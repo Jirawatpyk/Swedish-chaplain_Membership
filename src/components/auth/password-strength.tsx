@@ -151,8 +151,12 @@ export function usePasswordStrengthMeter(password: string): PasswordStrengthMete
   );
   const clearRejected = useCallback(() => setRejectedValue(null), []);
 
-  // The pin only holds while the value is unchanged; any edit re-runs the
-  // live estimate (a different string no longer matches `rejectedValue`).
+  // The pin only holds while the value equals the rejected one; any edit re-runs
+  // the live estimate (a different string no longer matches `rejectedValue`).
+  // The pin is value-equality, not a one-shot flag: if the user edits away and
+  // then types their way back to the exact rejected value, the bar re-pins to
+  // red without a new submit. That is intentional — that value was genuinely
+  // rejected (e.g. HIBP-breached), so the server would reject it again.
   const rejected = rejectedValue !== null && rejectedValue === password;
   const level = rejected ? 'weak' : estimatePasswordStrength(password);
   const weakReason: PasswordWeakReason | undefined = rejected
