@@ -32,7 +32,8 @@
       "submitted": "If that email matches an account, a reset link is on the way.",
       "resend": "Didn't get the email? Resend",
       "resendCountdown": "Resend ({seconds}s)",
-      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive."
+      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive.",
+      "rateLimited": "Too many requests. Please wait a moment and try again."
     },
     "resetPassword": {
       "title": "Choose a new password",
@@ -87,7 +88,8 @@
       "title": "Still there?",
       "description": "You'll be signed out in {seconds} seconds.",
       "stay": "Stay signed in",
-      "signOut": "Sign out now"
+      "signOut": "Sign out now",
+      "signedOutInactive": "You've been signed out due to inactivity. Please sign in again."
     },
     "denied": {
       "readOnly": "Your role does not permit this action.",
@@ -1272,6 +1274,7 @@
         "title": "Add member",
         "subtitle": "Create a member company with its primary contact.",
         "requiredNote": "* fields are required",
+        "errorSummaryTitle": "Please fix the following before continuing:",
         "submit": "Create member",
         "submitting": "Creating…",
         "cancel": "Cancel",
@@ -1316,7 +1319,10 @@
             "url": "Enter a valid URL, e.g. https://example.com.",
             "planYear": "Enter a year between 2020 and 2100.",
             "emailFormat": "Enter a valid email address, e.g. name@example.com.",
-            "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum."
+            "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
+            "dobRequired": "Date of birth is required for this plan.",
+            "foundedYear": "Enter a year between 1800 and this year.",
+            "turnover": "Enter a non-negative amount."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -3337,12 +3343,20 @@
           "placeholder": "{phrase}",
           "help": "Full refunds require typed confirmation to prevent accidental processing.",
           "mismatch": "Phrase does not match. Type exactly: {phrase}"
+        },
+        "errors": {
+          "amountRequired": "Enter a refund amount.",
+          "amountFormat": "Enter a valid amount — digits with up to 2 decimals.",
+          "reasonRequired": "Enter a reason for this refund.",
+          "reasonTooLong": "Reason must be 500 characters or fewer.",
+          "reasonSingleLine": "Reason must be a single line (no line breaks)."
         }
       },
       "success": {
         "toast": "Refund processed — credit note {number} issued and emailed to member"
       },
       "error": {
+        "title": "Couldn't issue the refund",
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",

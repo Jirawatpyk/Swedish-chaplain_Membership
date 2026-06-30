@@ -130,6 +130,11 @@ afterEach(() => {
   // for an example where the local `finally { spy.mockRestore() }`
   // IS the active per-test restore path (afterEach can't do it).
   vi.clearAllMocks();
+  // NOTE: do NOT add vi.unstubAllGlobals() here — several suites (e.g. the cron
+  // renewals coordinators) call vi.stubGlobal('fetch', …) at MODULE scope and
+  // rely on it persisting across every test in the file; a global per-test
+  // unstub would strip it after the first test. Per-test stubbers must unstub
+  // themselves (try/finally).
 });
 
 afterAll(() => {

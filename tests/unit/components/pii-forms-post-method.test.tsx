@@ -106,6 +106,9 @@ function hasPostAttribute(relPath: string): boolean {
 }
 const SOURCE_INVARIANT_FORMS: ReadonlyArray<readonly [string, string]> = [
   ['PortalEditForm', 'src/components/members/portal-edit-form.tsx'],
+  // Renders its <form> behind a DialogTrigger, so a source-level check is the
+  // faithful guard (audit XF-03 — it collects contact name/email/phone PII).
+  ['ContactFormDialog', 'src/components/members/contact-form-dialog.tsx'],
   ['InvoiceSettingsForm', 'src/components/invoices/invoice-settings-form.tsx'],
   [
     'InvoiceForm',

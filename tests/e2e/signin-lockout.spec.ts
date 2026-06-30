@@ -151,14 +151,17 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     expect(body.error).toBe('account-locked');
 
     // UX assertion: the form shows the "too many failed attempts"
-    // toast from `auth.signIn.errors.accountLocked` (not the
-    // generic invalid-credentials inline error). The EN copy is
-    // "Too many failed attempts. Try again later."; Thai and
-    // Swedish use their translations. sonner renders toasts into
-    // a portal at the page level.
-    await expect(
-      page.getByText(/too many failed attempts|try again later/i).first(),
-    ).toBeVisible({ timeout: 5_000 });
+    // message from `auth.signIn.errors.accountLocked`. Since PR #133
+    // all server rejections (account-locked included) render in the
+    // inline #signin-error banner (role="alert"), not a sonner toast.
+    // The EN copy is "Too many failed attempts. Try again later.";
+    // Thai and Swedish use their translations.
+    // Scope to the inline #signin-error banner (not just "visible somewhere")
+    // so the test actually enforces the inline-banner-not-toast contract.
+    await expect(page.locator('#signin-error')).toContainText(
+      /too many failed attempts|try again later/i,
+      { timeout: 5_000 },
+    );
   });
 
   test.afterAll(async () => {

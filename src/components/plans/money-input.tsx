@@ -19,6 +19,7 @@
 import { useId } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RequiredMark } from '@/components/ui/required-mark';
 
 export interface MoneyInputProps {
   /** Current value in integer MINOR units (e.g. satang). */
@@ -66,7 +67,12 @@ export function MoneyInput({
     <div className="space-y-1">
       <Label htmlFor={id}>
         {label}
-        {required ? <span className="text-destructive ml-1">*</span> : null}
+        {required ? (
+          <>
+            {' '}
+            <RequiredMark />
+          </>
+        ) : null}
       </Label>
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground w-6 text-center text-base">

@@ -26,7 +26,7 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { EmailInput } from '@/components/ui/email-input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { safeReturnTo } from '@/lib/return-url';
@@ -64,6 +64,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     register,
     handleSubmit,
     setError,
+    clearErrors,
     setFocus,
     formState: { errors },
   } = useForm<FormValues>({
@@ -79,6 +80,9 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
+    // Clear any prior server-rejection banner so it can't linger next to a
+    // different outcome (e.g. a later network throw) on a fresh attempt.
+    clearErrors('root');
     try {
       const response = await fetch('/api/auth/sign-in', {
         method: 'POST',
@@ -102,24 +106,20 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       const errorBody = (await response.json().catch(() => ({}))) as { error?: string };
       const errorCode = errorBody.error ?? 'invalid-credentials';
 
-      switch (errorCode) {
-        case 'account-disabled':
-          toast.error(t('errors.accountDisabled'));
-          break;
-        case 'account-locked':
-          toast.error(t('errors.accountLocked'));
-          break;
-        case 'rate-limited':
-          toast.error(t('errors.rateLimited'));
-          break;
-        case 'invalid-credentials':
-        default:
-          // Same generic message as the API — never reveal which field
-          // was wrong (spec FR-016).
-          setError('root', { message: t('errors.invalidCredentials') });
-          setFocus('email');
-          break;
-      }
+      // Surface every server rejection in the inline root banner (+ focus the
+      // email) so the reason persists on-page and is announced — a toast can be
+      // missed/dismissed and isn't associated with the form (audit XF-01).
+      // invalid-credentials stays generic so neither field is revealed (FR-016).
+      const messageByCode: Record<string, string> = {
+        'account-disabled': t('errors.accountDisabled'),
+        'account-locked': t('errors.accountLocked'),
+        'rate-limited': t('errors.rateLimited'),
+        'invalid-credentials': t('errors.invalidCredentials'),
+      };
+      setError('root', {
+        message: messageByCode[errorCode] ?? t('errors.invalidCredentials'),
+      });
+      setFocus('email');
     } catch {
       toast.error(tErrors('network'));
     } finally {
@@ -141,13 +141,21 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     >
       <div className="space-y-2">
         <Label htmlFor="email">{t('emailLabel')}</Label>
-        <Input
+        <EmailInput
           id="email"
-          type="email"
           autoComplete="username"
           spellCheck={false}
+          // aria-invalid only for an actual email-FORMAT error — a server
+          // rejection (bad credentials / account state) doesn't mean the email
+          // value is malformed, so we don't mark the field invalid for it. But
+          // we DO describe the focused field with the rejection banner so a SR
+          // user hears the reason (audit XF-01 / WCAG 3.3.1).
           aria-invalid={errors.email ? 'true' : undefined}
-          aria-describedby={errors.email ? 'email-error' : undefined}
+          aria-describedby={
+            [errors.email ? 'email-error' : null, errors.root ? 'signin-error' : null]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           {...register('email')}
         />
         {errors.email ? (
@@ -187,6 +195,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
       {errors.root ? (
         <div
+          id="signin-error"
           className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
           role="alert"
         >

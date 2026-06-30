@@ -11,8 +11,9 @@
  *   - After submission, a 60-second countdown gates the resend
  *     affordance (FR-025 / SC-017). Until the countdown expires, the
  *     resend link is disabled and shows the remaining seconds.
- *   - Rate-limited responses (429) surface a toast + temporarily
- *     disable the submit button.
+ *   - Failures (429 rate-limit / non-ok / network) surface an inline
+ *     role="alert" banner above the form (never a toast — see
+ *     ux-standards § 4.1), on both the first submit and a resend.
  *   - Keyboard: Enter submits. Esc is a no-op (spec explicitly does
  *     NOT want Esc to clear the form since that is surprising).
  */
@@ -21,10 +22,9 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { EmailInput } from '@/components/ui/email-input';
 import { Label } from '@/components/ui/label';
 import { emailText, type Translator } from '@/lib/zod-i18n';
 
@@ -45,7 +45,11 @@ export function ForgotPasswordForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [remaining, setRemaining] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Managed focus on the success card so a keyboard/SR user isn't dropped on
+  // <body> when the submit button is replaced by the resend button (XF focus).
+  const successRef = useRef<HTMLDivElement>(null);
 
   const schema = useMemo(
     () => buildForgotPasswordSchema(tv as Translator),
@@ -67,6 +71,12 @@ export function ForgotPasswordForm() {
   useEffect(() => {
     setFocus('email');
   }, [setFocus]);
+
+  // Move focus to the success card when the form swaps to the submitted state
+  // (WCAG 2.4.3 — the focused submit button is unmounted).
+  useEffect(() => {
+    if (submitted) successRef.current?.focus();
+  }, [submitted]);
 
   useEffect(
     () => () => {
@@ -95,6 +105,7 @@ export function ForgotPasswordForm() {
   const sendRequest = useCallback(
     async (email: string) => {
       setSubmitting(true);
+      setErrorMsg(null);
       try {
         const response = await fetch('/api/auth/forgot-password', {
           method: 'POST',
@@ -102,22 +113,23 @@ export function ForgotPasswordForm() {
           body: JSON.stringify({ email }),
         });
         if (response.status === 429) {
-          toast.error(tErrors('generic'));
+          // Actionable rate-limit copy instead of a generic "went wrong".
+          setErrorMsg(t('rateLimited'));
           return;
         }
         if (!response.ok) {
-          toast.error(tErrors('generic'));
+          setErrorMsg(tErrors('generic'));
           return;
         }
         setSubmitted(true);
         startCountdown();
       } catch {
-        toast.error(tErrors('network'));
+        setErrorMsg(tErrors('network'));
       } finally {
         setSubmitting(false);
       }
     },
-    [startCountdown, tErrors],
+    [startCountdown, t, tErrors],
   );
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
@@ -141,9 +153,8 @@ export function ForgotPasswordForm() {
     >
       <div className="space-y-2">
         <Label htmlFor="email">{t('emailLabel')}</Label>
-        <Input
+        <EmailInput
           id="email"
-          type="email"
           autoComplete="username"
           disabled={submitting || submitted}
           aria-invalid={errors.email ? 'true' : undefined}
@@ -157,9 +168,24 @@ export function ForgotPasswordForm() {
         ) : null}
       </div>
 
+      {/* Gated on errorMsg alone (NOT `!submitted`): a failed RESEND happens
+        * while submitted===true, so `!submitted` would swallow it. Each send
+        * clears errorMsg first (setErrorMsg(null)), so the success path leaves
+        * it null and the banner stays hidden; only a real failure shows it. */}
+      {errorMsg ? (
+        <div
+          className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {errorMsg}
+        </div>
+      ) : null}
+
       {submitted ? (
         <div
-          className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+          ref={successRef}
+          tabIndex={-1}
+          className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           role="status"
         >
           <p>{t('submitted')}</p>
@@ -193,7 +219,14 @@ export function ForgotPasswordForm() {
           size="lg"
           onClick={handleResend}
           disabled={remaining > 0 || submitting}
+          aria-busy={submitting}
         >
+          {submitting && (
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden
+            />
+          )}
           {remaining > 0
             ? t('resendCountdown', { seconds: remaining })
             : t('resend')}

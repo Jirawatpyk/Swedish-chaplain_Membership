@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RequiredMark } from '@/components/ui/required-mark';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -102,6 +103,34 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
+        // Surface a field-scoped server rejection INLINE (audit XF-01): map the
+        // first validation issue whose path tail matches a form field, else
+        // fall back to a toast. The form's field names match the server keys.
+        const issues: unknown = data?.error?.details;
+        if (data?.error?.code === 'validation_error' && Array.isArray(issues)) {
+          const FIELDS: ReadonlyArray<keyof EditFormValues> = [
+            'firstName',
+            'lastName',
+            'phone',
+            'preferredLanguage',
+            'website',
+            'description',
+          ];
+          for (const issue of issues as Array<{ path?: unknown }>) {
+            const path = Array.isArray(issue.path) ? issue.path : [];
+            const tail = path[path.length - 1];
+            const field = FIELDS.find((f) => f === tail);
+            if (field) {
+              // Use a LOCALISED message, never the server's raw `issue.message`
+              // (e.g. "invalid phone: <code>") — rendering the dev token inline
+              // is the same leak XF-02 fixed for refund. The inline highlight +
+              // focus tells the user which field; the message stays localised.
+              form.setError(field, { type: 'server', message: t('saveError') });
+              form.setFocus(field);
+              return;
+            }
+          }
+        }
         toast.error(data?.error?.message ?? t('saveError'));
         return;
       }
@@ -127,10 +156,11 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="firstName">
-                {t('fields.firstName')} <span className="text-destructive">*</span>
+                {t('fields.firstName')} <RequiredMark />
               </Label>
               <Input
                 id="firstName"
+                autoFocus
                 autoComplete="given-name"
                 aria-required="true"
                 aria-invalid={Boolean(errors.firstName)}
@@ -145,7 +175,7 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             </div>
             <div>
               <Label htmlFor="lastName">
-                {t('fields.lastName')} <span className="text-destructive">*</span>
+                {t('fields.lastName')} <RequiredMark />
               </Label>
               <Input
                 id="lastName"
@@ -234,7 +264,11 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                 id="description"
                 rows={4}
                 aria-invalid={Boolean(errors.description)}
-                aria-describedby={errors.description ? 'description-error' : undefined}
+                aria-describedby={
+                  errors.description
+                    ? 'description-error description-count'
+                    : 'description-count'
+                }
                 {...form.register('description')}
               />
               {errors.description && (
@@ -246,7 +280,13 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                   {errors.description.message}
                 </p>
               )}
-              <p className="mt-1 text-caption text-muted-foreground">
+              {/* Associated via aria-describedby so a SR reads the count on
+                * focus — but NOT a live region: a per-keystroke aria-live
+                * would announce "1/2000, 2/2000, …" on every character. */}
+              <p
+                id="description-count"
+                className="mt-1 text-caption text-muted-foreground"
+              >
                 {form.watch('description')?.length ?? 0}/2000
               </p>
             </div>

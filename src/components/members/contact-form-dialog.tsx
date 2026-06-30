@@ -38,7 +38,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { EmailInput } from '@/components/ui/email-input';
 import { Label } from '@/components/ui/label';
+import { RequiredMark } from '@/components/ui/required-mark';
 import {
   Select,
   SelectContent,
@@ -126,6 +128,8 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
     handleSubmit,
     control,
     reset,
+    setError,
+    setFocus,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -160,7 +164,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
       error?: { code?: string };
     };
     const code = body.error?.code;
-    if (res.status === 409 && code === 'conflict') {
+    if (res.status === 409 && code === 'conflict' && mode === 'add') {
+      // Field-level rejection — surface inline on the email input (+ focus)
+      // instead of a transient toast (audit XF-01). Guarded on add mode: email
+      // is read-only/not submitted on edit, so a future edit-side 409 must NOT
+      // be pinned onto the disabled email field (setFocus would no-op there).
+      setError('email', { type: 'server', message: tA('errors.emailTaken') });
+      setFocus('email');
+    } else if (res.status === 409 && code === 'conflict') {
       toast.error(tA('errors.emailTaken'));
     } else if (res.status === 400) {
       toast.error(tA('errors.validation'));
@@ -245,7 +256,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger render={trigger} />
       <DialogContent>
-        <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          // Native fallback POSTs so contact name/email/phone (PII) stays out
+          // of the URL on a pre-hydration submit (CWE-598; audit XF-03).
+          method="post"
+          noValidate
+          className="space-y-4"
+        >
           <DialogHeader>
             <DialogTitle>
               {mode === 'add' ? t('title') : t('editTitle')}
@@ -258,13 +276,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="cf-first-name">
-                {tf('firstName')} <span className="text-destructive">*</span>
+                {tf('firstName')} <RequiredMark />
               </Label>
               <Input
                 id="cf-first-name"
                 autoFocus
                 autoComplete="given-name"
                 maxLength={100}
+                aria-required="true"
                 aria-invalid={Boolean(errors.first_name)}
                 aria-describedby={errors.first_name ? 'cf-first-name-error' : undefined}
                 {...register('first_name')}
@@ -277,12 +296,13 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
             </div>
             <div>
               <Label htmlFor="cf-last-name">
-                {tf('lastName')} <span className="text-destructive">*</span>
+                {tf('lastName')} <RequiredMark />
               </Label>
               <Input
                 id="cf-last-name"
                 autoComplete="family-name"
                 maxLength={100}
+                aria-required="true"
                 aria-invalid={Boolean(errors.last_name)}
                 aria-describedby={errors.last_name ? 'cf-last-name-error' : undefined}
                 {...register('last_name')}
@@ -298,14 +318,18 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           <div>
             <Label htmlFor="cf-email">
               {tf('email')}
-              {mode === 'add' && <span className="text-destructive"> *</span>}
+              {mode === 'add' && (
+                <>
+                  {' '}
+                  <RequiredMark />
+                </>
+              )}
             </Label>
-            <Input
+            <EmailInput
               id="cf-email"
-              type="email"
-              autoComplete="email"
               maxLength={254}
               disabled={mode === 'edit'}
+              aria-required={mode === 'add' ? 'true' : undefined}
               aria-invalid={Boolean(errors.email)}
               aria-describedby={
                 mode === 'edit'
@@ -335,6 +359,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               <Input
                 id="cf-phone"
                 type="tel"
+                inputMode="tel"
                 autoComplete="tel"
                 maxLength={20}
                 placeholder="+66812345678"

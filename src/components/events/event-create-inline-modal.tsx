@@ -14,12 +14,15 @@
  *     → 201 'created'       — close modal + invoke onCreated callback
  *     → 200 'already_exists' — close modal + invoke onCreated (idempotent retry)
  *     → 400 validation-error — inline field error
- *     → 429 / 500 — inline error toast + retry CTA
+ *     → 429 / 500 — inline destructive Alert (focused); the Create button
+ *       stays enabled so the admin can retry without re-opening the modal.
  *
  * Accessibility:
  *   - role=dialog + aria-modal inherited from shadcn Dialog (Base UI).
  *   - Form fields use Label + htmlFor association.
- *   - Inline error rendered with aria-live=polite.
+ *   - Field + server errors use role="alert" (assertive) so a newly-inserted
+ *     validation/rejection message is announced reliably; the server-error
+ *     Alert also takes focus on a failed submit.
  *   - Default focus on the externalId input (admin-facing field).
  *   - All buttons min-h-11 (WCAG 2.5.8 target size).
  *
@@ -28,7 +31,7 @@
  * benefit / cultural-event flags) are NOT in this surface; admin can
  * edit them via /admin/events/[eventId] once the event exists.
  */
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -104,6 +107,12 @@ export function EventCreateInlineModal(
   const categoryHintId = useId();
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<ServerError | null>(null);
+  // Move focus to the server-error Alert on a failed submit so a keyboard/SR
+  // admin (focus on the re-enabled Create button) is taken to the reason.
+  const serverErrorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (serverError) serverErrorRef.current?.focus();
+  }, [serverError]);
 
   const {
     register,
@@ -123,6 +132,10 @@ export function EventCreateInlineModal(
   const handleClose = useCallback(() => {
     reset();
     setServerError(null);
+    // The success path closes WITHOUT a setSubmitting(false), and the parent
+    // keeps this modal mounted (only `open` toggles) — so clear it here too,
+    // else reopening after a successful create shows a stuck "Creating…".
+    setSubmitting(false);
     props.onOpenChange(false);
   }, [props, reset]);
 
@@ -247,10 +260,14 @@ export function EventCreateInlineModal(
 
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           {serverError !== null ? (
-            <Alert variant="destructive" aria-live="polite">
-              <AlertTitle>{serverError.title}</AlertTitle>
-              <AlertDescription>{serverError.detail}</AlertDescription>
-            </Alert>
+            <div ref={serverErrorRef} tabIndex={-1} className="outline-none">
+              {/* Alert already carries role="alert" (assertive) — no aria-live
+                * override, which would downgrade it to polite. */}
+              <Alert variant="destructive">
+                <AlertTitle>{serverError.title}</AlertTitle>
+                <AlertDescription>{serverError.detail}</AlertDescription>
+              </Alert>
+            </div>
           ) : null}
 
           {/* APG Form Pattern: keep the hint paragraph always-mounted +
@@ -283,7 +300,7 @@ export function EventCreateInlineModal(
               <p
                 id={`${externalIdId}-error`}
                 className="text-caption text-destructive"
-                aria-live="polite"
+                role="alert"
               >
                 {t(`fields.errors.${errors.externalId.message ?? 'externalIdInvalid'}`)}
               </p>
@@ -313,7 +330,7 @@ export function EventCreateInlineModal(
               <p
                 id={`${nameId}-error`}
                 className="text-caption text-destructive"
-                aria-live="polite"
+                role="alert"
               >
                 {t(`fields.errors.${errors.name.message ?? 'nameRequired'}`)}
               </p>
@@ -343,7 +360,7 @@ export function EventCreateInlineModal(
               <p
                 id={`${startDateId}-error`}
                 className="text-caption text-destructive"
-                aria-live="polite"
+                role="alert"
               >
                 {t(
                   `fields.errors.${errors.startDateLocal.message ?? 'startDateRequired'}`,
@@ -375,7 +392,7 @@ export function EventCreateInlineModal(
               <p
                 id={`${categoryId}-error`}
                 className="text-caption text-destructive"
-                aria-live="polite"
+                role="alert"
               >
                 {t(`fields.errors.${errors.category.message ?? 'categoryTooLong'}`)}
               </p>

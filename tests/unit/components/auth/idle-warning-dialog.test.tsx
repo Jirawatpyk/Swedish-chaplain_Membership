@@ -37,6 +37,7 @@ vi.mock('sonner', () => ({
     error: vi.fn(),
   },
 }));
+import { toast } from 'sonner';
 
 // Mock the auth domain module — importing the real one would drag in
 // Node-only infrastructure (argon2, postgres-js). We only need the
@@ -58,6 +59,8 @@ const messages = {
       description: 'Signing out in {seconds} s',
       stay: 'Stay signed in',
       signOut: 'Sign out',
+      signedOutInactive:
+        'You were signed out due to inactivity. Please sign in again.',
     },
   },
 };
@@ -91,6 +94,29 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
       await vi.advanceTimersByTimeAsync(29 * 60 * 1000);
     });
     expect(screen.queryByText('Are you still here?')).toBeNull();
+  });
+
+  it('on countdown expiry, the involuntary-signout toast states the inactivity reason (not the countdown copy) — TC-AUTH-05 step 3', async () => {
+    // Resolve the sign-out POST immediately so forceSignOut proceeds to the
+    // toast under fake timers (a real fetch would never settle here).
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    renderDialog();
+    // Open the warning instantly via the test hook instead of idling 29 min.
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    // Run the 60-second countdown to zero → involuntary sign-out.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+    expect(toast.info).toHaveBeenCalledWith(
+      'You were signed out due to inactivity. Please sign in again.',
+    );
+    // Exactly one toast with that message — catches an accidental extra/wrong
+    // toast.info (e.g. someone re-routing the countdown copy through a toast).
+    expect(toast.info).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
   });
 
   it('resumeIdleTimer event thaws the clock — subsequent 29 min of activity re-shows the warning', async () => {
