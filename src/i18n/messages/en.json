@@ -32,7 +32,8 @@
       "submitted": "If that email matches an account, a reset link is on the way.",
       "resend": "Didn't get the email? Resend",
       "resendCountdown": "Resend ({seconds}s)",
-      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive."
+      "deliveryHint": "Didn’t receive it after a minute? Check your spam folder, or contact support if it still doesn’t arrive.",
+      "rateLimited": "Too many requests. Please wait a moment and try again."
     },
     "resetPassword": {
       "title": "Choose a new password",

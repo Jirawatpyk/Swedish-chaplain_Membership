@@ -32,7 +32,8 @@
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
       "resend": "Fick du inget mejl? Skicka igen",
       "resendCountdown": "Skicka igen ({seconds}s)",
-      "deliveryHint": "Har du inte fått det efter en minut? Kontrollera din skräppostmapp, eller kontakta support om det fortfarande inte kommer fram."
+      "deliveryHint": "Har du inte fått det efter en minut? Kontrollera din skräppostmapp, eller kontakta support om det fortfarande inte kommer fram.",
+      "rateLimited": "För många förfrågningar. Vänta en stund och försök igen."
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
