@@ -39,6 +39,7 @@ import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/p
 import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
 import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
 import { Input } from '@/components/ui/input';
+import { EmailInput } from '@/components/ui/email-input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -768,9 +769,8 @@ export function MemberForm({
               {tf('email')}
               <RequiredMark />
             </Label>
-            <Input
+            <EmailInput
               id="contact_email"
-              type="email"
               {...register('primary_contact.email')}
               required
               aria-required="true"
@@ -780,7 +780,6 @@ export function MemberForm({
                   ? 'contact_email-error required-fields-note'
                   : 'required-fields-note'
               }
-              autoComplete="email"
               maxLength={254}
             />
             <FieldError

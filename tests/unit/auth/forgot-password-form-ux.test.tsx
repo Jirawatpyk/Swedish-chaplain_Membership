@@ -37,6 +37,40 @@ describe('ForgotPasswordForm', () => {
     vi.unstubAllGlobals();
   });
 
+  it('shows the error banner when a RESEND fails (banner is not gated on !submitted)', async () => {
+    // Regression: the banner was `{!submitted && errorMsg}`, but a resend only
+    // happens after submitted===true, so a failed resend was silent.
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, status: 200 }) // first submit
+        .mockResolvedValueOnce({ ok: false, status: 429 }); // resend
+      vi.stubGlobal('fetch', fetchMock);
+      const { container } = renderForm();
+      fireEvent.change(container.querySelector('#email')!, {
+        target: { value: 'user@example.com' },
+      });
+      fireEvent.submit(container.querySelector('form')!);
+      // Flush the first submit → success card + 60s resend countdown start.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByRole('status')).toBeTruthy();
+      // Run the countdown so the Resend button re-enables, then click it.
+      await vi.advanceTimersByTimeAsync(60_000);
+      fireEvent.click(screen.getByRole('button', { name: /resend/i }));
+      await vi.advanceTimersByTimeAsync(0); // flush the resend fetch
+      // The 429 banner must render even though submitted===true.
+      expect(
+        screen.getByText(
+          'Too many requests. Please wait a moment and try again.',
+        ),
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('shows an actionable rate-limit message inline on 429 (not generic)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 429 }));
     const { container } = renderForm();

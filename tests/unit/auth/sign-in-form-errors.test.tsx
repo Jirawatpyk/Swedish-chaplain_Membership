@@ -63,6 +63,11 @@ describe('SignInForm', () => {
     expect(
       container.querySelector('#email')?.getAttribute('aria-describedby') ?? '',
     ).toContain('signin-error');
+    // …but a syntactically-valid email is NOT marked invalid for an account-state
+    // rejection (aria-invalid is only for an actual email-format error).
+    expect(
+      container.querySelector('#email')?.getAttribute('aria-invalid'),
+    ).not.toBe('true');
     expect(toastError).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();

@@ -64,6 +64,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     register,
     handleSubmit,
     setError,
+    clearErrors,
     setFocus,
     formState: { errors },
   } = useForm<FormValues>({
@@ -79,6 +80,9 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
+    // Clear any prior server-rejection banner so it can't linger next to a
+    // different outcome (e.g. a later network throw) on a fresh attempt.
+    clearErrors('root');
     try {
       const response = await fetch('/api/auth/sign-in', {
         method: 'POST',
@@ -141,9 +145,12 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
           id="email"
           autoComplete="username"
           spellCheck={false}
-          // Associate with the inline error AND the root server-rejection banner,
-          // since a failed sign-in focuses this field (audit XF-01 / WCAG 3.3.1).
-          aria-invalid={errors.email || errors.root ? 'true' : undefined}
+          // aria-invalid only for an actual email-FORMAT error — a server
+          // rejection (bad credentials / account state) doesn't mean the email
+          // value is malformed, so we don't mark the field invalid for it. But
+          // we DO describe the focused field with the rejection banner so a SR
+          // user hears the reason (audit XF-01 / WCAG 3.3.1).
+          aria-invalid={errors.email ? 'true' : undefined}
           aria-describedby={
             [errors.email ? 'email-error' : null, errors.root ? 'signin-error' : null]
               .filter(Boolean)

@@ -167,7 +167,11 @@ export function ForgotPasswordForm() {
         ) : null}
       </div>
 
-      {!submitted && errorMsg ? (
+      {/* Gated on errorMsg alone (NOT `!submitted`): a failed RESEND happens
+        * while submitted===true, so `!submitted` would swallow it. Each send
+        * clears errorMsg first (setErrorMsg(null)), so the success path leaves
+        * it null and the banner stays hidden; only a real failure shows it. */}
+      {errorMsg ? (
         <div
           className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
           role="alert"

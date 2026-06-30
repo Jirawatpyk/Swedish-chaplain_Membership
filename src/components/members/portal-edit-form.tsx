@@ -280,10 +280,12 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
                   {errors.description.message}
                 </p>
               )}
+              {/* Associated via aria-describedby so a SR reads the count on
+                * focus — but NOT a live region: a per-keystroke aria-live
+                * would announce "1/2000, 2/2000, …" on every character. */}
               <p
                 id="description-count"
                 className="mt-1 text-caption text-muted-foreground"
-                aria-live="polite"
               >
                 {form.watch('description')?.length ?? 0}/2000
               </p>

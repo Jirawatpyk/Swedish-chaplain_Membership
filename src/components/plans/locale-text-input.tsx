@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { RequiredMark } from '@/components/ui/required-mark';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 type LocaleKey = 'en' | 'th' | 'sv';
@@ -86,7 +87,12 @@ export function LocaleTextInput({
             would stack with the 8px space-y → 14px double-gap. */}
         <Label className="mb-0">
           {label}
-          {required ? <span className="text-destructive ml-1">*</span> : null}
+          {required ? (
+            <>
+              {' '}
+              <RequiredMark />
+            </>
+          ) : null}
         </Label>
         {LOCALES.filter((l) => l.key !== 'en' && !value[l.key]).map((l) => (
           <Badge
