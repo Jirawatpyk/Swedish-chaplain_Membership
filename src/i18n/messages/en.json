@@ -1270,6 +1270,7 @@
         "title": "Add member",
         "subtitle": "Create a member company with its primary contact.",
         "requiredNote": "* fields are required",
+        "errorSummaryTitle": "Please fix the following before continuing:",
         "submit": "Create member",
         "submitting": "Creating…",
         "cancel": "Cancel",
@@ -1314,7 +1315,10 @@
             "url": "Enter a valid URL, e.g. https://example.com.",
             "planYear": "Enter a year between 2020 and 2100.",
             "emailFormat": "Enter a valid email address, e.g. name@example.com.",
-            "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum."
+            "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
+            "dobRequired": "Date of birth is required for this plan.",
+            "foundedYear": "Enter a year between 1800 and this year.",
+            "turnover": "Enter a non-negative amount."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",

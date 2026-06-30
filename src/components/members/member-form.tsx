@@ -42,6 +42,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { FormErrorSummary } from '@/components/ui/form-error-summary';
 import {
   Select,
   SelectContent,
@@ -64,7 +65,13 @@ import { type Translator } from '@/lib/zod-i18n';
 export function buildMemberFormSchema(
   tf: (key: string) => string,
   tv: Translator,
+  // When the selected plan requires it (Thai Alumni etc.), the DOB field is
+  // shown with a required asterisk — so the schema must actually enforce it,
+  // not silently accept an empty value the server then rejects (audit). Default
+  // false keeps the 2-arg call sites (and the schema unit test) unchanged.
+  requireDob = false,
 ) {
+  const currentYear = new Date().getUTCFullYear();
   return z.object({
   company_name: z
     .string()
@@ -92,11 +99,19 @@ export function buildMemberFormSchema(
   founded_year: z
     .union([z.string(), z.number()])
     .optional()
-    .transform((v) => (v === '' || v === undefined ? undefined : Number(v))),
+    .transform((v) => (v === '' || v === undefined ? undefined : Number(v)))
+    .refine(
+      (v) => v === undefined || (Number.isInteger(v) && v >= 1800 && v <= currentYear),
+      tf('errors.foundedYear'),
+    ),
   turnover_thb: z
     .union([z.string(), z.number()])
     .optional()
-    .transform((v) => (v === '' || v === undefined ? undefined : Number(v))),
+    .transform((v) => (v === '' || v === undefined ? undefined : Number(v)))
+    .refine(
+      (v) => v === undefined || (Number.isFinite(v) && v >= 0),
+      tf('errors.turnover'),
+    ),
   plan_id: z.string().min(1, tf('errors.required')),
   plan_year: z.coerce
     .number({ invalid_type_error: tf('errors.planYear') })
@@ -182,6 +197,16 @@ export function buildMemberFormSchema(
         code: z.ZodIssueCode.custom,
         path: ['country'],
         message: tf('errors.countryCode'),
+      });
+    }
+    // Conditional DOB requirement (Thai Alumni etc.): the field renders with a
+    // required asterisk only when the plan needs it, so enforce it here rather
+    // than letting the server reject an empty value with a generic toast.
+    if (requireDob && !data.primary_contact?.date_of_birth?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['primary_contact', 'date_of_birth'],
+        message: tf('errors.dobRequired'),
       });
     }
   });
@@ -279,22 +304,29 @@ export function MemberForm({
     mode === 'edit' ? tEdit('submitting') : t('submitting');
   const cancelLabel = mode === 'edit' ? tEdit('cancel') : t('cancel');
 
-  // Build the zod schema with the active-locale field-error translator. `tf`
-  // is stable per locale render (next-intl), so the memo only re-runs on a
-  // locale switch (which re-renders the page anyway).
+  // Track the selected plan in local state (not RHF `watch`) so the schema can
+  // be rebuilt with the conditional-DOB requirement BEFORE useForm consumes the
+  // resolver — avoids the watch()→useForm circular dependency.
+  const [planId, setPlanId] = useState<string>(initialValues?.plan_id ?? '');
+  const selectedPlan = plans.find((p) => p.plan_id === planId);
+  const needsDob = Boolean(selectedPlan?.requires_date_of_birth);
+
+  // Build the zod schema with the active-locale field-error translator + the
+  // conditional DOB requirement. `tf` is stable per locale render (next-intl);
+  // the memo re-runs on a locale switch or when the plan toggles DOB-required.
   const schema = useMemo(
     () =>
       buildMemberFormSchema(
         tf as (key: string) => string,
         tv as Translator,
+        needsDob,
       ),
-    [tf, tv],
+    [tf, tv, needsDob],
   );
 
   const {
     register,
     handleSubmit,
-    watch,
     control,
     setError,
     formState: { errors },
@@ -310,17 +342,6 @@ export function MemberForm({
       },
     } as MemberFormValues,
   });
-
-  // react-hook-form's `watch()` returns a fresh subscription each render,
-  // which the React compiler flags as incompatible-library. This is safe
-  // here — the form is a leaf component and compile-level memoization
-  // isn't on the critical path. See same pattern in F2 plan-form-wizard.
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const selectedPlanId = watch('plan_id');
-  const selectedPlan = plans.find(
-    (p) => p.plan_id === selectedPlanId,
-  );
-  const needsDob = Boolean(selectedPlan?.requires_date_of_birth);
 
   const [country, setCountry] = useState<string>(
     initialValues?.country ?? 'TH',
@@ -350,12 +371,43 @@ export function MemberForm({
     );
   }, [serverFieldError, setError]);
 
+  // Error-summary items (RHF path → DOM id) for the top-of-form summary on a
+  // long scrolling form (audit XF-09). RHF's shouldFocusError still moves focus
+  // to the first field, so the summary is autoFocus={false}: it renders, lists
+  // every error with a jump link, and announces via role="alert".
+  const summaryEntries: ReadonlyArray<readonly [string, string | undefined]> = [
+    ['company_name', errors.company_name?.message],
+    ['country', errors.country?.message],
+    ['tax_id', errors.tax_id?.message],
+    ['website', errors.website?.message],
+    ['founded_year', errors.founded_year?.message],
+    ['turnover_thb', errors.turnover_thb?.message],
+    ['plan_id', errors.plan_id?.message],
+    ['plan_year', errors.plan_year?.message],
+    ['first_name', errors.primary_contact?.first_name?.message],
+    ['last_name', errors.primary_contact?.last_name?.message],
+    ['contact_email', errors.primary_contact?.email?.message],
+    ['contact_phone', errors.primary_contact?.phone?.message],
+    ['date_of_birth', errors.primary_contact?.date_of_birth?.message],
+  ];
+  const summaryItems = summaryEntries
+    .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+    .map(([fieldId, message]) => ({ fieldId, message }));
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-[var(--page-section-gap)]">
       {/* FR-035 part (c): form-top required fields note */}
       <p className="text-sm text-muted-foreground" id="required-fields-note">
         {t('requiredNote')}
       </p>
+
+      {/* Summary only when MORE THAN ONE error (ux-standards § 11.3); a single
+        * error is already covered by its inline field message + RHF focus. */}
+      <FormErrorSummary
+        title={t('errorSummaryTitle')}
+        items={summaryItems.length > 1 ? summaryItems : []}
+        autoFocus={false}
+      />
 
       {/* --- Company section --- */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -370,6 +422,9 @@ export function MemberForm({
           </Label>
           <Input
             id="company_name"
+            // Auto-focus the primary input on create (ux-standards § 7.2);
+            // never on edit, so opening an edit form doesn't steal scroll/focus.
+            autoFocus={mode === 'create'}
             {...register('company_name')}
             required
             aria-required="true"
@@ -424,10 +479,17 @@ export function MemberForm({
               {...register('tax_id')}
               maxLength={50}
               aria-invalid={Boolean(errors.tax_id)}
-              aria-describedby={errors.tax_id ? 'tax_id-error' : undefined}
+              aria-describedby={
+                [
+                  errors.tax_id ? 'tax_id-error' : null,
+                  countryIsTH ? 'tax_id-hint' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' ') || undefined
+              }
             />
             {countryIsTH && (
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p id="tax_id-hint" className="mt-1 text-xs text-muted-foreground">
                 {tf('taxIdHintTH')}
               </p>
             )}
@@ -458,8 +520,11 @@ export function MemberForm({
               inputMode="numeric"
               min={1800}
               max={new Date().getUTCFullYear()}
+              aria-invalid={Boolean(errors.founded_year)}
+              aria-describedby={errors.founded_year ? 'founded_year-error' : undefined}
               {...register('founded_year')}
             />
+            <FieldError id="founded_year-error" message={errors.founded_year?.message} />
           </div>
           <div>
             <Label htmlFor="turnover_thb">{tf('turnoverThb')}</Label>
@@ -468,8 +533,11 @@ export function MemberForm({
               type="number"
               inputMode="numeric"
               min={0}
+              aria-invalid={Boolean(errors.turnover_thb)}
+              aria-describedby={errors.turnover_thb ? 'turnover_thb-error' : undefined}
               {...register('turnover_thb')}
             />
+            <FieldError id="turnover_thb-error" message={errors.turnover_thb?.message} />
           </div>
         </div>
 
@@ -491,8 +559,9 @@ export function MemberForm({
             rows={3}
             maxLength={4000}
             placeholder={tf('notesPlaceholder')}
+            aria-describedby="notes-hint"
           />
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p id="notes-hint" className="mt-1 text-xs text-muted-foreground">
             {tf('notesHint')}
           </p>
         </div>
@@ -509,7 +578,12 @@ export function MemberForm({
               render={({ field }) => (
                 <Select
                   value={field.value ?? ''}
-                  onValueChange={field.onChange}
+                  onValueChange={(v) => {
+                    field.onChange(v);
+                    // Mirror to local state so the schema rebuilds with the
+                    // plan's DOB requirement (see the planId state above).
+                    setPlanId(v ?? '');
+                  }}
                 >
                   <SelectTrigger
                     id="plan_id"
@@ -800,10 +874,25 @@ export function MemberForm({
               required
               aria-required="true"
               autoComplete="bday"
+              aria-invalid={Boolean(errors.primary_contact?.date_of_birth)}
+              aria-describedby={
+                [
+                  errors.primary_contact?.date_of_birth
+                    ? 'date_of_birth-error'
+                    : null,
+                  'date_of_birth-hint',
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+              }
             />
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p id="date_of_birth-hint" className="mt-1 text-xs text-muted-foreground">
               {tf('dateOfBirthHint')}
             </p>
+            <FieldError
+              id="date_of_birth-error"
+              message={errors.primary_contact?.date_of_birth?.message}
+            />
           </div>
         )}
       </fieldset>

@@ -31,12 +31,20 @@ export interface FormErrorSummaryProps {
   readonly title: string;
   readonly items: readonly FormErrorSummaryItem[];
   readonly className?: string;
+  /**
+   * Take focus when the error set appears (default true — the GOV.UK pattern).
+   * Pass false when the form already moves focus elsewhere on submit (e.g.
+   * react-hook-form's `shouldFocusError` focuses the first field) so the two
+   * don't fight; the summary still renders + announces via role="alert".
+   */
+  readonly autoFocus?: boolean;
 }
 
 export function FormErrorSummary({
   title,
   items,
   className,
+  autoFocus = true,
 }: FormErrorSummaryProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,8 +53,8 @@ export function FormErrorSummary({
   // each render). Empty signature ⇒ no items ⇒ no focus.
   const signature = items.map((i) => `${i.fieldId}:${i.message}`).join('|');
   useEffect(() => {
-    if (signature) ref.current?.focus();
-  }, [signature]);
+    if (autoFocus && signature) ref.current?.focus();
+  }, [autoFocus, signature]);
 
   if (items.length === 0) return null;
 

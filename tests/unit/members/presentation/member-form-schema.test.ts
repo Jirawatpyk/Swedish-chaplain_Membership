@@ -69,4 +69,42 @@ describe('buildMemberFormSchema — client mirrors server', () => {
       }),
     ).toContain('primary_contact.email');
   });
+
+  it('does NOT require DOB by default (2-arg schema)', () => {
+    expect(issuePaths(BASE)).not.toContain('primary_contact.date_of_birth');
+  });
+
+  it('rejects a founded_year outside 1800..thisYear on the founded_year field', () => {
+    expect(issuePaths({ ...BASE, founded_year: '1500' })).toContain('founded_year');
+    expect(issuePaths({ ...BASE, founded_year: '3000' })).toContain('founded_year');
+  });
+
+  it('accepts a valid founded_year', () => {
+    expect(issuePaths({ ...BASE, founded_year: '1990' })).not.toContain('founded_year');
+  });
+
+  it('rejects a negative turnover on the turnover_thb field', () => {
+    expect(issuePaths({ ...BASE, turnover_thb: '-5' })).toContain('turnover_thb');
+  });
+});
+
+describe('buildMemberFormSchema — conditional DOB requirement (requireDob=true)', () => {
+  const dobSchema = buildMemberFormSchema(tf, tv, true);
+  function dobPaths(values: unknown): string[] {
+    const r = dobSchema.safeParse(values);
+    return r.success ? [] : r.error.issues.map((i) => i.path.join('.'));
+  }
+
+  it('flags an empty DOB on the primary_contact.date_of_birth path', () => {
+    expect(dobPaths(BASE)).toContain('primary_contact.date_of_birth');
+  });
+
+  it('accepts when a DOB is provided', () => {
+    expect(
+      dobPaths({
+        ...BASE,
+        primary_contact: { ...BASE.primary_contact, date_of_birth: '1990-05-01' },
+      }),
+    ).not.toContain('primary_contact.date_of_birth');
+  });
 });

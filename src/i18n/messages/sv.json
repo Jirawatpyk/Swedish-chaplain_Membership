@@ -1270,6 +1270,7 @@
         "title": "Lägg till medlem",
         "subtitle": "Skapa ett medlemsföretag med primär kontakt.",
         "requiredNote": "* obligatoriska fält",
+        "errorSummaryTitle": "Åtgärda följande innan du fortsätter:",
         "submit": "Skapa medlem",
         "submitting": "Skapar…",
         "cancel": "Avbryt",
@@ -1314,7 +1315,10 @@
             "url": "Ange en giltig webbadress, t.ex. https://example.com.",
             "planYear": "Ange ett år mellan 2020 och 2100.",
             "emailFormat": "Ange en giltig e-postadress, t.ex. namn@example.com.",
-            "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran."
+            "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
+            "dobRequired": "Födelsedatum krävs för denna plan.",
+            "foundedYear": "Ange ett år mellan 1800 och i år.",
+            "turnover": "Ange ett icke-negativt belopp."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
