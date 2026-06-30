@@ -23,8 +23,8 @@
  *     confirmations + redirect.
  */
 
-import { useMemo, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useEffect, useMemo, useState } from 'react';
+import { useForm, Controller, type Path } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
@@ -33,6 +33,11 @@ import { Loader2Icon } from 'lucide-react';
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
+// Deep imports (no framework deps — same pattern as phone) so the client
+// mirrors the server's Thai tax-id checksum + ISO-3166 country validity and
+// rejects a bad value inline instead of on a 400 round-trip.
+import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
+import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -54,7 +59,9 @@ import { type Translator } from '@/lib/zod-i18n';
 // (key) => string at the call site (next-intl's namespaced key typing doesn't
 // structurally match a plain string param). Mirrors the in-component schema
 // pattern in contact-form-dialog.tsx.
-function buildMemberFormSchema(
+// Exported for the schema-level unit test (the superRefine TH-gating + country
+// shape-guard wiring). The component builds it per-render via the memo below.
+export function buildMemberFormSchema(
   tf: (key: string) => string,
   tv: Translator,
 ) {
@@ -125,6 +132,7 @@ function buildMemberFormSchema(
       .string()
       .trim()
       .min(1, tf('errors.required'))
+      .email(tf('errors.emailFormat'))
       .max(254, tv('tooLong', { max: 254 })),
     // Phone must be E.164 (matches the `asPhone` domain value object used
     // by create-member + updateContactFields). Validating client-side
@@ -144,6 +152,38 @@ function buildMemberFormSchema(
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
   }),
+  }).superRefine((data, ctx) => {
+    // Mirror the server's Thai tax-id checksum so a bad value is rejected +
+    // highlighted inline (like the email .email() rule) instead of via a 400
+    // round-trip — whose highlight briefly clears on the next resubmit because
+    // the base tax_id rule is only max(50) and can't see the checksum. Only TH
+    // tax-ids carry the Mod-11 check digit; non-TH ids stay length-only.
+    const taxId = data.tax_id?.trim();
+    if (
+      taxId &&
+      (data.country ?? '').toUpperCase() === 'TH' &&
+      !validateThaiTaxIdChecksum(taxId)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tax_id'],
+        message: tf('errors.taxIdChecksum'),
+      });
+    }
+    // The base country rule only checks the 2-letter SHAPE, so e.g. "ZZ" passes
+    // it but the server's ISO-3166 lookup rejects it. Mirror that here (guarded
+    // on a well-formed code so we don't double up with the shape error).
+    if (
+      data.country &&
+      /^[A-Za-z]{2}$/.test(data.country) &&
+      !isIsoCountryCode(data.country.toUpperCase())
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['country'],
+        message: tf('errors.countryCode'),
+      });
+    }
   });
 }
 
@@ -151,6 +191,16 @@ export type MemberFormValues = z.infer<
   ReturnType<typeof buildMemberFormSchema>
 >;
 
+/**
+ * A server-rejected field, resolved to a display message. Shared by the
+ * `serverFieldError` prop + both client wrappers' state so the shape stays in
+ * one place (was duplicated inline across three sites). `field` is a real RHF
+ * path so `setError` against it is compile-checked.
+ */
+export type ResolvedServerFieldError = {
+  readonly field: Path<MemberFormValues>;
+  readonly message: string;
+};
 
 // --- Props -------------------------------------------------------------------
 
@@ -172,6 +222,12 @@ type Props = {
   readonly initialValues?: Partial<MemberFormValues>;
   /** 'create' (default) or 'edit' — switches submit/submitting labels. */
   readonly mode?: 'create' | 'edit';
+  /**
+   * A server-rejected field (POST 400/409) to surface inline: highlights +
+   * focuses the input and shows `message` under it, instead of a generic
+   * toast with nothing marked. Each new object reference re-applies the error.
+   */
+  readonly serverFieldError?: ResolvedServerFieldError | null;
 };
 
 // --- Small visual helpers ----------------------------------------------------
@@ -207,6 +263,7 @@ export function MemberForm({
   onCancel,
   initialValues,
   mode = 'create',
+  serverFieldError,
 }: Props) {
   // Shared copy (section headers, required note, field labels) lives
   // under `admin.members.create.*` since it's identical for create +
@@ -239,6 +296,7 @@ export function MemberForm({
     handleSubmit,
     watch,
     control,
+    setError,
     formState: { errors },
   } = useForm<MemberFormValues>({
     resolver: zodResolver(schema),
@@ -268,6 +326,29 @@ export function MemberForm({
     initialValues?.country ?? 'TH',
   );
   const countryIsTH = country.toUpperCase() === 'TH';
+
+  // Surface a server-rejected field (email-in-use, bad tax-id checksum, …)
+  // inline: highlight + focus the originating input per WCAG 3.3.1 instead of
+  // the old generic toast with nothing marked. A new `serverFieldError` object
+  // reference (one per failed submit) re-runs this even for the same field.
+  //
+  // INVARIANT: this only SETS an error, never clears it. Two separate
+  // mechanisms keep that safe: (1) a `type:'server'` error is removed by RHF's
+  // resolver re-running on the next submit (every submit runs the resolver; the
+  // field then passes its own zod rule) — this is what actually clears the
+  // highlight; (2) the parent resets serverFieldError to null at the start of
+  // each submit purely so this effect does not RE-APPLY a stale error (the
+  // effect early-returns on null). Nulling the prop does not itself clear the
+  // RHF error. If a future caller nulls it expecting the highlight to vanish
+  // WITHOUT a resubmit (a "dismiss" affordance), add a clearErrors() here.
+  useEffect(() => {
+    if (!serverFieldError) return;
+    setError(
+      serverFieldError.field,
+      { type: 'server', message: serverFieldError.message },
+      { shouldFocus: true },
+    );
+  }, [serverFieldError, setError]);
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} method="post" noValidate className="flex flex-col gap-[var(--page-section-gap)]">
