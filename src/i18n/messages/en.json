@@ -3335,12 +3335,20 @@
           "placeholder": "{phrase}",
           "help": "Full refunds require typed confirmation to prevent accidental processing.",
           "mismatch": "Phrase does not match. Type exactly: {phrase}"
+        },
+        "errors": {
+          "amountRequired": "Enter a refund amount.",
+          "amountFormat": "Enter a valid amount — digits with up to 2 decimals.",
+          "reasonRequired": "Enter a reason for this refund.",
+          "reasonTooLong": "Reason must be 500 characters or fewer.",
+          "reasonSingleLine": "Reason must be a single line (no line breaks)."
         }
       },
       "success": {
         "toast": "Refund processed — credit note {number} issued and emailed to member"
       },
       "error": {
+        "title": "Couldn't issue the refund",
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",

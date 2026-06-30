@@ -3335,12 +3335,20 @@
           "placeholder": "{phrase}",
           "help": "Full återbetalning kräver inskriven bekräftelse för att förhindra oavsiktlig bearbetning.",
           "mismatch": "Frasen matchar inte. Skriv exakt: {phrase}"
+        },
+        "errors": {
+          "amountRequired": "Ange ett återbetalningsbelopp.",
+          "amountFormat": "Ange ett giltigt belopp — siffror med högst 2 decimaler.",
+          "reasonRequired": "Ange en orsak till återbetalningen.",
+          "reasonTooLong": "Orsaken får vara högst 500 tecken.",
+          "reasonSingleLine": "Orsaken måste vara en enda rad (inga radbrytningar)."
         }
       },
       "success": {
         "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen"
       },
       "error": {
+        "title": "Det gick inte att utfärda återbetalningen",
         "payment_not_found": "Betalning hittades inte.",
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",

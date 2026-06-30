@@ -20,7 +20,7 @@
  *      router.refresh() to update payment timeline + status badges.
  *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + sonner.
  */
-import { useState, useId, useMemo } from 'react';
+import { useEffect, useRef, useState, useId, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -90,6 +90,7 @@ export function RefundForm({
 }: Props) {
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
+  const tFormErr = useTranslations('admin.refund.form.errors');
   const tError = useTranslations('admin.refund.error');
   const locale = useLocale();
   const router = useRouter();
@@ -107,6 +108,14 @@ export function RefundForm({
   const amountId = useId();
   const reasonId = useId();
   const reasonHelpId = `${reasonId}-help`;
+
+  // Move focus to the server-rejection alert so a keyboard/SR admin whose
+  // focus is on the (re-enabled) Confirm button is taken to the reason
+  // (audit refund focus suggestion). role="alert" already announces it.
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (submitError) errorRef.current?.focus();
+  }, [submitError]);
 
   const {
     control,
@@ -241,6 +250,32 @@ export function RefundForm({
     touchedFields.amountThb && errors.amountThb?.message;
   const reasonError = touchedFields.reason && errors.reason?.message;
 
+  // Resolve raw zod codes to LOCALISED copy. Previously only `amountRange`
+  // was translated and the other codes (amountRequired/amountFormat,
+  // reasonRequired/…) rendered verbatim — leaking developer tokens to users
+  // in every locale on a money action (audit XF-02). Unknown codes fall back
+  // to the generic localised message rather than a raw token.
+  const amountMessage: string | null = !amountError
+    ? null
+    : amountError === 'amountRange'
+      ? tError('refund_exceeds_remaining', {
+          remaining: formatSatangThb(
+            remainingRefundableSatang,
+            locale,
+            currencyCode,
+          ),
+        })
+      : amountError === 'amountRequired' || amountError === 'amountFormat'
+        ? tFormErr(amountError)
+        : tError('internal_error');
+  const reasonMessage: string | null = !reasonError
+    ? null
+    : reasonError === 'reasonRequired' ||
+        reasonError === 'reasonTooLong' ||
+        reasonError === 'reasonSingleLine'
+      ? tFormErr(reasonError)
+      : tError('internal_error');
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
@@ -280,17 +315,9 @@ export function RefundForm({
             amount: formatSatangThb(remainingRefundableSatang, locale, currencyCode),
           })}
         </p>
-        {amountError && (
+        {amountMessage && (
           <p id={`${amountId}-error`} className="text-xs text-destructive" role="alert">
-            {amountError === 'amountRange'
-              ? tError('refund_exceeds_remaining', {
-                  remaining: formatSatangThb(
-                    remainingRefundableSatang,
-                    locale,
-                    currencyCode,
-                  ),
-                })
-              : amountError}
+            {amountMessage}
           </p>
         )}
       </div>
@@ -305,12 +332,23 @@ export function RefundForm({
           rows={3}
           maxLength={REASON_MAX}
           placeholder={tForm('reason.placeholder')}
-          aria-describedby={reasonHelpId}
+          aria-describedby={
+            reasonError ? `${reasonId}-error ${reasonHelpId}` : reasonHelpId
+          }
           aria-required="true"
           aria-invalid={Boolean(reasonError)}
           data-testid="refund-form-reason"
           {...register('reason')}
         />
+        {reasonMessage && (
+          <p
+            id={`${reasonId}-error`}
+            className="text-xs text-destructive"
+            role="alert"
+          >
+            {reasonMessage}
+          </p>
+        )}
         {/* Visual counter — sighted users see live updates per keystroke. */}
         <p
           id={reasonHelpId}
@@ -341,10 +379,15 @@ export function RefundForm({
 
       {/* Submit error — inline alert above buttons (FR-029(g)). */}
       {submitError && (
-        <InlineAlert tone="destructive" data-testid="refund-form-error">
-          <InlineAlertTitle>{t('error.internal_error')}</InlineAlertTitle>
-          <InlineAlertDescription>{submitError}</InlineAlertDescription>
-        </InlineAlert>
+        <div ref={errorRef} tabIndex={-1} className="outline-none">
+          <InlineAlert tone="destructive" data-testid="refund-form-error">
+            {/* Generic headline so a known business rejection (e.g. "refund in
+              * progress") isn't mislabelled "unexpected error"; the specific
+              * localised reason lives in the description. */}
+            <InlineAlertTitle>{t('error.title')}</InlineAlertTitle>
+            <InlineAlertDescription>{submitError}</InlineAlertDescription>
+          </InlineAlert>
+        </div>
       )}
 
       <AlertDialogFooter>
