@@ -32,10 +32,14 @@ export interface PasswordStrengthProps {
  * while the user types. Does NOT replace the server-side
  * `checkPasswordPolicy` (HIBP + common-list) which runs on submit.
  *
- * Rules match the LENGTH-based half of the server `scoreStrength`
- * in `src/modules/auth/application/password-policy.ts`:
+ * Rules approximate the server `scoreStrength` in
+ * `src/modules/auth/application/password-policy.ts`:
  *   - empty  → no bar
  *   - <12 chars → weak
+ *   - obvious low-entropy junk (one repeated char, or ≤3 distinct
+ *     chars — e.g. "111111111111") → weak. This is a local
+ *     approximation of what the server's HIBP/common-list check will
+ *     reject, so the bar isn't falsely encouraging.
  *   - ≥16 chars AND has a non-alphanumeric → strong
  *   - otherwise → acceptable
  *
@@ -64,8 +68,20 @@ export function estimatePasswordStrength(
 ): PasswordStrengthLevel {
   if (password.length === 0) return 'empty';
   if (password.length < 12) return 'weak';
+  // Obvious low-entropy junk (a single repeated character, or ≤3 distinct
+  // characters) is near-certain to be in the HIBP corpus and rejected on
+  // submit. Flag it locally so the bar never reads "acceptable" for e.g.
+  // "111111111111" — this needs no network round-trip, unlike the full breach
+  // check which stays server-side (see the client/server-drift note above).
+  if (isLowEntropy(password)) return 'weak';
   if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
   return 'acceptable';
+}
+
+/** Trivially-weak patterns detectable locally, without the HIBP network call. */
+function isLowEntropy(password: string): boolean {
+  if (/^(.)\1+$/.test(password)) return true; // one repeated character
+  return new Set(password).size <= 3; // too few distinct characters
 }
 
 const SEGMENT_COUNT = 3;

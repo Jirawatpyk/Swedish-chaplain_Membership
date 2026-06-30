@@ -51,7 +51,7 @@
       }
     },
     "passwordStrength": {
-      "weak": "Weak — at least 12 characters required.",
+      "weak": "Weak — use a longer, more varied password.",
       "acceptable": "Acceptable strength.",
       "strong": "Strong password."
     },
