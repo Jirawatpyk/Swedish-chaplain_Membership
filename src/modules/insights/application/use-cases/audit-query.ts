@@ -387,6 +387,10 @@ export async function auditQuery(
   const newest = pageRaw[0]; // first displayed row
   const oldest = pageRaw.at(-1); // last displayed row
 
+  // An EMPTY page (newest/oldest undefined → both cursors null) is only reachable
+  // via a stale/forged cursor (append-only log: normal navigation always has an
+  // adjacent row). Recovery is then the viewer's cursor-less "Latest" link, which
+  // page.tsx renders from the URL `cursor` param — NOT from these result cursors.
   let nextCursor: string | null;
   let prevCursor: string | null;
   if (backward) {

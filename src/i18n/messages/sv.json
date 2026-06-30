@@ -349,8 +349,7 @@
         "label": "Granskningsloggens sidor",
         "first": "Senaste",
         "previous": "Nyare",
-        "next": "Äldre",
-        "page": "Sida {page}"
+        "next": "Äldre"
       }
     },
     "compliance": {

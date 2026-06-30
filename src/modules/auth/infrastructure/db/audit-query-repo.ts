@@ -91,6 +91,10 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
         .where(and(...conds))
         // Backward pages scan UPWARD from the cursor, so order ASC to take the
         // rows CLOSEST-newer first; the use-case reverses them to newest-first.
+        // NB: `direction` flips the ORDER BY even with NO cursor (it would then
+        // return the OLDEST rows ASC) — harmless because the use-case only sends
+        // `direction:'backward'` together with a cursor (a backward request
+        // without one degrades to the forward first page upstream).
         .orderBy(
           ...(backward
             ? [asc(auditLog.timestamp), asc(auditLog.id)]

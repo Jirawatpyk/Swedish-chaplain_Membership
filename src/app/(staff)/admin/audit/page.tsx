@@ -86,13 +86,11 @@ export default async function AuditLogPage({
   const from = str(params.from);
   const to = str(params.to);
   const cursor = str(params.cursor);
-  // `dir=prev` follows prevCursor to NEWER rows (the Previous page). `page` is a
-  // display-only click-depth counter for orientation (never a server offset).
+  // `dir=prev` follows prevCursor to NEWER rows (the Previous page). No page
+  // NUMBER is shown — on an append-only log it would be a meaningless moving
+  // target (today's "page 3" ≠ tomorrow's); the timestamp column + the
+  // Latest/Newer/Older links carry the orientation.
   const dir = str(params.dir);
-  const pageNum = (() => {
-    const n = Number.parseInt(str(params.page), 10);
-    return Number.isFinite(n) && n >= 1 ? n : 1;
-  })();
 
   // A malformed `from`/`to` (tampered URL) must surface as the invalid-range
   // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card. Guard
@@ -224,15 +222,11 @@ export default async function AuditLogPage({
   const showFirst = cursor !== '';
   const prevHref =
     result.value.prevCursor !== null
-      ? hrefWith({
-          cursor: result.value.prevCursor,
-          dir: 'prev',
-          page: String(Math.max(pageNum - 1, 1)),
-        })
+      ? hrefWith({ cursor: result.value.prevCursor, dir: 'prev' })
       : null;
   const nextHref =
     result.value.nextCursor !== null
-      ? hrefWith({ cursor: result.value.nextCursor, page: String(pageNum + 1) })
+      ? hrefWith({ cursor: result.value.nextCursor })
       : null;
 
   return (
@@ -282,9 +276,6 @@ export default async function AuditLogPage({
                   </a>
                 ) : null}
               </div>
-              <span className="text-sm text-muted-foreground">
-                {t('pagination.page', { page: pageNum })}
-              </span>
               {nextHref ? (
                 <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
                   {t('pagination.next')}

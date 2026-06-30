@@ -349,8 +349,7 @@
         "label": "Audit log pages",
         "first": "Latest",
         "previous": "Newer",
-        "next": "Older",
-        "page": "Page {page}"
+        "next": "Older"
       }
     },
     "compliance": {

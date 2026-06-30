@@ -3,9 +3,13 @@
  *
  * Pins the application contract with a fake `AuditEventSource` + spy
  * `InsightsAuditPort` + fake `ActorDirectory` (no DB): role gate, invalid range,
- * tampered cursor, keyset cursor round-trip + `nextCursor`, per-role payload
- * redaction, actor/target label resolution (incl. id fallback — never email),
- * the emit, the sync export cap (incl. exact boundary), and graceful degrade.
+ * tampered cursor, keyset cursor round-trip + `nextCursor`, BIDIRECTIONAL paging
+ * (forward `prevCursor` derivation, the backward reverse-to-newest-first, the
+ * hasMore-guarded `prevCursor`, dir=backward-without-cursor degrade, and the
+ * empty-backward all-null edge), per-role payload redaction, actor/target label
+ * resolution (incl. id fallback — never email), the emit, the sync export cap
+ * (incl. exact boundary), and graceful degrade. The fake honours `limit` but not
+ * the keyset SQL — backward gt+ASC ordering is pinned by the live integration test.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -327,12 +331,41 @@ describe('auditQuery', () => {
     if (res.ok) expect(res.value.prevCursor).toBeNull();
   });
 
-  it('forward WITH a cursor derives a prevCursor (so a Previous link exists)', async () => {
+  it('forward WITH a cursor derives a prevCursor (so a Previous link exists) + sends NO direction', async () => {
     const cursor = tok('2026-05-20 04:00:00.000000+00', 'z');
-    const res = await auditQuery({ limit: 50, cursor }, meta('admin'), ctx, deps([row({ id: 'a' })]));
+    const d = deps([row({ id: 'a' })]);
+    const res = await auditQuery({ limit: 50, cursor }, meta('admin'), ctx, d);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.prevCursor).not.toBeNull();
     // Forward path passes NO direction to the source (older/DESC is the default).
+    expect(d._calls[0]!.direction).toBeUndefined();
+  });
+
+  it('backward with NO more newer rows yields prevCursor null (no phantom "Newer" at the newest edge)', async () => {
+    // Exactly `limit` newer rows exist → no extra row → hasMore false → the
+    // backward prevCursor hasMore-guard must null it (else a dead "Newer" link).
+    const ascNewer = [
+      row({ id: 'p', occurredAt: new Date('2026-05-20T05:00:00Z'), occurredAtIso: '2026-05-20 05:00:00.000000+00' }),
+      row({ id: 'q', occurredAt: new Date('2026-05-20T06:00:00Z'), occurredAtIso: '2026-05-20 06:00:00.000000+00' }),
+    ];
+    const cursor = tok('2026-05-20 04:00:00.000000+00', 'z');
+    const res = await auditQuery({ limit: 2, cursor, direction: 'backward' }, meta('admin'), ctx, deps(ascNewer));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.rows.map((r) => r.id)).toEqual(['q', 'p']); // reversed to newest-first
+    expect(res.value.prevCursor).toBeNull(); // at the newest edge — no Previous
+    expect(res.value.nextCursor).not.toBeNull(); // older rows still reachable
+  });
+
+  it('empty backward page (cursor at/past the newest row) → no rows, both cursors null', async () => {
+    const cursor = tok('2026-05-20 09:00:00.000000+00', 'z');
+    const res = await auditQuery({ limit: 50, cursor, direction: 'backward' }, meta('admin'), ctx, deps([]));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.rows).toHaveLength(0);
+    expect(res.value.prevCursor).toBeNull();
+    expect(res.value.nextCursor).toBeNull();
+    // Recovery is the page's URL-derived "Latest" link (showFirst), not a cursor.
   });
 
   it('backward (Previous): passes direction, reverses the ASC page to newest-first, derives prevCursor', async () => {
