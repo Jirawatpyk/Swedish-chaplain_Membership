@@ -66,6 +66,11 @@ describe('F4 audit_event_type ↔ F4AuditEventType parity', () => {
         // F4 invoicing (audit-port.ts F4AuditEventType + F4_AUDIT_RETENTION_YEARS,
         // 10y retention).
         'event_buyer_pii_redacted',
+        // 088-invoice-tax-flow-redesign (§ F.6) — starts with `tax_` (not the
+        // `receipt_` prefix); emitted in-tx with the RC §87 allocation at
+        // payment. Owned by F4 invoicing (F4AuditEventType +
+        // F4_AUDIT_RETENTION_YEARS, 10y retention).
+        'tax_receipt_issued',
       ],
     });
 

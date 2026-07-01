@@ -344,6 +344,14 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // erasure cascade. Registered in the F7 audit-port union + parity test
   // (it IS an F7 audit-taxonomy event), 5y retention.
   'broadcast_content_redacted',
+  // --- 088-invoice-tax-flow-redesign (migration 0230, T009) — F4 §86/4
+  //     first-issuance signal (SC-001). Emitted IN-TX by record-payment /
+  //     issue-event-invoice-as-paid when the §87 RC tax-receipt number is
+  //     minted at the payment moment (the async render worker does NOT
+  //     re-fire it). 10y retention (tax-document class, Thai RD §87/3). Keep
+  //     in lockstep with F4AuditEventType + F4_AUDIT_RETENTION_YEARS
+  //     (invoicing audit port) — the F4 enum↔retention parity test enforces it.
+  'tax_receipt_issued',
 ]);
 
 /**

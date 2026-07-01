@@ -177,6 +177,16 @@ export const invoices = pgTable(
     // worker retries. NULL for combined-mode + pre-T166 + non-paid rows.
     receiptDocumentNumberRaw: text('receipt_document_number_raw'),
 
+    // 088-invoice-tax-flow-redesign (T006, migration 0231) — the pre-payment
+    // ใบแจ้งหนี้'s NON-§87 bill number (e.g. SC-2026-000123), allocated at
+    // issue from the `bill` stream. Disjoint from sequence_number /
+    // document_number so it can NEVER enter invoices_tenant_fiscal_seq_unique
+    // (SC-003); has its own per-tenant partial unique index
+    // invoices_tenant_bill_raw_uniq below. NULL for drafts + all pre-088 rows.
+    // Written once in the draft→issued UPDATE, then locked by
+    // invoices_enforce_immutability (migration 0231, mirrors document_number).
+    billDocumentNumberRaw: text('bill_document_number_raw'),
+
     // 054-event-fee-invoices (code-review HIGH-3) — retryable PDF-blob purge
     // marker for the 10-year non-member event-buyer PII redaction sweep.
     // Set to now() ONLY by the redact-expired-event-buyers cron AFTER it has
@@ -256,7 +266,9 @@ export const invoices = pgTable(
           AND fiscal_year IS NOT NULL
           AND (
             (sequence_number IS NOT NULL AND document_number IS NOT NULL)
-            OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL
+            OR (bill_document_number_raw IS NOT NULL
+                AND sequence_number IS NULL AND document_number IS NULL)
+            OR (receipt_document_number_raw IS NOT NULL
                 AND sequence_number IS NULL AND document_number IS NULL)
           )
           AND issue_date IS NOT NULL
@@ -281,6 +293,7 @@ export const invoices = pgTable(
       sql`(
         status = 'draft'
         OR sequence_number IS NOT NULL
+        OR bill_document_number_raw IS NOT NULL
         OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL)
       )`,
     ),
@@ -319,6 +332,15 @@ export const invoices = pgTable(
     uniqueIndex('invoices_tenant_receipt_raw_uniq')
       .on(table.tenantId, table.receiptDocumentNumberRaw)
       .where(sql`receipt_document_number_raw IS NOT NULL`),
+    // 088-invoice-tax-flow-redesign (T006, migration 0231) — per-tenant
+    // uniqueness backstop for the NON-§87 bill number. Mirrors the receipt-raw
+    // index above; partial (NULL drafts/pre-088 rows stay outside), per-tenant
+    // (tenants legitimately share raws). Disjoint from
+    // invoices_tenant_fiscal_seq_unique so a bill number can never collide with
+    // a §87 tax number (SC-003).
+    uniqueIndex('invoices_tenant_bill_raw_uniq')
+      .on(table.tenantId, table.billDocumentNumberRaw)
+      .where(sql`bill_document_number_raw IS NOT NULL`),
     // FK DECISION (054-event-fee-invoices, Task 3+4):
     //   `(tenant_id, event_registration_id)` → `event_registrations
     //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware

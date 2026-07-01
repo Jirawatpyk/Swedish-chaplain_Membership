@@ -1611,6 +1611,20 @@
 			"when": 1798535800000,
 			"tag": "0229_broadcasts_audience_deleted_at",
 			"breakpoints": true
+		},
+		{
+			"idx": 230,
+			"version": "7",
+			"when": 1798535900000,
+			"tag": "0230_document_type_add_bill",
+			"breakpoints": true
+		},
+		{
+			"idx": 231,
+			"version": "7",
+			"when": 1798536000000,
+			"tag": "0231_invoices_bill_number_and_checks",
+			"breakpoints": true
 		}
 	]
 }
