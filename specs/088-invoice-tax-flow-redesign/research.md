@@ -11,7 +11,7 @@ This document resolves every implementation question raised (or implied) in `spe
 
 **Legal core (confirmed, not re-litigated below)**: membership dues are a **VATable service at 7%** (RD ruling **กค 0811/พ./2308** — a หอการค้า case, rd.go.th/25136.html); the VAT tax point for a service is **receipt of payment** (§78/1); there is **no withholding** on membership dues, basis **ม.65 ทวิ (13) + ท.ป.4/2528** (ruling **กค 0811/8542**, rd.go.th/25308.html) — the basis is the *dues exclusion*, **NOT** "the entity is income-tax-exempt". These resolved the two open tax questions; see §11.
 
-**No open `NEEDS CLARIFICATION` remain.** All ambiguities were resolved via the 2026-07-01 clarify session (spec.md § Clarifications) + primary-source RD research + the tax-auditor pass. The only pre-ship residuals are three **fact confirmations** an accountant must sign (not design unknowns — see §11), and a handful of best-practice defaults the accountant may revise without blocking development (RC/RE split, bill cadence).
+**No open `NEEDS CLARIFICATION` remain.** All ambiguities were resolved via the 2026-07-01 clarify session (spec.md § Clarifications) + primary-source RD research + the tax-auditor pass. The only pre-ship residuals are three **fact confirmations** an accountant must sign (not design unknowns — see §11), and a handful of best-practice defaults the accountant may revise without blocking development (bill cadence).
 
 ---
 
@@ -207,21 +207,21 @@ This document resolves every implementation question raised (or implied) in `spe
 
 ---
 
-## 9. §105 RE / RC register (separate default, revisable)
+## 9. §105 RE / RC register (separate — decided)
 
-**Decision**: Give the event-no-TIN §105 plain receipt its **own numbering stream/prefix `RE`**, separate from the §86/4 combined-receipt `RC` register — as the **conservative default** — while recording that this is **OPTIONAL, not required by §87** and may be merged on the accountant's preference. (Design D2, §6; spec Assumptions; tax-auditor item 1.)
+**Decision**: Give the event-no-TIN §105 plain receipt its **own numbering stream/prefix `RE`**, separate from the §86/4 combined-receipt `RC` register. **DECIDED** (pinned in `data-model.md` + `tasks.md`), **not** an accountant-revisable option. (Design D2, §6; spec Assumptions; tax-auditor item 1.)
 
-- Implement as `documentType='receipt_105'` (new enum value) **or** a shared `receipt` stream with an `RE` prefix; both allocate a gap-free number at payment (as-paid), stored in `receipt_document_number_raw`.
+- Implement as a separate `documentType='receipt_105'` (new enum value) with prefix `RE`, allocating a gap-free number at payment (as-paid), stored in `receipt_document_number_raw` — a register distinct from the §86/4 `RC` stream.
 
 **Rationale**:
-- **§87 gap-free is per-series, not a duty to maintain a §86/4-only register** (tax-auditor item 1, an explicit correction). RC (combined §86/4) and RE (§105 plain, no-TIN event) **both** carry 7% output VAT and both feed รายงานภาษีขาย / ภ.พ.30, so **one mixed-but-gap-free `receipt` register also satisfies §87** (matches the existing shared-register β-numbering ruling).
-- Separate RC/RE is chosen as the **tidier, audit-friendly OPTION** (clean §86/4-only register for inspection) — but because the simpler shared register is **equally legal**, this is an operational-preference call the accountant may revise **without blocking development**.
+- **§87 gap-free is per-series, not a duty to maintain a §86/4-only register** (tax-auditor item 1, an explicit correction). RC (combined §86/4) and RE (§105 plain, no-TIN event) **both** carry 7% output VAT and both feed รายงานภาษีขาย / ภ.พ.30, so **one mixed-but-gap-free `receipt` register would also satisfy §87** — §87 does **not** strictly require the split.
+- The split is nonetheless **decided** because a separate `RE` register keeps the §86/4 / §87 `RC` register **pure** for an RD audit (a clean §86/4-only series for inspection); `RE` stays sequential but is **not** under strict §87 no-gaps. This audit-purity gain is the reason the split is pinned rather than left to operational preference.
 
 **Alternatives considered**:
 
 | Option | Rejected because |
 |---|---|
-| One shared `RC` register for all receipts | Equally legal (§87 per-series), simpler — kept as the revisable fallback, but separate RE is tidier for audit and chosen as default. |
+| One shared `RC`/`receipt` register for all receipts | Legal under §87 (per-series gap-free) and simpler, but mixes §105 no-TIN event receipts into the §86/4 register — muddying the register RD auditors inspect. Rejected in favour of a pure §86/4 `RC` register (separate `RE` decided). |
 | Merge §105 into the §86/4 kind | The event-no-TIN receipt keeps its distinct §105 legal identity (no §86/4 particulars, non-creditable) — only inherits the cosmetic polish. |
 
 ---
@@ -261,7 +261,7 @@ This document resolves every implementation question raised (or implied) in `spe
 **Tax-auditor corrections (binding — folded into the sections above)**:
 - **Branch render gate** = VAT-registrant juristic buyer, **NOT** `buyerHasTin` (§6).
 - **WHT note** = correct dues-exclusion basis (**ม.65 ทวิ (13)**) + membership-only scope; editable settings field (§7). **Seed = แบบ A** (customer wording, legally imprecise); the accountant signs off แบบ A vs the precise **แบบ B** at Review before first issuance.
-- **RC/RE split** = an option, not required by §87 (§9).
+- **RC/RE split** = DECIDED separate (not required by §87, chosen for §86/4 register purity) (§9).
 - **Trap G** (payment-date/BKK fiscal year), **Trap I** (keep membership VAT-exclusive at payment), **J** (Original+Copy satisfies §105ทวิ + §87/3 — confirmed), **K** (e-Tax branch-code hook, later phase).
 
 **No open `NEEDS CLARIFICATION` remain.** The two open tax questions (VAT status, WHT basis) were resolved by primary-source RD rulings; all C–G items have accountant-revisable best-practice defaults that do **not** block development; the three fact-confirms are operational sign-offs at the Review gate, not design unknowns.
