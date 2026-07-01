@@ -47,10 +47,14 @@ render + Blob upload, snapshot pinning) is unchanged from the shipped F4 contrac
 | `vatTreatment` | `'standard' \| 'zero_rated_80_1_5'` | `'standard'` | **per-invoice, case-by-case** (NOT per-member). `'standard'` = VAT 7%; `'zero_rated_80_1_5'` = VAT 0% embassy / int'l-org sale under Revenue Code **§80/1(5)**. **Pinned into the immutable issue-time snapshot** (FR-023). |
 | `zeroRateCertNo` | `string` | — | MFA (Protocol Dept) certificate note number, e.g. `กต 0404/…`. **REQUIRED, fail-closed, when `vatTreatment === 'zero_rated_80_1_5'`** (FR-024). |
 | `zeroRateCertDate` | `string` (ISO 8601, date) | — | Date of the MFA certificate note. Captured with `zeroRateCertNo` on a zero-rated issue. |
-| `zeroRateCertBlobKey` | `string` (optional) | — | Vercel Blob key of the attached MFA certificate scan (reuses the F4 invoice-PDF blob adapter). Optional even when zero-rated — the **number** is the fail-closed gate, the scan is supporting evidence. |
+| `zeroRateCertBlobKey` | `string` (optional) | — | Vercel Blob key of the attached MFA certificate scan (reuses the F4 invoice-PDF blob adapter). Upload accepts **PDF or image** (PDF/PNG/JPG) and is **ClamAV-scanned before persistence** (F7.1a inline-upload pattern — reject on virus/oversize/bad-MIME). Optional even when zero-rated — the cert **number** (`zeroRateCertNo`) is the fail-closed gate, the scan is supporting evidence. |
 
 - **Membership is always `'standard'` (VAT 7%)** — a membership subject supplied as
-  `zero_rated_80_1_5` is coerced/rejected to standard (see error table). Zero-rate is
+  `zero_rated_80_1_5` is **REJECTED** server-side with `membership_cannot_be_zero_rated` (422,
+  **no invoice issued**), **NOT** silently coerced to `standard`. The admin issue form is the
+  first line of defence: when the invoice subject is a membership it **hides/disables the
+  `vat_treatment` toggle** (with a short explanatory caption), so the illegal request is
+  unreachable through the UI — the server 422 is defense-in-depth. Zero-rate is
   **embassy / int'l-org non-membership sales only** (event / service, e.g. Embassy of Sweden
   expo-booth construction), evidenced by RD-approved certs **VAT 326-24 / 327-24 / 351-24**.
 
@@ -102,7 +106,7 @@ invoice.billDocumentNumberRaw ?? null`, plus (US8) `vat_treatment: invoice.vatTr
 | `invalid` | 400 | schema parse failure |
 | `rate_limited` | 429 | 20 / 5 min bucket |
 | `zero_rate_cert_required` | 422 | **US8 / FR-024 fail-closed** — `vatTreatment==='zero_rated_80_1_5'` with a missing/blank `zeroRateCertNo` is **rejected** (no invoice issued). |
-| `membership_cannot_be_zero_rated` | 422 | **US8 / FR-025** — a membership subject supplied as `zero_rated_80_1_5` is illegal; membership stays **`standard` (VAT 7%)**. (May instead be coerced to `standard` — see note.) |
+| `membership_cannot_be_zero_rated` | 422 | **US8 / FR-025** — a membership subject supplied as `zero_rated_80_1_5` is illegal and **REJECTED** (no invoice issued); membership stays **`standard` (VAT 7%)**. It is a **reject, NOT a silent coerce**; the admin form additionally hides/disables the toggle for membership subjects (defense-in-depth). |
 
 > The §87 `overflow` semantics change: at issue it now guards only the **non-§87 bill** stream
 > (a gap here does not violate §87). The §87 no-gaps / overflow-must-throw discipline moves to
@@ -111,15 +115,27 @@ invoice.billDocumentNumberRaw ?? null`, plus (US8) `vat_treatment: invoice.vatTr
 ### US8 zero-rate validation (FR-024 / FR-025)
 
 - **Fail-closed cert gate**: `vatTreatment==='zero_rated_80_1_5'` **requires** a non-blank
-  `zeroRateCertNo`. Missing → `zero_rate_cert_required` (422); **no invoice is issued**. The scan
-  (`zeroRateCertBlobKey`) is optional — the cert **number** is the gate.
-- **Membership always standard**: a membership subject cannot be zero-rated — it is forced to
-  `standard` (VAT 7%). If the request asserts `zero_rated_80_1_5` on a membership subject, reject
-  with `membership_cannot_be_zero_rated` (422) rather than silently zero-rate.
+  `zeroRateCertNo`. Missing → `zero_rate_cert_required` (422); **no invoice is issued**. The
+  primary UX is **inline client-side validation before submit** (`aria-invalid` +
+  `aria-describedby` + `role=alert`, localised EN/TH/SV); the 422 `zero_rate_cert_required` + DB
+  CHECK are defense-in-depth. The scan (`zeroRateCertBlobKey`) is **optional** — accepts a
+  **PDF or image**, is **ClamAV-scanned** (F7.1a upload pattern) before persistence, and is
+  supporting evidence only. The cert **number** (`zeroRateCertNo`) is the fail-closed gate, not
+  the scan.
+- **Membership always standard — reject, not coerce**: a membership subject **cannot** be
+  zero-rated. A request asserting `zero_rated_80_1_5` on a membership subject is **REJECTED** with
+  `membership_cannot_be_zero_rated` (422, **no invoice issued**) — it is **NOT** silently coerced
+  to `standard`. The admin issue form **hides/disables the `vat_treatment` toggle** whenever the
+  subject is a membership (error-prevention, with a short explanatory caption), so the illegal
+  request cannot be built in the UI; the server-side 422 is defense-in-depth behind that.
+  Membership therefore always resolves to `standard` (VAT 7%).
 - **≥ 5,000 baht warning (NOT blocking)**: a `zero_rated_80_1_5` invoice whose subtotal is
-  `< 5,000 THB` surfaces a **non-blocking warning** (`zero_rate_below_threshold_warning`) in the
-  200 response / admin UI; the invoice still issues. Each embassy purchase is expected to be
-  ≥ 5,000 baht, but the threshold is advisory, not a hard block.
+  `< 5,000 THB` surfaces a **non-blocking warning** (`zero_rate_below_threshold_warning`). The
+  **primary surface is inline in the issue form, before submit** (advisory copy next to the
+  amount/treatment fields, aria-live so it is announced on reveal); the same
+  `zero_rate_below_threshold_warning` field echoed in the **200 response is defense-in-depth**,
+  not the primary surface. The invoice still issues either way. Each embassy purchase is expected
+  to be ≥ 5,000 baht, but the threshold is advisory, not a hard block.
 
 ## RBAC
 

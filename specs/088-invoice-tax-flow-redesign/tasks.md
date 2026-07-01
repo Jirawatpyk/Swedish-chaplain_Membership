@@ -138,6 +138,8 @@
 - [ ] T041 [US5] Render the tenant WHT note gated on `invoice_subject='membership'` (both membership docs, never event) + drop the hardcoded Chamber-OS/§-citation footer in `invoice-template.tsx` (FR-012).
 - [ ] T042 [US5] Render the FR-022 bank block + "Issued by"/"Received by"/"Date" fields on the ใบแจ้งหนี้ ONLY (not the tax receipt) in `invoice-template.tsx`.
 - [ ] T043 [P] [US5] Add WHT-note + seller-branch + bank fields to the settings form in `src/components/invoices/invoice-settings-form.tsx` (remove the `'combined'` option).
+- [ ] T043a [US5] Confirmation dialog on changing the document prefix / numbering mode (warn of the §87 numbering-stream impact) + success/error save toasts (MED); EN/TH/SV dialog + toast keys in `src/components/invoices/invoice-settings-form.tsx`.
+- [ ] T043b [US5] Structured bank-block fields (payee, account_no, account_type, bank, branch, address, swift + a free-text instructions line TH/EN — NOT one blob) with SWIFT + account-no format validation, help text, char counters, EN/TH/SV labels (MED; data-model § F.7, SHARED UX #3) in `src/components/invoices/invoice-settings-form.tsx`.
 - [ ] T044 [US5] Apply 0233 to `dev` Neon + `pnpm test:integration` (T037/T038 green).
 
 **Checkpoint**: footer/WHT/bank are tenant-configurable + membership-scoped.
@@ -199,6 +201,11 @@
 - [ ] T059 [US8] Async worker sources pinned `vat_treatment` + `zero_rate_cert_*` for the §80/1(5) render in `render-receipt-pdf.ts` (G1, closes T054).
 - [ ] T060 [US8] Capture `vat_treatment` (+ `zero_rate_cert_no`) in the `invoice_issued` + `tax_receipt_issued` audit payloads (no new event); cert blob = tax-doc class 10y, admin-only (G2) in the audit emitter + blob adapter.
 - [ ] T061 [P] [US8] Add the `vat_treatment` toggle + MFA-cert fields (no/date/upload) to the admin issue-invoice form in `src/app/(staff)/admin/**`, shown/gated by the flag.
+- [ ] T061a [US8] Hide/disable the `vat_treatment` toggle when `invoice_subject='membership'` (error-prevention, H3) + a short explanatory caption ("membership is always VAT 7%; §80/1(5) applies to non-membership sales only"), EN/TH/SV keys; server REJECT `membership_cannot_be_zero_rated` (422) stays as defense-in-depth (SHARED UX #1 — reject, NOT silent-coerce) in `src/app/(staff)/admin/**` issue-invoice form.
+- [ ] T061b [US8] Inline client-side missing-cert validation BEFORE submit when `vat_treatment='zero_rated_80_1_5'` and cert no. empty — `aria-invalid` + `aria-describedby` + `role="alert"`, localised EN/TH/SV; 422 `zero_rate_cert_required` + DB CHECK stay as defense-in-depth (SHARED UX #2) in `src/app/(staff)/admin/**` issue-invoice form.
+- [ ] T061c [US8] Progressive disclosure of the cert fields (no./date/upload) revealed only when zero-rate is selected, with an `aria-live="polite"` announce of the reveal (MED) in `src/app/(staff)/admin/**` issue-invoice form.
+- [ ] T061d [US8] Inline ≥5,000 THB pre-submit advisory warning (non-blocking, `role="status"`/`aria-live`, localised EN/TH/SV) in `src/app/(staff)/admin/**` issue-invoice form (FR-024).
+- [ ] T061e [US8] MFA cert upload UX (drag/drop + upload progress + error/retry states) + ClamAV scan reusing the F7.1a inline-image-upload pattern (`src/modules/broadcasts/**` scan adapter) → private Vercel Blob (tax-doc class 10y, admin-only) (MED) in `src/app/(staff)/admin/**` issue-invoice form.
 - [ ] T062 [US8] Apply 0234 to `dev` Neon + `pnpm test:integration` (T052–T054 green).
 
 **Checkpoint**: embassy zero-rate correct end-to-end; independently deferrable.
@@ -210,15 +217,19 @@
 **Purpose**: relabel every surface, resilience, cutover, rollout, and the full gate.
 
 - [ ] T063 [P] Relabel ALL user-facing strings (PDF titles, admin, portal) EN/TH/SV so the pre-payment bill is never ใบกำกับภาษี/Tax Invoice; `pnpm check:i18n` parity (FR-014, SC-005) across `src/i18n/messages/*` + consumers.
+- [ ] T063a Interactive-string i18n-parity inventory (SC-009): enumerate ALL new INTERACTIVE strings (vat_treatment toggle + caption, cert labels/help/errors, ≥5,000 warn, "Tax receipt" badge, "payable record — tax receipt issued (see RC)" label, "receipt being generated", admin re-render/permanent-fail alert, settings help + confirmation dialog, bank-block labels) and assert EN/TH/SV presence via `pnpm check:i18n` across `src/i18n/messages/*`; badges are text-badges (not colour-only, WCAG 1.4.1).
 - [ ] T064 [P] Relabel transactional **email** templates (subjects + bodies) — bill email never says Tax Invoice; the tax document travels on the receipt email (FR-020, SC-005) in the email templates dir.
 - [ ] T065 Two-document disambiguation (FR-016): RC "Tax receipt" badge + listed first; SC marked "payable record — tax receipt issued (see RC)" in the admin + `src/app/(member)/portal/**` document lists; keep both downloadable after payment (FR-015).
+- [ ] T065a FR-016 conditional bill label: an UNPAID bill shows ใบแจ้งหนี้/Invoice, a PAID bill shows a localised text-badge "payable record — tax receipt issued (see RC)" (not colour-only, WCAG 1.4.1) + a clickable "see RC" link navigating to the RC tax receipt (H1/H2/LOW); EN/TH/SV keys in the admin + `src/app/(member)/portal/**` document lists.
 - [ ] T066 Async resilience (FR-019): portal "receipt being generated" state + permanent-render-failure admin alert + re-render reusing the SAME allocated RC (never re-allocates) via the existing F4 resend surface + reconcile cron.
+- [ ] T066a FR-019 member-facing async state: portal `aria-live` announce of "your tax receipt is being generated", auto-refresh/poll to reveal the PDF on render-ready, reassurance copy, and a graceful permanent-render-failure member state (support path) — H4 — with EN/TH/SV keys in `src/app/(member)/portal/**`.
 - [ ] T067 In-flight legacy-bill guard (FR-017): pay path rejects a legacy §87-numbered invoice with no bill number → `legacy_invoice_needs_reissue` (409) → void + re-issue in `record-payment.ts` (data-model § F.4).
 - [ ] T068 Void handling: `void-invoice.ts` falls back to `bill_document_number_raw` + ใบแจ้งหนี้ title for an unpaid bill; a voided PAID membership stamps VOID on BOTH blobs (bill + receipt) — edge cases § (data-model § F.3).
 - [ ] T069 Renewal parity (FR-018): renewal (F8) membership invoice issues as ใบแจ้งหนี้ (no §87), RC at renewal payment (online+offline), renewal email/success screens reference correct docs; integration test in `tests/integration/invoicing/renewal-parity.integration.test.ts`.
 - [ ] T070 Cutover data-audit (§ E / § F.1): populate `members.legal_entity_type` for the 131 members + seed TSCC seller identity (Tax ID `0994000187203`, HQ address) + WHT note (แบบ A) + bank block into `tenant_invoice_settings`; wire into `scripts/verify-088-cutover.ts` (T003).
 - [ ] T071 [P] Reaffirm tenant isolation: extend the cross-tenant integration test to read/write the new invoice columns (`bill_document_number_raw`, `vat_treatment`, cert fields) — Constitution I (CHK033).
 - [ ] T072 Rollout/rollback runbook + flag flip: finalize `FEATURE_088_TAX_AT_PAYMENT` land-order + rollback in plan § Rollout; confirm US8 UI + zero-rate render gate off cleanly (dark-launch).
+- [ ] T072a [P] `@a11y` axe-core WCAG 2.1 AA e2e coverage (SC-010) for the new surfaces (issue-invoice form incl. progressive cert reveal + ≥5,000 warn, portal two-document disambiguation, async pending + permanent-fail state, settings form incl. confirmation dialog): assert keyboard/focus + aria-live regions + zero axe violations via `pnpm test:e2e --grep "@a11y"` in `tests/e2e/invoicing/**`.
 - [ ] T073 Run `scripts/verify-088-cutover.ts` on `dev`, then the full local gate: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm test:integration` + `pnpm test:e2e` for the affected surfaces; walk `checklists/tax-compliance.md` (CHK001–040).
 - [ ] T074 [P] Run `quickstart.md` validation end-to-end (issue → pay → receipt → credit → zero-rate) on `dev`.
 
@@ -253,3 +264,4 @@
 - **T015a** is the explicit SC-002 §87-no-gaps regression for the `RC` §86/4 tax-receipt register (interleaved membership + event-with-TIN payments in one fiscal year → contiguous `RC`); the `RE` §105 event-without-TIN series (its own `receipt_105`/`RE` register) is sequential-but-NOT-§87-strict and is deliberately kept out of the `RC` no-gaps guarantee.
 - `[P]` = different files, no incomplete-task dependency. `[Story]` traces to spec US.
 - Apply each migration + `pnpm test:integration` BEFORE committing schema-referencing code; thread `tx` from `runInTenant`; run `pnpm typecheck` + full `pnpm lint` as the final gate; zero `test.fixme`/bare `test.skip` on release.
+- The UX-implementation tasks at letter-suffix ids (T043a/b, T061a–e, T063a, T065a, T066a, T072a) trace to the **2026-07-01 UX review**; SC-009 (interactive-string EN/TH/SV parity) closes on T063a, SC-010 (`@a11y` axe-core WCAG 2.1 AA on the new surfaces) on T072a. Shared UX decisions: membership zero-rate = UI-prevent + server REJECT (not coerce); missing-cert = inline client validation + 422/CHECK defense-in-depth; bank block = STRUCTURED fields; all new interactive strings text-badged (WCAG 1.4.1) with EN/TH/SV keys.
