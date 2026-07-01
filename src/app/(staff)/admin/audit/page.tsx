@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
+import { buildAuditPaginationLinks } from './_lib/pagination-links';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -86,6 +87,11 @@ export default async function AuditLogPage({
   const from = str(params.from);
   const to = str(params.to);
   const cursor = str(params.cursor);
+  // `dir=prev` follows prevCursor to NEWER rows (the Previous page). No page
+  // NUMBER is shown — on an append-only log it would be a meaningless moving
+  // target (today's "page 3" ≠ tomorrow's); the timestamp column + the
+  // Latest/Newer/Older links carry the orientation.
+  const dir = str(params.dir);
 
   // A malformed `from`/`to` (tampered URL) must surface as the invalid-range
   // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card. Guard
@@ -115,6 +121,7 @@ export default async function AuditLogPage({
     ...(from ? { from: tenantDayStartUtc(from, tz) } : {}),
     ...(to ? { to: tenantDayEndUtc(to, tz) } : {}),
     ...(cursor ? { cursor } : {}),
+    ...(dir === 'prev' && cursor ? { direction: 'backward' as const } : {}),
     limit: 50,
   };
 
@@ -202,10 +209,16 @@ export default async function AuditLogPage({
       : [],
   }));
 
-  const nextParams = new URLSearchParams(exportParams);
-  if (result.value.nextCursor !== null) nextParams.set('cursor', result.value.nextCursor);
-  const nextHref =
-    result.value.nextCursor !== null ? `/admin/audit?${nextParams.toString()}` : null;
+  // Bidirectional keyset nav (derivation extracted + unit-tested in _lib). Keyset
+  // stays O(page) + stable under concurrent appends (no offset, no page-drift),
+  // unlike numbered pages.
+  const { firstHref, showFirst, prevHref, nextHref } = buildAuditPaginationLinks({
+    basePath: '/admin/audit',
+    filterParams: exportParams,
+    cursor,
+    prevCursor: result.value.prevCursor,
+    nextCursor: result.value.nextCursor,
+  });
 
   return (
     <TableContainer>
@@ -237,12 +250,31 @@ export default async function AuditLogPage({
             }}
           />
 
-          {nextHref ? (
-            <div className="flex justify-center">
-              <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
-                {t('pagination.next')}
-              </a>
-            </div>
+          {showFirst || prevHref || nextHref ? (
+            <nav
+              aria-label={t('pagination.label')}
+              className="flex flex-wrap items-center justify-between gap-2"
+            >
+              <div className="flex gap-2">
+                {showFirst ? (
+                  <a href={firstHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.first')}
+                  </a>
+                ) : null}
+                {prevHref ? (
+                  <a href={prevHref} className={buttonVariants({ variant: 'outline' })}>
+                    {t('pagination.previous')}
+                  </a>
+                ) : null}
+              </div>
+              {nextHref ? (
+                <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
+                  {t('pagination.next')}
+                </a>
+              ) : (
+                <span aria-hidden />
+              )}
+            </nav>
           ) : null}
         </CardContent>
       </Card>

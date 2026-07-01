@@ -51,6 +51,15 @@ export interface AuditQueryReadFilters {
   readonly from?: string;
   readonly to?: string;
   readonly cursor?: AuditQueryCursor;
+  /**
+   * Keyset direction relative to the cursor (default `'forward'`):
+   *   - `'forward'`  → rows OLDER than the cursor, `(ts,id) DESC` (the Next page).
+   *   - `'backward'` → rows NEWER than the cursor, `(ts,id) ASC` (the Previous
+   *     page). The reader returns them ASC (closest-newer first); the use-case
+   *     reverses to the newest-first display order.
+   * Ignored when there is no cursor (the first page is always forward/DESC).
+   */
+  readonly direction?: 'forward' | 'backward';
   readonly limit: number;
 }
 
@@ -72,9 +81,11 @@ export interface AuditQueryReadRow {
 
 export interface AuditQueryReadPort {
   /**
-   * Returns up to `filters.limit` rows for the current tenant, newest-first
-   * (`timestamp DESC, id DESC`), applying the keyset cursor + filters. Throws on
-   * a DB read failure — the consuming use-case maps that to its Result channel.
+   * Returns up to `filters.limit` rows for the current tenant, applying the
+   * keyset cursor + filters. Forward (default) → newest-first (`timestamp DESC,
+   * id DESC`); backward → oldest-first (`timestamp ASC, id ASC`, the rows just
+   * newer than the cursor). Throws on a DB read failure — the consuming use-case
+   * maps that to its Result channel.
    */
   query(ctx: import('@/modules/tenants').TenantContext, filters: AuditQueryReadFilters): Promise<readonly AuditQueryReadRow[]>;
 }

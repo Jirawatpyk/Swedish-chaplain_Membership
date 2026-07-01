@@ -2,8 +2,10 @@
  * F9 US2 (T042 / T046) — `auditQuery` + `auditExport` use-cases.
  *
  * The read/export path over F1's append-only `audit_log` that backs the staff
- * audit viewer (FR-008..013). Staff-only (member → forbidden); keyset-paginated
- * `(timestamp DESC, id DESC)` (FR-008, p95 < 1 s @ 50k); per-role payload
+ * audit viewer (FR-008..013). Staff-only (member → forbidden); BIDIRECTIONAL
+ * keyset paging — forward (Older) scans `(timestamp DESC, id DESC)`; backward
+ * (Newer) scans ASC and is reversed to the newest-first display order — with a
+ * `prevCursor`/`nextCursor` per page (FR-008, p95 < 1 s @ 50k); per-role payload
  * redaction (FR-011, via `audit-redaction`); each call emits its own audit trail
  * (`audit_log_queried` / `audit_log_exported`) — the viewer never mutates the log
  * (FR-010, no mutation path exists here).
@@ -36,6 +38,7 @@ import type {
   AuditEventSource,
   AuditSourceCursor,
   AuditSourceFilters,
+  AuditSourceRow,
 } from '../ports/audit-source';
 
 export type AuditQueryActorRole = 'admin' | 'manager' | 'member';
@@ -61,8 +64,14 @@ export interface AuditQueryInput {
   readonly from?: string;
   /** ISO 8601 instant (inclusive upper bound). */
   readonly to?: string;
-  /** Opaque keyset cursor from a prior page's `nextCursor`. */
+  /** Opaque keyset cursor from a prior page's `nextCursor` / `prevCursor`. */
   readonly cursor?: string;
+  /**
+   * Paging direction relative to `cursor` (default `'forward'`): `'forward'`
+   * follows `nextCursor` to OLDER rows; `'backward'` follows `prevCursor` to
+   * NEWER rows (the Previous page). Ignored without a cursor.
+   */
+  readonly direction?: 'forward' | 'backward';
   readonly limit?: number;
 }
 
@@ -89,8 +98,15 @@ export interface AuditQueryRow {
 
 export interface AuditQueryResult {
   readonly rows: readonly AuditQueryRow[];
-  /** Opaque cursor for the next page, or `null` when this is the last page. */
+  /** Opaque cursor for the NEXT (older) page, or `null` when no older rows remain
+   *  (the oldest page — or an empty page from a stale/forged cursor). */
   readonly nextCursor: string | null;
+  /**
+   * Opaque cursor for the PREVIOUS (newer) page, or `null` when there are no
+   * newer rows (the first/newest page — or an empty page). Pair with
+   * `direction: 'backward'`.
+   */
+  readonly prevCursor: string | null;
 }
 
 export type AuditQueryError = 'forbidden' | 'invalid_range';
@@ -347,19 +363,51 @@ export async function auditQuery(
 
   const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
 
+  // Backward (Previous) only makes sense with a cursor — a dir=backward request
+  // without one degrades to the forward first page (newest, DESC).
+  const hadCursor = resolved.value.base.cursor !== undefined;
+  const backward = input.direction === 'backward' && hadCursor;
+
   const start = Date.now();
-  // Fetch limit + 1 to detect (and not over-render) the next page.
-  const raw = await deps.source.query(ctx, { ...resolved.value.base, limit: limit + 1 });
+  // Fetch limit + 1 to detect (and not over-render) the adjacent page.
+  const raw = await deps.source.query(ctx, {
+    ...resolved.value.base,
+    ...(backward ? { direction: 'backward' as const } : {}),
+    limit: limit + 1,
+  });
   insightsMetrics.auditQueryDurationMs(Date.now() - start);
 
-  const hasMore = raw.length > limit;
-  const pageRaw = hasMore ? raw.slice(0, limit) : raw;
+  const hasMore = raw.length > limit; // more rows beyond this page IN the scan direction
+  const slice = hasMore ? raw.slice(0, limit) : raw;
+  // Backward pages arrive ASC (closest-newer first) — reverse to the always
+  // newest-first display order so the table looks identical either way.
+  const pageRaw = backward ? [...slice].reverse() : slice;
+
   const identities = await resolveIdentityLabelsSafe(deps, ctx, meta, pageRaw);
   const rows = pageRaw.map((r) => toRow(r, role, identities));
 
-  const last = pageRaw.at(-1);
-  const nextCursor =
-    hasMore && last ? encodeCursor({ iso: last.occurredAtIso, id: last.id }) : null;
+  const cur = (r: AuditSourceRow): string =>
+    encodeCursor({ iso: r.occurredAtIso, id: r.id });
+  const newest = pageRaw[0]; // first displayed row
+  const oldest = pageRaw.at(-1); // last displayed row
+
+  // An EMPTY page (newest/oldest undefined → both cursors null) is only reachable
+  // via a stale/forged cursor (append-only log: normal navigation always has an
+  // adjacent row). Recovery is then the viewer's cursor-less "Latest" link, which
+  // page.tsx renders from the URL `cursor` param — NOT from these result cursors.
+  let nextCursor: string | null;
+  let prevCursor: string | null;
+  if (backward) {
+    // Scanned newer-than-cursor: OLDER rows always exist (we came from there);
+    // `hasMore` here means even-NEWER pages remain → a Previous exists.
+    nextCursor = oldest ? cur(oldest) : null;
+    prevCursor = hasMore && newest ? cur(newest) : null;
+  } else {
+    // Forward: `hasMore` means OLDER rows remain → a Next exists. A Previous
+    // exists iff we arrived via a cursor (there is a newer page we came from).
+    nextCursor = hasMore && oldest ? cur(oldest) : null;
+    prevCursor = hadCursor && newest ? cur(newest) : null;
+  }
 
   await emit(deps, ctx, meta, {
     kind: 'queried',
@@ -367,7 +415,7 @@ export async function auditQuery(
     resultCount: rows.length,
   });
 
-  return ok({ rows, nextCursor });
+  return ok({ rows, nextCursor, prevCursor });
 }
 
 export async function auditExport(
