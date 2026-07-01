@@ -287,4 +287,56 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
     expect(afterRow!.status).toBe('issued');
     expect(afterRow!.receiptDocumentNumberRaw).toBeNull();
   }, 90_000);
+
+  it('immutability — receipt_document_number_raw (§87 RC) is frozen once minted (even under the redaction GUC)', async () => {
+    // 088 INFO / migration 0235 — the §87 RC number must be immutable on a paid
+    // row, symmetric with bill_document_number_raw / document_number. The
+    // NULL→RC write at payment is permitted; every subsequent change rejects.
+    const t = await seedTenant();
+    created.push(t.tenant);
+    const slug = t.tenant.ctx.slug;
+    const invoiceId = await issueBill(t, true);
+
+    const paid = await recordPayment(recordDeps(slug, true), {
+      tenantId: slug,
+      actorUserId: t.user.userId,
+      requestId: `inv-freeze-pay-${invoiceId}`,
+      invoiceId,
+      paymentMethod: 'bank_transfer',
+      paymentDate: '2026-07-01',
+    });
+    expect(paid.ok, paid.ok ? 'ok' : JSON.stringify(paid)).toBe(true);
+    if (!paid.ok) throw new Error('pay failed');
+    const rc = paid.value.receiptDocumentNumberRaw;
+    expect(rc).toMatch(/^RC-2026-\d{6}$/);
+
+    // Normal UPDATE of the minted RC → rejected.
+    await expect(
+      runInTenant(t.tenant.ctx, (tx) =>
+        tx.execute(
+          sql`UPDATE invoices SET receipt_document_number_raw = 'RC-2026-999999'
+              WHERE tenant_id = ${slug} AND invoice_id = ${invoiceId}`,
+        ),
+      ),
+    ).rejects.toThrow();
+
+    // Under the PII-redaction GUC it is STILL frozen (an RC is a §87 tax number,
+    // not redactable PII).
+    await expect(
+      runInTenant(t.tenant.ctx, async (tx) => {
+        await tx.execute(sql`SET LOCAL app.allow_pii_redaction = 'true'`);
+        await tx.execute(
+          sql`UPDATE invoices SET receipt_document_number_raw = 'RC-2026-888888'
+              WHERE tenant_id = ${slug} AND invoice_id = ${invoiceId}`,
+        );
+      }),
+    ).rejects.toThrow();
+
+    // Unchanged.
+    const [row] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, slug), eq(invoices.invoiceId, invoiceId)));
+    expect(row!.receiptDocumentNumberRaw).toBe(rc);
+  }, 90_000);
 });

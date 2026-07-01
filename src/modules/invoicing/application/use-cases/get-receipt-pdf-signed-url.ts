@@ -4,24 +4,28 @@
  * Mirrors `get-invoice-pdf-signed-url` but resolves to the receipt PDF.
  * The system ALWAYS persists two distinct physical PDFs per paid
  * invoice:
- *   - `invoice.pdf` — issued at `issueInvoice`, header "ใบกำกับภาษี /
- *     Tax Invoice"
- *   - `invoice.receiptPdf` — rendered at `recordPayment`, header
- *     "ใบกำกับภาษี / ใบเสร็จรับเงิน" (combined-mode) or
- *     "ใบเสร็จรับเงิน / Official Receipt" (separate-mode)
+ *   - `invoice.pdf` — rendered at `issueInvoice`. In the 088 bill→RC flow
+ *     (FEATURE_088_TAX_AT_PAYMENT) its header is the NON-tax "ใบแจ้งหนี้ /
+ *     Invoice"; on the legacy flag-off path it is "ใบกำกับภาษี / Tax Invoice".
+ *   - `invoice.receiptPdf` — rendered at `recordPayment`, the §86/4 payment-time
+ *     "ใบกำกับภาษี / ใบเสร็จรับเงิน" tax receipt (or the §105 "ใบเสร็จรับเงิน /
+ *     Official Receipt" for an event-without-TIN buyer).
  *
- * Behaviour per `receiptNumberingMode` + `receiptPdfStatus`:
+ * Behaviour keys off whether a distinct §87 receipt number was minted —
+ * `receiptDocumentNumberRaw` (the `RC` in the new flow; NULL only on the legacy
+ * reuse path where the receipt reuses the §87 invoice number) — plus
+ * `receiptPdfStatus`. (The retired `receiptNumberingMode` setting no longer
+ * drives this — F.5 / T008.)
  *
- *   combined-mode + paid + rendered    → invoice.receiptPdf.blobKey
- *                                        filename = {invoiceDocNum}-receipt.pdf
- *                                        (distinguishes from the
- *                                        sibling invoice PDF on disk)
- *   separate-mode + paid + rendered    → invoice.receiptPdf.blobKey
+ *   RC set + paid + rendered           → invoice.receiptPdf.blobKey
  *                                        filename = {RC-2026-0001}.pdf
- *   separate-mode + paid + pending     → 'receipt_pdf_pending' (425 to
+ *   reuse (RC NULL) + paid + rendered  → invoice.receiptPdf.blobKey
+ *                                        filename = {invoiceDocNum}-receipt.pdf
+ *                                        (distinguishes from the sibling PDF)
+ *   paid + pending                     → 'receipt_pdf_pending' (425 to
  *                                        member; admin gets fallback to
  *                                        invoice.pdf — see admin route)
- *   separate-mode + paid + failed      → 'receipt_pdf_failed' with
+ *   paid + failed                      → 'receipt_pdf_failed' with
  *                                        `receiptPdfLastError` in payload
  *                                        (admin only — strip for member)
  *   non-paid / draft / void / credited → 'forbidden'

@@ -96,6 +96,17 @@ export const invoices = pgTable(
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
 
+    // 088 L1 — this is the BILL / issue-time fiscal year by design (derived
+    // from the ISSUE date in `issueInvoice`). It is NOT the §87 fiscal year of
+    // the payment-time `RC` tax receipt: for a cross-year sale (bill FY2025 →
+    // paid FY2026) the RC is `RC-2026-…` while `fiscal_year` stays 2025. The
+    // RC's true §87 fiscal year lives on the RC number string
+    // (`receipt_document_number_raw`, `RC-{FY}-…`) AND in the
+    // `tax_receipt_issued` audit payload's `fiscal_year`. Any future §87 RC-
+    // register / ภพ.30 report (T065b, unbuilt) MUST bucket RC receipts by THAT
+    // payment fiscal year, never by this column. The current readers of this
+    // column (F9 YTD-paid-revenue KPI + the invoice list `fiscalYear` filter)
+    // are intentionally on the bill/issue-FY basis — leave them unchanged.
     fiscalYear: smallint('fiscal_year'),
     sequenceNumber: integer('sequence_number'),
     documentNumber: text('document_number'),
