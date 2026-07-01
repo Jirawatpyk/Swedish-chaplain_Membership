@@ -70,13 +70,18 @@ src/modules/renewals/**                                    # F8 renewal parity �
 scripts/verify-088-cutover.ts                              # NEW cutover assertion (enum has 'bill'; settings separate/RC; WHT seeded; issue allocates only 'bill')
 src/app/(staff)/admin/invoices/**                          # download affordances (both docs), labels, issue-dialog copy, settings form; issue-invoice form gains a VAT-treatment toggle (standard 7% / zero-rated §80/1(5) 0%) + MFA-cert fields (cert no/date/upload) shown fail-closed when zero-rated (US8, FR-023/FR-024)
 src/app/(member)/portal/invoices/**                        # download both docs, labels
-src/components/invoices/invoice-settings-form.tsx          # WHT-note (TH/EN) + seller branch + bank-block (FR-022) fields
-src/i18n/messages/{en,th,sv}.json                          # relabel-in-place + new keys
+src/components/invoices/invoice-settings-form.tsx          # WHT-note (TH/EN) + seller branch + bank-block (FR-022) fields; fieldset grouping + sticky Save @320px (FR-036)
+src/i18n/messages/{en,th,sv}.json                          # relabel-in-place + new keys (incl. interactive strings, timeline, palette — SC-009 keep-Thai-plus-gloss)
+# --- UX round-2 surfaces (FR-027..036 / SC-011,012) ---
+# admin/invoices/**: pre-issue review dialog (FR-027) · §87-mint money-modal no-optimistic/undo (FR-028) · per-row Record-payment + undo-on-issue toast (FR-035) · list filters + RC-register/§80/1(5) period view (FR-031) · uniform toasts/inline-alerts (FR-032)
+src/components/command-palette/invoices-group.tsx          # "Record payment"/"Re-render receipt" entries (FR-035)
+src/modules/members/application/timeline/resolve-invoice-event-copy.ts  # render tax_receipt_issued + relabel invoiceIssued→ใบแจ้งหนี้ (FR-029)
+src/modules/insights/** (F9) + src/modules/renewals/** (F8) # read-path fix: count issued ใบแจ้งหนี้ via status+bill_document_number_raw, NEVER document_number (FR-030 — existing consumers)
 drizzle/migrations/                                        # ≥4 migrations (enum + bill column/index + CHECKs; members branch; settings WHT/branch; invoices vat_treatment + MFA-cert columns → 0234)
 tests/{unit,contract,integration,e2e}/invoicing/**         # ≈25 files (numbering, goldens, credit-note, settings, payment→receipt)
 ```
 
-**Structure Decision**: extends the existing **F4 `src/modules/invoicing/`** bounded context (Clean Architecture layers preserved) plus a two-column addition to **F3 `members`** and the presentation surfaces; the **F5 `payments`** module is passthrough (no behavioural change). No new module or npm dependency.
+**Structure Decision**: extends the existing **F4 `src/modules/invoicing/`** bounded context (Clean Architecture layers preserved) plus a two-column addition to **F3 `members`** and the presentation surfaces; the **F5 `payments`** module is passthrough (no behavioural change). The **UX round-2** requirements additionally touch **read-paths** in **F9 `insights`** (AR/outstanding), **F8 `renewals`** (at-risk `invoicesOverdueCount`), the **F3 `members` timeline** resolver, and the **command-palette** — all as existing consumers (FR-029 / FR-030 / FR-031 / FR-035), plus mobile-first responsive + i18n/a11y across the new surfaces (FR-036 / SC-009..012). No new module, bounded-context boundary, or npm dependency.
 
 ## Complexity Tracking
 
