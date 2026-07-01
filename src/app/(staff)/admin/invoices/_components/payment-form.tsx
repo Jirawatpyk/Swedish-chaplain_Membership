@@ -4,12 +4,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -18,7 +19,8 @@ import {
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
+import { routeRecordPaymentError } from './record-payment-error-routing';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
 
@@ -84,6 +86,19 @@ export function PaymentForm({
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const dateInputRef = useRef<HTMLInputElement>(null);
 
+  // 088 T018a / FR-028 + FR-032 — recording a payment MINTS the §87 `RC` tax
+  // number in-tx and cannot be rolled back client-side, so a failure MUST NOT
+  // be a transient toast: it is surfaced INLINE via a focused role="alert" so
+  // the admin cannot miss that the mint did not complete. A concurrent 409 is
+  // shown as an inline "already paid — refresh", not a red error.
+  const [formError, setFormError] = useState<
+    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
+  >(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formError) errorRef.current?.focus();
+  }, [formError]);
+
   // App-controlled validation of the payment date — mirrors the native
   // [issueDate, todayIso] clamp but surfaces an inline error + aria-invalid
   // instead of relying solely on the browser's transient native bubble
@@ -101,6 +116,7 @@ export function PaymentForm({
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitAttempted(true);
+    setFormError(null);
     if (dateInvalid) {
       dateInputRef.current?.focus();
       return;
@@ -119,19 +135,20 @@ export function PaymentForm({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const code = (body as { error?: { code?: string } })?.error?.code;
-        toast.error(t('errors.failed'), {
-          description:
-            // REMOVE-WITH-064-REMEDIATION (site 5/15 — checklist at the guard
-            // in record-payment.ts; also drop the i18n key ×3 locales).
-            // 064 INTERIM — surface a human-readable message for the legacy
-            // no-TIN event-row guard (raw code is useless to an admin); same
-            // explicit-equality pattern as issue-invoice-dialog's error map.
-            code === 'legacy_no_tin_event_needs_remediation'
-              ? t('errors.legacy_no_tin_event_needs_remediation')
-              : code
-                ? t('errors.codeFallback', { code })
-                : t('errors.unknown'),
-        });
+        // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
+        // role="alert" (never a transient toast); a concurrent 409 →
+        // inline "already paid — refresh". The dialog stays open (no
+        // optimistic close) so the admin sees the outcome in context.
+        const routing = routeRecordPaymentError(code);
+        if (routing.kind === 'concurrent') {
+          setFormError({ kind: 'concurrent' });
+        } else {
+          const message =
+            routing.messageKey === 'errors.codeFallback' && routing.codeArg
+              ? t('errors.codeFallback', { code: routing.codeArg })
+              : t(routing.messageKey as 'errors.unknown');
+          setFormError({ kind: 'failure', message });
+        }
         return;
       }
       toast.success(t('success'), {
@@ -163,6 +180,38 @@ export function PaymentForm({
       noValidate
       className="flex flex-col gap-[var(--page-section-gap)]"
     >
+      {/* 088 FR-028/FR-032 — inline, focused failure surface for the §87-mint
+          mutation (never a transient toast). `tabIndex={-1}` + the focus effect
+          move focus here so the admin cannot miss that the mint did not
+          complete. `outline-none` because focus is programmatic (the visible
+          state IS the alert). */}
+      {formError && (
+        <Alert
+          ref={errorRef}
+          tabIndex={-1}
+          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          className="outline-none"
+          data-testid="record-payment-error"
+        >
+          <TriangleAlertIcon className="size-4" aria-hidden="true" />
+          {formError.kind === 'concurrent' ? (
+            <AlertDescription className="flex flex-col items-start gap-2">
+              <span>{t('errors.concurrent')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={() => router.refresh()}
+              >
+                {t('errors.refreshAction')}
+              </Button>
+            </AlertDescription>
+          ) : (
+            <AlertDescription>{formError.message}</AlertDescription>
+          )}
+        </Alert>
+      )}
       <div>
         <Label htmlFor="method">{t('fields.method')}</Label>
         <Select
