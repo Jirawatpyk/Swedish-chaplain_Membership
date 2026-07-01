@@ -229,6 +229,13 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
         primary_contact_email: 'jane@beta.example',
         member_number: null,
         member_number_display: null,
+        // 088-invoice-tax-flow-redesign (T010) — makeMemberIdentitySnapshot's
+        // zod `.optional().default(…)` now also materialises the buyer §86/4
+        // branch particulars at their fail-closed defaults (head-office / null /
+        // not-registrant) for a manually-pinned non-member event buyer.
+        buyer_is_head_office: true,
+        buyer_branch_code: null,
+        buyer_is_vat_registrant: false,
       });
       // Model B — single event_fee line holds the VAT-INCLUSIVE total.
       const lines = call.lines as Invoice['lines'];
