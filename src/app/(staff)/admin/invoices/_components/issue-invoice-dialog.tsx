@@ -34,7 +34,7 @@
  *     receive the numbers + warnings as part of the dialog content.
  */
 
-import { useState, useTransition, useCallback } from 'react';
+import { useEffect, useRef, useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -55,7 +55,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { computeIssueReviewModel } from '../_lib/issue-review';
+import { routeIssueError } from './issue-error-routing';
 
 type Props = {
   readonly invoiceId: string;
@@ -142,6 +144,17 @@ export function IssueInvoiceDialog({
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
 
+  // 088 T021a / FR-032 — issuing pins an immutable §86/4 snapshot, so a failure
+  // is surfaced INLINE via a focused role="alert" (never a transient toast); a
+  // concurrent 409 (already issued elsewhere) shows an inline "refresh" prompt.
+  const [formError, setFormError] = useState<
+    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
+  >(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formError) errorRef.current?.focus();
+  }, [formError]);
+
   const confirmPhrase = t('confirmPhrase');
   const matches =
     typed.trim().toLocaleUpperCase(locale) ===
@@ -165,11 +178,15 @@ export function IssueInvoiceDialog({
   // typed value from leaking into a later re-open (same pattern as
   // F3 archive-member-button R006).
   const handleOpenChange = useCallback((next: boolean) => {
-    if (!next) setTyped('');
+    if (!next) {
+      setTyped('');
+      setFormError(null);
+    }
     setOpen(next);
   }, []);
 
   function confirm() {
+    setFormError(null);
     startTransition(async () => {
       const res = await fetch(`/api/invoices/${invoiceId}/issue`, {
         method: 'POST',
@@ -177,27 +194,34 @@ export function IssueInvoiceDialog({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const code = (body as { error?: { code?: string } })?.error?.code;
-        toast.error(t('errors.failed'), {
-          description:
-            // 064 §105 ROOT FIX — human-readable copy for the no-TIN EVENT
-            // guard, pointing the admin at the record-as-paid flow instead of
-            // plain issue. (066 removed the membership tax_id_required gate — a
-            // no-TIN membership now issues a valid §86/4 with name+address, so
-            // there is no membership error code to surface here.)
-            code === 'event_no_tin_requires_paid_issue'
-              ? t('errors.event_no_tin_requires_paid_issue')
-              // 064 S1 — registration refunded between draft and issue
-              // (issuance-time TOCTOU re-check); human-readable copy so
-              // the admin knows the draft is now a dead end, not retryable.
-              : code === 'registration_refunded'
-                ? t('errors.registration_refunded')
-                : code
-                  ? t('errors.codeFallback', { code })
-                  : t('errors.unknown'),
-        });
+        // FR-032 — route the irreversible issue failure to an INLINE focused
+        // role="alert" (the dialog stays open); a concurrent 409 shows the
+        // "already issued — refresh" prompt. The dedicated no-TIN-event +
+        // refunded-registration copies still resolve via routeIssueError.
+        const routing = routeIssueError(code);
+        if (routing.kind === 'concurrent') {
+          setFormError({ kind: 'concurrent' });
+        } else {
+          const message =
+            routing.messageKey === 'errors.codeFallback' && routing.codeArg
+              ? t('errors.codeFallback', { code: routing.codeArg })
+              : t(routing.messageKey as 'errors.unknown');
+          setFormError({ kind: 'failure', message });
+        }
         return;
       }
-      toast.success(t('success'));
+      // FR-032 — doc-specific success toast interpolating the allocated bill
+      // number (non-§87 SC under the 088 flow; the legacy §87 document number
+      // when the flag is off). Falls back to the plain copy if absent.
+      const body = (await res.json().catch(() => ({}))) as {
+        bill_document_number_raw?: string | null;
+        document_number?: string | null;
+      };
+      const number =
+        (typeof body.bill_document_number_raw === 'string' && body.bill_document_number_raw) ||
+        (typeof body.document_number === 'string' && body.document_number) ||
+        null;
+      toast.success(number ? t('successWithNumber', { number }) : t('success'));
       setOpen(false);
       setTyped('');
       router.refresh();
@@ -353,6 +377,37 @@ export function IssueInvoiceDialog({
             <AlertDescription className="text-amber-900 dark:text-amber-200">
               {t('noTaxIdHint')}
             </AlertDescription>
+          </Alert>
+        )}
+
+        {/* FR-032 — inline, focused failure surface for the irreversible issue
+            mutation (never a transient toast). A concurrent 409 shows a
+            "refresh" prompt; other failures show a destructive alert. */}
+        {formError && (
+          <Alert
+            ref={errorRef}
+            tabIndex={-1}
+            variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+            className="outline-none"
+            data-testid="issue-invoice-error"
+          >
+            <TriangleAlertIcon className="size-4" aria-hidden="true" />
+            {formError.kind === 'concurrent' ? (
+              <AlertDescription className="flex flex-col items-start gap-2">
+                <span>{t('errors.concurrent')}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[44px]"
+                  onClick={() => router.refresh()}
+                >
+                  {t('errors.refreshAction')}
+                </Button>
+              </AlertDescription>
+            ) : (
+              <AlertDescription>{formError.message}</AlertDescription>
+            )}
           </Alert>
         )}
 

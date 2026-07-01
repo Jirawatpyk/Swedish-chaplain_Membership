@@ -2137,11 +2137,14 @@
         "issueButton": "Issue",
         "issuing": "Issuing…",
         "success": "Invoice issued",
+        "successWithNumber": "Invoice {number} issued",
         "cancel": "Cancel",
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues as a valid tax invoice with name and address, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
         "errors": {
           "failed": "Issue failed",
+          "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
+          "refreshAction": "Refresh",
           "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "codeFallback": "Error code: {code}",
@@ -2196,6 +2199,7 @@
         "submitting": "Recording…",
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
+        "successReceipt": "Tax receipt {number} issued",
         "cancel": "Back to invoice",
         "cancelDialog": "Cancel",
         "errors": {

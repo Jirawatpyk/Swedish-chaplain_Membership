@@ -151,9 +151,23 @@ export function PaymentForm({
         }
         return;
       }
-      toast.success(t('success'), {
-        description: documentNumber ? t('successDetail', { number: documentNumber }) : undefined,
-      });
+      // FR-032 — doc-specific success toast: under the 088 flow the payment
+      // mints the §86/4 RC receipt number, so prefer "Tax receipt RC-… issued"
+      // (read from the response); fall back to the legacy "paid" copy otherwise.
+      const body = (await res.json().catch(() => ({}))) as {
+        receipt_document_number_raw?: string | null;
+      };
+      const rc =
+        typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
+          ? body.receipt_document_number_raw
+          : null;
+      if (rc) {
+        toast.success(t('successReceipt', { number: rc }));
+      } else {
+        toast.success(t('success'), {
+          description: documentNumber ? t('successDetail', { number: documentNumber }) : undefined,
+        });
+      }
       if (onSuccess) {
         // Dialog overlay wrapper — close first, then refresh so the
         // detail page rerender lands with the dialog already gone.
