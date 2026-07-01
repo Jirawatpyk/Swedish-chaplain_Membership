@@ -50,11 +50,28 @@
  *     at v4 as at v3 (verified: same rendered length + extracted text
  *     for invoice / invoice_preview / receipt_separate / credit_note /
  *     void / receipt_combined@v3).
+ *   - **v5** (2026-07-02, 088-invoice-tax-flow-redesign US3 / T032 /
+ *     FR-008 / AS1-4) — the §86/4 **Head-Office / Branch** line now renders
+ *     on BOTH parties of every tax document (ใบแจ้งหนี้ + tax receipt): the
+ *     SELLER block always shows สำนักงานใหญ่ / Head Office (or the tenant's
+ *     branch once US5 wires the seller-branch columns), and the BUYER block
+ *     shows สำนักงานใหญ่ / Head Office (default) or สาขาที่ NNNNN / Branch —
+ *     but ONLY for a VAT-registrant juristic buyer (gated on the snapshot's
+ *     `buyer_is_vat_registrant`, NEVER `buyerHasTin`; an individual / NULL
+ *     legal-entity-type buyer renders NO branch line, fail-closed). Both new
+ *     lines gate on `templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION` (=5,
+ *     see templates/invoice-template.tsx), so a pinned pre-v5 document (resend
+ *     / void-overlay / async worker / any re-render at its stored
+ *     `pdf_template_version`) reproduces its original bytes — the SC-003
+ *     guarantee holds, exactly like the v3 citation + v4 two-page gates. Every
+ *     kind renders byte-for-length identical at v5 as at v4 when the buyer is
+ *     not a VAT-registrant AND the seller line is absent — i.e. only a v5
+ *     issuance with the new snapshot fields differs.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 4 as const;
+export const CURRENT_TEMPLATE_VERSION = 5 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

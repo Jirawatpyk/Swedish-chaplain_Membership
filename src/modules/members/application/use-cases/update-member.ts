@@ -46,8 +46,38 @@ export const updateMemberSchema = z
     founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
     turnover_thb: z.number().int().nonnegative().nullable().optional(),
     notes: z.string().max(4000).nullable().optional(),
+    // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular, admin-managed.
+    // `is_head_office=true` = สำนักงานใหญ่; a branch carries a 5-digit code.
+    is_head_office: z.boolean().optional(),
+    branch_code: z
+      .string()
+      .regex(/^\d{5}$/, 'branch_code must be exactly 5 digits')
+      .nullable()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    // Mirror the DB CHECK `members_branch_pairing_ck` + the member-identity
+    // snapshot VO superRefine: a head office carries a NULL code; a branch
+    // carries a 5-digit code. Fires only when `is_head_office` is present — the
+    // admin form always sends BOTH fields together, so the pair is validated as
+    // one (the DB CHECK is the backstop for any partial-only request). A failure
+    // surfaces as `invalid_body` (400) at the route.
+    if (data.is_head_office === true && data.branch_code != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['branch_code'],
+        message: 'a head-office member must not carry a branch code',
+      });
+    }
+    if (data.is_head_office === false && data.branch_code == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['branch_code'],
+        message: 'a branch member requires a 5-digit branch code',
+      });
+    }
+  });
 
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 
@@ -155,6 +185,13 @@ export async function updateMember(
         draft.companyName = data.company_name.trim();
       if (data.legal_entity_type !== undefined)
         draft.legalEntityType = data.legal_entity_type;
+      // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
+      // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
+      // the validated pair into the patch (buildDiff surfaces them on the
+      // `member_updated` audit's fields_changed + diff — no new event type).
+      if (data.is_head_office !== undefined)
+        draft.isHeadOffice = data.is_head_office;
+      if (data.branch_code !== undefined) draft.branchCode = data.branch_code;
       if (validatedCountry !== undefined) draft.country = validatedCountry;
       if (data.tax_id !== undefined) {
         if (data.tax_id === null) {

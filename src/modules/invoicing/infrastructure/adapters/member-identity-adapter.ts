@@ -14,6 +14,7 @@
  * come from `contacts`.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { isVatRegistrantEntityType } from '@/lib/legal-entity';
 import type {
   MemberIdentityPort,
   MemberIdentityView,
@@ -48,6 +49,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
+                   m.legal_entity_type, m.is_head_office, m.branch_code,
                    COALESCE(
                      (SELECT s.member_number_prefix
                         FROM tenant_member_settings s
@@ -68,6 +70,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
                    m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
+                   m.legal_entity_type, m.is_head_office, m.branch_code,
                    COALESCE(
                      (SELECT s.member_number_prefix
                         FROM tenant_member_settings s
@@ -105,6 +108,13 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       // members-domain `DEFAULT_MEMBER_NUMBER_PREFIX` — keep them in sync.
       member_number_prefix: string;
       member_type_scope: 'company' | 'individual' | 'both' | null;
+      // 088 US3 (T030 / FR-008) — §86/4 buyer-branch source columns. The branch
+      // LINE is drawn only for a VAT-registrant juristic buyer, derived from
+      // `legal_entity_type` (≠ 'individual' AND non-NULL). `is_head_office` is
+      // NOT NULL (DEFAULT true); `branch_code` is a nullable char(5).
+      legal_entity_type: string | null;
+      is_head_office: boolean;
+      branch_code: string | null;
     }>;
 
     const m = memberRows[0];
@@ -171,6 +181,21 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         // The FORMATTED display string the PDF renders (`SCCM-0042`) — frozen
         // here so a later prefix/member change never mutates an issued document.
         member_number_display: memberNumberDisplay,
+        // 088 US3 (T030 / FR-008) — §86/4 Head-Office / Branch particular, pinned
+        // at issue. The buyer branch LINE renders only for a VAT-registrant
+        // juristic buyer, so the discriminator is derived HERE (never
+        // `buyerHasTin`) via the SHARED `isVatRegistrantEntityType` helper — the
+        // SAME canonicalisation the admin-form branch guard uses, so a member
+        // entered as 'Individual' / '  individual  ' stays fail-closed (US3
+        // review fix 2026-07-02). NULL / '' / any casing of 'individual' ⇒ false
+        // ⇒ NO branch line.
+        buyer_is_vat_registrant: isVatRegistrantEntityType(m.legal_entity_type),
+        // Head office (default) / branch pair, taken from the member row. The
+        // `members_branch_pairing_ck` CHECK guarantees they are consistent
+        // (head office ⇒ NULL code; branch ⇒ 5-digit code), matching the
+        // snapshot VO's superRefine.
+        buyer_is_head_office: m.is_head_office ?? true,
+        buyer_branch_code: m.branch_code ?? null,
       }),
     };
   },

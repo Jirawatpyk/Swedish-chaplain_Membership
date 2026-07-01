@@ -53,6 +53,17 @@ export const members = pgTable(
     legalEntityType: text('legal_entity_type'),
     country: char('country', { length: 2 }).notNull(),
     taxId: text('tax_id'),
+
+    // 088-invoice-tax-flow-redesign (US3 / FR-008, migration 0232) — §86/4
+    // Head-Office / Branch buyer particular, admin-managed. `is_head_office`
+    // defaults true (สำนักงานใหญ่); a branch carries a 5-digit RD `branch_code`.
+    // The pairing is enforced by `members_branch_pairing_ck` (head office ⇒ NULL
+    // code; branch ⇒ `^[0-9]{5}$`). Pinned into the immutable buyer identity
+    // snapshot at issue; the §86/4 branch LINE renders only for a VAT-registrant
+    // juristic buyer (never `buyerHasTin`). Scrubbed by `scrubPiiInTx` (§86/4
+    // business quasi-identifier) — see scrub-pii-column-coverage.test.ts.
+    isHeadOffice: boolean('is_head_office').notNull().default(true),
+    branchCode: char('branch_code', { length: 5 }),
     website: text('website'),
     description: text('description'),
     foundedYear: integer('founded_year'),

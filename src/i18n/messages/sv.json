@@ -1285,7 +1285,8 @@
         "sections": {
           "company": "Företag",
           "address": "Adress",
-          "primaryContact": "Primär kontakt"
+          "primaryContact": "Primär kontakt",
+          "taxBranch": "Huvudkontor / Filial (สำนักงานใหญ่/สาขา, §86/4)"
         },
         "fields": {
           "companyName": "Företagsnamn",
@@ -1301,6 +1302,10 @@
           "city": "Ort/Stad",
           "province": "Län/Region",
           "postalCode": "Postnummer",
+          "isHeadOffice": "Denna medlem är huvudkontoret (สำนักงานใหญ่)",
+          "branchCode": "Filialkod",
+          "branchCodeHint": "5-siffrig filialkod (RD), t.ex. 00001",
+          "branchHint": "För en §86/4-skattefaktura skrivs köparens rad för huvudkontor/filial ut endast för ett momsregistrerat bolag.",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
@@ -1326,7 +1331,9 @@
             "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
             "dobRequired": "Födelsedatum krävs för denna plan.",
             "foundedYear": "Ange ett år mellan 1800 och i år.",
-            "turnover": "Ange ett icke-negativt belopp."
+            "turnover": "Ange ett icke-negativt belopp.",
+            "branchCodeFormat": "Ange en 5-siffrig filialkod, t.ex. 00001.",
+            "branchOnNonRegistrant": "En filialkod gäller endast ett momsregistrerat bolag. Ange den juridiska personens typ först."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",

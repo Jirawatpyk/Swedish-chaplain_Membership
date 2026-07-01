@@ -182,6 +182,9 @@ export default async function EditMemberPage({ params }: PageProps) {
               postalCode: member.postalCode,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
+              // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular.
+              isHeadOffice: member.isHeadOffice ?? true,
+              branchCode: member.branchCode ?? null,
               planId: member.planId,
               planYear: member.planYear,
               registrationDate: member.registrationDate

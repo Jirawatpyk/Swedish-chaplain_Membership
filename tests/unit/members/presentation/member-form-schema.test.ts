@@ -108,3 +108,59 @@ describe('buildMemberFormSchema — conditional DOB requirement (requireDob=true
     ).not.toContain('primary_contact.date_of_birth');
   });
 });
+
+// 088 US3 (FR-008) — branch pairing + registrant cross-field rules. US3-review
+// finding: these were wired in the form (member-form.tsx superRefine) but had
+// ZERO coverage — a regression weakening the /^\d{5}$/ regex or dropping the
+// individual guard would have passed the whole suite undetected.
+describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)', () => {
+  it('accepts a head office (is_head_office=true, no branch_code)', () => {
+    expect(issuePaths({ ...BASE, is_head_office: true })).toEqual([]);
+  });
+
+  it('flags a non-5-digit branch_code on the branch_code field (branchCodeFormat)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '123',
+        legal_entity_type: 'company',
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('flags a branch on a non-registrant — individual in ANY casing (branchOnNonRegistrant)', () => {
+    // Shares the same normalizer the adapter fail-open was fixed with, so the
+    // capital-I variant that broke the §86/4 render is caught at the form too.
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
+        legal_entity_type: 'Individual',
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('flags a branch on an empty legal_entity_type (branchOnNonRegistrant)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
+        legal_entity_type: '',
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('accepts a valid branch (is_head_office=false + 5-digit code + juristic type)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
+        legal_entity_type: 'company',
+      }),
+    ).toEqual([]);
+  });
+});

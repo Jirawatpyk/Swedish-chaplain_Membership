@@ -31,6 +31,12 @@ export type MemberInitialValues = {
   readonly planId: string;
   readonly planYear: number;
   readonly registrationDate: string;
+  // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular. Optional so the
+  // existing fixtures + create path (which never seed them) stay non-breaking;
+  // the edit page always supplies them (`isHeadOffice ?? true` / `branchCode ??
+  // null`). The diff helpers normalise both sides with the same defaults.
+  readonly isHeadOffice?: boolean;
+  readonly branchCode?: string | null;
 };
 
 export type EditablePrimaryContact = {
@@ -66,6 +72,13 @@ export function buildFieldPayload(
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
       typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
+    // 088 US3 — §86/4 branch particular. Always send a CHECK-consistent pair:
+    // head office ⇒ branch_code null; branch ⇒ the trimmed 5-digit code (the
+    // form's zod already validated the digit count + registrant rule).
+    is_head_office: values.is_head_office ?? true,
+    branch_code: (values.is_head_office ?? true)
+      ? null
+      : values.branch_code?.trim() || null,
   };
 }
 
@@ -92,7 +105,12 @@ export function hasFieldDiff(
     (typeof values.founded_year === 'number' ? values.founded_year : null) !==
       (member.foundedYear ?? null) ||
     (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==
-      (member.turnoverThb ?? null)
+      (member.turnoverThb ?? null) ||
+    // 088 US3 — §86/4 branch particular (both sides default head-office / null).
+    (values.is_head_office ?? true) !== (member.isHeadOffice ?? true) ||
+    ((values.is_head_office ?? true)
+      ? null
+      : values.branch_code?.trim() || null) !== (member.branchCode ?? null)
   );
 }
 

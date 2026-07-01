@@ -193,6 +193,31 @@ function beYear(isoDate: string | null): string {
  */
 const TWO_PAGE_RECEIPT_COPY_MIN_VERSION = 4;
 
+/**
+ * 088 US3 (T032 / FR-008 / SC-004) — first template version whose §86/4 blocks
+ * render the Head-Office / Branch line (both parties). Gated so a pinned pre-v5
+ * document (resend / void-overlay / async worker / any re-render at its stored
+ * `pdf_template_version`) reproduces its ORIGINAL bytes with NO branch line —
+ * preserving the SC-003 reproduce-the-original guarantee, exactly like the v3
+ * kind-aware-citation + v4 two-page gates. Registry log: template-registry.ts v5.
+ */
+const HEAD_OFFICE_BRANCH_MIN_VERSION = 5;
+
+/**
+ * 088 US3 — the §86/4 สำนักงานใหญ่ / Head Office | สาขาที่ NNNNN / Branch line.
+ * A head office renders "สำนักงานใหญ่ / Head Office"; a branch renders
+ * "สาขาที่ <code> / Branch". The bilingual literals match the existing template
+ * pattern (hardcoded shaped-Thai + English gloss — no i18n key on the PDF).
+ */
+function headOfficeBranchLine(
+  isHeadOffice: boolean,
+  branchCode: string | null,
+): string {
+  return isHeadOffice
+    ? shapeThai('สำนักงานใหญ่') + ' / Head Office'
+    : shapeThai('สาขาที่ ' + (branchCode ?? '')) + ' / Branch';
+}
+
 interface PageBodyProps {
   readonly input: PdfRenderInput;
   readonly isPreview: boolean;
@@ -287,6 +312,19 @@ function renderPageBody({
           <Text style={styles.label}>
             {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
           </Text>
+          {/* 088 US3 (T032 / FR-008 / AS4) — the SELLER §86/4 Head-Office /
+              Branch line. TSCC is always สำนักงานใหญ่ / Head Office; the branch
+              fallback stays dormant until US5 wires the tenant seller-branch
+              columns (`seller_is_head_office ?? true`). Gated on templateVersion
+              so pre-v5 documents re-render byte-stable (SC-003). */}
+          {input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION && (
+            <Text style={styles.label}>
+              {headOfficeBranchLine(
+                input.tenant.seller_is_head_office ?? true,
+                input.tenant.seller_branch_code ?? null,
+              )}
+            </Text>
+          )}
         </View>
         <View style={styles.headerRight}>
           <Text style={styles.h1}>{shapeThai(titleTh)}</Text>
@@ -349,6 +387,24 @@ function renderPageBody({
             {shapeThai(line)}
           </Text>
         ))}
+        {/* 088 US3 (T032 / FR-008 / AS1-3) — the BUYER §86/4 Head-Office /
+            Branch line. Drawn ONLY for a VAT-registrant juristic buyer
+            (`buyer_is_vat_registrant`, populated at issue from
+            `legal_entity_type ≠ 'individual'` AND non-NULL — NEVER `buyerHasTin`):
+            AS1 registrant + no branch → สำนักงานใหญ่ (default); AS2 branch code →
+            สาขาที่ NNNNN; AS3 individual / NULL type → NO line (fail-closed). Gated
+            on templateVersion so pre-v5 documents re-render byte-stable (SC-003).
+            Renders inside renderPageBody, so it appears on BOTH the Original + the
+            Copy page of the US2 two-page combined receipt. */}
+        {input.member.buyer_is_vat_registrant === true &&
+          input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION && (
+            <Text style={styles.label}>
+              {headOfficeBranchLine(
+                input.member.buyer_is_head_office ?? true,
+                input.member.buyer_branch_code ?? null,
+              )}
+            </Text>
+          )}
         {input.member.primary_contact_name && (
           <Text style={styles.label}>
             {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}

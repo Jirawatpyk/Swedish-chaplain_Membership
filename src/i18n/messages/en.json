@@ -1285,7 +1285,8 @@
         "sections": {
           "company": "Company",
           "address": "Address",
-          "primaryContact": "Primary contact"
+          "primaryContact": "Primary contact",
+          "taxBranch": "Head office / Branch (§86/4)"
         },
         "fields": {
           "companyName": "Company name",
@@ -1301,6 +1302,10 @@
           "city": "City / District",
           "province": "Province / State",
           "postalCode": "Postal code",
+          "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",
+          "branchCode": "Branch code",
+          "branchCodeHint": "5-digit RD branch code, e.g. 00001",
+          "branchHint": "For a §86/4 tax invoice, the buyer's head-office / branch line prints only for a VAT-registrant company.",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",
@@ -1326,7 +1331,9 @@
             "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
             "dobRequired": "Date of birth is required for this plan.",
             "foundedYear": "Enter a year between 1800 and this year.",
-            "turnover": "Enter a non-negative amount."
+            "turnover": "Enter a non-negative amount.",
+            "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
+            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
