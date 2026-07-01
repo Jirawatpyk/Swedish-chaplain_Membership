@@ -275,6 +275,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1–F8. (014-email-broadcast-advance)
 - TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, + Next.js 16 App Router · React 19 · Drizzle ORM · next-intl (015-admin-dashboard)
 - Neon Postgres `ap-southeast-1` + Drizzle. **4 new tables** (015-admin-dashboard)
+- TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); Node 22 LTS + Next.js 16 App Router · React 19 · Drizzle ORM · `@react-pdf/renderer` (deterministic PDF) · `@js-joda/core`+`timezone` (Asia/Bangkok fiscal year) · `thai-baht-text` · `stripe` (payment path — passthrough only) · next-intl. **Zero new npm dependencies** (Constitution X). (088-invoice-tax-flow-redesign)
+- Neon Postgres `ap-southeast-1` (Drizzle) + Vercel Blob (PDF artifacts). New DDL: `document_type` enum `+= 'bill'`; `invoices.bill_document_number_raw` + partial unique index; `members.is_head_office` + `branch_code`; `tenant_invoice_settings.wht_note_th/_en` + `seller_is_head_office` + `seller_branch_code`; amended CHECK constraints on `invoices`. (088-invoice-tax-flow-redesign)
 
 ## Recent Changes
 
@@ -284,4 +286,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-06-06 (refreshed `db:*` command names, Constitution v1.4.2, integration-test source of truth, F9/member-number current status; full history → docs/changelog.md)
+Last updated: 2026-07-01 (refreshed `db:*` command names, Constitution v1.4.2, integration-test source of truth, F9/member-number current status; full history → docs/changelog.md)
