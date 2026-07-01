@@ -9,6 +9,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { searchPlans } from '@/modules/plans';
@@ -285,9 +286,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // 088 T021b / FR-035 — the "Re-render tax receipt" palette action is an 088
+    // tax-at-payment concept (the §86/4 RC receipt is minted at payment). Strip
+    // it when FEATURE_088_TAX_AT_PAYMENT is OFF so the legacy §87-at-issue flow
+    // never surfaces an action it cannot fulfil. Presentation-layer gate: `env`
+    // is read here (route), not in the Application-layer `searchPlans`.
+    const actions = env.features.f088TaxAtPayment
+      ? result.value.results.actions
+      : result.value.results.actions.filter((a) => a.id !== 'invoice.rerenderReceipt');
+
     return NextResponse.json(
       {
-        results: { ...result.value.results, members, refundableInvoices },
+        results: { ...result.value.results, actions, members, refundableInvoices },
       },
       { status: 200 },
     );

@@ -50,6 +50,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
+import { RecordPaymentDialog } from './record-payment-dialog';
 import type { InvoiceStatus } from '@/modules/invoicing';
 
 /**
@@ -227,6 +228,8 @@ function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
 export function InvoicesTable({
   rows,
   showMethodColumn = false,
+  canRecordPayment = false,
+  todayIso,
 }: {
   rows: readonly InvoicesTableRow[];
   /**
@@ -235,6 +238,20 @@ export function InvoicesTable({
    * to keep the standard list compact (95% of rows would carry no badge).
    */
   showMethodColumn?: boolean;
+  /**
+   * 088 T021c / FR-035 — enable the per-row "Record payment" quick action on
+   * issued / overdue bills. Admin-only (money mutation); the list page passes
+   * `isAdmin`. Requires `todayIso` (below) to be threaded too.
+   */
+  canRecordPayment?: boolean;
+  /**
+   * Tenant-timezone (Asia/Bangkok) "today" as YYYY-MM-DD, computed server-side
+   * (`bangkokLocalDate`). Threaded to the per-row `RecordPaymentDialog` as the
+   * payment-date default + upper bound — never derived client-side from
+   * `new Date()` (UTC), which breaks the date clamp for ~7h/day. Only consumed
+   * when `canRecordPayment` is on; the per-row action stays hidden without it.
+   */
+  todayIso?: string;
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
@@ -555,11 +572,54 @@ export function InvoicesTable({
                     r.status === 'paid' &&
                     r.receiptPdfStatus !== null &&
                     r.receiptPdfStatus !== 'rendered';
-                  if (!showInvoice && !r.hasReceiptPdf && !receiptPending) {
+                  // 088 T021c / FR-035 — per-row "Record payment" quick action
+                  // on issued / overdue bills (admin-only). Opens the SAME
+                  // money-mutation `RecordPaymentDialog` used on the detail page
+                  // (defaults today + bank-transfer). FR-028 — this is a
+                  // §87-minting mutation, so the dialog contract (no optimistic
+                  // close / no undo toast) is inherited unchanged; the row NEVER
+                  // reuses the bulk-mark-paid optimistic pattern.
+                  const showRecordPayment =
+                    canRecordPayment &&
+                    todayIso !== undefined &&
+                    (r.status === 'issued' || r.status === 'overdue');
+                  if (
+                    !showInvoice &&
+                    !r.hasReceiptPdf &&
+                    !receiptPending &&
+                    !showRecordPayment
+                  ) {
                     return <span className="text-sm text-muted-foreground">—</span>;
                   }
                   return (
                     <div className="flex items-center justify-end gap-1">
+                      {showRecordPayment && todayIso !== undefined && (
+                        <RecordPaymentDialog
+                          invoiceId={r.invoiceId}
+                          // The row's display number is the bill number (SC-…)
+                          // or legacy invoice number; '—' means a true draft
+                          // (never issued) which can't appear here anyway →
+                          // pass null so the dialog's fallback copy stays clean.
+                          documentNumber={r.documentNumber === '—' ? null : r.documentNumber}
+                          issueDate={r.issueDate}
+                          todayIso={todayIso}
+                          triggerLabel={t('actions.recordPayment')}
+                          // a11y — number-bearing accessible name so a screen
+                          // reader (button-list nav strips row context) knows
+                          // which bill this money-mutation targets; mirrors the
+                          // sibling download buttons' aria in this same cell.
+                          triggerAriaLabel={t('actions.recordPaymentAria', {
+                            number: r.documentNumber,
+                          })}
+                          triggerVariant="ghost"
+                          triggerSize="sm"
+                          triggerClassName="min-h-11 px-3 gap-1"
+                          // Per-row unique id — many dialogs render on one page;
+                          // the default 'record-payment' id must not collide.
+                          triggerId={`record-payment-${r.invoiceId}`}
+                          triggerTestId="row-record-payment-trigger"
+                        />
+                      )}
                       {showInvoice && (
                         // Button (not <a download>) routes through
                         // the shared fetch+blob helper so 4xx/5xx

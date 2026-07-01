@@ -1646,10 +1646,13 @@
         "submitting": "Issuing…",
         "cancel": "Cancel",
         "success": "Credit note issued.",
+        "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
+          "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
+          "refreshAction": "Refresh",
           "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
           "codeFallback": "Error code: {code}"
         }
@@ -1755,6 +1758,8 @@
           "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
           "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
           "receiptPreparing": "Receipt preparing…",
+          "recordPayment": "Record payment",
+          "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -2195,6 +2200,7 @@
       "pay": {
         "title": "Record payment",
         "description": "Mark this invoice paid. A receipt PDF will be generated and emailed to the member.",
+        "payingForDocument": "Recording payment for {number}",
         "submit": "Record payment",
         "submitting": "Recording…",
         "success": "Payment recorded",
@@ -2244,9 +2250,12 @@
         "submitting": "Voiding…",
         "cancel": "Cancel",
         "success": "Invoice voided.",
+        "successWithNumber": "Invoice {number} voided.",
         "errors": {
           "failed": "Invoice could not be voided.",
           "unknown": "An unknown error occurred. Please try again.",
+          "concurrent": "This invoice was already voided or changed in another session. Refresh to see the latest status.",
+          "refreshAction": "Refresh",
           "codeFallback": "Error code: {code}"
         }
       }
@@ -4135,7 +4144,9 @@
       "issueRefund": "Issue refund — find paid invoice",
       "reviewBroadcasts": "Review broadcasts queue",
       "broadcastsHalted": "Halted members — broadcast review",
-      "newBroadcastTemplate": "Create new E-Blast template"
+      "newBroadcastTemplate": "Create new E-Blast template",
+      "recordPayment": "Record payment for an invoice",
+      "rerenderTaxReceipt": "Re-render tax receipt"
     },
     "navigate": {
       "plansList": "Plans list",

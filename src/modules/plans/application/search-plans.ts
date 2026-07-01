@@ -113,6 +113,28 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/invoices/new',
     requires: 'admin',
   },
+  // 088 T021b / FR-035 — "Record payment for …" jump. Lands on the payable
+  // (issued) invoice list carrying the `?pay=1` intent marker; the admin then
+  // uses the per-row "Record payment" quick action (T021c) which opens the
+  // money-mutation dialog. Admin-only (money mutation; managers are read-only
+  // on finance).
+  {
+    id: 'invoice.recordPayment',
+    label: 'palette.actions.recordPayment',
+    url: '/admin/invoices?status=issued&pay=1',
+    requires: 'admin',
+  },
+  // 088 T021b / FR-035 — "Re-render tax receipt" jump. Lands on the paid-invoice
+  // list where the row ⋯ menu re-renders / resends the §86/4 RC tax receipt.
+  // This is an 088 tax-at-payment concept (RC minted at payment), so the
+  // `/api/plans/search` route STRIPS this entry when FEATURE_088_TAX_AT_PAYMENT
+  // is OFF — the legacy §87-at-issue flow never surfaces it. Admin-only.
+  {
+    id: 'invoice.rerenderReceipt',
+    label: 'palette.actions.rerenderTaxReceipt',
+    url: '/admin/invoices?status=paid',
+    requires: 'admin',
+  },
   // F5 Phase 6 (T118) — refund flow browse-mode shortcut. Admin-only.
   // Lands on the invoices list pre-filtered to paid + partially-
   // credited invoices (the same filter the F5 reconciliation chip

@@ -1646,8 +1646,11 @@
         "submitting": "Utfärdar…",
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
+        "successWithNumber": "Kreditnota {number} utfärdad.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "errors": {
+          "concurrent": "Denna faktura har redan krediterats eller makulerats i en annan session. Uppdatera för att se den senaste statusen.",
+          "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
@@ -1755,6 +1758,8 @@
           "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
           "receiptPreparing": "Förbereder kvitto…",
+          "recordPayment": "Registrera betalning",
+          "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
@@ -2195,6 +2200,7 @@
       "pay": {
         "title": "Registrera betalning",
         "description": "Markera fakturan som betald. Ett kvitto-PDF genereras och skickas till medlemmen.",
+        "payingForDocument": "Registrerar betalning för {number}",
         "submit": "Registrera",
         "submitting": "Registrerar…",
         "success": "Betalning registrerad",
@@ -2244,9 +2250,12 @@
         "submitting": "Annullerar…",
         "cancel": "Avbryt",
         "success": "Fakturan annullerad.",
+        "successWithNumber": "Faktura {number} annullerad.",
         "errors": {
           "failed": "Fakturan kunde inte annulleras.",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
+          "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}"
         }
       }
@@ -4135,7 +4144,9 @@
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
       "reviewBroadcasts": "Granska utskickskön",
       "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning",
-      "newBroadcastTemplate": "Skapa ny E-Blast-mall"
+      "newBroadcastTemplate": "Skapa ny E-Blast-mall",
+      "recordPayment": "Registrera betalning för en faktura",
+      "rerenderTaxReceipt": "Återskapa skattekvitto"
     },
     "navigate": {
       "plansList": "Paketlista",

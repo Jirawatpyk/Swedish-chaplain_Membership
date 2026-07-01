@@ -464,7 +464,17 @@ export default async function AdminInvoicesPage({
             </div>
           ) : (
             <>
-              <InvoicesTable rows={rows} showMethodColumn={paidOnlineOnly} />
+              <InvoicesTable
+                rows={rows}
+                showMethodColumn={paidOnlineOnly}
+                // 088 T021c / FR-035 — per-row Record payment quick action.
+                // Admin-only (money mutation); managers are read-only on
+                // finance. `todayIso` is the tenant-timezone (Bangkok) today —
+                // the SAME value the detail page threads to the dialog so the
+                // payment-date clamp never off-by-ones for ~7h/day.
+                canRecordPayment={isAdmin}
+                todayIso={bangkokLocalDate(nowUtcIso)}
+              />
               <TablePagination
                 page={page}
                 pageSize={PAGE_SIZE}

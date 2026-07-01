@@ -1,0 +1,52 @@
+/**
+ * Unit tests for `routeCreditNoteError` — 088 T021a / FR-032.
+ *
+ * A credit note mints a §87 tax-document number in-tx, so a credit FAILURE is
+ * surfaced INLINE (focused role=alert), never a transient toast. This pure
+ * router classifies the credit-note route's error codes into:
+ *   - `concurrent` — a stale-write 409 (`invalid_status`,
+ *     `concurrent_state_change`, `credit_exceeds_remainder`) → inline
+ *     "already credited/voided — refresh";
+ *   - `failure`   — a dedicated operator-actionable message
+ *     (`receipt_not_creditable`), a codeFallback carrying the raw code, or the
+ *     generic unknown copy.
+ *
+ * Pure — no framework/DB/network.
+ */
+import { describe, expect, it } from 'vitest';
+import { routeCreditNoteError } from '@/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-error-routing';
+
+describe('routeCreditNoteError (FR-032)', () => {
+  it('classifies the three 409 stale-write codes as concurrent (refresh, not error)', () => {
+    expect(routeCreditNoteError('invalid_status')).toEqual({ kind: 'concurrent' });
+    expect(routeCreditNoteError('concurrent_state_change')).toEqual({ kind: 'concurrent' });
+    // The creditable remainder shrank because a concurrent credit note landed —
+    // a refresh, not a red error, so the admin picks up the new remainder.
+    expect(routeCreditNoteError('credit_exceeds_remainder')).toEqual({ kind: 'concurrent' });
+  });
+
+  it('maps receipt_not_creditable to the existing dedicated inline message key', () => {
+    expect(routeCreditNoteError('receipt_not_creditable')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.receiptNotCreditable',
+    });
+  });
+
+  it('an unrecognised but present code falls back to codeFallback with the raw code', () => {
+    expect(routeCreditNoteError('overflow')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.codeFallback',
+      codeArg: 'overflow',
+    });
+    expect(routeCreditNoteError('blob_upload_failed')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.codeFallback',
+      codeArg: 'blob_upload_failed',
+    });
+  });
+
+  it('a missing code falls back to the generic unknown message', () => {
+    expect(routeCreditNoteError(undefined)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
+    expect(routeCreditNoteError(null)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
+  });
+});
