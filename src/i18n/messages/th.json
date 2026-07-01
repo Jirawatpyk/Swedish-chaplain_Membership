@@ -5094,6 +5094,7 @@
       "auto_email_delivery_failed": "ส่งอีเมลอัตโนมัติไม่สำเร็จ",
       "receipt_rendered": "สร้างใบเสร็จรับเงินแล้ว",
       "receipt_pdf_downloaded": "ดาวน์โหลดใบเสร็จรับเงินแล้ว",
+      "tax_receipt_issued": "ออกใบกำกับภาษี/ใบเสร็จรับเงิน",
       "tenant_receipt_prefix_changed": "เปลี่ยน prefix เลขเอกสาร"
     },
     "eventcreate": {

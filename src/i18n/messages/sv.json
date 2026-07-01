@@ -5094,6 +5094,7 @@
       "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
       "receipt_rendered": "Kvitto renderat",
       "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
+      "tax_receipt_issued": "Skattekvitto utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
       "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat"
     },
     "eventcreate": {

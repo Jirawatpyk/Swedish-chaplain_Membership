@@ -5094,6 +5094,7 @@
       "auto_email_delivery_failed": "Auto email delivery failed",
       "receipt_rendered": "Receipt rendered",
       "receipt_pdf_downloaded": "Receipt PDF downloaded",
+      "tax_receipt_issued": "Tax receipt issued",
       "tenant_receipt_prefix_changed": "Document-number prefix changed"
     },
     "eventcreate": {
