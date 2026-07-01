@@ -10,7 +10,7 @@
 
 ## 0. Read these in order before writing code
 
-1. `specs/088-invoice-tax-flow-redesign/spec.md` — 7 user stories (US1/US2 = P1), FR-001…FR-015, SC-001…SC-007, 2 clarifications.
+1. `specs/088-invoice-tax-flow-redesign/spec.md` — 7 user stories (US1/US2 = P1), FR-001…FR-021, SC-001…SC-007, 4 clarifications.
 2. `specs/088-invoice-tax-flow-redesign/plan.md` — Constitution Check + Technical Context + Complexity Tracking (why the new `bill` stream is justified).
 3. `docs/superpowers/specs/2026-06-30-f4-invoice-receipt-tax-flow-redesign-design.md` — **PRIMARY source.** The AS-IS file:line map, migrations, numbering re-architecture (§6), payment→receipt path (§7), credit notes (§8), Head-Office/Branch (§9), WHT footer (§10), tax-auditor traps (§16).
 4. `docs/superpowers/specs/2026-06-30-f4-accountant-questions.md` — resolved tax basis + the 3 FACTS the accountant must confirm before ship.
@@ -59,17 +59,17 @@ The seeder (`scripts/seed-f4-invoice-settings.ts`) is `ON CONFLICT (tenant_id) D
 
 | column | value | why |
 |---|---|---|
-| `receipt_numbering_mode` | `'separate'` | routes payment to the `allocateNext({documentType:'receipt'})` RC branch (retires the `combinedMode` number-reuse) |
-| `receipt_number_prefix` | `'RC'` | the §86/4 tax-receipt series (already nullable, added migration 0142) |
-| `wht_note_th` | แบบ A (below) | membership-only WHT note (customer's wording); never a code literal |
-| `wht_note_en` | แบบ A (below) | EN counterpart |
+| `receipt_numbering_mode` | `'separate'` | mode is **always `'separate'`** now — the `'combined'` value + its number-reuse branch are **retired** (dropped from the accepted values / CHECK / form, fail-closed). The settings flip's **only remaining numbering job is the `RC` prefix** below |
+| `receipt_number_prefix` | `'RC'` | the §86/4 tax-receipt series (already nullable, added migration 0142) — the sole surviving purpose of the settings flip |
+| `wht_note_th` | แบบ A (below) | membership-only WHT note; seed = **แบบ A** (customer's wording), pending accountant sign-off vs แบบ B at the Review gate; never a code literal |
+| `wht_note_en` | แบบ A (below) | EN counterpart of the แบบ A seed |
 | `seller_is_head_office` | `true` | TSCC issues from head office (F2 answer; adjustable if the customer says otherwise) |
 | `seller_branch_code` | `NULL` | head office ⇒ no branch code |
 
-**WHT note — แบบ A (customer-specified wording, typo-fixed; the accountant may refine the legal basis toward ม.65 ทวิ (13) at go-live — editable tenant field):**
+**WHT note — the seeded default is แบบ A** (customer's wording, typo-fixed). แบบ A is **legally imprecise** per `research.md §7/§11` (it uses the "entity income-tax-exempt" framing; the precise underlying basis is **ม.65 ทวิ (13) + ท.ป.4/2528** — the dues exclusion). So แบบ A is an **accountant sign-off item at the Review gate — แบบ A vs the precise แบบ B — before first issuance** (a **4th** sign-off item alongside the 3 tax FACTS in § 5). Do NOT change the seed to แบบ B unilaterally; ship แบบ A as the seed, pending sign-off. Editable tenant field.
 
-- **TH** — `หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ ไม่ต้องหักภาษี ณ ที่จ่าย`
-- **EN** — `No withholding tax is applicable, as the income is exempt from income tax.`
+- **TH (แบบ A)** — `หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ไม่ต้องหักภาษี ณ ที่จ่าย`
+- **EN (แบบ A)** — `No deduction of withholding tax shall apply, as the income is exempt from income tax.`
 
 **Preferred — via the settings form (US4):** sign in as admin → `/admin/invoices/settings` → set Receipt numbering = **Separate**, prefix = **RC**, paste the TH + EN WHT notes, seller = **Head office**. Save.
 
@@ -92,8 +92,8 @@ await db.execute(sql`
     receipt_number_prefix  = 'RC',
     seller_is_head_office  = TRUE,
     seller_branch_code     = NULL,
-    wht_note_th = ${'หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ ไม่ต้องหักภาษี ณ ที่จ่าย'},
-    wht_note_en = ${'No withholding tax is applicable, as the income is exempt from income tax.'}
+    wht_note_th = ${'หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ไม่ต้องหักภาษี ณ ที่จ่าย'},
+    wht_note_en = ${'No deduction of withholding tax shall apply, as the income is exempt from income tax.'}
   WHERE tenant_id = ${TENANT}
 `);
 console.log('✓ 088 cutover applied for', TENANT);
@@ -103,6 +103,10 @@ node --env-file=.env.local --import tsx /tmp/cutover-088.ts
 ```
 
 > **Prod note:** prod is **test-data only** (wiped 2026-06-24) — no byte-stable / backward-compat constraint, so a clean numbering cutover is acceptable. On prod the same flip runs via the settings UI (or `db:migrate:prod` + the equivalent UPDATE against `.env.production`) **before the first real document is issued** — this is an operator gate, not code.
+
+### 2.3 Populate `members.legal_entity_type` for the juristic members (data audit — before first issuance)
+
+The §86/4 head-office / branch (`สำนักงานใหญ่ / Branch`) line is **fail-closed**: it renders only when the buyer is a VAT-registrant **juristic** person, gated on `members.legal_entity_type`. A **NULL** `legal_entity_type` → the branch line is silently **omitted** even for a genuine registrant. So before the first real document, run a one-off **data audit / populate** pass over the existing **131 members**: set `legal_entity_type` (juristic vs natural person) for every juristic member (mirror the RLS `set_config('app.current_tenant', …)` pattern from § 2.2). This is a data-cutover step, not code — but it is a **hard prerequisite**: skip it and every already-migrated corporate registrant loses its §86/4 สำนักงานใหญ่ line on their first receipt.
 
 ---
 
@@ -180,7 +184,7 @@ This is a tax-law-sensitive, payment + PII surface → **≥2 reviewers**, one s
 - [ ] Tenant-isolation integration test green (Principle I clause 3).
 - [ ] SC-001…SC-007 validated (one §86/4 per paid sale; `RC` gap-free; bill outside the tax uniqueness index; Original+Copy; no surface labels the bill ใบกำกับภาษี/Tax Invoice; CN targets the receipt; WHT note membership-only + tenant-scoped).
 - [ ] SweCham cutover applied (`separate` / `RC` / WHT TH+EN / seller head office) **before the first real document**.
-- [ ] Accountant sign-off on the 3 FACTS + Thai-tax + security reviewer sign-off at the Review gate.
+- [ ] Accountant sign-off on the 3 FACTS **+ the WHT wording (แบบ A vs the precise แบบ B — 4th sign-off item, § 2.2)** + Thai-tax + security reviewer sign-off at the Review gate.
 - [ ] i18n relabel done **in place** (values changed, key names kept → no `MISSING_MESSAGE`); EN/TH/SV parity via `check:i18n`.
 
 ## 6. Common gotchas (carry into implementation)

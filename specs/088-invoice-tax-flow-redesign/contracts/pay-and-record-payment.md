@@ -12,8 +12,8 @@
 **Event-as-paid sibling** — `POST /api/invoices/[invoiceId]/issue-as-paid` →
    `issueEventInvoiceAsPaid` mints the receipt in one shot for out-of-band event payments;
    inherits the same §87-RC-at-payment rules.
-**Covers**: US1 (AS2, AS4), US2 (Original+Copy), US7 · FR-002, FR-004, FR-005, FR-013 ·
-   SC-001, SC-002, SC-004
+**Covers**: US1 (AS2, AS4), US2 (Original+Copy), US7 · FR-002, FR-004, FR-005, FR-013,
+   FR-017, FR-019, FR-021 · SC-001, SC-002, SC-004
 
 ---
 
@@ -41,6 +41,15 @@ point for a service is receipt of payment (§78/1), so:
 `render-receipt-pdf.ts` (gated by `FEATURE_F5_ASYNC_RECEIPT_PDF`) MUST recompute the receipt
 **kind** from `invoiceSubject` + buyer TIN via the shared `document-kind.ts` helper — otherwise a
 membership receipt on the async path mis-renders as §105-only and loses its §86/4 identity.
+
+**FR-019 (async pending window).** `record-payment.ts` **allocates** the `RC` number in-tx and
+**enqueues** the render; the `render-receipt-pdf.ts` worker only **reads**
+`receipt_document_number_raw` + `paymentDate` (for dating) — it never allocates. While
+`receipt_pdf_status = 'pending'` the invoice surfaces a **"receipt being generated"** state (no
+download link yet); the RC number is already final and visible. A **permanent** render failure
+(`pdf_render_permanently_failed`, reconcile-cron after retry budget) does **not** re-number — it
+reuses the existing **F4 resend / re-render surface** with the **same allocated `RC`**, so the
+§87 stream never gaps.
 
 ## Request
 
@@ -85,6 +94,10 @@ Serialised invoice DTO (`serialiseInvoice`) with:
 - `paymentDate ∈ [issue_date, today]` in Asia/Bangkok (`payment_date_out_of_range`, 422) —
   server-side mirror of the client clamp; F5-webhook / F8-offline paths are exempt.
 - Not a legacy issued no-TIN event row (`legacy_no_tin_event_needs_remediation`, 409).
+- Not a legacy §87-numbered bill with **no** `bill_document_number_raw` — such a row predates the
+  bill/receipt split and **cannot be paid**; it must be **voided + re-issued** first so a fresh
+  `bill_document_number_raw` (and, at payment, an `RC` receipt number) can be allocated
+  (`legacy_invoice_needs_reissue`, 409, FR-017).
 - §87 RC allocation is inside the payment transaction; overflow **throws in-tx → rollback → no
   gap** (moves the no-gaps discipline here).
 
@@ -96,6 +109,7 @@ Serialised invoice DTO (`serialiseInvoice`) with:
 | `invalid_status` | 409 |
 | `concurrent_state_change` | 409 |
 | `legacy_no_tin_event_needs_remediation` | 409 |
+| `legacy_invoice_needs_reissue` | 409 |
 | `settings_missing` | 409 |
 | `no_snapshot_on_invoice` | 422 |
 | `payment_date_out_of_range` | 422 (default 422 arm) |
@@ -117,6 +131,12 @@ webhook handler maps them to its own retry/ack semantics.
 ## Audit events
 
 - `invoice_paid` (10y; F3-timeline). On the async path the sha256 is `null` at paid-time.
+- **`tax_receipt_issued`** (10y) — **NEW audit event** (new enum value; 4-place add: domain const +
+  Drizzle `pgEnum` + audit-event count test + completeness test). Fired at the **`RC`-allocation
+  moment inside `record-payment`** (both sync and async paths — allocation happens in-tx before the
+  render is enqueued), distinct from `invoice_issued`. This is the **SC-001 signal** — it evidences
+  that a §86/4 ใบกำกับภาษี/ใบเสร็จ number was minted at payment; `receipt_rendered` alone (bytes
+  landing) is insufficient because allocation and render are decoupled on the async path.
 - `receipt_rendered` (10y) — emitted when the receipt bytes land (async worker) / inline (sync);
   carries the RC `receipt_document_number_raw` + sha256.
 - `pdf_render_permanently_failed` (5y) — reconcile-cron after retry budget exhausts.
