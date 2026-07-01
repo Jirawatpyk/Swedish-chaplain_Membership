@@ -292,7 +292,14 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
   // applyPayment so the worker reads it back instead of re-allocating
   // (which would create §87 gaps on every retry).
   it('088 async: pre-allocates the §87 receipt number + persists receiptDocumentNumberRaw on applyPayment', async () => {
-    const draft = makeIssuedInvoice();
+    // 088 — a NEW-flow bill (non-§87 SC number, NULL §87 document_number). The
+    // legacy §87 shape would (correctly) trip the FR-017 guard under the flag.
+    const draft = {
+      ...makeIssuedInvoice(),
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    } as Invoice;
     // 088 T008/T018 — RC allocation is flag-gated (`taxAtPayment`), not
     // settings-driven. Enable it so the async pre-allocation path runs.
     const deps = {
