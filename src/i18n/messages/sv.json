@@ -1794,6 +1794,7 @@
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
+        "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
           "clearAll": "Rensa filter",

@@ -110,6 +110,13 @@ interface SearchParams {
    * list to one invoice subject. Any other value (or absent) = all.
    */
   readonly subject?: string;
+  /**
+   * 088 T021b / FR-035 — `?pay=1` payment-intent marker set by the command-
+   * palette "Record payment for …" action (alongside `?status=issued`). Drives
+   * a guiding hint pointing the admin at the per-row Record payment button;
+   * `'1'` = on, any other value (or absent) = off.
+   */
+  readonly pay?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -160,6 +167,11 @@ export default async function AdminInvoicesPage({
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
   const includeDrafts = statusFilter === 'draft';
   const paidOnlineOnly = query.paidOnline === '1';
+  // 088 T021b / FR-035 — the command-palette "Record payment for …" action
+  // deep-links to ?status=issued&pay=1. The action is generic (no specific
+  // invoice), so it can't auto-open a row's dialog; instead we surface a hint
+  // that lands the admin on the payable list + points at the per-row button.
+  const payIntent = query.pay === '1';
   // 054-event-fee-invoices — subject filter. Only the two known subjects
   // are honoured; any other value falls through to "all".
   const subjectFilter =
@@ -435,6 +447,18 @@ export default async function AdminInvoicesPage({
       <Card>
         <CardContent className="flex flex-col gap-4">
           <InvoiceFilters />
+          {payIntent && isAdmin && rows.length > 0 ? (
+            // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
+            // to the per-row Record payment button (role=status = polite, this
+            // is guidance not an error).
+            <div
+              role="status"
+              className="rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground"
+              data-testid="record-payment-intent-hint"
+            >
+              {t('list.recordPaymentIntentHint')}
+            </div>
+          ) : null}
           {rows.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-muted-foreground">

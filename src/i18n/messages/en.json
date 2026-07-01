@@ -1794,6 +1794,7 @@
         "searchLabel": "Search invoices",
         "loadMore": "Load more",
         "filteredEmpty": "No invoices match the current filters.",
+        "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
           "clearAll": "Clear filters",
