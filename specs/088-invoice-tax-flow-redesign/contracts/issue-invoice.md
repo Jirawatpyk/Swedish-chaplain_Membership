@@ -3,7 +3,7 @@
 **Feature**: `088-invoice-tax-flow-redesign` · **Surface**: `POST /api/invoices/[invoiceId]/issue`
 **Use-case**: `issueInvoice` (`src/modules/invoicing/application/use-cases/issue-invoice.ts`)
 **Route handler**: `src/app/api/invoices/[invoiceId]/issue/route.ts`
-**Covers**: US1 (AS1, AS3), FR-001, FR-003, FR-014 · SC-001, SC-003, SC-005
+**Covers**: US1 (AS1, AS3), FR-001, FR-003, FR-014 · SC-001, SC-003, SC-005 · **US8** (Embassy §80/1(5) zero-rate, P3), FR-023, FR-024, FR-025 · SC-008
 
 > **Envelope note (AS-IS, verified against the live route)**: F4 routes do **not** use the
 > `{ ok, data }` wrapper drawn in the F1/007 contract sketch. Success returns the **serialised
@@ -34,9 +34,25 @@ render + Blob upload, snapshot pinning) is unchanged from the shipped F4 contrac
 ## Request
 
 - **Path**: `invoiceId` (uuid).
-- **Body**: none. `issueInvoiceSchema` = `{ tenantId, actorUserId, requestId, invoiceId }`,
-  all server-derived (`tenantId` from host, `actorUserId` from session, `requestId` from headers).
+- **Body**: VAT-treatment fields (US8 / FR-023, FR-024). `issueInvoiceSchema` =
+  `{ tenantId, actorUserId, requestId, invoiceId, vatTreatment?, zeroRateCertNo?, zeroRateCertDate?, zeroRateCertBlobKey? }`.
+  `tenantId` / `actorUserId` / `requestId` stay server-derived (`tenantId` from host,
+  `actorUserId` from session, `requestId` from headers).
 - **Headers**: session cookie (F1). Rate limit key `f4:issue:{tenant}:{actor}` — 20 / 5 min.
+
+### VAT-treatment fields (US8 · FR-023 / FR-024)
+
+| field | type | default | note |
+|---|---|---|---|
+| `vatTreatment` | `'standard' \| 'zero_rated_80_1_5'` | `'standard'` | **per-invoice, case-by-case** (NOT per-member). `'standard'` = VAT 7%; `'zero_rated_80_1_5'` = VAT 0% embassy / int'l-org sale under Revenue Code **§80/1(5)**. **Pinned into the immutable issue-time snapshot** (FR-023). |
+| `zeroRateCertNo` | `string` | — | MFA (Protocol Dept) certificate note number, e.g. `กต 0404/…`. **REQUIRED, fail-closed, when `vatTreatment === 'zero_rated_80_1_5'`** (FR-024). |
+| `zeroRateCertDate` | `string` (ISO 8601, date) | — | Date of the MFA certificate note. Captured with `zeroRateCertNo` on a zero-rated issue. |
+| `zeroRateCertBlobKey` | `string` (optional) | — | Vercel Blob key of the attached MFA certificate scan (reuses the F4 invoice-PDF blob adapter). Optional even when zero-rated — the **number** is the fail-closed gate, the scan is supporting evidence. |
+
+- **Membership is always `'standard'` (VAT 7%)** — a membership subject supplied as
+  `zero_rated_80_1_5` is coerced/rejected to standard (see error table). Zero-rate is
+  **embassy / int'l-org non-membership sales only** (event / service, e.g. Embassy of Sweden
+  expo-booth construction), evidenced by RD-approved certs **VAT 326-24 / 327-24 / 351-24**.
 
 ## Response `200`
 
@@ -50,9 +66,13 @@ Serialised invoice DTO (`serialiseInvoice`). Field deltas versus today:
 | `status` | `issued` | `issued` |
 | `receipt_document_number_raw` | `null` | `null` (not minted until payment) |
 | `pdf_sha256` / `pdf_template_version` | tax-invoice PDF | ใบแจ้งหนี้ PDF (template v4) |
+| **`vat_treatment`** (new, US8) | — | `"standard"` (VAT 7%) or `"zero_rated_80_1_5"` (VAT 0%); pinned in snapshot (FR-023) |
+| **`zero_rate_cert_no`** (new, US8) | — | MFA cert note no. (non-null on `zero_rated_80_1_5`); else `null` |
+| `vat_rate` / `vat_amount` | 7% / computed | **0% / `0.00` on `zero_rated_80_1_5`**; total = base (still a VATable §80/1(5) supply, NOT §81-exempt) |
 
 `serialiseInvoice` (`_serialise.ts:87-137`) MUST add `bill_document_number_raw:
-invoice.billDocumentNumberRaw ?? null`.
+invoice.billDocumentNumberRaw ?? null`, plus (US8) `vat_treatment: invoice.vatTreatment` and
+`zero_rate_cert_no: invoice.zeroRateCertNo ?? null`.
 
 ## Preconditions
 
@@ -81,10 +101,25 @@ invoice.billDocumentNumberRaw ?? null`.
 | `blob_upload_failed` | 500 | server fault |
 | `invalid` | 400 | schema parse failure |
 | `rate_limited` | 429 | 20 / 5 min bucket |
+| `zero_rate_cert_required` | 422 | **US8 / FR-024 fail-closed** — `vatTreatment==='zero_rated_80_1_5'` with a missing/blank `zeroRateCertNo` is **rejected** (no invoice issued). |
+| `membership_cannot_be_zero_rated` | 422 | **US8 / FR-025** — a membership subject supplied as `zero_rated_80_1_5` is illegal; membership stays **`standard` (VAT 7%)**. (May instead be coerced to `standard` — see note.) |
 
 > The §87 `overflow` semantics change: at issue it now guards only the **non-§87 bill** stream
 > (a gap here does not violate §87). The §87 no-gaps / overflow-must-throw discipline moves to
 > `record-payment` / `issue-event-invoice-as-paid`.
+
+### US8 zero-rate validation (FR-024 / FR-025)
+
+- **Fail-closed cert gate**: `vatTreatment==='zero_rated_80_1_5'` **requires** a non-blank
+  `zeroRateCertNo`. Missing → `zero_rate_cert_required` (422); **no invoice is issued**. The scan
+  (`zeroRateCertBlobKey`) is optional — the cert **number** is the gate.
+- **Membership always standard**: a membership subject cannot be zero-rated — it is forced to
+  `standard` (VAT 7%). If the request asserts `zero_rated_80_1_5` on a membership subject, reject
+  with `membership_cannot_be_zero_rated` (422) rather than silently zero-rate.
+- **≥ 5,000 baht warning (NOT blocking)**: a `zero_rated_80_1_5` invoice whose subtotal is
+  `< 5,000 THB` surfaces a **non-blocking warning** (`zero_rate_below_threshold_warning`) in the
+  200 response / admin UI; the invoice still issues. Each embassy purchase is expected to be
+  ≥ 5,000 baht, but the threshold is advisory, not a hard block.
 
 ## RBAC
 
@@ -95,6 +130,8 @@ invoice.billDocumentNumberRaw ?? null`.
 
 - `invoice_issued` (retained; 10y retention). Semantics shift from "tax invoice issued" to
   "ใบแจ้งหนี้ issued"; payload now reflects the **bill** number (`bill_document_number_raw`) and
-  records that **no §87 tax number was consumed**. Surfaces on the F3 member timeline
-  (`F4MemberTimelineAuditEventType`). For a non-member event buyer, emitted via
+  records that **no §87 tax number was consumed**. **US8**: the payload also carries
+  `vatTreatment` (`'standard'` | `'zero_rated_80_1_5'`) and, when zero-rated, `zeroRateCertNo`
+  (the pinned MFA cert note number) — **no separate audit event type is added**. Surfaces on the
+  F3 member timeline (`F4MemberTimelineAuditEventType`). For a non-member event buyer, emitted via
   `emitNonMemberInvoiceEvent` (no `member_id`; carries `event_registration_id`).

@@ -276,6 +276,32 @@ This document resolves every implementation question raised (or implied) in `spe
 
 ---
 
+## 12. §80/1(5) embassy zero-rate — modelling (D19)
+
+**Decision**: Model the Embassy / international-organization VAT zero-rate as a **per-invoice `vat_treatment` enum** (`invoices.vat_treatment`, default `'standard'` = 7%, or `'zero_rated_80_1_5'` = 0%) — **NOT** a per-member flag — with **MFA-certificate capture** (`zero_rate_cert_no` / `zero_rate_cert_date` / optional `zero_rate_cert_blob_key`) that is **REQUIRED and fail-closed** whenever `vat_treatment='zero_rated_80_1_5'`, VAT **computed at 0%** (`vat_rate` 0, `vat_amount` 0) as a **VATable-at-0% supply** (creditable / reportable), and the treatment **pinned into the immutable issue-time snapshot**. **Zero-rate ≠ §81 exemption**: it is still a **full §86/4 tax invoice**, the supplier is a **§82/3 VAT registrant applying the 0% rate**, input VAT stays **claimable**, and the sale is reported as **zero-rate sales on ภพ.30**. Admin sets the treatment at issue; case-by-case per embassy notification. (Spec US8 (P3), FR-023 / FR-024 / FR-025; SC-008.)
+
+- **Per-invoice enum (FR-023)**: `vat_treatment` defaults to `'standard'`; membership rows **always** stay `'standard'` (7%). Zero-rate applies **only** to non-membership embassy / int'l-org sales (event / service — e.g. Embassy of Sweden expo-booth construction). Pinned into the same immutable `TenantIdentitySnapshot` / issue-time snapshot posture as the other §86/4 particulars, so a later member/settings edit cannot mutate an issued document.
+- **MFA-cert capture, fail-closed (FR-024)**: `zero_rate_cert_no` (the MFA note number, e.g. `กต 0404/…`) + `zero_rate_cert_date` + optional `zero_rate_cert_blob_key` (scan of the RD-approved certificate — **reuse the F4 invoice-PDF Vercel Blob adapter**, no new infra). A `zero_rated_80_1_5` invoice with a **NULL `zero_rate_cert_no` is BLOCKED** (fail-closed, evidence-required). A **≥ 5,000 baht** per-purchase floor is a **warn, not a hard-block**.
+- **VAT computation (FR-025)**: `zero_rated_80_1_5` → `vat_rate` 0%, `vat_amount` 0, but the supply is **VATable at 0%** (creditable / reportable on ภพ.30), **NOT** §81-exempt; `standard` → VAT 7% exactly as today (VAT-exclusive membership math, §3/§8 unchanged).
+- **Rendering (FR-025)**: the **ใบแจ้งหนี้ (bill)** shows VAT **0% / 0.00**, total = base; the **§86/4 tax invoice/receipt at payment** is a **FULL §86/4 tax invoice at VAT 0%** PLUS a **§80/1(5) note** ("VAT 0% under §80/1(5); MFA certificate no. …") with the certificate reference / attachment. **Original + Copy (§4/D4) unchanged.** The **WHT note** (membership-only, FR-012, §7) does **not** render on these non-membership documents.
+- **Numbering unchanged**: bill `SC` stream + receipt `RC` §87 stream (§2, §3) are untouched — zero-rate does **not** change numbering.
+- **Migration**: the new `invoices` columns (`vat_treatment` + the three `zero_rate_cert_*` fields) land in a **new additive migration `0234`** (after `0230–0233`); keep the "next free migration index" bookkeeping at `0234`.
+- **Audit**: capture `vat_treatment` (+ `zero_rate_cert_no` when zero-rated) in the **`invoice_issued`** and **`tax_receipt_issued`** audit payloads (§10) — **no separate audit event** needed.
+
+**Rationale**:
+- **RD-approved certificates VAT 326-24 / 327-24 / 351-24** (Ministry of Foreign Affairs, Protocol Department) authorise the Thai-Swedish Chamber to zero-rate sales of goods/services to **embassies / international organizations** under **Revenue Code §80/1(5)**. This is a **zero-rated VATable supply** (§82/3 registrant applying 0%), **not** a §81 exemption — so a full §86/4 tax invoice still issues, VAT is computed at 0%, input VAT is claimable, and the sale is reported as zero-rate sales on ภพ.30.
+- **Accountant-confirmed (2026-07-01)**: TSCC has **NO §81-exempt "No VAT" items** — every line is either **VAT 7% (standard)** or **VAT 0% (embassy §80/1(5))**. Zero-rate is **embassy / int'l-org ONLY, case-by-case**: the embassy applies to the MFA, which issues the certificate the embassy hands to TSCC to attach, and the embassy notifies TSCC per transaction. **Membership is ALWAYS VAT 7%.** This confirmation is what makes per-**invoice** (not per-member) treatment + mandatory certificate capture the correct model.
+- Folding US8 into core 088 (previously flagged as a fast-follow) keeps the zero-rate path on the **same §86/4 tax-invoice-at-payment machinery** built for the core flow — the bill/receipt split, snapshot pinning, and RC §87 numbering all apply unchanged; only the VAT rate, the §80/1(5) note, and the certificate evidence differ.
+
+**Alternatives considered**:
+
+| Option | Rejected because |
+|---|---|
+| Per-**member** zero-rate flag (mark an embassy member as "always 0%") | Zero-rate is **case-by-case per embassy MFA notification per transaction**, not a stable member attribute — a member flag would wrongly zero-rate transactions that lack a certificate. It must live on the **invoice** and be pinned in the issue-time snapshot (FR-023). |
+| Treat the sale as **§81-exempt / a plain (non-tax) receipt** | §80/1(5) is a **zero-rate (0%) VATable supply**, **not** a §81 exemption: a full **§86/4 tax invoice** still issues, input VAT stays **claimable**, and it is reported as **zero-rate sales on ภพ.30**. Rendering it as an exempt/plain receipt would drop the §86/4 identity and mis-state the ภพ.30 line. |
+
+---
+
 ## References
 
 - Design map: `docs/superpowers/specs/2026-06-30-f4-invoice-receipt-tax-flow-redesign-design.md` (8-surface, file:line AS-IS).

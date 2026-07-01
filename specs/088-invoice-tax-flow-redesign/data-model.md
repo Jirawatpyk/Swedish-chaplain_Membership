@@ -13,9 +13,9 @@ This document is **additive** to the shipped F4 data model (`specs/007-invoices-
 - `src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts` + `tenant-identity-snapshot.ts` (issue-time snapshot VOs)
 - `src/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator.ts` + `application/ports/sequence-allocator-port.ts` (§87 allocator)
 
-**Next free Drizzle migration index: `0230`** (last applied = `0229_broadcasts_audience_deleted_at.sql`). Migration assignment for this feature is in § B.6.
+**Next free Drizzle migration index: `0230`** (last applied = `0229_broadcasts_audience_deleted_at.sql`). Migration assignment for this feature is in § B.6 — this feature now spans `0230`→`0234` (`0234` = US8 §80/1(5) embassy zero-rate, § F.8, folded into core scope 2026-07-01), so the **last** migration this feature adds is `0234` and the next free index afterwards is `0235`.
 
-> **Confirmed tax facts driving the model (do not re-litigate):** membership dues = VATable **7%** (ruling กค 0811/พ./2308); **NO withholding** on dues (ม.65 ทวิ (13) + ท.ป.4/2528, ruling กค 0811/8542 — basis is the dues exclusion, not "entity income-tax-exempt"). Branch-line render gate = **VAT-registrant juristic buyer** (NOT `buyerHasTin`). WHT note is scoped to `invoice_subject='membership'` only. §105 RE separate register is the **working default but OPTIONAL** (§87 gap-free is per-series). prod is **test-data only** → no byte-stable re-render constraint.
+> **Confirmed tax facts driving the model (do not re-litigate):** membership dues = VATable **7%** (ruling กค 0811/พ./2308); **NO withholding** on dues (ม.65 ทวิ (13) + ท.ป.4/2528, ruling กค 0811/8542 — basis is the dues exclusion, not "entity income-tax-exempt"). **TSCC lines are VAT 7% (standard) or VAT 0% (§80/1(5) embassy / int'l-org zero-rate) ONLY — there are NO §81-exempt "No VAT" items** (accountant-confirmed 2026-07-01); zero-rate is embassy/int'l-org, **case-by-case, per-invoice** (US8 / § F.8, RD-approved certs VAT 326-24 / 327-24 / 351-24), while **membership is always VAT 7% (`vat_treatment='standard'`)**. Branch-line render gate = **VAT-registrant juristic buyer** (NOT `buyerHasTin`). WHT note is scoped to `invoice_subject='membership'` only. §105 RE separate register is the **working default but OPTIONAL** (§87 gap-free is per-series). prod is **test-data only** → no byte-stable re-render constraint.
 
 ---
 
@@ -238,8 +238,9 @@ Thread the four new fields through: schema → `drizzle-tenant-settings-repo` (`
 | `0231` | `invoices_bill_number_and_checks` | `bill_document_number_raw` column + `invoices_tenant_bill_raw_uniq` partial unique + rewrite `invoices_draft_has_no_number` & `invoices_non_draft_has_snapshots` + extend `invoices_enforce_immutability` for the bill column. |
 | `0232` | `members_branch_fields` | `is_head_office` + `branch_code` + `members_branch_pairing_ck`. |
 | `0233` | `tenant_invoice_settings_wht_and_seller_branch` | `wht_note_th` + `wht_note_en` + `seller_is_head_office` + `seller_branch_code` + `tenant_invoice_settings_seller_branch_ck`. |
+| `0234` | `invoices_vat_treatment_zero_rate` | US8 §80/1(5): `vat_treatment` (text NOT NULL DEFAULT `'standard'`) + `zero_rate_cert_no` + `zero_rate_cert_date` + `zero_rate_cert_blob_key` columns + `invoices_vat_treatment_valid` + `invoices_zero_rate_cert_required` (fail-closed) CHECKs (§ F.8). **Additive**, lands after 0230→0233. |
 
-Apply 0230→0233 to the **`dev` Neon branch**, then `pnpm test:integration` **before commit** (repo gotcha: migration + integration before committing schema-referencing code). Prod migrates on Vercel deploy.
+Apply 0230→0234 to the **`dev` Neon branch**, then `pnpm test:integration` **before commit** (repo gotcha: migration + integration before committing schema-referencing code). Prod migrates on Vercel deploy.
 
 ---
 
@@ -386,3 +387,52 @@ Notes:
 **F.6 — New audit event `tax_receipt_issued` (SC-001 first-issuance signal).** RC allocation at record-payment fires a **new** audit event `tax_receipt_issued`, **distinct from `invoice_issued`** — it marks the moment a §86/4 tax receipt (RC §87 number) comes into existence and is the **SC-001** first-issuance signal. `tax_receipt_issued` is a **new `audit_event_type` enum value** → the repo **4-place add** (analog of "add-audit-event-type-4-places"): (1) the domain audit-event const/tuple, (2) the `audit_event_type` **pgEnum**, (3) the audit-event **count** test, (4) the audit-event **completeness** test (typecheck does not catch the count-test drift). Retention = **10 years** (Thai RD §87/3 tax-document class, same posture as the F4 backfill), not the 5-year default. Fired **in-tx with the RC allocation** at the record-payment moment on **both** the offline (`record-payment.ts`) and event as-paid (`issue-event-invoice-as-paid.ts`) paths, and therefore on the online passthrough that funnels through `recordPayment`. The subsequent async `render-receipt-pdf` worker (§ F.2) does **not** re-fire it — the event marks allocation, not render.
 
 **F.7 — Offline-payment bank block (FR-022).** `tenant_invoice_settings` gains tenant-configurable **bank / payment-instruction** fields, rendered on the **ใบแจ้งหนี้ ONLY** (never the paid tax receipt) for offline (bank-transfer / cheque) payers. Suggested columns (all `text NULL` → NULL renders nothing, same posture as the WHT note): `bank_payee_name`, `bank_account_no`, `bank_account_type`, `bank_name`, `bank_branch`, `bank_address`, `bank_swift`, `payment_instructions_th` / `_en` — **or** a single free-text `payment_block_th` / `_en` (a modelling choice for the plan; structured is cleaner for PDF layout). Threaded settings → snapshot → template exactly like the WHT note; land in **migration 0233** (the settings migration). The bill also renders an **"Issued by"** (preparer/actor) line + blank **"Received by" / "Date"** signature-stamp fields (layout-only, no stored data). SweCham seed data: see spec § Assumptions (Kasikorn Bank, Emquartier Branch; A/C 005-3-92003-9; SWIFT KASITHBK). *(The tenant-invoice-settings contract + settings form gain these fields — refresh at `/speckit.tasks`.)*
+
+---
+
+## F.8 — §80/1(5) embassy / international-organization VAT zero-rate (US8 / FR-023..025, P3)
+
+*Folded into core 088 scope 2026-07-01 (was previously flagged "fast-follow / out-of-scope" — now **IN SCOPE**, User Story **US8**, priority **P3** after the core membership flow).*
+
+Sales of goods/services to **embassies / international organizations** (e.g., Embassy of Sweden — expo-booth construction) are **zero-rated (0%) under Revenue Code §80/1(5)** — the supplier is a **§82/3 VAT registrant applying the 0% rate**. This is **NOT §81 exemption**: it is a **zero-rated VATable supply** — still a **full §86/4 tax invoice**, VAT computed at 0%, input VAT **claimable**, reported as **zero-rate sales on ภพ.30**. Zero-rate is **embassy/int'l-org ONLY, case-by-case** (the embassy applies to the MFA Protocol Department, which issues a certificate — RD-approved **VAT 326-24 / 327-24 / 351-24** for TSCC — that the embassy hands to TSCC and notifies TSCC per transaction). **Membership is ALWAYS `'standard'` (VAT 7%).**
+
+### F.8.1 New `invoices` columns (migration 0234, additive)
+
+`schema-invoices.ts`, landing in **migration 0234** (after 0230→0233, § B.6):
+
+```ts
+// 088 US8 — per-invoice VAT treatment (case-by-case, NOT per-member).
+// 'standard'          = VAT 7% (membership + all default sales);
+// 'zero_rated_80_1_5' = VAT 0% embassy/int'l-org zero-rate (§80/1(5)).
+vatTreatment: text('vat_treatment').notNull().default('standard'),
+// MFA certificate particulars (REQUIRED when zero-rated — fail-closed, FR-024).
+zeroRateCertNo: text('zero_rate_cert_no'),             // MFA note number, e.g. กต 0404/…
+zeroRateCertDate: date('zero_rate_cert_date'),         // MFA note date
+zeroRateCertBlobKey: text('zero_rate_cert_blob_key'),  // optional scan in Vercel Blob (reuse F4 invoice-PDF blob adapter)
+```
+
+### F.8.2 CHECK constraints (migration 0234)
+
+Author both as idempotent `DROP CONSTRAINT … ; ADD CONSTRAINT …` DO-blocks (the live pattern from 0203/0208/0212) and mirror the predicates back into the `check()` builders in `schema-invoices.ts`:
+
+```sql
+-- accepted-value gate
+ALTER TABLE invoices ADD CONSTRAINT invoices_vat_treatment_valid CHECK (
+  vat_treatment IN ('standard', 'zero_rated_80_1_5')
+);
+-- fail-closed (FR-024): a zero-rated invoice MUST carry an MFA certificate number
+ALTER TABLE invoices ADD CONSTRAINT invoices_zero_rate_cert_required CHECK (
+  vat_treatment <> 'zero_rated_80_1_5' OR zero_rate_cert_no IS NOT NULL
+);
+```
+
+### F.8.3 Semantics
+
+- **Per-invoice, pinned in the snapshot (FR-023).** `vat_treatment` (+ the three cert fields) is a **per-invoice** decision (NOT per-member) — the admin sets it **at issue** and it is pinned into the immutable issue-time computed snapshot (immutable per FR-011), exactly like the other §86/4 particulars. The payment-time §86/4 receipt re-renders from the **pinned** treatment, never re-reads it. Default `'standard'`; membership rows stay `'standard'`. Add `vat_treatment` to the issue-time computed snapshot with the same `.optional().default('standard')` posture used for the § C.1 / § F.1 fields (`z.object` strips undeclared keys → declaring it is mandatory; historical snapshots with the key absent resolve to `'standard'`).
+- **VAT computation reads `vat_treatment`.** `'zero_rated_80_1_5'` → `vat_rate = 0`, `vat_amount = 0`, total = base — a **VATable-at-0% (creditable/reportable) supply, NOT §81-exempt**; `'standard'` → VAT 7% as today.
+- **Fail-closed cert capture (FR-024).** A `zero_rated_80_1_5` invoice with NULL `zero_rate_cert_no` is **BLOCKED** at both the application layer (zod + use-case) and the DB (`invoices_zero_rate_cert_required` CHECK). The optional scan rides `zero_rate_cert_blob_key` (Vercel Blob — reuse the F4 invoice-PDF blob adapter). Guard: each purchase should be **≥ 5,000 baht** — **warn, not hard-block**.
+- **Rendering (FR-025).** ใบแจ้งหนี้ (bill) shows **VAT 0% / 0.00**, total = base. The payment-time §86/4 tax invoice/receipt is a **FULL §86/4 tax invoice at VAT 0%** PLUS a **§80/1(5) note** ("VAT 0% under §80/1(5); MFA certificate no. …") + the cert reference/attachment; **ต้นฉบับ + สำเนา** unchanged (§ A.2). Zero-rate is **non-membership** (event/service) only → the membership WHT note (FR-012) does **not** render on these.
+- **Numbering unchanged (§ D).** Zero-rate does not change numbering: bill = `SC` stream, receipt = `RC` §87 stream.
+- **Audit.** `vat_treatment` (+ `zero_rate_cert_no`) is captured in the **`invoice_issued`** and **`tax_receipt_issued`** (§ F.6) audit payloads — **no separate audit event needed**.
+
+**Success criterion SC-008**: a zero-rated embassy sale issues a §86/4 tax invoice with **VAT 0%** and a captured MFA certificate, charging **no 7% VAT**.

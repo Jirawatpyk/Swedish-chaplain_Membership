@@ -12,8 +12,8 @@
 **Event-as-paid sibling** — `POST /api/invoices/[invoiceId]/issue-as-paid` →
    `issueEventInvoiceAsPaid` mints the receipt in one shot for out-of-band event payments;
    inherits the same §87-RC-at-payment rules.
-**Covers**: US1 (AS2, AS4), US2 (Original+Copy), US7 · FR-002, FR-004, FR-005, FR-013,
-   FR-017, FR-019, FR-021 · SC-001, SC-002, SC-004
+**Covers**: US1 (AS2, AS4), US2 (Original+Copy), US7, US8 (embassy §80/1(5) zero-rate) · FR-002,
+   FR-004, FR-005, FR-013, FR-017, FR-019, FR-021, FR-025 · SC-001, SC-002, SC-004, SC-008
 
 ---
 
@@ -36,6 +36,16 @@ point for a service is receipt of payment (§78/1), so:
   one sha256 (D4 / US2);
 - membership receipts keep **VAT-EXCLUSIVE** math (trap I) — only event Model B uses
   `splitVatInclusive`.
+- when the paid invoice's issue-time snapshot pins **`vatTreatment='zero_rated_80_1_5'`** (US8 —
+  embassy / international-organization §80/1(5), **non-membership event/service sales only**; every
+  membership row stays `'standard'`), the payment-time document is **still a full §86/4
+  ใบกำกับภาษี/ใบเสร็จรับเงิน** (`receipt_combined` kind, **ต้นฉบับ + สำเนา**, RC §87 number) — **NOT
+  a plain receipt** — but renders at **VAT 0% / 0.00** (`vat_rate` 0%, `vat_amount` 0; a **zero-rated
+  VATable supply**, not a §81 exemption) with a **§80/1(5) note** ("VAT 0% under §80/1(5); MFA
+  certificate no. …") plus the captured certificate reference/attachment (`zeroRateCertNo` /
+  `zeroRateCertDate` / optional blob key). The membership-only WHT note (FR-012) does **not** render
+  on these. `standard` receipts (the default) keep **VAT 7%** as today. **Numbering is unchanged** —
+  zero-rate never alters the RC §87 stream (FR-025 · SC-008).
 
 **Both paths produce identical content, kind, numbering, and dating (FR-005).** The async worker
 `render-receipt-pdf.ts` (gated by `FEATURE_F5_ASYNC_RECEIPT_PDF`) MUST recompute the receipt
@@ -136,7 +146,9 @@ webhook handler maps them to its own retry/ack semantics.
   moment inside `record-payment`** (both sync and async paths — allocation happens in-tx before the
   render is enqueued), distinct from `invoice_issued`. This is the **SC-001 signal** — it evidences
   that a §86/4 ใบกำกับภาษี/ใบเสร็จ number was minted at payment; `receipt_rendered` alone (bytes
-  landing) is insufficient because allocation and render are decoupled on the async path.
+  landing) is insufficient because allocation and render are decoupled on the async path. The
+  payload also captures **`vatTreatment`** (+ **`zeroRateCertNo`** when `zero_rated_80_1_5`) so the
+  §80/1(5) zero-rate and its MFA certificate are traceable at the tax-numbering moment (US8).
 - `receipt_rendered` (10y) — emitted when the receipt bytes land (async worker) / inline (sync);
   carries the RC `receipt_document_number_raw` + sha256.
 - `pdf_render_permanently_failed` (5y) — reconcile-cron after retry budget exhausts.
