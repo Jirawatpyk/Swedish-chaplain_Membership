@@ -152,6 +152,14 @@ export type RecordPaymentError =
    * RC) can be allocated. Only reachable when `FEATURE_088_TAX_AT_PAYMENT` is on.
    */
   | { code: 'legacy_invoice_needs_reissue' }
+  /**
+   * 088 SEC-MED — the symmetric (ON→OFF rollback) sibling of
+   * `legacy_invoice_needs_reissue`. A NEW-FLOW bill (non-§87 bill number, NULL
+   * §87 document_number) cannot be paid while `FEATURE_088_TAX_AT_PAYMENT` is
+   * OFF — the legacy reuse path would mint no §87 tax number. Restore the flag
+   * ON (or void + re-issue under the legacy flow).
+   */
+  | { code: 'new_flow_bill_requires_flag_on' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -447,6 +455,26 @@ export async function recordPayment(
       loaded.billDocumentNumberRaw === null
     ) {
       return err({ code: 'legacy_invoice_needs_reissue' });
+    }
+
+    // 088 SEC-MED — SYMMETRIC guard for the flag ON→OFF rollback direction. A
+    // NEW-FLOW bill (non-§87 `bill_document_number_raw`, NULL §87
+    // `document_number`, issued while the flag was ON) CANNOT be paid after the
+    // flag is rolled back to OFF: the legacy reuse path would reuse the NULL §87
+    // number → a `paid` membership with NO §87 tax number AND NO
+    // `tax_receipt_issued` (an untaxed paid row + a blank receipt). Refuse until
+    // the flag is restored ON (the correct action — the bill was minted for the
+    // new flow) or the row is voided + re-issued under the legacy flow.
+    // Pre-sequence (`return err`, no number burned). `=== false` (not `!== true`)
+    // so only the explicit prod flag-OFF path trips it — legacy callers that
+    // never set the flag carry a legacy-shaped row (documentNumber non-null) and
+    // never reach a new-flow bill here.
+    if (
+      deps.taxAtPayment === false &&
+      loaded.billDocumentNumberRaw !== null &&
+      loaded.documentNumber === null
+    ) {
+      return err({ code: 'new_flow_bill_requires_flag_on' });
     }
 
     // Spec § 398 — "registration fee once per member lifecycle". If the

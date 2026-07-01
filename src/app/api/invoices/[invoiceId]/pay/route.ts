@@ -106,6 +106,9 @@ export async function POST(
       // 088 FR-017 — a legacy §87-numbered invoice with no bill number cannot be
       // paid in the new flow (would mint a 2nd §87); void + re-issue → 409.
       : result.error.code === 'legacy_invoice_needs_reissue' ? 409
+      // 088 SEC-MED — the symmetric case: a new-flow bill cannot be paid while
+      // the flag is OFF (would mint no §87); restore the flag → 409.
+      : result.error.code === 'new_flow_bill_requires_flag_on' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'no_snapshot_on_invoice' ? 422
       : result.error.code === 'overflow' ? 422
