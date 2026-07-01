@@ -103,6 +103,9 @@ export async function POST(
       // paying would mint a §105 receipt #2; conflicts with the row's
       // remediation state → 409.
       : result.error.code === 'legacy_no_tin_event_needs_remediation' ? 409
+      // 088 FR-017 — a legacy §87-numbered invoice with no bill number cannot be
+      // paid in the new flow (would mint a 2nd §87); void + re-issue → 409.
+      : result.error.code === 'legacy_invoice_needs_reissue' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'no_snapshot_on_invoice' ? 422
       : result.error.code === 'overflow' ? 422

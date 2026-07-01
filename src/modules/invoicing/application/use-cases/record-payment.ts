@@ -142,6 +142,16 @@ export type RecordPaymentError =
    * through the remediation runbook.
    */
   | { code: 'legacy_no_tin_event_needs_remediation' }
+  /**
+   * 088 FR-017 (data-model § F.4) — an in-flight LEGACY invoice carrying a §87
+   * `invoice`-stream number (issued under the pre-088 §86/4-at-issue flow) but
+   * NO `bill_document_number_raw` predates the bill/receipt split. Paying it in
+   * the new flow would allocate a SECOND §87 number (the RC) on top of its
+   * existing §87 invoice number — two §87 numbers for one sale. It must be
+   * VOIDED + RE-ISSUED first so a fresh non-§87 bill number (and, at payment, an
+   * RC) can be allocated. Only reachable when `FEATURE_088_TAX_AT_PAYMENT` is on.
+   */
+  | { code: 'legacy_invoice_needs_reissue' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -421,6 +431,22 @@ export async function recordPayment(
       !buyerHasTin(loaded.memberIdentitySnapshot.tax_id)
     ) {
       return err({ code: 'legacy_no_tin_event_needs_remediation' });
+    }
+
+    // 088 FR-017 (data-model § F.4) — in-flight legacy-bill guard. A LEGACY
+    // invoice with a §87 `document_number` but NO `bill_document_number_raw`
+    // (issued under the old §86/4-at-issue flow) cannot be paid in the new flow:
+    // record-payment would allocate the §87 `RC` on TOP of the existing §87
+    // invoice number, leaving the row with two §87 numbers. Force a void +
+    // re-issue instead. Pre-sequence (`return err`, no §87 number burned).
+    // Only reachable under the flag — the legacy flow reuses the invoice number
+    // (`reuseInvoiceNumber`) and never allocates a second §87 number.
+    if (
+      deps.taxAtPayment === true &&
+      loaded.documentNumber !== null &&
+      loaded.billDocumentNumberRaw === null
+    ) {
+      return err({ code: 'legacy_invoice_needs_reissue' });
     }
 
     // Spec § 398 — "registration fee once per member lifecycle". If the

@@ -358,6 +358,21 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
+  it('088 FR-017 — rejects a legacy §87-numbered invoice (no bill number) paid under the new flow', async () => {
+    // Legacy shape: a §87 `document_number` (issued under the old flow) with NO
+    // bill_document_number_raw. Paying it under the flag would mint a 2nd §87.
+    const legacy = makeIssuedInvoice({ billDocumentNumberRaw: null });
+    const deps = makeDeps(true, legacy, makeSettings(), { taxAtPayment: true });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => legacy);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected legacy_invoice_needs_reissue');
+    expect(r.error.code).toBe('legacy_invoice_needs_reissue');
+    // Pre-sequence reject — no §87 receipt number burned, no payment applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+  });
+
   it('FR-038 — receipt PDF uses ISSUE-TIME member snapshot, NOT live value', async () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
