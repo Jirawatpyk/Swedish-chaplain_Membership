@@ -100,16 +100,16 @@
 
 ### Tests for US3 (author first, MUST fail) ⚠️
 
-- [ ] T027 [P] [US3] Contract test for member-branch admin edit (head-office/branch pairing, admin-only) in `tests/contract/members/member-branch.contract.test.ts` per `contracts/member-branch.md`.
-- [ ] T028 [P] [US3] Integration test: VAT-registrant + branch → สาขา line; registrant + no branch → สำนักงานใหญ่; individual/NULL → NO line (fail-closed); seller = head office (US3 AS1–4, §F.1) in `tests/integration/invoicing/branch-render.integration.test.ts`.
+- [X] T027 [P] [US3] Contract test for member-branch admin edit (head-office/branch pairing, admin-only) in `tests/contract/members/member-branch.contract.test.ts` per `contracts/member-branch.md`.
+- [X] T028 [P] [US3] Integration test: VAT-registrant + branch → สาขา line; registrant + no branch → สำนักงานใหญ่; individual/NULL → NO line (fail-closed); seller = head office (US3 AS1–4, §F.1) in `tests/integration/invoicing/branch-render.integration.test.ts`.
 
 ### Implementation for US3
 
-- [ ] T029 [US3] Migration `0232_members_branch_fields.sql` — `is_head_office` + `branch_code` + `members_branch_pairing_ck`; mirror into `src/modules/members/infrastructure/db/schema-members.ts`.
-- [ ] T030 [US3] Populate `buyer_is_vat_registrant` on the identity snapshot at issue from `members.legal_entity_type` (`≠ individual` AND non-NULL → true; else false, fail-closed) in `src/modules/invoicing/application/use-cases/issue-invoice.ts` + the VO from T010.
-- [ ] T031 [P] [US3] Admin member-branch edit (admin-only, tax-critical posture) in the members application + `src/app/(staff)/admin/members/**` edit surface.
-- [ ] T032 [US3] Render seller + buyer Head Office/Branch on BOTH ใบแจ้งหนี้ and tax receipt, gated on `buyer_is_vat_registrant` (never `buyerHasTin`), in `invoice-template.tsx` (FR-008).
-- [ ] T033 [US3] Apply 0232 to `dev` Neon + `pnpm test:integration` (T027/T028 green).
+- [X] T029 [US3] Migration `0232_members_branch_fields.sql` — `is_head_office` + `branch_code` + `members_branch_pairing_ck`; mirror into `src/modules/members/infrastructure/db/schema-members.ts`.
+- [X] T030 [US3] Populate `buyer_is_vat_registrant` on the identity snapshot at issue from `members.legal_entity_type` (`≠ individual` AND non-NULL → true; else false, fail-closed) in `src/modules/invoicing/application/use-cases/issue-invoice.ts` + the VO from T010.
+- [X] T031 [P] [US3] Admin member-branch edit (admin-only, tax-critical posture) in the members application + `src/app/(staff)/admin/members/**` edit surface.
+- [X] T032 [US3] Render seller + buyer Head Office/Branch on BOTH ใบแจ้งหนี้ and tax receipt, gated on `buyer_is_vat_registrant` (never `buyerHasTin`), in `invoice-template.tsx` (FR-008).
+- [X] T033 [US3] Apply 0232 to `dev` Neon + `pnpm test:integration` (T027/T028 green). **[US3 DONE 2026-07-02, committed `0a59f1df`. Migration 0232 (is_head_office + branch_code + members_branch_pairing_ck) applied to Neon dev (journal idx 236 / `when` after 0235; filename kept 0232). §86/4 branch line renders สำนักงานใหญ่/สาขาที่ NNNNN gated on `buyer_is_vat_registrant` (never buyerHasTin) + templateVersion≥5 (bumped v4→v5, SC-003 byte-stable for pinned pre-v5 docs) inside `renderPageBody` (both Original+Copy); seller always สำนักงานใหญ่ (US5 wires configurable seller). Admin-only edit (member_updated audit, not on portal). Adversarial review (drizzle+thai-tax+reliability+spec, 4 project agents+verify) = 2 confirmed medium FIXED: (1) fail-OPEN on non-canonical 'individual' → shared `isVatRegistrantEntityType` normalizer (`src/lib/legal-entity.ts`) used by adapter+form; (2) form cross-field rules untested → +5 buildMemberFormSchema cases. Gates: tsc 0 · 33+ tests · check:i18n 4031 · lint clean. **M1 cutover: backfill imported members' `legal_entity_type` is an operator step (prod clean; fail-closed correct + FR-027 pre-issue warns).**]**
 
 **Checkpoint**: §86/4 branch particular present + fail-closed.
 
