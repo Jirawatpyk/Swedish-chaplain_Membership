@@ -181,6 +181,291 @@ function beYear(isoDate: string | null): string {
   return (year + 543).toString();
 }
 
+/**
+ * 088 US2 (T025 / FR-004 / SC-004 / §105ทวิ) — first template version whose
+ * `receipt_combined` (ใบกำกับภาษี/ใบเสร็จรับเงิน) renders as ต้นฉบับ (Original)
+ * + สำเนา (Copy) = two pages in ONE PDF. Gated so a pinned pre-v4 combined
+ * receipt (resend / Blob-miss recovery / void-overlay / any historical
+ * re-render at its stored `pdf_template_version`) still paginates to a SINGLE
+ * page — preserving the SC-003 reproduce-the-original guarantee for
+ * already-issued documents, exactly like the v3 kind-aware-citation gate.
+ * Registry log: template-registry.ts v4 entry.
+ */
+const TWO_PAGE_RECEIPT_COPY_MIN_VERSION = 4;
+
+interface PageBodyProps {
+  readonly input: PdfRenderInput;
+  readonly isPreview: boolean;
+  readonly isVoid: boolean;
+  readonly isBill: boolean;
+  readonly isCreditAnnotatable: boolean;
+  readonly titleTh: string;
+  readonly titleEn: string;
+  readonly footerCitation: string;
+  readonly totalThb: number;
+  /**
+   * The §86/4 original/copy marker for THIS page: `'ต้นฉบับ / ORIGINAL'` on the
+   * original, `'สำเนา / COPY'` on the §105ทวิ copy of a two-page combined tax
+   * receipt, or `null` (preview / void / bill — those carry their own
+   * watermark). Every OTHER element of the body is identical between the two
+   * pages, so the copy is a true คู่ฉบับ.
+   */
+  readonly copyMarker: string | null;
+}
+
+/**
+ * The single-page document body. Extracted verbatim from the historical inline
+ * `<Page>` children so the two-page `receipt_combined` render (Original + Copy)
+ * can reuse the SAME body with only `copyMarker` differing. Invoked as a plain
+ * function (not `<PageBody/>`) so the returned element tree is spliced directly
+ * under each `<Page>` — every non-combined kind renders exactly one instance,
+ * byte-for-length identical to the pre-088 inline body (verified against the
+ * deterministic render length + extracted text for all six kinds).
+ */
+function renderPageBody({
+  input,
+  isPreview,
+  isVoid,
+  isBill,
+  isCreditAnnotatable,
+  titleTh,
+  titleEn,
+  footerCitation,
+  totalThb,
+  copyMarker,
+}: PageBodyProps) {
+  return (
+    <>
+      {isPreview && (
+        <Text style={styles.watermark}>
+          DRAFT / {shapeThai('ร่าง')} — NOT A TAX DOCUMENT
+        </Text>
+      )}
+      {isVoid && (
+        <Text fixed style={styles.voidStamp}>
+          VOID / {shapeThai('ยกเลิก')}
+        </Text>
+      )}
+      {isCreditAnnotatable && input.creditedAnnotation && (
+        <Text style={styles.creditedStamp}>
+          {input.creditedAnnotation.fullyCredited
+            ? shapeThai('ลดหนี้แล้ว') + ' / CREDITED'
+            : shapeThai('ลดหนี้บางส่วน') + ' / PARTIALLY CREDITED'}
+        </Text>
+      )}
+
+      <View style={styles.headerRow}>
+        <View style={styles.headerLeft}>
+          {input.tenantLogo && (
+            // @react-pdf/renderer v4 TYPES require `Buffer` for
+            // `Image.src.data` (the RUNTIME accepts Uint8Array fine
+            // but the .d.ts is narrower than the implementation).
+            // `Buffer.from(uint8array)` is zero-copy in Node — it
+            // creates a Buffer VIEW over the same underlying memory
+            // rather than allocating, so the overhead is just an
+            // object wrapper. Future-Edge port: replace with `bytes`
+            // directly once react-pdf widens its src typing.
+            //
+            // a11y note: no `alt` prop — react-pdf renders to PDF
+            // coordinate space (no DOM / no SR tree) and the
+            // `ImageProps` type does not accept one. The legal
+            // name is rendered alongside in `styles.identityName`
+            // so a decorative annotation would be moot regardless.
+            // eslint-disable-next-line jsx-a11y/alt-text
+            <Image
+              src={{
+                data: Buffer.from(input.tenantLogo.bytes),
+                format: input.tenantLogo.format,
+              }}
+              style={styles.logo}
+            />
+          )}
+          <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
+          <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
+          <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>
+          <Text style={styles.value}>{input.tenant.address_en}</Text>
+          <Text style={styles.label}>
+            {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Text style={styles.h1}>{shapeThai(titleTh)}</Text>
+          <Text style={styles.h2}>{titleEn}</Text>
+          {copyMarker && (
+            <Text style={[styles.label, { fontWeight: 700 }]}>
+              {shapeThai(copyMarker)}
+            </Text>
+          )}
+          {input.documentNumber && (
+            <Text style={styles.value}>No. {input.documentNumber.raw}</Text>
+          )}
+          {input.issueDate && (
+            <Text style={styles.label}>
+              {shapeThai('วันที่')} / Date: {input.issueDate} ({shapeThai('พ.ศ.')}{' '}
+              {beYear(input.issueDate)})
+            </Text>
+          )}
+          {input.dueDate && (
+            <Text style={styles.label}>
+              {shapeThai('ครบกำหนด')} / Due: {input.dueDate}
+            </Text>
+          )}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>{shapeThai('ลูกค้า')} / Customer</Text>
+        <Text style={styles.value}>{shapeThai(input.member.legal_name)}</Text>
+        {/*
+          066-membership-no-tin — render the buyer Tax ID line ONLY when a
+          non-blank TIN is present, via the SHARED `buyerHasTin` discriminator
+          (the same one the issue/pay/credit gates use — directly unit-tested
+          for null/empty/whitespace/padded, so the rendered buyer block and the
+          document-kind decision can never diverge). It treats whitespace as
+          "no TIN". Before the 066 relax a whitespace-only tax_id was blocked at
+          issue, so it never reached here; now that a no-TIN membership issues,
+          this prevents a stray "Tax ID:   " line on the §86/4. Byte-identical
+          for a real TIN (renders) and null (omitted) — only whitespace changes.
+        */}
+        {buyerHasTin(input.member.tax_id) && (
+          <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+        )}
+        {/*
+          055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
+          pinned on the snapshot at ISSUE time (computed from the tenant prefix +
+          bare integer), so the buyer block matches the admin/portal/search
+          surfaces. Guarded `!== null` (NOT truthy): explicit so a future type
+          widen can't silently render `''`/`undefined`, and so a HISTORICAL
+          snapshot (pre-feature JSONB → zod `.default(null)`) omits the line,
+          preserving SC-003 byte-stable re-render of already-issued documents.
+        */}
+        {input.member.member_number_display !== null && (
+          <Text style={styles.label}>
+            {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number_display}
+          </Text>
+        )}
+        {input.member.address.split('\n').map((line, i) => (
+          <Text key={`buyer-addr-${i}`} style={styles.addrLine}>
+            {shapeThai(line)}
+          </Text>
+        ))}
+        {input.member.primary_contact_name && (
+          <Text style={styles.label}>
+            {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
+          </Text>
+        )}
+      </View>
+
+      {input.kind === 'credit_note' && input.creditNote && (
+        <View style={styles.cnRefBlock}>
+          <Text style={styles.cnRefLabel}>
+            {shapeThai('อ้างอิงใบกำกับภาษีต้นฉบับ')} / Reference to Original Tax Invoice
+          </Text>
+          <Text style={styles.cnRefLine}>
+            {shapeThai('เลขที่')} / No.: {input.creditNote.originalDocumentNumber}
+          </Text>
+          <Text style={styles.cnRefLine}>
+            {shapeThai('วันที่')} / Date: {input.creditNote.originalIssueDate}
+            {' ('}{shapeThai('พ.ศ.')} {beYear(input.creditNote.originalIssueDate)}
+            {')'}
+          </Text>
+          <Text style={styles.cnRefLine}>
+            {shapeThai('เหตุผล')} / Reason: {shapeThai(input.creditNote.reason)}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.table}>
+        <View style={styles.trHead}>
+          <Text style={styles.tdDesc}>{shapeThai('รายการ')} / Description</Text>
+          <Text style={styles.tdQty}>{shapeThai('จำนวน')} / Qty</Text>
+          <Text style={styles.tdUnit}>{shapeThai('ราคา')} / Unit</Text>
+          <Text style={styles.tdTotal}>{shapeThai('รวม')} / Total</Text>
+        </View>
+        {input.lines.map((l) => (
+          <View key={l.lineId} style={styles.tr}>
+            <View style={styles.tdDesc}>
+              <Text>{shapeThai(l.descriptionTh)}</Text>
+              <Text style={styles.label}>{l.descriptionEn}</Text>
+            </View>
+            <Text style={styles.tdQty}>{l.quantity}</Text>
+            <Text style={styles.tdUnit}>{formatThbSatang(l.unitPrice.satang)}</Text>
+            <Text style={styles.tdTotal}>{formatThbSatang(l.total.satang)}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.totalsBlock}>
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>{shapeThai('รวมก่อนภาษี')} / Subtotal:</Text>
+          <Text style={styles.totalValue}>{formatThbSatang(input.subtotal.satang)}</Text>
+        </View>
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>
+            VAT {input.vatRate.toPercentString()}:
+          </Text>
+          <Text style={styles.totalValue}>{formatThbSatang(input.vat.satang)}</Text>
+        </View>
+        <View style={styles.totalRow}>
+          <Text style={[styles.totalLabel, styles.grand]}>
+            {shapeThai('รวมทั้งสิ้น')} / Total (THB):
+          </Text>
+          <Text style={[styles.totalValue, styles.grand]}>
+            {formatThbSatang(input.total.satang)}
+          </Text>
+        </View>
+        {/* 054-event-fee-invoices — VAT-inclusive (event Model B) annotation.
+            The single event_fee line carries the GROSS (all-in) ticket price,
+            while the subtotal above is the back-calculated NET amount and VAT
+            is the derived remainder. Without this label a Thai reader sees a
+            line total that doesn't equal the subtotal and could mistake the
+            document for an arithmetic error. Bilingual + placed directly under
+            the totals so the relationship (line gross = net + VAT) is explicit.
+            Membership invoices are VAT-EXCLUSIVE (vatInclusive falsy) → no
+            annotation, preserving byte-identical re-render for F4 documents. */}
+        {input.vatInclusive && (
+          <Text style={styles.vatInclusiveNote}>
+            {shapeThai('ราคารวมภาษีมูลค่าเพิ่มแล้ว')} / VAT included
+          </Text>
+        )}
+      </View>
+
+      <Text style={styles.wordsLine}>
+        ({shapeThai('ตัวอักษร')}) {shapeThai(amountToThaiWords(totalThb))}
+      </Text>
+      <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
+
+      {isCreditAnnotatable &&
+        input.creditedAnnotation &&
+        input.creditedAnnotation.references.length > 0 && (
+          <View style={styles.cnRefFooterBlock}>
+            <Text style={styles.cnRefFooterLabel}>
+              {shapeThai('อ้างอิงใบลดหนี้')} / Referenced by credit note(s):
+            </Text>
+            {input.creditedAnnotation.references.map((r) => (
+              <View key={r.documentNumber} style={styles.cnRefFooterRow}>
+                <Text style={styles.cnRefFooterCell}>{r.documentNumber}</Text>
+                <Text style={styles.cnRefFooterCell}>{r.issueDate}</Text>
+                <Text style={styles.cnRefFooterCellAmt}>
+                  {formatThbSatang(r.total.satang)} THB
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+      {/* 088 T016 — the ใบแจ้งหนี้ (bill) carries NO Revenue-Code §-citation
+          footer (its legal identity rests on the non-tax title alone;
+          research §1). Legacy tax documents keep the citation unchanged. */}
+      {!isBill && (
+        <Text style={styles.footer}>
+          Rendered by Chamber-OS ({shapeThai(footerCitation)})
+        </Text>
+      )}
+    </>
+  );
+}
+
 export function InvoiceTemplate(input: PdfRenderInput) {
   const isPreview = input.kind === 'invoice_preview';
   const isVoid = input.kind === 'void_stamped_invoice';
@@ -250,235 +535,59 @@ export function InvoiceTemplate(input: PdfRenderInput) {
 
   const totalThb = Number(input.total.satang) / 100;
 
+  const bodyProps = {
+    input,
+    isPreview,
+    isVoid,
+    isBill,
+    isCreditAnnotatable,
+    titleTh,
+    titleEn,
+    footerCitation,
+    totalThb,
+  } satisfies Omit<PageBodyProps, 'copyMarker'>;
+
+  // 088 US2 (T025 / FR-004 / SC-004 / §105ทวิ คู่ฉบับ) — the combined §86/4 tax
+  // receipt is issued as ต้นฉบับ (Original) + สำเนา (Copy): two pages in ONE
+  // PDF, sharing ONE RC number, rendered ONCE (a single <Document> → one stream
+  // → one sha → one blob via the adapter — no second render). Both pages carry
+  // the identical body; only the original/copy marker differs. Gated on the
+  // pinned templateVersion so a pre-v4 combined receipt (resend / void-overlay /
+  // historical re-render) still paginates to a single page (SC-003).
+  // 088 US2 review fix (reliability) — the two-page ต้นฉบับ+สำเนา layout must ALSO
+  // hold when the combined receipt is re-rendered as its OWN VOID cancellation
+  // evidence: the void path passes kind='void_stamped_invoice' +
+  // voidUnderlyingKind='receipt_combined' (void-invoice.ts), so a gate keyed only
+  // on `kind==='receipt_combined'` collapses the void to ONE page — dropping the
+  // §105ทวิ Copy from the retained §87/3 (10-year) cancelled คู่ฉบับ and making it
+  // asymmetric with both the 2-page original AND the 2-page CREDITED re-render
+  // (which keeps kind='receipt_combined'). The pinned templateVersion still gates
+  // it, so a pre-v4 combined void stays 1 page (matches the 1-page doc it cancels
+  // → SC-003). Markers stay ต้นฉบับ/สำเนา (the VOID `fixed` watermark repeats on
+  // both pages) so a voided คู่ฉบับ mirrors its credited counterpart.
+  const isCombinedReceiptLayout =
+    input.kind === 'receipt_combined' ||
+    (isVoid && input.voidUnderlyingKind === 'receipt_combined');
+  if (
+    isCombinedReceiptLayout &&
+    input.templateVersion >= TWO_PAGE_RECEIPT_COPY_MIN_VERSION
+  ) {
+    return (
+      <Document>
+        <Page size="A4" style={styles.page}>
+          {renderPageBody({ ...bodyProps, copyMarker: 'ต้นฉบับ / ORIGINAL' })}
+        </Page>
+        <Page size="A4" style={styles.page}>
+          {renderPageBody({ ...bodyProps, copyMarker: 'สำเนา / COPY' })}
+        </Page>
+      </Document>
+    );
+  }
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        {isPreview && (
-          <Text style={styles.watermark}>
-            DRAFT / {shapeThai('ร่าง')} — NOT A TAX DOCUMENT
-          </Text>
-        )}
-        {isVoid && (
-          <Text fixed style={styles.voidStamp}>
-            VOID / {shapeThai('ยกเลิก')}
-          </Text>
-        )}
-        {isCreditAnnotatable && input.creditedAnnotation && (
-          <Text style={styles.creditedStamp}>
-            {input.creditedAnnotation.fullyCredited
-              ? shapeThai('ลดหนี้แล้ว') + ' / CREDITED'
-              : shapeThai('ลดหนี้บางส่วน') + ' / PARTIALLY CREDITED'}
-          </Text>
-        )}
-
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            {input.tenantLogo && (
-              // @react-pdf/renderer v4 TYPES require `Buffer` for
-              // `Image.src.data` (the RUNTIME accepts Uint8Array fine
-              // but the .d.ts is narrower than the implementation).
-              // `Buffer.from(uint8array)` is zero-copy in Node — it
-              // creates a Buffer VIEW over the same underlying memory
-              // rather than allocating, so the overhead is just an
-              // object wrapper. Future-Edge port: replace with `bytes`
-              // directly once react-pdf widens its src typing.
-              //
-              // a11y note: no `alt` prop — react-pdf renders to PDF
-              // coordinate space (no DOM / no SR tree) and the
-              // `ImageProps` type does not accept one. The legal
-              // name is rendered alongside in `styles.identityName`
-              // so a decorative annotation would be moot regardless.
-              // eslint-disable-next-line jsx-a11y/alt-text
-              <Image
-                src={{
-                  data: Buffer.from(input.tenantLogo.bytes),
-                  format: input.tenantLogo.format,
-                }}
-                style={styles.logo}
-              />
-            )}
-            <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
-            <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
-            <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>
-            <Text style={styles.value}>{input.tenant.address_en}</Text>
-            <Text style={styles.label}>
-              {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
-            </Text>
-          </View>
-          <View style={styles.headerRight}>
-            <Text style={styles.h1}>{shapeThai(titleTh)}</Text>
-            <Text style={styles.h2}>{titleEn}</Text>
-            {originalMarker && (
-              <Text style={[styles.label, { fontWeight: 700 }]}>
-                {shapeThai(originalMarker)}
-              </Text>
-            )}
-            {input.documentNumber && (
-              <Text style={styles.value}>No. {input.documentNumber.raw}</Text>
-            )}
-            {input.issueDate && (
-              <Text style={styles.label}>
-                {shapeThai('วันที่')} / Date: {input.issueDate} ({shapeThai('พ.ศ.')}{' '}
-                {beYear(input.issueDate)})
-              </Text>
-            )}
-            {input.dueDate && (
-              <Text style={styles.label}>
-                {shapeThai('ครบกำหนด')} / Due: {input.dueDate}
-              </Text>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.label}>{shapeThai('ลูกค้า')} / Customer</Text>
-          <Text style={styles.value}>{shapeThai(input.member.legal_name)}</Text>
-          {/*
-            066-membership-no-tin — render the buyer Tax ID line ONLY when a
-            non-blank TIN is present, via the SHARED `buyerHasTin` discriminator
-            (the same one the issue/pay/credit gates use — directly unit-tested
-            for null/empty/whitespace/padded, so the rendered buyer block and the
-            document-kind decision can never diverge). It treats whitespace as
-            "no TIN". Before the 066 relax a whitespace-only tax_id was blocked at
-            issue, so it never reached here; now that a no-TIN membership issues,
-            this prevents a stray "Tax ID:   " line on the §86/4. Byte-identical
-            for a real TIN (renders) and null (omitted) — only whitespace changes.
-          */}
-          {buyerHasTin(input.member.tax_id) && (
-            <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
-          )}
-          {/*
-            055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
-            pinned on the snapshot at ISSUE time (computed from the tenant prefix +
-            bare integer), so the buyer block matches the admin/portal/search
-            surfaces. Guarded `!== null` (NOT truthy): explicit so a future type
-            widen can't silently render `''`/`undefined`, and so a HISTORICAL
-            snapshot (pre-feature JSONB → zod `.default(null)`) omits the line,
-            preserving SC-003 byte-stable re-render of already-issued documents.
-          */}
-          {input.member.member_number_display !== null && (
-            <Text style={styles.label}>
-              {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number_display}
-            </Text>
-          )}
-          {input.member.address.split('\n').map((line, i) => (
-            <Text key={`buyer-addr-${i}`} style={styles.addrLine}>
-              {shapeThai(line)}
-            </Text>
-          ))}
-          {input.member.primary_contact_name && (
-            <Text style={styles.label}>
-              {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
-            </Text>
-          )}
-        </View>
-
-        {input.kind === 'credit_note' && input.creditNote && (
-          <View style={styles.cnRefBlock}>
-            <Text style={styles.cnRefLabel}>
-              {shapeThai('อ้างอิงใบกำกับภาษีต้นฉบับ')} / Reference to Original Tax Invoice
-            </Text>
-            <Text style={styles.cnRefLine}>
-              {shapeThai('เลขที่')} / No.: {input.creditNote.originalDocumentNumber}
-            </Text>
-            <Text style={styles.cnRefLine}>
-              {shapeThai('วันที่')} / Date: {input.creditNote.originalIssueDate}
-              {' ('}{shapeThai('พ.ศ.')} {beYear(input.creditNote.originalIssueDate)}
-              {')'}
-            </Text>
-            <Text style={styles.cnRefLine}>
-              {shapeThai('เหตุผล')} / Reason: {shapeThai(input.creditNote.reason)}
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.table}>
-          <View style={styles.trHead}>
-            <Text style={styles.tdDesc}>{shapeThai('รายการ')} / Description</Text>
-            <Text style={styles.tdQty}>{shapeThai('จำนวน')} / Qty</Text>
-            <Text style={styles.tdUnit}>{shapeThai('ราคา')} / Unit</Text>
-            <Text style={styles.tdTotal}>{shapeThai('รวม')} / Total</Text>
-          </View>
-          {input.lines.map((l) => (
-            <View key={l.lineId} style={styles.tr}>
-              <View style={styles.tdDesc}>
-                <Text>{shapeThai(l.descriptionTh)}</Text>
-                <Text style={styles.label}>{l.descriptionEn}</Text>
-              </View>
-              <Text style={styles.tdQty}>{l.quantity}</Text>
-              <Text style={styles.tdUnit}>{formatThbSatang(l.unitPrice.satang)}</Text>
-              <Text style={styles.tdTotal}>{formatThbSatang(l.total.satang)}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.totalsBlock}>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>{shapeThai('รวมก่อนภาษี')} / Subtotal:</Text>
-            <Text style={styles.totalValue}>{formatThbSatang(input.subtotal.satang)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>
-              VAT {input.vatRate.toPercentString()}:
-            </Text>
-            <Text style={styles.totalValue}>{formatThbSatang(input.vat.satang)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text style={[styles.totalLabel, styles.grand]}>
-              {shapeThai('รวมทั้งสิ้น')} / Total (THB):
-            </Text>
-            <Text style={[styles.totalValue, styles.grand]}>
-              {formatThbSatang(input.total.satang)}
-            </Text>
-          </View>
-          {/* 054-event-fee-invoices — VAT-inclusive (event Model B) annotation.
-              The single event_fee line carries the GROSS (all-in) ticket price,
-              while the subtotal above is the back-calculated NET amount and VAT
-              is the derived remainder. Without this label a Thai reader sees a
-              line total that doesn't equal the subtotal and could mistake the
-              document for an arithmetic error. Bilingual + placed directly under
-              the totals so the relationship (line gross = net + VAT) is explicit.
-              Membership invoices are VAT-EXCLUSIVE (vatInclusive falsy) → no
-              annotation, preserving byte-identical re-render for F4 documents. */}
-          {input.vatInclusive && (
-            <Text style={styles.vatInclusiveNote}>
-              {shapeThai('ราคารวมภาษีมูลค่าเพิ่มแล้ว')} / VAT included
-            </Text>
-          )}
-        </View>
-
-        <Text style={styles.wordsLine}>
-          ({shapeThai('ตัวอักษร')}) {shapeThai(amountToThaiWords(totalThb))}
-        </Text>
-        <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
-
-        {isCreditAnnotatable &&
-          input.creditedAnnotation &&
-          input.creditedAnnotation.references.length > 0 && (
-            <View style={styles.cnRefFooterBlock}>
-              <Text style={styles.cnRefFooterLabel}>
-                {shapeThai('อ้างอิงใบลดหนี้')} / Referenced by credit note(s):
-              </Text>
-              {input.creditedAnnotation.references.map((r) => (
-                <View key={r.documentNumber} style={styles.cnRefFooterRow}>
-                  <Text style={styles.cnRefFooterCell}>{r.documentNumber}</Text>
-                  <Text style={styles.cnRefFooterCell}>{r.issueDate}</Text>
-                  <Text style={styles.cnRefFooterCellAmt}>
-                    {formatThbSatang(r.total.satang)} THB
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-        {/* 088 T016 — the ใบแจ้งหนี้ (bill) carries NO Revenue-Code §-citation
-            footer (its legal identity rests on the non-tax title alone;
-            research §1). Legacy tax documents keep the citation unchanged. */}
-        {!isBill && (
-          <Text style={styles.footer}>
-            Rendered by Chamber-OS ({shapeThai(footerCitation)})
-          </Text>
-        )}
+        {renderPageBody({ ...bodyProps, copyMarker: originalMarker })}
       </Page>
     </Document>
   );

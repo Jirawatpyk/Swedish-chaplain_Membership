@@ -22,7 +22,7 @@
  *
  * Section B — live-Neon as-paid β sanity: the REAL chain
  * (createEventInvoiceDraft → issueEventInvoiceAsPaid, no-TIN buyer)
- * pins pdf_template_version = CURRENT (v3) on the row and the §105
+ * pins pdf_template_version = CURRENT on the row and the §105
  * receipt bytes carry "มาตรา 105" — proving new issuance is wired to
  * the bumped constant end-to-end, not just at the template boundary.
  *
@@ -270,7 +270,7 @@ describe('T31 §A — OLD-VERSION regression: v1/v2 keep the legacy unconditiona
 });
 
 // =============================================================================
-// §B — live-Neon as-paid β sanity: new issuance pins v3 on the row and the
+// §B — live-Neon as-paid β sanity: new issuance pins CURRENT_TEMPLATE_VERSION on the row and the
 // §105 receipt bytes carry มาตรา 105. SIMULATED buyer only (fake PII).
 // =============================================================================
 
@@ -317,7 +317,7 @@ function makeAsPaidDeps(
   };
 }
 
-describe('T31 §B — as-paid β issue pins v3 + §105 footer (live Neon)', () => {
+describe('T31 §B — as-paid β issue pins CURRENT + §105 footer (live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let draftNoTin: InvoiceId;
@@ -392,7 +392,7 @@ describe('T31 §B — as-paid β issue pins v3 + §105 footer (live Neon)', () =
     await deleteTestUser(user).catch(() => {});
   });
 
-  it('no-TIN as-paid → row pins pdf_template_version = CURRENT (v3) + bytes cite มาตรา 105 (not 86/4)', async () => {
+  it('no-TIN as-paid → row pins pdf_template_version = CURRENT + bytes cite มาตรา 105 (not 86/4)', async () => {
     const capturedBytes: Uint8Array[] = [];
     const deps = makeAsPaidDeps(tenant.ctx.slug, capturedBytes);
     const res = await issueEventInvoiceAsPaid(deps, {

@@ -25,6 +25,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
+import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000a167';
 
@@ -215,6 +216,39 @@ describe('renderReceiptPdf — async worker callback', () => {
     const rendered = auditCalls.find((c) => c[1].eventType === 'receipt_rendered');
     expect(rendered).toBeDefined();
     expect(rendered![1].payload.receipt_pdf_sha256).toBe('b'.repeat(64));
+  });
+
+  // 088 US2 / SC-004 (storage half) — a `receipt_combined` renders as ต้นฉบับ +
+  // สำเนา (two pages) at templateVersion >= 4, but the §105ทวิ คู่ฉบับ is ONE
+  // artifact: a single <Document> with two <Page>s serialises to ONE stream →
+  // ONE sha → ONE blob. This pins that the async worker invokes the render +
+  // upload EXACTLY once (two PAGES never become two RENDERS / two blobs), and
+  // that it hands the template the combined kind at the two-page version.
+  it('088 US2/SC-004: receipt_combined@v4 (two pages) → still ONE render + ONE upload + ONE applyReceiptPdf', async () => {
+    const captured: PdfRenderInput[] = [];
+    const deps = makeDeps(
+      makePaidPendingInvoice({ invoiceSubject: 'membership' }),
+      makeSettings(),
+      {
+        pdfRender: {
+          render: vi.fn(async (renderInput: PdfRenderInput) => {
+            captured.push(renderInput);
+            return {
+              bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+              sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+            };
+          }),
+        },
+      },
+    );
+    const r = await renderReceiptPdf(deps, { ...input, templateVersion: 4 });
+    expect(r.ok).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledTimes(1);
+    expect(deps.blob.uploadPdf).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdf).toHaveBeenCalledTimes(1);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.kind).toBe('receipt_combined');
+    expect(captured[0]!.templateVersion).toBe(4);
   });
 
   it('idempotent: status=rendered → no-op return ok (no render, no upload, no audit)', async () => {

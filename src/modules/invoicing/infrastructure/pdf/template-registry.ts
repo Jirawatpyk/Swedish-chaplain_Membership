@@ -34,11 +34,27 @@
  *     annotation, async receipt worker) reproduces the original
  *     output (SC-003). Measured: docs/Bug/065-t31-footer-
  *     {pre,post}change.txt.
+ *   - **v4** (2026-07-01, 088-invoice-tax-flow-redesign US2 / T025 /
+ *     FR-004 / SC-004) — the `receipt_combined` (ใบกำกับภาษี/ใบเสร็จรับเงิน)
+ *     §86/4 tax receipt now renders as ต้นฉบับ (Original) + สำเนา (Copy):
+ *     two pages in ONE PDF sharing ONE RC number (§105ทวิ คู่ฉบับ +
+ *     §87/3 retention), rendered ONCE (one <Document> → one stream →
+ *     one sha → one blob). The template gates the second page on
+ *     `templateVersion >= TWO_PAGE_RECEIPT_COPY_MIN_VERSION` (=4, see
+ *     templates/invoice-template.tsx), so a pinned pre-v4
+ *     `receipt_combined` (resend / Blob-miss recovery / void-overlay /
+ *     any re-render at its stored `pdf_template_version`) still
+ *     paginates to a single page — the SC-003 reproduce-the-original
+ *     guarantee holds for already-issued documents, exactly like the v3
+ *     citation gate. Every OTHER kind renders byte-for-length identical
+ *     at v4 as at v3 (verified: same rendered length + extracted text
+ *     for invoice / invoice_preview / receipt_separate / credit_note /
+ *     void / receipt_combined@v3).
  */
 
-export const CURRENT_TEMPLATE_VERSION = 3 as const;
+export const CURRENT_TEMPLATE_VERSION = 4 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {
