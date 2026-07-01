@@ -9,6 +9,13 @@
 
 Today the platform issues a **§86/4 ใบกำกับภาษี / Tax Invoice at billing time** and a **second §86/4 document (ใบกำกับภาษี/ใบเสร็จรับเงิน) at payment**, so a member receives **two tax invoices for one sale**. For a service (membership / event fee) the Thai VAT tax point is at **receipt of payment** (Revenue Code §78/1). This feature corrects the flow: the pre-payment document becomes a **non-tax ใบแจ้งหนี้ / Invoice**, and the single §86/4 + §105ทวิ **ใบกำกับภาษี / ใบเสร็จรับเงิน** is issued only at payment. It also delivers the customer's document-presentation revisions and the §86/4 completeness items surfaced during review.
 
+## Clarifications
+
+### Session 2026-07-01
+
+- Q: On which documents do the withholding-tax note and the Head Office/Branch §86/4 fields render — the non-tax bill, the tax receipt, or both? → A: **Both** — the ใบแจ้งหนี้ (bill) and the ใบกำกับภาษี/ใบเสร็จรับเงิน (tax receipt) render both fields, drawn from the same immutable issue-time snapshot (the WHT note is most actionable on the bill the member pays against; the branch line is harmless on the bill and keeps the two documents consistent).
+- Q: After a membership bill is paid, which documents remain downloadable? → A: **Both** — the ใบแจ้งหนี้ (bill) and the tax receipt stay available to admin and member; the bill is NOT hidden once paid (they are two distinct legal documents: a payable record and a tax receipt).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Non-tax bill → tax receipt issued at payment (Priority: P1)
@@ -138,13 +145,14 @@ Event-with-TIN reuses the same non-tax ใบแจ้งหนี้ (when bill
 - **FR-005**: Online (Stripe card / PromptPay) and offline (admin-recorded) payment paths MUST produce identical tax-receipt content, kind, numbering, and dating.
 - **FR-006**: Event-with-TIN MUST reuse the non-tax bill + payment-time RC tax receipt; event-without-TIN MUST remain a §105 ใบเสร็จรับเงิน issued at payment (unchanged legal identity).
 - **FR-007**: Credit notes (§86/10) MUST reference and annotate the §86/4 tax receipt (not the non-tax bill) and MUST be issuable only after the tax receipt exists.
-- **FR-008**: Seller and buyer §86/4 blocks MUST show a Head Office / Branch indicator; buyer branch MUST be stored on the member record (admin-managed), default สำนักงานใหญ่, rendered only for VAT-registrant juristic buyers; seller renders TSCC head office.
+- **FR-008**: Seller and buyer §86/4 blocks MUST show a Head Office / Branch indicator on **both the ใบแจ้งหนี้ and the tax receipt**; buyer branch MUST be stored on the member record (admin-managed), default สำนักงานใหญ่, rendered only for VAT-registrant juristic buyers; seller renders TSCC head office.
 - **FR-009**: All documents MUST format monetary amounts with thousands separators and capitalize the first letter of the English amount-in-words (deterministic, locale-independent).
 - **FR-010**: The buyer identity block order MUST be Name → Address → Tax ID → Head Office/Branch (member number and contact follow).
 - **FR-011**: The membership line description MUST include the plan name and the coverage period.
-- **FR-012**: The document footer MUST be tenant-configurable (replacing the hardcoded Chamber-OS / §-citation footer). The withholding-tax note MUST render on membership documents only and be editable via tenant settings; a tenant with no configured note renders nothing.
+- **FR-012**: The document footer MUST be tenant-configurable (replacing the hardcoded Chamber-OS / §-citation footer). The withholding-tax note MUST render on membership documents only — on **both the membership ใบแจ้งหนี้ and the membership tax receipt**, never on event documents — and be editable via tenant settings; a tenant with no configured note renders nothing.
 - **FR-013**: The change MUST preserve tenant isolation (RLS), audit logging, and §87 no-gaps integrity on the tax-receipt stream.
 - **FR-014**: All user-facing document and UI strings (PDF titles, admin, portal, i18n EN/TH/SV) MUST be updated so the pre-payment bill is never labelled ใบกำกับภาษี / Tax Invoice, with no missing-translation regressions.
+- **FR-015**: After payment, **both** the ใบแจ้งหนี้ and the tax receipt MUST remain downloadable/accessible to admin and member (portal); the bill MUST NOT be hidden once paid.
 
 ### Key Entities *(include if feature involves data)*
 
