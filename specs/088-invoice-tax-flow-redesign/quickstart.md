@@ -24,7 +24,7 @@
 - F1–F8 on `main`; F4 (`007-invoices-receipts`) is the base this extends. Branch `088-invoice-tax-flow-redesign` checked out.
 - Local dev per root `CLAUDE.md § Commands` — **pnpm** (not npm), dev on **:3100**, Node 22.
 - `.env.local` points at the **`dev` Neon branch** (NOT prod — see `CLAUDE.md § Gotchas`; prod backup is `.env.local.bak.prod`). Integration tests refuse to run against prod (`tests/integration-setup.ts` blocklist guard).
-- `vercel env pull .env.local` if you need the latest env (no new env var is introduced by this feature — the WHT note is a DB column, never a literal or env value).
+- `vercel env pull .env.local` if you need the latest env. One new env var is introduced: **`FEATURE_088_TAX_AT_PAYMENT`** (T001; `booleanFromString`, **default `false`** — 088 ships dark). It gates BOTH the new bill→§87-at-payment flow AND the US8 `vat_treatment` zero-rate UI + render arm (G5), so US8 dark-launches independently of the P1 core. Flip it to `true` in Vercel env (alongside the SweCham settings flip in § 2.2) as the operator trigger; revert-the-flag + redeploy prior code + revert the settings flip is the rollback (NOT a DB down-migration — `ALTER TYPE … ADD VALUE 'bill'` + consumed §87 numbers are irreversible; plan § Rollout). The WHT note remains a DB column, never a literal or env value.
 
 ```bash
 pnpm install

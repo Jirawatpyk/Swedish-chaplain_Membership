@@ -292,6 +292,30 @@ const schema = z.object({
   // Flip to TRUE in Vercel env once the DPA amendment is signed.
   FEATURE_F4_VOID_ATTACHMENT: booleanFromString.default(false),
 
+  // --- 088 Invoice / Receipt Tax-Flow Redesign (bill → ใบแจ้งหนี้) ----------
+  // Kill-switch for the new §87-at-payment tax flow. When FALSE (default)
+  // the legacy F4 flow is active: the pre-payment document is a §86/4
+  // ใบกำกับภาษี issued with a §87 number at issue time. When TRUE the new
+  // flow ships: the pre-payment document becomes a NON-tax ใบแจ้งหนี้
+  // (non-§87 `SC` bill number allocated at issue), and the single §86/4
+  // ใบกำกับภาษี/ใบเสร็จรับเงิน is minted only at payment (§78/1 tax point),
+  // dated at the payment date, with the §87 `RC` number born then — so a
+  // member never holds two §86/4 tax invoices for one sale.
+  //
+  // The SAME flag ALSO gates the US8 surface (per plan § Rollout G5): the
+  // issue-invoice `vat_treatment` toggle (standard 7% / zero-rated
+  // §80/1(5) 0%) + MFA-cert fields + the zero-rate render arm — so US8 can
+  // dark-launch independently of the P1 core (flag off → the toggle is
+  // hidden and every invoice is `'standard'` 7%).
+  //
+  // Default FALSE — 088 ships dark; the SweCham settings flip
+  // (receiptNumberingMode='separate', receiptNumberPrefix='RC', WHT note)
+  // is the operator trigger. Reverting the flag + redeploying prior code +
+  // reverting the settings flip is the rollback (NOT a DB down-migration —
+  // an `ALTER TYPE … ADD VALUE 'bill'` and consumed §87 numbers are
+  // irreversible; see plan § Rollout / Constitution Gate X).
+  FEATURE_088_TAX_AT_PAYMENT: booleanFromString.default(false),
+
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
   // F1+F4 transactional API. Hosted on the same Resend account; uses a
@@ -875,6 +899,9 @@ export const env = {
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
     f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
     f9Dashboard: raw.FEATURE_F9_DASHBOARD,
+    // 088 — §87-at-payment tax flow (bill → ใบแจ้งหนี้) + US8 zero-rate UI.
+    // Default false; ships dark. See schema docstring above + plan § Rollout.
+    f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
   },
 
   // F4 Invoicing

@@ -1731,6 +1731,14 @@
       }
     },
     "invoices": {
+      "tax088": {
+        "billTitle": "ใบแจ้งหนี้ (Faktura)",
+        "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน (Skattefaktura/Kvitto)",
+        "section8015Note": "Moms 0 % enligt §80/1(5) i thailändska skattelagen (ใบกำกับภาษี med nollskatt för ambassad/internationell organisation).",
+        "bankBlockHeading": "Betalningsuppgifter för banköverföring",
+        "badgeTaxReceipt": "Skattekvitto (ใบกำกับภาษี)",
+        "badgeBillPayableRecord": "Betalningspost — skattekvitto utfärdat (se RC)"
+      },
       "meta": {
         "title": "Fakturor"
       },

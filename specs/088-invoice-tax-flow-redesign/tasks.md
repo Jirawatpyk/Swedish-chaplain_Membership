@@ -15,10 +15,10 @@
 
 **Purpose**: flag, fixtures, and cutover scaffolding shared by all stories.
 
-- [ ] T001 Add `FEATURE_088_TAX_AT_PAYMENT` kill-switch to the zod env schema in `src/lib/env.ts` (default off) + document it in `specs/088-invoice-tax-flow-redesign/quickstart.md`; the flag gates the new bill→payment flow AND (per G5) the US8 `vat_treatment` UI + zero-rate render.
-- [ ] T002 [P] Add tax-flow test builders (bill / tax-receipt / zero-rate-invoice factories) in `tests/helpers/invoicing-factories.ts`.
-- [ ] T003 [P] Scaffold `scripts/verify-088-cutover.ts` (asserts zero issued-unpaid legacy invoices + `legal_entity_type` populated + settings seeded) per plan § Rollout.
-- [ ] T004 [P] Scaffold new i18n keys (bill/tax-receipt titles, §80/1(5) note, bank block, two-doc badges) in `src/i18n/messages/en.json` as canonical, with TH + SV placeholders (guarded by `pnpm check:i18n`).
+- [X] T001 Add `FEATURE_088_TAX_AT_PAYMENT` kill-switch to the zod env schema in `src/lib/env.ts` (default off) + document it in `specs/088-invoice-tax-flow-redesign/quickstart.md`; the flag gates the new bill→payment flow AND (per G5) the US8 `vat_treatment` UI + zero-rate render.
+- [X] T002 [P] Add tax-flow test builders (bill / tax-receipt / zero-rate-invoice factories) in `tests/helpers/invoicing-factories.ts`.
+- [X] T003 [P] Scaffold `scripts/verify-088-cutover.ts` (asserts zero issued-unpaid legacy invoices + `legal_entity_type` populated + settings seeded) per plan § Rollout.
+- [X] T004 [P] Scaffold new i18n keys (bill/tax-receipt titles, §80/1(5) note, bank block, two-doc badges) in `src/i18n/messages/en.json` as canonical, with TH + SV placeholders (guarded by `pnpm check:i18n`).
 
 **Checkpoint**: flag + fixtures ready.
 

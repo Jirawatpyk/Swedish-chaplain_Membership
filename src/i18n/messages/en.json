@@ -1731,6 +1731,14 @@
       }
     },
     "invoices": {
+      "tax088": {
+        "billTitle": "ใบแจ้งหนี้ / Invoice",
+        "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน / Tax Invoice & Receipt",
+        "section8015Note": "VAT 0% under Revenue Code §80/1(5) (embassy / international organisation zero-rate).",
+        "bankBlockHeading": "Bank transfer details",
+        "badgeTaxReceipt": "Tax receipt",
+        "badgeBillPayableRecord": "Payable record — tax receipt issued (see RC)"
+      },
       "meta": {
         "title": "Invoices"
       },
