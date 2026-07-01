@@ -81,6 +81,49 @@ function makeSource(rows: readonly AuditSourceRow[]): {
   return { source, calls };
 }
 
+/**
+ * A keyset-honouring fake reader (unlike `makeSource`, which trusts the caller
+ * to pre-order): given ALL rows unordered, it applies the SAME cursor + direction
+ * + ordering the Drizzle reader does, so a backward test pins that
+ * `direction:'backward'` actually SELECTS newer-than-cursor rows in ASC order —
+ * not just that the use-case reverses a pre-arranged fixture. `occurredAtIso` is
+ * a same-format zero-padded timestamptz text, so a lexicographic compare is
+ * chronological (µs-precision boundaries stay the integration test's job).
+ */
+function makeKeysetSource(allRows: readonly AuditSourceRow[]): {
+  source: AuditEventSource;
+  calls: AuditSourceFilters[];
+} {
+  const calls: AuditSourceFilters[] = [];
+  const cmp = (a: { occurredAtIso: string; id: string }, b: { occurredAtIso: string; id: string }): number =>
+    a.occurredAtIso !== b.occurredAtIso
+      ? a.occurredAtIso < b.occurredAtIso
+        ? -1
+        : 1
+      : a.id < b.id
+        ? -1
+        : a.id > b.id
+          ? 1
+          : 0;
+  const source: AuditEventSource = {
+    async query(_ctx, filters) {
+      calls.push(filters);
+      const backward = filters.direction === 'backward';
+      const sorted = [...allRows].sort(cmp); // ASC by (ts, id)
+      const ordered = backward ? sorted : [...sorted].reverse(); // forward → DESC
+      const c = filters.cursor;
+      const scoped = c
+        ? ordered.filter((r) => {
+            const t = cmp(r, { occurredAtIso: c.iso, id: c.id });
+            return backward ? t > 0 : t < 0; // backward = newer (>), forward = older (<)
+          })
+        : ordered;
+      return scoped.slice(0, filters.limit);
+    },
+  };
+  return { source, calls };
+}
+
 function makeAudit(): { audit: InsightsAuditPort; record: ReturnType<typeof vi.fn> } {
   const record = vi.fn().mockResolvedValue(undefined);
   const audit: InsightsAuditPort = { record, recordInTx: vi.fn().mockResolvedValue(undefined) };
@@ -89,6 +132,13 @@ function makeAudit(): { audit: InsightsAuditPort; record: ReturnType<typeof vi.f
 
 function deps(rows: readonly AuditSourceRow[]): AuditQueryDeps & { _record: ReturnType<typeof vi.fn>; _calls: AuditSourceFilters[] } {
   const { source, calls } = makeSource(rows);
+  const { audit, record } = makeAudit();
+  return { source, audit, actorDirectory: fakeActorDirectory, _record: record, _calls: calls };
+}
+
+/** Like `deps`, but the source honours the keyset (cursor + direction + order). */
+function keysetDeps(allRows: readonly AuditSourceRow[]): AuditQueryDeps & { _record: ReturnType<typeof vi.fn>; _calls: AuditSourceFilters[] } {
+  const { source, calls } = makeKeysetSource(allRows);
   const { audit, record } = makeAudit();
   return { source, audit, actorDirectory: fakeActorDirectory, _record: record, _calls: calls };
 }
@@ -395,6 +445,37 @@ describe('auditQuery', () => {
     expect(res.ok).toBe(true);
     expect(d._calls[0]!.direction).toBeUndefined(); // forward — no backward scan without a cursor
     if (res.ok) expect(res.value.prevCursor).toBeNull();
+  });
+
+  it('backward keyset SELECTS newer-than-cursor rows (ASC) then reverses — keyset-honouring fake, multi-row', async () => {
+    const all = [
+      row({ id: 'o', occurredAtIso: '2026-05-20 01:00:00.000000+00', occurredAt: new Date('2026-05-20T01:00:00Z') }),
+      row({ id: 'n1', occurredAtIso: '2026-05-20 05:00:00.000000+00', occurredAt: new Date('2026-05-20T05:00:00Z') }),
+      row({ id: 'n2', occurredAtIso: '2026-05-20 06:00:00.000000+00', occurredAt: new Date('2026-05-20T06:00:00Z') }),
+      row({ id: 'n3', occurredAtIso: '2026-05-20 07:00:00.000000+00', occurredAt: new Date('2026-05-20T07:00:00Z') }),
+    ];
+    const d = keysetDeps(all);
+    const cursor = tok('2026-05-20 04:00:00.000000+00', 'z'); // between 'o' and 'n1'
+    const res = await auditQuery({ limit: 2, cursor, direction: 'backward' }, meta('admin'), ctx, d);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // gt keyset picks n1,n2,n3 (ASC); closest 2 = n1,n2; reversed → n2,n1 (DESC).
+    // The OLDER row 'o' is correctly EXCLUDED (proves direction drives selection).
+    expect(res.value.rows.map((r) => r.id)).toEqual(['n2', 'n1']);
+    expect(res.value.prevCursor).not.toBeNull(); // n3 remains → a Previous exists
+    expect(res.value.nextCursor).not.toBeNull(); // 'o' remains → a Next exists
+  });
+
+  it('forward keyset selects OLDER-than-cursor rows (DESC) — keyset-honouring fake', async () => {
+    const all = [
+      row({ id: 'a', occurredAtIso: '2026-05-20 07:00:00.000000+00', occurredAt: new Date('2026-05-20T07:00:00Z') }),
+      row({ id: 'b', occurredAtIso: '2026-05-20 06:00:00.000000+00', occurredAt: new Date('2026-05-20T06:00:00Z') }),
+      row({ id: 'c', occurredAtIso: '2026-05-20 05:00:00.000000+00', occurredAt: new Date('2026-05-20T05:00:00Z') }),
+    ];
+    const cursor = tok('2026-05-20 06:30:00.000000+00', 'z'); // older than a; newer than b/c
+    const res = await auditQuery({ limit: 50, cursor }, meta('admin'), ctx, keysetDeps(all));
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.rows.map((r) => r.id)).toEqual(['b', 'c']); // 'a' excluded (newer)
   });
 
   void pad;

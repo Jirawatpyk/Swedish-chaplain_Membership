@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
+import { buildAuditPaginationLinks } from './_lib/pagination-links';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -208,26 +209,16 @@ export default async function AuditLogPage({
       : [],
   }));
 
-  // Bidirectional keyset nav. `exportParams` already carries the active filters;
-  // each link layers the cursor/dir/page on top. Keyset stays O(page) + stable
-  // under concurrent appends (no offset, no page-drift), unlike numbered pages.
-  const hrefWith = (extra: Record<string, string>): string => {
-    const p = new URLSearchParams(exportParams);
-    for (const [k, v] of Object.entries(extra)) p.set(k, v);
-    const q = p.toString();
-    return `/admin/audit${q ? `?${q}` : ''}`;
-  };
-  // "Latest" → the cursor-less first page; shown whenever we're not already on it.
-  const firstHref = hrefWith({});
-  const showFirst = cursor !== '';
-  const prevHref =
-    result.value.prevCursor !== null
-      ? hrefWith({ cursor: result.value.prevCursor, dir: 'prev' })
-      : null;
-  const nextHref =
-    result.value.nextCursor !== null
-      ? hrefWith({ cursor: result.value.nextCursor })
-      : null;
+  // Bidirectional keyset nav (derivation extracted + unit-tested in _lib). Keyset
+  // stays O(page) + stable under concurrent appends (no offset, no page-drift),
+  // unlike numbered pages.
+  const { firstHref, showFirst, prevHref, nextHref } = buildAuditPaginationLinks({
+    basePath: '/admin/audit',
+    filterParams: exportParams,
+    cursor,
+    prevCursor: result.value.prevCursor,
+    nextCursor: result.value.nextCursor,
+  });
 
   return (
     <TableContainer>
