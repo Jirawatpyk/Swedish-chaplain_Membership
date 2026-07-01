@@ -13,7 +13,10 @@
    `issueEventInvoiceAsPaid` mints the receipt in one shot for out-of-band event payments;
    inherits the same §87-RC-at-payment rules.
 **Covers**: US1 (AS2, AS4), US2 (Original+Copy), US7, US8 (embassy §80/1(5) zero-rate) · FR-002,
-   FR-004, FR-005, FR-013, FR-017, FR-019, FR-021, FR-025 · SC-001, SC-002, SC-004, SC-008
+   FR-004, FR-005, FR-013, FR-017, FR-019, FR-021, FR-025, **FR-028** (§87-mint mutation contract),
+   **FR-029** (member timeline `tax_receipt_issued`), **FR-032** (uniform action feedback),
+   **FR-035** (palette + per-row quick action + undo-on-issue-only) · SC-001, SC-002, SC-004,
+   SC-008, **SC-012** (timeline + AR correctness)
 
 ---
 
@@ -149,7 +152,56 @@ webhook handler maps them to its own retry/ack semantics.
   landing) is insufficient because allocation and render are decoupled on the async path. The
   payload also captures **`vatTreatment`** (+ **`zeroRateCertNo`** when `zero_rated_80_1_5`) so the
   §80/1(5) zero-rate and its MFA certificate are traceable at the tax-numbering moment (US8).
+  **FR-029 (member timeline) — this is the signal `record-payment` emits to drive the F3
+  member-timeline `tax_receipt_issued` entry** (keys `admin.members.timeline.taxReceiptIssued`
+  EN/TH/SV; interpolates the `RC-…` number + links the RC document). The timeline renders it
+  **alongside `invoice_paid`** so the payment moment is not confusingly doubled, while the existing
+  `invoice_issued` timeline copy is reworded to "ใบแจ้งหนี้ issued" (FR-014). Together with the
+  status + `bill_document_number_raw` AR counting (FR-030), this is the **SC-012** signal
+  (timeline shows the RC number after payment; F9 AR / F8 at-risk / member-detail count
+  issued-unpaid ใบแจ้งหนี้ correctly).
 - `receipt_rendered` (10y) — emitted when the receipt bytes land (async worker) / inline (sync);
   carries the RC `receipt_document_number_raw` + sha256.
 - `pdf_render_permanently_failed` (5y) — reconcile-cron after retry budget exhausts.
 - (unchanged) `receipt_pdf_downloaded` (10y) on signed-URL issuance.
+
+## Client action UX (admin invoices/documents surface)
+
+Every string introduced below is **new interactive copy** and MUST ship **EN/TH/SV** keys
+(Constitution V; TH is mandatory on tax surfaces — shared decision 4). Any status/confirmation
+copy is **text** (labelled text, never colour-only) for WCAG 1.4.1.
+
+### FR-028 — §87-mint mutation contract (money-mutation modal)
+
+`recordPayment` — and **every §87-minting action** (the event `issue-as-paid` sibling, the optional
+bulk record-payment) — MUST use the **money-mutation modal** (ux-standards § 6.4): a **spinner**
+shows while the mutation is in flight and **the dialog stays open until the server returns success
+or failure**. **NO optimistic close, NO undo toast.** The shipped **bulk-mark-paid optimistic-UI +
+undo-toast pattern is FORBIDDEN here** — an `RC` §87 tax number is minted in-tx at the payment
+moment and cannot be silently rolled back client-side, so optimistic/undo must **never** be reused
+on this action. (Undo/optimistic are permitted **only** on the F4 issue action — FR-035.)
+
+### FR-032 — uniform action feedback
+
+- **Success** (both the offline `/pay` path and the online settle bridge): a doc-specific toast
+  **"Tax receipt RC-… issued"** interpolating `receipt_document_number_raw` (EN/TH/SV keys),
+  matching the wider issue/pay/re-render/credit/void toast family.
+- **Concurrent stale-write (409)** — `concurrent_state_change` / an `invalid_status` replay on an
+  already-`paid` invoice surfaces an **inline "already paid — refresh"** message (NOT a raw error
+  toast), prompting a reload to pick up the already-minted `RC` number.
+- **Tax-mutation failure** — irreversible §87 failures (`overflow`, `pdf_render_failed`,
+  `blob_upload_failed`, and any §87-mint failure) route to an **inline `role=alert` (focus moved to
+  it), not a transient toast**, so the admin cannot miss that the mint did not complete.
+
+### FR-035 — palette + per-row quick action + undo-on-issue-only
+
+- **Command palette** (`cmdk`; keys `admin.commandPalette.invoices.*` EN/TH/SV): a **"Record
+  payment for …"** action that **deep-links to the pay flow via `?pay=1`** on the invoice detail
+  route, plus a **"Re-render tax receipt"** action that reuses the F4 resend / re-render surface
+  with the **same allocated `RC`** (never re-numbers — § FR-019).
+- **Per-row quick action** — a **"Record payment"** button on each `issued` bill row (defaults to
+  **today / bank-transfer**) that opens the same money-mutation modal (FR-028).
+- **Bulk record-payment (optional)** — **one `RC` per invoice, sequential, in-tx, gap-free**, and
+  explicitly **NOT undoable** (each `RC` is a real §87 mint). Undo/optimistic **never** apply to
+  record-payment; a **toast-with-undo (10 s)** is offered **only after ISSUE** (revert to draft —
+  no §87 consumed).

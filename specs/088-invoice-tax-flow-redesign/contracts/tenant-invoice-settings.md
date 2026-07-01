@@ -4,7 +4,9 @@
 **Use-case**: `updateTenantInvoiceSettings`
 **Route handler**: `src/app/api/tenant-invoice-settings/route.ts`
 **Covers**: US5 (footer/WHT note + offline-payment bank block), US3 (seller Head Office/Branch),
-   numbering cutover · FR-008, FR-012, FR-022
+   numbering cutover · FR-008, FR-012, FR-022, **FR-026** (prefix-flip confirm dialog),
+   **FR-036** (mobile-first responsive + `<fieldset><legend>` grouping + sticky Save) ·
+   **SC-010**, **SC-011** (settings form passes reflow @320px + axe)
 
 ---
 
@@ -128,6 +130,28 @@ copy is **text** (text-badges / labelled text, never colour-only) for WCAG 1.4.1
 settings form is a **new/extended surface** and MUST pass an explicit **axe-core WCAG 2.1 AA
 `@a11y`** assertion — keyboard + focus order, labelled inputs, and `aria-live` on the confirm /
 toast reveals — not just a generic e2e pass (shared decision 5).
+
+### FR-036 — mobile-first responsive layout + `<fieldset><legend>` grouping
+
+The settings form is one of the **4 new surfaces** that MUST render at **320px with no horizontal
+scroll** (`document.scrollWidth ≤ innerWidth`), with all new controls at **touch-target ≥44×44px**
+(≥24 min).
+
+- **Fieldset grouping** — the form groups its fields with semantic `<fieldset><legend>`:
+  **Seller** (Head Office / Branch — §86/4), **Bank** (offline-payment bank block +
+  `payment_instructions_*`), **Notes** (WHT / footer note), and **Numbering** (prefix / mode
+  cutover). Each `<legend>` carries an **EN/TH/SV** key. Grouping is semantic (screen-reader field
+  association) — not colour- or box-only.
+- **Reachable / sticky Save at 320px** — the primary Save control stays **reachable and sticky**
+  (does not scroll off-screen or get clipped) at 320px width and is **≥44px** tall.
+- **All new controls ≥44×44px** — inputs, the Head-Office/Branch toggle, the bank-block fields,
+  the free-text textareas, and the prefix-flip confirm button (FR-026) meet the target-size floor;
+  the drag/drop cert affordance elsewhere stays an enhancement over a native ≥44px control.
+
+**SC-010 / SC-011 (measurable):** the `@a11y`/responsive E2E (T072a) asserts the settings form
+passes **reflow @320px** (`document.scrollWidth ≤ innerWidth`) with every new control measured
+**≥44px**, plus **WCAG 1.4.10 Reflow / 1.4.4 Resize 200% / 2.5.5 Target Size** (axe alone does not
+cover these), **in addition to** the existing axe-core WCAG 2.1 AA pass.
 
 ### Prefix-flip confirmation (MED) — AlertDialog, not a plain save
 
