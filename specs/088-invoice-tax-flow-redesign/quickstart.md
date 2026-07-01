@@ -61,15 +61,15 @@ The seeder (`scripts/seed-f4-invoice-settings.ts`) is `ON CONFLICT (tenant_id) D
 |---|---|---|
 | `receipt_numbering_mode` | `'separate'` | routes payment to the `allocateNext({documentType:'receipt'})` RC branch (retires the `combinedMode` number-reuse) |
 | `receipt_number_prefix` | `'RC'` | the §86/4 tax-receipt series (already nullable, added migration 0142) |
-| `wht_note_th` | แบบ B (below) | membership-only WHT note — basis ม.65 ทวิ (13), never a code literal |
-| `wht_note_en` | แบบ B (below) | EN counterpart |
+| `wht_note_th` | แบบ A (below) | membership-only WHT note (customer's wording); never a code literal |
+| `wht_note_en` | แบบ A (below) | EN counterpart |
 | `seller_is_head_office` | `true` | TSCC issues from head office (F2 answer; adjustable if the customer says otherwise) |
 | `seller_branch_code` | `NULL` | head office ⇒ no branch code |
 
-**WHT note — แบบ B wording (basis ม.65 ทวิ (13) + ท.ป.4/2528; NOT "entity income-tax-exempt"):**
+**WHT note — แบบ A (customer-specified wording, typo-fixed; the accountant may refine the legal basis toward ม.65 ทวิ (13) at go-live — editable tenant field):**
 
-- **TH** — `ค่าบำรุงสมาชิกเป็นรายได้ที่ได้รับยกเว้นตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษี ณ ที่จ่าย`
-- **EN** — `Membership dues are income exempt under Section 65 bis (13) of the Revenue Code; the payer has no withholding-tax obligation.`
+- **TH** — `หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ ไม่ต้องหักภาษี ณ ที่จ่าย`
+- **EN** — `No withholding tax is applicable, as the income is exempt from income tax.`
 
 **Preferred — via the settings form (US4):** sign in as admin → `/admin/invoices/settings` → set Receipt numbering = **Separate**, prefix = **RC**, paste the TH + EN WHT notes, seller = **Head office**. Save.
 
@@ -92,8 +92,8 @@ await db.execute(sql`
     receipt_number_prefix  = 'RC',
     seller_is_head_office  = TRUE,
     seller_branch_code     = NULL,
-    wht_note_th = ${'ค่าบำรุงสมาชิกเป็นรายได้ที่ได้รับยกเว้นตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษี ณ ที่จ่าย'},
-    wht_note_en = ${'Membership dues are income exempt under Section 65 bis (13) of the Revenue Code; the payer has no withholding-tax obligation.'}
+    wht_note_th = ${'หอการค้าไทย-สวีเดนได้รับการยกเว้นภาษีเงินได้ ไม่ต้องหักภาษี ณ ที่จ่าย'},
+    wht_note_en = ${'No withholding tax is applicable, as the income is exempt from income tax.'}
   WHERE tenant_id = ${TENANT}
 `);
 console.log('✓ 088 cutover applied for', TENANT);
