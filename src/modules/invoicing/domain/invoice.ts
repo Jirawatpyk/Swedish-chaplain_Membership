@@ -272,6 +272,16 @@ export interface InvoiceCommon {
    * gap on every retry).
    */
   readonly receiptDocumentNumberRaw: string | null;
+  /**
+   * 088-invoice-tax-flow-redesign (US1) — the pre-payment ใบแจ้งหนี้'s
+   * NON-§87 bill number (e.g. `SC-2026-000123`), allocated at issue from the
+   * `bill` stream when `FEATURE_088_TAX_AT_PAYMENT` is on. Disjoint from
+   * `sequenceNumber`/`documentNumber` (which stay NULL for a non-§87 bill), so
+   * it can never enter the §87 uniqueness index (SC-003). NULL on drafts, on
+   * every pre-088 row, and on the legacy §87-at-issue path (flag off). Written
+   * once in the draft→issued UPDATE, then locked by the immutability trigger.
+   */
+  readonly billDocumentNumberRaw: string | null;
 
   readonly lines: readonly InvoiceLine[];
 

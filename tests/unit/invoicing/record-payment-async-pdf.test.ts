@@ -108,6 +108,7 @@ function makeIssuedInvoice(): Invoice {
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -290,15 +291,20 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
   // the allocated raw doc num is persisted on the invoice row via
   // applyPayment so the worker reads it back instead of re-allocating
   // (which would create §87 gaps on every retry).
-  it('separate-mode async: pre-allocates receipt seq + persists receiptDocumentNumberRaw on applyPayment', async () => {
+  it('088 async: pre-allocates the §87 receipt number + persists receiptDocumentNumberRaw on applyPayment', async () => {
     const draft = makeIssuedInvoice();
-    const deps = makeAsyncDeps(
-      draft,
-      makeSettings({
-        receiptNumberingMode: 'separate',
-        receiptNumberPrefix: 'RE',
-      }),
-    );
+    // 088 T008/T018 — RC allocation is flag-gated (`taxAtPayment`), not
+    // settings-driven. Enable it so the async pre-allocation path runs.
+    const deps = {
+      ...makeAsyncDeps(
+        draft,
+        makeSettings({
+          receiptNumberingMode: 'separate',
+          receiptNumberPrefix: 'RE',
+        }),
+      ),
+      taxAtPayment: true,
+    };
     // Allocator returns sequence 7 — the test asserts that 7 is the
     // value that lands on the row (NOT some later value from a
     // worker re-allocation).

@@ -50,7 +50,12 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   invoiceNumberPrefix: z.string().min(1).max(20).optional(),
   creditNoteNumberPrefix: z.string().min(1).max(20).optional(),
   receiptNumberPrefix: z.string().min(1).max(20).nullable().optional(),
-  receiptNumberingMode: z.enum(['combined', 'separate']).optional(),
+  // 088 T008 (F.5) — combined-numbering mode is RETIRED: the pre-payment bill
+  // carries a non-§87 `SC` number, so the payment-time §86/4 receipt can never
+  // reuse a §87 number from it. Only `'separate'` is accepted now (fail-closed);
+  // a `'combined'` PATCH is rejected. The read type keeps the historical union
+  // for legacy rows, but no new `'combined'` value can be written.
+  receiptNumberingMode: z.enum(['separate']).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
   defaultNetDays: z.number().int().min(0).max(365).optional(),
   proRatePolicy: z.enum(['none', 'monthly', 'daily']).optional(),

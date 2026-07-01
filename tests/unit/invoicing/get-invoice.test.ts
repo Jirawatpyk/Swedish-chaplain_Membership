@@ -51,6 +51,7 @@ function makeStub(): Invoice {
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
     lines: [],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',

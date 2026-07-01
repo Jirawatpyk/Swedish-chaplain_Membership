@@ -104,6 +104,8 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // 088 T022 — new bill→§87-at-payment flow when the flag is on.
+    taxAtPayment: env.features.f088TaxAtPayment,
   };
 }
 
@@ -136,6 +138,9 @@ export function makeIssueEventInvoiceAsPaidDeps(
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // 088 T022 — mirror record-payment's §87-RC-at-payment behaviour for the
+    // event as-paid path when the flag is on (FR-005 / FR-006).
+    taxAtPayment: env.features.f088TaxAtPayment,
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
@@ -423,6 +428,8 @@ export function makeRecordPaymentDeps(
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
+    // 088 T022 — mint the §86/4 §87 RC receipt number at payment when on.
+    taxAtPayment: env.features.f088TaxAtPayment,
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }

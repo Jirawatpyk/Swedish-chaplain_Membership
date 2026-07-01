@@ -145,8 +145,20 @@ export interface InvoiceRepo {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
       readonly fiscalYear: number;
-      readonly sequenceNumber: number;
-      readonly documentNumber: string;
+      /**
+       * §87 invoice-stream numbering — legacy §86/4-at-issue path. In the 088
+       * new flow (FEATURE_088_TAX_AT_PAYMENT on) both are NULL and the bill's
+       * NON-§87 number rides `billDocumentNumberRaw` instead. Exactly one of
+       * `{sequenceNumber+documentNumber}` / `billDocumentNumberRaw` is set — the
+       * DB `invoices_non_draft_has_snapshots` CHECK enforces the invariant.
+       */
+      readonly sequenceNumber: number | null;
+      readonly documentNumber: string | null;
+      /**
+       * 088 US1 — the NON-§87 `bill` number (SC), written on the new
+       * tax-at-payment flow; NULL on the legacy §87-at-issue path.
+       */
+      readonly billDocumentNumberRaw?: string | null;
       readonly issueDate: string;
       readonly dueDate: string;
       readonly subtotalSatang: Satang;

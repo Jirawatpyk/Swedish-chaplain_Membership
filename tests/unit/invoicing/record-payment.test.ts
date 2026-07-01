@@ -331,8 +331,17 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
-  it('separate numbering — allocates receipt seq', async () => {
-    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings({ receiptNumberingMode: 'separate' }));
+  it('088 tax-at-payment — allocates the §87 RC receipt number + renders receipt_combined', async () => {
+    // 088 T008/T018 — RC allocation is now FLAG-gated (`taxAtPayment`), not
+    // settings-driven. A MEMBERSHIP receipt is receipt_combined (§86/4) — the
+    // old separate-mode rendered it as receipt_separate, a §105 mislabel that
+    // `inferReceiptKind` (D13) corrects.
+    const deps = makeDeps(
+      true,
+      makeIssuedInvoice(),
+      makeSettings({ receiptNumberingMode: 'separate' }),
+      { taxAtPayment: true },
+    );
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
@@ -345,7 +354,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       expect.objectContaining({ documentType: 'receipt' }),
     );
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
+      expect.objectContaining({ kind: 'receipt_combined' }),
     );
   });
 
@@ -520,6 +529,9 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       true,
       invoiceWithRegFee,
       makeSettings({ receiptNumberingMode: 'separate' }),
+      // 088 — RC allocation is flag-gated now; enable it so the member→advisory
+      // lock-order assertion still exercises the allocation.
+      { taxAtPayment: true },
     );
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
@@ -599,7 +611,10 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     // a null member, and threads the event Model-B VAT-inclusive flag.
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: 'receipt_separate',
+        // 088 D13 — an event-with-TIN buyer's receipt is receipt_combined
+        // (§86/4), NOT receipt_separate (§105); `inferReceiptKind` fixes the
+        // former settings-driven mislabel.
+        kind: 'receipt_combined',
         vatInclusive: true,
         member: expect.objectContaining({ legal_name: 'Walk-in Buyer Co' }),
       }),

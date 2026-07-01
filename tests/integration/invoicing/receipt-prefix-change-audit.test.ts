@@ -82,7 +82,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
         requestId,
         ...BASE_REQUIRED,
         invoiceNumberPrefix: 'INV',
-        receiptNumberingMode: 'combined',
+        receiptNumberingMode: 'separate',
       },
     );
     expect(result.ok).toBe(true);
@@ -131,7 +131,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
         requestId: bootstrapRequestId,
         ...BASE_REQUIRED,
         invoiceNumberPrefix: 'INV',
-        receiptNumberingMode: 'combined',
+        receiptNumberingMode: 'separate',
       },
     );
     expect(bootstrapResult.ok).toBe(true);
@@ -191,7 +191,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
       old: 'INV',
       new: 'TX',
     });
-    expect(payload.receipt_numbering_mode).toBe('combined');
+    expect(payload.receipt_numbering_mode).toBe('separate');
 
     // The invoice/FY-2026 last_sequence_number SHOULD be 3 (we allocated
     // 1, 2, 3; next_sequence_number is now 4; last issued = 3).
@@ -217,7 +217,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
           actorUserId: user.userId,
           ...BASE_REQUIRED,
           invoiceNumberPrefix: 'INV',
-          receiptNumberingMode: 'combined',
+          receiptNumberingMode: 'separate',
         },
       );
 
@@ -285,7 +285,7 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
           actorUserId: user.userId,
           ...BASE_REQUIRED,
           invoiceNumberPrefix: 'INV',
-          receiptNumberingMode: 'combined',
+          receiptNumberingMode: 'separate',
         },
       );
       expect(bootstrapResult.ok).toBe(true);

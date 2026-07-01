@@ -193,9 +193,20 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   // ใบเสร็จรับเงิน must never carry a credit-note stamp.
   const isCreditAnnotatable =
     input.kind === 'invoice' || input.kind === 'receipt_combined';
+  // 088-invoice-tax-flow-redesign (T016) — the pre-payment document is a
+  // NON-tax ใบแจ้งหนี้ / Invoice, NOT a §86/4 ใบกำกับภาษี. `billMode` is set by
+  // `issueInvoice` ONLY when FEATURE_088_TAX_AT_PAYMENT is on. When absent
+  // (legacy flag-off + every pre-088 render) the kind falls through to the
+  // historical ใบกำกับภาษี / Tax Invoice title, so old output is byte-identical.
+  const isBill =
+    (input.kind === 'invoice' || input.kind === 'invoice_preview') &&
+    input.billMode === true;
   let titleTh = 'ใบกำกับภาษี';
   let titleEn = 'Tax Invoice';
-  if (input.kind === 'credit_note') {
+  if (isBill) {
+    titleTh = 'ใบแจ้งหนี้';
+    titleEn = 'Invoice';
+  } else if (input.kind === 'credit_note') {
     titleTh = 'ใบลดหนี้';
     titleEn = 'Credit Note';
   } else if (input.kind === 'receipt_combined') {
@@ -222,7 +233,9 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   // Thai-RD §86/4 requires the document to mark whether it is the
   // original or a copy. Previews + voids have their own watermark;
   // all other rendered tax documents are the tenant's ORIGINAL copy.
-  const originalMarker = isPreview || isVoid ? null : 'ต้นฉบับ / ORIGINAL';
+  // 088 T016 — a ใบแจ้งหนี้ (bill) carries NO ต้นฉบับ/ORIGINAL marker (it is
+  // not a §86/4 tax document). Previews + voids already suppress it.
+  const originalMarker = isPreview || isVoid || isBill ? null : 'ต้นฉบับ / ORIGINAL';
   // 065 Task 31 (tax-auditor M-D) — kind-aware Revenue-Code citation,
   // gated on template v3+. Versions 1/2 keep the historical
   // unconditional §86/4 string BYTE-FOR-BYTE: every pinned-version
@@ -458,9 +471,14 @@ export function InvoiceTemplate(input: PdfRenderInput) {
             </View>
           )}
 
-        <Text style={styles.footer}>
-          Rendered by Chamber-OS ({shapeThai(footerCitation)})
-        </Text>
+        {/* 088 T016 — the ใบแจ้งหนี้ (bill) carries NO Revenue-Code §-citation
+            footer (its legal identity rests on the non-tax title alone;
+            research §1). Legacy tax documents keep the citation unchanged. */}
+        {!isBill && (
+          <Text style={styles.footer}>
+            Rendered by Chamber-OS ({shapeThai(footerCitation)})
+          </Text>
+        )}
       </Page>
     </Document>
   );

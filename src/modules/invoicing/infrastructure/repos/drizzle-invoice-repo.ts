@@ -316,6 +316,8 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     receiptPdfRenderAttempts: row.receiptPdfRenderAttempts ?? 0,
     receiptPdfLastError: row.receiptPdfLastError ?? null,
     receiptDocumentNumberRaw: row.receiptDocumentNumberRaw ?? null,
+    // 088 US1 — non-§87 bill number (SC) allocated at issue in the new flow.
+    billDocumentNumberRaw: row.billDocumentNumberRaw ?? null,
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -770,6 +772,9 @@ export function makeDrizzleInvoiceRepo(
           fiscalYear: input.fiscalYear,
           sequenceNumber: input.sequenceNumber,
           documentNumber: input.documentNumber,
+          // 088 US1 — non-§87 bill number (SC) written in the new flow; the
+          // legacy §87-at-issue path leaves it undefined → NULL (unchanged).
+          billDocumentNumberRaw: input.billDocumentNumberRaw ?? null,
           issueDate: input.issueDate,
           dueDate: input.dueDate,
           subtotalSatang: input.subtotalSatang,

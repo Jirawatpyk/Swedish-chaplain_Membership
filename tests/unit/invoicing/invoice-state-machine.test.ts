@@ -170,6 +170,7 @@ describe('Invoice state machine', () => {
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
       lines: [],
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',

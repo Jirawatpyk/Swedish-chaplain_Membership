@@ -46,6 +46,17 @@ export interface PdfRenderInput {
    * exclusive without change.
    */
   readonly vatInclusive?: boolean;
+  /**
+   * 088-invoice-tax-flow-redesign (US1 / T016) — render the `'invoice'` /
+   * `'invoice_preview'` kind as the NON-tax ใบแจ้งหนี้ / Invoice (no §86/4
+   * title, no ต้นฉบับ/ORIGINAL marker, no §-citation footer) instead of the
+   * legacy §86/4 ใบกำกับภาษี / Tax Invoice. Set to `true` by `issueInvoice`
+   * ONLY when `FEATURE_088_TAX_AT_PAYMENT` is on (the bill is then a non-§87
+   * `SC` document). OPTIONAL + defaults to the legacy titles when absent, so
+   * every pre-088 render input is byte-identical and the receipt / credit-note
+   * / void kinds are unaffected (only the pre-payment bill kind relabels).
+   */
+  readonly billMode?: boolean;
   readonly voidReason?: string | null;
   /**
    * 064 W1 S31 — what the document being VOID-stamped ORIGINALLY was.

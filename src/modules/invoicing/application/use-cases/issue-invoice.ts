@@ -185,6 +185,13 @@ export interface IssueInvoiceDeps {
    * pass the row's stored `pdf_template_version` instead (R3-E4).
    */
   readonly currentTemplateVersion: number;
+  /**
+   * 088-invoice-tax-flow-redesign (T022) — FEATURE_088_TAX_AT_PAYMENT.
+   * When true, issue allocates ONLY the non-§87 `bill` number (SC) and
+   * renders the ใบแจ้งหนี้; the §86/4 §87 number is minted later at payment.
+   * When false/undefined the legacy §87-at-issue §86/4 flow runs unchanged.
+   */
+  readonly taxAtPayment?: boolean;
 }
 
 export async function issueInvoice(
@@ -391,21 +398,31 @@ export async function issueInvoice(
     // an `IssueInvoiceInternalError` so withTx rolls back and the
     // allocator's increment is NOT committed.
 
-    // E. Allocate sequence.
-    // Event + membership invoices INTENTIONALLY share the single
-    // `documentType:'invoice'` §87 stream. Thai RD §87 requires a
-    // continuous, no-gaps sequence across ALL tax invoices for the
-    // fiscal year — a separate stream for events would create gaps in
-    // the membership stream and vice versa.
+    // E. Allocate the document number.
+    //
+    // 088 US1 (T017) — the stream depends on FEATURE_088_TAX_AT_PAYMENT:
+    //   NEW flow (taxAtPayment) — the pre-payment document is a NON-tax
+    //     ใบแจ้งหนี้ numbered from the `bill` stream (prefix from
+    //     `invoiceNumberPrefix` → 'SC' at cutover). NO §87 number is consumed
+    //     at issue; the §86/4 §87 `RC` number is minted later at payment
+    //     (record-payment.ts). A gap in the bill stream is LEGAL — §87 does not
+    //     govern a non-tax document (research §2/§3). The overflow-must-throw
+    //     §87 no-gaps discipline moves WITH the §87 allocation to payment time.
+    //   LEGACY flow — the §86/4 §87 `invoice`-stream number is allocated HERE.
+    //     Event + membership invoices INTENTIONALLY share the single
+    //     `documentType:'invoice'` §87 stream (Thai RD §87 continuity).
+    const taxAtPayment = deps.taxAtPayment === true;
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
-      documentType: 'invoice',
+      documentType: taxAtPayment ? 'bill' : 'invoice',
       fiscalYear: fy,
     });
     const docNum = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
     if (!docNum.ok) {
       // Critical: overflow happens AFTER allocateNext — must throw, not
-      // return err, otherwise the tx commits and we leak a §87 gap.
+      // return err, otherwise the tx commits. On the legacy stream this leaks
+      // a §87 gap; on the bill stream a gap is legal but the tx must still roll
+      // back so a bill row without a valid number never commits.
       throw new IssueInvoiceInternalError({ code: 'overflow', fiscalYear: fy });
     }
 
@@ -487,6 +504,9 @@ export async function issueInvoice(
           // annotation on event Model-B documents (gross line + net subtotal +
           // VAT + total read coherently). Membership invoices are VAT-exclusive.
           vatInclusive: draft.vatInclusive,
+          // 088 T016 — render the pre-payment document as the non-tax ใบแจ้งหนี้
+          // (no §86/4 title / ORIGINAL marker / §-citation) in the new flow.
+          billMode: taxAtPayment,
         },
         blobKey,
       },
@@ -503,8 +523,12 @@ export async function issueInvoice(
         tenantId: input.tenantId,
         invoiceId,
         fiscalYear: fy,
-        sequenceNumber: seq,
-        documentNumber: docNum.value.raw,
+        // 088 US1 — NEW flow writes the non-§87 bill number (SC) to
+        // bill_document_number_raw with a NULL §87 sequence/document pair;
+        // LEGACY writes the §87 pair. The DB CHECK enforces exactly one leg.
+        sequenceNumber: taxAtPayment ? null : seq,
+        documentNumber: taxAtPayment ? null : docNum.value.raw,
+        billDocumentNumberRaw: taxAtPayment ? docNum.value.raw : null,
         issueDate,
         dueDate,
         // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
@@ -563,14 +587,21 @@ export async function issueInvoice(
     //   entirely. Mirrors the `emitNonTimelineDraftCreated` precedent in
     //   create-event-invoice-draft.ts.
     const issuedSummary = `Invoice ${docNum.value.raw} issued`;
-    const issuedPayloadBase = {
+    // 088 US1 — the audit payload reflects WHICH number was minted. NEW flow:
+    // the non-§87 bill number (bill_document_number_raw) + a `tax_number_consumed:
+    // false` marker (the §87 §86/4 number is minted at payment, on
+    // tax_receipt_issued). LEGACY: the §87 sequence/document pair as before.
+    const issuedPayloadBase: Record<string, unknown> = {
       invoice_id: invoiceId,
       fiscal_year: fy,
-      sequence_number: seq,
-      document_number: docNum.value.raw,
+      sequence_number: taxAtPayment ? null : seq,
+      document_number: taxAtPayment ? null : docNum.value.raw,
+      ...(taxAtPayment
+        ? { bill_document_number_raw: docNum.value.raw, tax_number_consumed: false }
+        : {}),
       total_satang: total.satang.toString(),
       pdf_sha256: rendered.sha256,
-    } as const;
+    };
     if (memberId !== null) {
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,

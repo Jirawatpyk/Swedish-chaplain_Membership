@@ -111,6 +111,9 @@ export function serialiseInvoice(invoice: Invoice) {
     // route). pdf_sha256 (content hash for integrity) is retained.
     pdf_sha256: invoice.pdf?.sha256 ?? null,
     pdf_template_version: invoice.pdf?.templateVersion ?? null,
+    // 088 — the pre-payment ใบแจ้งหนี้'s NON-§87 bill number (SC), allocated
+    // at issue in the new tax-at-payment flow. NULL on drafts + legacy rows.
+    bill_document_number_raw: invoice.billDocumentNumberRaw,
     // Receipt-PDF surface (separate-mode keeps its own §87 sequence
     // number + its own rendered bytes; combined-mode reuses the
     // invoice document number with `receipt_document_number_raw` = null).

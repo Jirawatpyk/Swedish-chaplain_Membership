@@ -78,7 +78,8 @@ const bodySchema = z.object({
   invoice_number_prefix: z.string().min(1).max(20).optional(),
   credit_note_number_prefix: z.string().min(1).max(20).optional(),
   receipt_number_prefix: z.string().min(1).max(20).nullable().optional(),
-  receipt_numbering_mode: z.enum(['combined', 'separate']).optional(),
+  // 088 T008 (F.5) — combined-numbering mode retired; only 'separate' accepted.
+  receipt_numbering_mode: z.enum(['separate']).optional(),
   fiscal_year_start_month: z.number().int().min(1).max(12).optional(),
   default_net_days: z.number().int().min(0).max(365).optional(),
   pro_rate_policy: z.enum(['none', 'monthly', 'daily']).optional(),

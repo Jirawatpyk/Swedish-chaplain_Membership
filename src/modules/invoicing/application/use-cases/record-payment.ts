@@ -45,9 +45,10 @@ import type {
 } from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
+import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import {
   buyerHasTin,
-  inferEventDocumentKind,
+  inferReceiptKind,
 } from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
@@ -171,6 +172,16 @@ export interface RecordPaymentDeps {
   readonly outbox: EmailOutboxPort;
   readonly memberIdentity: MemberIdentityPort;
   readonly currentTemplateVersion: number;
+  /**
+   * 088-invoice-tax-flow-redesign (T018 / T022) — FEATURE_088_TAX_AT_PAYMENT.
+   * When true, the §86/4 §87 `RC` receipt number is minted HERE at payment
+   * (the bill carried only a non-§87 `SC` number), the receipt is dated at the
+   * payment date, and a `tax_receipt_issued` audit event fires. When
+   * false/undefined the legacy flow runs: the receipt reuses the issue-time
+   * §87 invoice number (the retired combined mode) — no second §87 number is
+   * minted (the `combinedMode` settings branch is retired, F.5 / T008).
+   */
+  readonly taxAtPayment?: boolean;
   /**
    * T166-03 — Async receipt PDF render enqueue port. Required when
    * `asyncReceiptPdf=true`; never invoked when the flag is false.
@@ -455,49 +466,59 @@ export async function recordPayment(
       );
     }
 
-    // Receipt PDF — reuses invoice snapshot (FR-038 immutability). The
-    // kind differs based on tenant setting; combined mode renders a
-    // single "ใบกำกับภาษี/ใบเสร็จรับเงิน" label; separate mode
-    // allocates its own receipt sequence number.
-    //
-    // 054/064/066 — §86/4 doc-type consistency. The receipt kind mirrors the
-    // issue-time document kind via the shared `inferEventDocumentKind`
-    // discriminator, so issue-, pay-, and credit-time gates stay in lockstep
-    // (FIX 5 — no inline `buyerHasTin` reconstruction):
-    //
-    //   • EVENT + no TIN  → `receipt_separate` (ใบเสร็จรับเงิน / §105). An event
-    //     ticket buyer with no TIN is routed to a §105 receipt (the 064 design),
-    //     so the payment-time receipt FORCES `receipt_separate`, overriding the
-    //     tenant's `receiptNumberingMode='combined'`. (In practice no TIN-less
-    //     event row reaches here — the 064 interim guard above rejects it — but
-    //     the verdict is kept for lockstep with the issue-/credit-time gates.)
-    //   • MEMBERSHIP (any TIN state) → `inferEventDocumentKind` returns 'invoice',
-    //     so `forceSeparate` is ALWAYS false and a membership receipt follows the
-    //     tenant setting (`receipt_combined` when combined-mode). 066 relax: a
-    //     no-TIN membership buyer is now REACHABLE here, and `receipt_combined`
-    //     (the "ใบกำกับภาษี/ใบเสร็จรับเงิน" label) is CORRECT for them — a §86/4
-    //     to a non-registrant with name+address is a valid tax invoice, so the
-    //     combined tax-invoice/receipt is equally valid. (The old "a TIN-less
-    //     buyer must never receive the ใบกำกับภาษี label" rule was the legally-
-    //     wrong premise 066 corrected; it never applied to membership.)
-    //
-    // The `member` rendered below is the BUYER snapshot
+    // Receipt PDF — reuses the invoice snapshot (FR-038 immutability). The
+    // `member` rendered below is the BUYER snapshot
     // (`loaded.memberIdentitySnapshot`, non-null per the guard above) — NEVER a
     // deref of `member_id`, so a null-member event invoice renders correctly.
-    // (TIN check trims whitespace, matching the issue-time discriminator.)
-    const forceSeparate =
-      inferEventDocumentKind(
-        loaded.invoiceSubject,
-        loaded.memberIdentitySnapshot.tax_id,
-      ) === 'receipt_separate';
-    const combinedMode =
-      settings.receiptNumberingMode === 'combined' && !forceSeparate;
+    //
+    // 088 US1 (T008 / T018 / T022) — the combined-mode SETTINGS branch is
+    // RETIRED (F.5): in the new flow the bill carries a non-§87 `SC` number, so
+    // reusing it as the tax number would VIOLATE §87. Whether the §86/4 §87
+    // receipt number is minted NOW is FLAG-gated instead of settings-gated:
+    //
+    //   reuseInvoiceNumber (legacy flag-off, membership / event-with-TIN):
+    //     reuse the issue-time §87 `invoice`-stream number (`loaded.documentNumber`)
+    //     as the receipt — the behaviour the retired combined mode provided —
+    //     so NO second §87 number is minted (one §86/4 per sale).
+    //   allocate (flag-on, OR the event-no-TIN §105 arm):
+    //     • flag-on: mint the §86/4 §87 `RC` receipt number now (§78/1 tax
+    //       point). The bill was a non-§87 `SC` number, so the RC is the SOLE
+    //       §87 number for the sale — dated at the payment date; the §87 fiscal
+    //       year derives from the PAYMENT date in Asia/Bangkok (trap G — never
+    //       now(), never the frozen issue FY).
+    //     • event-no-TIN (forceSeparate): its own §105 `RE` receipt (unchanged;
+    //       unreachable here — the 064 interim guard rejects no-TIN event rows
+    //       above — retained for lockstep with the issue/credit gates).
+    //
+    // Receipt kind mirrors the payment-time doc-kind via the shared
+    // `inferReceiptKind` resolver (membership / event-with-TIN → receipt_combined;
+    // event-no-TIN → receipt_separate), replacing the retired setting check.
+    const receiptKind = inferReceiptKind(
+      loaded.invoiceSubject,
+      loaded.memberIdentitySnapshot.tax_id,
+    );
+    const forceSeparate = receiptKind === 'receipt_separate';
+    const taxAtPayment = deps.taxAtPayment === true;
+    const reuseInvoiceNumber = !taxAtPayment && !forceSeparate;
+    // §87 fiscal year for a freshly-minted receipt number — the PAYMENT-date FY
+    // (Asia/Bangkok) in the new flow; the frozen issue-time FY in legacy.
+    // `T05:00:00Z` = 12:00 Bangkok the same calendar day (no DST), so the FY is
+    // exactly the one containing input.paymentDate in Bangkok wall-clock.
+    const receiptFiscalYear: FiscalYear = taxAtPayment
+      ? fiscalYearFromUtcIso(
+          `${input.paymentDate}T05:00:00Z`,
+          settings.fiscalYearStartMonth as
+            | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,
+        )
+      : loaded.fiscalYear;
+    // Receipt is dated at the PAYMENT date in the new flow (D7); legacy keeps
+    // the invoice's issue date (the combined document IS the invoice).
+    const receiptIssueDate = taxAtPayment ? input.paymentDate : loaded.issueDate;
     let receiptDocNumRaw: string | null = null;
     let receiptDocNum: DocumentNumber | null = null;
-    if (!combinedMode) {
-      // Separate mode — allocate receipt sequence. fiscalYear presence
-      // was validated above (no_snapshot_on_invoice), so loaded.fiscalYear
-      // is the frozen issue-time FY, never 0.
+    if (!reuseInvoiceNumber) {
+      // Allocate a fresh receipt-stream number (RC §86/4 in the new flow / §105
+      // RE for the event-no-TIN arm).
       // Lock-order note (wave-3 S12): advisory('receipt') is acquired HERE,
       // AFTER the member-row update (markRegistrationFeePaid, hoisted above)
       // — member→advisory, the SAME order the β as-paid path takes. Do not
@@ -506,19 +527,19 @@ export async function recordPayment(
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: 'receipt',
-        fiscalYear: loaded.fiscalYear,
+        fiscalYear: receiptFiscalYear,
       });
       const receiptDoc = DocumentNumber.of(
         settings.receiptNumberPrefix ?? 'RE',
-        loaded.fiscalYear,
+        receiptFiscalYear,
         seq,
       );
       if (!receiptDoc.ok) {
-        // Throw so the tx rolls back and the sequence allocation is NOT
-        // consumed by a failed receipt number assignment.
+        // Throw so the tx rolls back and the §87 sequence allocation is NOT
+        // consumed by a failed receipt number assignment (no §87 gap).
         throw new RecordPaymentInternalError({
           code: 'overflow',
-          fiscalYear: loaded.fiscalYear,
+          fiscalYear: receiptFiscalYear,
         });
       }
       receiptDocNum = receiptDoc.value;
@@ -581,14 +602,17 @@ export async function recordPayment(
             { pdfRender: deps.pdfRender, blob: deps.blob },
             {
               renderInput: {
-                kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+                kind: receiptKind,
                 templateVersion: deps.currentTemplateVersion,
-                // Separate-mode receipt MUST use its own document number (the
-                // one just allocated); combined-mode reuses the invoice
-                // number because the document IS the same physical page
-                // (one combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-                documentNumber: combinedMode ? loaded.documentNumber : receiptDocNum,
-                issueDate: loaded.issueDate,
+                // A freshly-allocated receipt uses its own number; the legacy
+                // reuse path reuses the invoice's §87 number (the combined
+                // ใบกำกับภาษี/ใบเสร็จรับเงิน IS the same physical page).
+                documentNumber: reuseInvoiceNumber
+                  ? loaded.documentNumber
+                  : receiptDocNum,
+                // 088 D7 — dated at the payment date in the new flow; legacy
+                // keeps the invoice's issue date.
+                issueDate: receiptIssueDate,
                 dueDate: loaded.dueDate,
                 tenant: loaded.tenantIdentitySnapshot,
                 tenantLogo,
@@ -636,12 +660,9 @@ export async function recordPayment(
                 templateVersion: deps.currentTemplateVersion,
                 // Persist the receipt doc number on the SYNC path too so
                 // the detail page + list column can read it back without
-                // re-parsing the PDF bytes. Previously only the async
-                // (pending) branch wrote this — sync invoices ended up
-                // with NULL on the row even when separate-mode allocated
-                // a real RC sequence number into the rendered PDF.
-                // NULL for combined-mode (receipt reuses invoice number).
-                receiptDocumentNumberRaw: combinedMode
+                // re-parsing the PDF bytes. NULL only on the legacy
+                // reuse path (receipt reuses the invoice's §87 number).
+                receiptDocumentNumberRaw: reuseInvoiceNumber
                   ? null
                   : receiptDocNumRaw,
               }
@@ -651,9 +672,9 @@ export async function recordPayment(
                 // number so the worker reads it back instead of
                 // re-allocating (which would burn fresh §87 sequence
                 // numbers on every retry, leaving gaps in
-                // tenant_document_sequences.receipt). NULL for
-                // combined-mode (worker reuses invoice doc num).
-                receiptDocumentNumberRaw: combinedMode
+                // tenant_document_sequences.receipt). NULL only on the
+                // legacy reuse path (worker reuses the invoice doc num).
+                receiptDocumentNumberRaw: reuseInvoiceNumber
                   ? null
                   : receiptDocNumRaw,
               },
@@ -768,6 +789,37 @@ export async function recordPayment(
         actorUserId: input.actorUserId,
         summary: invoicePaidSummary,
         extraPayload: invoicePaidPayloadBase,
+      });
+    }
+
+    // 088 US1 (F.6) — `tax_receipt_issued`: the §86/4 tax-receipt
+    // FIRST-ISSUANCE signal (SC-001), fired IN-TX at the RC-allocation moment,
+    // DISTINCT from `invoice_paid`. Only when a §86/4 §87 `RC` number was
+    // actually minted in the new flow (`taxAtPayment` + not the §105 `RE` arm +
+    // a receipt number was allocated). Carries `member_id` for a membership so
+    // it surfaces on the F3 member timeline (FR-029; the F9 timeline view
+    // selects by `payload ? 'member_id'`), or `event_registration_id` for a
+    // non-member event buyer. 10y retention (tax-document class) is applied by
+    // the audit adapter via `f4RetentionFor`.
+    if (taxAtPayment && !forceSeparate && receiptDocNumRaw !== null) {
+      const taxReceiptPayload: Record<string, unknown> = {
+        invoice_id: invoiceId,
+        receipt_document_number_raw: receiptDocNumRaw,
+        fiscal_year: receiptFiscalYear,
+        payment_date: input.paymentDate,
+        ...(memberId !== null
+          ? { member_id: memberId }
+          : loaded.eventRegistrationId !== null
+            ? { event_registration_id: loaded.eventRegistrationId }
+            : {}),
+      };
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'tax_receipt_issued',
+        actorUserId: input.actorUserId,
+        summary: `Tax receipt ${receiptDocNumRaw} issued`,
+        payload: taxReceiptPayload,
       });
     }
 

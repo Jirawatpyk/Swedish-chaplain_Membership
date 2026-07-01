@@ -184,6 +184,14 @@ export interface IssueEventInvoiceAsPaidDeps {
   /** PDF template version pinned on THIS issuance (T045 registry). */
   readonly currentTemplateVersion: number;
   /**
+   * 088-invoice-tax-flow-redesign (T019 / T022) — FEATURE_088_TAX_AT_PAYMENT.
+   * When true, a TIN buyer's combined §86/4 receipt is minted from the §87
+   * `RC` receipt stream (mirroring `record-payment`) and a `tax_receipt_issued`
+   * audit event fires; when false/undefined the legacy path allocates the §87
+   * `invoice`-stream number as today. The no-TIN §105 arm is unchanged.
+   */
+  readonly taxAtPayment?: boolean;
+  /**
    * F8 cross-module on-paid hooks — SAME contract as
    * `RecordPaymentDeps.onPaidCallbacks` (fired in registration order inside
    * the still-open withTx, after apply + audits + outbox; a rejection rolls
@@ -432,9 +440,19 @@ export async function issueEventInvoiceAsPaid(
       // formerly copy-pasted allocate/build/overflow arms are collapsed —
       // only documentType + prefix differ; the overflow throw rolls the tx
       // back so the consumed increment never commits, either stream.)
+      // 088 T019 — a TIN buyer's combined §86/4 receipt is minted from the §87
+      // `RC` receipt stream in the new flow (`taxAtPayment`), mirroring
+      // record-payment so the §86/4 RC register stays contiguous across
+      // membership + event-with-TIN payments (SC-002). Legacy allocates the
+      // shared §87 `invoice` stream as before. The no-TIN §105 arm keeps its
+      // `receipt`/RE numbering in both flows (its own separate RE register is
+      // US7 / T050, out of US1 scope).
+      const taxAtPayment = deps.taxAtPayment === true;
       const stream =
         pdfKind === 'receipt_combined'
-          ? ({ documentType: 'invoice', prefix: settings.invoiceNumberPrefix } as const)
+          ? taxAtPayment
+            ? ({ documentType: 'receipt', prefix: settings.receiptNumberPrefix ?? 'RE' } as const)
+            : ({ documentType: 'invoice', prefix: settings.invoiceNumberPrefix } as const)
           : ({ documentType: 'receipt', prefix: settings.receiptNumberPrefix ?? 'RE' } as const);
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
@@ -640,6 +658,33 @@ export async function issueEventInvoiceAsPaid(
           actorUserId: input.actorUserId,
           summary: paidSummary,
           extraPayload: paidPayloadBase,
+        });
+      }
+
+      // 088 US1 (F.6) — `tax_receipt_issued`: the §86/4 tax-receipt
+      // FIRST-ISSUANCE signal (SC-001), fired IN-TX at the RC-allocation moment
+      // for a TIN buyer in the new flow (identical to record-payment; FR-005 /
+      // FR-006). The no-TIN §105 arm mints no §86/4 → no event. Carries
+      // member_id for a matched member (F3 timeline, FR-029) else
+      // event_registration_id. 10y retention via the audit adapter.
+      if (taxAtPayment && pdfKind === 'receipt_combined') {
+        const taxReceiptPayload: Record<string, unknown> = {
+          invoice_id: invoiceId,
+          receipt_document_number_raw: docNum.raw,
+          fiscal_year: fy,
+          payment_date: input.paymentDate,
+          invoice_subject: 'event',
+          ...(memberId !== null
+            ? { member_id: memberId }
+            : { event_registration_id: draft.eventRegistrationId }),
+        };
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'tax_receipt_issued',
+          actorUserId: input.actorUserId,
+          summary: `Tax receipt ${docNum.raw} issued`,
+          payload: taxReceiptPayload,
         });
       }
 
