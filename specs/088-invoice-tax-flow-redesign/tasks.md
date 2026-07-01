@@ -28,7 +28,7 @@
 
 **Purpose**: schema baseline + numbering streams + snapshot scaffolding + audit event that ALL stories build on. **⚠️ No user story work begins until this phase is green.**
 
-- [ ] T005 Migration `0230_document_type_add_bill.sql` — `ALTER TYPE document_type ADD VALUE 'bill'` (own migration, enum-add ordering) in `drizzle/migrations/` + `bill` in the `document_type` pgEnum in `src/modules/invoicing/infrastructure/db/schema-tenant-document-sequences.ts`.
+- [ ] T005 Migration `0230_document_type_add_bill.sql` — `ALTER TYPE document_type ADD VALUE 'bill'` **AND** `ALTER TYPE document_type ADD VALUE 'receipt_105'` (the separate `RE` §105 register — added definitely, NOT conditional on any D2-split) (own migration, enum-add ordering) in `drizzle/migrations/` + `bill` and `receipt_105` in the `document_type` pgEnum in `src/modules/invoicing/infrastructure/db/schema-tenant-document-sequences.ts`.
 - [ ] T006 Migration `0231_invoices_bill_number_and_checks.sql` — add `bill_document_number_raw` + `invoices_tenant_bill_raw_uniq` partial unique index + rewrite `invoices_draft_has_no_number` & `invoices_non_draft_has_snapshots` + extend `invoices_enforce_immutability`; mirror into `src/modules/invoicing/infrastructure/db/schema-invoices.ts` (data-model § B.3).
 - [ ] T007 [P] Add the non-§87 `bill` stream (prefix `SC`, gaps allowed) to `src/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator.ts` + `application/ports/sequence-allocator-port.ts` — reuse the advisory-lock/FY machinery, do NOT assert §87 no-gaps on this stream (research D2/§2).
 - [ ] T008 [P] Retire combined-numbering (data-model § F.5): tighten `receipt_numbering_mode` CHECK to `'separate'`-only, drop `'combined'` from the settings zod enum in `src/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings.ts`, and delete the `combinedMode` number-reuse branch in `src/modules/invoicing/application/use-cases/record-payment.ts`.
@@ -52,6 +52,7 @@
 - [ ] T013 [P] [US1] Contract test for pay-and-record-payment (RC §87 minted in-tx at payment, `tax_receipt_issued` emitted, dated at payment date) in `tests/contract/invoicing/pay-and-record-payment.contract.test.ts` per `contracts/pay-and-record-payment.md`.
 - [ ] T014 [P] [US1] Integration test (live Neon): issue → offline pay → exactly one RC §86/4 receipt, bill `document_number` NULL, `bill_document_number_raw` set, one `tax_receipt_issued` (SC-001) in `tests/integration/invoicing/bill-to-receipt.integration.test.ts`.
 - [ ] T015 [P] [US1] Integration test: online (Stripe passthrough) + offline produce identical receipt kind/number/dating (FR-005) in `tests/integration/invoicing/payment-parity.integration.test.ts`.
+- [ ] T015a [P] [US1] Integration test (live Neon): interleaved membership + event-with-TIN payments within a fiscal year → the §87 `RC` tax-receipt register is contiguous / gap-free (SC-002) in tests/integration/invoicing/rc-no-gaps.integration.test.ts
 
 ### Implementation for US1
 
@@ -170,7 +171,7 @@
 **Independent Test**: event-with-TIN billed then paid → same ใบแจ้งหนี้→RC flow; event-no-TIN → §105 receipt at payment as today.
 
 - [ ] T049 [P] [US7] Integration test: event-with-TIN → bill→RC flow; event-no-TIN → `receipt_separate` §105 at payment, legal identity unchanged, new presentation (US7 AS1/AS2) in `tests/integration/invoicing/event-parity.integration.test.ts`.
-- [ ] T050 [US7] Confirm `inferEventDocumentKind` routes event-with-TIN to the bill→RC path and event-no-TIN to `receipt_separate` at payment in `src/modules/invoicing/domain/document-kind.ts` + `issue-event-invoice-as-paid.ts`.
+- [ ] T050 [US7] Confirm `inferEventDocumentKind` routes event-with-TIN to the bill→RC path and event-no-TIN to `receipt_separate` at payment, with the event-no-TIN §105 number allocated from the SEPARATE `RE` (`receipt_105`) register — prefix `RE`, sequential (good bookkeeping) but NOT under the strict §87 tax no-gaps (it is a §105 non-tax receipt, not §86/4), reusing the existing allocator machinery — in `src/modules/invoicing/domain/document-kind.ts` + `src/modules/invoicing/application/use-cases/issue-event-invoice-as-paid.ts` + `src/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator.ts`.
 - [ ] T051 [US7] Ensure event documents inherit US4 presentation without altering the §105 legal identity in `invoice-template.tsx`.
 
 **Checkpoint**: event flows consistent, §105 untouched.
@@ -249,5 +250,6 @@
 ## Notes
 
 - Tests REQUIRED (Constitution II): 100% branch on security-critical use cases (record-payment, issue-invoice, credit-note, void); Domain 100% line; integration on live Neon `dev`.
+- **T015a** is the explicit SC-002 §87-no-gaps regression for the `RC` §86/4 tax-receipt register (interleaved membership + event-with-TIN payments in one fiscal year → contiguous `RC`); the `RE` §105 event-without-TIN series (its own `receipt_105`/`RE` register) is sequential-but-NOT-§87-strict and is deliberately kept out of the `RC` no-gaps guarantee.
 - `[P]` = different files, no incomplete-task dependency. `[Story]` traces to spec US.
 - Apply each migration + `pnpm test:integration` BEFORE committing schema-referencing code; thread `tx` from `runInTenant`; run `pnpm typecheck` + full `pnpm lint` as the final gate; zero `test.fixme`/bare `test.skip` on release.

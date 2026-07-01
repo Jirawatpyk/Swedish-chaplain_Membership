@@ -15,7 +15,7 @@ This document is **additive** to the shipped F4 data model (`specs/007-invoices-
 
 **Next free Drizzle migration index: `0230`** (last applied = `0229_broadcasts_audience_deleted_at.sql`). Migration assignment for this feature is in § B.6 — this feature now spans `0230`→`0234` (`0234` = US8 §80/1(5) embassy zero-rate, § F.8, folded into core scope 2026-07-01), so the **last** migration this feature adds is `0234` and the next free index afterwards is `0235`.
 
-> **Confirmed tax facts driving the model (do not re-litigate):** membership dues = VATable **7%** (ruling กค 0811/พ./2308); **NO withholding** on dues (ม.65 ทวิ (13) + ท.ป.4/2528, ruling กค 0811/8542 — basis is the dues exclusion, not "entity income-tax-exempt"). **TSCC lines are VAT 7% (standard) or VAT 0% (§80/1(5) embassy / int'l-org zero-rate) ONLY — there are NO §81-exempt "No VAT" items** (accountant-confirmed 2026-07-01); zero-rate is embassy/int'l-org, **case-by-case, per-invoice** (US8 / § F.8, RD-approved certs VAT 326-24 / 327-24 / 351-24), while **membership is always VAT 7% (`vat_treatment='standard'`)**. Branch-line render gate = **VAT-registrant juristic buyer** (NOT `buyerHasTin`). WHT note is scoped to `invoice_subject='membership'` only. §105 RE separate register is the **working default but OPTIONAL** (§87 gap-free is per-series). prod is **test-data only** → no byte-stable re-render constraint.
+> **Confirmed tax facts driving the model (do not re-litigate):** membership dues = VATable **7%** (ruling กค 0811/พ./2308); **NO withholding** on dues (ม.65 ทวิ (13) + ท.ป.4/2528, ruling กค 0811/8542 — basis is the dues exclusion, not "entity income-tax-exempt"). **TSCC lines are VAT 7% (standard) or VAT 0% (§80/1(5) embassy / int'l-org zero-rate) ONLY — there are NO §81-exempt "No VAT" items** (accountant-confirmed 2026-07-01); zero-rate is embassy/int'l-org, **case-by-case, per-invoice** (US8 / § F.8, RD-approved certs VAT 326-24 / 327-24 / 351-24), while **membership is always VAT 7% (`vat_treatment='standard'`)**. Branch-line render gate = **VAT-registrant juristic buyer** (NOT `buyerHasTin`). WHT note is scoped to `invoice_subject='membership'` only. §105 RE uses a **separate `RE` register** (`receipt_105` documentType) — **pinned/decided** (2026-07-01), keeping the `RC` §86/4 register pure for RD audit; RE is **sequential but NOT under strict §87 no-gaps** (§105 non-tax receipt). prod is **test-data only** → no byte-stable re-render constraint.
 
 ---
 
@@ -52,7 +52,7 @@ The `invoices` row after payment, with the §86/4 receipt PDF materialised.
 
 ### A.3 §105 Receipt (`receipt_separate`, ใบเสร็จรับเงิน §105) — event-without-TIN, UNCHANGED legal identity
 
-Event attendee with no TIN, paid as-issued. `pdf_doc_kind='receipt_separate'`, `receipt_document_number_raw` on the `RE` stream (or shared `receipt` — see § D). Inherits only the presentation polish (US4); legal identity untouched. Remains **non-creditable** (`receipt_not_creditable` gate).
+Event attendee with no TIN, paid as-issued. `pdf_doc_kind='receipt_separate'`, `receipt_document_number_raw` on the separate `RE` register (`receipt_105` documentType — pinned, § D). Inherits only the presentation polish (US4); legal identity untouched. Remains **non-creditable** (`receipt_not_creditable` gate).
 
 ### A.4 Credit Note (ใบลดหนี้ §86/10)
 
@@ -92,7 +92,7 @@ Existing `credit_notes` table (`schema-credit-notes.ts`) — **no column change*
 
 ## B. DDL changes (exact names / types / constraints)
 
-### B.1 `document_type` enum += `'bill'` (+ optional `'receipt_105'`)
+### B.1 `document_type` enum += `'bill'` + `'receipt_105'`
 
 `schema-tenant-document-sequences.ts:13` — AS-IS:
 
@@ -103,20 +103,16 @@ export const documentTypeEnum = pgEnum('document_type', ['invoice', 'receipt', '
 TO-BE (required):
 
 ```ts
-export const documentTypeEnum = pgEnum('document_type', ['invoice', 'receipt', 'credit_note', 'bill']);
+export const documentTypeEnum = pgEnum('document_type', ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105']);
 ```
 
-Optional D2-split (only if the operator keeps the §105 RE register separate at the DB-stream level rather than sharing the `receipt` stream — see § D):
+`'receipt_105'` above is the **separate `RE` register** for §105 event-without-TIN receipts — **pinned/decided** (§ D, resolves U1): its own `document_type` value + prefix `RE`, keeping the `RC` §86/4/§87 register pure for a clean RD audit. It lands in the **same** enum-add migration as `'bill'` (0230, § B.6).
 
-```ts
-// += 'receipt_105'  ← OPTIONAL. Omit if RE shares the `receipt` documentType stream.
-```
-
-**4-place enum add** (repo convention, analog of "add-audit-event-type-4-places"):
+**4-place enum add** (repo convention, analog of "add-audit-event-type-4-places") — applies to **both** new values `'bill'` and `'receipt_105'`:
 1. `documentTypeEnum` pgEnum tuple (above).
-2. `DocumentTypeCode` union in `application/ports/sequence-allocator-port.ts:11` (`'invoice' | 'receipt' | 'credit_note'` → `+ 'bill'`).
-3. Migration `ALTER TYPE document_type ADD VALUE 'bill'`.
-4. Allocator / numbering unit + integration tests asserting the `bill` stream.
+2. `DocumentTypeCode` union in `application/ports/sequence-allocator-port.ts:11` (`'invoice' | 'receipt' | 'credit_note'` → `+ 'bill' + 'receipt_105'`).
+3. Migration `ALTER TYPE document_type ADD VALUE 'bill'` + `ADD VALUE 'receipt_105'` (both in 0230).
+4. Allocator / numbering unit + integration tests asserting the `bill` and `receipt_105` (`RE`) streams.
 
 **Migration ordering constraint**: `ALTER TYPE … ADD VALUE` must land in **its own migration (0230)**, committed before any migration or runtime path uses the new value (`::document_type`) — a PG restriction on using a freshly-added enum value in the same transaction. Do NOT fold the enum-add into the column/CHECK migration.
 
@@ -234,10 +230,10 @@ Thread the four new fields through: schema → `drizzle-tenant-settings-repo` (`
 
 | idx | migration | contents |
 |---|---|---|
-| `0230` | `document_type_add_bill` | `ALTER TYPE document_type ADD VALUE 'bill'` (+ `'receipt_105'` if D2-split). **Own migration** (enum-add ordering, § B.1). |
+| `0230` | `document_type_add_bill` | `ALTER TYPE document_type ADD VALUE 'bill'` + `ADD VALUE 'receipt_105'` (separate `RE` register, pinned § D). **Own migration** (enum-add ordering, § B.1). |
 | `0231` | `invoices_bill_number_and_checks` | `bill_document_number_raw` column + `invoices_tenant_bill_raw_uniq` partial unique + rewrite `invoices_draft_has_no_number` & `invoices_non_draft_has_snapshots` + extend `invoices_enforce_immutability` for the bill column. |
 | `0232` | `members_branch_fields` | `is_head_office` + `branch_code` + `members_branch_pairing_ck`. |
-| `0233` | `tenant_invoice_settings_wht_and_seller_branch` | `wht_note_th` + `wht_note_en` + `seller_is_head_office` + `seller_branch_code` + `tenant_invoice_settings_seller_branch_ck`. |
+| `0233` | `tenant_invoice_settings_wht_and_seller_branch` | `wht_note_th` + `wht_note_en` + `seller_is_head_office` + `seller_branch_code` + `tenant_invoice_settings_seller_branch_ck` + **FR-022 bank block** (`bank_payee_name` + `bank_account_no` + `bank_account_type` + `bank_name` + `bank_branch` + `bank_address` + `bank_swift` + `payment_instructions_th` / `_en`, all `text NULL`) (§ F.7 / T039). |
 | `0234` | `invoices_vat_treatment_zero_rate` | US8 §80/1(5): `vat_treatment` (text NOT NULL DEFAULT `'standard'`) + `zero_rate_cert_no` + `zero_rate_cert_date` + `zero_rate_cert_blob_key` columns + `invoices_vat_treatment_valid` + `invoices_zero_rate_cert_required` (fail-closed) CHECKs (§ F.8). **Additive**, lands after 0230→0233. |
 
 Apply 0230→0234 to the **`dev` Neon branch**, then `pnpm test:integration` **before commit** (repo gotcha: migration + integration before committing schema-referencing code). Prod migrates on Vercel deploy.
@@ -325,14 +321,14 @@ Because there is no read-boundary zod parse, **historical** tenant snapshots (ke
 |---|---|---|---|---|---|---|
 | **bill (ใบแจ้งหนี้)** | **`bill`** (new) | `SC` (from `invoice_number_prefix`, D1) | **no** — a gap is legal | **issue** (`issue-invoice.ts`) | **`bill_document_number_raw`** | yearly (tidy; not §87-required) |
 | **tax receipt (RC)** | `receipt` | `RC` (`receipt_number_prefix`) | **yes** | **payment** (`record-payment.ts` / `issue-event-invoice-as-paid.ts` / `render-receipt-pdf.ts`) | `receipt_document_number_raw` | yearly |
-| **§105 plain receipt (RE)** | `receipt_105` (new, D2-split) **or** shared `receipt` | `RE` | yes (own register if split) | payment (as-paid) | `receipt_document_number_raw` | yearly |
+| **§105 plain receipt (RE)** | `receipt_105` (new, separate register — pinned § D) | `RE` | **no** (sequential/tidy; §105 non-tax) | payment (as-paid) | `receipt_document_number_raw` | yearly |
 | **credit note (CN)** | `credit_note` | `CN` (`credit_note_number_prefix`) | yes | CN issue | `credit_notes.sequence_number`/`document_number` | yearly |
 
 Notes:
 
-- **All streams** share the single allocator `postgresSequenceAllocator.allocateNext(tx, {tenantId, documentType, fiscalYear})` with the per-`(tenant, documentType, fiscalYear)` advisory lock `invoicing:{tenant}:{doc_type}:{fy}` (`postgres-sequence-allocator.ts:70,93`) and the counter table `tenant_document_sequences` (PK `(tenant_id, document_type, fiscal_year)`). Adding the `bill` (and optional `receipt_105`) stream is a **data-only** extension — no allocator code change beyond the `DocumentTypeCode` union.
+- **All streams** share the single allocator `postgresSequenceAllocator.allocateNext(tx, {tenantId, documentType, fiscalYear})` with the per-`(tenant, documentType, fiscalYear)` advisory lock `invoicing:{tenant}:{doc_type}:{fy}` (`postgres-sequence-allocator.ts:70,93`) and the counter table `tenant_document_sequences` (PK `(tenant_id, document_type, fiscal_year)`). Adding the `bill` and `receipt_105` streams is a **data-only** extension — no allocator code change beyond the `DocumentTypeCode` union.
 - **Why a separate `bill_document_number_raw` column (not `document_number`)**: `sequence_number`/`document_number` feed the §87 unique index `invoices_tenant_fiscal_seq_unique` (no stream discriminator). A non-§87 bill number placed there could false-collide with a tax number or falsely satisfy §87 invariants (SC-003). The bill therefore gets its own column + `invoices_tenant_bill_raw_uniq` (§ B.2).
-- **RC/RE split is OPTIONAL** (accountant C1; §87 gap-free is per-series). **Default = separate** (`receipt_105`/`RE`) for audit clarity; the simpler **shared `receipt` register** (RC + RE interleaved, still gap-free) is equally §87-valid. The DB supports either — the split only adds an enum value + one stream; the merge needs no new enum value.
+- **RC/RE split is DECIDED — separate** (`receipt_105`/`RE`), pinned 2026-07-01 (resolves U1). The `RE` register keeps the `RC` §86/4/§87 register **pure** (only §86/4 tax receipts) for a clean RD audit, and reuses the existing allocator (one extra enum value + prefix). `RE` is **sequential (tidy bookkeeping) but NOT under the strict §87 no-gaps** — a §105 non-tax receipt, not §86/4. The shared-`receipt` alternative is **retired**.
 - **Fiscal year (trap G)**: the RC allocation at payment derives `fiscalYear` from the **payment date in Asia/Bangkok** (a Dec payment recorded in Jan numbers into the Dec FY) — not `now()`, not the bill's `issue_date`.
 - **Hot-path**: every membership payment now takes the `invoicing:{tenant}:receipt:{fy}` advisory lock (combined-mode took no receipt lock before). Payments are low-frequency → acceptable. The overflow-must-throw / no-gap discipline moves **with** the allocation into `record-payment` + `issue-event-invoice-as-paid` (both already throw-in-tx).
 
@@ -358,7 +354,7 @@ Notes:
 |---|---|---|---|---|
 | `draft → issued` | `issue-invoice.ts` | **none** (bill is non-§87) | `bill_document_number_raw` (SC, `bill` stream) | ใบแจ้งหนี้ / `pdf_doc_kind='invoice'`; NO §86/4, NO ORIGINAL, NO §-citation |
 | `issued → paid` | `record-payment.ts` (offline) · `issue-event-invoice-as-paid.ts` (event as-paid) · `render-receipt-pdf.ts` (async worker) · online passthrough (`confirm-payment → invoicing-bridge → markPaidFromProcessor → recordPayment`) | **RC §87 allocated HERE** (tax point = payment, §78/1) | `receipt_document_number_raw` (RC, `receipt` stream) | ใบกำกับภาษี/ใบเสร็จรับเงิน / `receipt_combined`; payment-dated (D7); Original+Copy |
-| event-no-TIN as-paid (`draft → paid`) | `issue-event-invoice-as-paid.ts` | §105 allocated at payment (`RE`, own or shared register) | `receipt_document_number_raw` | §105 ใบเสร็จรับเงิน / `receipt_separate` (unchanged identity) |
+| event-no-TIN as-paid (`draft → paid`) | `issue-event-invoice-as-paid.ts` | §105 allocated at payment (`RE`, own `receipt_105` register) | `receipt_document_number_raw` | §105 ใบเสร็จรับเงิน / `receipt_separate` (unchanged identity) |
 | `paid → partially_credited` / `credited` | `issue-credit-note.ts` | CN §86/10 allocated at CN issue (unchanged stream) | `credit_notes.sequence_number`/`document_number` (CN) | ใบลดหนี้; references the **RC receipt** (D6); requires `receipt_pdf_status='rendered'` |
 | any non-terminal → `void` | void use-case | none | — | bill/receipt voided; void stamp repeats across pages (`fixed`) |
 
