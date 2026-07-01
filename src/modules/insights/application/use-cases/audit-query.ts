@@ -2,8 +2,10 @@
  * F9 US2 (T042 / T046) — `auditQuery` + `auditExport` use-cases.
  *
  * The read/export path over F1's append-only `audit_log` that backs the staff
- * audit viewer (FR-008..013). Staff-only (member → forbidden); keyset-paginated
- * `(timestamp DESC, id DESC)` (FR-008, p95 < 1 s @ 50k); per-role payload
+ * audit viewer (FR-008..013). Staff-only (member → forbidden); BIDIRECTIONAL
+ * keyset paging — forward (Older) scans `(timestamp DESC, id DESC)`; backward
+ * (Newer) scans ASC and is reversed to the newest-first display order — with a
+ * `prevCursor`/`nextCursor` per page (FR-008, p95 < 1 s @ 50k); per-role payload
  * redaction (FR-011, via `audit-redaction`); each call emits its own audit trail
  * (`audit_log_queried` / `audit_log_exported`) — the viewer never mutates the log
  * (FR-010, no mutation path exists here).
@@ -96,11 +98,13 @@ export interface AuditQueryRow {
 
 export interface AuditQueryResult {
   readonly rows: readonly AuditQueryRow[];
-  /** Opaque cursor for the NEXT (older) page, or `null` when this is the oldest page. */
+  /** Opaque cursor for the NEXT (older) page, or `null` when no older rows remain
+   *  (the oldest page — or an empty page from a stale/forged cursor). */
   readonly nextCursor: string | null;
   /**
    * Opaque cursor for the PREVIOUS (newer) page, or `null` when there are no
-   * newer rows (the first/newest page). Pair with `direction: 'backward'`.
+   * newer rows (the first/newest page — or an empty page). Pair with
+   * `direction: 'backward'`.
    */
   readonly prevCursor: string | null;
 }

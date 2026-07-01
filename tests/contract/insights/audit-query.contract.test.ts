@@ -88,7 +88,10 @@ function makeSource(rows: readonly AuditSourceRow[]): {
  * `direction:'backward'` actually SELECTS newer-than-cursor rows in ASC order —
  * not just that the use-case reverses a pre-arranged fixture. `occurredAtIso` is
  * a same-format zero-padded timestamptz text, so a lexicographic compare is
- * chronological (µs-precision boundaries stay the integration test's job).
+ * chronological. The `id` tie-break here is a plain string compare — a unit
+ * stand-in, NOT the real reader's Postgres `uuid`-type ordering; that fidelity
+ * (and the µs-precision boundary) is pinned against live Neon by the integration
+ * suite's same-µs id-tie-break test.
  */
 function makeKeysetSource(allRows: readonly AuditSourceRow[]): {
   source: AuditEventSource;

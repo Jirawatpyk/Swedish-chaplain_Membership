@@ -267,9 +267,56 @@ describe('F9 auditQuery — integration (T040)', () => {
       );
       expect(back.ok).toBe(true);
       if (back.ok) {
-        expect(back.value.rows.map((r) => r.summary)).toContain('same-ms newer');
+        // Exact (limit 1) — the backward page is precisely the newer row, not
+        // just "contains" it.
+        expect(back.value.rows.map((r) => r.summary)).toEqual(['same-ms newer']);
       }
     }
+  });
+
+  it('keyset tie-breaks on id when two rows share the EXACT same µs timestamp (forward + backward id arm)', async () => {
+    // The most fragile keyset arm is `(ts = c AND id </> c.id)` — only reached
+    // when two rows share the exact µs timestamp. Insert two with explicit,
+    // ordered UUIDs at one instant and page across the tie in both directions.
+    const tieActor = randomUUID();
+    const idLow = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const idHigh = 'bbbbbbbb-0000-4000-8000-000000000002';
+    const ts = '2031-02-02 00:00:00.777777+00';
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO audit_log (id, event_type, actor_user_id, summary, request_id, tenant_id, timestamp)
+        VALUES
+          (${idLow}::uuid, 'sign_in_success', ${tieActor}, 'tie low', ${'tl-' + randomUUID()}, ${tenantA.ctx.slug}, ${ts}::timestamptz),
+          (${idHigh}::uuid, 'sign_in_success', ${tieActor}, 'tie high', ${'th-' + randomUUID()}, ${tenantA.ctx.slug}, ${ts}::timestamptz)
+      `);
+    });
+
+    // Forward page 1 (DESC → higher id first).
+    const p1 = await auditQuery({ actorUserId: tieActor, limit: 1 }, meta('admin'), tenantA.ctx, makeAuditQueryDeps());
+    expect(p1.ok).toBe(true);
+    if (!p1.ok) return;
+    expect(p1.value.rows.map((r) => r.summary)).toEqual(['tie high']);
+
+    // Forward page 2 (id < cursor.id → lower id) — the forward id arm.
+    const p2 = await auditQuery(
+      { actorUserId: tieActor, limit: 1, cursor: p1.value.nextCursor! },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(p2.ok).toBe(true);
+    if (!p2.ok) return;
+    expect(p2.value.rows.map((r) => r.summary)).toEqual(['tie low']);
+
+    // Backward from page 2 (id > cursor.id → higher id) — the backward id arm.
+    const back = await auditQuery(
+      { actorUserId: tieActor, limit: 1, cursor: p2.value.prevCursor!, direction: 'backward' },
+      meta('admin'),
+      tenantA.ctx,
+      makeAuditQueryDeps(),
+    );
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.value.rows.map((r) => r.summary)).toEqual(['tie high']);
   });
 
   it('rejects an inverted date range', async () => {

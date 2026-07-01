@@ -60,7 +60,11 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
       // would never equal a µs-precise column, dropping same-ms boundary rows).
       //   - forward  (Next, default): rows OLDER — (ts < c) OR (ts = c AND id < c.id)
       //   - backward (Previous):      rows NEWER — (ts > c) OR (ts = c AND id > c.id)
-      const backward = filters.direction === 'backward';
+      // `backward` requires a cursor: a directionless first page is ALWAYS
+      // newest-first (DESC), so the port stays self-consistent even if a future
+      // caller passes `direction:'backward'` without a cursor (it would otherwise
+      // ASC-order the OLDEST rows — the opposite of the newest-first contract).
+      const backward = filters.direction === 'backward' && filters.cursor !== undefined;
       if (filters.cursor) {
         const cursorTs = sql`${filters.cursor.iso}::timestamptz`;
         const keyset = backward
@@ -91,10 +95,8 @@ export const auditQueryReadAdapter: AuditQueryReadPort = {
         .where(and(...conds))
         // Backward pages scan UPWARD from the cursor, so order ASC to take the
         // rows CLOSEST-newer first; the use-case reverses them to newest-first.
-        // NB: `direction` flips the ORDER BY even with NO cursor (it would then
-        // return the OLDEST rows ASC) — harmless because the use-case only sends
-        // `direction:'backward'` together with a cursor (a backward request
-        // without one degrades to the forward first page upstream).
+        // (`backward` is false without a cursor — see above — so a directionless
+        // first page always orders DESC/newest-first.)
         .orderBy(
           ...(backward
             ? [asc(auditLog.timestamp), asc(auditLog.id)]
