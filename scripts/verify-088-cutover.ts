@@ -24,8 +24,29 @@
  * code (which uses pooled DATABASE_URL + runInTenant).
  */
 import postgres from 'postgres';
+import { readFileSync } from 'node:fs';
 
 process.loadEnvFile?.('.env.local');
+
+/**
+ * M1 (§105/RC cutover-ordering guard) — is US7/T050 shipped, i.e. does the
+ * event-WITHOUT-TIN §105 arm route to the SEPARATE `receipt_105` register
+ * instead of the shared `receipt` (RC) stream? Detected by the routing literal
+ * in `issue-event-invoice-as-paid.ts` (the sole site). Until it does, a §105
+ * event-no-TIN receipt minted while `receipt_number_prefix='RC'` would carry an
+ * `RC-…` number on the §86/4 RC register — un-renumberable §87 pollution.
+ */
+function us7Receipt105Live(): boolean {
+  try {
+    const src = readFileSync(
+      'src/modules/invoicing/application/use-cases/issue-event-invoice-as-paid.ts',
+      'utf8',
+    );
+    return src.includes("documentType: 'receipt_105'");
+  } catch {
+    return false;
+  }
+}
 
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
 if (!url) {
@@ -114,6 +135,29 @@ async function main(): Promise<void> {
         s.receipt_number_prefix === 'RC',
         `got '${s.receipt_number_prefix ?? '(null)'}'`,
       ) && ok;
+
+      // 4b. M1 — §105/RC cutover-ordering ship-gate. Setting the §86/4 RC prefix
+      //     is only safe if EITHER the §105 event-no-TIN arm already routes to
+      //     the separate `receipt_105` register (US7/T050 shipped) OR there are
+      //     zero event-no-TIN §105 sales in the interim. Otherwise a §105
+      //     receipt would be minted as `RC-…` onto the §86/4 RC register — a
+      //     §87-no-gaps pollution that cannot be renumbered afterwards.
+      if (s.receipt_number_prefix === 'RC' && !us7Receipt105Live()) {
+        const evtNoTin = await sql<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM invoices
+          WHERE tenant_id = ${TENANT}
+            AND invoice_subject = 'event'
+            AND pdf_doc_kind = 'receipt_separate'
+            AND receipt_document_number_raw IS NOT NULL`;
+        const n = evtNoTin[0]?.n ?? 0;
+        ok = report(
+          "M1 §105/RC ordering — no event-no-TIN §105 sales pollute the RC register while US7/T050 (receipt_105 split) is unshipped",
+          n === 0,
+          n === 0
+            ? 'zero event-no-TIN §105 sales — RC prefix safe for now, but ship US7/T050 before any occur'
+            : `${n} event-no-TIN §105 receipt(s) numbered on the shared RC register — SHIP US7/T050 (receipt_105 split) FIRST, then remediate`,
+        ) && ok;
+      }
     }
 
     // 5. WHT note seeded — column-existence-guarded (lands migration 0233 / US5).
