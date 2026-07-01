@@ -11,25 +11,34 @@
  *   - F1 `idle-warning-dialog` (AlertDialog + decision)
  *
  * Why AlertDialog (not Dialog):
- *   - Issue is IRREVERSIBLE — §87 sequential number is permanently
- *     consumed; voiding requires a separate credit note.
+ *   - Issue pins an IMMUTABLE tax snapshot — under the 088 flow a non-§87
+ *     ใบแจ้งหนี้ (bill) number is allocated at issue and the §86/4 tax receipt
+ *     (RC §87 number) is minted only at payment; under the legacy flow the §87
+ *     sequential number is consumed at issue. Either way, correcting the
+ *     document requires a void.
  *   - AlertDialog forces explicit acknowledgement (Cancel + Continue
  *     are prominent, ESC/overlay click maps to Cancel).
  *
+ * 088 T017a / FR-027 — pre-issue review/confirm. When the tax-at-payment flag
+ * is ON, the dialog body is a REVIEW that consolidates the consequential §86/4
+ * fields (buyer + Head-Office/Branch line, VAT treatment — prominent at 0%,
+ * cert no/date, totals, the SC bill-number stream, WHT-note presence) plus an
+ * explicit acknowledgement that issue pins an immutable snapshot, and raises
+ * two non-blocking WARNINGS (no payment path; unset legal_entity_type → no
+ * §86/4 branch line). The typed-phrase gate IS the acknowledgement to proceed.
+ *
  * a11y:
  *   - `AlertDialogTitle` is the accessible name.
- *   - `AlertDialogDescription` includes the irreversible warning.
- *   - Pre-confirm summary is rendered inside the dialog body so SR
- *     users receive the numbers as part of the dialog content.
- *   - Typed-phrase input defers focus via `autoFocus={false}` (below)
- *     so the title/description are narrated first.
+ *   - `AlertDialogDescription` includes the immutable-snapshot acknowledgement.
+ *   - Pre-confirm summary + review are inside the dialog body so SR users
+ *     receive the numbers + warnings as part of the dialog content.
  */
 
 import { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { InfoIcon, Loader2Icon } from 'lucide-react';
+import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,6 +54,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { computeIssueReviewModel } from '../_lib/issue-review';
 
 type Props = {
   readonly invoiceId: string;
@@ -67,12 +78,61 @@ type Props = {
    * and are blocked separately, so the hint never shows for them).
    */
   readonly showNoTaxIdHint?: boolean;
+
+  // --- 088 T017a / FR-027 pre-issue review ---------------------------------
+  /**
+   * `FEATURE_088_TAX_AT_PAYMENT` (server env). ON → the 088 bill→RC-at-payment
+   * flow + the FR-027 review block + 088-flow copy. OFF → legacy §87-at-issue
+   * copy + the original confirmation body (no review block).
+   */
+  readonly taxAtPayment: boolean;
+  /**
+   * Membership subject → the §86/4 branch-line review + WHT-note row apply
+   * (both are membership-scoped). Event drafts skip them.
+   */
+  readonly isMembership: boolean;
+  /**
+   * Buyer `legal_entity_type` (F3 members, free-text). Drives the Head-Office/
+   * Branch preview + the fail-closed NULL-entity WARNING. Meaningful only for a
+   * membership draft (where the page loaded the member).
+   */
+  readonly legalEntityType: string | null;
+  /**
+   * Per-invoice VAT treatment pinned at issue (US8). Until the US8 issue-form
+   * toggle lands this is `'standard'`; the review renders it prominently when
+   * `'zero_rated_80_1_5'` so a 0% sale is never pinned by accident.
+   */
+  readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5';
+  /** MFA §80/1(5) certificate reference (US8) — shown only when zero-rated. */
+  readonly zeroRateCert?: { readonly no: string; readonly date: string | null } | null;
+  /**
+   * Whether the tenant WHT note will print on this (membership) document (US5).
+   * `undefined` while the US5 wht_note settings are unbuilt → the row is hidden.
+   */
+  readonly whtNoteWillPrint?: boolean;
+  /**
+   * FR-027 WARN(a) — the bill will render with NO payment path (online-pay OFF
+   * AND the tenant bank block empty). Composed server-side from F5 online-pay +
+   * the US5 bank block; `undefined` while the bank-block half is unbuilt → the
+   * warning stays dormant (never a false positive).
+   */
+  readonly hasNoPaymentPath?: boolean;
+  /** Bill-number stream prefix for the review copy (SC). */
+  readonly billNumberPrefix?: string;
 };
 
 export function IssueInvoiceDialog({
   invoiceId,
   summary,
   showNoTaxIdHint = false,
+  taxAtPayment,
+  isMembership,
+  legalEntityType,
+  vatTreatment = 'standard',
+  zeroRateCert = null,
+  whtNoteWillPrint,
+  hasNoPaymentPath,
+  billNumberPrefix = 'SC',
 }: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
@@ -86,6 +146,20 @@ export function IssueInvoiceDialog({
   const matches =
     typed.trim().toLocaleUpperCase(locale) ===
     confirmPhrase.toLocaleUpperCase(locale);
+
+  // FR-027 review model — branch-line preview + non-blocking warnings, computed
+  // only under the 088 flow. The §86/4 branch line + WARN(b) are membership-
+  // scoped (event buyers have no branch concept), so for an event draft we feed
+  // `'individual'` — it suppresses the branch line + WARN(b) while leaving the
+  // payment-path WARN(a) intact (that is not membership-specific). The branch
+  // `<div>` itself is `isMembership`-gated below.
+  const review = taxAtPayment
+    ? computeIssueReviewModel({
+        legalEntityType: isMembership ? legalEntityType : 'individual',
+        ...(hasNoPaymentPath !== undefined ? { hasNoPaymentPath } : {}),
+      })
+    : null;
+  const isZeroRated = vatTreatment === 'zero_rated_80_1_5';
 
   // Reset transient state whenever dialog closes — prevents a stale
   // typed value from leaking into a later re-open (same pattern as
@@ -135,11 +209,11 @@ export function IssueInvoiceDialog({
       <AlertDialogTrigger className={buttonVariants({ variant: 'default' })}>
         {tDetail('actions.issue')}
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t('irreversibleWarning')}
+            {taxAtPayment ? t('review.immutableSnapshotAck') : t('irreversibleWarning')}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -180,6 +254,98 @@ export function IssueInvoiceDialog({
             </dd>
           </div>
         </dl>
+
+        {/* 088 FR-027 — pre-issue review of the §86/4 particulars that will be
+            pinned. Rendered only under the tax-at-payment flow. */}
+        {taxAtPayment && review && (
+          <section
+            aria-labelledby="issue-review-heading"
+            className="grid gap-3 rounded-md border bg-muted/30 p-3 text-sm"
+          >
+            <h3 id="issue-review-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {t('review.heading')}
+            </h3>
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {isMembership && (
+                <div>
+                  <dt className="text-muted-foreground">{t('review.fields.branchLine')}</dt>
+                  <dd className="font-medium">
+                    {review.branchLine.kind === 'head_office'
+                      ? t('review.branchLine.headOffice')
+                      : review.branchLine.reason === 'individual'
+                        ? t('review.branchLine.noneIndividual')
+                        : t('review.branchLine.noneUnset')}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-muted-foreground">{t('review.fields.vatTreatment')}</dt>
+                <dd>
+                  {isZeroRated ? (
+                    // Prominent text-badge (not colour-only) so a 0% sale is
+                    // never pinned by accident — WCAG 1.4.1.
+                    <Badge variant="destructive" className="font-semibold">
+                      {t('review.vatTreatmentValue.zeroRated')}
+                    </Badge>
+                  ) : (
+                    <span className="font-medium">{t('review.vatTreatmentValue.standard')}</span>
+                  )}
+                </dd>
+              </div>
+              {isZeroRated && zeroRateCert && (
+                <div className="sm:col-span-2">
+                  <dt className="text-muted-foreground">{t('review.fields.cert')}</dt>
+                  <dd className="font-medium">
+                    {zeroRateCert.no}
+                    {zeroRateCert.date ? ` · ${zeroRateCert.date}` : ''}
+                  </dd>
+                </div>
+              )}
+              {isMembership && whtNoteWillPrint !== undefined && (
+                <div>
+                  <dt className="text-muted-foreground">{t('review.fields.whtNote')}</dt>
+                  <dd className="font-medium">
+                    {whtNoteWillPrint
+                      ? t('review.whtNoteValue.willPrint')
+                      : t('review.whtNoteValue.none')}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <p className="text-xs text-muted-foreground">
+              {t('review.billStreamNote', { prefix: billNumberPrefix })}
+            </p>
+
+            {/* FR-027 non-blocking warnings (acknowledge-to-proceed via the
+                typed-phrase gate below). */}
+            {review.warnings.length > 0 && (
+              <div className="grid gap-2">
+                {review.warnings.includes('no_payment_path') && (
+                  <Alert
+                    role="status"
+                    className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <AlertDescription className="text-amber-900 dark:text-amber-200">
+                      {t('review.warnings.noPaymentPath')}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {review.warnings.includes('no_branch_line_null_entity_type') && (
+                  <Alert
+                    role="status"
+                    className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <AlertDescription className="text-amber-900 dark:text-amber-200">
+                      {t('review.warnings.nullEntityType')}
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
+          </section>
+        )}
 
         {showNoTaxIdHint && (
           <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">

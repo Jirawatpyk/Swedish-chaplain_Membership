@@ -2103,6 +2103,34 @@
       "issue": {
         "title": "Utfärda faktura",
         "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
+        "review": {
+          "heading": "Granska innan utfärdande — detta låser en oföränderlig §86/4-ögonblicksbild",
+          "immutableSnapshotAck": "Utfärdande låser en OFÖRÄNDERLIG skatteögonblicksbild (köparidentitet, huvudkontor/filial, momsbehandling och noteringar). Den kan endast ändras genom att annullera detta dokument. Granska detaljerna nedan innan du bekräftar.",
+          "billStreamNote": "Ett icke-skattemässigt ใบแจ้งหนี้ (faktura)-nummer ({prefix}-…) tilldelas nu — INGET §87-skattenummer förbrukas vid utfärdande. §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (skattekvitto) med sitt RC-nummer utfärdas när betalning registreras.",
+          "fields": {
+            "branchLine": "Huvudkontor/filial (สำนักงานใหญ่/สาขา)",
+            "vatTreatment": "Momsbehandling",
+            "cert": "Intyg (§80/1(5))",
+            "whtNote": "Källskattenotering"
+          },
+          "branchLine": {
+            "headOffice": "สำนักงานใหญ่ (huvudkontor)",
+            "noneIndividual": "Ingen filialrad (privatperson)",
+            "noneUnset": "Ingen filialrad (juridisk typ ej angiven)"
+          },
+          "vatTreatmentValue": {
+            "standard": "Standard — moms 7%",
+            "zeroRated": "Nollskattesats 0% — §80/1(5)"
+          },
+          "whtNoteValue": {
+            "willPrint": "Skrivs ut på detta medlemsdokument",
+            "none": "Ingen konfigurerad"
+          },
+          "warnings": {
+            "noPaymentPath": "Denna ใบแจ้งหนี้ (faktura) får INGEN betalningsväg — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Konfigurera en betalningsmetod innan utfärdande, eller fortsätt med vetskapen att fakturan för närvarande inte kan betalas.",
+            "nullEntityType": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparens juridiska typ är inte angiven. Ange den i medlemsposten först om detta är ett momsregistrerat företag."
+          }
+        },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
         "typeToConfirm": "Bekräftelsefras",

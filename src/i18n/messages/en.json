@@ -2103,6 +2103,34 @@
       "issue": {
         "title": "Issue invoice",
         "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
+        "review": {
+          "heading": "Review — this pins an immutable §86/4 snapshot",
+          "immutableSnapshotAck": "Issuing pins an IMMUTABLE tax snapshot (buyer identity, Head Office / Branch, VAT treatment and notes). It can be changed only by voiding this document. Review the details below before you confirm.",
+          "billStreamNote": "A non-tax ใบแจ้งหนี้ (Invoice) number ({prefix}-…) is allocated now — NO §87 tax number is consumed at issue. The §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (with its RC number) is issued when payment is recorded.",
+          "fields": {
+            "branchLine": "Head Office / Branch",
+            "vatTreatment": "VAT treatment",
+            "cert": "MFA certificate (§80/1(5))",
+            "whtNote": "Withholding-tax note"
+          },
+          "branchLine": {
+            "headOffice": "สำนักงานใหญ่ (Head Office)",
+            "noneIndividual": "No branch line (individual buyer)",
+            "noneUnset": "No branch line (legal entity type not set)"
+          },
+          "vatTreatmentValue": {
+            "standard": "Standard — VAT 7%",
+            "zeroRated": "Zero-rated 0% — §80/1(5)"
+          },
+          "whtNoteValue": {
+            "willPrint": "Will print on this membership document",
+            "none": "None configured"
+          },
+          "warnings": {
+            "noPaymentPath": "This ใบแจ้งหนี้ will have NO payment path — online payment is off and no bank-transfer details are configured, so the member cannot pay it. Configure a payment method before issuing, or proceed knowing the bill is currently unpayable.",
+            "nullEntityType": "No §86/4 Head Office / Branch line will print — this buyer's legal entity type is not set. Set it on the member record first if this is a VAT-registrant company."
+          }
+        },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
         "typeToConfirm": "Confirmation phrase",

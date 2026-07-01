@@ -26,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { env } from '@/lib/env';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -191,6 +192,11 @@ export default async function InvoiceDetailPage({
   // draft buyer with no TIN. Drafts have no pinned snapshot, so this live member
   // lookup (already done for the display name) is the source of truth.
   let buyerHasTaxId = true;
+  // 088 T017a / FR-027 — buyer legal_entity_type drives the pre-issue Head-Office/
+  // Branch preview + the fail-closed NULL-entity warning. Loaded from the live
+  // member (drafts only) alongside the display name; NULL for a non-member event
+  // draft (which the review dialog treats as non-membership).
+  let buyerLegalEntityType: string | null = null;
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
@@ -200,6 +206,7 @@ export default async function InvoiceDetailPage({
     if (memberResult.ok) {
       memberDisplayName = memberResult.value.member.companyName;
       buyerHasTaxId = memberResult.value.member.taxId !== null;
+      buyerLegalEntityType = memberResult.value.member.legalEntityType;
     }
   }
 
@@ -412,6 +419,14 @@ export default async function InvoiceDetailPage({
                   showNoTaxIdHint={
                     invoice.invoiceSubject === 'membership' && !buyerHasTaxId
                   }
+                  // 088 T017a / FR-027 — pre-issue review + immutable-snapshot
+                  // acknowledgement, gated by the tax-at-payment flag. The §86/4
+                  // branch preview + WHT-note row are membership-scoped;
+                  // vatTreatment / cert / bank-block-payment-path light up when
+                  // US8 / US5 land (default off until then).
+                  taxAtPayment={env.features.f088TaxAtPayment}
+                  isMembership={invoice.invoiceSubject === 'membership'}
+                  legalEntityType={buyerLegalEntityType}
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,
