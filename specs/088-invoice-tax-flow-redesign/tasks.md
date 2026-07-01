@@ -74,6 +74,8 @@
 
 **Checkpoint**: MVP — bill→payment→single §86/4 works online + offline; SC-001/SC-002/SC-003 provable.
 
+> **US1 review-hardening (post tax + security review, 2026-07-01)** — applied on this branch, NOT new tasks: (a) **SEC-MED** symmetric flag guard in `record-payment.ts` — a new-flow bill paid after a flag ON→OFF rollback is rejected `new_flow_bill_requires_flag_on` (pay route → 409), closing the untaxed-paid-row hole opposite FR-017; (b) **INFO** migration `0235_invoices_freeze_receipt_number.sql` — freeze `receipt_document_number_raw` (§87 RC) in `invoices_enforce_immutability` (normal + PII-redaction GUC paths), conditional so the NULL→RC write at payment is permitted; (c) **L1** documented that `invoices.fiscal_year` is the BILL FY (RC §87 FY lives on the RC string + `tax_receipt_issued.fiscal_year`; no §87-register-by-FY reader exists yet — T065b unbuilt); (d) **L2** refreshed the stale combined/separate docstring in `get-receipt-pdf-signed-url.ts`; (e) integration test gaps filled — concurrent-double-pay (1 RC + 1 tax_receipt_issued) + flag-rollback (409) + RC-number immutability. All GREEN on live Neon `dev`; TRUE `tsc` = 0, `pnpm lint` clean. Migration numbering: 0235 sits above the reserved 0232–0234 (US3/US5/US8); next free = **0236** (data-model §B.6 updated). §105/RC cutover-ordering guard (M1) is a `verify-088-cutover.ts` script assertion — see the follow-up note below / cutover runbook.
+
 ---
 
 ## Phase 4: User Story 2 — Tax receipt renders Original + Copy (Priority: P1)
