@@ -373,6 +373,26 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
   });
 
+  it('088 SEC-MED — rejects a new-flow bill paid after a flag ON→OFF rollback (no untaxed paid row)', async () => {
+    // A NEW-flow bill: non-§87 SC number, NULL §87 document_number (issued while
+    // the flag was ON). Paying it with the flag now OFF would reuse the NULL
+    // §87 number → a paid membership with NO §87 tax number + NO tax_receipt.
+    const newFlowBill = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    });
+    const deps = makeDeps(true, newFlowBill, makeSettings(), { taxAtPayment: false });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => newFlowBill);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected new_flow_bill_requires_flag_on');
+    expect(r.error.code).toBe('new_flow_bill_requires_flag_on');
+    // Pre-sequence reject — nothing minted, nothing applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+  });
+
   it('FR-038 — receipt PDF uses ISSUE-TIME member snapshot, NOT live value', async () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings());
