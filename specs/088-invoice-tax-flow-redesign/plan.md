@@ -102,3 +102,5 @@ tests/{unit,contract,integration,e2e}/invoicing/**         # ≈25 files (number
 **Production success signals (P10):** alert on `count(paid membership rows with >1 §87 number) == 0` (proves SC-001); a bill-vs-receipt issuance dashboard; and an alert on `pdf_render_permanently_failed` for paid receipts (FR-019).
 
 **F8/F6 ordering (E15):** confirm F8 `applyPendingTierUpgrade` + F6 as-paid finalisers run **post-commit**, outside the receipt advisory-lock tx, so the enlarged payment tx does not widen lock/rollback scope.
+
+**Combined-numbering retired (Decision A, 2026-07-01):** `receipt_numbering_mode` is always `'separate'` in the new flow — the bill has no §87 number to reuse. **Delete the `combinedMode` reuse branch** in `record-payment.ts` (it would reuse a non-§87 bill number as the tax number — a §87 violation). Keep the column (no migration churn); optionally tighten the CHECK to `'separate'`-only later. The **combined DOCUMENT** format (ใบกำกับภาษี/ใบเสร็จรับเงิน merged) is unrelated and unchanged. See data-model § F.5.
