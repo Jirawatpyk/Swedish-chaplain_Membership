@@ -284,3 +284,17 @@ This document resolves every implementation question raised (or implied) in `spe
 - RD rulings: กค 0811/พ./2308 (rd.go.th/25136.html) · กค 0811/8542 (rd.go.th/25308.html).
 - Prior art: `specs/007-invoices-receipts/research.md` (F4 numbering allocator, PDF engine, receipt representation).
 - Repo conventions: MEMORY `add_audit_event_type_4_places`, `feedback_migration_apply_before_commit`, `project_drizzle_repo_tx_pattern`.
+
+---
+
+## Critique remediation (2026-07-01)
+
+*Decisions added/corrected after the dual-lens critique (`critiques/critique-20260701-124839.md`).*
+
+- **D12 (corrects §6) — buyer VAT-registrant discriminator.** The branch-render gate needs a snapshot field; there is none, so §6's "gate on VAT-registrant juristic" would silently fall back to `buyerHasTin` (auditor-forbidden). **Decision:** add `buyer_is_vat_registrant` to the identity snapshot (from `members.legal_entity_type`), fail-closed on NULL/unknown. **Alternatives:** reuse `buyerHasTin` (rejected — over-includes natural persons whose national ID is a TIN).
+- **D13 — new `inferReceiptKind` resolver.** **Decision:** add a dedicated payment-time resolver (membership→`receipt_combined`; event+TIN→`receipt_combined`; event+noTIN→`receipt_separate`). **Alternatives:** reuse `inferEventDocumentKind` (rejected — it returns `'invoice'` for membership → would render the receipt with the non-tax ใบแจ้งหนี้ label, a §86/4 identity loss).
+- **D14 — async worker null-safety + payment date/FY.** **Decision:** `render-receipt-pdf.ts` sources the number from `receipt_document_number_raw` (membership bills have `document_number = NULL`), takes `paymentDate` + payment-BKK `fiscalYear`, and null-safes every `documentNumber` deref. **Alternatives:** leave the doc-number guard (rejected — NPEs/rejects every membership receipt on the async path when `FEATURE_F5_ASYNC_RECEIPT_PDF` is on).
+- **D15 — `void-invoice.ts` in scope.** **Decision:** bill-number fallback + default-title relabel so a voided unpaid bill renders ใบแจ้งหนี้. **Alternatives:** omit (rejected — void of an unpaid bill NPEs on the missing number and re-titles as Tax Invoice).
+- **D16 — feature-flagged, verifiable, reversible cutover.** **Decision:** `FEATURE_088_TAX_AT_PAYMENT` flag + `scripts/verify-088-cutover.ts` + `issue-invoice` bill-stream-only runtime assertion + FR-017 in-flight guard; rollback = flag/code/settings revert (enum-add + consumed §87 numbers are irreversible). **Alternatives:** "steps must land together" prose only (rejected — a partial rollout mints two §87 numbers per sale; no rollback path violates Constitution Gate X).
+- **D17 — renewal (F8) parity.** **Decision:** renewal-generated membership invoices are first-class in-scope (non-tax bill → RC receipt at renewal payment; renewal email/success copy). **Alternatives:** rely on implicit inheritance (rejected — unverified; renewal is the recurring-revenue path).
+- **D18 — user-facing completeness.** **Decision:** two-document disambiguation UX (FR-016), email-template relabel (FR-020), and production SC signals (alert on `>1 §87 number per paid row`, `pdf_render_permanently_failed`). **Alternatives:** build-time SC checks only (rejected — SC-001/004 unprovable in prod).

@@ -37,7 +37,7 @@ Technical approach (from the 8-surface design map): **relabel the existing `invo
 - [x] **V. Internationalization (EN/TH/SV)** — All new strings (ใบแจ้งหนี้/Invoice, สำนักงานใหญ่/สาขา, WHT note, footer) added to EN + TH + SV; the `invoice`→ใบแจ้งหนี้ relabel edits existing i18n **values in place** (keep key names → no `MISSING_MESSAGE`). Thai tax documents mandatory-TH satisfied. PASS.
 - [x] **VI. Inclusive UX (Mobile-first + WCAG 2.1 AA)** — Admin/portal changes (both-document download affordances, settings-form WHT/branch fields) start at 320px + WCAG 2.1 AA; shared component library reused. The PDF is a print artifact (no DOM a11y tree). PASS.
 - [x] **VII. Performance & Observability** — Inherit F4 SLO budgets; the new `receipt`-stream advisory lock is per-`(tenant, fy)` on low-frequency payments. Metrics + audit on numbering and receipt issuance; the numbering cutover is logged. PASS.
-- [x] **VIII. Reliability** — The §87 no-gaps / overflow-must-throw discipline **moves with the allocation** into the payment path (in-tx throw → rollback, no gap). Idempotency preserved on payment→receipt; allocate+render+persist in one tx; audit events for bill-issued / receipt-issued / credit-note; crediting blocked while the receipt PDF is pending/failed. PASS.
+- [x] **VIII. Reliability** — The §87 no-gaps / overflow-must-throw discipline **moves with the allocation** into the payment path (in-tx throw → rollback, no gap). Idempotency preserved on payment→receipt; allocate+render+persist in one tx; audit events for bill-issued / receipt-issued / credit-note; crediting blocked while the receipt PDF is pending/failed. A documented **rollback + cutover runbook** + feature flag + `verify-088-cutover.ts` + the FR-017 in-flight guard (see § Rollout, Cutover & Rollback) satisfy Gate X's rollback requirement for this irreversible tax-numbering change. PASS.
 - [x] **IX. Code Quality Standards** — TS strict, ESLint clean, Conventional Commits, `[Spec Kit]` gate prefixes. This is an **auth-adjacent / payment / PII / tax** surface → **≥2 reviewers**, one signing the security checklist; a Thai-tax reviewer at the Review gate. PASS.
 - [x] **X. Simplicity (YAGNI)** — `invoice` is **relabelled in place** (no new PdfDocKind) to avoid forcing every switch/gate/column/redaction-arm to disambiguate tax-vs-non-tax. The single added complexity (new `bill` documentType + `bill_document_number_raw`) is justified below. PASS.
 
@@ -61,11 +61,13 @@ specs/088-invoice-tax-flow-redesign/
 
 ```text
 src/modules/invoicing/
-├── domain/                 # document-kind.ts (payment-time receipt-kind helper), document-number.ts, {member,tenant}-identity-snapshot.ts (branch fields)
-├── application/use-cases/  # issue-invoice.ts (→ 'bill' stream), record-payment.ts + issue-event-invoice-as-paid.ts + render-receipt-pdf.ts (§87 RC at payment, payment-date, Original+Copy), issue-credit-note.ts (target receipt), update-tenant-invoice-settings.ts
+├── domain/                 # document-kind.ts (NEW inferReceiptKind resolver — membership→receipt_combined, NOT reuse inferEventDocumentKind), document-number.ts, {member,tenant}-identity-snapshot.ts (branch fields + buyer_is_vat_registrant juristic discriminator, fail-closed)
+├── application/use-cases/  # issue-invoice.ts (→ 'bill' stream + bill-stream-only runtime assertion), record-payment.ts + issue-event-invoice-as-paid.ts + render-receipt-pdf.ts (§87 RC at payment, payment-date + payment-FY, NULL-document_number-safe, Original+Copy), issue-credit-note.ts (target receipt), void-invoice.ts (bill-number fallback + ใบแจ้งหนี้ void title), update-tenant-invoice-settings.ts
 └── infrastructure/         # db/schema-invoices.ts (bill column + CHECK), db/schema-tenant-document-sequences.ts ('bill' enum), db/schema-tenant-invoice-settings.ts (WHT/branch), pdf/templates/invoice-template.tsx (relabel, Original+Copy, footer, presentation), pdf/amount-to-english.ts (capitalize), repos/*
 src/modules/members/infrastructure/db/schema-members.ts   # is_head_office + branch_code (+ admin edit form/route)
-src/modules/payments/**                                    # passthrough — verify no behavioural change
+src/modules/payments/**                                    # passthrough — verify no change; confirm F8/F6 finalisers run POST-commit (outside the receipt-lock tx)
+src/modules/renewals/**                                    # F8 renewal parity — renewal invoices = non-tax bills → RC receipt at renewal payment; renewal email/success copy
+scripts/verify-088-cutover.ts                              # NEW cutover assertion (enum has 'bill'; settings separate/RC; WHT seeded; issue allocates only 'bill')
 src/app/(staff)/admin/invoices/**                          # download affordances (both docs), labels, issue-dialog copy, settings form
 src/app/(member)/portal/invoices/**                        # download both docs, labels
 src/components/invoices/invoice-settings-form.tsx          # WHT-note (TH/EN) + seller branch fields
@@ -82,3 +84,21 @@ tests/{unit,contract,integration,e2e}/invoicing/**         # ≈25 files (number
 |-----------|------------|-------------------------------------|
 | New `bill` `document_type` + `bill_document_number_raw` column | The non-tax ใบแจ้งหนี้ needs its own sequential number, isolated from the §87 tax register | Reusing `invoices.sequence_number`/`document_number` is unsafe — `sequence_number` feeds the §87 uniqueness index (no stream discriminator), so a non-§87 bill number there could false-collide or falsely satisfy §87 invariants |
 | §87 allocation moved issue-time → payment-time (touches `record-payment` + `issue-event-invoice-as-paid` + `render-receipt-pdf`) | The §86/4 tax number must be minted at the tax point (§78/1 = payment) | Keeping §87 at issue is the root cause of the duplicate-§86/4 this feature removes; a cosmetic-only rename would leave the flow illegal |
+
+## Rollout, Cutover & Rollback
+
+*Added per critique 2026-07-01 (P8, P9, E7, E13, E14, X1, X2).*
+
+**Land order (one atomic PR):** migration `0230` (`document_type += 'bill'`) → `0231-0233` (bill column + CHECKs; members branch; settings WHT/branch) → code (issue→`bill`, pay→`RC`, async worker, `void-invoice`) → settings flip (`receiptNumberingMode='separate'`, `receiptNumberPrefix='RC'`, WHT note, seller branch). The issue-side and pay-side numbering edits **MUST ship together** — a partial rollout mints two §87 numbers per sale (E7).
+
+**Feature flag:** gate the §87-at-payment switch behind `FEATURE_088_TAX_AT_PAYMENT` so it can be reverted **before the first real payment**; the settings flip is the operator trigger.
+
+**Cutover verification (`scripts/verify-088-cutover.ts`, pre- and post-flip):** asserts the enum has `bill`; SweCham settings = `separate`/`RC`; the WHT note is seeded; and `issue-invoice` allocates **only** the `bill` stream (a runtime assertion throws if asked for a tax stream post-cutover, E7). Plus a **verified operator gate**: zero issued-unpaid invoices at cutover (a count query in the runbook), else FR-017 blocks paying a legacy §87-numbered bill (P8).
+
+**In-flight guard (FR-017):** the pay path rejects a legacy issued invoice lacking `bill_document_number_raw` (mirrors the existing `legacy_no_tin_event_needs_remediation` pattern) → force void + re-issue.
+
+**Rollback (Constitution Gate X):** `ALTER TYPE … ADD VALUE 'bill'` and consumed §87 numbers are irreversible → rollback = **revert the flag + redeploy prior code + revert the settings flip** (NOT a DB down-migration, E14); `bill`-numbered rows become read-broken on old code (acceptable — prod is test-data-only). A defective *issued* tax receipt post-launch is remediated via §86/10 credit-note or void+re-issue, never by mutating the §87 register. Wire `READ_ONLY_MODE` into the cutover to freeze writes in ~30s.
+
+**Production success signals (P10):** alert on `count(paid membership rows with >1 §87 number) == 0` (proves SC-001); a bill-vs-receipt issuance dashboard; and an alert on `pdf_render_permanently_failed` for paid receipts (FR-019).
+
+**F8/F6 ordering (E15):** confirm F8 `applyPendingTierUpgrade` + F6 as-paid finalisers run **post-commit**, outside the receipt advisory-lock tx, so the enlarged payment tx does not widen lock/rollback scope.

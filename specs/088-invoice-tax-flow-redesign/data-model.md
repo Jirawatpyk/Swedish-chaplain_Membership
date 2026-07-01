@@ -362,3 +362,17 @@ Notes:
 **Where §87 is allocated now**: the §87 no-gaps obligation **moves from issue-time to payment-time**. Previously `issue-invoice.ts` allocated a §87 `invoice` number at issue; now issue allocates only the **non-§87 `bill`** number, and the §87 `RC` number is minted at the `issued → paid` transition. **Steps must land together** (plan): if `issue-invoice` kept allocating a §87 number while `record-payment` also allocates one, every sale would mint **two** tax numbers — the exact duplicate-§86/4 this feature removes.
 
 **Cutover (operator gate, before first real document)**: SweCham `tenant_invoice_settings` flip — `receipt_numbering_mode='separate'`, `receipt_number_prefix='RC'`, seed `wht_note_th`/`wht_note_en` (membership WHT text), set `seller_is_head_office=true` / `seller_branch_code=NULL`. The seeder is `ON CONFLICT DO NOTHING` and the prod row already exists → the flip happens via the settings form (US5) or a one-off `UPDATE`. Imported members default to `is_head_office=true` / `branch_code=NULL`; admin edits only the genuine-branch rows.
+
+---
+
+## F. Critique remediation (2026-07-01)
+
+*Model deltas added after the dual-lens critique (E1/E2, E4/E5, E6, FR-017).*
+
+**F.1 — Buyer VAT-registrant discriminator on the snapshot (E1/E2, blocks the branch gate).** The branch line must gate on VAT-registrant-juristic, but the snapshot carries no such field. Add `buyer_is_vat_registrant: boolean` to `MemberIdentitySnapshot` (+ the tenant-manual-event buyer snapshot), populated **at issue** from `members.legal_entity_type` (`≠ 'individual'` AND non-NULL). Zod: `.optional().default(false)` (same posture as `member_number`; `z.object` strips undeclared keys). **NULL / unknown `legal_entity_type` → `false` → NO branch line (fail-closed)** — never fall back to `buyerHasTin`. The template gates the buyer branch line on `member.buyer_is_vat_registrant`, not on TIN presence.
+
+**F.2 — Async worker inputs (E4/E5).** `render-receipt-pdf.ts` and its enqueue payload (`record-payment.ts`) MUST carry `paymentDate` + a **payment-date-derived** `fiscalYear` (Asia/Bangkok), NOT the frozen issue-time `loaded.fiscalYear`. The worker MUST source the tax number from `receipt_document_number_raw` (a membership bill's `document_number` is now NULL), recompute kind via the new `inferReceiptKind` resolver, and null-safe every `documentNumber` deref. Add an integration test: async render on a membership bill with `document_number = NULL`.
+
+**F.3 — Void of an unpaid bill (E6).** `void-invoice.ts` MUST fall back to `bill_document_number_raw` when `document_number` is NULL, and the **default** template title must be the relabeled ใบแจ้งหนี้ so a voided unpaid bill is never re-titled "Tax Invoice" (`voidUnderlyingKind='invoice'` → ใบแจ้งหนี้).
+
+**F.4 — In-flight legacy-bill guard (FR-017 / P8).** The pay path MUST reject a legacy invoice with a §87 `sequence_number` but no `bill_document_number_raw` (issued under the old flow) → force void + re-issue, so the row can never carry two §87 numbers.
