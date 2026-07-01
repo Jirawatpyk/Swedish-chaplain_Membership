@@ -105,6 +105,33 @@ describe('resolveInvoiceEventCopy', () => {
     expect(copy?.vars.documentNumber).toBe('INV-2026-0042');
   });
 
+  it('tax_receipt_issued (088/FR-029): i18nKey taxReceiptIssued, RC number from receipt_document_number_raw, link to the invoice (RC document)', () => {
+    // The §86/4 tax-receipt-at-payment event carries the §87 `RC` number in
+    // `receipt_document_number_raw` (record-payment.ts emit payload) — NOT the
+    // `document_number` / `receipt_document_number` keys the older events use.
+    const copy = resolveInvoiceEventCopy('tax_receipt_issued', {
+      invoice_id: INVOICE_ID,
+      receipt_document_number_raw: 'RC-2026-000045',
+      member_id: 'm-1',
+    });
+    expect(copy).not.toBeNull();
+    expect(copy?.i18nKey).toBe('taxReceiptIssued');
+    expect(copy?.vars.documentNumber).toBe('RC-2026-000045');
+    // The RC receipt is downloaded from the invoice detail surface — link there.
+    expect(copy?.link).toBe(`/admin/invoices/${INVOICE_ID}`);
+  });
+
+  it('tax_receipt_issued: non-member event buyer (no member_id) still resolves + interpolates RC', () => {
+    const copy = resolveInvoiceEventCopy('tax_receipt_issued', {
+      invoice_id: INVOICE_ID,
+      receipt_document_number_raw: 'RC-2026-000046',
+      event_registration_id: 'reg-1',
+    });
+    expect(copy?.i18nKey).toBe('taxReceiptIssued');
+    expect(copy?.vars.documentNumber).toBe('RC-2026-000046');
+    expect(copy?.link).toBe(`/admin/invoices/${INVOICE_ID}`);
+  });
+
   it('null payload does not throw; all link fields are null', () => {
     const copy = resolveInvoiceEventCopy('invoice_issued', null);
     expect(copy).not.toBeNull();
