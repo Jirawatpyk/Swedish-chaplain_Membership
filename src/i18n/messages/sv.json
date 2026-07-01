@@ -1220,7 +1220,8 @@
         "invoicePaid": "Faktura betald via {paymentMethod}",
         "invoiceVoided": "Faktura makulerad — {reason}",
         "creditNoteIssued": "Kreditnota {documentNumber} utställd — {creditAmount} THB",
-        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt"
+        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt",
+        "taxReceiptIssued": "Skattekvitto {documentNumber} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)"
       },
       "invoices": {
         "title": "Fakturor",

@@ -1220,7 +1220,8 @@
         "invoicePaid": "Invoice paid via {paymentMethod}",
         "invoiceVoided": "Invoice voided — {reason}",
         "creditNoteIssued": "Credit note {documentNumber} issued — {creditAmount} THB",
-        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent"
+        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent",
+        "taxReceiptIssued": "Tax receipt {documentNumber} issued"
       },
       "invoices": {
         "title": "Invoices",

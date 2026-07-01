@@ -117,6 +117,13 @@ export const F4_MEMBER_TIMELINE_EVENT_TYPES = [
   'invoice_voided',
   'credit_note_issued',
   'invoice_pdf_resent',
+  // 088-invoice-tax-flow-redesign (T019a / FR-029) — the §86/4 tax-receipt
+  // minted at payment. Emitted in-tx by record-payment / issue-event-invoice-
+  // as-paid with `member_id` (membership) or `event_registration_id` (event)
+  // + `receipt_document_number_raw` (the §87 `RC` number). Surfaces on the F3
+  // member timeline alongside `invoice_paid` so the payment moment is not
+  // doubled; the copy resolver interpolates the `RC-…` number + links the doc.
+  'tax_receipt_issued',
 ] as const;
 
 export type F4MemberTimelineEventType =

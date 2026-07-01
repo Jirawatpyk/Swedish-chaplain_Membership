@@ -122,6 +122,42 @@ describe('TimelineEventItem — round-3+4+5 audit event-type i18n (L5)', () => {
     errSpy.mockRestore();
   });
 
+  // 088 (T019a / FR-029) — the tax_receipt_issued audit row must surface the
+  // §87 `RC` number one-liner (from `receipt_document_number_raw`) beneath the
+  // "Tax receipt issued" label, so the member timeline shows WHICH receipt was
+  // minted at payment — not just that one was.
+  it('tax_receipt_issued: renders the RC number one-liner from receipt_document_number_raw', () => {
+    const messagesWithTaxReceipt = {
+      ...messages,
+      audit: {
+        eventType: {
+          ...messages.audit.eventType,
+          tax_receipt_issued: 'Tax receipt issued',
+        },
+      },
+    };
+    render(
+      <NextIntlClientProvider locale="en" messages={messagesWithTaxReceipt}>
+        <TimelineEventItem
+          id="audit-tax-receipt"
+          timestamp="2026-04-10T10:00:00Z"
+          source="audit"
+          eventType="tax_receipt_issued"
+          actorKind="staff"
+          actorUserId="actor-1"
+          actorDisplayName="Test User"
+          payload={{
+            receipt_document_number_raw: 'RC-2026-000045',
+            invoice_id: 'i-1',
+            member_id: 'm-1',
+          }}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('Tax receipt issued')).toBeTruthy();
+    expect(screen.getByText('RC-2026-000045')).toBeTruthy();
+  });
+
   it('uncatalogued audit event with no summary falls back to the source label', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>

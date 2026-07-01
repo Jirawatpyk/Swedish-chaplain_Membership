@@ -1220,7 +1220,8 @@
         "invoicePaid": "รับชำระเงินผ่าน {paymentMethod}",
         "invoiceVoided": "ยกเลิกใบแจ้งหนี้ — {reason}",
         "creditNoteIssued": "ออกใบลดหนี้ {documentNumber} จำนวน {creditAmount} บาท",
-        "invoicePdfResent": "ส่ง PDF ใบแจ้งหนี้ {documentNumber} อีกครั้ง"
+        "invoicePdfResent": "ส่ง PDF ใบแจ้งหนี้ {documentNumber} อีกครั้ง",
+        "taxReceiptIssued": "ออกใบกำกับภาษี/ใบเสร็จรับเงิน {documentNumber}"
       },
       "invoices": {
         "title": "ใบแจ้งหนี้",
