@@ -15,6 +15,8 @@ Today the platform issues a **§86/4 ใบกำกับภาษี / Tax Inv
 
 - Q: On which documents do the withholding-tax note and the Head Office/Branch §86/4 fields render — the non-tax bill, the tax receipt, or both? → A: **Both** — the ใบแจ้งหนี้ (bill) and the ใบกำกับภาษี/ใบเสร็จรับเงิน (tax receipt) render both fields, drawn from the same immutable issue-time snapshot (the WHT note is most actionable on the bill the member pays against; the branch line is harmless on the bill and keeps the two documents consistent).
 - Q: After a membership bill is paid, which documents remain downloadable? → A: **Both** — the ใบแจ้งหนี้ (bill) and the tax receipt stay available to admin and member; the bill is NOT hidden once paid (they are two distinct legal documents: a payable record and a tax receipt).
+- Q: When a PAID membership is voided, which of its two PDF blobs (bill vs tax receipt) is VOID-stamped? → A: **Both** — the ใบแจ้งหนี้ bill blob and the ใบกำกับภาษี/ใบเสร็จ tax-receipt blob are both VOID-stamped (both remain downloadable per FR-015, so neither may look valid after a void). Note: cancelling an issued §86/4 receipt is normally done via a §86/10 credit note; void is the edge path.
+- Q: Audit evidence for SC-001 (the tax number is born at payment) — reuse `invoice_issued` or add a dedicated event? → A: **Add a dedicated `tax_receipt_issued` audit event** at payment-time §87 allocation (10-year retention, like other tax-document events), keeping `invoice_issued` for the bill; this is the queryable SC-001 signal. It is a 4-place enum add (domain const + pgEnum + audit-event count test + completeness test). (`tenant_receipt_prefix_changed` already exists — not new.)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -139,6 +141,7 @@ Event-with-TIN reuses the same non-tax ใบแจ้งหนี้ (when bill
 - Async receipt window: after online-payment success the receipt PDF may still be rendering → portal shows a "receipt being generated" state; a permanent render failure raises an admin alert + re-render path (FR-019).
 - Voiding an **unpaid** ใบแจ้งหนี้ MUST succeed and re-render under the ใบแจ้งหนี้ title (never "Tax Invoice"), using the bill number (the row has no §87 number).
 - A legacy invoice issued under the OLD flow (carries a §87 number, no bill number) presented for payment after cutover → payment blocked; void + re-issue required (FR-017).
+- Voiding a **paid** membership stamps VOID on **both** blobs (bill + tax receipt) via the invoice- and receipt-PDF regeneration paths; a voided sale never leaves an un-stamped downloadable document. (Cancelling an issued §86/4 is normally a §86/10 credit note; void is the edge path.)
 
 ## Requirements *(mandatory)*
 
@@ -164,6 +167,7 @@ Event-with-TIN reuses the same non-tax ใบแจ้งหนี้ (when bill
 - **FR-018** (renewal parity): the renewal (F8) flow MUST follow the same model — a renewal-generated membership invoice issues as a non-tax ใบแจ้งหนี้ (no §87), the RC tax receipt mints at renewal payment (online + offline), and renewal emails / success screens reference the correct documents.
 - **FR-019** (paid member never stranded): a paid member MUST never be left without their §86/4 tax receipt — the async render window MUST show a "receipt being generated" state, and a permanent render failure MUST raise an admin alert with an explicit re-render path (an allocated RC number must always resolve to a rendered receipt).
 - **FR-020** (all user-facing channels): FR-014's relabel MUST also cover transactional **email templates** (subjects + bodies) so a bill email never calls the document a Tax Invoice; the tax document travels on the receipt email (SC-005 surface).
+- **FR-021** (audit evidence): the payment-time §86/4 tax-receipt issuance MUST emit a dedicated `tax_receipt_issued` audit event (10-year retention), distinct from the bill's `invoice_issued`, as the queryable evidence for SC-001 (one tax number per paid sale, born at payment).
 
 ### Key Entities *(include if feature involves data)*
 
