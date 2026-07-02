@@ -342,6 +342,7 @@ export async function MembersDirectoryBody({
           first_name: row.primaryContact.firstName,
           last_name: row.primaryContact.lastName,
           email: row.primaryContact.email,
+          invite_bounced: row.primaryContact.inviteBouncedAt !== null,
         }
       : null,
     };

@@ -92,6 +92,12 @@ const messages = {
         toggleStatus: 'Toggle ({current})',
         networkError: 'Network error',
       },
+      detail: {
+        inviteBounced: {
+          badge: 'Invite bounced',
+          badgeAria: 'Invitation email bounced',
+        },
+      },
     },
   },
 };
@@ -163,5 +169,30 @@ describe('MembersTable lapsed badge', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.getByText('Lapsed').closest('button')).toBeNull();
+  });
+});
+
+describe('MembersTable invite-bounced badge (directory)', () => {
+  const bouncedContact = {
+    contact_id: 'c-1',
+    first_name: 'Jane',
+    last_name: 'Doe',
+    email: 'jane@example.com',
+    invite_bounced: true,
+  };
+
+  it('renders the "Invite bounced" badge (+ SR text) in the Contact cell when the primary contact bounced', () => {
+    renderTable([baseRow({ primary_contact: bouncedContact })]);
+    expect(screen.getByText('Invite bounced')).toBeInTheDocument();
+    expect(screen.getByText('Invitation email bounced')).toBeInTheDocument();
+  });
+
+  it('renders NO bounce badge when the primary contact has not bounced', () => {
+    renderTable([
+      baseRow({
+        primary_contact: { ...bouncedContact, invite_bounced: false },
+      }),
+    ]);
+    expect(screen.queryByText('Invite bounced')).not.toBeInTheDocument();
   });
 });
