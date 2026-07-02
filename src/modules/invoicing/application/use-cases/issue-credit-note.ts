@@ -762,6 +762,21 @@ export async function issueCreditNote(
             // 'membership') and the note-less PDF would overwrite the SAME blob +
             // sha256 — silently destroying legally-relevant tenant content.
             invoiceSubject: loaded.invoiceSubject,
+            // 088 US8 review fix (HIGH / FR-025) — thread the PINNED zero-rate
+            // triplet so the §80/1(5) note gate fires IDENTICALLY on this credited
+            // §86/4 receipt re-render (gate: !isBill && v>=8 && vatTreatment ===
+            // 'zero_rated_80_1_5'). Without it the credited re-render drops the
+            // §80/1(5) legal-basis note + cert reference and the note-less PDF
+            // overwrites the SAME 10y-retention tax-receipt blob + sha256 — the
+            // exact twin of the WHT-note bug above. Mirrors record-payment.ts;
+            // spread ONLY on a zero-rated row so a standard re-render is unchanged.
+            ...(loaded.vatTreatment === 'zero_rated_80_1_5'
+              ? {
+                  vatTreatment: loaded.vatTreatment,
+                  zeroRateCertNo: loaded.zeroRateCertNo,
+                  zeroRateCertDate: loaded.zeroRateCertDate,
+                }
+              : {}),
             creditedAnnotation: {
               fullyCredited,
               references: annotationRefs,

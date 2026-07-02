@@ -248,6 +248,20 @@ export async function renderReceiptPdf(
             // membership §86/4 tax receipt. Threaded from the stored subject so
             // this async render matches the sync record-payment receipt render.
             invoiceSubject: loaded.invoiceSubject,
+            // 088 US8 (T059 / FR-025 / SC-008 / G1) — source the PINNED VAT
+            // treatment + MFA cert from the row (NEVER default to 7%) so an
+            // async-rendered §86/4 receipt on a zero-rated bill computes VAT 0%
+            // + renders the §80/1(5) note. The VAT amounts (subtotal/vat/total/
+            // vatRate) already come from the pinned row above; this adds the
+            // note inputs. Threaded ONLY on a zero-rated row → a standard async
+            // render is byte-identical (undefined omitted from the seed, SC-003).
+            ...(loaded.vatTreatment === 'zero_rated_80_1_5'
+              ? {
+                  vatTreatment: loaded.vatTreatment,
+                  zeroRateCertNo: loaded.zeroRateCertNo,
+                  zeroRateCertDate: loaded.zeroRateCertDate,
+                }
+              : {}),
           },
           blobKey: receiptBlobKey,
           // Allow overwrite — failed-retry path may upload twice.

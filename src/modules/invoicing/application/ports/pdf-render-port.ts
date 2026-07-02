@@ -71,6 +71,24 @@ export interface PdfRenderInput {
    * seed is unchanged for callers that do not set it (SC-003 byte-stable).
    */
   readonly invoiceSubject?: 'membership' | 'event';
+  /**
+   * 088-invoice-tax-flow-redesign (US8 / T058 / FR-025 / SC-008) — the pinned
+   * per-invoice VAT treatment. When `'zero_rated_80_1_5'` AND `templateVersion
+   * >= ZERO_RATE_NOTE_MIN_VERSION` (=8), the §86/4 tax receipt renders the
+   * §80/1(5) note ("VAT 0% under §80/1(5); MFA certificate no. … / date …")
+   * from `zeroRateCertNo` + `zeroRateCertDate`. The scan is NOT appended — the
+   * cert is referenced by number/date only (G6).
+   *
+   * OPTIONAL + undefined-guarded: threaded ONLY on a zero-rated document, so a
+   * `'standard'` invoice (and every pre-088 caller) omits it → the deterministic
+   * render seed is unchanged and the note never renders (SC-003 byte-stable).
+   * VAT 0% / 0.00 itself is driven by `subtotal`/`vat`/`vatRate` (already
+   * present) — the note is the only new element. Membership is always
+   * `'standard'`, so the note never draws on a membership document.
+   */
+  readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5';
+  readonly zeroRateCertNo?: string | null;
+  readonly zeroRateCertDate?: string | null;
   readonly voidReason?: string | null;
   /**
    * 064 W1 S31 — what the document being VOID-stamped ORIGINALLY was.

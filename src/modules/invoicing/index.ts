@@ -43,6 +43,15 @@ export { Money } from './domain/value-objects/money';
 export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
+// 088 US8 (§ F.8) — per-invoice VAT-treatment policy (drives the rate + the
+// ≥5,000-THB advisory-warn threshold). Public so the serialiser/route surfaces
+// can compute the FR-024 non-blocking warning without a deep domain import.
+export {
+  resolveVatRate,
+  isZeroRateBelowThreshold,
+  ZERO_RATE_MIN_SUBTOTAL_SATANG,
+  type VatTreatment,
+} from './domain/policies/vat-treatment';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
 // FIX 5 — shared §86/4 buyer-TIN / event-document-kind discriminator (dedup of
 // the inline check formerly repeated across issue-invoice / record-payment /

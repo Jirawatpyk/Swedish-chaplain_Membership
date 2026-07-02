@@ -28,6 +28,7 @@ import type { ProRatePolicy } from './value-objects/pro-rate-policy';
 import type { TenantIdentitySnapshot } from './value-objects/tenant-identity-snapshot';
 import type { MemberIdentitySnapshot } from './value-objects/member-identity-snapshot';
 import type { Sha256Hex } from './value-objects/sha256-hex';
+import type { VatTreatment } from './policies/vat-treatment';
 import type { InvoiceLine } from './invoice-line';
 
 export const INVOICE_STATUSES = [
@@ -282,6 +283,26 @@ export interface InvoiceCommon {
    * once in the draft→issued UPDATE, then locked by the immutability trigger.
    */
   readonly billDocumentNumberRaw: string | null;
+
+  /**
+   * 088-invoice-tax-flow-redesign (US8 / § F.8) — per-invoice VAT treatment
+   * (case-by-case, NOT per-member), pinned at issue + immutable (FR-023):
+   * 'standard' (VAT 7%, membership + all defaults) or 'zero_rated_80_1_5'
+   * (VAT 0% embassy / int'l-org §80/1(5)). The DB column is NOT NULL DEFAULT
+   * 'standard', so every persisted row (incl. pre-088) resolves to a value.
+   * DRIVES the VAT rate (FR-025 / G3).
+   */
+  readonly vatTreatment: VatTreatment;
+  /**
+   * MFA (Protocol Dept) certificate particulars for a `'zero_rated_80_1_5'`
+   * invoice — REQUIRED when zero-rated (fail-closed, FR-024), NULL otherwise.
+   * The cert is REFERENCED by number/date on the §86/4 tax invoice; the scan
+   * (`zeroRateCertBlobKey`) is retained separately (10y, admin-only) and NOT
+   * appended to the PDF (G6).
+   */
+  readonly zeroRateCertNo: string | null;
+  readonly zeroRateCertDate: string | null;
+  readonly zeroRateCertBlobKey: string | null;
 
   readonly lines: readonly InvoiceLine[];
 

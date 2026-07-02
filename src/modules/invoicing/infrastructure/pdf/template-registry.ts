@@ -102,11 +102,28 @@
  *     Chamber-OS (§-citation)" footer — preserving the SC-003
  *     reproduce-the-original guarantee, exactly like the v3 citation + v4
  *     two-page + v5 branch-line + v6 polish gates.
+ *   - **v8** (2026-07-02, 088-invoice-tax-flow-redesign US8 / T058 / FR-025 /
+ *     SC-008) — §80/1(5) embassy / int'l-org VAT-zero-rate note. When the pinned
+ *     `vatTreatment='zero_rated_80_1_5'`, the §86/4 tax invoice / receipt renders
+ *     a §80/1(5) note ("VAT 0% under Revenue Code §80/1(5)") + the MFA (Protocol
+ *     Dept) certificate reference (number + date) — the cert SCAN is retained
+ *     separately (Vercel Blob, 10y, admin-only) and NOT appended to the PDF (G6).
+ *     The non-tax ใบแจ้งหนี้ bill just shows VAT 0% / 0.00 (no note); the note
+ *     never draws on a membership document (membership is always 'standard') and
+ *     the WHT note (US5, membership-only) never draws on a zero-rate document.
+ *     Gated on `templateVersion >= ZERO_RATE_NOTE_MIN_VERSION` (=8, see
+ *     templates/invoice-template.tsx), so a pinned pre-v8 document (resend /
+ *     void-overlay / async worker / any re-render at its stored
+ *     `pdf_template_version`) reproduces its ORIGINAL bytes with NO §80/1(5)
+ *     note — the SC-003 guarantee holds, exactly like the v3 citation + v4
+ *     two-page + v5 branch-line + v6 polish + v7 WHT/bank gates. Because the
+ *     note + its `vatTreatment`/cert render inputs are threaded ONLY on a
+ *     zero-rated document, every STANDARD render at v8 is byte-identical to v7.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 7 as const;
+export const CURRENT_TEMPLATE_VERSION = 8 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

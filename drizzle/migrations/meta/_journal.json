@@ -1653,6 +1653,13 @@
 			"when": 1798536400000,
 			"tag": "0236_members_branch_pairing_ck_fix",
 			"breakpoints": true
+		},
+		{
+			"idx": 239,
+			"version": "7",
+			"when": 1798536500000,
+			"tag": "0234_invoices_vat_treatment_zero_rate",
+			"breakpoints": true
 		}
 	]
 }

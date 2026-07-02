@@ -198,6 +198,22 @@ export const invoices = pgTable(
     // invoices_enforce_immutability (migration 0231, mirrors document_number).
     billDocumentNumberRaw: text('bill_document_number_raw'),
 
+    // 088-invoice-tax-flow-redesign (T055, migration 0234, US8 / § F.8) —
+    // per-invoice VAT treatment (case-by-case, NOT per-member). 'standard' =
+    // VAT 7% (membership + all defaults); 'zero_rated_80_1_5' = VAT 0% embassy /
+    // int'l-org zero-rate (§80/1(5)). NOT NULL DEFAULT 'standard' → every
+    // pre-088 row backfills cleanly; the value DRIVES the VAT rate (FR-025).
+    // Pinned at issue, then locked by invoices_enforce_immutability (0234).
+    vatTreatment: text('vat_treatment').notNull().default('standard'),
+    // MFA (Protocol Dept) certificate particulars — REQUIRED when zero-rated
+    // (fail-closed, invoices_zero_rate_cert_required CHECK below + app layer).
+    // NULL on every standard row. Also pinned/locked at issue (0234).
+    zeroRateCertNo: text('zero_rate_cert_no'),
+    zeroRateCertDate: date('zero_rate_cert_date'),
+    // Optional Vercel-Blob key of the cert scan (tax-document class, 10y,
+    // admin-only — reference only, NOT appended to the PDF).
+    zeroRateCertBlobKey: text('zero_rate_cert_blob_key'),
+
     // 054-event-fee-invoices (code-review HIGH-3) — retryable PDF-blob purge
     // marker for the 10-year non-member event-buyer PII redaction sweep.
     // Set to now() ONLY by the redact-expired-event-buyers cron AFTER it has
@@ -323,6 +339,22 @@ export const invoices = pgTable(
     check(
       'invoices_non_draft_has_doc_kind',
       sql`(status = 'draft' OR pdf_doc_kind IS NOT NULL)`,
+    ),
+    // 088-invoice-tax-flow-redesign (T055, migration 0234, US8 / § F.8.2) —
+    // mirror the LIVE predicates so the Drizzle schema reflects the DB shape.
+    // (a) accepted-value gate; (b) fail-closed cert-required-when-zero-rated;
+    // (c) US8 review fix — membership can never be zero-rated (FR-023 layer 3).
+    check(
+      'invoices_vat_treatment_valid',
+      sql`vat_treatment IN ('standard', 'zero_rated_80_1_5')`,
+    ),
+    check(
+      'invoices_zero_rate_cert_required',
+      sql`vat_treatment <> 'zero_rated_80_1_5' OR zero_rate_cert_no IS NOT NULL`,
+    ),
+    check(
+      'invoices_membership_is_standard',
+      sql`invoice_subject <> 'membership' OR vat_treatment = 'standard'`,
     ),
     // 054-event-fee-invoices — one non-void event invoice per registration.
     // Predicate uses `status <> 'void'` because the void status value is

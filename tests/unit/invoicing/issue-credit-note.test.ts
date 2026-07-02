@@ -789,6 +789,32 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     expect(annotation.invoiceSubject).toBe('membership');
   });
 
+  it('zero-rate Shape 1 → annotation carries vatTreatment + cert so the §80/1(5) note survives the credited re-render (US8 review fix)', async () => {
+    // A §80/1(5) zero-rated event §86/4 receipt (TIN buyer → receipt_combined).
+    // The credited re-render must reproduce the §80/1(5) note + cert reference —
+    // the exact twin of the US5 WHT-note gate: the template note gate needs
+    // vatTreatment === 'zero_rated_80_1_5' at v>=8, so without threading the pinned
+    // triplet the note-less PDF would overwrite the SAME 10y-retention tax receipt.
+    const invoice = makeIssuedEventInvoice({
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      zeroRateCertDate: '2026-04-10',
+      vatRate: VatRate.ofUnsafe('0.0000'),
+      vat: Money.fromSatangUnsafe(0n),
+      total: Money.fromSatangUnsafe(23_364n), // zero-rate: total === subtotal
+      vatInclusive: false,
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-us8-zerorate' });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const annotation = annotationRenderInput(deps);
+    expect(annotation.kind).toBe('receipt_combined');
+    expect(annotation.vatTreatment).toBe('zero_rated_80_1_5');
+    expect(annotation.zeroRateCertNo).toBe('กต 0404/1234');
+  });
+
   it('CN references the §86/4 RC receipt number + the payment date, NOT the bill number / issue date (T047) — NEW-flow shape: documentNumber NULL', async () => {
     // 088 US6 review — the realistic NEW-flow (taxAtPayment) paid shape: the bill
     // uses a non-§87 SC number so `documentNumber` is NULL, and the §86/4 receipt

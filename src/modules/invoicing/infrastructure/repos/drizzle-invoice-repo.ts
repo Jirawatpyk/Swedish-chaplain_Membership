@@ -14,6 +14,7 @@ import {
   type InvoiceStatus,
   type InvoiceSubjectFields,
 } from '../../domain/invoice';
+import type { VatTreatment } from '../../domain/policies/vat-treatment';
 import {
   asInvoiceLineId,
   type InvoiceLine,
@@ -318,6 +319,14 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     receiptDocumentNumberRaw: row.receiptDocumentNumberRaw ?? null,
     // 088 US1 — non-§87 bill number (SC) allocated at issue in the new flow.
     billDocumentNumberRaw: row.billDocumentNumberRaw ?? null,
+    // 088 US8 (§ F.8) — per-invoice VAT treatment + pinned MFA cert. The DB
+    // column is NOT NULL DEFAULT 'standard'; the narrow cast is safe because
+    // `invoices_vat_treatment_valid` pins the value set (a corrupt value would
+    // be a dropped-CHECK anomaly, out of scope for a silent coerce here).
+    vatTreatment: (row.vatTreatment ?? 'standard') as VatTreatment,
+    zeroRateCertNo: row.zeroRateCertNo ?? null,
+    zeroRateCertDate: row.zeroRateCertDate ?? null,
+    zeroRateCertBlobKey: row.zeroRateCertBlobKey ?? null,
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -775,6 +784,13 @@ export function makeDrizzleInvoiceRepo(
           // 088 US1 — non-§87 bill number (SC) written in the new flow; the
           // legacy §87-at-issue path leaves it undefined → NULL (unchanged).
           billDocumentNumberRaw: input.billDocumentNumberRaw ?? null,
+          // 088 US8 (§ F.8) — pinned per-invoice VAT treatment + MFA cert.
+          // Default 'standard' keeps every pre-US8 caller (and the legacy path)
+          // on the unchanged VAT-7% behaviour; cert fields NULL unless zero-rated.
+          vatTreatment: input.vatTreatment ?? 'standard',
+          zeroRateCertNo: input.zeroRateCertNo ?? null,
+          zeroRateCertDate: input.zeroRateCertDate ?? null,
+          zeroRateCertBlobKey: input.zeroRateCertBlobKey ?? null,
           issueDate: input.issueDate,
           dueDate: input.dueDate,
           subtotalSatang: input.subtotalSatang,

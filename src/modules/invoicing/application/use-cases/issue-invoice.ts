@@ -86,6 +86,10 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import {
+  resolveVatRate,
+  type VatTreatment,
+} from '@/modules/invoicing/domain/policies/vat-treatment';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import {
   buyerHasTin,
@@ -107,6 +111,18 @@ export const issueInvoiceSchema = z.object({
   actorUserId: z.string().min(1),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
+  // 088 US8 (§ F.8 / FR-023..025) — per-invoice VAT treatment + MFA certificate.
+  // `vatTreatment` defaults to 'standard' (VAT 7%); `'zero_rated_80_1_5'` is the
+  // embassy / int'l-org §80/1(5) zero rate. The cert fields are supporting
+  // evidence — `zeroRateCertNo` is the FAIL-CLOSED gate (checked in-use-case,
+  // 422 `zero_rate_cert_required`), the scan (`zeroRateCertBlobKey`) is optional.
+  // `.optional()` WITHOUT `.default()` keeps `IssueInvoiceInput.vatTreatment`
+  // optional so existing direct callers need not pass it; the use-case applies
+  // the `?? 'standard'` default.
+  vatTreatment: z.enum(['standard', 'zero_rated_80_1_5']).optional(),
+  zeroRateCertNo: z.string().max(200).optional(),
+  zeroRateCertDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  zeroRateCertBlobKey: z.string().max(1024).optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -144,6 +160,19 @@ export type IssueInvoiceError =
    */
   | { code: 'registration_lookup_failed' }
   | { code: 'invalid_lines'; reason: string }
+  /**
+   * 088 US8 (FR-025) — a MEMBERSHIP subject supplied as `zero_rated_80_1_5` is
+   * illegal (membership is ALWAYS VAT 7%). REJECTED (no invoice issued) — a
+   * reject, NOT a silent coerce. Defense-in-depth behind the form hiding the
+   * toggle for membership subjects. 422.
+   */
+  | { code: 'membership_cannot_be_zero_rated' }
+  /**
+   * 088 US8 (FR-024, fail-closed) — a `zero_rated_80_1_5` issue with a
+   * missing/blank `zeroRateCertNo` is BLOCKED (no invoice issued). The DB
+   * `invoices_zero_rate_cert_required` CHECK is defense-in-depth behind this. 422.
+   */
+  | { code: 'zero_rate_cert_required' }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
@@ -261,6 +290,28 @@ export async function issueInvoice(
     // C2. Draft invoice (now safely inside the row lock)
     const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
+
+    // 088 US8 (§ F.8 / FR-024 / FR-025) — VAT-treatment gates. FAIL-FAST +
+    // PRE-SEQUENCE (plain `return err` — no §87/bill number consumed; runs
+    // before buyer resolution, the event gates, and allocateNext):
+    //   (1) membership can NEVER be zero-rated (VAT 7% always) → reject, not
+    //       coerce (FR-025);
+    //   (2) a zero-rated issue REQUIRES a non-blank MFA certificate number
+    //       (FR-024). The DB `invoices_zero_rate_cert_required` CHECK is
+    //       defense-in-depth behind this app-layer gate.
+    const vatTreatment: VatTreatment = input.vatTreatment ?? 'standard';
+    if (
+      vatTreatment === 'zero_rated_80_1_5' &&
+      draft.invoiceSubject === 'membership'
+    ) {
+      return err({ code: 'membership_cannot_be_zero_rated' });
+    }
+    if (
+      vatTreatment === 'zero_rated_80_1_5' &&
+      (input.zeroRateCertNo ?? '').trim() === ''
+    ) {
+      return err({ code: 'zero_rate_cert_required' });
+    }
 
     // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
     // extracted VERBATIM to `lib/resolve-invoice-buyer.ts` in 064 Task 3 so
@@ -444,15 +495,21 @@ export async function issueInvoice(
     for (const line of draft.lines) {
       lineSum = lineSum.add(line.total);
     }
+    // 088 US8 (FR-025 / G3) — `vat_treatment` DRIVES the rate (single source of
+    // truth): a `'zero_rated_80_1_5'` issue computes at 0%, everything else at
+    // the tenant's configured standard rate. The rate is NEVER chosen
+    // independently of the treatment. Both the inclusive + exclusive branches +
+    // the persisted `vatRateSnapshot` use THIS derived rate.
+    const effectiveVatRate = resolveVatRate(vatTreatment, settings.vatRate);
     let subtotal: Money;
     let vat: Money;
     let total: Money;
     if (draft.vatInclusive) {
       total = lineSum;
-      ({ subtotal, vat } = splitVatInclusive(total, settings.vatRate.numerator));
+      ({ subtotal, vat } = splitVatInclusive(total, effectiveVatRate.numerator));
     } else {
       subtotal = lineSum;
-      ({ vat, total } = calculateVat(subtotal, settings.vatRate));
+      ({ vat, total } = calculateVat(subtotal, effectiveVatRate));
     }
 
     // G. Snapshots — `tenantSnap` is the seller; `memberSnap` is the BUYER,
@@ -497,7 +554,9 @@ export async function issueInvoice(
           member: memberSnap,
           lines: draft.lines,
           subtotal,
-          vatRate: settings.vatRate,
+          // 088 US8 (FR-025) — the DERIVED rate (0% for zero-rate), never the
+          // raw tenant standard rate.
+          vatRate: effectiveVatRate,
           vat,
           total,
           // 054-event-fee-invoices — VAT-inclusive flag drives the "VAT included"
@@ -510,6 +569,18 @@ export async function issueInvoice(
           // 088 US5 (T041 / FR-012) — gate the tenant WHT note (membership only)
           // + let the template render the bank block on a membership bill.
           invoiceSubject: draft.invoiceSubject,
+          // 088 US8 (T058 / FR-025 / SC-008) — thread the pinned zero-rate
+          // treatment + cert ONLY on a zero-rated document so a standard render
+          // is byte-identical (undefined → omitted from the JSON seed, SC-003).
+          // The bill itself renders no §80/1(5) note (the note is §86/4-receipt
+          // only) but the 0% VAT is already driven by `vatRate`/`vat` above.
+          ...(vatTreatment === 'zero_rated_80_1_5'
+            ? {
+                vatTreatment,
+                zeroRateCertNo: input.zeroRateCertNo ?? null,
+                zeroRateCertDate: input.zeroRateCertDate ?? null,
+              }
+            : {}),
         },
         blobKey,
       },
@@ -532,11 +603,20 @@ export async function issueInvoice(
         sequenceNumber: taxAtPayment ? null : seq,
         documentNumber: taxAtPayment ? null : docNum.value.raw,
         billDocumentNumberRaw: taxAtPayment ? docNum.value.raw : null,
+        // 088 US8 (§ F.8 / FR-023) — pin the per-invoice VAT treatment + MFA
+        // certificate onto the issued row (immutable via the 0234 trigger).
+        // 'standard' + NULL cert on every non-zero-rate issue.
+        vatTreatment,
+        zeroRateCertNo: input.zeroRateCertNo ?? null,
+        zeroRateCertDate: input.zeroRateCertDate ?? null,
+        zeroRateCertBlobKey: input.zeroRateCertBlobKey ?? null,
         issueDate,
         dueDate,
         // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
         subtotalSatang: asSatang(subtotal.satang),
-        vatRate: settings.vatRate.raw,
+        // 088 US8 (FR-025) — persist the DERIVED rate (0% for zero-rate), so the
+        // stored snapshot matches the rendered document.
+        vatRate: effectiveVatRate.raw,
         vatSatang: asSatang(vat.satang),
         totalSatang: asSatang(total.satang),
         // 054-event-fee-invoices — pro-rating is membership-only, so event
@@ -604,6 +684,10 @@ export async function issueInvoice(
         : {}),
       total_satang: total.satang.toString(),
       pdf_sha256: rendered.sha256,
+      // 088 US8 (T060 / § F.8.3) — record the pinned VAT treatment + (when
+      // zero-rated) the MFA cert number on `invoice_issued`. No new event type.
+      vat_treatment: vatTreatment,
+      zero_rate_cert_no: input.zeroRateCertNo ?? null,
     };
     if (memberId !== null) {
       await deps.audit.emit(tx, {

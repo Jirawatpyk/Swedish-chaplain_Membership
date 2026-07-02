@@ -12,6 +12,7 @@ import type {
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import type { VatTreatment } from '@/modules/invoicing/domain/policies/vat-treatment';
 
 export interface InvoiceRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
@@ -159,6 +160,17 @@ export interface InvoiceRepo {
        * tax-at-payment flow; NULL on the legacy §87-at-issue path.
        */
       readonly billDocumentNumberRaw?: string | null;
+      /**
+       * 088 US8 (§ F.8) — pinned per-invoice VAT treatment + MFA certificate
+       * particulars. Absent/undefined → the DB `'standard'` default (VAT 7%,
+       * cert fields NULL). Set to `'zero_rated_80_1_5'` + a non-null
+       * `zeroRateCertNo` on an embassy / int'l-org §80/1(5) issue (the
+       * `invoices_zero_rate_cert_required` CHECK enforces the pairing).
+       */
+      readonly vatTreatment?: VatTreatment;
+      readonly zeroRateCertNo?: string | null;
+      readonly zeroRateCertDate?: string | null;
+      readonly zeroRateCertBlobKey?: string | null;
       readonly issueDate: string;
       readonly dueDate: string;
       readonly subtotalSatang: Satang;

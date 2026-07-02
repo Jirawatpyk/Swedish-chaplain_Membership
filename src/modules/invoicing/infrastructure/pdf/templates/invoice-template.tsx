@@ -135,6 +135,17 @@ const styles = StyleSheet.create({
   // renders only that line. `maxWidth:'100%'` for the Thai wrap safeguard.
   whtNoteBlock: { marginTop: 16, width: '100%' },
   whtNoteLine: { fontSize: 8, color: '#555', maxWidth: '100%', marginBottom: 2 },
+  // 088 US8 (T058 / FR-025) — §80/1(5) zero-rate note block on the §86/4 tax
+  // receipt. Framed with a left accent border (matches the bank/credit-note
+  // reference-block pattern) so it reads as the tax-basis callout. Muted body.
+  zeroRateNoteBlock: {
+    marginTop: 16,
+    padding: 8,
+    borderLeft: '3 solid #444',
+    backgroundColor: '#fafafa',
+    width: '100%',
+  },
+  zeroRateNoteLine: { fontSize: 9, color: '#333', maxWidth: '100%', marginBottom: 2 },
   // 088 US5 (T042 / FR-022) — offline-payment bank block on the ใบแจ้งหนี้ ONLY.
   // Framed with a left accent border (matches the credit-note reference block
   // pattern) so it reads as the payment-instruction box.
@@ -265,6 +276,39 @@ const PRESENTATION_POLISH_MIN_VERSION = 6;
  * Registry log: template-registry.ts v7.
  */
 const WHT_AND_BANK_BLOCK_MIN_VERSION = 7;
+
+/**
+ * 088 US8 (T058 / FR-025 / SC-008) — first template version that renders the
+ * §80/1(5) embassy / int'l-org VAT-zero-rate note on the §86/4 tax invoice /
+ * receipt. Gated so a pinned pre-v8 document (resend / void-overlay / async
+ * worker / any re-render at its stored `pdf_template_version`) reproduces its
+ * ORIGINAL bytes with NO §80/1(5) note — the SC-003 reproduce-the-original
+ * guarantee, exactly like the v3 citation + v4 two-page + v5 branch-line + v6
+ * polish + v7 WHT/bank gates. Registry log: template-registry.ts v8.
+ */
+const ZERO_RATE_NOTE_MIN_VERSION = 8;
+
+/**
+ * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
+ * the template's shaped-Thai + English-gloss convention — the PDF carries no
+ * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
+ * (Protocol Dept) certificate number + date. The scan is NOT appended (G6).
+ */
+function section8015NoteLines(
+  certNo: string | null,
+  certDate: string | null,
+): { citation: string; certRef: string } {
+  return {
+    citation:
+      shapeThai('ภาษีมูลค่าเพิ่มอัตรา 0% ตามมาตรา 80/1(5) แห่งประมวลรัษฎากร') +
+      ' / VAT 0% under Revenue Code 80/1(5)',
+    certRef:
+      shapeThai('หนังสือรับรองกระทรวงการต่างประเทศเลขที่') +
+      ' / MFA certificate no.: ' +
+      (certNo ?? '-') +
+      (certDate ? ` (${certDate})` : ''),
+  };
+}
 
 /**
  * 088 US3 — the §86/4 สำนักงานใหญ่ / Head Office | สาขาที่ NNNNN / Branch line.
@@ -634,6 +678,32 @@ function renderPageBody({
             {input.tenant.wht_note_en != null && (
               <Text style={styles.whtNoteLine}>{input.tenant.wht_note_en}</Text>
             )}
+          </View>
+        )}
+
+      {/* 088 US8 (T058 / FR-025 / SC-008) — §80/1(5) embassy / int'l-org
+          VAT-zero-rate note. Renders on the §86/4 tax invoice / receipt ONLY
+          (NOT the non-tax ใบแจ้งหนี้ bill, which just shows VAT 0% / 0.00), and
+          ONLY when the pinned treatment is zero-rated; gated v>=8 so pre-v8
+          documents re-render byte-stable (SC-003). Membership is always
+          'standard', so the note never draws on a membership document; the
+          WHT note (US5, membership-only) never draws on a zero-rate document. */}
+      {!isBill &&
+        input.templateVersion >= ZERO_RATE_NOTE_MIN_VERSION &&
+        input.vatTreatment === 'zero_rated_80_1_5' && (
+          <View style={styles.zeroRateNoteBlock}>
+            {(() => {
+              const note = section8015NoteLines(
+                input.zeroRateCertNo ?? null,
+                input.zeroRateCertDate ?? null,
+              );
+              return (
+                <>
+                  <Text style={styles.zeroRateNoteLine}>{note.citation}</Text>
+                  <Text style={styles.zeroRateNoteLine}>{note.certRef}</Text>
+                </>
+              );
+            })()}
           </View>
         )}
 

@@ -696,6 +696,18 @@ export async function recordPayment(
                 // Threaded from the stored subject so the sync (here) + async
                 // (render-receipt-pdf) receipt renders gate identically.
                 invoiceSubject: loaded.invoiceSubject,
+                // 088 US8 (T058 / FR-025 / SC-008) — source the PINNED VAT
+                // treatment + MFA cert from the row so the payment-time §86/4
+                // receipt renders VAT 0% + the §80/1(5) note (never re-computed).
+                // Threaded ONLY on a zero-rated row so a standard receipt render
+                // is byte-identical (undefined → omitted from the seed, SC-003).
+                ...(loaded.vatTreatment === 'zero_rated_80_1_5'
+                  ? {
+                      vatTreatment: loaded.vatTreatment,
+                      zeroRateCertNo: loaded.zeroRateCertNo,
+                      zeroRateCertDate: loaded.zeroRateCertDate,
+                    }
+                  : {}),
               },
               blobKey: receiptBlobKey,
             },
@@ -875,6 +887,10 @@ export async function recordPayment(
         receipt_document_number_raw: receiptDocNumRaw,
         fiscal_year: receiptFiscalYear,
         payment_date: input.paymentDate,
+        // 088 US8 (T060 / § F.8.3) — record the pinned VAT treatment + (when
+        // zero-rated) the MFA cert number on `tax_receipt_issued`. No new type.
+        vat_treatment: loaded.vatTreatment,
+        zero_rate_cert_no: loaded.zeroRateCertNo,
         ...(memberId !== null
           ? { member_id: memberId }
           : loaded.eventRegistrationId !== null
