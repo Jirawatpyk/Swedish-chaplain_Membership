@@ -507,6 +507,9 @@ export async function issueInvoice(
           // 088 T016 — render the pre-payment document as the non-tax ใบแจ้งหนี้
           // (no §86/4 title / ORIGINAL marker / §-citation) in the new flow.
           billMode: taxAtPayment,
+          // 088 US5 (T041 / FR-012) — gate the tenant WHT note (membership only)
+          // + let the template render the bank block on a membership bill.
+          invoiceSubject: draft.invoiceSubject,
         },
         blobKey,
       },

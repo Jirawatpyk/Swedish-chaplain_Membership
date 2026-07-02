@@ -1563,7 +1563,10 @@
         "tax": "Skatt",
         "numbering": "Dokumentnumrering",
         "defaults": "Faktureringsstandard",
-        "logo": "Logotyp"
+        "logo": "Logotyp",
+        "seller": "Säljarens filial (§86/4)",
+        "whtNote": "Notering om källskatt",
+        "bank": "Offlinebetalning (banköverföring)"
       },
       "labels": {
         "currencyCode": "Valutakod",
@@ -1582,14 +1585,34 @@
         "defaultNetDays": "Standard kreditdagar",
         "proRatePolicy": "Proportionerlig beräkning",
         "autoEmail": "Auto-e-post vid utfärdande/betalning",
-        "logo": "Ladda upp logotyp"
+        "logo": "Ladda upp logotyp",
+        "sellerIsHeadOffice": "Huvudkontor",
+        "sellerBranchCode": "Filialkod",
+        "whtNoteTh": "Källskattsnotering (thailändska)",
+        "whtNoteEn": "Källskattsnotering (engelska)",
+        "bankPayeeName": "Kontonamn / betalningsmottagare",
+        "bankAccountNo": "Kontonummer",
+        "bankAccountType": "Kontotyp",
+        "bankName": "Bank",
+        "bankBranch": "Bankkontor",
+        "bankAddress": "Bankadress",
+        "bankSwift": "SWIFT / BIC",
+        "paymentInstructionsTh": "Betalningsinstruktioner (thailändska)",
+        "paymentInstructionsEn": "Betalningsinstruktioner (engelska)"
       },
       "hints": {
         "currencyCode": "ISO 4217 — 3 versaler (t.ex. THB, USD, SEK).",
         "taxId": "13 siffror (thailändskt skattemyndighetsformat).",
         "receiptPrefix": "Används endast när kvittoläge är \"separat\".",
         "autoEmail": "När på skickas nya fakturor automatiskt via e-post vid utfärdande. Kan åsidosättas per faktura.",
-        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt."
+        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt.",
+        "receiptMode": "Kombinerad numrering har utgått – kvittot får sin egen §87-nummerserie.",
+        "sellerIsHeadOffice": "På = huvudkontor (สำนักงานใหญ่). Av = en filial som anges med en femsiffrig kod.",
+        "sellerBranchCode": "Exakt 5 siffror (skatteverkets filialkod).",
+        "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Lämna tomt för inget.",
+        "bank": "Visas endast på fakturan (ใบแจ้งหนี้), för betalning via banköverföring. Lämna tomt för inget.",
+        "bankSwift": "8 eller 11 tecken (t.ex. KASITHBK).",
+        "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."
       },
       "receiptMode": {
         "combined": "Kombinerad faktura + kvitto",
@@ -1622,7 +1645,10 @@
         "netDays": "Standard kreditdagar måste vara 0-365.",
         "validation": "Kontrollera formuläret — vissa fält behöver uppmärksamhet.",
         "forbidden": "Din roll kan inte ändra fakturainställningar.",
-        "generic": "Sparning misslyckades. Försök igen."
+        "generic": "Sparning misslyckades. Försök igen.",
+        "sellerBranch": "En filial kräver en femsiffrig filialkod; ett huvudkontor måste lämna den tom.",
+        "bankSwift": "SWIFT/BIC måste vara 8 eller 11 tecken (bokstäver och siffror).",
+        "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna)."
       },
       "saving": "Sparar…",
       "actions": {
@@ -1632,6 +1658,13 @@
       "toast": {
         "created": "Fakturainställningar skapade.",
         "updated": "Fakturainställningar uppdaterade."
+      },
+      "charCount": "{count}/{max}",
+      "prefixChange": {
+        "title": "Ändra dokumentnummerprefix?",
+        "description": "Att ändra ett prefix för faktura, kvitto eller kreditnota startar en NY nummerserie. Redan utfärdade dokument behåller sina nummer; §87-spårningen registrerar ändringen. Fortsätta?",
+        "confirm": "Ändra prefix",
+        "cancel": "Avbryt"
       }
     },
     "creditNotes": {

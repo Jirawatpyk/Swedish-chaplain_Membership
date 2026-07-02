@@ -114,6 +114,9 @@ export async function previewInvoiceDraft(
       vatRate: settings.vatRate,
       vat,
       total,
+      // 088 US5 (T041 / FR-012) — gate the tenant WHT note on a membership draft
+      // preview so the admin sees the note that will print on the issued document.
+      invoiceSubject: draft.invoiceSubject,
     });
 
     return ok({ bytes: rendered.bytes, contentType: 'application/pdf' });

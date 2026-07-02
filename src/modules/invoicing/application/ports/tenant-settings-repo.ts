@@ -69,6 +69,32 @@ export interface TenantInvoiceSettingsPatch {
   readonly proRatePolicy?: 'none' | 'monthly' | 'daily';
   readonly autoEmailEnabled?: boolean;
   readonly logoBlobKey?: string | null;
+  /**
+   * 088-invoice-tax-flow-redesign (US5 / T040 / FR-012) — tenant-configurable
+   * WHT footer note. `null` clears it. Pinned into the tenant snapshot at issue.
+   */
+  readonly whtNoteTh?: string | null;
+  readonly whtNoteEn?: string | null;
+  /**
+   * 088 US5 / T040 (§ C.2) — seller §86/4 Head-Office/Branch. The pairing
+   * (head-office ⇒ NULL code; branch ⇒ 5-digit code) is validated in the
+   * use-case superRefine + enforced by `tenant_invoice_settings_seller_branch_ck`.
+   */
+  readonly sellerIsHeadOffice?: boolean;
+  readonly sellerBranchCode?: string | null;
+  /**
+   * 088 US5 / T040 (FR-022) — offline-payment bank block. `null` clears each
+   * field. Rendered on the ใบแจ้งหนี้ (bill) ONLY.
+   */
+  readonly bankPayeeName?: string | null;
+  readonly bankAccountNo?: string | null;
+  readonly bankAccountType?: string | null;
+  readonly bankName?: string | null;
+  readonly bankBranch?: string | null;
+  readonly bankAddress?: string | null;
+  readonly bankSwift?: string | null;
+  readonly paymentInstructionsTh?: string | null;
+  readonly paymentInstructionsEn?: string | null;
 }
 
 /**

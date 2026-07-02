@@ -750,6 +750,11 @@ describe('issueCreditNote — J2 annotation kind threading (064 Task 12)', () =>
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
 
     expect(annotationRenderInput(deps).kind).toBe('invoice');
+    // 088 US5 review fix (HIGH) — the credited re-render MUST thread the subject
+    // so a membership §86/4 that carried the tenant WHT note at issue keeps it
+    // (the WHT gate needs invoiceSubject === 'membership'); without threading the
+    // note-less re-render would overwrite the stored blob + pdf_sha256.
+    expect(annotationRenderInput(deps).invoiceSubject).toBe('membership');
   });
 
   it('DRIFT: column disagrees with derivation → the COLUMN wins (it records what was rendered)', async () => {

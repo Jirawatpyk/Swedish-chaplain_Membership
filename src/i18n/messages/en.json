@@ -1563,7 +1563,10 @@
         "tax": "Tax",
         "numbering": "Document numbering",
         "defaults": "Invoicing defaults",
-        "logo": "Logo"
+        "logo": "Logo",
+        "seller": "Seller branch (§86/4)",
+        "whtNote": "Withholding-tax note",
+        "bank": "Offline payment (bank transfer)"
       },
       "labels": {
         "currencyCode": "Currency code",
@@ -1582,14 +1585,34 @@
         "defaultNetDays": "Default net days",
         "proRatePolicy": "Pro-rate policy",
         "autoEmail": "Auto-email on issue/payment",
-        "logo": "Upload logo"
+        "logo": "Upload logo",
+        "sellerIsHeadOffice": "Head office",
+        "sellerBranchCode": "Branch code",
+        "whtNoteTh": "WHT note (Thai)",
+        "whtNoteEn": "WHT note (English)",
+        "bankPayeeName": "Account name / payee",
+        "bankAccountNo": "Account number",
+        "bankAccountType": "Account type",
+        "bankName": "Bank",
+        "bankBranch": "Bank branch",
+        "bankAddress": "Bank address",
+        "bankSwift": "SWIFT / BIC",
+        "paymentInstructionsTh": "Payment instructions (Thai)",
+        "paymentInstructionsEn": "Payment instructions (English)"
       },
       "hints": {
         "currencyCode": "ISO 4217 — 3 uppercase letters (e.g. THB, USD, SEK).",
         "taxId": "13 digits (Thai Revenue Department format).",
         "receiptPrefix": "Only used when receipt numbering mode is \"separate\".",
         "autoEmail": "When on, new invoices default to auto-email their PDF on issue. Can be overridden per-invoice.",
-        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px."
+        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px.",
+        "receiptMode": "Combined numbering is retired — the tax receipt gets its own §87 stream.",
+        "sellerIsHeadOffice": "On = head office (สำนักงานใหญ่). Off = a branch identified by a 5-digit code.",
+        "sellerBranchCode": "Exactly 5 digits (Revenue Department branch code).",
+        "whtNote": "Shown on membership documents only (invoice + tax receipt). Leave blank for none.",
+        "bank": "Shown on the invoice (ใบแจ้งหนี้) only, for offline bank-transfer payment. Leave blank for none.",
+        "bankSwift": "8 or 11 characters (e.g. KASITHBK).",
+        "bankAccountNo": "Digits, with optional dashes or spaces."
       },
       "receiptMode": {
         "combined": "Combined tax invoice + receipt",
@@ -1622,7 +1645,10 @@
         "netDays": "Default net days must be 0-365.",
         "validation": "Please check the form — some fields need attention.",
         "forbidden": "Your role cannot modify invoice settings.",
-        "generic": "Save failed. Please try again."
+        "generic": "Save failed. Please try again.",
+        "sellerBranch": "A branch requires a 5-digit branch code; a head office must leave it blank.",
+        "bankSwift": "SWIFT/BIC must be 8 or 11 characters (letters and digits).",
+        "bankAccountNo": "Account number must be digits (dashes or spaces allowed)."
       },
       "saving": "Saving…",
       "actions": {
@@ -1632,6 +1658,13 @@
       "toast": {
         "created": "Invoice settings created.",
         "updated": "Invoice settings updated."
+      },
+      "charCount": "{count}/{max}",
+      "prefixChange": {
+        "title": "Change document-number prefix?",
+        "description": "Changing an invoice, receipt, or credit-note prefix starts a NEW numbering stream. Already-issued documents keep their numbers; the §87 sequential trail records the change. Continue?",
+        "confirm": "Change prefix",
+        "cancel": "Cancel"
       }
     },
     "creditNotes": {

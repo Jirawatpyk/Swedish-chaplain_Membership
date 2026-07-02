@@ -129,6 +129,37 @@ const styles = StyleSheet.create({
     transform: 'rotate(-45deg)',
   },
   footer: { marginTop: 24, fontSize: 8, color: '#777', textAlign: 'center' },
+  // 088 US5 (T041 / FR-012) — tenant WHT footer note. Muted, left-aligned block
+  // sitting below the amount-in-words lines. Bilingual (TH shaped + EN gloss),
+  // each line guarded independently so a tenant configuring only one language
+  // renders only that line. `maxWidth:'100%'` for the Thai wrap safeguard.
+  whtNoteBlock: { marginTop: 16, width: '100%' },
+  whtNoteLine: { fontSize: 8, color: '#555', maxWidth: '100%', marginBottom: 2 },
+  // 088 US5 (T042 / FR-022) — offline-payment bank block on the ใบแจ้งหนี้ ONLY.
+  // Framed with a left accent border (matches the credit-note reference block
+  // pattern) so it reads as the payment-instruction box.
+  bankBlock: {
+    marginTop: 16,
+    padding: 8,
+    borderLeft: '3 solid #444',
+    backgroundColor: '#fafafa',
+    width: '100%',
+  },
+  bankLabel: { fontSize: 9, color: '#555', marginBottom: 4, fontWeight: 500, maxWidth: '100%' },
+  bankLine: { fontSize: 9, color: '#333', marginBottom: 2, maxWidth: '100%' },
+  bankInstructions: { fontSize: 8, color: '#555', marginTop: 4, maxWidth: '100%' },
+  // 088 US5 (T042 / FR-022) — layout-only signature stamps on the ใบแจ้งหนี้.
+  // Three equal cells (Issued by / Received by / Date) with a top rule so the
+  // reader sees blank sign-off lines. Per the task these are BLANK layout fields
+  // (NOT auto-filled with a preparer name — see the FR-022 deviation note).
+  signatureRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 24,
+    gap: 12,
+  },
+  signatureCell: { flex: 1, borderTop: '1 solid #999', paddingTop: 4, alignItems: 'center' },
+  signatureLabel: { fontSize: 8, color: '#555', maxWidth: '100%' },
   // T079 — credit-note reference block. Rendered between the customer
   // section and the line-items table so the reader's eye scans the
   // legal continuity (this document references invoice #X) before the
@@ -222,6 +253,18 @@ const HEAD_OFFICE_BRANCH_MIN_VERSION = 5;
  * Registry log: template-registry.ts v6.
  */
 const PRESENTATION_POLISH_MIN_VERSION = 6;
+
+/**
+ * 088 US5 (T041 / T042 / FR-012 / FR-022 / SC-007) — first template version that
+ * (a) DROPS the hardcoded "Rendered by Chamber-OS (§-citation)" footer and
+ * renders the tenant WHT note on membership documents instead, and (b) renders
+ * the offline-payment bank block + signature stamps on the ใบแจ้งหนี้ (bill).
+ * Gated so a pinned pre-v7 document re-renders byte-stable (NO WHT note, NO bank
+ * block, KEEPS the legacy footer) — the SC-003 reproduce-the-original guarantee,
+ * exactly like the v3 citation + v4 two-page + v5 branch-line + v6 polish gates.
+ * Registry log: template-registry.ts v7.
+ */
+const WHT_AND_BANK_BLOCK_MIN_VERSION = 7;
 
 /**
  * 088 US3 — the §86/4 สำนักงานใหญ่ / Head Office | สาขาที่ NNNNN / Branch line.
@@ -577,10 +620,108 @@ function renderPageBody({
           </View>
         )}
 
+      {/* 088 US5 (T041 / FR-012 / SC-007) — tenant WHT footer note. Renders on
+          `invoice_subject='membership'` documents ONLY (bill + tax receipt),
+          NEVER event; gated v>=7 so pre-v7 documents re-render byte-stable. Each
+          language line guarded independently (a tenant may configure only one). */}
+      {input.templateVersion >= WHT_AND_BANK_BLOCK_MIN_VERSION &&
+        input.invoiceSubject === 'membership' &&
+        (input.tenant.wht_note_th != null || input.tenant.wht_note_en != null) && (
+          <View style={styles.whtNoteBlock}>
+            {input.tenant.wht_note_th != null && (
+              <Text style={styles.whtNoteLine}>{shapeThai(input.tenant.wht_note_th)}</Text>
+            )}
+            {input.tenant.wht_note_en != null && (
+              <Text style={styles.whtNoteLine}>{input.tenant.wht_note_en}</Text>
+            )}
+          </View>
+        )}
+
+      {/* 088 US5 (T042 / FR-022) — offline-payment bank block + signature stamps
+          on the ใบแจ้งหนี้ (bill) ONLY (never the paid §86/4 tax receipt); gated
+          v>=7. The bank box only renders when ≥1 bank field is configured; the
+          signature stamps are BLANK layout fields on every v7 bill. */}
+      {isBill && input.templateVersion >= WHT_AND_BANK_BLOCK_MIN_VERSION && (
+        <>
+          {(input.tenant.bank_payee_name != null ||
+            input.tenant.bank_account_no != null ||
+            input.tenant.bank_name != null ||
+            input.tenant.bank_swift != null ||
+            input.tenant.payment_instructions_th != null ||
+            input.tenant.payment_instructions_en != null) && (
+            <View style={styles.bankBlock}>
+              <Text style={styles.bankLabel}>
+                {shapeThai('ช่องทางการชำระเงิน')} / Payment Details
+              </Text>
+              {input.tenant.bank_payee_name != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('ชื่อบัญชี')} / Payee: {input.tenant.bank_payee_name}
+                </Text>
+              )}
+              {input.tenant.bank_name != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('ธนาคาร')} / Bank: {input.tenant.bank_name}
+                </Text>
+              )}
+              {input.tenant.bank_branch != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('สาขา')} / Branch: {input.tenant.bank_branch}
+                </Text>
+              )}
+              {input.tenant.bank_account_type != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('ประเภทบัญชี')} / Account Type: {input.tenant.bank_account_type}
+                </Text>
+              )}
+              {input.tenant.bank_account_no != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('เลขที่บัญชี')} / Account No.: {input.tenant.bank_account_no}
+                </Text>
+              )}
+              {input.tenant.bank_swift != null && (
+                <Text style={styles.bankLine}>SWIFT/BIC: {input.tenant.bank_swift}</Text>
+              )}
+              {input.tenant.bank_address != null && (
+                <Text style={styles.bankLine}>
+                  {shapeThai('ที่อยู่ธนาคาร')} / Bank Address: {shapeThai(input.tenant.bank_address)}
+                </Text>
+              )}
+              {input.tenant.payment_instructions_th != null && (
+                <Text style={styles.bankInstructions}>
+                  {shapeThai(input.tenant.payment_instructions_th)}
+                </Text>
+              )}
+              {input.tenant.payment_instructions_en != null && (
+                <Text style={styles.bankInstructions}>
+                  {input.tenant.payment_instructions_en}
+                </Text>
+              )}
+            </View>
+          )}
+          <View style={styles.signatureRow}>
+            <View style={styles.signatureCell}>
+              <Text style={styles.signatureLabel}>
+                {shapeThai('ผู้ออกเอกสาร')} / Issued by
+              </Text>
+            </View>
+            <View style={styles.signatureCell}>
+              <Text style={styles.signatureLabel}>
+                {shapeThai('ผู้รับเงิน')} / Received by
+              </Text>
+            </View>
+            <View style={styles.signatureCell}>
+              <Text style={styles.signatureLabel}>{shapeThai('วันที่')} / Date</Text>
+            </View>
+          </View>
+        </>
+      )}
+
       {/* 088 T016 — the ใบแจ้งหนี้ (bill) carries NO Revenue-Code §-citation
-          footer (its legal identity rests on the non-tax title alone;
-          research §1). Legacy tax documents keep the citation unchanged. */}
-      {!isBill && (
+          footer (its legal identity rests on the non-tax title alone).
+          088 US5 T041 / FR-012 — from v7 the hardcoded "Rendered by Chamber-OS
+          (§-citation)" footer is DROPPED on every kind (replaced by the tenant
+          WHT note above). Pre-v7 tax documents KEEP it byte-stable (SC-003). */}
+      {!isBill && input.templateVersion < WHT_AND_BANK_BLOCK_MIN_VERSION && (
         <Text style={styles.footer}>
           Rendered by Chamber-OS ({shapeThai(footerCitation)})
         </Text>

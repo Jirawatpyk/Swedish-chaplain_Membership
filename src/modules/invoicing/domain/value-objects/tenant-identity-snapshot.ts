@@ -38,6 +38,25 @@ export interface TenantIdentitySnapshot {
    */
   readonly wht_note_th?: string | null;
   readonly wht_note_en?: string | null;
+  /**
+   * 088-invoice-tax-flow-redesign (US5 / T040 / FR-022) — tenant-configurable
+   * offline-payment bank / payment-instructions block. Rendered on the
+   * ใบแจ้งหนี้ (bill) ONLY (never the paid §86/4 tax receipt). Like the WHT note,
+   * the block is PINNED at issue (immutable, FR-011) — the template reads THIS
+   * snapshot, never live settings, so a re-rendered bill (resend / Blob-miss) is
+   * byte-stable. All OPTIONAL / undefined-guarded: a historical snapshot omits
+   * them → the template guards `?? null` → no bank block (also gated v7).
+   * NULL / missing on any field ⇒ render nothing for that line.
+   */
+  readonly bank_payee_name?: string | null;
+  readonly bank_account_no?: string | null;
+  readonly bank_account_type?: string | null;
+  readonly bank_name?: string | null;
+  readonly bank_branch?: string | null;
+  readonly bank_address?: string | null;
+  readonly bank_swift?: string | null;
+  readonly payment_instructions_th?: string | null;
+  readonly payment_instructions_en?: string | null;
 }
 
 export function makeTenantIdentitySnapshot(parts: TenantIdentitySnapshot): TenantIdentitySnapshot {

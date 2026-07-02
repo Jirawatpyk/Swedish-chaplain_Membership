@@ -1639,6 +1639,20 @@
 			"when": 1798536200000,
 			"tag": "0232_members_branch_fields",
 			"breakpoints": true
+		},
+		{
+			"idx": 237,
+			"version": "7",
+			"when": 1798536300000,
+			"tag": "0233_tenant_invoice_settings_wht_and_seller_branch",
+			"breakpoints": true
+		},
+		{
+			"idx": 238,
+			"version": "7",
+			"when": 1798536400000,
+			"tag": "0236_members_branch_pairing_ck_fix",
+			"breakpoints": true
 		}
 	]
 }

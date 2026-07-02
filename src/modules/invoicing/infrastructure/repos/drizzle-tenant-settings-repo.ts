@@ -64,6 +64,24 @@ function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoic
       address_th: row.registeredAddressTh,
       address_en: row.registeredAddressEn,
       logo_blob_key: row.logoBlobKey,
+      // 088 US5 (T040) — seller branch + WHT note + bank block ride the pinned
+      // TenantIdentitySnapshot. issue-invoice copies `settings.identity` verbatim
+      // into `tenant_identity_snapshot`, so populating them here is what pins
+      // them at issue (FR-011) — the template reads the snapshot, never live
+      // settings.
+      seller_is_head_office: row.sellerIsHeadOffice,
+      seller_branch_code: row.sellerBranchCode,
+      wht_note_th: row.whtNoteTh,
+      wht_note_en: row.whtNoteEn,
+      bank_payee_name: row.bankPayeeName,
+      bank_account_no: row.bankAccountNo,
+      bank_account_type: row.bankAccountType,
+      bank_name: row.bankName,
+      bank_branch: row.bankBranch,
+      bank_address: row.bankAddress,
+      bank_swift: row.bankSwift,
+      payment_instructions_th: row.paymentInstructionsTh,
+      payment_instructions_en: row.paymentInstructionsEn,
     }),
   };
 }
@@ -235,6 +253,20 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       ['proRatePolicy', 'proRatePolicy'],
       ['autoEmailEnabled', 'autoEmailEnabled'],
       ['logoBlobKey', 'logoBlobKey'],
+      // 088 US5 (T040) — WHT note + seller branch + bank block.
+      ['whtNoteTh', 'whtNoteTh'],
+      ['whtNoteEn', 'whtNoteEn'],
+      ['sellerIsHeadOffice', 'sellerIsHeadOffice'],
+      ['sellerBranchCode', 'sellerBranchCode'],
+      ['bankPayeeName', 'bankPayeeName'],
+      ['bankAccountNo', 'bankAccountNo'],
+      ['bankAccountType', 'bankAccountType'],
+      ['bankName', 'bankName'],
+      ['bankBranch', 'bankBranch'],
+      ['bankAddress', 'bankAddress'],
+      ['bankSwift', 'bankSwift'],
+      ['paymentInstructionsTh', 'paymentInstructionsTh'],
+      ['paymentInstructionsEn', 'paymentInstructionsEn'],
     ];
     for (const [src, dst] of copyFields) {
       if (patch[src] !== undefined) {

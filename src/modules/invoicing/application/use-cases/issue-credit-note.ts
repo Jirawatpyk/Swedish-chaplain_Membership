@@ -671,6 +671,14 @@ export async function issueCreditNote(
               // invoices carry `false` so the re-render stays byte-equivalent to
               // the original (modulo the CREDITED overlay) per SC-003 intent.
               vatInclusive: loaded.vatInclusive,
+              // 088 US5 review fix (HIGH / FR-012) — thread the subject so the
+              // tenant WHT-note gate fires IDENTICALLY on this credited re-render.
+              // A membership §86/4 that carried the WHT note at issue (v>=7) would
+              // otherwise re-render WITHOUT it (gate needs invoiceSubject ===
+              // 'membership') and the note-less PDF would overwrite the SAME blob
+              // + pdf_sha256 — silently destroying legally-relevant tenant content.
+              // Mirrors void-invoice.ts threading it for the same reason.
+              invoiceSubject: loaded.invoiceSubject,
               creditedAnnotation: {
                 fullyCredited,
                 references: annotationRefs,

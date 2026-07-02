@@ -682,6 +682,11 @@ export async function recordPayment(
                 // receipt PDF. Membership invoices carry false (VAT-exclusive) so
                 // the annotation is suppressed there, matching existing behaviour.
                 vatInclusive: loaded.vatInclusive,
+                // 088 US5 (T041 / FR-012 / SC-007) — gate the tenant WHT note on
+                // the membership §86/4 tax receipt (event receipts never carry it).
+                // Threaded from the stored subject so the sync (here) + async
+                // (render-receipt-pdf) receipt renders gate identically.
+                invoiceSubject: loaded.invoiceSubject,
               },
               blobKey: receiptBlobKey,
             },

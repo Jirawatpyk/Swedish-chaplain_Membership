@@ -244,6 +244,10 @@ export async function renderReceiptPdf(
             vatRate: loaded.vatRate,
             vat: loaded.vat,
             total: loaded.total,
+            // 088 US5 (T041 / FR-012 / SC-007) — gate the tenant WHT note on the
+            // membership §86/4 tax receipt. Threaded from the stored subject so
+            // this async render matches the sync record-payment receipt render.
+            invoiceSubject: loaded.invoiceSubject,
           },
           blobKey: receiptBlobKey,
           // Allow overwrite — failed-retry path may upload twice.

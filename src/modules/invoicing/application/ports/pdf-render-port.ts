@@ -57,6 +57,20 @@ export interface PdfRenderInput {
    * / void kinds are unaffected (only the pre-payment bill kind relabels).
    */
   readonly billMode?: boolean;
+  /**
+   * 088-invoice-tax-flow-redesign (US5 / T041 / FR-012 / SC-007) — the subject of
+   * the underlying invoice. Gates the tenant WHT footer note, which renders on
+   * `'membership'` documents ONLY (both the ใบแจ้งหนี้ bill AND the §86/4 tax
+   * receipt), NEVER on `'event'` documents. Threaded from `draft.invoiceSubject`
+   * (issuance / preview) or the stored `invoice.invoiceSubject` (receipt / void
+   * re-render) so every render path of a given document gates consistently.
+   *
+   * OPTIONAL / undefined-guarded: a render input that omits it (credit-note, or
+   * any pre-088 caller) → the WHT-note gate is `=== 'membership'` → false → no
+   * note. `undefined` is omitted by `JSON.stringify`, so the deterministic render
+   * seed is unchanged for callers that do not set it (SC-003 byte-stable).
+   */
+  readonly invoiceSubject?: 'membership' | 'event';
   readonly voidReason?: string | null;
   /**
    * 064 W1 S31 — what the document being VOID-stamped ORIGINALLY was.

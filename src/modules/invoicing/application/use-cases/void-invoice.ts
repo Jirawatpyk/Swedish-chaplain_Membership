@@ -245,6 +245,10 @@ export async function voidInvoice(
           vat: loaded.vat,
           total: loaded.total,
           voidReason: input.voidReason,
+          // 088 US5 (T041 / FR-012 / SC-007) — a voided membership document is
+          // the retained §87/3 evidence copy of what was cancelled: keep the WHT
+          // note it originally carried (gated v>=7, so pre-v7 voids are byte-stable).
+          invoiceSubject: loaded.invoiceSubject,
         });
       } catch (e) {
         throw new VoidInvoiceInternalError({

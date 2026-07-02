@@ -86,11 +86,27 @@
  *     line description (plan name + coverage period, FR-011 / T036) is a
  *     FORWARD-ONLY ISSUE-TIME DATA change stored on the invoice line — the
  *     template renders the STORED text, so it needs NO template-version gate.
+ *   - **v7** (2026-07-02, 088-invoice-tax-flow-redesign US5 / T041 / T042 /
+ *     FR-012 / FR-022 / SC-007) — tenant-configurable footer: (a) FR-012 — the
+ *     hardcoded "Rendered by Chamber-OS (§-citation)" footer is DROPPED on every
+ *     kind; in its place the tenant WHT note (pinned in the snapshot) renders on
+ *     `invoice_subject='membership'` documents ONLY (both the ใบแจ้งหนี้ bill AND
+ *     the §86/4 tax receipt), NEVER on event documents; (b) FR-022 — the
+ *     offline-payment bank block + "Issued by / Received by / Date" signature
+ *     stamps render on the ใบแจ้งหนี้ (bill) ONLY (never the paid tax receipt),
+ *     reading the PINNED snapshot bank fields. BOTH gate on `templateVersion >=
+ *     WHT_AND_BANK_BLOCK_MIN_VERSION` (=7, see templates/invoice-template.tsx),
+ *     so a pinned pre-v7 document (resend / void-overlay / async worker / any
+ *     re-render at its stored `pdf_template_version`) reproduces its ORIGINAL
+ *     bytes — NO WHT note, NO bank block, AND it KEEPS the legacy "Rendered by
+ *     Chamber-OS (§-citation)" footer — preserving the SC-003
+ *     reproduce-the-original guarantee, exactly like the v3 citation + v4
+ *     two-page + v5 branch-line + v6 polish gates.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 6 as const;
+export const CURRENT_TEMPLATE_VERSION = 7 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

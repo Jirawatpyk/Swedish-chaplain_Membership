@@ -517,6 +517,9 @@ export async function issueEventInvoiceAsPaid(
             vat,
             total,
             vatInclusive: true,
+            // 088 US5 (T041 / SC-007) — event as-paid receipt: explicitly 'event'
+            // so the tenant WHT note (membership-only) is never drawn here.
+            invoiceSubject: 'event',
           },
           blobKey,
         },
