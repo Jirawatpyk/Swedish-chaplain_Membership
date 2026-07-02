@@ -33,6 +33,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
 | **F4 redact-expired-event-buyers** (054 Task 15) | **`POST /api/cron/invoicing/redact-expired-event-buyers`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F4 redact-expired-event-buyers) |
 | **redact-expired-member-invoices** (COMP-1 US3-B) | **`POST /api/cron/invoicing/redact-expired-member-invoices`** | **`0 5 * * *`** (daily 05:00 UTC = 12:00 ICT) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § COMP-1 redact-expired-member-invoices) |
+| **088 prune-orphaned-zero-rate-certs** (US8 UX-B2) | **`POST /api/cron/invoicing/prune-orphaned-zero-rate-certs`** | **`0 21 * * *`** (daily 21:00 UTC = 04:00 ICT next day) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § 088 prune-orphaned-zero-rate-certs) |
 | **F7 broadcasts dispatch** | **`POST /api/cron/broadcasts/dispatch-scheduled`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 dispatch) |
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
@@ -263,6 +264,89 @@ event-buyer cron to credit notes if the case is reachable).
 ### Handler module
 
 `src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts`
+
+## 088 — prune-orphaned-zero-rate-certs (NEW — US8 UX-B2)
+
+Daily TTL sweep that **deletes ABANDONED / SUPERSEDED §80/1(5) MFA zero-rate
+certificate SCAN blobs** — files uploaded via the UX-B1 upload route
+(`upload-zero-rate-cert`) onto a DRAFT invoice that was then never issued
+(issue dialog cancelled, flipped to standard VAT, or superseded by a re-upload).
+A cert scan is written to a server-derived key
+`invoicing/<tenantId>/zero-rate-certs/<invoiceId>_<uploadedAtMs>.<ext>` and is
+only PINNED onto `invoices.zero_rate_cert_blob_key` at ISSUE. A never-issued
+draft leaves the blob orphaned; Vercel Blob has **no TTL**, so this cron is the
+only reclaim path (the invoicing analogue of the F6 error-CSV blob TTL sweep).
+
+### Orphan rule (the safety-critical part)
+
+For every cert blob key, per tenant, inside `runInTenant`:
+
+- **KEEP** iff SOME invoice (ANY status) in the key's tenant pins it
+  (`zero_rate_cert_blob_key = <key>`). **A pinned cert is 10-year-retained legal
+  evidence and is NEVER swept**, even on a voided / credited invoice.
+- Else **DELETE** only when the blob's age (from the `<uploadedAtMs>` embedded in
+  the key, vs. an injected clock — never `Date.now()`) exceeds the **48h grace
+  window** (`ORPHAN_CERT_GRACE_MS`). The grace protects an in-flight mid-issue
+  upload (uploaded, issue not yet committed).
+- **MALFORMED** key (no parseable ms) → SKIP, never delete (age unknown).
+
+**Fail-safe**: deletion runs ONLY after a positive confirmation the blob is
+un-pinned AND past grace. If the pin probe throws (DB/RLS outage) the blob is
+KEPT (retried next tick) — an unconfirmed orphan is treated as pinned. A
+per-tenant `blob.list` failure skips that tenant and continues the rest; only a
+tenant-LIST failure aborts the sweep (`scan_failed` → 500). Idempotent: an
+already-gone blob (delete resolves as no-op, or throws not-found) counts as a
+successful sweep, and a deleted key is not re-listed so it never double-counts.
+
+**No live sweep for years** on a healthy deployment (orphans are rare —
+cancelled/superseded dialogs only); ships now so the reclaim is automated.
+NOT feature-gated (pure cleanup, safe regardless of the 088 flag; returns zeros
+when nothing is due). No new audit event / metric — matches the F6 sweep;
+observability is structured pino logs + the `scan_failed` → 500 alerting anchor.
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · 088 prune-orphaned-zero-rate-certs`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/invoicing/prune-orphaned-zero-rate-certs`
+   - **Schedule**: `0 21 * * *` (daily 21:00 UTC = 04:00 ICT next day — low-traffic;
+     the 48h grace has ample tolerance so a missed daily tick is not a
+     correctness issue, the next tick catches up)
+   - **Request method**: `POST`
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (reused from F4/F5/F7/F8)
+   - **Timeout**: 60 seconds
+   - **Retry on failure**: **OFF** (per § Retry policy contract — the sweep is
+     idempotent + the next daily tick is the natural retry)
+   - **Notifications**: email on ≥3 consecutive failures
+3. Click **Run** to verify a 200 OK response:
+   ```json
+   { "ok": true, "scanned": 0, "swept": 0, "skipped": 0, "cutoff": "…" }
+   ```
+   `swept: 0` is the expected steady state — orphaned certs only arise from a
+   cancelled/superseded issue flow.
+
+### Expected response codes
+
+| HTTP code | Meaning | Operator action |
+|-----------|---------|-----------------|
+| 200 + `swept: 0` | Healthy steady state (no orphans due) | None |
+| 200 + `swept > 0` | Orphaned cert blobs reclaimed this tick | None — expected after a cancelled/superseded issue flow |
+| 200 + `skipped > 0` (with `swept: 0`) | Blobs KEPT — pinned, within grace, malformed key, OR a per-blob probe/delete failure (retried next tick) | None unless `skipped` stays high across ticks → grep logs `zero_rate_cert_prune_pin_probe_failed` / `.delete_failed` / `.list_failed` for the failing tenant + `BLOB_READ_WRITE_TOKEN` health |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure cron-job.org header |
+| 500 + `scan_failed` | Tenant-list query failed OR unexpected throw (no blob deleted this tick) | Investigate DB connectivity; harness retries next tick |
+
+### Safety note (data-loss guard)
+
+A PINNED cert is 10y legal evidence — the sweep must NEVER delete one. The
+use-case only deletes after a POSITIVE `existsInvoiceWithCertBlobKey = false`
+AND age > grace; any probe error, malformed key, or list/delete failure results
+in KEEP. Alert if `swept` ever exceeds the count of genuinely-cancelled issue
+flows (there is no metric — this is a manual sanity check should a spike appear).
+
+### Handler module
+
+`src/app/api/cron/invoicing/prune-orphaned-zero-rate-certs/route.ts`
 
 ## F7 — broadcasts/dispatch-scheduled (NEW — F7 ship)
 

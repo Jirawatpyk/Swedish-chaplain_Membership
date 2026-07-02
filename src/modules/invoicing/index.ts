@@ -222,6 +222,19 @@ export {
   type GetZeroRateCertSignedUrlDeps,
 } from './application/use-cases/get-zero-rate-cert-signed-url';
 
+// 088 US8 UX-B2 — daily TTL sweep for ABANDONED/SUPERSEDED §80/1(5) cert-scan
+// blobs (uploaded onto a draft that was never issued → never pinned). Composed
+// by `src/lib/invoicing-cert-prune-deps.ts` for the cron route.
+export {
+  pruneOrphanedZeroRateCerts,
+  parseZeroRateCertKey,
+  ORPHAN_CERT_GRACE_MS,
+  type PruneOrphanedZeroRateCertsInput,
+  type PruneOrphanedZeroRateCertsOutput,
+  type PruneOrphanedZeroRateCertsDeps,
+} from './application/use-cases/prune-orphaned-zero-rate-certs';
+export type { ZeroRateCertPruneRepo } from './application/ports/zero-rate-cert-prune-repo';
+
 export {
   exportPaidInvoicesCsv,
   exportPaidInvoicesCsvSchema,
@@ -452,6 +465,7 @@ export {
 export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
 export { makeDrizzleInvoiceRepo } from './infrastructure/repos/drizzle-invoice-repo';
+export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
 export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
