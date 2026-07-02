@@ -800,6 +800,10 @@ export function InvoiceSettingsForm({
               onChange={(e) => setBankSwift(e.target.value.toUpperCase())}
               disabled={disabled}
               maxLength={11}
+              // 088 T061g — SWIFT/BIC character hint (belt + braces with the
+              // SWIFT_RE guard on submit); 8 or 11 alphanumerics, uppercase.
+              inputMode="text"
+              pattern="[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?"
               aria-describedby="bank_swift_hint"
               className="font-mono uppercase"
             />

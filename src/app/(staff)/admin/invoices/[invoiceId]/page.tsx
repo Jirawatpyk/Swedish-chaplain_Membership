@@ -427,6 +427,14 @@ export default async function InvoiceDetailPage({
                   taxAtPayment={env.features.f088TaxAtPayment}
                   isMembership={invoice.invoiceSubject === 'membership'}
                   legalEntityType={buyerLegalEntityType}
+                  // 088 US8 (T061d) — draft subtotal in satang (plain number;
+                  // a bigint cannot cross the RSC → client-prop boundary)
+                  // drives the ≥ 5,000 THB zero-rate advisory in the form.
+                  subtotalSatang={
+                    displaySubtotalSatang !== null
+                      ? Number(displaySubtotalSatang)
+                      : null
+                  }
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,

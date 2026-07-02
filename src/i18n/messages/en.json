@@ -2178,6 +2178,25 @@
             "nullEntityType": "No §86/4 Head Office / Branch line will print — this buyer's legal entity type is not set. Set it on the member record first if this is a VAT-registrant company."
           }
         },
+        "form": {
+          "vatTreatment": {
+            "label": "VAT treatment",
+            "help": "For embassy / international-organization sales only — attach the Ministry of Foreign Affairs (MFA) §80/1(5) certificate. Every other sale stays at the standard VAT 7%.",
+            "standard": "Standard — VAT 7%",
+            "zeroRated": "Zero-rated 0% — §80/1(5) (embassy / int'l org)",
+            "membershipCaption": "Membership is always VAT 7%; §80/1(5) applies to non-membership (event / service) sales only."
+          },
+          "cert": {
+            "legend": "MFA §80/1(5) certificate",
+            "revealed": "Certificate fields shown — a certificate number is required to issue a zero-rated invoice.",
+            "noLabel": "MFA certificate number",
+            "noPlaceholder": "e.g. กต 0404/…",
+            "noRequired": "Enter the MFA certificate number to issue a zero-rated invoice.",
+            "dateLabel": "Certificate date",
+            "dateFormat": "Enter the certificate date as YYYY-MM-DD."
+          },
+          "lowAmountWarning": "This zero-rated sale is below 5,000 THB. An MFA certificate is normally required for purchases of 5,000 THB or more — confirm the certificate applies before issuing."
+        },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
         "typeToConfirm": "Confirmation phrase",

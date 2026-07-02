@@ -2178,6 +2178,25 @@
             "nullEntityType": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparens juridiska typ är inte angiven. Ange den i medlemsposten först om detta är ett momsregistrerat företag."
           }
         },
+        "form": {
+          "vatTreatment": {
+            "label": "Momsbehandling",
+            "help": "Endast för försäljning till ambassader / internationella organisationer — bifoga intyget från utrikesministeriet (MFA) enligt §80/1(5). All annan försäljning har standardmoms 7%.",
+            "standard": "Standard — moms 7%",
+            "zeroRated": "Nollskattesats 0% — §80/1(5) (ambassad / int. org.)",
+            "membershipCaption": "Medlemskap har alltid moms 7%; §80/1(5) gäller endast icke-medlemsförsäljning (evenemang / tjänst)."
+          },
+          "cert": {
+            "legend": "MFA-intyg §80/1(5)",
+            "revealed": "Intygsfält visas — ett intygsnummer krävs för att utfärda en nollskattefaktura.",
+            "noLabel": "MFA-intygsnummer",
+            "noPlaceholder": "t.ex. กต 0404/…",
+            "noRequired": "Ange MFA-intygsnumret för att utfärda en nollskattefaktura.",
+            "dateLabel": "Intygsdatum",
+            "dateFormat": "Ange intygsdatum som ÅÅÅÅ-MM-DD."
+          },
+          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB. Ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer — bekräfta att intyget gäller innan du utfärdar."
+        },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
         "typeToConfirm": "Bekräftelsefras",
