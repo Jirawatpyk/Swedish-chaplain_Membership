@@ -424,13 +424,18 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
     expect(row!.paidAt).not.toBeNull();
     expect(row!.memberId).toBeNull(); // non-member event invoice.
 
-    // 064 Task 10 (reviewer carry-forward) — α-shape explicit pin: a TIN
-    // bill-first row paid under SEPARATE receipt numbering legitimately
-    // carries the FULL §87 invoice-stream pair AND a receipt-stream raw
-    // number side by side. Migration 0212's relaxed leg applies only when
-    // the pair is ABSENT — this α shape must stay legal under it.
+    // 088 US1 (T008) retired the settings-driven combined/separate receipt
+    // numbering in favour of the FEATURE_088_TAX_AT_PAYMENT flag. With the flag
+    // OFF (current prod default; this test uses the default deps), an
+    // event-with-TIN combined receipt REUSES the §87 invoice number (one §87 —
+    // `reuseInvoiceNumber = !taxAtPayment && !forceSeparate` in record-payment.ts):
+    // the invoice-stream pair is allocated at ISSUE (sequenceNumber set) and NO
+    // separate receipt-stream number is minted (receiptDocumentNumberRaw stays
+    // NULL). The flag-ON bill→RC flow (non-§87 SC bill + a separate §87 RC) is
+    // covered by the dedicated US1 tests (bill-to-receipt / payment-parity), not
+    // here. (Was the retired pre-088 "separate receipt numbering" α-shape.)
     expect(row!.sequenceNumber).not.toBeNull();
-    expect(row!.receiptDocumentNumberRaw).not.toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
 
     // Receipt render invoked with the PRE-PINNED non-member buyer snapshot
     // (NOT a deref of a null member) + Model-B vatInclusive threaded.
