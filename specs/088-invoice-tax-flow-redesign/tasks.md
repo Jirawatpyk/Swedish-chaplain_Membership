@@ -164,13 +164,13 @@
 
 ### Tests for US6 (author first, MUST fail) ⚠️
 
-- [ ] T045 [P] [US6] Contract test for issue-credit-note (targets `receiptDocumentNumberRaw`, blocked pre-receipt) in `tests/contract/invoicing/issue-credit-note.contract.test.ts` per `contracts/issue-credit-note.md`.
-- [ ] T046 [P] [US6] Integration test: credit unpaid bill rejected; paid → CN references RC + annotation lands on the receipt blob (SC-006, § A.4) in `tests/integration/invoicing/credit-note-target.integration.test.ts`.
+- [X] T045 [P] [US6] Contract test for issue-credit-note (targets `receiptDocumentNumberRaw`, blocked pre-receipt) in `tests/contract/invoicing/issue-credit-note.contract.test.ts` per `contracts/issue-credit-note.md`.
+- [X] T046 [P] [US6] Integration test: credit unpaid bill rejected; paid → CN references RC + annotation lands on the receipt blob (SC-006, § A.4) in `tests/integration/invoicing/credit-note-target.integration.test.ts`.
 
 ### Implementation for US6
 
-- [ ] T047 [US6] Re-target credit note to the tax receipt: `original_document_number → receiptDocumentNumberRaw ?? documentNumber.raw`, `original_issue_date → receipt (payment) date`; add precondition `receipt_pdf_status='rendered'` in `src/modules/invoicing/application/use-cases/issue-credit-note.ts` (§ A.4).
-- [ ] T048 [US6] Re-target the CREDITED annotation to the `receipt_pdf_blob_key` (kind `receipt_combined`), not the non-tax bill blob.
+- [X] T047 [US6] Re-target credit note to the tax receipt: `original_document_number → receiptDocumentNumberRaw ?? documentNumber.raw`, `original_issue_date → receipt (payment) date`; add precondition `receipt_pdf_status='rendered'` in `src/modules/invoicing/application/use-cases/issue-credit-note.ts` (§ A.4).
+- [X] T048 [US6] Re-target the CREDITED annotation to the `receipt_pdf_blob_key` (kind `receipt_combined`), not the non-tax bill blob. **[US6 DONE 2026-07-02, committed `a8f766e0` feat. T047 CN references the §86/4 receipt (`receiptDocumentNumberRaw ?? documentNumber`) + precondition `receiptPdfStatus='rendered'` → `receipt_not_rendered` 409. T048 annotation branches on parent shape: Shape 1 (separate receiptPdf → `applyReceiptPdfRegeneration`/receipt_pdf_sha256) + Shape 2 (as-paid-TIN event, receipt IS main pdf → applyInvoicePdfRegeneration). New `applyReceiptPdfRegeneration` port+drizzle. Keeps `invoiceSubject` (US5 WHT gate). NO migration/i18n/audit-event/template. Review (thai-tax+reliability+spec, 3 agents+verify) = 3 confirmed ALL FIXED: HIGH+MED (same root) `receiptIssueDate = loaded.paymentDate` UNCONDITIONAL → on legacy combined-reuse (flag OFF = current default) the §86/4 receipt is dated at issueDate, so the CN cited the wrong §86/10 date AND the CREDITED re-render non-additively rewrote the printed date (§86/10 + SC-003 violation) → FIXED: `documentNumber === null ? paymentDate : issueDate` (mirror render-receipt-pdf); MED spec: dropped `!documentNumber` guard leg had 0 coverage → RC unit test now uses a documentNumber-NULL new-flow fixture + credit-note-target date assertion corrected to legacy issueDate. Gates: tsc 0 · unit 30 · integ (target/golden/partial/event/separate) + pdf-deterministic SC-003 · lint 0.]**
 
 **Checkpoint**: credit notes legally target the tax document.
 
