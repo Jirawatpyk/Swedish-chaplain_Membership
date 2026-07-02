@@ -1648,7 +1648,8 @@
         "generic": "Save failed. Please try again.",
         "sellerBranch": "A branch requires a 5-digit branch code; a head office must leave it blank.",
         "bankSwift": "SWIFT/BIC must be 8 or 11 characters (letters and digits).",
-        "bankAccountNo": "Account number must be digits (dashes or spaces allowed)."
+        "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
+        "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC."
       },
       "saving": "Saving…",
       "actions": {

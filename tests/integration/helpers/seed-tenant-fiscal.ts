@@ -24,8 +24,9 @@ export interface SeedTenantFiscalInput {
   readonly invoiceNumberPrefix?: string;
   readonly creditNoteNumberPrefix?: string;
   /**
-   * Wave-4 S18 — receipt-stream prefix (separate-mode / as-paid β tests).
-   * Omitted → column default (NULL; runtime falls back to 'RE').
+   * Wave-4 S18 — §86/4 receipt-stream prefix (separate-mode / as-paid β tests).
+   * Omitted → column default (NULL; the §86/4 'receipt' register falls back to
+   * 'RC' since 088 US7 — disjoint from the §105 'receipt_105'/'RE' register).
    */
   readonly receiptNumberPrefix?: string;
   readonly legalNameTh?: string;

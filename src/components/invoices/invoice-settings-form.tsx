@@ -279,6 +279,17 @@ export function InvoiceSettingsForm({
     const orNull = (v: string) => (v.trim() === '' ? null : v.trim());
     const receiptPrefixValue = receiptPrefix.trim() === '' ? null : receiptPrefix;
 
+    // 088 US7 (review fix) — 'RE' is reserved for the §105 event-receipt
+    // register (hardcoded prefix). A §86/4 receipt prefix of 'RE' would collide
+    // with it on the shared receipt-number unique index. Reject early with a
+    // localized message (the route zod is the real boundary; this mirrors it for
+    // fast inline feedback). Case-insensitive — document prefixes are uppercase.
+    if (receiptPrefixValue !== null && receiptPrefixValue.trim().toUpperCase() === 'RE') {
+      setError(t('errors.receiptPrefixReserved'));
+      setSubmitting(false);
+      return;
+    }
+
     const body = {
       currency_code: normalisedCurrency,
       legal_name_th: legalNameTh,

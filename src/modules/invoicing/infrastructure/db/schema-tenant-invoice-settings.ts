@@ -58,8 +58,10 @@ export const tenantInvoiceSettings = pgTable(
       .notNull()
       .default('yearly'),
     receiptNumberingMode: text('receipt_numbering_mode').notNull().default('combined'),
-    // Receipt-number prefix used only when receipt_numbering_mode = 'separate'.
-    // Nullable — when null the record-payment use case falls back to 'RE'.
+    // Receipt-number prefix for the §86/4 RC-role receipt register. Nullable —
+    // when null the record-payment / issue-event-invoice-as-paid use cases fall
+    // back to 'RC' (088 US7; disjoint from the §105 'receipt_105' register's
+    // hardcoded 'RE'). 'RE' is reserved and rejected by the settings update path.
     // Added by migration 0142.
     receiptNumberPrefix: text('receipt_number_prefix'),
     creditNoteNumberPrefix: text('credit_note_number_prefix').notNull(),

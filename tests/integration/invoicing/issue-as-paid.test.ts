@@ -582,7 +582,7 @@ async function readInvoiceRowOwner(tenantSlug: string, invoiceId: string) {
 /** §87 counter for (tenant, docType, fy) — null when never allocated. */
 async function readSeqCounterFor(
   tenantSlug: string,
-  documentType: 'invoice' | 'receipt' | 'credit_note',
+  documentType: 'invoice' | 'receipt' | 'credit_note' | 'receipt_105',
   fiscalYear: number,
 ): Promise<number | null> {
   const [row] = await db
@@ -1377,8 +1377,14 @@ describe('issueEventInvoiceAsPaid — cross-tenant probe (live Neon)', () => {
 // without a document number must never slip through the relaxed leg).
 // =============================================================================
 
-/** β receipt-stream number (passes receipt_document_number_raw_format_check). */
-const NO_TIN_RECEIPT_RAW = 'RC-2026-000001';
+/**
+ * β §105 receipt number on the SEPARATE `receipt_105`/`RE` register (US7/T050).
+ * A §105 event-no-TIN receipt is 'RE-…', never the §86/4 'RC-…' — this repo-seam
+ * section hand-feeds the number to prove the persistence CHECK relax; the
+ * allocation-driven end-to-end split proof is the Task 10 section below.
+ * (Passes receipt_document_number_raw_format_check either way.)
+ */
+const NO_TIN_RECEIPT_RAW = 'RE-2026-000001';
 
 /** SIMULATED no-TIN walk-in buyer (tax_id null ⇒ §105 receipt) — never real PII. */
 const BUYER_NO_TIN = {
@@ -1631,12 +1637,12 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
 
   it('W1 (064 remediation) — admin search by the printed §105 receipt number finds the β row in BOTH list variants', async () => {
     // β rows have document_number NULL — pre-fix, the search predicate
-    // ilike'd ONLY invoices.document_number so the row's printed RC number
+    // ilike'd ONLY invoices.document_number so the row's printed §105 RE number
     // was unfindable in /admin/invoices. Seed an INDEPENDENT β row (own
-    // registration + RC number — the 0213 receipt-raw unique backstop bars
-    // reuse of NO_TIN_RECEIPT_RAW) and prove a SUBSTRING of the RC number
+    // registration + RE number — the 0213 receipt-raw unique backstop bars
+    // reuse of NO_TIN_RECEIPT_RAW) and prove a SUBSTRING of the RE number
     // surfaces it through both `list` (cursor) and `listPaged` (offset).
-    const W1_RECEIPT_RAW = 'RC-2026-000771';
+    const W1_RECEIPT_RAW = 'RE-2026-000771';
     const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
     const reg = await seedUcEventWithRegistration(tenant, {
       attendeeEmail: BUYER_NO_TIN.primary_contact_email,
@@ -1763,7 +1769,7 @@ describe('applyIssueAsPaid — β no-TIN shape (receipt_stream) + conditional CH
           vat_satang = 654, total_satang = 10004,
           fiscal_year = 2026,
           sequence_number = 424242,
-          receipt_document_number_raw = 'RC-2026-000003',
+          receipt_document_number_raw = 'RE-2026-000003',
           issue_date = ${ISSUE_DATE}, due_date = ${ISSUE_DATE}, net_days_snapshot = 0,
           tenant_identity_snapshot = ${JSON.stringify(T9_TENANT_SNAPSHOT)}::jsonb,
           pdf_blob_key = ${'invoices/t9-probe/event-half-pair.pdf'},
@@ -1796,8 +1802,10 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    // Receipt prefix 'RC' configured — fresh tenant ⇒ the FIRST receipt-stream
-    // allocation is fully deterministic: RC-2026-000001.
+    // §86/4 receipt prefix 'RC' configured — this PROVES the US7/T050 split:
+    // despite 'RC', the §105 event-no-TIN receipt numbers from its own separate
+    // `receipt_105`/'RE' register, so the FIRST allocation is RE-2026-000001
+    // (fresh tenant ⇒ deterministic) and the 'RC' register is never touched.
     await seedUcSettings(tenant, 'EVN', { receiptPrefix: 'RC' });
     ({ registrationId: regNoTin } = await seedUcEventWithRegistration(tenant, {
       attendeeEmail: BUYER_NO_TIN.primary_contact_email,
@@ -1813,20 +1821,27 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
     await deleteTestUser(user).catch(() => {});
   });
 
-  it('T10-1 — no-TIN as-paid: §105 receipt on the RECEIPT stream (RC-2026-000001), invoice-stream counter UNTOUCHED, dual non-timeline audits + outbox', async () => {
-    // BOTH stream counters before the act — the core β claim is that the
-    // shared §87 invoice stream is never burned for a §105 receipt.
+  it('T10-1 — no-TIN as-paid: §105 receipt on the SEPARATE receipt_105 register (RE-2026-000001), §87 invoice AND §86/4 RC counters UNTOUCHED, dual non-timeline audits + outbox', async () => {
+    // THREE stream counters before the act — the core US7/T050 split claim is
+    // that a §105 event-no-TIN receipt burns ONLY its own `receipt_105`/RE
+    // register: NEITHER the shared §87 `invoice` stream NOR the §86/4 `RC`
+    // receipt stream is touched (even though 'RC' is the configured prefix).
     const invoiceCounterBefore = await readSeqCounterFor(
       tenant.ctx.slug,
       'invoice',
       UC_FISCAL_YEAR,
     );
-    const receiptCounterBefore = await readSeqCounterFor(
+    const rcCounterBefore = await readSeqCounterFor(
       tenant.ctx.slug,
       'receipt',
       UC_FISCAL_YEAR,
     );
-    expect(receiptCounterBefore).toBeNull(); // fresh tenant — lazy bootstrap in-tx
+    const receipt105Before = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'receipt_105',
+      UC_FISCAL_YEAR,
+    );
+    expect(receipt105Before).toBeNull(); // fresh tenant — lazy bootstrap in-tx
 
     const captured: PdfRenderInput[] = [];
     const deps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO, captured });
@@ -1848,7 +1863,7 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
     expect(res.value.status).toBe('paid');
     expect(res.value.sequenceNumber).toBeNull();
     expect(res.value.documentNumber).toBeNull();
-    expect(res.value.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(res.value.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(res.value.pdfDocKind).toBe('receipt_separate');
 
     // Raw row — β shape committed through the REAL use-case path.
@@ -1856,7 +1871,7 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
     expect(row!.status).toBe('paid');
     expect(row!.sequenceNumber).toBeNull();
     expect(row!.documentNumber).toBeNull();
-    expect(row!.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(row!.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(row!.pdfDocKind).toBe('receipt_separate');
     expect(row!.fiscalYear).toBe(UC_FISCAL_YEAR);
     // As-paid date pin + payment fields (TIN-path parity).
@@ -1870,32 +1885,42 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
     expect(row!.receiptPdfBlobKey).toBeNull();
     expect(row!.receiptPdfSha256).toBeNull();
 
-    // Render input — ONE §105 receipt carrying the RECEIPT document number
-    // (the printed number on the ใบเสร็จรับเงิน), dates pinned to payment.
+    // Render input — ONE §105 receipt carrying the receipt_105-register
+    // document number (the printed 'RE-…' number on the ใบเสร็จรับเงิน),
+    // dates pinned to payment.
     expect(captured).toHaveLength(1);
     expect(captured[0]!.kind).toBe('receipt_separate');
-    expect(captured[0]!.documentNumber?.raw).toBe('RC-2026-000001');
+    expect(captured[0]!.documentNumber?.raw).toBe('RE-2026-000001');
     expect(captured[0]!.vatInclusive).toBe(true);
     expect(captured[0]!.issueDate).toBe(UC_PAYMENT_DATE);
     expect(captured[0]!.dueDate).toBe(UC_PAYMENT_DATE);
 
-    // §87 — invoice-stream counter UNTOUCHED (no burn for a §105 receipt);
-    // receipt stream lazily bootstrapped in-tx, next = 2.
+    // §87 — invoice-stream counter UNTOUCHED (no burn for a §105 receipt), and
+    // the §86/4 'RC' receipt stream is ALSO untouched (US7/T050 split — even
+    // with 'RC' configured). Only the separate receipt_105/RE register advances
+    // (lazily bootstrapped in-tx, next = 2).
     const invoiceCounterAfter = await readSeqCounterFor(
       tenant.ctx.slug,
       'invoice',
       UC_FISCAL_YEAR,
     );
     expect(invoiceCounterAfter).toBe(invoiceCounterBefore);
-    const receiptCounterAfter = await readSeqCounterFor(
+    const rcCounterAfter = await readSeqCounterFor(
       tenant.ctx.slug,
       'receipt',
       UC_FISCAL_YEAR,
     );
-    expect(receiptCounterAfter).toBe(2);
+    // §86/4 RC register stays pure — never touched by a §105 receipt.
+    expect(rcCounterAfter).toBe(rcCounterBefore);
+    const receipt105After = await readSeqCounterFor(
+      tenant.ctx.slug,
+      'receipt_105',
+      UC_FISCAL_YEAR,
+    );
+    expect(receipt105After).toBe(2);
 
     // Audits — BOTH lifecycle facts, non-timeline branch (non-member buyer),
-    // RC number as the forensic document number.
+    // the receipt_105-register RE number as the forensic document number.
     const audits = await db
       .select()
       .from(auditLog)
@@ -1910,7 +1935,7 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
       expect(payload.invoice_subject).toBe('event');
       expect(payload.event_registration_id).toBe(regNoTin);
       expect('member_id' in payload).toBe(false);
-      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+      expect(payload.receipt_document_number).toBe('RE-2026-000001');
     }
     const issuedPayload = issued[0]!.payload as Record<string, unknown>;
     expect(issuedPayload.sequence_number).toBeNull();
@@ -1932,10 +1957,11 @@ describe('issueEventInvoiceAsPaid — no-TIN β receipt-stream end-to-end (live 
 });
 
 // -----------------------------------------------------------------------------
-// Section Eβ — no-TIN blob-upload failure rollback (RECEIPT stream, live Neon).
-// β twin of Section E above (T10 reliability review Important #1): the no-TIN
-// arm allocates from the RECEIPT stream, so the §87 no-gap proof must cover
-// THAT counter — Section E only proves the invoice stream rolls back.
+// Section Eβ — no-TIN blob-upload failure rollback (receipt_105 register, live
+// Neon). β twin of Section E above (T10 reliability review Important #1): the
+// no-TIN arm allocates from the SEPARATE receipt_105/RE register (US7/T050), so
+// the no-gap proof must cover THAT counter — Section E only proves the invoice
+// stream rolls back.
 // -----------------------------------------------------------------------------
 
 describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (live Neon)', () => {
@@ -1946,8 +1972,9 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
-    // Receipt prefix 'RC' (T10 pattern) — fresh tenant ⇒ the first SUCCESSFUL
-    // receipt-stream allocation is fully deterministic: RC-2026-000001.
+    // §86/4 prefix 'RC' configured (T10 pattern) — but the §105 no-TIN arm uses
+    // its own separate receipt_105/RE register, so the first SUCCESSFUL §105
+    // allocation is deterministic RE-2026-000001 (US7/T050 split).
     await seedUcSettings(tenant, 'EVB', { receiptPrefix: 'RC' });
     const { registrationId } = await seedUcEventWithRegistration(tenant, {
       attendeeEmail: BUYER_NO_TIN.primary_contact_email,
@@ -1963,10 +1990,10 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
     await deleteTestUser(user).catch(() => {});
   });
 
-  it('failed upload → typed err, row stays draft, RECEIPT counter unchanged, ZERO audits, orphan cleanup; retry gets RC-2026-000001 (no RC burn)', async () => {
+  it('failed upload → typed err, row stays draft, receipt_105 counter unchanged, ZERO audits, orphan cleanup; retry gets RE-2026-000001 (no RE burn)', async () => {
     // Fresh tenant: neither stream has ever allocated (absent → null). On a
     // reused tenant the same assertions degrade gracefully to value→same.
-    const receiptBefore = await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR);
+    const receiptBefore = await readSeqCounterFor(tenant.ctx.slug, 'receipt_105', UC_FISCAL_YEAR);
     const invoiceBefore = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
     expect(receiptBefore).toBeNull();
 
@@ -1997,10 +2024,10 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
     expect(rowAfterFail!.sequenceNumber).toBeNull();
     expect(rowAfterFail!.receiptDocumentNumberRaw).toBeNull();
 
-    // §87 — the RECEIPT-stream counter rolled back with the tx (the β arm's
-    // allocateNext ran with documentType:'receipt' before the upload threw).
-    // Fresh tenant ⇒ absent→absent: the failed attempt burned NO RC number.
-    const receiptAfterFail = await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR);
+    // §87 — the receipt_105-register counter rolled back with the tx (the β arm's
+    // allocateNext ran with documentType:'receipt_105' before the upload threw).
+    // Fresh tenant ⇒ absent→absent: the failed attempt burned NO RE number.
+    const receiptAfterFail = await readSeqCounterFor(tenant.ctx.slug, 'receipt_105', UC_FISCAL_YEAR);
     expect(receiptAfterFail).toBe(receiptBefore);
     // β never touches the invoice stream — failure path included.
     const invoiceAfterFail = await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR);
@@ -2020,8 +2047,8 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
     );
     expect(audits).toHaveLength(0);
 
-    // Retry with a WORKING blob → succeeds with the FIRST receipt-stream
-    // number — RC-2026-000001 proves the failed attempt left no RC gap.
+    // Retry with a WORKING blob → succeeds with the FIRST receipt_105-register
+    // number — RE-2026-000001 proves the failed attempt left no RE gap.
     const retryDeps = makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO });
     const res2 = await issueEventInvoiceAsPaid(retryDeps, {
       tenantId: tenant.ctx.slug,
@@ -2033,19 +2060,19 @@ describe('issueEventInvoiceAsPaid — no-TIN β blob-upload failure rollback (li
     });
     expect(res2.ok, res2.ok ? 'ok' : `retry err: ${JSON.stringify(res2)}`).toBe(true);
     if (!res2.ok) throw new Error('retry failed');
-    expect(res2.value.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(res2.value.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(res2.value.sequenceNumber).toBeNull();
     expect(res2.value.documentNumber).toBeNull();
 
     const row2 = await readInvoiceRowOwner(tenant.ctx.slug, invoiceId);
     expect(row2!.status).toBe('paid');
-    expect(row2!.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    expect(row2!.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(row2!.sequenceNumber).toBeNull();
     expect(row2!.pdfDocKind).toBe('receipt_separate');
 
-    // Exactly ONE receipt allocation across fail+retry (next = 2); the
+    // Exactly ONE receipt_105 allocation across fail+retry (next = 2); the
     // invoice stream stayed untouched end-to-end.
-    expect(await readSeqCounterFor(tenant.ctx.slug, 'receipt', UC_FISCAL_YEAR)).toBe(2);
+    expect(await readSeqCounterFor(tenant.ctx.slug, 'receipt_105', UC_FISCAL_YEAR)).toBe(2);
     expect(await readSeqCounterFor(tenant.ctx.slug, 'invoice', UC_FISCAL_YEAR)).toBe(
       invoiceBefore,
     );

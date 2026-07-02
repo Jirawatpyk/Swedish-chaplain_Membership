@@ -571,8 +571,9 @@ export async function recordPayment(
     let receiptDocNumRaw: string | null = null;
     let receiptDocNum: DocumentNumber | null = null;
     if (!reuseInvoiceNumber) {
-      // Allocate a fresh receipt-stream number (RC §86/4 in the new flow / §105
-      // RE for the event-no-TIN arm).
+      // Allocate a fresh §86/4 RC-role receipt-stream number (documentType
+      // 'receipt', default prefix 'RC'). record-payment never mints the §105
+      // 'receipt_105'/'RE' register — that arm lives in issue-event-invoice-as-paid.
       // Lock-order note (wave-3 S12): advisory('receipt') is acquired HERE,
       // AFTER the member-row update (markRegistrationFeePaid, hoisted above)
       // — member→advisory, the SAME order the β as-paid path takes. Do not
@@ -583,8 +584,16 @@ export async function recordPayment(
         documentType: 'receipt',
         fiscalYear: receiptFiscalYear,
       });
+      // 088 US7 fix — the §86/4 RC-role receipt defaults to 'RC' (NOT the stale
+      // pre-088 'RE'). This must stay disjoint from the §105 `receipt_105`
+      // register (issue-event-invoice-as-paid, hardcoded 'RE'): both writers land
+      // in `receipt_document_number_raw` under the single unpartitioned
+      // `invoices_tenant_receipt_raw_uniq` index, and each register is a separate
+      // counter (both seq 1 in a fresh FY). An 'RE' default here would render the
+      // same raw as a §105 receipt → 23505. The tenant settings guard reserves
+      // 'RE' so a configured §86/4 prefix can never re-open this collision.
       const receiptDoc = DocumentNumber.of(
-        settings.receiptNumberPrefix ?? 'RE',
+        settings.receiptNumberPrefix ?? 'RC',
         receiptFiscalYear,
         seq,
       );

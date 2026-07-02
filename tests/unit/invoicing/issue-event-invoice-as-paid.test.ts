@@ -24,12 +24,13 @@
  *                   paymentDate, dual audits in-tx + in-order, ONE outbox
  *                   enqueue (privacy footer for non-members), F8 onPaid
  *                   callbacks for matched members only.
- *   no-TIN (β)    — 064 Task 10: receipt-STREAM allocation (documentType
- *                   'receipt', receipt prefix from settings with the 'RE'
- *                   fallback — recordPayment separate-mode parity), apply
- *                   numbering kind 'receipt_stream', pdfDocKind
- *                   'receipt_separate', §105 render kind, audit/outbox/F8
- *                   parity with the TIN path, receipt-stream overflow.
+ *   no-TIN (β)    — 088 US7/T050: SEPARATE §105 register allocation
+ *                   (documentType 'receipt_105', HARDCODED 'RE' prefix —
+ *                   settings.receiptNumberPrefix is deliberately IGNORED so the
+ *                   §86/4 'RC' register stays pure), apply numbering kind
+ *                   'receipt_stream', pdfDocKind 'receipt_separate', §105 render
+ *                   kind, audit/outbox/F8 parity with the TIN path,
+ *                   receipt_105-stream overflow.
  *
  * Ports are mocked with vi.fn(); the tx parameter is the module-level
  * OPAQUE_TX symbol so in-tx audit emission can be asserted by identity.
@@ -631,32 +632,42 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
 
   // --- no-TIN β path (064 Task 10 — receipt-stream numbering LIVE) ---------------
 
-  it('β: no-TIN as-paid allocates documentType:"receipt" ONCE — never the invoice stream', async () => {
+  it('β: no-TIN as-paid allocates documentType:"receipt_105" ONCE — never the §87 invoice stream nor the §86/4 RC receipt stream', async () => {
     const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledTimes(1);
+    // US7/T050 — the §105 event-no-TIN receipt allocates from its OWN separate
+    // `receipt_105`/'RE' register, NEVER the §86/4 `receipt` (RC) stream — even
+    // though 'RC' is the configured receipt prefix here. The split keeps the
+    // §86/4/§87 RC register pure (un-pollutable) for a clean RD audit.
     expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
       OPAQUE_TX,
-      expect.objectContaining({ documentType: 'receipt', fiscalYear: 2026 }),
+      expect.objectContaining({ documentType: 'receipt_105', fiscalYear: 2026 }),
     );
-    // The shared §87 invoice stream is NEVER burned for a §105 receipt.
+    // Neither the shared §87 invoice stream NOR the §86/4 RC receipt stream is
+    // ever burned for a §105 receipt.
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalledWith(
       OPAQUE_TX,
       expect.objectContaining({ documentType: 'invoice' }),
     );
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalledWith(
+      OPAQUE_TX,
+      expect.objectContaining({ documentType: 'receipt' }),
+    );
   });
 
-  it('β: no-TIN apply input carries receipt_stream numbering (formatted RC number) + pdfDocKind receipt_separate; render = §105 receipt with the RC number', async () => {
+  it('β: no-TIN apply input carries receipt_stream numbering (formatted RE number) + pdfDocKind receipt_separate; render = §105 receipt with the RE number', async () => {
     const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    // §105 receipt render carries the RECEIPT document number — the printed
-    // number on the ใบเสร็จรับเงิน is the receipt-stream number.
+    // §105 receipt render carries the receipt_105-register document number — the
+    // printed number on the ใบเสร็จรับเงิน is 'RE-…', NOT the §86/4 'RC-…' even
+    // though 'RC' is the configured receipt prefix (US7/T050 split).
     expect(deps.pdfRender.render).toHaveBeenCalledTimes(1);
     const renderInput = vi.mocked(deps.pdfRender.render).mock.calls[0]![0];
     expect(renderInput.kind).toBe('receipt_separate');
-    expect(renderInput.documentNumber?.raw).toBe('RC-2026-000001');
+    expect(renderInput.documentNumber?.raw).toBe('RE-2026-000001');
     expect(renderInput.issueDate).toBe(input.paymentDate);
     expect(renderInput.dueDate).toBe(input.paymentDate);
     // Apply input — receipt_stream arm: NO invoice-stream pair, raw set.
@@ -664,15 +675,17 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
     expect(applyInput.numbering).toEqual({
       kind: 'receipt_stream',
-      receiptDocumentNumberRaw: 'RC-2026-000001',
+      receiptDocumentNumberRaw: 'RE-2026-000001',
     });
     expect(applyInput.pdfDocKind).toBe('receipt_separate');
   });
 
-  it("β: no-TIN with NO configured receipt prefix falls back to 'RE' (recordPayment separate-mode parity)", async () => {
-    // makeSettings() leaves receiptNumberPrefix undefined — same fallback
-    // record-payment.ts uses for separate-mode receipt allocation.
-    const deps = makeDeps(makeNoTinDraft(), makeSettings(), null);
+  it("β: no-TIN §105 register prefix is HARDCODED 'RE' — ANY configured receiptNumberPrefix is ignored (settings-independent split)", async () => {
+    // A tenant with a NON-RC receipt prefix ('RX') STILL gets a §105 receipt
+    // numbered 'RE-…': the receipt_105-register prefix is a hardcoded constant,
+    // never read from settings.receiptNumberPrefix (US7/T050). This proves the
+    // split is unconditional, not a special-case of the 'RC' §86/4 prefix.
+    const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RX' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
@@ -682,7 +695,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     });
   });
 
-  it('β: no-TIN audits mirror the TIN path — non-timeline branch, in-tx dual emits, invoice_paid carries receipt_document_number = RC number', async () => {
+  it('β: no-TIN audits mirror the TIN path — non-timeline branch, in-tx dual emits, invoice_paid carries receipt_document_number = RE number', async () => {
     const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
@@ -698,9 +711,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect('member_id' in payload).toBe(false);
       expect(payload.event_registration_id).toBe('reg-uuid-1');
       expect(payload.invoice_subject).toBe('event');
-      // Receipt-stream numbering: the RC number is the forensic document
-      // number on BOTH lifecycle payloads.
-      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+      // Receipt-stream numbering: the receipt_105-register RE number is the
+      // forensic document number on BOTH lifecycle payloads (never the §86/4
+      // RC number, even with 'RC' configured — US7/T050 split).
+      expect(payload.receipt_document_number).toBe('RE-2026-000001');
     }
     // Issued payload keeps the TIN-path shape — the invoice-stream pair is
     // genuinely absent (null), never fabricated from the receipt stream.
@@ -754,7 +768,8 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     for (const call of emitCalls) {
       const payload = (call[1] as { payload: Record<string, unknown> }).payload;
       expect(payload.member_id).toBe('member-1');
-      expect(payload.receipt_document_number).toBe('RC-2026-000001');
+      // receipt_105-register RE number (US7/T050 split; 'RC' configured but ignored).
+      expect(payload.receipt_document_number).toBe('RE-2026-000001');
     }
   });
 
@@ -1014,7 +1029,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
   });
 
-  it('β: RECEIPT-stream overflow (seq > 999_999) → err overflow via throw-carrier; sequence rolls back, apply never called', async () => {
+  it('β: receipt_105-stream overflow (seq > 999_999) → err overflow via throw-carrier; sequence rolls back, apply never called', async () => {
     const allocateNext = vi.fn(async () => 1_000_000);
     const deps = makeDeps(makeNoTinDraft(), makeSettings({ receiptNumberPrefix: 'RC' }), null, {
       sequenceAllocator: { allocateNext },
@@ -1025,12 +1040,12 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect(r.error.code).toBe('overflow');
       if (r.error.code === 'overflow') expect(r.error.fiscalYear).toBe(2026);
     }
-    // The overflow came from the RECEIPT allocation (post-sequence zone —
-    // the throw aborts the tx so the receipt counter increment rolls back).
+    // The overflow came from the receipt_105 allocation (post-sequence zone —
+    // the throw aborts the tx so the receipt_105 counter increment rolls back).
     expect(allocateNext).toHaveBeenCalledTimes(1);
     expect(allocateNext).toHaveBeenCalledWith(
       OPAQUE_TX,
-      expect.objectContaining({ documentType: 'receipt' }),
+      expect.objectContaining({ documentType: 'receipt_105' }),
     );
     expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
     expect(deps.pdfRender.render).not.toHaveBeenCalled();

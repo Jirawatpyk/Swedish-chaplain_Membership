@@ -132,6 +132,23 @@ const bodySchema = z.object({
   payment_instructions_th: z.string().max(500).nullable().optional(),
   payment_instructions_en: z.string().max(500).nullable().optional(),
 }).superRefine((val, ctx) => {
+  // 088 US7 (review fix) — reserve 'RE' for the §105 `receipt_105` register.
+  // Mirrors the use-case superRefine (updateTenantInvoiceSettingsSchema): a
+  // §86/4 receipt prefix of 'RE' collides with the §105 register's hardcoded
+  // 'RE' on the shared `invoices_tenant_receipt_raw_uniq` index → 23505.
+  // Case-insensitive (document prefixes are uppercase-only per DocumentNumber);
+  // null / any other prefix (e.g. the 'RC' default) is fine.
+  if (
+    val.receipt_number_prefix != null &&
+    val.receipt_number_prefix.trim().toUpperCase() === 'RE'
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['receipt_number_prefix'],
+      message:
+        "receipt_number_prefix 'RE' is reserved for §105 event receipts; use a different §86/4 receipt prefix such as RC",
+    });
+  }
   // 088 US5 (T037) — seller Head-Office/Branch pairing. Only validated when the
   // flag is in the patch (a partial PATCH that omits it defers to the stored
   // value + the DB CHECK). Mirrors the member branch pairing (US3).

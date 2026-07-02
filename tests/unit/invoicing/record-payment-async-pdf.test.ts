@@ -308,7 +308,9 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
         draft,
         makeSettings({
           receiptNumberingMode: 'separate',
-          receiptNumberPrefix: 'RE',
+          // 088 US7 — the §86/4 RC-role receipt prefix. Uses 'RC' (the new
+          // default); 'RE' is now reserved for the §105 event-receipt register.
+          receiptNumberPrefix: 'RC',
         }),
       ),
       taxAtPayment: true,
@@ -325,7 +327,7 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     const callArg = (deps.invoiceRepo.applyPayment as ReturnType<typeof vi.fn>)
       .mock.calls[0]![1];
     expect(callArg.receiptPdf.kind).toBe('pending');
-    expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RE-2026-000007');
+    expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RC-2026-000007');
   });
 
   // R1-CG-1 + R2-CG-1 — atomicity: enqueue throw must roll the whole
