@@ -138,19 +138,19 @@
 
 ### Tests for US5 (author first, MUST fail) ⚠️
 
-- [ ] T037 [P] [US5] Contract test for tenant-invoice-settings PATCH (wht_note_th/en, seller branch, bank fields; `'combined'` rejected) in `tests/contract/invoicing/tenant-invoice-settings.contract.test.ts` per `contracts/tenant-invoice-settings.md`.
-- [ ] T038 [P] [US5] Integration test: WHT note on membership doc, absent on event doc, absent for a no-note tenant (SC-007) in `tests/integration/invoicing/wht-note-scope.integration.test.ts`.
+- [X] T037 [P] [US5] Contract test for tenant-invoice-settings PATCH (wht_note_th/en, seller branch, bank fields; `'combined'` rejected) in `tests/contract/invoicing/tenant-invoice-settings.contract.test.ts` per `contracts/tenant-invoice-settings.md`.
+- [X] T038 [P] [US5] Integration test: WHT note on membership doc, absent on event doc, absent for a no-note tenant (SC-007) in `tests/integration/invoicing/wht-note-scope.integration.test.ts`.
 
 ### Implementation for US5
 
-- [ ] T039 [US5] Migration `0233_tenant_invoice_settings_wht_and_seller_branch.sql` — `wht_note_th/_en` + `seller_is_head_office` + `seller_branch_code` + `tenant_invoice_settings_seller_branch_ck` **+ the FR-022 bank-block fields** (payee/account/bank/branch/address/swift/instructions, all NULL) per data-model § F.7; mirror into `schema-tenant-invoice-settings.ts`.
-- [ ] T040 [US5] Thread the note + seller-branch + bank fields settings → snapshot → template in `update-tenant-invoice-settings.ts` + the settings repo (thread `tx` from `runInTenant`).
-- [ ] T041 [US5] Render the tenant WHT note gated on `invoice_subject='membership'` (both membership docs, never event) + drop the hardcoded Chamber-OS/§-citation footer in `invoice-template.tsx` (FR-012).
-- [ ] T042 [US5] Render the FR-022 bank block + "Issued by"/"Received by"/"Date" fields on the ใบแจ้งหนี้ ONLY (not the tax receipt) in `invoice-template.tsx`.
-- [ ] T043 [P] [US5] Add WHT-note + seller-branch + bank fields to the settings form in `src/components/invoices/invoice-settings-form.tsx` (remove the `'combined'` option).
-- [ ] T043a [US5] Confirmation dialog on changing the document prefix / numbering mode (warn of the §87 numbering-stream impact) + success/error save toasts (MED); EN/TH/SV dialog + toast keys in `src/components/invoices/invoice-settings-form.tsx`.
-- [ ] T043b [US5] Structured bank-block fields (payee, account_no, account_type, bank, branch, address, swift + a free-text instructions line TH/EN — NOT one blob) with SWIFT + account-no format validation, help text, char counters, EN/TH/SV labels (MED; data-model § F.7, SHARED UX #3) in `src/components/invoices/invoice-settings-form.tsx`.
-- [ ] T044 [US5] Apply 0233 to `dev` Neon + `pnpm test:integration` (T037/T038 green).
+- [X] T039 [US5] Migration `0233_tenant_invoice_settings_wht_and_seller_branch.sql` — `wht_note_th/_en` + `seller_is_head_office` + `seller_branch_code` + `tenant_invoice_settings_seller_branch_ck` **+ the FR-022 bank-block fields** (payee/account/bank/branch/address/swift/instructions, all NULL) per data-model § F.7; mirror into `schema-tenant-invoice-settings.ts`.
+- [X] T040 [US5] Thread the note + seller-branch + bank fields settings → snapshot → template in `update-tenant-invoice-settings.ts` + the settings repo (thread `tx` from `runInTenant`).
+- [X] T041 [US5] Render the tenant WHT note gated on `invoice_subject='membership'` (both membership docs, never event) + drop the hardcoded Chamber-OS/§-citation footer in `invoice-template.tsx` (FR-012).
+- [X] T042 [US5] Render the FR-022 bank block + "Issued by"/"Received by"/"Date" fields on the ใบแจ้งหนี้ ONLY (not the tax receipt) in `invoice-template.tsx`.
+- [X] T043 [P] [US5] Add WHT-note + seller-branch + bank fields to the settings form in `src/components/invoices/invoice-settings-form.tsx` (remove the `'combined'` option).
+- [X] T043a [US5] Confirmation dialog on changing the document prefix / numbering mode (warn of the §87 numbering-stream impact) + success/error save toasts (MED); EN/TH/SV dialog + toast keys in `src/components/invoices/invoice-settings-form.tsx`.
+- [X] T043b [US5] Structured bank-block fields (payee, account_no, account_type, bank, branch, address, swift + a free-text instructions line TH/EN — NOT one blob) with SWIFT + account-no format validation, help text, char counters, EN/TH/SV labels (MED; data-model § F.7, SHARED UX #3) in `src/components/invoices/invoice-settings-form.tsx`.
+- [X] T044 [US5] Apply 0233 to `dev` Neon + `pnpm test:integration` (T037/T038 green). **[US5 DONE 2026-07-02, committed `f5de415d`. Migration 0233 (+13 cols wht_note/seller-branch/9 bank + seller_branch_ck) applied Neon dev; template v6→v7 (WHT note membership-only both docs + DROP hardcoded Chamber-OS/§-citation footer + bank block bill-only, all v7-gated; bank block PINNED in frozen snapshot). Review (thai-tax+drizzle+reliability+spec, 4 agents+verify) = 3 confirmed all addressed: **HIGH** credit-note credited re-render (7th render site) omitted invoiceSubject → membership §86/4 lost WHT note on credit → FIXED in issue-credit-note.ts + unit test; **MED** members_branch_pairing_ck (0232) same 3-valued-logic hole → FIXED via **migration 0236** (mirror 0233, applied Neon dev); **MED** FR-022 "Issued by" = layout-only blank (NOT auto-filled preparer name) → **DEVIATION flagged for user ratification** (bill=non-tax, blank wet-signature standard). Gates: tsc 0 · 42 SC-003 goldens unchanged · contract 8 · i18n 4062 · lint 0. Pre-existing (NOT US5→route US1): record-payment-event-invoice α-shape RED (US1 reuseInvoiceNumber flag-gating).]**
 
 **Checkpoint**: footer/WHT/bank are tenant-configurable + membership-scoped.
 
