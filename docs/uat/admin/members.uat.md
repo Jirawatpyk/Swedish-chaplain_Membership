@@ -36,7 +36,7 @@
 |---|---|---|
 | 1 | สร้างสมาชิกเลือก plan ที่ต้องการ turnover สูง (เช่น Premium) แต่ใส่ turnover ต่ำกว่าเกณฑ์ | ขึ้น warning ว่า turnover ไม่เข้าเกณฑ์ plan; save ไม่ผ่านจนกว่าจะ override |
 | 2 | กล่อง "Reason for bypassing validation" เลือก Reason = **Other** แต่เว้น Note | บล็อก: "Note is required when reason is \"Other\"." |
-| 3 | ใส่ Note แล้วกด **Proceed with override** | บันทึกสำเร็จ (event `member_created`). **หมายเหตุ:** ปัจจุบัน create-member ยัง**ไม่บันทึก** override reason (code+note) ลง audit payload ของ `member_created` — reason ถูก validate แต่ยังไม่ persist (ต่างจาก change-plan ที่บันทึก); อย่า fail เพราะไม่พบ reason ใน audit ของ create |
+| 3 | ใส่ Note แล้วกด **Proceed with override** | บันทึกสำเร็จ; เหตุผล (code+note) ถูกเก็บใน audit payload ของ event `member_created` (`override_reason_code` + `override_reason_note`) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -47,7 +47,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | เลือก plan **Thai Alumni**, ใส่ Date of birth ที่ทำให้อายุ > 35 ณ วันเริ่ม plan | warning เรื่องอายุ; save ต้อง override + เหตุผล (validate ใน dialog — ยังไม่ persist ลง audit ของ create, ดู TC-02) |
+| 1 | เลือก plan **Thai Alumni**, ใส่ Date of birth ที่ทำให้อายุ > 35 ณ วันเริ่ม plan | warning เรื่องอายุ; save ต้อง override + เหตุผล (เก็บใน audit ของ `member_created`) |
 | 2 | เลือก plan **Start-up**, ใส่ Founded year ที่ทำให้บริษัทอายุ > 2 ปี | warning เรื่องอายุบริษัท; save ต้อง override + เหตุผล |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________

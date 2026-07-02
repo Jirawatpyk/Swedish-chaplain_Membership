@@ -396,6 +396,15 @@ export async function createMember(
           plan_id: result.value.member.planId,
           plan_year: result.value.member.planYear,
           primary_contact_id: result.value.contact.contactId,
+          // FR-006a — persist the override reason on the ORIGINATING audit
+          // event (member_created) so F9 can aggregate overrides by reason
+          // code. Present only when an override was asserted to bypass a
+          // turnover/start-up/age warning (validated at ~:225). Mirrors the
+          // change-plan.ts pattern; keeps the note as null when omitted.
+          ...(data.override_reason_code && {
+            override_reason_code: data.override_reason_code,
+            override_reason_note: data.override_reason_note ?? null,
+          }),
         },
       });
       if (!memberAudit.ok) throw new UseCaseAbort<RepoError>(memberAudit.error);
