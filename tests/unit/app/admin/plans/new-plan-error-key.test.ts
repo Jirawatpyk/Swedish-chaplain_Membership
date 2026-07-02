@@ -2,12 +2,12 @@
  * new-plan create-error → i18n key mapping (regression guard).
  *
  * `POST /api/plans` returns snake_case error codes; `new-plan-client` looks up
- * `admin.plans.errors.<code>` and falls back to `errors.generic` on a miss. Two
- * 409 codes are spelled differently from their i18n key and previously produced
- * the generic "Something went wrong." toast instead of their specific message
- * (F2 UAT TC-PLAN-14; `duplicate_plan` fixed in PR #137, `idempotency_conflict`
- * here). These tests pin the mapping AND that each target key still exists in
- * en.json, so a rename on either side re-surfaces the bug at CI time.
+ * `admin.plans.errors.<code>` and falls back to `errors.generic` on a miss.
+ * Several codes differ from (or have no) same-named i18n key and previously
+ * produced the generic "Something went wrong." toast (F2 UAT TC-PLAN-14;
+ * `duplicate_plan` fixed in PR #137). These tests pin the mapping AND that each
+ * target key still exists in en.json, so a rename on either side re-surfaces
+ * the bug at CI time.
  */
 import { describe, expect, it } from 'vitest';
 import en from '@/i18n/messages/en.json';
@@ -39,10 +39,19 @@ describe('resolvePlanCreateErrorKey', () => {
     expect(resolvePlanCreateErrorKey('generic')).toBe('generic');
   });
 
-  it('has exactly the two known snake↔camel mismatches mapped', () => {
+  it('maps invalid_body and partnership_corporate_mismatch → validation', () => {
+    expect(resolvePlanCreateErrorKey('invalid_body')).toBe('validation');
+    expect(resolvePlanCreateErrorKey('partnership_corporate_mismatch')).toBe(
+      'validation',
+    );
+  });
+
+  it('maps every known create error code to an i18n key', () => {
     expect(PLAN_CREATE_ERROR_KEY_MAP).toEqual({
       duplicate_plan: 'duplicateKey',
       idempotency_conflict: 'idempotencyConflict',
+      invalid_body: 'validation',
+      partnership_corporate_mismatch: 'validation',
     });
   });
 

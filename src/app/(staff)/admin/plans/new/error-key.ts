@@ -4,14 +4,18 @@
  * `POST /api/plans` returns snake_case error codes (see
  * `src/app/api/plans/route.ts`). `new-plan-client` looks up
  * `admin.plans.errors.<code>` and falls back to `errors.generic` on a miss.
- * Most codes match their i18n key 1:1, but two 409s are spelled differently
- * and would otherwise render the generic toast instead of their specific
- * message:
- *   - `duplicate_plan`       → `duplicateKey`
- *   - `idempotency_conflict` → `idempotencyConflict`
+ * These codes either differ in spelling from their same-named i18n key or
+ * have no matching key, so without this map they render the generic toast:
+ *   - `duplicate_plan`                 → `duplicateKey`
+ *   - `idempotency_conflict`           → `idempotencyConflict`
+ *   - `invalid_body`                   → `validation`  (schema/shape failure)
+ *   - `partnership_corporate_mismatch` → `validation`  (integrity-rule failure)
  *
- * Unknown / already-matching codes pass through unchanged (the caller then
- * falls back to `errors.generic`).
+ * `invalid_body` / `partnership_corporate_mismatch` are near-unreachable via
+ * the wizard (client-side zod validates first); they share the `validation`
+ * message as a defensive fallback for direct API calls / schema drift.
+ * Unknown / already-matching codes pass through unchanged (caller then falls
+ * back to `errors.generic`).
  *
  * Kept as a pure, colocated module so the mapping is unit-tested without
  * rendering the client (tests/unit/app/admin/plans/new-plan-error-key.test.ts).
@@ -20,6 +24,8 @@
 export const PLAN_CREATE_ERROR_KEY_MAP: Readonly<Record<string, string>> = {
   duplicate_plan: 'duplicateKey',
   idempotency_conflict: 'idempotencyConflict',
+  invalid_body: 'validation',
+  partnership_corporate_mismatch: 'validation',
 };
 
 /**
