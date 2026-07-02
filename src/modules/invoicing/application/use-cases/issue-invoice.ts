@@ -173,6 +173,16 @@ export type IssueInvoiceError =
    * `invoices_zero_rate_cert_required` CHECK is defense-in-depth behind this. 422.
    */
   | { code: 'zero_rate_cert_required' }
+  /**
+   * 088 US8 UX-B1 review fix (SEC/reliability MED, CWE-639/CWE-20) — the OPTIONAL
+   * cert-scan `zeroRateCertBlobKey` is client-supplied at issue, so it MUST be
+   * re-validated to this tenant + this invoice's server-derived cert namespace
+   * (`invoicing/<tenant>/zero-rate-certs/<invoiceId>_`). Rejects pinning an
+   * arbitrary / never-ClamAV-scanned / cross-tenant blob onto the 10y-immutable
+   * §86/4 tax document (Blob has no RLS → this is the isolation boundary,
+   * Constitution I). 422.
+   */
+  | { code: 'zero_rate_cert_blob_key_invalid' }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
@@ -311,6 +321,23 @@ export async function issueInvoice(
       (input.zeroRateCertNo ?? '').trim() === ''
     ) {
       return err({ code: 'zero_rate_cert_required' });
+    }
+    //   (3) UX-B1 review fix — the OPTIONAL cert-scan blob key is client-supplied
+    //       (round-tripped from the upload response), so re-validate it here to
+    //       THIS tenant + THIS invoice's server-derived cert namespace. A key
+    //       matching `invoicing/<tenant>/zero-rate-certs/<invoiceId>_` can only
+    //       exist because upload-zero-rate-cert (ClamAV-scanned, server-derived
+    //       key) produced it; any other value = an injected arbitrary / unscanned
+    //       / cross-tenant blob and is rejected BEFORE it is pinned onto the
+    //       10y-immutable row + served by the cert-view route (Blob has no RLS).
+    const certBlobKey = input.zeroRateCertBlobKey ?? null;
+    if (
+      certBlobKey !== null &&
+      !certBlobKey.startsWith(
+        `invoicing/${input.tenantId}/zero-rate-certs/${input.invoiceId}_`,
+      )
+    ) {
+      return err({ code: 'zero_rate_cert_blob_key_invalid' });
     }
 
     // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
@@ -609,7 +636,7 @@ export async function issueInvoice(
         vatTreatment,
         zeroRateCertNo: input.zeroRateCertNo ?? null,
         zeroRateCertDate: input.zeroRateCertDate ?? null,
-        zeroRateCertBlobKey: input.zeroRateCertBlobKey ?? null,
+        zeroRateCertBlobKey: certBlobKey,
         issueDate,
         dueDate,
         // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.

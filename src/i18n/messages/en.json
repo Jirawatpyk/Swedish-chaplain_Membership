@@ -2195,7 +2195,27 @@
             "dateLabel": "Certificate date",
             "dateFormat": "Enter the certificate date as YYYY-MM-DD."
           },
-          "lowAmountWarning": "This zero-rated sale is below 5,000 THB. An MFA certificate is normally required for purchases of 5,000 THB or more — confirm the certificate applies before issuing."
+          "lowAmountWarning": "This zero-rated sale is below 5,000 THB. An MFA certificate is normally required for purchases of 5,000 THB or more — confirm the certificate applies before issuing.",
+          "certUpload": {
+            "label": "MFA certificate scan (optional)",
+            "pickerLabel": "Choose a certificate scan to upload",
+            "uploadButton": "Attach certificate scan",
+            "uploadingLabel": "Uploading…",
+            "uploadingAria": "Uploading certificate — please wait",
+            "uploadedToast": "Certificate scan attached.",
+            "attached": "Attached: {filename}",
+            "remove": "Remove",
+            "helpText": "Optional. PDF, PNG or JPG up to 5 MB. The scan is virus-scanned before it is stored. The certificate NUMBER above is what makes the zero rate valid — the scan is supporting evidence only.",
+            "errors": {
+              "zero_rate_cert_too_large": "The certificate scan is larger than 5 MB.",
+              "zero_rate_cert_invalid_mime": "Only PDF, PNG or JPG files are allowed.",
+              "zero_rate_cert_unsafe": "The certificate scan was flagged by the virus scanner. The upload was rejected.",
+              "zero_rate_cert_scan_failed": "The certificate scan could not be virus-scanned. Try again, or issue with the certificate number only (the scan is optional).",
+              "invalid_body": "The upload request was malformed.",
+              "internal_error": "An unexpected error occurred during upload.",
+              "unknown": "Upload failed. Please try again."
+            }
+          }
         },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",

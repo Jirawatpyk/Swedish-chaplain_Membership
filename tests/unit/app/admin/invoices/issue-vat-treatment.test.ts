@@ -112,7 +112,7 @@ describe('buildIssueRequestBody — POST body shape', () => {
     expect(body && 'zeroRateCertDate' in body).toBe(false);
   });
 
-  it('never sends the scan blob key (UX-B)', () => {
+  it('omits the scan blob key when no scan is attached', () => {
     const body = buildIssueRequestBody({
       taxAtPayment: true,
       vatTreatment: 'zero_rated_80_1_5',
@@ -120,6 +120,35 @@ describe('buildIssueRequestBody — POST body shape', () => {
       certDate: '2026-01-02',
     });
     expect(body && 'zeroRateCertBlobKey' in body).toBe(false);
+  });
+
+  it('includes the scan blob key when a scan was uploaded (UX-B1)', () => {
+    const body = buildIssueRequestBody({
+      taxAtPayment: true,
+      vatTreatment: 'zero_rated_80_1_5',
+      certNo: 'กต 0404/1234',
+      certDate: '2026-01-02',
+      certBlobKey: '  invoicing/t/zero-rate-certs/inv-1_9.pdf  ',
+    });
+    expect(body).toEqual({
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      zeroRateCertDate: '2026-01-02',
+      zeroRateCertBlobKey: 'invoicing/t/zero-rate-certs/inv-1_9.pdf',
+    });
+  });
+
+  it('omits the scan blob key when it is null or blank (scan optional)', () => {
+    for (const certBlobKey of [null, '', '   '] as const) {
+      const body = buildIssueRequestBody({
+        taxAtPayment: true,
+        vatTreatment: 'zero_rated_80_1_5',
+        certNo: 'กต 0404/1234',
+        certDate: '',
+        certBlobKey,
+      });
+      expect(body && 'zeroRateCertBlobKey' in body).toBe(false);
+    }
   });
 });
 

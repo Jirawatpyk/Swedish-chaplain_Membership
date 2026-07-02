@@ -59,6 +59,7 @@ import {
   CERT_NO_MAX,
 } from '../_lib/issue-vat-treatment';
 import { routeIssueError } from './issue-error-routing';
+import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -143,6 +144,11 @@ export function IssueInvoiceForm({
   const [certNo, setCertNo] = useState('');
   const [certDate, setCertDate] = useState('');
   const [certErrors, setCertErrors] = useState<ZeroRateCertErrors>(NO_CERT_ERRORS);
+  // 088 UX-B1 — the OPTIONAL cert-scan Blob key + its filename (for the
+  // "attached" affordance). NEVER cleared on a 422 retry (preserved so the
+  // admin re-issues without re-uploading, FR-033); cleared only on treatment flip.
+  const [certBlobKey, setCertBlobKey] = useState<string | null>(null);
+  const [certFilename, setCertFilename] = useState<string | null>(null);
   const certNoRef = useRef<HTMLInputElement>(null);
   const certDateRef = useRef<HTMLInputElement>(null);
 
@@ -169,16 +175,42 @@ export function IssueInvoiceForm({
     : null;
 
   // 088 T061f (reset arm) — flipping treatment AWAY from zero-rate clears the
-  // cert fields so no stale certificate carries over (the 422-retry-preserve
-  // of a scanned blob is UX-B).
+  // cert fields AND the attached scan so no stale certificate carries over
+  // (FR-033: zero-rated → standard → zero-rated RESETS the cert fields).
   const handleVatTreatmentChange = useCallback((next: VatTreatmentChoice) => {
     setVatTreatment(next);
     if (next !== 'zero_rated_80_1_5') {
       setCertNo('');
       setCertDate('');
       setCertErrors(NO_CERT_ERRORS);
+      setCertBlobKey(null);
+      setCertFilename(null);
     }
   }, []);
+
+  // 088 T061f (dirty guard) — a dirty issue form warns before an accidental tab
+  // close / refresh (FR-033 `beforeunload`). Active when the admin has entered
+  // zero-rate work (treatment / cert no. / date / scan) AND is not mid-submit
+  // (the post-submit refresh would false-trigger the prompt). Clone of the
+  // broadcasts compose-form guard. Note: App Router exposes no clean SPA
+  // route-change interception, so this covers tab close / hard nav / refresh.
+  useEffect(() => {
+    const dirty =
+      !pending &&
+      (vatTreatment !== 'standard' ||
+        certNo !== '' ||
+        certDate !== '' ||
+        certBlobKey !== null);
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      // Modern browsers ignore the message string and show their own copy;
+      // preventDefault + returnValue is the cross-browser invocation pattern.
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [pending, vatTreatment, certNo, certDate, certBlobKey]);
 
   function confirm() {
     setFormError(null);
@@ -203,6 +235,9 @@ export function IssueInvoiceForm({
       vatTreatment: effectiveTreatment,
       certNo,
       certDate,
+      // 088 UX-B1 — include the already-scanned cert blob key when attached
+      // (omitted otherwise; the scan is optional).
+      certBlobKey,
     });
 
     startTransition(async () => {
@@ -404,6 +439,20 @@ export function IssueInvoiceForm({
               </p>
             )}
           </div>
+          {/* 088 T061e (UX-B1) — OPTIONAL cert-scan upload (ClamAV-scanned).
+              Below cert-no/date; the cert NUMBER is the fail-closed gate. */}
+          <ZeroRateCertUploader
+            invoiceId={invoiceId}
+            attachedFilename={certFilename}
+            onUploaded={(blobKey, filename) => {
+              setCertBlobKey(blobKey);
+              setCertFilename(filename);
+            }}
+            onRemove={() => {
+              setCertBlobKey(null);
+              setCertFilename(null);
+            }}
+          />
           {/* 088 T061d — non-blocking ≥ 5,000 THB advisory (WARN, not a block). */}
           {lowAmountWarn && (
             <Alert

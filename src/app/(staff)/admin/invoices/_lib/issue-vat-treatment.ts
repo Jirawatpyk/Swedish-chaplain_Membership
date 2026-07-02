@@ -15,8 +15,9 @@
  *   2. `buildIssueRequestBody` — the exact POST body: `null` (→ empty POST,
  *      backward-compatible legacy issue) for a standard-rate or flag-off
  *      issue; the `{ vatTreatment, zeroRateCertNo, zeroRateCertDate? }`
- *      triplet for a zero-rated issue. `zeroRateCertBlobKey` (the scan) is
- *      UX-B and is NEVER sent here.
+ *      triplet for a zero-rated issue. 088 UX-B1: when an OPTIONAL cert SCAN
+ *      was uploaded, the returned blob key is threaded as `zeroRateCertBlobKey`
+ *      (omitted when no scan was attached — the scan stays optional).
  *   3. `isZeroRateLowAmount` — the non-blocking ≥ 5,000 THB pre-submit
  *      advisory trigger (a WARN, never a hard block, FR-024).
  *
@@ -66,6 +67,12 @@ export type IssueRequestBody =
       readonly vatTreatment: 'zero_rated_80_1_5';
       readonly zeroRateCertNo: string;
       readonly zeroRateCertDate?: string;
+      /**
+       * 088 UX-B1 — the Blob key of an OPTIONAL, already-ClamAV-scanned cert
+       * scan. Present ONLY when the admin attached a scan; omitted otherwise
+       * (the scan is optional — the cert NUMBER is the fail-closed gate).
+       */
+      readonly zeroRateCertBlobKey?: string;
     }
   | null;
 
@@ -114,21 +121,27 @@ export function isZeroRateLowAmount(
 /**
  * Build the issue POST body. Returns `null` (→ empty POST) unless the flag is
  * on AND the admin chose zero-rate; then it carries the vat_treatment + cert
- * NUMBER (+ DATE when entered). The scan blob key is UX-B and never sent.
+ * NUMBER (+ DATE when entered). 088 UX-B1: when an OPTIONAL cert SCAN was
+ * uploaded (`certBlobKey` non-empty), its Blob key is included as
+ * `zeroRateCertBlobKey`; when no scan was attached it is omitted (the scan is
+ * optional — the cert NUMBER is the fail-closed gate).
  */
 export function buildIssueRequestBody(input: {
   readonly taxAtPayment: boolean;
   readonly vatTreatment: VatTreatmentChoice;
   readonly certNo: string;
   readonly certDate: string;
+  readonly certBlobKey?: string | null;
 }): IssueRequestBody {
   if (!input.taxAtPayment || input.vatTreatment !== 'zero_rated_80_1_5') {
     return null;
   }
   const certDate = input.certDate.trim();
+  const certBlobKey = (input.certBlobKey ?? '').trim();
   return {
     vatTreatment: 'zero_rated_80_1_5',
     zeroRateCertNo: input.certNo.trim(),
     ...(certDate !== '' ? { zeroRateCertDate: certDate } : {}),
+    ...(certBlobKey !== '' ? { zeroRateCertBlobKey: certBlobKey } : {}),
   };
 }

@@ -237,3 +237,119 @@ describe('IssueInvoiceForm — valid zero-rate issue POST', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 088 UX-B1 (T061e/T061f-form) — cert-scan upload + dirty guard.
+// ---------------------------------------------------------------------------
+
+function certPdf(name = 'cert.pdf'): File {
+  return new File(['%PDF-1.4 fake'], name, { type: 'application/pdf' });
+}
+
+/** fetch router: cert-upload → { blobKey }; issue → { bill_document_number_raw }. */
+function makeRoutedFetch() {
+  return vi.fn(async (url: string) => {
+    if (String(url).includes('zero-rate-cert-upload')) {
+      return {
+        ok: true,
+        json: async () => ({ blobKey: 'invoicing/t/zero-rate-certs/inv-1_9.pdf' }),
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({ bill_document_number_raw: 'SC-2026-0007' }),
+    };
+  });
+}
+
+describe('IssueInvoiceForm — cert-scan blob key in POST (UX-B1)', () => {
+  it('includes zeroRateCertBlobKey in the issue POST after a scan is uploaded', async () => {
+    const fetchMock = makeRoutedFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+
+      // Upload a cert scan → the uploader POSTs, then reports the blob key.
+      fireEvent.change(screen.getByLabelText(/Choose a certificate scan/i), {
+        target: { files: [certPdf()] },
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('zero-rate-cert-attached')).toBeInTheDocument(),
+      );
+
+      fireEvent.change(screen.getByLabelText(/MFA certificate number/i), {
+        target: { value: 'กต 0404/1234' },
+      });
+      fireEvent.change(screen.getByLabelText(/to confirm/i), {
+        target: { value: 'ISSUE' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+
+      // Find the /issue POST (the cert-upload POST fired first).
+      await waitFor(() =>
+        expect(
+          fetchMock.mock.calls.some(
+            (c) => String(c[0]).endsWith('/issue'),
+          ),
+        ).toBe(true),
+      );
+      const issueCall = fetchMock.mock.calls.find((c) =>
+        String(c[0]).endsWith('/issue'),
+      ) as unknown as [string, RequestInit];
+      const body = JSON.parse(issueCall[1].body as string);
+      expect(body.zeroRateCertBlobKey).toBe('invoicing/t/zero-rate-certs/inv-1_9.pdf');
+      expect(body.vatTreatment).toBe('zero_rated_80_1_5');
+      expect(body.zeroRateCertNo).toBe('กต 0404/1234');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('flipping zero-rate → standard → zero-rate RESETS the attached scan', async () => {
+    const fetchMock = makeRoutedFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+      fireEvent.change(screen.getByLabelText(/Choose a certificate scan/i), {
+        target: { files: [certPdf()] },
+      });
+      await waitFor(() =>
+        expect(screen.getByTestId('zero-rate-cert-attached')).toBeInTheDocument(),
+      );
+
+      // Flip away then back — the attached scan must NOT carry over.
+      fireEvent.click(screen.getByRole('radio', { name: /Standard/i }));
+      fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+
+      expect(screen.queryByTestId('zero-rate-cert-attached')).toBeNull();
+      expect(
+        screen.getByRole('button', { name: /Attach certificate scan/i }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
+  it('registers a beforeunload listener only once the form is dirty (zero-rate)', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderForm();
+      // On mount (standard, empty) the form is clean → no guard.
+      expect(
+        addSpy.mock.calls.some((c) => c[0] === 'beforeunload'),
+      ).toBe(false);
+
+      // Selecting zero-rate makes the form dirty → guard attaches.
+      fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+      expect(
+        addSpy.mock.calls.some((c) => c[0] === 'beforeunload'),
+      ).toBe(true);
+    } finally {
+      addSpy.mockRestore();
+    }
+  });
+});

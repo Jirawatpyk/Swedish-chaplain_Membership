@@ -374,6 +374,37 @@ describe('issue-invoice zero-rate contract (088 US8)', () => {
     expect(p.zero_rate_cert_no).toBe('กต 0404/1234');
   });
 
+  it('UX-B1 review (SEC/CWE-639) — an INJECTED cert blob key outside this invoice cert namespace is rejected, no invoice issued', async () => {
+    const cap = emptyCap();
+    const r = await issueInvoice(makeDeps(eventDraft(1_200_000n), cap), {
+      ...baseInput,
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      // A key pointing at ANOTHER tenant's / an arbitrary never-scanned blob.
+      zeroRateCertBlobKey: 'invoicing/other-tenant/zero-rate-certs/deadbeef_1.pdf',
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('unreachable');
+    expect(r.error.code).toBe('zero_rate_cert_blob_key_invalid');
+    // Fail-fast BEFORE any pin/render — the bad key never lands on the row.
+    expect(cap.applyIssueInputs).toHaveLength(0);
+    expect(cap.renderInputs).toHaveLength(0);
+  });
+
+  it("UX-B1 review — a VALID cert blob key under this invoice's server-derived namespace is accepted + pinned", async () => {
+    const cap = emptyCap();
+    const validKey = `invoicing/${baseInput.tenantId}/zero-rate-certs/${INVOICE_ID}_1700000000000.pdf`;
+    const r = await issueInvoice(makeDeps(eventDraft(1_200_000n), cap), {
+      ...baseInput,
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      zeroRateCertBlobKey: validKey,
+    });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(cap.applyIssueInputs[0]!.zeroRateCertBlobKey).toBe(validKey);
+  });
+
   it('FR-024 advisory — a zero-rate subtotal < 5,000 THB WARNS but still issues', async () => {
     const cap = emptyCap();
     // 4,000.00 THB = 400,000 satang < 500,000 threshold.

@@ -2195,7 +2195,27 @@
             "dateLabel": "Intygsdatum",
             "dateFormat": "Ange intygsdatum som ÅÅÅÅ-MM-DD."
           },
-          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB. Ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer — bekräfta att intyget gäller innan du utfärdar."
+          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB. Ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer — bekräfta att intyget gäller innan du utfärdar.",
+          "certUpload": {
+            "label": "Skanning av MFA-intyg (valfritt)",
+            "pickerLabel": "Välj en intygsskanning att ladda upp",
+            "uploadButton": "Bifoga intygsskanning",
+            "uploadingLabel": "Laddar upp…",
+            "uploadingAria": "Laddar upp intyg — vänta",
+            "uploadedToast": "Intygsskanning bifogad.",
+            "attached": "Bifogad: {filename}",
+            "remove": "Ta bort",
+            "helpText": "Valfritt. PDF, PNG eller JPG upp till 5 MB. Skanningen virusgranskas innan den lagras. Det är intygsNUMRET ovan som gör nollskatten giltig — skanningen är endast stödjande bevis.",
+            "errors": {
+              "zero_rate_cert_too_large": "Intygsskanningen är större än 5 MB.",
+              "zero_rate_cert_invalid_mime": "Endast PDF-, PNG- eller JPG-filer tillåts.",
+              "zero_rate_cert_unsafe": "Intygsskanningen flaggades av virusgranskaren. Uppladdningen avvisades.",
+              "zero_rate_cert_scan_failed": "Intygsskanningen kunde inte virusgranskas. Försök igen, eller utfärda med endast intygsnumret (skanningen är valfri).",
+              "invalid_body": "Uppladdningsbegäran var felaktig.",
+              "internal_error": "Ett oväntat fel uppstod under uppladdningen.",
+              "unknown": "Uppladdningen misslyckades. Försök igen."
+            }
+          }
         },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",

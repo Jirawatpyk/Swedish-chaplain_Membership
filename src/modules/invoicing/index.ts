@@ -206,6 +206,22 @@ export {
   type GetReceiptPdfSignedUrlError,
 } from './application/use-cases/get-receipt-pdf-signed-url';
 
+// 088 US8 UX-B1 — OPTIONAL §80/1(5) zero-rate cert-scan upload + admin cert-view.
+export {
+  uploadZeroRateCert,
+  isCertMimeType,
+  type UploadZeroRateCertInput,
+  type UploadZeroRateCertError,
+  type UploadZeroRateCertOutput,
+  type UploadZeroRateCertDeps,
+} from './application/use-cases/upload-zero-rate-cert';
+export {
+  getZeroRateCertSignedUrl,
+  type GetZeroRateCertSignedUrlInput,
+  type GetZeroRateCertSignedUrlError,
+  type GetZeroRateCertSignedUrlDeps,
+} from './application/use-cases/get-zero-rate-cert-signed-url';
+
 export {
   exportPaidInvoicesCsv,
   exportPaidInvoicesCsvSchema,
@@ -389,6 +405,8 @@ export {
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
   makeGetReceiptPdfSignedUrlDeps,
+  makeUploadZeroRateCertDeps,
+  makeGetZeroRateCertSignedUrlDeps,
   makeExportPaidInvoicesCsvDeps,
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,

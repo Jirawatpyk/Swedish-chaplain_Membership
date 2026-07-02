@@ -19,6 +19,7 @@ import { vercelBlobAdapter } from '../infrastructure/adapters/vercel-blob-adapte
 import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-email-outbox-adapter';
 import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
+import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
 import { eventDetailsLookupAdapter } from '../infrastructure/adapters/event-details-lookup-adapter';
@@ -39,6 +40,8 @@ import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
 import type { IssueEventInvoiceAsPaidDeps } from './use-cases/issue-event-invoice-as-paid';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
+import type { UploadZeroRateCertDeps } from './use-cases/upload-zero-rate-cert';
+import type { GetZeroRateCertSignedUrlDeps } from './use-cases/get-zero-rate-cert-signed-url';
 import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
 import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices-csv';
 import {
@@ -154,6 +157,36 @@ export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-ca
 }
 
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+  };
+}
+
+/**
+ * 088 US8 UX-B1 (T061e-2) — composition for the OPTIONAL zero-rate cert-scan
+ * upload use-case. Own invoicing ClamAV adapter (NOT the broadcasts one —
+ * Constitution III), reusing the F4 Vercel Blob adapter for storage. `tenantId`
+ * unused in the deps graph today (the scanner + blob are tenant-agnostic
+ * adapters); kept in the signature for factory-shape parity + future DI.
+ */
+export function makeUploadZeroRateCertDeps(_tenantId: string): UploadZeroRateCertDeps {
+  return {
+    scanner: makeClamavVirusScanner(),
+    blob: vercelBlobAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * 088 US8 UX-B1 (T061e-3) — composition for the admin cert-view use-case
+ * (retrievability of the pinned 10y admin-only cert scan). Same shape as
+ * `makeGetInvoicePdfSignedUrlDeps` (repo + blob + audit).
+ */
+export function makeGetZeroRateCertSignedUrlDeps(
+  tenantId: string,
+): GetZeroRateCertSignedUrlDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     blob: vercelBlobAdapter,
