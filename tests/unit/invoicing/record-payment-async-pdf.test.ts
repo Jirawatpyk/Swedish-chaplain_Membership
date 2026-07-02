@@ -158,6 +158,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
       lockForUpdate: vi.fn(async () => 'issued' as InvoiceStatus),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

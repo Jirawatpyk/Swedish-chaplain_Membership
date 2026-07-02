@@ -162,6 +162,18 @@ export type IssueCreditNoteError =
    * number.
    */
   | { code: 'receipt_not_creditable' }
+  /**
+   * 088 US6 (T047 / § A.4 / SC-006) — the parent is a paid invoice whose §86/4
+   * TAX RECEIPT PDF has NOT yet materialised (`receipt_pdf_status !== 'rendered'`
+   * — the async render worker is still 'pending' or 'failed'). A §86/10 ใบลดหนี้
+   * can only adjust a rendered §86/4 tax receipt, so crediting is blocked until
+   * it lands. TRANSIENT (409): the operator can retry once the receipt render
+   * completes. Distinct from `receipt_not_creditable` — that is a LEGAL verdict
+   * (a §105 receipt is NEVER creditable); this is a timing conflict. Ordered
+   * AFTER the §86/10 gate so a §105 parent always gets the legal verdict, and
+   * BEFORE `allocateNext` so a blocked attempt burns no §87 CN number.
+   */
+  | { code: 'receipt_not_rendered' }
   | { code: 'settings_missing' }
   | {
       // F5R3v4 M-5 (2026-05-16) — fields are `UntrustedSatang`
@@ -305,6 +317,21 @@ export async function issueCreditNote(
         return err({ code: 'receipt_not_creditable' });
       }
 
+      // 088 US6 (T047 / § A.4 / SC-006) — a §86/10 ใบลดหนี้ can only adjust a
+      // MATERIALISED §86/4 tax receipt. Block crediting until the receipt PDF
+      // has rendered (the async worker may still be 'pending'/'failed', or a
+      // legacy paid row may carry a null status). An unpaid ใบแจ้งหนี้ already
+      // failed the paid/partially_credited status gate above (no receipt exists
+      // yet). Runs AFTER the §86/10 `receipt_not_creditable` gate (a §105
+      // receipt is never creditable regardless of render state) and BEFORE
+      // `allocateNext` so a blocked attempt burns no §87 CN sequence number.
+      // BOTH parent shapes that reach here land `receiptPdfStatus='rendered'`:
+      // the record-payment path (separate receipt blob) and the as-paid path
+      // (the main pdf IS the receipt) — so this one check gates both.
+      if (loaded.receiptPdfStatus !== 'rendered') {
+        return err({ code: 'receipt_not_rendered' });
+      }
+
       if (
         !loaded.memberIdentitySnapshot ||
         !loaded.tenantIdentitySnapshot ||
@@ -313,11 +340,53 @@ export async function issueCreditNote(
         !loaded.total ||
         !loaded.vatRate ||
         !loaded.fiscalYear ||
-        !loaded.documentNumber ||
+        // 088 US6 — `documentNumber` is NO LONGER required: a membership bill in
+        // the new tax-at-payment flow carries `document_number = NULL` (its §87
+        // number lives in `receipt_document_number_raw`). Requiring it here would
+        // reject every membership credit note. The receipt number the CN
+        // references + annotates is resolved by `receiptDocNum` below (prefers
+        // the RC in `receiptDocumentNumberRaw`, falls back to the invoice-stream
+        // `documentNumber` for as-paid TIN + legacy combined-reuse).
         !loaded.issueDate
       ) {
         return err({ code: 'no_snapshot_on_invoice' });
       }
+
+      // 088 US6 (T047 / § A.4) — resolve the §86/4 tax RECEIPT this credit note
+      // references + annotates (NOT the non-tax ใบแจ้งหนี้ bill). Mirror
+      // `render-receipt-pdf.ts`: prefer the payment-time RC in
+      // `receiptDocumentNumberRaw`; fall back to the invoice-stream
+      // `documentNumber` (as-paid TIN combined receipt reuses it; legacy
+      // combined-mode does too). Exactly one is set on a creditable paid row —
+      // the §105 `receipt_separate` parent is already blocked above — so
+      // both-null is unreachable data corruption. Computed BEFORE `allocateNext`
+      // so a parse failure returns a clean error without burning a §87 number.
+      let receiptDocNum: DocumentNumber;
+      if (loaded.receiptDocumentNumberRaw !== null) {
+        const parsedReceiptDoc = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
+        if (!parsedReceiptDoc.ok) return err({ code: 'no_snapshot_on_invoice' });
+        receiptDocNum = parsedReceiptDoc.value;
+      } else if (loaded.documentNumber !== null) {
+        receiptDocNum = loaded.documentNumber;
+      } else {
+        return err({ code: 'no_snapshot_on_invoice' });
+      }
+
+      // 088 US6 review fix (HIGH / §86/10 + SC-003) — the receipt date must match
+      // what the §86/4 receipt was ACTUALLY rendered with, so the CREDITED
+      // re-render is byte-faithful (additive-only) and the §86/10 CN cites the
+      // real original-document date. MIRROR render-receipt-pdf.ts:216-219 +
+      // record-payment.ts:570: the NEW-flow receipt (documentNumber NULL → RC
+      // minted at payment) is dated at the payment date (D7 tax point); a LEGACY
+      // combined-reuse receipt (documentNumber reused, flag-off — the CURRENT
+      // rollout default) was dated at the bill's issueDate. Using paymentDate
+      // unconditionally would silently rewrite the printed date on an
+      // already-issued legacy receipt when the annotation overwrites its blob.
+      // Both branches are non-null on a paid/partially_credited row; guard
+      // defensively so a corrupt row fails typed rather than NPEs.
+      const receiptIssueDate =
+        loaded.documentNumber === null ? loaded.paymentDate : loaded.issueDate;
+      if (receiptIssueDate === null) return err({ code: 'no_snapshot_on_invoice' });
       // 054-event-fee-invoices (Task 8) — `memberId` is nullable. Membership
       // invoices always carry one (`invoices_subject_fields_ck`); NON-member
       // EVENT invoices have `member_id IS NULL` but DO carry a complete pinned
@@ -469,8 +538,8 @@ export async function issueCreditNote(
       const syntheticLine = {
         lineId: asInvoiceLineId(creditNoteId),
         kind: 'registration_fee' as const,
-        descriptionTh: `ลดหนี้ตาม ${loaded.documentNumber.raw}`,
-        descriptionEn: `Credit against ${loaded.documentNumber.raw}`,
+        descriptionTh: `ลดหนี้ตาม ${receiptDocNum.raw}`,
+        descriptionEn: `Credit against ${receiptDocNum.raw}`,
         unitPrice: creditAmount,
         quantity: '1.0000',
         proRateFactor: null,
@@ -505,8 +574,10 @@ export async function issueCreditNote(
             vat,
             total,
             creditNote: {
-              originalDocumentNumber: loaded.documentNumber.raw,
-              originalIssueDate: loaded.issueDate,
+              // 088 US6 (T047) — reference the §86/4 RC tax receipt (its number
+              // + payment date), NOT the non-tax ใบแจ้งหนี้ bill.
+              originalDocumentNumber: receiptDocNum.raw,
+              originalIssueDate: receiptIssueDate,
               reason: input.reason,
             },
           },
@@ -581,151 +652,175 @@ export async function issueCreditNote(
         throw e;
       }
 
-      // J2. US6 AS4 — re-render the original invoice PDF with a
-      // CREDITED / PARTIALLY CREDITED annotation + CN-reference
-      // footer, then overwrite at the SAME Blob key (content-address
-      // preserved). Mirrors the VOID-stamping pattern (FR-008) so
-      // downstream readers (admin, member, bookkeeper email export)
-      // see the status change on the invoice document itself. We
-      // re-render with the PINNED `invoice.pdf.templateVersion` (NOT
-      // currentTemplateVersion) so R3-E4 / FR-016 layout-integrity
-      // rules hold — the annotation is additive, template layout is
-      // unchanged.
+      // J2. US6 (T048 / SC-006 / § A.4) — re-render the §86/4 TAX RECEIPT with a
+      // CREDITED / PARTIALLY CREDITED annotation + CN-reference footer, then
+      // overwrite at the SAME receipt Blob key (content-address preserved). A
+      // §86/10 ใบลดหนี้ adjusts the tax receipt (the document carrying the input
+      // VAT), NOT the now-non-tax ใบแจ้งหนี้ bill — so the stamp lands on the
+      // receipt. Two parent shapes carry the receipt (both reach here only with
+      // `receiptPdfStatus='rendered'`, guaranteed by the precondition above):
       //
-      // `pdfBlobKey` is guaranteed non-null here because the paid-
-      // state guard at the top of the use case implies the invoice
-      // was issued (has `pdf`). TypeScript can't prove this statically
-      // so we re-check and bail cleanly if the snapshot is somehow
-      // missing (this branch is unreachable under valid state).
-      if (loaded.pdf) {
-        const allCreditNotes = await deps.creditNoteRepo.findByOriginalInvoiceInTx(
-          tx,
-          invoiceId,
-          input.tenantId,
-        );
-        // IM-6 — `total: Money` (not stringified satang) for uniformity
-        // with the rest of PdfRenderInput's money fields. The template
-        // adapter stringifies for display at render time.
-        const annotationRefs = allCreditNotes
-          .slice()
-          .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
-          .map((x) => ({
-            documentNumber: x.documentNumber.raw,
-            issueDate: x.issueDate,
-            total: x.total,
-          }));
+      //   Shape 1 — record-payment path (membership, bill-first TIN event): the
+      //     §86/4 receipt is a SEPARATE blob (`loaded.receiptPdf` non-null); the
+      //     main `pdf` is the bill. Re-render → `receiptPdf.blobKey`
+      //     (kind='receipt_combined', receipt's PINNED templateVersion); persist
+      //     the new sha via `applyReceiptPdfRegeneration` (receipt_pdf_sha256) —
+      //     the bill's `pdf_sha256` stays frozen.
+      //   Shape 2 — as-paid path (issueEventInvoiceAsPaid TIN event): the
+      //     §105ทวิ receipt IS the main `pdf` blob (`pdfDocKind='receipt_combined'`,
+      //     `receiptPdf` null). Re-render → `pdf.blobKey` reproducing the stored
+      //     `pdfDocKind` (so the combined receipt is never re-titled — 064 Task
+      //     12); persist via `applyInvoicePdfRegeneration` (pdf_sha256).
+      //
+      // Re-render uses the PINNED templateVersion of whichever blob is being
+      // overwritten (NOT currentTemplateVersion) so R3-E4 / FR-016 layout-
+      // integrity rules hold — the annotation is additive.
+      const receiptTarget =
+        loaded.receiptPdf !== null
+          ? {
+              blobKey: loaded.receiptPdf.blobKey,
+              templateVersion: loaded.receiptPdf.templateVersion,
+              priorSha256: loaded.receiptPdf.sha256,
+              // The separate receipt blob is always the combined §86/4+§105ทวิ
+              // receipt (the §105 receipt_separate parent is blocked above).
+              annotationKind: 'receipt_combined' as const,
+              persist: 'receipt' as const,
+            }
+          : loaded.pdf !== null
+            ? {
+                blobKey: loaded.pdf.blobKey,
+                templateVersion: loaded.pdf.templateVersion,
+                priorSha256: loaded.pdf.sha256,
+                // Reproduce what the main blob holds (as-paid → 'receipt_combined';
+                // NULL fallback → 'invoice' matches pre-064). Never re-titles.
+                annotationKind: loaded.pdfDocKind ?? 'invoice',
+                persist: 'invoice' as const,
+              }
+            : null;
+      // Unreachable under the `receiptPdfStatus==='rendered'` precondition: a
+      // paid creditable row always carries the receipt in one of the two shapes.
+      // Fail loud rather than silently skip the tax-document annotation.
+      if (receiptTarget === null) {
+        throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
+      }
 
-        // J2 re-annotation (T126 shared helper, `annotation` prefix
-        // differentiates from initial G+H failure). MUST overwrite
-        // per Review CR-1 — the re-render produces DIFFERENT bytes
-        // (adds the credit-annotation overlay) so DB pdf_sha256
-        // diverges from the original; without allowOverwrite the
-        // adapter silently treats already-exists as success.
-        //
-        // Round-3 fix R3-H3 — re-load tenantLogo with the invoice's
-        // PINNED template version (could be v1). For v1 the helper
-        // returns null → logo suppressed → bytes stay byte-equivalent
-        // to the original (modulo the CREDITED overlay).
-        const annotationTenantLogo = await loadTenantLogo(
-          deps.blob,
-          loaded.tenantIdentitySnapshot.logo_blob_key,
-          loaded.pdf.templateVersion,
-        );
-        pendingRenderKind = 'annotation';
-        const rerendered = await renderAndUploadPdf(
-          { pdfRender: deps.pdfRender, blob: deps.blob },
-          {
-            renderInput: {
-              // 064 Task 12 — reproduce what the MAIN blob actually holds.
-              // `invoices.pdf_doc_kind` (migration 0211) is the persisted
-              // record of the issue-time render; it WINS over any derivation
-              // (the as-paid TIN parent derives 'invoice' from its TIN, but
-              // its main blob IS the combined ใบกำกับภาษี/ใบเสร็จรับเงิน).
-              // Reachable parents after the §86/10 gate above:
-              //   - membership rows           → 'invoice'
-              //   - bill-first TIN event rows → 'invoice' (record-payment's
-              //     receipt_combined bytes live in the SEPARATE receipt blob;
-              //     the main blob stays frozen at issue — final-review C1)
-              //   - as-paid TIN event rows    → 'receipt_combined' (the main
-              //     blob is the only §105ทวิ receipt evidence, 10y retention)
-              // 'receipt_separate' parents are rejected by the
-              // `receipt_not_creditable` guard before this point. The NULL
-              // fallback is defensive only — `invoices_non_draft_has_doc_kind`
-              // forbids NULL on any non-draft row, and falling back to
-              // 'invoice' matches the pre-064 behaviour.
-              kind: loaded.pdfDocKind ?? 'invoice',
-              templateVersion: loaded.pdf.templateVersion,
-              documentNumber: loaded.documentNumber,
-              issueDate: loaded.issueDate,
-              dueDate: loaded.dueDate,
-              tenant: loaded.tenantIdentitySnapshot,
-              tenantLogo: annotationTenantLogo,
-              member: loaded.memberIdentitySnapshot,
-              lines: loaded.lines,
-              subtotal: loaded.subtotal,
-              vatRate: loaded.vatRate,
-              vat: loaded.vat,
-              total: loaded.total,
-              // 054-event-fee-invoices — preserve the VAT-inclusive annotation
-              // when re-annotating a credited EVENT invoice (Model B). Membership
-              // invoices carry `false` so the re-render stays byte-equivalent to
-              // the original (modulo the CREDITED overlay) per SC-003 intent.
-              vatInclusive: loaded.vatInclusive,
-              // 088 US5 review fix (HIGH / FR-012) — thread the subject so the
-              // tenant WHT-note gate fires IDENTICALLY on this credited re-render.
-              // A membership §86/4 that carried the WHT note at issue (v>=7) would
-              // otherwise re-render WITHOUT it (gate needs invoiceSubject ===
-              // 'membership') and the note-less PDF would overwrite the SAME blob
-              // + pdf_sha256 — silently destroying legally-relevant tenant content.
-              // Mirrors void-invoice.ts threading it for the same reason.
-              invoiceSubject: loaded.invoiceSubject,
-              creditedAnnotation: {
-                fullyCredited,
-                references: annotationRefs,
-              },
+      const allCreditNotes = await deps.creditNoteRepo.findByOriginalInvoiceInTx(
+        tx,
+        invoiceId,
+        input.tenantId,
+      );
+      // IM-6 — `total: Money` (not stringified satang) for uniformity with the
+      // rest of PdfRenderInput's money fields. The template adapter stringifies
+      // for display at render time.
+      const annotationRefs = allCreditNotes
+        .slice()
+        .sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+        .map((x) => ({
+          documentNumber: x.documentNumber.raw,
+          issueDate: x.issueDate,
+          total: x.total,
+        }));
+
+      // Re-load tenantLogo with the TARGET blob's PINNED template version (could
+      // be v1 → helper returns null → logo suppressed → bytes stay byte-
+      // equivalent modulo the CREDITED overlay). MUST overwrite per Review CR-1:
+      // the re-render adds the credit-annotation overlay so the sha diverges;
+      // without allowOverwrite the adapter treats already-exists as success.
+      const annotationTenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+        receiptTarget.templateVersion,
+      );
+      pendingRenderKind = 'annotation';
+      const rerendered = await renderAndUploadPdf(
+        { pdfRender: deps.pdfRender, blob: deps.blob },
+        {
+          renderInput: {
+            kind: receiptTarget.annotationKind,
+            templateVersion: receiptTarget.templateVersion,
+            // 088 US6 — the receipt's own number + payment date (D7), not the
+            // bill's. `receiptDocNum` prefers the RC (`receiptDocumentNumberRaw`)
+            // and falls back to the invoice-stream number for as-paid/legacy.
+            documentNumber: receiptDocNum,
+            issueDate: receiptIssueDate,
+            dueDate: loaded.dueDate,
+            tenant: loaded.tenantIdentitySnapshot,
+            tenantLogo: annotationTenantLogo,
+            member: loaded.memberIdentitySnapshot,
+            lines: loaded.lines,
+            subtotal: loaded.subtotal,
+            vatRate: loaded.vatRate,
+            vat: loaded.vat,
+            total: loaded.total,
+            // 054-event-fee-invoices — preserve the VAT-inclusive annotation on a
+            // credited EVENT receipt (Model B). Membership carries `false`.
+            vatInclusive: loaded.vatInclusive,
+            // 088 US5 review fix (HIGH / FR-012) — thread the subject so the
+            // tenant WHT-note gate fires IDENTICALLY on this credited receipt
+            // re-render. A membership §86/4 receipt that carried the WHT note
+            // would otherwise re-render WITHOUT it (gate needs invoiceSubject ===
+            // 'membership') and the note-less PDF would overwrite the SAME blob +
+            // sha256 — silently destroying legally-relevant tenant content.
+            invoiceSubject: loaded.invoiceSubject,
+            creditedAnnotation: {
+              fullyCredited,
+              references: annotationRefs,
             },
-            blobKey: loaded.pdf.blobKey,
-            allowOverwrite: true,
-            reasonPrefix: 'annotation',
           },
-          (code, reason) => new IssueCreditNoteInternalError({ code, reason }),
-        );
+          blobKey: receiptTarget.blobKey,
+          allowOverwrite: true,
+          reasonPrefix: 'annotation',
+        },
+        (code, reason) => new IssueCreditNoteInternalError({ code, reason }),
+      );
 
-        try {
+      // Persist the re-rendered sha on the correct column: the SEPARATE receipt
+      // blob (Shape 1 → receipt_pdf_sha256) or the main pdf blob (Shape 2 →
+      // pdf_sha256). Both columns are whitelisted by the immutability trigger.
+      try {
+        if (receiptTarget.persist === 'receipt') {
+          await deps.invoiceRepo.applyReceiptPdfRegeneration(tx, {
+            tenantId: input.tenantId,
+            invoiceId,
+            receiptPdfSha256: rerendered.sha256,
+          });
+        } else {
           await deps.invoiceRepo.applyInvoicePdfRegeneration(tx, {
             tenantId: input.tenantId,
             invoiceId,
             pdfSha256: rerendered.sha256,
           });
-        } catch (e) {
-          logger.error(
-            { err: String(e), invoiceId, creditNoteId },
-            'issueCreditNote: applyInvoicePdfRegeneration failed',
-          );
-          throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
         }
-
-        // Companion audit event `invoice_pdf_regenerated` (introduced
-        // in F4 alongside R3-E4 / CP-5.2 Best-Practice PDF integrity —
-        // see audit-port.ts doc). Captures the before/after sha256 so
-        // the 10-year audit trail can reconstruct the exact document
-        // state at any point.
-        await deps.audit.emit(tx, {
-          tenantId: input.tenantId,
-          requestId: input.requestId ?? null,
-          eventType: 'invoice_pdf_regenerated',
-          actorUserId: input.actorUserId,
-          summary: `Invoice ${loaded.documentNumber.raw} PDF regenerated with ${fullyCredited ? 'CREDITED' : 'PARTIALLY CREDITED'} annotation`,
-          payload: {
-            invoice_id: invoiceId,
-            invoice_number: loaded.documentNumber.raw,
-            original_sha256: loaded.pdf.sha256,
-            new_sha256: rerendered.sha256,
-            reason: 'credit_note_annotation',
-            triggered_by_credit_note_id: creditNoteId,
-          },
-        });
+      } catch (e) {
+        logger.error(
+          { err: String(e), invoiceId, creditNoteId, persist: receiptTarget.persist },
+          'issueCreditNote: tax-document pdf regeneration failed',
+        );
+        throw new IssueCreditNoteInternalError({ code: 'concurrent_state_change' });
       }
+
+      // Companion audit event `invoice_pdf_regenerated` (introduced in F4
+      // alongside R3-E4 / CP-5.2 Best-Practice PDF integrity — see audit-port.ts
+      // doc). Captures the before/after sha256 of the RE-RENDERED tax-document
+      // blob so the 10-year audit trail can reconstruct the exact document state
+      // at any point. Reuses the existing event type + payload field names (no
+      // new audit event type per US6 scope); the number is the §86/4 receipt
+      // number (`receiptDocNum`).
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId ?? null,
+        eventType: 'invoice_pdf_regenerated',
+        actorUserId: input.actorUserId,
+        summary: `Tax receipt ${receiptDocNum.raw} PDF regenerated with ${fullyCredited ? 'CREDITED' : 'PARTIALLY CREDITED'} annotation`,
+        payload: {
+          invoice_id: invoiceId,
+          invoice_number: receiptDocNum.raw,
+          original_sha256: receiptTarget.priorSha256,
+          new_sha256: rerendered.sha256,
+          reason: 'credit_note_annotation',
+          triggered_by_credit_note_id: creditNoteId,
+        },
+      });
 
       // K. Audit `credit_note_issued` — branch on buyer kind (054-event-fee-
       // invoices Task 8).
@@ -744,7 +839,7 @@ export async function issueCreditNote(
       //   and omitting `member_id` entirely. Mirrors the `emitNonTimelineDraftCreated`
       //   precedent in create-event-invoice-draft.ts + the issue-invoice.ts
       //   non-member branch.
-      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${loaded.documentNumber.raw}`;
+      const creditNoteSummary = `Credit note ${docNum.value.raw} issued against ${receiptDocNum.raw}`;
       const creditNotePayloadBase: Record<string, unknown> = {
         credit_note_id: creditNoteId,
         original_invoice_id: invoiceId,

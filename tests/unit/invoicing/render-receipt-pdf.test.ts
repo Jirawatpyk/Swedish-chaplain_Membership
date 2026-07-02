@@ -153,6 +153,7 @@ function makeDeps(
       lockForUpdate: vi.fn(),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyIssueAsPaid: vi.fn(),
       applyReceiptPdf: vi.fn(async () =>

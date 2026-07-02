@@ -180,6 +180,7 @@ function makeDeps(taxAtPayment: boolean, legacy: boolean, cap: Cap): RecordPayme
       lockForUpdate: vi.fn(async () => 'issued' as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

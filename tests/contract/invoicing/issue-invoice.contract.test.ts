@@ -197,6 +197,7 @@ function makeDeps(taxAtPayment: boolean, cap: Captured): IssueInvoiceDeps {
       lockForUpdate: vi.fn(async () => 'draft' as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

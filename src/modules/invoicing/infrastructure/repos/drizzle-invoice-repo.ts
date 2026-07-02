@@ -1301,5 +1301,29 @@ export function makeDrizzleInvoiceRepo(
           ),
         );
     },
+
+    async applyReceiptPdfRegeneration(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // 088 US6 — single-column UPDATE, receipt_pdf_sha256 only. Receipt blob
+      // key + template version are fixed by the content-addressed key + the
+      // pinned templateVersion stored at payment time; only the sha changes to
+      // match the CREDITED-annotated re-render. The invoices immutability
+      // trigger does NOT lock receipt_pdf_sha256 (it locks the receipt NUMBER,
+      // migration 0235), so this write lands on a partially_credited/credited
+      // row. Mirrors `applyInvoicePdfRegeneration` (pdf_sha256) for the Shape-1
+      // parent whose §86/4 receipt lives in the SEPARATE receipt blob.
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfSha256: input.receiptPdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
   };
 }

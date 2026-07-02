@@ -122,6 +122,7 @@ function makeDeps(invoice: Invoice | null) {
         lockForUpdate: vi.fn(),
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
+        applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

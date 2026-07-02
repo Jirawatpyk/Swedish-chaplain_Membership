@@ -213,6 +213,7 @@ function makeDeps(
       lockForUpdate: vi.fn(async () => loaded?.status ?? null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(async () => {}),
+      applyReceiptPdfRegeneration: vi.fn(async () => {}),
       applyVoid: vi.fn(async () =>
         ({
           ...(loaded as Invoice),

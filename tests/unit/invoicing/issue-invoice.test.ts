@@ -206,6 +206,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       lockForUpdate: vi.fn(async () => (draft?.status ?? null) as InvoiceStatus | null),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
