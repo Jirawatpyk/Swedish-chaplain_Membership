@@ -228,8 +228,8 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | ตั้ง `online_payment_enabled=false` (หรือ `FEATURE_F5_ONLINE_PAYMENT=false`) | มีผลภายใน 1 รอบ request (ไม่แคชเกิน ~60 วิ); audit `online_payment_toggled` |
-| 2 | member เปิดใบ Issued | **ไม่มี** ปุ่ม Pay now; เห็นการ์ด **"Online payment unavailable"** + ปุ่ม **Contact administrator** (mailto admin พร้อม subject อ้างเลขใบ) |
+| 1 | ตั้ง `FEATURE_F5_ONLINE_PAYMENT=false` (env var — **มีผลทันที**) | ไม่มี Pay now ทันที. **หมายเหตุ MVP:** (ก) การ flip DB-column `online_payment_enabled=false` มี cache ~1h — ใช้ **env var** เพื่อผลทันทีตาม SC-013; (ข) event `online_payment_toggled` **ยังไม่ถูก emit** สำหรับการ flip แบบ config/env (รอ admin payment-settings toggle use-case — per-tenant, future) → ตอนนี้ track ผ่าน deploy/git history |
+| 2 | member เปิดใบ Issued | **ไม่มี** ปุ่ม Pay now; เห็นการ์ด **"Online payment unavailable"** + ปุ่ม **Contact administrator** (mailto admin, subject อ้างเลขใบ). **หมายเหตุ MVP:** ปุ่มจะ active เมื่อมี admin email — ปัจจุบันใช้ `BOOTSTRAP_ADMIN_EMAIL` (operator ต้องตั้งใน Vercel runtime env); ถ้าไม่ตั้ง แสดง disabled + "No administrator email is configured yet". per-tenant `contact_email` = future |
 | 3 | เปิดกลับ (`true`) → member เปิดใบใหม่ | ปุ่ม Pay now กลับมา |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
