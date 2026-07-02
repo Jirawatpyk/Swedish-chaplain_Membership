@@ -67,11 +67,30 @@
  *     kind renders byte-for-length identical at v5 as at v4 when the buyer is
  *     not a VAT-registrant AND the seller line is absent — i.e. only a v5
  *     issuance with the new snapshot fields differs.
+ *   - **v6** (2026-07-02, 088-invoice-tax-flow-redesign US4 / T035 / T035a /
+ *     FR-009 / FR-010 / FR-034) — §86/4 presentation polish: (a) FR-009 —
+ *     monetary amounts render with `,` thousands separators (deterministic +
+ *     locale-independent) and the English amount-in-words first letter is
+ *     capitalized; (b) FR-010 — the buyer identity block reorders to Name →
+ *     Address → Tax ID → Head-Office/Branch (member number + contact follow);
+ *     (c) FR-034 — the buyer legal name + address no longer CLIP at 3 / 5 lines
+ *     with an ellipsis — they wrap / paginate (react-pdf `<Page wrap>` applies
+ *     per page, so the US2 Original + Copy paginate consistently). ALL THREE
+ *     gate on `templateVersion >= PRESENTATION_POLISH_MIN_VERSION` (=6, see
+ *     templates/invoice-template.tsx), so a pinned pre-v6 document (resend /
+ *     void-overlay / async worker / any re-render at its stored
+ *     `pdf_template_version`) reproduces its ORIGINAL bytes — ungrouped
+ *     amounts, lowercase words, legacy buyer order, and the 3/5-line clips —
+ *     preserving the SC-003 reproduce-the-original guarantee, exactly like the
+ *     v3 citation + v4 two-page + v5 branch-line gates. NOTE: the membership
+ *     line description (plan name + coverage period, FR-011 / T036) is a
+ *     FORWARD-ONLY ISSUE-TIME DATA change stored on the invoice line — the
+ *     template renders the STORED text, so it needs NO template-version gate.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 5 as const;
+export const CURRENT_TEMPLATE_VERSION = 6 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

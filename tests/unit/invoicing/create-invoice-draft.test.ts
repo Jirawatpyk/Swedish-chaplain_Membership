@@ -131,6 +131,9 @@ function makeDeps(
     },
     planLookup: {
       getAnnualFeeSatang: vi.fn(async () => annualFeeSatang),
+      // 088 T036 (FR-011) — membership line description = plan name + coverage
+      // period. The adapter returns the resolved {th, en} plan name.
+      getPlanName: vi.fn(async () => ({ th: 'สมาชิกสามัญ', en: 'Regular Member' })),
     },
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-01-15T10:00:00Z' }, // mid-January Bangkok
@@ -212,6 +215,79 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.proRateFactor).toBe('1.0000');
         expect(line.total.toString()).toBe('16000.00 THB');
+      }
+    });
+  });
+
+  // 088 T036 (FR-011) — the membership line description MUST include the plan
+  // name and the coverage period. Forward-only issue-time (draft-time) DATA
+  // change: the description string is composed here and stored on the invoice
+  // line; the PDF template renders the STORED text verbatim, so historical
+  // drafts keep their old description and only NEW drafts get plan + period.
+  describe('088 FR-011 — membership line description = plan name + coverage period', () => {
+    it('full-cycle draft → description carries the plan name + the fiscal-year coverage dates (both locales)', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
+        makeMember({ registrationDate: '2024-06-01' }), // returning → factor 1.0000
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, baseInput); // planYear 2026, clock 2026-01-15
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        // Plan name (resolved via planLookup.getPlanName).
+        expect(line.descriptionEn).toContain('Regular Member');
+        expect(line.descriptionTh).toContain('สมาชิกสามัญ');
+        // Coverage period — the fiscal-year boundary dates (Gregorian ISO,
+        // storage-safe; BE is display-only). FY start month 1 → full 2026.
+        expect(line.descriptionEn).toContain('2026-01-01');
+        expect(line.descriptionEn).toContain('2026-12-31');
+        expect(line.descriptionTh).toContain('2026-01-01');
+        expect(line.descriptionTh).toContain('2026-12-31');
+      }
+    });
+
+    it('pro-rated draft → description keeps the pro-rate detail AND carries plan name + coverage period', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
+        makeMember({ registrationDate: '2026-07-15' }),
+        1_600_000n,
+        { clock: { nowIso: () => '2026-07-15T10:00:00Z' } },
+      );
+      const result = await createInvoiceDraft(deps, baseInput);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionEn).toContain('Regular Member'); // plan name
+        expect(line.descriptionEn).toContain('2026-01-01'); // coverage period
+        expect(line.descriptionEn).toContain('pro-rated'); // pro-rate detail retained
+        expect(line.descriptionEn).toContain('0.5000');
+      }
+    });
+
+    it('early renewal (issued in a prior FY for a FUTURE planYear) → coverage = planYear FY, NOT wall-clock now (US4 review HIGH)', async () => {
+      // A member renews their FY2027 cycle in Dec 2026 (renewal reminders fire
+      // before expiry). The §86/4 coverage MUST read FY2027, not the FY that
+      // contains "now" — else the legal document is self-contradictory
+      // ("Membership 2027 (coverage 2026-01-01 to 2026-12-31)").
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
+        makeMember({ registrationDate: '2024-06-01', registrationFeePaid: true }),
+        1_600_000n,
+        { clock: { nowIso: () => '2026-12-15T10:00:00Z' } },
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        planYear: 2027,
+        renewalSignal: { unitPriceSatang: 5_000_000n },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionEn).toContain('coverage 2027-01-01 to 2027-12-31');
+        expect(line.descriptionTh).toContain('2027-01-01 ถึง 2027-12-31');
+        // The bug printed the FY containing "now" (2026) on a FY2027 document.
+        expect(line.descriptionEn).not.toContain('coverage 2026-01-01');
       }
     });
   });

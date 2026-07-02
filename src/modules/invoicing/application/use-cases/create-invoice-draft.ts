@@ -100,6 +100,27 @@ export interface CreateInvoiceDraftDeps {
 }
 
 /**
+ * Fiscal-year boundary dates (YYYY-MM-DD inclusive) for an EXPLICIT fiscal-year
+ * anchor year: FY `n` runs from `n-startMonth-01` to the day before `startMonth`
+ * one year later. Pure calendar math (no clock) — the correct source for the
+ * COVERAGE PERIOD an invoice bills (the FY the invoice is FOR = `planYear`, NOT
+ * wall-clock "now"; an early renewal issued in Dec-2026 for FY2027 must show
+ * FY2027's coverage).
+ */
+function fiscalYearBoundaryForYear(
+  fyAnchorYear: number,
+  startMonth: number,
+): { fyStartDate: string; fyEndDate: string } {
+  const fyStartDate = `${fyAnchorYear}-${String(startMonth).padStart(2, '0')}-01`;
+  // End of FY = day before (startMonth) one year later. Plain UTC arithmetic is
+  // safe here because we compute calendar dates only — not clocks / instants.
+  const endAnchor = new Date(Date.UTC(fyAnchorYear + 1, startMonth - 1, 1));
+  endAnchor.setUTCDate(endAnchor.getUTCDate() - 1);
+  const fyEndDate = `${endAnchor.getUTCFullYear()}-${String(endAnchor.getUTCMonth() + 1).padStart(2, '0')}-${String(endAnchor.getUTCDate()).padStart(2, '0')}`;
+  return { fyStartDate, fyEndDate };
+}
+
+/**
  * Derive the Bangkok-local fiscal-year boundary dates (YYYY-MM-DD
  * inclusive) for a given issue timestamp + tenant start month.
  */
@@ -117,15 +138,7 @@ function fiscalYearBoundary(
 
   // If we're before startMonth, FY anchor is the PREVIOUS calendar year.
   const fyAnchorYear = bkkMonth >= startMonth ? bkkYear : bkkYear - 1;
-  const fyStartDate = `${fyAnchorYear}-${String(startMonth).padStart(2, '0')}-01`;
-  // End of FY = day before (startMonth) one year later. Plain UTC
-  // arithmetic is safe here because we are computing calendar dates
-  // only — not clocks / instants.
-  const endAnchor = new Date(Date.UTC(fyAnchorYear + 1, startMonth - 1, 1));
-  endAnchor.setUTCDate(endAnchor.getUTCDate() - 1);
-  const fyEndDate = `${endAnchor.getUTCFullYear()}-${String(endAnchor.getUTCMonth() + 1).padStart(2, '0')}-${String(endAnchor.getUTCDate()).padStart(2, '0')}`;
-
-  return { fyStartDate, fyEndDate, issueDate };
+  return { ...fiscalYearBoundaryForYear(fyAnchorYear, startMonth), issueDate };
 }
 
 export async function createInvoiceDraft(
@@ -217,6 +230,48 @@ export async function createInvoiceDraft(
           fyEndDate,
         });
 
+    // 088 T036 (FR-011) — the membership line description MUST include the plan
+    // name and the coverage period. The plan name is resolved via the plan-
+    // lookup port (Thai falls back to English when the plan has no `th`
+    // translation — F2 `LocaleText` only requires `en`); the coverage period is
+    // the tenant fiscal-year boundary (Gregorian ISO — storage stays Gregorian,
+    // BE is display-only). getPlanName reuses the SAME (tenant, plan, year) +
+    // not-soft-deleted filter as the fee gate above, so a draft that resolved a
+    // fee also resolves a name; a null (TOCTOU / race) falls back to no name.
+    //
+    // Forward-only: the enriched string is composed HERE and STORED on the line;
+    // the PDF template renders the stored text verbatim (no recompute), so
+    // already-drafted/-issued documents keep their original description and only
+    // NEW drafts get the plan + period. No template-version gate is needed.
+    const planNameParts = await deps.planLookup.getPlanName(
+      input.tenantId,
+      input.planId,
+      input.planYear,
+    );
+    const planLabelTh = planNameParts?.th ? `${planNameParts.th} ` : '';
+    const planLabelEn = planNameParts?.en ? `${planNameParts.en} ` : '';
+    // 088 US4 review fix (HIGH) — the COVERAGE PERIOD label is the FY the invoice
+    // is FOR (input.planYear), NOT the FY containing wall-clock "now". An early
+    // renewal confirmed in Dec-2026 for planYear 2027 must read
+    // "coverage 2027-01-01 to 2027-12-31", not now's FY (which printed a
+    // self-contradictory §86/4). The pro-rate math above stays now-based (a new
+    // member joining THIS FY pro-rates from today); for a new member planYear == the
+    // current FY, so the two coincide.
+    const { fyStartDate: coverageStart, fyEndDate: coverageEnd } =
+      fiscalYearBoundaryForYear(input.planYear, settings.fiscalYearStartMonth);
+    // The full-cycle base carries plan name + coverage period; a pro-rated line
+    // appends the factor + start date (the historical pro-rate detail retained).
+    const membershipDescTh =
+      `ค่าสมาชิก ${planLabelTh}ปี ${input.planYear} (ระยะเวลา ${coverageStart} ถึง ${coverageEnd})` +
+      (proRateFactor === '1.0000'
+        ? ''
+        : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${issueDate})`);
+    const membershipDescEn =
+      `Membership ${planLabelEn}${input.planYear} (coverage ${coverageStart} to ${coverageEnd})` +
+      (proRateFactor === '1.0000'
+        ? ''
+        : ` (pro-rated ${proRateFactor}, from ${issueDate})`);
+
     // --- Build line items ---------------------------------------------------
     const lines: InvoiceLine[] = [];
     let position = 1;
@@ -225,14 +280,8 @@ export async function createInvoiceDraft(
     const membershipLine = makeInvoiceLine({
       lineId: asInvoiceLineId(deps.newUuid()),
       kind: 'membership_fee',
-      descriptionTh:
-        proRateFactor === '1.0000'
-          ? `ค่าสมาชิก ปี ${input.planYear}`
-          : `ค่าสมาชิก ปี ${input.planYear} (pro-rate ${proRateFactor}, ตั้งแต่ ${issueDate})`,
-      descriptionEn:
-        proRateFactor === '1.0000'
-          ? `Membership ${input.planYear}`
-          : `Membership ${input.planYear} (pro-rated ${proRateFactor}, from ${issueDate})`,
+      descriptionTh: membershipDescTh,
+      descriptionEn: membershipDescEn,
       unitPrice: Money.fromSatangUnsafe(membershipUnitPriceSatang),
       quantity: '1.0000',
       proRateFactor,

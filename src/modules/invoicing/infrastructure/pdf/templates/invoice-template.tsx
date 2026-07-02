@@ -25,6 +25,12 @@ import {
   revenueCodeCitation,
 } from './revenue-code-citation';
 import { buyerHasTin } from '../../../domain/document-kind';
+// 088 US4 (T034/T035 / FR-009) — pure, locale-independent formatting helpers.
+// Extracted to `../format-thb` so the unit test imports them WITHOUT pulling in
+// @react-pdf/renderer. `formatThbSatang(satang, grouped)` groups the integer
+// part with ',' thousands separators when `grouped` (v6+); default false keeps
+// the pre-v6 ungrouped output byte-identical (SC-003).
+import { capitalizeFirstLetter, formatThbSatang } from '../format-thb';
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Sarabun', fontSize: 10, padding: 36, color: '#111' },
@@ -66,6 +72,13 @@ const styles = StyleSheet.create({
   // while the ellipsis still guards against a pathologically long single field
   // that @react-pdf/fontkit cannot wrap.
   addrLine: { fontSize: 10, maxWidth: '100%', maxLines: 5, textOverflow: 'ellipsis' },
+  // 088 US4 (T035a / FR-034) — the §86/4 buyer NAME + ADDRESS must NEVER be
+  // silently truncated: a clipped buyer name / dropped address line is
+  // non-compliant. From v6 the buyer name + address use this UNCLAMPED style
+  // (no `maxLines` / `textOverflow`) so long content wraps and paginates
+  // (react-pdf `<Page wrap>` is on by default) instead of ellipsising. Pre-v6
+  // renders keep `value` / `addrLine` (the 3 / 5-line clips) byte-stable.
+  valueUnclamped: { fontSize: 10, maxWidth: '100%' },
   section: { marginBottom: 12, width: '100%' },
   table: { marginTop: 8, marginBottom: 8, borderTop: '1 solid #ccc' },
   tr: { flexDirection: 'row', borderBottom: '1 solid #eee', paddingVertical: 4 },
@@ -166,12 +179,6 @@ const styles = StyleSheet.create({
   cnRefFooterCellAmt: { flex: 1, textAlign: 'right' },
 });
 
-function formatThbSatang(satang: bigint): string {
-  const whole = satang / 100n;
-  const rem = satang % 100n;
-  return `${whole.toString()}.${rem.toString().padStart(2, '0')}`;
-}
-
 /**
  * Buddhist Era year helper — CE + 543.
  */
@@ -202,6 +209,19 @@ const TWO_PAGE_RECEIPT_COPY_MIN_VERSION = 4;
  * kind-aware-citation + v4 two-page gates. Registry log: template-registry.ts v5.
  */
 const HEAD_OFFICE_BRANCH_MIN_VERSION = 5;
+
+/**
+ * 088 US4 (T035 / T035a / FR-009 / FR-010 / FR-034) — first template version
+ * whose §86/4 body gets the presentation polish: (a) thousands-separated
+ * amounts + capitalized English amount-in-words; (b) buyer block reordered to
+ * Name → Address → Tax ID → Head-Office/Branch; (c) buyer name + address no
+ * longer clip at 3 / 5 lines (they wrap / paginate). ALL THREE gate on this so
+ * a pinned pre-v6 document re-renders byte-stable (ungrouped amounts, lowercase
+ * words, legacy order, 3/5-line clips) — the SC-003 reproduce-the-original
+ * guarantee, exactly like the v3 citation + v4 two-page + v5 branch-line gates.
+ * Registry log: template-registry.ts v6.
+ */
+const PRESENTATION_POLISH_MIN_VERSION = 6;
 
 /**
  * 088 US3 — the §86/4 สำนักงานใหญ่ / Head Office | สาขาที่ NNNNN / Branch line.
@@ -236,6 +256,15 @@ interface PageBodyProps {
    * pages, so the copy is a true คู่ฉบับ.
    */
   readonly copyMarker: string | null;
+  /**
+   * 088 US4 (FR-009 / FR-010 / FR-034) — true when `templateVersion >=
+   * PRESENTATION_POLISH_MIN_VERSION` (=6): apply thousands separators +
+   * capitalized English words, the reordered buyer block, and the unclamped
+   * (non-clipping) buyer name / address. False (pre-v6) keeps the legacy
+   * output byte-stable. Computed ONCE in `InvoiceTemplate` and threaded here so
+   * BOTH pages of the two-page combined receipt render consistently.
+   */
+  readonly polish: boolean;
 }
 
 /**
@@ -258,7 +287,66 @@ function renderPageBody({
   footerCitation,
   totalThb,
   copyMarker,
+  polish,
 }: PageBodyProps) {
+  // 088 US4 (T035 / FR-010 / FR-034) — the §86/4 buyer particulars, extracted
+  // so the block can render in the polished order (v6) OR the legacy order
+  // (pre-v6) byte-stably, and so the buyer name + address can swap to the
+  // UNCLAMPED (non-clipping) style at v6 (FR-034: never silently truncated).
+  const buyerNameEl = (
+    <Text style={polish ? styles.valueUnclamped : styles.value}>
+      {shapeThai(input.member.legal_name)}
+    </Text>
+  );
+  // 066-membership-no-tin — render the buyer Tax ID line ONLY when a non-blank
+  // TIN is present, via the SHARED `buyerHasTin` discriminator (the same one the
+  // issue/pay/credit gates use). Byte-identical for a real TIN (renders) and
+  // null (omitted) — only whitespace changes.
+  const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
+    <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+  ) : null;
+  // 055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
+  // pinned on the snapshot at ISSUE time. Guarded `!== null` (NOT truthy) so a
+  // historical snapshot (zod `.default(null)`) omits the line, preserving
+  // SC-003 byte-stable re-render of already-issued documents.
+  const buyerMemberNoEl =
+    input.member.member_number_display !== null ? (
+      <Text style={styles.label}>
+        {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number_display}
+      </Text>
+    ) : null;
+  const buyerAddrEls = input.member.address.split('\n').map((line, i) => (
+    <Text
+      key={`buyer-addr-${i}`}
+      style={polish ? styles.valueUnclamped : styles.addrLine}
+    >
+      {shapeThai(line)}
+    </Text>
+  ));
+  // 088 US3 (T032 / FR-008 / AS1-3) — the BUYER §86/4 Head-Office / Branch line.
+  // Drawn ONLY for a VAT-registrant juristic buyer (`buyer_is_vat_registrant`,
+  // populated at issue from `legal_entity_type ≠ 'individual'` AND non-NULL —
+  // NEVER `buyerHasTin`): AS1 registrant + no branch → สำนักงานใหญ่ (default);
+  // AS2 branch code → สาขาที่ NNNNN; AS3 individual / NULL type → NO line
+  // (fail-closed). Gated on templateVersion so pre-v5 documents re-render
+  // byte-stable (SC-003). Its own gate (v>=5) is ⊆ the v6 polish gate, so the
+  // v6 reorder never resurrects it on a pre-v5 pin.
+  const buyerBranchEl =
+    input.member.buyer_is_vat_registrant === true &&
+    input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION ? (
+      <Text style={styles.label}>
+        {headOfficeBranchLine(
+          input.member.buyer_is_head_office ?? true,
+          input.member.buyer_branch_code ?? null,
+        )}
+      </Text>
+    ) : null;
+  const buyerContactEl = input.member.primary_contact_name ? (
+    <Text style={styles.label}>
+      {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
+    </Text>
+  ) : null;
+
   return (
     <>
       {isPreview && (
@@ -353,62 +441,31 @@ function renderPageBody({
 
       <View style={styles.section}>
         <Text style={styles.label}>{shapeThai('ลูกค้า')} / Customer</Text>
-        <Text style={styles.value}>{shapeThai(input.member.legal_name)}</Text>
-        {/*
-          066-membership-no-tin — render the buyer Tax ID line ONLY when a
-          non-blank TIN is present, via the SHARED `buyerHasTin` discriminator
-          (the same one the issue/pay/credit gates use — directly unit-tested
-          for null/empty/whitespace/padded, so the rendered buyer block and the
-          document-kind decision can never diverge). It treats whitespace as
-          "no TIN". Before the 066 relax a whitespace-only tax_id was blocked at
-          issue, so it never reached here; now that a no-TIN membership issues,
-          this prevents a stray "Tax ID:   " line on the §86/4. Byte-identical
-          for a real TIN (renders) and null (omitted) — only whitespace changes.
-        */}
-        {buyerHasTin(input.member.tax_id) && (
-          <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
-        )}
-        {/*
-          055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
-          pinned on the snapshot at ISSUE time (computed from the tenant prefix +
-          bare integer), so the buyer block matches the admin/portal/search
-          surfaces. Guarded `!== null` (NOT truthy): explicit so a future type
-          widen can't silently render `''`/`undefined`, and so a HISTORICAL
-          snapshot (pre-feature JSONB → zod `.default(null)`) omits the line,
-          preserving SC-003 byte-stable re-render of already-issued documents.
-        */}
-        {input.member.member_number_display !== null && (
-          <Text style={styles.label}>
-            {shapeThai('หมายเลขสมาชิก')} / Member No.: {input.member.member_number_display}
-          </Text>
-        )}
-        {input.member.address.split('\n').map((line, i) => (
-          <Text key={`buyer-addr-${i}`} style={styles.addrLine}>
-            {shapeThai(line)}
-          </Text>
-        ))}
-        {/* 088 US3 (T032 / FR-008 / AS1-3) — the BUYER §86/4 Head-Office /
-            Branch line. Drawn ONLY for a VAT-registrant juristic buyer
-            (`buyer_is_vat_registrant`, populated at issue from
-            `legal_entity_type ≠ 'individual'` AND non-NULL — NEVER `buyerHasTin`):
-            AS1 registrant + no branch → สำนักงานใหญ่ (default); AS2 branch code →
-            สาขาที่ NNNNN; AS3 individual / NULL type → NO line (fail-closed). Gated
-            on templateVersion so pre-v5 documents re-render byte-stable (SC-003).
-            Renders inside renderPageBody, so it appears on BOTH the Original + the
-            Copy page of the US2 two-page combined receipt. */}
-        {input.member.buyer_is_vat_registrant === true &&
-          input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION && (
-            <Text style={styles.label}>
-              {headOfficeBranchLine(
-                input.member.buyer_is_head_office ?? true,
-                input.member.buyer_branch_code ?? null,
-              )}
-            </Text>
-          )}
-        {input.member.primary_contact_name && (
-          <Text style={styles.label}>
-            {shapeThai('ผู้ติดต่อ')} / Contact: {shapeThai(input.member.primary_contact_name)}
-          </Text>
+        {polish ? (
+          // 088 US4 (T035 / FR-010) — v6 order: Name → Address → Tax ID →
+          // Head-Office/Branch → member number → contact. The branch line's own
+          // gate (v>=5) still applies inside `buyerBranchEl`.
+          <>
+            {buyerNameEl}
+            {buyerAddrEls}
+            {buyerTaxIdEl}
+            {buyerBranchEl}
+            {buyerMemberNoEl}
+            {buyerContactEl}
+          </>
+        ) : (
+          // pre-v6 legacy order — BYTE-STABLE (SC-003): Name → Tax ID → member
+          // number → Address → Head-Office/Branch → contact. Same elements as
+          // the historical inline block; only wrapped in a byte-transparent
+          // Fragment.
+          <>
+            {buyerNameEl}
+            {buyerTaxIdEl}
+            {buyerMemberNoEl}
+            {buyerAddrEls}
+            {buyerBranchEl}
+            {buyerContactEl}
+          </>
         )}
       </View>
 
@@ -441,12 +498,19 @@ function renderPageBody({
         {input.lines.map((l) => (
           <View key={l.lineId} style={styles.tr}>
             <View style={styles.tdDesc}>
-              <Text>{shapeThai(l.descriptionTh)}</Text>
+              {/* 088 US4 (FR-034) — the Thai description needs the maxWidth:'100%'
+                  wrap safeguard (every other multilingual Text has it); without it
+                  fontkit's advance-width under-count overflows the narrow tdDesc cell
+                  instead of wrapping. Only the v6 FR-011 line is long enough to
+                  overflow, so it is gated on `polish` to keep pre-v6 bytes stable. */}
+              <Text {...(polish ? { style: styles.valueUnclamped } : {})}>
+                {shapeThai(l.descriptionTh)}
+              </Text>
               <Text style={styles.label}>{l.descriptionEn}</Text>
             </View>
             <Text style={styles.tdQty}>{l.quantity}</Text>
-            <Text style={styles.tdUnit}>{formatThbSatang(l.unitPrice.satang)}</Text>
-            <Text style={styles.tdTotal}>{formatThbSatang(l.total.satang)}</Text>
+            <Text style={styles.tdUnit}>{formatThbSatang(l.unitPrice.satang, polish)}</Text>
+            <Text style={styles.tdTotal}>{formatThbSatang(l.total.satang, polish)}</Text>
           </View>
         ))}
       </View>
@@ -454,20 +518,20 @@ function renderPageBody({
       <View style={styles.totalsBlock}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>{shapeThai('รวมก่อนภาษี')} / Subtotal:</Text>
-          <Text style={styles.totalValue}>{formatThbSatang(input.subtotal.satang)}</Text>
+          <Text style={styles.totalValue}>{formatThbSatang(input.subtotal.satang, polish)}</Text>
         </View>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>
             VAT {input.vatRate.toPercentString()}:
           </Text>
-          <Text style={styles.totalValue}>{formatThbSatang(input.vat.satang)}</Text>
+          <Text style={styles.totalValue}>{formatThbSatang(input.vat.satang, polish)}</Text>
         </View>
         <View style={styles.totalRow}>
           <Text style={[styles.totalLabel, styles.grand]}>
             {shapeThai('รวมทั้งสิ้น')} / Total (THB):
           </Text>
           <Text style={[styles.totalValue, styles.grand]}>
-            {formatThbSatang(input.total.satang)}
+            {formatThbSatang(input.total.satang, polish)}
           </Text>
         </View>
         {/* 054-event-fee-invoices — VAT-inclusive (event Model B) annotation.
@@ -489,7 +553,10 @@ function renderPageBody({
       <Text style={styles.wordsLine}>
         ({shapeThai('ตัวอักษร')}) {shapeThai(amountToThaiWords(totalThb))}
       </Text>
-      <Text style={styles.wordsLine}>({amountToEnglishWords(totalThb)})</Text>
+      {/* 088 US4 (T035 / FR-009) — capitalize the English amount-in-words first
+          letter at v6. Kept on ONE line + the exact `(…)` literal children so a
+          pre-v6 render is byte-identical to the historical output (SC-003). */}
+      <Text style={styles.wordsLine}>({polish ? capitalizeFirstLetter(amountToEnglishWords(totalThb)) : amountToEnglishWords(totalThb)})</Text>
 
       {isCreditAnnotatable &&
         input.creditedAnnotation &&
@@ -503,7 +570,7 @@ function renderPageBody({
                 <Text style={styles.cnRefFooterCell}>{r.documentNumber}</Text>
                 <Text style={styles.cnRefFooterCell}>{r.issueDate}</Text>
                 <Text style={styles.cnRefFooterCellAmt}>
-                  {formatThbSatang(r.total.satang)} THB
+                  {formatThbSatang(r.total.satang, polish)} THB
                 </Text>
               </View>
             ))}
@@ -591,6 +658,12 @@ export function InvoiceTemplate(input: PdfRenderInput) {
 
   const totalThb = Number(input.total.satang) / 100;
 
+  // 088 US4 (T035 / T035a / FR-009 / FR-010 / FR-034) — presentation polish gate.
+  // Computed ONCE and threaded into both pages of the two-page combined receipt
+  // so the Original + Copy stay consistent. Pre-v6 → false → byte-stable legacy
+  // output (SC-003), exactly like the citation / two-page / branch-line gates.
+  const polish = input.templateVersion >= PRESENTATION_POLISH_MIN_VERSION;
+
   const bodyProps = {
     input,
     isPreview,
@@ -601,6 +674,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
     titleEn,
     footerCitation,
     totalThb,
+    polish,
   } satisfies Omit<PageBodyProps, 'copyMarker'>;
 
   // 088 US2 (T025 / FR-004 / SC-004 / §105ทวิ คู่ฉบับ) — the combined §86/4 tax
