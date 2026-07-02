@@ -220,7 +220,7 @@
 | 1 | ผ่าน flow เปลี่ยน email พอร์ทัล เปลี่ยน email ของผู้ติดต่อที่มีบัญชี F1 | ใน 1 ธุรกรรม: อัปเดต contact+user email, **ตัด session ผู้ใช้นั้นทันที**, ปิด email เก่าล็อกอินไม่ได้ |
 | 2 | ตรวจกล่อง email ใหม่ | ได้อีเมลยืนยัน token 24 ชม. (ใช้ได้หลังหน่วง 5 นาที); email ใหม่ล็อกอินไม่ได้จนกว่าจะยืนยัน |
 | 3 | ตรวจกล่อง email เก่า | ได้อีเมล "this wasn't me — revert + freeze" token 48 ชม. |
-| 4 | ดู audit | มี `member_contact_email_changed` (high) **แถวเดียว** — payload บรรจุ `sessions_revoked` (จำนวน session ที่ตัด), `verification_enqueued: true`, `revert_enqueued: true` (ไม่มี audit row แยกสำหรับ session-revoked / email-sent — ข้อมูลอยู่ใน payload; enum `email_verification_sent` / `email_change_notification_sent_to_old_address` ยังไม่ถูก emit) |
+| 4 | ดู audit | มี **4 events** ใน 1 ธุรกรรม: `member_contact_email_changed` (high) + `user_sessions_revoked` + `email_verification_sent` + `email_change_notification_sent_to_old_address` (ข้อมูล session-revoke-count / outbox-row-id อยู่ใน payload ของแต่ละ event) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
