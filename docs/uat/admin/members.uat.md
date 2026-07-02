@@ -271,7 +271,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | จำลองอีเมลเชิญตีกลับ (Resend `email.bounced`) | ผู้ติดต่อมี badge "Invite bounced" (แสดงบน**หน้ารายละเอียดสมาชิก** ในบล็อกผู้ติดต่อ — directory ยังไม่มีสัญญาณระดับแถว); audit `invitation_bounced` |
+| 1 | จำลองอีเมลเชิญตีกลับ (Resend `email.bounced`) | ผู้ติดต่อมี badge **"Invite bounced"** — แสดงทั้งบน**แถว directory** (คอลัมน์ Primary contact) และหน้ารายละเอียดสมาชิก; audit `invitation_bounced` |
 | 2 | กด **Re-send invite** | ส่งคำเชิญใหม่ + เคลียร์ flag bounce; toast "Invitation re-sent." |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
