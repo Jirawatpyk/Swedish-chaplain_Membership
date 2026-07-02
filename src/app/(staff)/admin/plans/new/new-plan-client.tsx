@@ -60,8 +60,13 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
       if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
         toast.error(t('errors.readOnlyMode'));
       } else {
-        const message = errorCode in (t.raw('errors') as Record<string, string>)
-          ? t(`errors.${errorCode}` as 'generic')
+        // API error codes are snake_case; a few differ from their i18n key.
+        // Map duplicate_plan (409) → duplicateKey so the specific
+        // "A plan with this ID already exists for {year}." message renders
+        // instead of falling through to errors.generic.
+        const messageKey = errorCode === 'duplicate_plan' ? 'duplicateKey' : errorCode;
+        const message = messageKey in (t.raw('errors') as Record<string, string>)
+          ? t(`errors.${messageKey}` as 'generic')
           : t('errors.generic');
         toast.error(message);
       }
