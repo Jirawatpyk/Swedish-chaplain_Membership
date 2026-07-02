@@ -177,7 +177,7 @@
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
 | 1 | สร้างแพ็กเกจโดยเว้น **Plan name (EN)** ว่าง | save ไม่ได้ ไฮไลต์แท็บภาษาที่ขาด (EN บังคับ) |
-| 2 | ใช้ Plan ID ที่มีอยู่แล้วในปีเดียวกัน | ถูกปฏิเสธ **ไม่มีแพ็กเกจซ้ำถูกสร้าง** — ควรขึ้น **"A plan with this ID already exists for {year}."** ⚠️ (known issue: new-plan wizard ยัง map error code `duplicate_plan`→key `duplicateKey` ไม่ครบ จึงแสดง toast ทั่วไป **"Something went wrong. Please try again."** แทน — ถือว่า **ผ่าน** ถ้าการปฏิเสธทำงาน (ไม่มีแพ็กเกจซ้ำ); แจ้ง dev แก้ข้อความ) |
+| 2 | ใช้ Plan ID ที่มีอยู่แล้วในปีเดียวกัน | ถูกปฏิเสธ **"A plan with this ID already exists for {year}."** ไม่มีแพ็กเกจซ้ำถูกสร้าง |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
