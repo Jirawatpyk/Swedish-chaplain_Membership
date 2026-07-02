@@ -252,6 +252,65 @@ export async function changeContactEmail(
       });
       if (!auditResult.ok) throw new PortError(auditResult.error);
 
+      // FR-023 / US3-AS6 — the session revocation and the two email dispatches
+      // MUST each be their OWN audit event (not merely payload flags on
+      // member_contact_email_changed). Emitted in the SAME tx so the whole
+      // change is atomic (Principle VIII: state + audit together). Summaries
+      // carry only UUIDs (no email) and payloads hash addresses per
+      // data-model.md § 4 (PDPA § 37 / GDPR Art 5(1)(c)).
+      const sessionAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'user_sessions_revoked',
+        actorUserId: input.actorUserId,
+        targetUserId: userId,
+        requestId: input.requestId,
+        summary: `sessions revoked for user ${userId} on email change`,
+        payload: {
+          member_id: contact.memberId,
+          contact_id: input.contactId,
+          user_id: userId,
+          revoked_count: sessionResult.value.revokedCount,
+          reason: 'email_change',
+        },
+      });
+      if (!sessionAudit.ok) throw new PortError(sessionAudit.error);
+
+      const verificationAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'email_verification_sent',
+        actorUserId: input.actorUserId,
+        targetUserId: userId,
+        requestId: input.requestId,
+        summary: `verification email enqueued for contact ${input.contactId}`,
+        payload: {
+          member_id: contact.memberId,
+          contact_id: input.contactId,
+          user_id: userId,
+          new_email_hash: hashEmail(newEmail as string),
+          outbox_row_id: verificationEnqueue.value.outboxRowId,
+        },
+      });
+      if (!verificationAudit.ok) throw new PortError(verificationAudit.error);
+
+      const oldAddressNotifyAudit = await deps.audit.recordInTx(
+        tx,
+        deps.tenant,
+        {
+          type: 'email_change_notification_sent_to_old_address',
+          actorUserId: input.actorUserId,
+          targetUserId: userId,
+          requestId: input.requestId,
+          summary: `email-change revert notice enqueued to old address for contact ${input.contactId}`,
+          payload: {
+            member_id: contact.memberId,
+            contact_id: input.contactId,
+            user_id: userId,
+            old_email_hash: hashEmail(userUpdate.value.oldEmail),
+            outbox_row_id: revertEnqueue.value.outboxRowId,
+          },
+        },
+      );
+      if (!oldAddressNotifyAudit.ok)
+        throw new PortError(oldAddressNotifyAudit.error);
+
       return {
         oldEmail: userUpdate.value.oldEmail,
         sessionsRevoked: sessionResult.value.revokedCount,

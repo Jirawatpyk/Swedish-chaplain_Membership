@@ -322,6 +322,22 @@ describe('changeContactEmail — happy path', () => {
     );
   });
 
+  it('appends the session-revoke + email-dispatch audit events (FR-023 / US3-AS6)', async () => {
+    await changeContactEmail(deps, baseInput);
+    const recordInTx = deps.audit.recordInTx as ReturnType<typeof vi.fn>;
+    const types = recordInTx.mock.calls.map((c) => c[2].type);
+    // All four events land in the same tx — the main change plus the three
+    // that were previously dead enum entries (no emit site).
+    expect(types).toEqual(
+      expect.arrayContaining([
+        'member_contact_email_changed',
+        'user_sessions_revoked',
+        'email_verification_sent',
+        'email_change_notification_sent_to_old_address',
+      ]),
+    );
+  });
+
   it('revokes sessions inside the transaction', async () => {
     await changeContactEmail(deps, baseInput);
     expect(deps.sessions.revokeAllForInTx).toHaveBeenCalledWith(
