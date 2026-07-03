@@ -204,7 +204,10 @@ export async function createInvoiceDraft(
       : planFee;
 
     // --- Pro-rate factor (US1 AS2 / FR-019) ---------------------------------
-    const { fyStartDate, fyEndDate, issueDate } = fiscalYearBoundary(
+    // `issueDate` from fiscalYearBoundary is intentionally NOT destructured
+    // here anymore — the pro-rate line's "from" date is the proRateAnchor
+    // (join date), not today's issue date (see the membership line below).
+    const { fyStartDate, fyEndDate } = fiscalYearBoundary(
       deps.clock.nowIso(),
       settings.fiscalYearStartMonth,
     );
