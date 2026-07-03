@@ -107,6 +107,26 @@ function separateRenderedInvoice(): Invoice {
   } as Invoice;
 }
 
+function paid088BillInvoice(): Invoice {
+  // A paid 088 ใบแจ้งหนี้ → §86/4 RC flow: the §87 `documentNumber` is NULL
+  // (the SC bill number lives in `billDocumentNumberRaw`); at payment a
+  // distinct RC receipt number is minted into `receiptDocumentNumberRaw` and
+  // the §86/4 receipt PDF renders. Serves the receipt blob (separate-mode:
+  // receiptDocumentNumberRaw non-null).
+  return {
+    ...makeBaseInvoice(),
+    documentNumber: null,
+    billDocumentNumberRaw: 'SC-2026-000009',
+    receiptDocumentNumberRaw: 'RC-2026-000009',
+    receiptPdfStatus: 'rendered',
+    receiptPdf: {
+      blobKey: RECEIPT_BLOB_KEY,
+      sha256: 'd'.repeat(64),
+      templateVersion: 1,
+    } as unknown as Invoice['receiptPdf'],
+  } as Invoice;
+}
+
 function separatePendingInvoice(): Invoice {
   return {
     ...makeBaseInvoice(),
@@ -223,6 +243,31 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
     // R5-CONST-M1 — separate-mode receipt also carries the template
     // version snapshot.
     expect(payload.receipt_pdf_template_version).toBe(1);
+  });
+
+  it('paid 088 bill (documentNumber NULL) → audit summary uses the SC bill number, not the invoiceId UUID', async () => {
+    // FR-030 — the download cross-reference must be a human-readable document
+    // number, never the raw UUID. For a paid 088 bill the §87 `documentNumber`
+    // is NULL, so the summary falls back to `billDocumentNumberRaw` (SC).
+    const invoice = paid088BillInvoice();
+    const { deps, audit } = makeDeps(invoice);
+    const inputInvoiceId = '00000000-0000-4000-8000-000000000009';
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: inputInvoiceId,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    const summary = auditCall.summary as string;
+    expect(summary).toContain('SC-2026-000009');
+    // Pre-fix the summary interpolated `documentNumber?.raw ?? invoiceId` →
+    // the raw UUID leaked into the §87 forensic trail.
+    expect(summary).not.toContain(inputInvoiceId);
   });
 
   it('member with matching memberId can download the receipt', async () => {

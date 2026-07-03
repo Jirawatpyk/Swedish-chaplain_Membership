@@ -31,6 +31,13 @@ interface AuditPayloadLike {
   readonly invoice_id?: string;
   readonly credit_note_id?: string;
   readonly document_number?: string;
+  /**
+   * 088 (FR-030) — the SC bill number of an issued 088 ใบแจ้งหนี้, whose §87
+   * `document_number` is NULL until payment. The `invoice_issued` audit event
+   * emits it (issue-invoice.ts). Without this fallback the timeline renders
+   * `invoiceIssued` with a MISSING {documentNumber} for every 088 bill.
+   */
+  readonly bill_document_number_raw?: string;
   readonly receipt_document_number?: string;
   /**
    * 088 (FR-029) — the §87 `RC` tax-receipt number, carried by the
@@ -63,6 +70,7 @@ export function resolveInvoiceEventCopy(
   const creditNoteId = str(p.credit_note_id);
   const docNum =
     str(p.document_number) ??
+    str(p.bill_document_number_raw) ??
     str(p.receipt_document_number) ??
     str(p.receipt_document_number_raw);
 

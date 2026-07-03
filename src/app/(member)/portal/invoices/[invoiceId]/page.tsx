@@ -350,13 +350,14 @@ export default async function PortalInvoiceDetailPage({
                 // prominent body sections below (room for the aria-live
                 // announce + reassurance / the support path). See
                 // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
-                // 088 T065c — the MAIN download serves the issue-time PDF: on a
-                // paid 088 bill that is the SC bill, so the control names the SC
-                // number (never the RC in `documentNumber`).
-                const mainDownloadNumber =
-                  taxDocKind === 'tax_receipt' && invoice.billDocumentNumberRaw
-                    ? invoice.billDocumentNumberRaw
-                    : documentNumber;
+                // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
+                // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
+                // Reuse the already-correct `headerNumber` (declared above:
+                // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
+                // resolved `documentNumber`). The prior ternary only used the SC
+                // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
+                // fell to `documentNumber` = '—' → the download was named "—.pdf".
+                const mainDownloadNumber = headerNumber;
                 return (
                   <>
                     {showInvoicePdf && (

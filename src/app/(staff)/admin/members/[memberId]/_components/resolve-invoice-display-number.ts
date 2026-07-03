@@ -8,8 +8,11 @@
  * placeholder for a REAL issued bill (and for a paid 088 bill too) — the exact
  * FR-030 "document_number-NULL sweep" defect this resolves. Legacy / §87 rows
  * (where `billDocumentNumberRaw` is NULL) fall back to `documentNumber?.raw`.
- * Returns `null` for a true draft (both NULL) so the caller supplies its own
- * placeholder.
+ * A no-TIN paid event / as-paid §105 receipt has NEITHER a bill number NOR a
+ * §87 `documentNumber` — its printed number lives in `receiptDocumentNumberRaw`,
+ * so that is the final fallback (else a PAID, numbered receipt would render the
+ * "(draft)" placeholder). Returns `null` only for a TRUE draft (all three NULL)
+ * so the caller supplies its own placeholder.
  *
  * NOT flag-gated (row-shape-correct): the resolution keys on the row's own
  * columns, so a bill issued while the flag was on still surfaces its SC number
@@ -25,7 +28,12 @@
 import type { Invoice } from '@/modules/invoicing';
 
 export function resolveMemberInvoiceDisplayNumber(
-  inv: Pick<Invoice, 'billDocumentNumberRaw' | 'documentNumber'>,
+  inv: Pick<Invoice, 'billDocumentNumberRaw' | 'documentNumber' | 'receiptDocumentNumberRaw'>,
 ): string | null {
-  return inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null;
+  return (
+    inv.billDocumentNumberRaw ??
+    inv.documentNumber?.raw ??
+    inv.receiptDocumentNumberRaw ??
+    null
+  );
 }

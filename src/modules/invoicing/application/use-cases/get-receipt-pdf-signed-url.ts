@@ -181,9 +181,12 @@ export async function getReceiptPdfSignedUrl(
     requestId: input.requestId ?? null,
     eventType: 'receipt_pdf_downloaded',
     actorUserId: input.actorUserId,
+    // 088 (FR-030) — a paid 088 bill has NULL §87 `documentNumber`; its SC bill
+    // number lives in `billDocumentNumberRaw`. Prefer it so the download
+    // cross-reference is a human-readable document number, never the raw UUID.
     summary: combinedMode
-      ? `Receipt PDF downloaded — invoice ${invoice.documentNumber?.raw ?? invoiceId} (combined mode)`
-      : `Receipt PDF downloaded — ${invoice.receiptDocumentNumberRaw} (invoice ${invoice.documentNumber?.raw ?? invoiceId})`,
+      ? `Receipt PDF downloaded — invoice ${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId} (combined mode)`
+      : `Receipt PDF downloaded — ${invoice.receiptDocumentNumberRaw} (invoice ${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId})`,
     payload: {
       invoice_id: invoiceId,
       member_id: invoice.memberId,

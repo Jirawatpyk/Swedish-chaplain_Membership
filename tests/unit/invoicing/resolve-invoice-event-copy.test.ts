@@ -48,6 +48,20 @@ describe('resolveInvoiceEventCopy', () => {
     expect(copy?.link).toBe(`/admin/invoices/${INVOICE_ID}`);
   });
 
+  it('invoice_issued (088 bill): documentNumber falls back to bill_document_number_raw when §87 document_number is NULL', () => {
+    // 088 (FR-030) — an issued 088 ใบแจ้งหนี้ has NULL §87 `document_number`;
+    // its SC bill number is emitted as `bill_document_number_raw`
+    // (issue-invoice.ts audit payload). Without the fallback, the timeline
+    // renders `invoiceIssued` with a MISSING {documentNumber}.
+    const copy = resolveInvoiceEventCopy('invoice_issued', {
+      invoice_id: INVOICE_ID,
+      document_number: null,
+      bill_document_number_raw: 'SC-2026-000045',
+    });
+    expect(copy?.i18nKey).toBe('invoiceIssued');
+    expect(copy?.vars.documentNumber).toBe('SC-2026-000045');
+  });
+
   it('invoice_paid without document_number OR receipt_document_number: vars.documentNumber undefined', () => {
     const copy = resolveInvoiceEventCopy('invoice_paid', {
       invoice_id: INVOICE_ID,
