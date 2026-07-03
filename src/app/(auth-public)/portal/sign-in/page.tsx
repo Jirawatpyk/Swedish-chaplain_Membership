@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
-import { ThemeToggle } from '@/components/shell/theme-toggle';
+import { AuthPageControls } from '@/components/shell/auth-page-controls';
 import { BrandMark } from '@/components/shell/brand-mark';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
@@ -65,13 +65,7 @@ export default async function MemberSignInPage({
 
   return (
     <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
-      <header className="absolute right-4 top-4 z-10">
-        {/* Brand wordmark removed — the vertical lockup above the card now
-            carries the SweCham brand. The theme toggle floats top-right so it
-            doesn't consume layout height, letting the sign-in block centre in
-            the full viewport. */}
-        <ThemeToggle />
-      </header>
+      <AuthPageControls />
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md space-y-6">
           <BrandMark

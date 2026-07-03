@@ -6,6 +6,7 @@ import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
+import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -22,7 +23,7 @@ import { MarketingAcknowledgementBanner } from './_components/marketing-acknowle
  * their own portal. Members stay.
  *
  * Renders the persistent header with horizontal MemberNav +
- * UserMenu + ThemeToggle.
+ * LocaleSwitcher + UserMenu + ThemeToggle.
  */
 
 /**
@@ -62,6 +63,11 @@ export default async function MemberLayout({ children }: { children: ReactNode }
          * Desktop (≥ 640 px): right column expands to include the
          * ThemeToggle (via `sm:contents` on its wrapper); the grid
          * max-width is capped at the detail layout token.
+         *
+         * LocaleSwitcher sits in the same right column but OUTSIDE the
+         * `sm:contents` wrapper, so it stays always-visible at every
+         * width — locale has no OS-level fallback the way color scheme
+         * does for a hidden ThemeToggle.
          */}
         <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
@@ -79,11 +85,12 @@ export default async function MemberLayout({ children }: { children: ReactNode }
             <MemberNav />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {/* ThemeToggle is hidden on mobile (< 640 px) to give the
-                fixed-width header room for the icon-only MemberNav.
-                Mobile users can change theme via their OS `prefers-
-                color-scheme` setting (honoured automatically) or via
-                the UserMenu which remains always-visible. */}
+            {/* LocaleSwitcher is ALWAYS visible (even on mobile): unlike
+                theme, locale has no OS fallback and no UserMenu entry, so a
+                hidden switcher would strand a member in a language they can't
+                read. ThemeToggle stays hidden < 640px (OS prefers-color-scheme
+                is the mobile fallback). */}
+            <LocaleSwitcher />
             <span className="hidden sm:contents">
               <ThemeToggle />
             </span>

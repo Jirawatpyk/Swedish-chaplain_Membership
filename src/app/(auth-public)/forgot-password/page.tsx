@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { ForgotPasswordForm } from '@/components/auth/forgot-password-form';
-import { ThemeToggle } from '@/components/shell/theme-toggle';
+import { AuthPageControls } from '@/components/shell/auth-page-controls';
 import { BrandMark } from '@/components/shell/brand-mark';
 
 /**
@@ -30,10 +30,7 @@ export default async function ForgotPasswordPage() {
 
   return (
     <main id="main-content" className="relative flex min-h-screen flex-col bg-muted/20">
-      <header className="absolute right-4 top-4 z-10">
-        {/* Brand wordmark replaced by the vertical lockup above the card. */}
-        <ThemeToggle />
-      </header>
+      <AuthPageControls />
       <div className="flex flex-1 flex-col items-center justify-center gap-6 p-4">
         <BrandMark
           variant="vertical"

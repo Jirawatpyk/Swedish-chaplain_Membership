@@ -25,3 +25,10 @@ export const localeLabels: Record<Locale, string> = {
 export function isLocale(value: string): value is Locale {
   return (locales as readonly string[]).includes(value);
 }
+
+/**
+ * Name of the cookie next-intl reads for the active locale (see request.ts).
+ * Shared by the read side (request.ts) and the write side (LocaleSwitcher) so
+ * the two can never drift.
+ */
+export const LOCALE_COOKIE_NAME = 'NEXT_LOCALE';
