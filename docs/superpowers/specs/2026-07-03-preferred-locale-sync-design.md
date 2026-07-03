@@ -187,12 +187,20 @@ function persistPreferredLocale(locale: Locale): void {
 <LocaleSwitcher persistToAccount />
 ```
 
-A boolean literal is the correct prop shape here (NOT a callback): the layout is
-a Server Component and cannot pass a non-serializable function across the RSC
-boundary. Staff layout + the 7 auth pages pass nothing → `persistToAccount`
-defaults `false` → unchanged. (First surface-mode boolean on the switcher; if
-more accrete later, revisit toward a `MemberLocaleSwitcher` wrapper — YAGNI at
-N=1.)
+A boolean literal is the chosen prop shape (over a callback) on **simplicity /
+YAGNI** grounds — this is the first surface-mode flag on the switcher. Note the
+trade-off it accepts: the shared shell primitive (`locale-switcher.tsx`, also
+used by staff + the 7 auth pages) now statically imports the persist policy →
+the portal transport, so a little member-account code rides along in the
+staff/auth client bundles (a small two-field fetch wrapper — modest, not a
+correctness issue). A `MemberLocaleSwitcher` client wrapper in
+`src/components/portal/` would keep the shell primitive portal-ignorant and
+pass an `onChange` callback client→client (no function crosses the RSC boundary
+— a Server Component passing a **boolean** to a Client Component and a Client
+Component passing a **callback** to another Client Component are both fine).
+That wrapper is the right shape once a *second* side-effect consumer appears;
+at N=1 the boolean wins. Staff layout + the 7 auth pages pass nothing →
+`persistToAccount` defaults `false` → unchanged.
 
 ## Testing
 

@@ -65,7 +65,12 @@ export function LocaleSwitcher({
     syncAbortRef.current?.abort();
     const controller = new AbortController();
     syncAbortRef.current = controller;
-    const timer = setTimeout(() => controller.abort(), PERSIST_TIMEOUT_MS);
+    // Abort with a TimeoutError reason so the policy can tell a timeout (a real
+    // sync failure → warn) apart from a supersession (benign → silent).
+    const timer = setTimeout(
+      () => controller.abort(new DOMException('preferred_locale sync timed out', 'TimeoutError')),
+      PERSIST_TIMEOUT_MS,
+    );
     void runPreferredLocalePersist(locale, controller.signal)
       .then((outcome) => {
         if (outcome === 'failed') {

@@ -57,7 +57,7 @@ describe('runPreferredLocalePersist', () => {
     expect(updateMock).toHaveBeenCalledTimes(2);
   });
 
-  it('stops with aborted (no retry) when the signal is aborted mid-flight', async () => {
+  it('stops with aborted (no retry) when superseded (default abort reason)', async () => {
     const ac = new AbortController();
     updateMock.mockImplementation(() => {
       ac.abort();
@@ -65,5 +65,16 @@ describe('runPreferredLocalePersist', () => {
     });
     expect(await runPreferredLocalePersist('th', ac.signal)).toBe('aborted');
     expect(updateMock).toHaveBeenCalledTimes(1); // did NOT retry after abort
+  });
+
+  it('returns failed (not aborted) when the abort carries a TimeoutError reason', async () => {
+    const ac = new AbortController();
+    updateMock.mockImplementation(() => {
+      ac.abort(new DOMException('timed out', 'TimeoutError'));
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    });
+    // A timeout is a genuine sync failure — the caller must warn on it.
+    expect(await runPreferredLocalePersist('th', ac.signal)).toBe('failed');
+    expect(updateMock).toHaveBeenCalledTimes(1); // aborted → no retry
   });
 });
