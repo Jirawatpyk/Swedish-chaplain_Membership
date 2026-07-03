@@ -164,6 +164,9 @@
       "dark": "Dark",
       "system": "System"
     },
+    "locale": {
+      "label": "Change language"
+    },
     "roleBadge": {
       "admin": "Admin",
       "manager": "Manager",
