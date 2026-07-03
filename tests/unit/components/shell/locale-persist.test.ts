@@ -4,7 +4,12 @@ vi.mock('@/components/portal/preferred-locale-client', () => ({
   updatePreferredLocale: vi.fn(),
 }));
 import { updatePreferredLocale } from '@/components/portal/preferred-locale-client';
-import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
+import {
+  runPreferredLocalePersist,
+  runAbortablePersist,
+  type PersistOutcome,
+} from '@/components/shell/locale-persist';
+import type { Locale } from '@/i18n/config';
 
 const updateMock = vi.mocked(updatePreferredLocale);
 const res = (status: number): Response =>
@@ -76,5 +81,72 @@ describe('runPreferredLocalePersist', () => {
     // A timeout is a genuine sync failure — the caller must warn on it.
     expect(await runPreferredLocalePersist('th', ac.signal)).toBe('failed');
     expect(updateMock).toHaveBeenCalledTimes(1); // aborted → no retry
+  });
+});
+
+describe('runAbortablePersist', () => {
+  afterEach(() => vi.useRealTimers());
+
+  const pending = (): (() => Promise<PersistOutcome>) => () => new Promise<PersistOutcome>(() => {});
+
+  it('bounds the sync with a TimeoutError abort after timeoutMs', () => {
+    vi.useFakeTimers();
+    const ref: { current: AbortController | null } = { current: null };
+    let signal: AbortSignal | undefined;
+    const run = vi.fn((_l: Locale, s: AbortSignal): Promise<PersistOutcome> => {
+      signal = s;
+      return pending()();
+    });
+    runAbortablePersist(ref, 'th', 8000, () => {}, run);
+    expect(signal?.aborted).toBe(false);
+    vi.advanceTimersByTime(8000);
+    expect(signal?.aborted).toBe(true);
+    expect((signal?.reason as DOMException).name).toBe('TimeoutError');
+  });
+
+  it('aborts a previous in-flight sync when called again (abort-previous)', () => {
+    vi.useFakeTimers();
+    const ref: { current: AbortController | null } = { current: null };
+    const signals: AbortSignal[] = [];
+    const run = vi.fn((_l: Locale, s: AbortSignal): Promise<PersistOutcome> => {
+      signals.push(s);
+      return pending()();
+    });
+    runAbortablePersist(ref, 'th', 8000, () => {}, run);
+    runAbortablePersist(ref, 'sv', 8000, () => {}, run);
+    expect(signals[0]?.aborted).toBe(true); // superseded
+    expect(signals[1]?.aborted).toBe(false); // still live
+  });
+
+  it('clears the timeout on completion — no late abort fires', async () => {
+    vi.useFakeTimers();
+    const ref: { current: AbortController | null } = { current: null };
+    let signal: AbortSignal | undefined;
+    const run = vi.fn((_l: Locale, s: AbortSignal): Promise<PersistOutcome> => {
+      signal = s;
+      return Promise.resolve('ok');
+    });
+    runAbortablePersist(ref, 'th', 8000, () => {}, run);
+    await vi.runAllTimersAsync(); // flush the .then/.finally (timer cleared)
+    vi.advanceTimersByTime(8000);
+    expect(signal?.aborted).toBe(false);
+  });
+
+  it('calls onFailed only on a failed outcome', async () => {
+    vi.useFakeTimers();
+    const ref: { current: AbortController | null } = { current: null };
+    const onFailed = vi.fn();
+    runAbortablePersist(ref, 'th', 8000, onFailed, () => Promise.resolve('failed'));
+    await vi.runAllTimersAsync();
+    expect(onFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call onFailed on a non-failed outcome', async () => {
+    vi.useFakeTimers();
+    const ref: { current: AbortController | null } = { current: null };
+    const onFailed = vi.fn();
+    runAbortablePersist(ref, 'th', 8000, onFailed, () => Promise.resolve('aborted'));
+    await vi.runAllTimersAsync();
+    expect(onFailed).not.toHaveBeenCalled();
   });
 });

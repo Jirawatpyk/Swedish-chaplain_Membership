@@ -35,3 +35,33 @@ export async function runPreferredLocalePersist(
   }
   return 'failed';
 }
+
+/**
+ * The LocaleSwitcher's detached persist wiring: abort any prior in-flight sync
+ * held in `ref` (so a stale retry can't land out of order), bound this attempt
+ * with a `TimeoutError`-tagged abort after `timeoutMs`, run the policy, and call
+ * `onFailed` only on a `'failed'` outcome. Never awaited; the timer is always
+ * cleared on completion. INVARIANT: `onFailed` must not `setState`/`toast` (it
+ * fires after `router.refresh()` — an orphaned update). `run` is injectable for
+ * tests.
+ */
+export function runAbortablePersist(
+  ref: { current: AbortController | null },
+  locale: Locale,
+  timeoutMs: number,
+  onFailed: () => void,
+  run: (locale: Locale, signal: AbortSignal) => Promise<PersistOutcome> = runPreferredLocalePersist,
+): void {
+  ref.current?.abort();
+  const controller = new AbortController();
+  ref.current = controller;
+  const timer = setTimeout(
+    () => controller.abort(new DOMException('preferred_locale sync timed out', 'TimeoutError')),
+    timeoutMs,
+  );
+  void run(locale, controller.signal)
+    .then((outcome) => {
+      if (outcome === 'failed') onFailed();
+    })
+    .finally(() => clearTimeout(timer));
+}

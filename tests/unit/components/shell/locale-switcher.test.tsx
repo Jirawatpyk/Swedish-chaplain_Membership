@@ -11,15 +11,18 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
-import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
+import { runAbortablePersist } from '@/components/shell/locale-persist';
 
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: refreshSpy }),
 }));
 
+// The component delegates the abort-previous + timeout + retry wiring to
+// runAbortablePersist; its internals (abort-previous, 8s timeout, retry/4xx,
+// onFailed) are covered deterministically in locale-persist.test.ts.
 vi.mock('@/components/shell/locale-persist', () => ({
-  runPreferredLocalePersist: vi.fn(),
+  runAbortablePersist: vi.fn(),
 }));
 
 function renderSwitcher(locale: 'en' | 'th' | 'sv' = 'en') {
@@ -30,7 +33,7 @@ function renderSwitcher(locale: 'en' | 'th' | 'sv' = 'en') {
   );
 }
 
-const persistMock = vi.mocked(runPreferredLocalePersist);
+const abortableMock = vi.mocked(runAbortablePersist);
 
 function renderWithPersist(locale: 'en' | 'th' | 'sv' = 'en') {
   return render(
@@ -95,8 +98,7 @@ describe('<LocaleSwitcher persistToAccount>', () => {
   beforeEach(() => {
     vi.useRealTimers();
     refreshSpy.mockClear();
-    persistMock.mockReset();
-    persistMock.mockResolvedValue('ok');
+    abortableMock.mockReset();
     document.cookie = 'NEXT_LOCALE=; path=/; max-age=0';
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -106,52 +108,33 @@ describe('<LocaleSwitcher persistToAccount>', () => {
     vi.useFakeTimers();
   });
 
-  it('runs the persist policy with the chosen locale + an AbortSignal', async () => {
+  it('runs the abortable persist with the chosen locale', async () => {
     renderWithPersist('en');
     await pickThai();
-    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
-    expect(persistMock).toHaveBeenCalledWith('th', expect.any(AbortSignal));
+    await waitFor(() => expect(abortableMock).toHaveBeenCalledTimes(1));
+    // (abortRef, locale, timeoutMs, onFailed) — the signal/timeout wiring is
+    // internal to runAbortablePersist (covered in locale-persist.test.ts).
+    expect(abortableMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'th',
+      expect.any(Number),
+      expect.any(Function),
+    );
   });
 
-  it('warns once when the persist outcome is "failed"', async () => {
-    persistMock.mockResolvedValue('failed');
+  it('passes an onFailed callback that warns', async () => {
+    abortableMock.mockImplementation((_ref, _locale, _ms, onFailed) => {
+      onFailed();
+    });
     renderWithPersist('en');
     await pickThai();
     await waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
-  });
-
-  it('does not warn on a non-failed outcome (client_error)', async () => {
-    persistMock.mockResolvedValue('client_error');
-    renderWithPersist('en');
-    await pickThai();
-    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
-    await new Promise((r) => setTimeout(r, 30));
-    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('does not persist when persistToAccount is absent (default cookie-only)', async () => {
     renderSwitcher('en'); // no persistToAccount
     await pickThai();
     await new Promise((r) => setTimeout(r, 30));
-    expect(persistMock).not.toHaveBeenCalled();
-  });
-
-  it('aborts a superseded in-flight persist when a newer locale is picked', async () => {
-    const signals: AbortSignal[] = [];
-    persistMock.mockImplementation((_locale, signal) => {
-      signals.push(signal);
-      return new Promise<never>(() => {}); // never resolves — stays in-flight
-    });
-    renderWithPersist('en');
-    // pick TH (persist #1 starts, never resolves)
-    fireEvent.click(screen.getByRole('button', { name: /change language/i }));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'ไทย' }));
-    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
-    // pick SV (should abort persist #1 before starting persist #2)
-    fireEvent.click(screen.getByRole('button', { name: /change language/i }));
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Svenska' }));
-    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(2));
-    expect(signals[0]?.aborted).toBe(true); // first sync superseded
-    expect(signals[1]?.aborted).toBe(false); // second still live
+    expect(abortableMock).not.toHaveBeenCalled();
   });
 });
