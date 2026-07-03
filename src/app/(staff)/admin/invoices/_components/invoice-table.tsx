@@ -412,7 +412,7 @@ export function InvoicesTable({
                     a clickable link in the Receipt No. column. No per-row tag. */}
                 <Link
                   href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                 >
                   {r.documentNumber}
                 </Link>
@@ -431,7 +431,7 @@ export function InvoicesTable({
                     aria-label={tTax088('seeReceiptLink', {
                       number: r.receiptDocumentNumberRaw,
                     })}
-                    className="font-mono text-sm tabular-nums underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                   >
                     {r.receiptDocumentNumberRaw}
                   </Link>
