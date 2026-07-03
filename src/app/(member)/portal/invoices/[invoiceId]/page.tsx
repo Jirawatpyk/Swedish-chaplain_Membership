@@ -285,7 +285,9 @@ export default async function PortalInvoiceDetailPage({
               {invoice.status !== 'void' ? (
                 <ResendInvoiceButton
                   invoiceId={invoice.invoiceId}
-                  documentNumber={documentNumber}
+                  // 088 FR-030 — use the SC bill number for an 088 bill (the
+                  // bare `documentNumber` local resolves to '—' on an 088 bill).
+                  documentNumber={headerNumber}
                   variant="ghost"
                   layout="full"
                   className="min-h-11 px-3"
@@ -731,7 +733,8 @@ export default async function PortalInvoiceDetailPage({
           <PayNowButton
             invoice={{
               id: invoice.invoiceId,
-              invoiceNumber: documentNumber,
+              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
+              invoiceNumber: headerNumber,
               amountDue: total !== null ? Number(total) : 0,
               currency: 'THB',
               status: invoice.status,
@@ -740,7 +743,7 @@ export default async function PortalInvoiceDetailPage({
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
         ) : (
-          <OnlinePaymentDisabledCard invoiceNumber={documentNumber} tenantContactEmail={null} />
+          <OnlinePaymentDisabledCard invoiceNumber={headerNumber} tenantContactEmail={null} />
         )
       ) : null}
 

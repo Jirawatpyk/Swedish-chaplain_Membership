@@ -113,7 +113,10 @@ export async function maybeEmitOverdueDetected(
     actorUserId: actor.userId,
     invoiceId: invoice.invoiceId,
     memberId: invoice.memberId,
-    documentNumber: invoice.documentNumber?.raw ?? null,
+    // 088 FR-030 — an issued 088 bill has NULL §87 `documentNumber`; surface its
+    // SC bill number so the overdue-detected audit isn't blank. Legacy §87 rows
+    // keep documentNumber (billDocumentNumberRaw NULL → falls through).
+    documentNumber: invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null,
     dueDate: invoice.dueDate ?? '',
     bangkokLocalDate: bangkokLocalDate(nowUtcIso),
   });

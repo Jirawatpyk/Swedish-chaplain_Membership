@@ -99,7 +99,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // member actually types) rather than "5350000".
   const invoices = result.value.rows.map((inv) => ({
     id: String(inv.invoiceId),
-    invoiceNumber: inv.documentNumber ? String(inv.documentNumber) : '',
+    // 088 FR-030 — this route is issued-ONLY (status:'issued' above), so an 088
+    // bill's number lives in `billDocumentNumberRaw` (§87 `documentNumber` NULL).
+    // Bill-first; do NOT use `displayDocumentNumber` here (it omits the bill
+    // number). Also fixes the `String(valueObject)`→"[object Object]" trap.
+    invoiceNumber: inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? '',
     amountDue: inv.total ? Number(inv.total.satang) / 100 : 0,
     currency: inv.currency,
   }));

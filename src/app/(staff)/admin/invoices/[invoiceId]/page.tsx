@@ -475,7 +475,9 @@ export default async function InvoiceDetailPage({
               // number in the background card.
               <RecordPaymentDialog
                 invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? null}
+                // 088 FR-030 — bill-first: an issued 088 bill's number is its SC
+                // (`billDocumentNumberRaw`); legacy §87 rows keep documentNumber.
+                documentNumber={invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null}
                 issueDate={invoice.issueDate}
                 todayIso={bangkokTodayIso}
               />
@@ -543,7 +545,8 @@ export default async function InvoiceDetailPage({
                       ?.currency_code ?? 'THB'
                   }
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
-                  invoiceDocumentNumber={invoice.documentNumber?.raw ?? null}
+                  // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
+                  invoiceDocumentNumber={invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null}
                 />
               </Suspense>
             )}
@@ -568,7 +571,9 @@ export default async function InvoiceDetailPage({
                 // 064 remediation S2 — display number, never a raw UUID: β
                 // rows resolve to their printed §105 receipt number (drives
                 // the download filename + every aria inside the menu).
-                documentNumber={displayNumber ?? invoice.invoiceId}
+                // 088 FR-030 — fall back to the SC bill number before the UUID so
+                // an unpaid 088 bill (displayNumber NULL) is named by its SC.
+                documentNumber={displayNumber ?? invoice.billDocumentNumberRaw ?? invoice.invoiceId}
                 // 088 (T065 review fix) — on a paid 088 bill `displayNumber`
                 // resolves to the RC §86/4 tax-receipt number, but the MAIN
                 // (`showDownload`) PDF is the non-tax SC bill, so name that

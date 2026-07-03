@@ -24,6 +24,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   listInvoicesPaged,
   makeListInvoicesDeps,
+  displayDocumentNumber,
 } from '@/modules/invoicing';
 import {
   loadInvoicePaymentActivity,
@@ -215,9 +216,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 ?.legal_name ?? '';
             items.push({
               invoice_id: String(inv.invoiceId),
-              invoice_number: inv.documentNumber
-                ? String(inv.documentNumber)
-                : '',
+              // 088 FR-030 — these rows are PAID → receipt-first via the shared
+              // helper (documentNumber?.raw ?? receiptDocumentNumberRaw). Also
+              // fixes the latent `String(valueObject)`→"[object Object]" bug: the
+              // DocumentNumber VO has no toString, so read `.raw` via the helper.
+              invoice_number: displayDocumentNumber(inv) ?? '',
               member_company_name: memberCompany,
               total_display: `${total.toFixed(2)} ${inv.currency}`,
               // RefundDialog auto-opens on `?refund=1`.

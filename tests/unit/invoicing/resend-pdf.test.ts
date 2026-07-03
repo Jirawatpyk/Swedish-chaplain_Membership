@@ -320,6 +320,78 @@ describe('resendPdf', () => {
     expect(auditCall.payload).not.toHaveProperty('member_id');
   });
 
+  it('088 invoice variant — restores the SC bill number to the audit summary + payload (FR-030)', async () => {
+    // A new-flow 088 bill has NULL §87 `documentNumber`; its SC number lives in
+    // `billDocumentNumberRaw`. The invoice-copy resend must name the SC (not '')
+    // in the outbox row + `invoice_pdf_resent` audit summary/payload.
+    const invoice = issuedInvoice({
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000123',
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.documentNumber).toBe('SC-2026-000123');
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.documentNumber).toBe('SC-2026-000123');
+    const auditCall = (deps.audit.emit as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as {
+      summary: string;
+      payload: Record<string, unknown>;
+    };
+    expect(auditCall.summary).toContain('SC-2026-000123');
+    expect(auditCall.payload.document_number).toBe('SC-2026-000123');
+  });
+
+  it('088 receipt variant — names the §86/4 RC receipt number (FR-030)', async () => {
+    // On a paid 088 bill the §86/4 RC lives in `receiptDocumentNumberRaw`. The
+    // receipt-copy resend must name the RC (not the NULL §87 documentNumber).
+    const invoice = issuedInvoice({
+      status: 'paid',
+      paidAt: '2026-04-20T00:00:00Z',
+      paymentDate: '2026-04-20',
+      paymentMethod: 'bank_transfer',
+      paymentRecordedByUserId: 'u-admin',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000123',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+      receiptPdf: { blobKey: 'blob:rcpt-key', sha256: sha(), templateVersion: 1 },
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'receipt',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.documentNumber).toBe('RC-2026-000123');
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.documentNumber).toBe('RC-2026-000123');
+    const auditCall = (deps.audit.emit as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as {
+      eventType: string;
+      summary: string;
+      payload: Record<string, unknown>;
+    };
+    expect(auditCall.eventType).toBe('receipt_pdf_resent');
+    expect(auditCall.summary).toContain('RC-2026-000123');
+    expect(auditCall.payload.document_number).toBe('RC-2026-000123');
+  });
+
   it('credit_note variant — enqueues credit_note_pdf_resent + audit', async () => {
     const cn = creditNoteFixture();
     const deps = makeDeps(null, cn);

@@ -52,7 +52,12 @@ export default async function NewCreditNotePage({
   if (invoice.status !== 'paid' && invoice.status !== 'partially_credited') {
     notFound();
   }
-  if (!invoice.total || !invoice.documentNumber) notFound();
+  // 088 FR-030 — a paid 088 invoice has NULL §87 `documentNumber`; its
+  // §86/4 RC receipt number lives in `receiptDocumentNumberRaw`. Guard on
+  // EITHER so a paid 088 invoice is creditable (SC-006), not 404'd.
+  if (!invoice.total || (!invoice.documentNumber && !invoice.receiptDocumentNumberRaw)) {
+    notFound();
+  }
 
   const remainingSatang = (
     invoice.total.satang - invoice.creditedTotal.satang
@@ -65,7 +70,11 @@ export default async function NewCreditNotePage({
         <CardContent>
           <CreditNoteForm
             invoiceId={invoiceId}
-            documentNumber={invoice.documentNumber.raw}
+            // documentNumber-FIRST so legacy IN-…/separate-mode keep their
+            // §87 number; a paid 088 invoice (documentNumber NULL) falls
+            // through to its RC (SC-006). Display-only ("against invoice
+            // {number}" label).
+            documentNumber={invoice.documentNumber?.raw ?? invoice.receiptDocumentNumberRaw ?? ''}
             remainingSatang={remainingSatang}
             currencySymbol="THB"
           />

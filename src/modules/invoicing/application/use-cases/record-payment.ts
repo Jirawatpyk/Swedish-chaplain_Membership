@@ -802,7 +802,10 @@ export async function recordPayment(
     // Common (subject-agnostic) fields for the `invoice_paid` audit payload.
     // The branch below adds EITHER `member_id` (membership / matched member →
     // F3 timeline) OR `event_registration_id` (non-member event → non-timeline).
-    const invoicePaidSummary = `Invoice ${loaded.documentNumber?.raw} marked paid`;
+    // 088 FR-030 — an 088 bill has NULL §87 `documentNumber`; name the audit by
+    // its SC bill (or, defensively, the just-minted RC) so the summary never
+    // reads "Invoice undefined marked paid". Legacy §87 rows keep documentNumber.
+    const invoicePaidSummary = `Invoice ${loaded.billDocumentNumberRaw ?? loaded.receiptDocumentNumberRaw ?? loaded.documentNumber?.raw ?? loaded.invoiceId} marked paid`;
     const invoicePaidPayloadBase: Record<string, unknown> = {
       invoice_id: invoiceId,
       payment_method: input.paymentMethod,

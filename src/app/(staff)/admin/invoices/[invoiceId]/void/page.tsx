@@ -49,7 +49,13 @@ export default async function VoidInvoicePage({
   // Only `issued` is voidable. `paid` → direct to credit-note (US6);
   // everything else is terminal or pre-issue.
   if (invoice.status !== 'issued') notFound();
-  if (!invoice.documentNumber) notFound();
+  // 088 FR-030 — an issued 088 bill carries its number in
+  // `billDocumentNumberRaw` (the §87 `documentNumber` stays NULL). The
+  // void-invoice use-case supports voiding it (FR-017), so resolve
+  // whichever number the row actually carries rather than 404-ing a
+  // legitimately voidable bill. Legacy §87 rows keep `documentNumber`.
+  const confirmNumber = invoice.documentNumber?.raw ?? invoice.billDocumentNumberRaw;
+  if (!confirmNumber) notFound();
 
   return (
     <FormContainer>
@@ -67,7 +73,7 @@ export default async function VoidInvoicePage({
         <CardContent>
           <VoidConfirmDialog
             invoiceId={invoiceId}
-            documentNumber={invoice.documentNumber.raw}
+            documentNumber={confirmNumber}
           />
         </CardContent>
       </Card>

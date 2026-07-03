@@ -228,7 +228,10 @@ function buildRow(
 
   const cells: readonly string[] = [
     inv.issueDate ?? '',
-    inv.documentNumber?.raw ?? '',
+    // 088 FR-030 — the "Invoice No." column shows an 088 bill's SC number
+    // (`billDocumentNumberRaw`; §87 `documentNumber` NULL); the §86/4 RC stays
+    // in the "Receipt No." column below. Legacy §87 rows keep documentNumber.
+    inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? '',
     inv.receiptDocumentNumberRaw ?? '',
     legalName,
     taxId,
