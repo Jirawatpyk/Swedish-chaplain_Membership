@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
+import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -63,6 +64,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
               <Suspense fallback={null}>
                 <OutboxHealthBadge />
               </Suspense>
+              <LocaleSwitcher />
               <ThemeToggle />
               <UserMenu
                 displayName={user.displayName}

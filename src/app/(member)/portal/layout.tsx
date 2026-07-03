@@ -6,6 +6,7 @@ import { getTranslations } from 'next-intl/server';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { MemberNav } from '@/components/layout/member-nav';
 import { MemberBottomTabs } from '@/components/layout/member-bottom-tabs';
+import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { MemberCommandPaletteRoot } from '@/components/shell/member-command-palette-root';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -79,11 +80,12 @@ export default async function MemberLayout({ children }: { children: ReactNode }
             <MemberNav />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {/* ThemeToggle is hidden on mobile (< 640 px) to give the
-                fixed-width header room for the icon-only MemberNav.
-                Mobile users can change theme via their OS `prefers-
-                color-scheme` setting (honoured automatically) or via
-                the UserMenu which remains always-visible. */}
+            {/* LocaleSwitcher is ALWAYS visible (even on mobile): unlike
+                theme, locale has no OS fallback and no UserMenu entry, so a
+                hidden switcher would strand a member in a language they can't
+                read. ThemeToggle stays hidden < 640px (OS prefers-color-scheme
+                is the mobile fallback). */}
+            <LocaleSwitcher />
             <span className="hidden sm:contents">
               <ThemeToggle />
             </span>
