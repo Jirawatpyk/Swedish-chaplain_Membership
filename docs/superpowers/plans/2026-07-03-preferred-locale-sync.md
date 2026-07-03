@@ -4,7 +4,7 @@
 
 **Goal:** When a logged-in member switches the UI language, also persist that locale to `members.preferred_locale` (email/broadcast language), via a best-effort background write — staff and auth pages stay cookie-only.
 
-**Architecture:** A new shared client transport (`updatePreferredLocale`) owns the PATCH to the existing `/api/portal/preferred-locale`; both the `LocaleSwitcher` (new opt-in `persistToAccount` branch) and the existing `PreferredLocaleForm` call it. The switcher's persist is a detached, abort-superseded, timeout-bounded, retry-once (5xx/network only) write that never blocks the cookie-driven UI refresh.
+**Architecture:** A new shared client transport (`updatePreferredLocale`) owns the PATCH to the existing `/api/portal/preferred-locale`; both the `LocaleSwitcher` (new opt-in `persistToAccount`) and the existing `PreferredLocaleForm` call it. The switcher's retry/abort policy lives in a separate, directly-testable `runPreferredLocalePersist`; the component wires it with an abort-previous ref + timeout, and never blocks the cookie-driven UI refresh.
 
 **Tech Stack:** Next.js 16 App Router (RSC), React 19 (`useRef`, `useTransition`), TypeScript strict, Vitest + Testing Library, Playwright.
 
@@ -15,11 +15,12 @@
 - Package manager **pnpm**, never npm. Dev port **3100**.
 - Conventional Commits (`feat(i18n): …`); NOT a Spec Kit feature — no `[Spec Kit]` prefix.
 - **No new npm dependencies**; TypeScript strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) — run `pnpm typecheck` + `pnpm lint` before each commit.
-- Presentation-only (Constitution III): the switcher, transport, and form call an existing HTTP endpoint; none imports `src/modules/*`.
-- **Cookie-only elsewhere**: `persistToAccount` defaults `false`; staff layout + the 7 auth pages must remain unchanged (no persist).
-- **INVARIANT** — the switcher's detached persist path does **no** `setState` and **no** `toast`; only `console.warn`. (Orphaned-update hazard after `router.refresh()`.)
+- Presentation-only (Constitution III): the switcher, persist policy, transport, and form call an existing HTTP endpoint; none imports `src/modules/*`.
+- **Cookie-only elsewhere**: `persistToAccount` defaults `false`; staff layout + the 7 auth pages remain unchanged.
+- **INVARIANT** — the switcher's detached persist path does **no** `setState` and **no** `toast`; only `console.warn` on a `'failed'` outcome. (Orphaned-update hazard after `router.refresh()`.)
 - Retry **only** on network error / 5xx — never on a 4xx (deterministic).
 - E2E always `--workers=1`.
+- When applying an Edit, if a shown `old` snippet does not match, **derive `old_string` from a fresh Read of the file** — do not force the plan's snippet.
 
 **Working dir:** worktree `.claude/worktrees/preferred-locale-sync` on branch `worktree-preferred-locale-sync` (off `main` @ `f3082a1a`, deps installed, `.env.local` present).
 
@@ -32,7 +33,7 @@
 - Test: `tests/unit/components/portal/preferred-locale-client.test.ts`
 
 **Interfaces:**
-- Produces: `PREFERRED_LOCALE_ENDPOINT: string`, `type PreferredLocale = 'en'|'th'|'sv'|null`, and `updatePreferredLocale(preferredLocale: PreferredLocale, signal?: AbortSignal): Promise<Response>`.
+- Produces: `PREFERRED_LOCALE_ENDPOINT: string`; `type PreferredLocale = 'en'|'th'|'sv'|null`; `updatePreferredLocale(preferredLocale: PreferredLocale, signal?: AbortSignal): Promise<Response>`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -82,10 +83,10 @@ describe('updatePreferredLocale', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test — verify it fails**
+- [ ] **Step 2: Run — verify it fails**
 
 Run: `pnpm test tests/unit/components/portal/preferred-locale-client.test.ts`
-Expected: FAIL — cannot resolve `@/components/portal/preferred-locale-client`.
+Expected: FAIL — module `@/components/portal/preferred-locale-client` not found.
 
 - [ ] **Step 3: Implement the transport**
 
@@ -95,8 +96,8 @@ Create `src/components/portal/preferred-locale-client.ts`:
 /**
  * Client transport for the member preferred-locale endpoint. Owns the URL +
  * request shape ONLY — callers apply their own policy (the LocaleSwitcher
- * persist branch retries; the Account form toasts). Single source of truth so
- * the route string + body shape cannot drift across consumers.
+ * persist path retries; the Account form toasts). Single source of truth so the
+ * route string + body shape cannot drift across consumers.
  */
 export const PREFERRED_LOCALE_ENDPOINT = '/api/portal/preferred-locale';
 
@@ -123,15 +124,14 @@ export function updatePreferredLocale(
 }
 ```
 
-- [ ] **Step 4: Run the test — verify it passes**
+- [ ] **Step 4: Run — verify it passes**
 
 Run: `pnpm test tests/unit/components/portal/preferred-locale-client.test.ts`
 Expected: PASS (3 tests).
 
 - [ ] **Step 5: Typecheck**
 
-Run: `pnpm typecheck`
-Expected: no errors.
+Run: `pnpm typecheck` → no errors.
 
 - [ ] **Step 6: Commit**
 
@@ -152,9 +152,14 @@ Mechanical refactor — **no behavior change**. Removes the duplicated inline PA
 **Interfaces:**
 - Consumes: `updatePreferredLocale`, `PREFERRED_LOCALE_ENDPOINT`, `PreferredLocale` from Task 1.
 
-- [ ] **Step 1: Add the import**
+> The `old` snippets below are indentation-sensitive. If any Edit fails to
+> match, re-Read the file and derive the exact `old_string` (the GET block is
+> nested inside a `void (async () => { … })()` in a `useEffect`, at 8/10-space
+> indent).
 
-In `src/components/portal/preferred-locale-form.tsx`, add near the other imports:
+- [ ] **Step 1: Add the import; drop the local type**
+
+Add near the other imports in `src/components/portal/preferred-locale-form.tsx`:
 
 ```ts
 import {
@@ -164,31 +169,31 @@ import {
 } from '@/components/portal/preferred-locale-client';
 ```
 
-Then delete the local type declaration line `type PreferredLocale = 'en' | 'th' | 'sv' | null;` (now imported).
+Delete the local declaration line `type PreferredLocale = 'en' | 'th' | 'sv' | null;` (now imported). Keep the `type LoadState = …` line.
 
 - [ ] **Step 2: Use the const for the mount GET**
 
-Replace the GET fetch URL:
+Replace (note the real 8/10-space indentation):
 
-```ts
-const res = await fetch('/api/portal/preferred-locale', {
-  credentials: 'same-origin',
-});
+```tsx
+        const res = await fetch('/api/portal/preferred-locale', {
+          credentials: 'same-origin',
+        });
 ```
 
 with:
 
-```ts
-const res = await fetch(PREFERRED_LOCALE_ENDPOINT, {
-  credentials: 'same-origin',
-});
+```tsx
+        const res = await fetch(PREFERRED_LOCALE_ENDPOINT, {
+          credentials: 'same-origin',
+        });
 ```
 
 - [ ] **Step 3: Use the transport for the submit PATCH**
 
-Replace the submit fetch block:
+Replace:
 
-```ts
+```tsx
       const res = await fetch('/api/portal/preferred-locale', {
         method: 'PATCH',
         credentials: 'same-origin',
@@ -199,20 +204,17 @@ Replace the submit fetch block:
 
 with:
 
-```ts
+```tsx
       const res = await updatePreferredLocale(value);
 ```
 
-(The surrounding `if (res.ok) { toast.success … } else { toast.error … }` stays exactly as-is — the form keeps its own UX policy.)
+(The surrounding `if (res.ok) { toast.success … } else { toast.error … }` is unchanged — the form keeps its own UX policy.)
 
 - [ ] **Step 4: Verify — no behavior change**
 
-Run: `pnpm typecheck && pnpm lint`
-Expected: no errors (the local `PreferredLocale` type is now imported; `value: PreferredLocale` still assignable to the transport param).
-
-Run any existing form test if present:
-`pnpm test tests/unit/components/portal/preferred-locale-form.test.tsx 2>/dev/null || echo "no dedicated form test — covered by typecheck"`
-Expected: PASS (or the "no dedicated form test" note).
+Run: `pnpm typecheck && pnpm lint` → no errors.
+Run: `pnpm test tests/unit/components/portal/preferred-locale-form.test.tsx 2>/dev/null || echo "no dedicated form test — typecheck covers the refactor"`
+Expected: PASS (or the note).
 
 - [ ] **Step 5: Commit**
 
@@ -223,44 +225,175 @@ git commit -m "refactor(i18n): PreferredLocaleForm uses the shared transport"
 
 ---
 
-## Task 3: `LocaleSwitcher` — `persistToAccount` detached persist
+## Task 3: `runPreferredLocalePersist` — the retry/abort policy (directly tested)
+
+Extract the switcher's persist policy into a pure, directly-testable async
+function, so the retry + 4xx + abort-stop branches (the feature's core
+out-of-order-write guard) get deterministic coverage without DOM/menu timing.
+
+**Files:**
+- Create: `src/components/shell/locale-persist.ts`
+- Test: `tests/unit/components/shell/locale-persist.test.ts`
+
+**Interfaces:**
+- Consumes: `updatePreferredLocale` (Task 1); `type Locale` from `@/i18n/config`.
+- Produces: `type PersistOutcome = 'ok' | 'client_error' | 'aborted' | 'failed'`; `runPreferredLocalePersist(locale: Locale, signal: AbortSignal): Promise<PersistOutcome>`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/unit/components/shell/locale-persist.test.ts`:
+
+```ts
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@/components/portal/preferred-locale-client', () => ({
+  updatePreferredLocale: vi.fn(),
+}));
+import { updatePreferredLocale } from '@/components/portal/preferred-locale-client';
+import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
+
+const updateMock = vi.mocked(updatePreferredLocale);
+const res = (status: number): Response =>
+  ({ ok: status >= 200 && status < 300, status }) as unknown as Response;
+
+describe('runPreferredLocalePersist', () => {
+  beforeEach(() => updateMock.mockReset());
+
+  it('returns ok on 200 without retrying', async () => {
+    updateMock.mockResolvedValue(res(200));
+    expect(await runPreferredLocalePersist('th', new AbortController().signal)).toBe('ok');
+    expect(updateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns client_error and does NOT retry on a 4xx (403)', async () => {
+    updateMock.mockResolvedValue(res(403));
+    expect(await runPreferredLocalePersist('th', new AbortController().signal)).toBe('client_error');
+    expect(updateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries once on 5xx then succeeds', async () => {
+    updateMock.mockResolvedValueOnce(res(503)).mockResolvedValueOnce(res(200));
+    expect(await runPreferredLocalePersist('th', new AbortController().signal)).toBe('ok');
+    expect(updateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns failed after both attempts are 5xx', async () => {
+    updateMock.mockResolvedValue(res(503));
+    expect(await runPreferredLocalePersist('th', new AbortController().signal)).toBe('failed');
+    expect(updateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns failed after both attempts reject (network)', async () => {
+    updateMock.mockRejectedValue(new Error('network'));
+    expect(await runPreferredLocalePersist('th', new AbortController().signal)).toBe('failed');
+    expect(updateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops with aborted (no retry) when the signal is aborted mid-flight', async () => {
+    const ac = new AbortController();
+    updateMock.mockImplementation(() => {
+      ac.abort();
+      return Promise.reject(new DOMException('aborted', 'AbortError'));
+    });
+    expect(await runPreferredLocalePersist('th', ac.signal)).toBe('aborted');
+    expect(updateMock).toHaveBeenCalledTimes(1); // did NOT retry after abort
+  });
+});
+```
+
+- [ ] **Step 2: Run — verify it fails**
+
+Run: `pnpm test tests/unit/components/shell/locale-persist.test.ts`
+Expected: FAIL — module `@/components/shell/locale-persist` not found.
+
+- [ ] **Step 3: Implement**
+
+Create `src/components/shell/locale-persist.ts`:
+
+```ts
+import { updatePreferredLocale } from '@/components/portal/preferred-locale-client';
+import type { Locale } from '@/i18n/config';
+
+export type PersistOutcome = 'ok' | 'client_error' | 'aborted' | 'failed';
+
+/**
+ * The LocaleSwitcher's best-effort persist policy for a member's preferred
+ * locale: up to 2 attempts, retrying ONLY on network error / 5xx (a 4xx is
+ * deterministic → stop). Stops immediately if `signal` is aborted (superseded
+ * by a newer selection, or timed out). Never throws. The caller warns only on
+ * `'failed'`.
+ */
+export async function runPreferredLocalePersist(
+  locale: Locale,
+  signal: AbortSignal,
+): Promise<PersistOutcome> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await updatePreferredLocale(locale, signal);
+      if (res.ok) return 'ok';
+      if (res.status < 500) return 'client_error'; // 4xx → deterministic, stop
+      // 5xx → fall through to the one retry
+    } catch {
+      if (signal.aborted) return 'aborted'; // superseded / timed out
+      // network error → fall through to the one retry
+    }
+  }
+  return 'failed';
+}
+```
+
+- [ ] **Step 4: Run — verify all pass**
+
+Run: `pnpm test tests/unit/components/shell/locale-persist.test.ts`
+Expected: PASS (6 tests).
+
+- [ ] **Step 5: Typecheck**
+
+Run: `pnpm typecheck` → no errors.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/components/shell/locale-persist.ts tests/unit/components/shell/locale-persist.test.ts
+git commit -m "feat(i18n): runPreferredLocalePersist retry/abort policy"
+```
+
+---
+
+## Task 4: `LocaleSwitcher` — `persistToAccount` wiring
+
+Wire the opt-in prop to the persist policy with an abort-previous ref + timeout,
+warn on `'failed'`, and update the now-stale file-header comment.
 
 **Files:**
 - Modify: `src/components/shell/locale-switcher.tsx`
 - Test: `tests/unit/components/shell/locale-switcher.test.tsx` (extend)
 
 **Interfaces:**
-- Consumes: `updatePreferredLocale` (Task 1).
-- Produces: `LocaleSwitcher` now accepts `{ className?: string; persistToAccount?: boolean }`.
+- Consumes: `runPreferredLocalePersist` (Task 3).
+- Produces: `LocaleSwitcher` accepts `{ className?: string; persistToAccount?: boolean }`.
 
 - [ ] **Step 1: Write the failing tests (extend the existing file)**
 
-At the TOP of `tests/unit/components/shell/locale-switcher.test.tsx`, add the transport mock right after the existing `vi.mock('next/navigation', …)` block:
+At the TOP of `tests/unit/components/shell/locale-switcher.test.tsx`, after the existing `vi.mock('next/navigation', …)` block, add:
 
 ```ts
-vi.mock('@/components/portal/preferred-locale-client', () => ({
-  PREFERRED_LOCALE_ENDPOINT: '/api/portal/preferred-locale',
-  updatePreferredLocale: vi.fn(),
+vi.mock('@/components/shell/locale-persist', () => ({
+  runPreferredLocalePersist: vi.fn(),
 }));
 ```
 
-Add these imports to the existing import list:
+Add to the import list:
 
 ```ts
 import { waitFor } from '@testing-library/react';
-import { updatePreferredLocale } from '@/components/portal/preferred-locale-client';
+import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
 ```
 
-Add this helper below the existing `renderSwitcher` function:
+Add below the existing `renderSwitcher` helper:
 
 ```ts
-const updateMock = vi.mocked(updatePreferredLocale);
-
-// Minimal Response stub — the persist path only reads `.ok` and `.status`.
-// `as unknown as Response` avoids TS2352 (a bare `{ok,status}` object lacks
-// Response's other members) and sidesteps needing a real `Response` global.
-const res = (status: number): Response =>
-  ({ ok: status >= 200 && status < 300, status }) as unknown as Response;
+const persistMock = vi.mocked(runPreferredLocalePersist);
 
 function renderWithPersist(locale: 'en' | 'th' | 'sv' = 'en') {
   return render(
@@ -284,7 +417,8 @@ describe('<LocaleSwitcher persistToAccount>', () => {
   beforeEach(() => {
     vi.useRealTimers();
     refreshSpy.mockClear();
-    updateMock.mockReset();
+    persistMock.mockReset();
+    persistMock.mockResolvedValue('ok');
     document.cookie = 'NEXT_LOCALE=; path=/; max-age=0';
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -294,65 +428,44 @@ describe('<LocaleSwitcher persistToAccount>', () => {
     vi.useFakeTimers();
   });
 
-  it('persists the chosen locale to the account', async () => {
-    updateMock.mockResolvedValue(res(200));
+  it('runs the persist policy with the chosen locale + an AbortSignal', async () => {
     renderWithPersist('en');
     await pickThai();
-    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
-    expect(updateMock).toHaveBeenCalledWith('th', expect.any(AbortSignal));
+    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
+    expect(persistMock).toHaveBeenCalledWith('th', expect.any(AbortSignal));
   });
 
-  it('retries once on 5xx then succeeds without warning', async () => {
-    updateMock
-      .mockResolvedValueOnce(res(503))
-      .mockResolvedValueOnce(res(200));
-    renderWithPersist('en');
-    await pickThai();
-    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it('does NOT retry on a 4xx (403)', async () => {
-    updateMock.mockResolvedValue(res(403));
-    renderWithPersist('en');
-    await pickThai();
-    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
-    // give any erroneous retry a chance to fire, then confirm it did not.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(updateMock).toHaveBeenCalledTimes(1);
-    expect(warnSpy).not.toHaveBeenCalled();
-  });
-
-  it('warns once after both attempts reject (network) and never throws', async () => {
-    updateMock.mockRejectedValue(new Error('network down'));
+  it('warns once when the persist outcome is "failed"', async () => {
+    persistMock.mockResolvedValue('failed');
     renderWithPersist('en');
     await pickThai();
     await waitFor(() => expect(warnSpy).toHaveBeenCalledTimes(1));
-    expect(updateMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not warn on a non-failed outcome (client_error)', async () => {
+    persistMock.mockResolvedValue('client_error');
+    renderWithPersist('en');
+    await pickThai();
+    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('does not persist when persistToAccount is absent (default cookie-only)', async () => {
-    updateMock.mockResolvedValue(res(200));
     renderSwitcher('en'); // no persistToAccount
     await pickThai();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(updateMock).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(persistMock).not.toHaveBeenCalled();
   });
 });
 ```
 
-> Note on the superseded/abort path: it is verified by code review + the
-> `expect.any(AbortSignal)` assertion above (proving the signal is wired), NOT
-> by a dedicated unit test — reproducing two overlapping in-flight persists
-> deterministically fights the `isPending` guard + Base UI menu timing and
-> would be flaky. Do not add a timing-racy abort test.
-
-- [ ] **Step 2: Run the new tests — verify they fail**
+- [ ] **Step 2: Run — verify the 4 new tests fail**
 
 Run: `pnpm test tests/unit/components/shell/locale-switcher.test.tsx`
-Expected: the 5 new `persistToAccount` tests FAIL (the prop is ignored / `updateMock` never called); the original 4 still pass.
+Expected: the 4 new tests FAIL (prop ignored, `persistMock` never called); the original 4 still pass.
 
-- [ ] **Step 3: Implement the persist path**
+- [ ] **Step 3: Implement the wiring**
 
 In `src/components/shell/locale-switcher.tsx`:
 
@@ -362,20 +475,37 @@ In `src/components/shell/locale-switcher.tsx`:
 import { useRef, useTransition } from 'react';
 ```
 
-**(b)** Add the transport import after the `@/lib/utils` import:
+**(b)** Add after the `@/lib/utils` import:
 
 ```ts
-import { updatePreferredLocale } from '@/components/portal/preferred-locale-client';
+import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
 ```
 
-**(c)** Add a module-level const above the component (after the imports):
+**(c)** Add a module-level const after the imports (before the component):
 
 ```ts
 /** Abort a stuck preferred-locale sync after this long (captive-portal guard). */
 const PERSIST_TIMEOUT_MS = 8000;
 ```
 
-**(d)** Change the component signature to accept the prop:
+**(d)** Update the file-header comment: replace the sentence
+
+```
+ * Client-only, mirroring `ThemeToggle`. It does NOT touch
+ * member `preferred_locale` (email language) — that stays an Account-settings
+ * preference (see the design doc).
+```
+
+with
+
+```
+ * Client-only, mirroring `ThemeToggle`. By default it is cookie-only; when
+ * `persistToAccount` is set (member portal), it ALSO best-effort persists the
+ * choice to `members.preferred_locale` (email language) via
+ * `runPreferredLocalePersist`. Staff/auth stay cookie-only.
+```
+
+**(e)** Change the signature to accept the prop:
 
 ```ts
 export function LocaleSwitcher({
@@ -387,45 +517,36 @@ export function LocaleSwitcher({
 } = {}) {
 ```
 
-**(e)** Add the abort ref after the `useTransition` line:
+**(f)** Add the abort ref after the `useTransition` line:
 
 ```ts
   const syncAbortRef = useRef<AbortController | null>(null);
 ```
 
-**(f)** Add the persist helper between the ref and `handleValueChange`:
+**(g)** Add the persist wiring between the ref and `handleValueChange`:
 
 ```ts
-  // Best-effort background write of preferred_locale (email/broadcast language)
-  // for logged-in members. Detached: never blocks the cookie-driven UI refresh.
-  // INVARIANT: no setState / no toast here — only console.warn. A state update
-  // fired after router.refresh() would be an orphaned-update bug.
+  // Best-effort background write of preferred_locale for logged-in members.
+  // Detached: never blocks the cookie-driven UI refresh. INVARIANT: no setState
+  // / no toast here — only console.warn on a hard failure (a state update after
+  // router.refresh() would be an orphaned-update bug). Abort-previous: a newer
+  // pick supersedes an in-flight sync so a stale retry can't land out of order.
   const persistPreferredLocale = (locale: Locale): void => {
-    syncAbortRef.current?.abort(); // supersede any older in-flight sync
+    syncAbortRef.current?.abort();
     const controller = new AbortController();
     syncAbortRef.current = controller;
     const timer = setTimeout(() => controller.abort(), PERSIST_TIMEOUT_MS);
-    void (async () => {
-      try {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const res = await updatePreferredLocale(locale, controller.signal);
-            if (res.ok || res.status < 500) return; // ok, or deterministic 4xx → stop
-            // 5xx → fall through to the one retry
-          } catch {
-            if (controller.signal.aborted) return; // superseded or timed out
-            // network error → fall through to the one retry
-          }
+    void runPreferredLocalePersist(locale, controller.signal)
+      .then((outcome) => {
+        if (outcome === 'failed') {
+          console.warn('[LocaleSwitcher] preferred_locale sync failed');
         }
-        console.warn('[LocaleSwitcher] preferred_locale sync failed');
-      } finally {
-        clearTimeout(timer);
-      }
-    })();
+      })
+      .finally(() => clearTimeout(timer));
   };
 ```
 
-**(g)** In `handleValueChange`, fire the persist after the cookie write, before the refresh:
+**(h)** In `handleValueChange`, fire the persist after the cookie write, before the refresh:
 
 ```ts
     document.cookie = `${LOCALE_COOKIE_NAME}=${value}; path=/; max-age=31536000; samesite=lax`;
@@ -433,33 +554,32 @@ export function LocaleSwitcher({
     startTransition(() => router.refresh());
 ```
 
-- [ ] **Step 4: Run the tests — verify all pass**
+- [ ] **Step 4: Run — verify all pass**
 
 Run: `pnpm test tests/unit/components/shell/locale-switcher.test.tsx`
-Expected: PASS (4 original + 5 new = 9).
+Expected: PASS (4 original + 4 new = 8).
 
 - [ ] **Step 5: Typecheck + lint**
 
-Run: `pnpm typecheck && pnpm lint`
-Expected: no errors.
+Run: `pnpm typecheck && pnpm lint` → no errors.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/components/shell/locale-switcher.tsx tests/unit/components/shell/locale-switcher.test.tsx
-git commit -m "feat(i18n): LocaleSwitcher persistToAccount syncs preferred_locale"
+git commit -m "feat(i18n): LocaleSwitcher persistToAccount wiring + abort ref"
 ```
 
 ---
 
-## Task 4: Wire `persistToAccount` in the member layout
+## Task 5: Wire `persistToAccount` in the member layout
 
 **Files:**
-- Modify: `src/app/(member)/portal/layout.tsx:93`
+- Modify: `src/app/(member)/portal/layout.tsx` (the always-visible switcher, ~line 93)
 
 - [ ] **Step 1: Pass the prop**
 
-In `src/app/(member)/portal/layout.tsx`, change the always-visible switcher (line ~93) from:
+Change:
 
 ```tsx
             <LocaleSwitcher />
@@ -471,12 +591,11 @@ to:
             <LocaleSwitcher persistToAccount />
 ```
 
-(Staff layout + the 7 auth pages are left unchanged — they render `<LocaleSwitcher />` → `persistToAccount` defaults `false`.)
+(Staff layout + the 7 auth pages keep `<LocaleSwitcher />` → `persistToAccount` defaults `false`.)
 
 - [ ] **Step 2: Verify**
 
-Run: `pnpm typecheck && pnpm lint`
-Expected: no errors.
+Run: `pnpm typecheck && pnpm lint` → no errors.
 
 - [ ] **Step 3: Commit**
 
@@ -487,18 +606,17 @@ git commit -m "feat(i18n): member portal switcher persists preferred_locale"
 
 ---
 
-## Task 5: E2E — member persists, staff does not
+## Task 6: E2E — member persists, staff does not
 
 **Files:**
 - Modify: `tests/e2e/locale-switcher.spec.ts`
 
 **Interfaces:**
-- Consumes: the existing `signIn(page, email, password, portal)` + `chooseLanguage(page, optionName)` helpers already in the spec.
+- Consumes: the existing `signIn(page, email, password, portal)` + `chooseLanguage(page, optionName)` helpers and the `ADMIN_*` / `MEMBER_*` env consts already in the spec.
 
 - [ ] **Step 1: Add the two tests**
 
-In `tests/e2e/locale-switcher.spec.ts`, inside the existing
-`test.describe('LocaleSwitcher @i18n', …)` block, add:
+Inside the existing `test.describe('LocaleSwitcher @i18n', …)` block, add:
 
 ```ts
   test('member portal switch persists preferred_locale (fires PATCH)', async ({ page }) => {
@@ -525,15 +643,13 @@ In `tests/e2e/locale-switcher.spec.ts`, inside the existing
   });
 ```
 
-- [ ] **Step 2: Validate statically (live run deferred to CI/preview)**
+- [ ] **Step 2: Validate statically (live run deferred / done by controller)**
 
-A live run needs this branch served on :3100 (conflicts with the operator's dev server), so validate compilation only:
 Run: `pnpm typecheck && pnpm test:e2e --grep "LocaleSwitcher" --list`
-Expected: typecheck clean; `--list` collects the now-5 tests × 3 projects with no compile/collection error.
+Expected: typecheck clean; `--list` collects the now-**5** tests × 3 projects with no compile/collection error.
 
-> The controller may instead run these live against a throwaway worktree dev
-> server on :3101 (see the team's e2e-worktree recipe) — but the implementer
-> should NOT attempt a live run that touches :3100.
+> Do NOT attempt a live run that touches :3100 (the operator's dev server). The
+> controller may run it live against a throwaway :3101 worktree server.
 
 - [ ] **Step 3: Commit**
 
@@ -547,6 +663,6 @@ git commit -m "test(i18n): e2e — member persists preferred_locale, staff does 
 ## Final verification (before opening the PR)
 
 - [ ] `pnpm lint && pnpm typecheck && pnpm test && pnpm build`
-- [ ] Confirm `git grep -n "fetch('/api/portal/preferred-locale'" src` returns **nothing** (all consumers now go through the transport; the form's GET uses the const).
+- [ ] `git grep -n "fetch('/api/portal/preferred-locale'" src` returns **nothing** (all consumers go through the transport / the const).
 - [ ] E2E live (controller, via a :3101 worktree server — never :3100): `pnpm exec playwright test --config=<:3101-override> --grep "LocaleSwitcher" --project=chromium --workers=1`.
 - [ ] Open PR off `main`.
