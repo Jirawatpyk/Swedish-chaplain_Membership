@@ -31,6 +31,16 @@ vi.mock('@/modules/invoicing', () => ({
   issueInvoice: vi.fn(),
   makeCreateInvoiceDraftDeps: vi.fn(() => ({})),
   makeIssueInvoiceDeps: vi.fn(() => ({})),
+  // The barrel's runtime graph is server-only (pino/node-crypto), so this mock
+  // is a hand-rolled literal (not `importOriginal`). `billFirstDocumentNumber`
+  // is a pure Domain function the bridge now calls through the barrel; provide a
+  // faithful re-impl (byte-identical to `billDocumentNumberRaw ?? documentNumber
+  // ?.raw ?? null`) so the bridge resolves the SAME number. The real function is
+  // unit-tested directly in tests/unit/invoicing/domain/invoice.test.ts.
+  billFirstDocumentNumber: (inv: {
+    documentNumber: { raw: string } | null;
+    billDocumentNumberRaw: string | null;
+  }): string | null => inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null,
 }));
 
 import { createInvoiceDraft, issueInvoice } from '@/modules/invoicing';

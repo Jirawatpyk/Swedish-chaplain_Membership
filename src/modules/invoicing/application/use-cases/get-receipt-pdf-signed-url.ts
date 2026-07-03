@@ -42,7 +42,11 @@ import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
-import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
+import {
+  asInvoiceId,
+  billFirstDocumentNumber,
+  type InvoiceId,
+} from '@/modules/invoicing/domain/invoice';
 
 export interface GetReceiptPdfSignedUrlInput {
   readonly tenantId: string;
@@ -185,8 +189,8 @@ export async function getReceiptPdfSignedUrl(
     // number lives in `billDocumentNumberRaw`. Prefer it so the download
     // cross-reference is a human-readable document number, never the raw UUID.
     summary: combinedMode
-      ? `Receipt PDF downloaded — invoice ${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId} (combined mode)`
-      : `Receipt PDF downloaded — ${invoice.receiptDocumentNumberRaw} (invoice ${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId})`,
+      ? `Receipt PDF downloaded — invoice ${billFirstDocumentNumber(invoice) ?? invoiceId} (combined mode)`
+      : `Receipt PDF downloaded — ${invoice.receiptDocumentNumberRaw} (invoice ${billFirstDocumentNumber(invoice) ?? invoiceId})`,
     payload: {
       invoice_id: invoiceId,
       member_id: invoice.memberId,

@@ -22,6 +22,7 @@ import {
   canTransition,
   displayDocumentNumber,
   issuedInvoiceIdentity,
+  billFirstDocumentNumber,
   INVOICE_STATUSES,
   type Invoice,
   type InvoiceStatus,
@@ -204,6 +205,50 @@ describe('issuedInvoiceIdentity — void/confirm identity of an ISSUED invoice (
         receiptDocumentNumberRaw: 'RC-2026-000015',
       }),
     ).toBe('RC-2026-000015');
+  });
+});
+
+describe('billFirstDocumentNumber — bill-first display identity (088 FR-030 shared core)', () => {
+  const docNum = (raw: string): DocumentNumber => {
+    const r = DocumentNumber.parse(raw);
+    if (!r.ok) throw new Error('bad fixture doc number');
+    return r.value;
+  };
+
+  it('issued 088 bill (SC present) resolves the non-§87 ใบแจ้งหนี้ bill number', () => {
+    expect(
+      billFirstDocumentNumber({
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000001',
+      }),
+    ).toBe('SC-2026-000001');
+  });
+
+  it('legacy §87 row (bill NULL) falls back to the §87 document number', () => {
+    expect(
+      billFirstDocumentNumber({
+        documentNumber: docNum('IN-2026-000009'),
+        billDocumentNumberRaw: null,
+      }),
+    ).toBe('IN-2026-000009');
+  });
+
+  it('returns null when neither number is present (true draft)', () => {
+    expect(
+      billFirstDocumentNumber({ documentNumber: null, billDocumentNumberRaw: null }),
+    ).toBeNull();
+  });
+
+  it('bill number WINS when both are set (bill-first, distinct from issuedInvoiceIdentity)', () => {
+    // Defensive: the §87-at-issue and 088-bill flows are disjoint, but the
+    // bill-first order must hold if both are ever set on one row — this is the
+    // exact INVERSE of `issuedInvoiceIdentity` (which prefers documentNumber).
+    expect(
+      billFirstDocumentNumber({
+        documentNumber: docNum('IN-2026-000009'),
+        billDocumentNumberRaw: 'SC-2026-000003',
+      }),
+    ).toBe('SC-2026-000003');
   });
 });
 

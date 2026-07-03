@@ -30,7 +30,7 @@
  *     duplicate no-ops. A future polish (post-MVP) may batch the N
  *     inserts into a single INSERT … VALUES (...) ON CONFLICT.
  */
-import type { Invoice } from '@/modules/invoicing/domain/invoice';
+import { billFirstDocumentNumber, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import type { OverdueAuditPort } from '../ports/overdue-audit-port';
 
@@ -116,7 +116,7 @@ export async function maybeEmitOverdueDetected(
     // 088 FR-030 — an issued 088 bill has NULL §87 `documentNumber`; surface its
     // SC bill number so the overdue-detected audit isn't blank. Legacy §87 rows
     // keep documentNumber (billDocumentNumberRaw NULL → falls through).
-    documentNumber: invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null,
+    documentNumber: billFirstDocumentNumber(invoice),
     dueDate: invoice.dueDate ?? '',
     bangkokLocalDate: bangkokLocalDate(nowUtcIso),
   });

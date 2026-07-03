@@ -22,6 +22,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireMemberContext } from '@/lib/member-context';
 import {
+  billFirstDocumentNumber,
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
 } from '@/modules/invoicing';
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // bill's number lives in `billDocumentNumberRaw` (§87 `documentNumber` NULL).
     // Bill-first; do NOT use `displayDocumentNumber` here (it omits the bill
     // number). Also fixes the `String(valueObject)`→"[object Object]" trap.
-    invoiceNumber: inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? '',
+    invoiceNumber: billFirstDocumentNumber(inv) ?? '',
     amountDue: inv.total ? Number(inv.total.satang) / 100 : 0,
     currency: inv.currency,
   }));

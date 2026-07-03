@@ -813,6 +813,10 @@ export async function recordPayment(
     // 088 FR-030 — an 088 bill has NULL §87 `documentNumber`; name the audit by
     // its SC bill (or, defensively, the just-minted RC) so the summary never
     // reads "Invoice undefined marked paid". Legacy §87 rows keep documentNumber.
+    // Deliberately NOT `billFirstDocumentNumber(loaded)`: that helper is SC ??
+    // documentNumber, whereas the paid-audit summary intentionally prefers the
+    // just-minted RC (`receiptDocumentNumberRaw`) BEFORE the §87 documentNumber —
+    // a different precedence (SC ?? RC ?? documentNumber), so it stays inline.
     const invoicePaidSummary = `Invoice ${loaded.billDocumentNumberRaw ?? loaded.receiptDocumentNumberRaw ?? loaded.documentNumber?.raw ?? loaded.invoiceId} marked paid`;
     const invoicePaidPayloadBase: Record<string, unknown> = {
       invoice_id: invoiceId,

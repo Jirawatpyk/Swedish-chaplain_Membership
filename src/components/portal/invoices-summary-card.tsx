@@ -27,7 +27,11 @@ import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import {
+  billFirstDocumentNumber,
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+} from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
@@ -206,7 +210,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
               // paid, the §86/4 RC in `receiptDocumentNumberRaw`. Bill-first so
               // this widget's "latest invoices" rows never render '—'/UUID.
               const displayNo =
-                r.billDocumentNumberRaw ?? r.documentNumber?.raw ?? r.receiptDocumentNumberRaw;
+                billFirstDocumentNumber(r) ?? r.receiptDocumentNumberRaw;
               return (
               <li
                 key={r.invoiceId}

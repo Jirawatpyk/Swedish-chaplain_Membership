@@ -382,6 +382,22 @@ export function issuedInvoiceIdentity(inv: {
 }
 
 /**
+ * The bill-first display identity of an invoice: the non-§87 ใบแจ้งหนี้ bill
+ * number (SC) if present, else the §87 documentNumber, else null. The single
+ * source for the ~14 inline `billDocumentNumberRaw ?? documentNumber?.raw`
+ * sites (each applies its own tail: ?? invoiceId / ?? '' / ?? receiptRaw).
+ * Distinct from `displayDocumentNumber` (documentNumber-first, RC fallback —
+ * for PAID/receipt surfaces) and `issuedInvoiceIdentity` (documentNumber-first,
+ * bill fallback — for the void/confirm guard). Pure/framework-free.
+ */
+export function billFirstDocumentNumber(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly billDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null;
+}
+
+/**
  * LOW-14 — per-subject rule for the "exactly-one subject-defining line"
  * invariant. Each subject pins (1) the line `kind` that must appear exactly
  * once and (2) the two error builders for the 0-line and >1-line cases. A new

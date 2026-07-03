@@ -37,6 +37,7 @@ import {
   calculateVat,
   computeIsOverdue,
   displayDocumentNumber,
+  billFirstDocumentNumber,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
 } from '@/modules/invoicing';
@@ -477,7 +478,7 @@ export default async function InvoiceDetailPage({
                 invoiceId={invoice.invoiceId}
                 // 088 FR-030 — bill-first: an issued 088 bill's number is its SC
                 // (`billDocumentNumberRaw`); legacy §87 rows keep documentNumber.
-                documentNumber={invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null}
+                documentNumber={billFirstDocumentNumber(invoice)}
                 issueDate={invoice.issueDate}
                 todayIso={bangkokTodayIso}
               />
@@ -546,7 +547,7 @@ export default async function InvoiceDetailPage({
                   }
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
-                  invoiceDocumentNumber={invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? null}
+                  invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
                 />
               </Suspense>
             )}

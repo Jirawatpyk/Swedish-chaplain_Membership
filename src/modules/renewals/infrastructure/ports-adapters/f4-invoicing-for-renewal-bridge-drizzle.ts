@@ -14,6 +14,7 @@
  * Pure Infrastructure — only F4 barrel imports + the port interface.
  */
 import {
+  billFirstDocumentNumber,
   createInvoiceDraft,
   issueInvoice,
   makeCreateInvoiceDraftDeps,
@@ -106,8 +107,7 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     // The prior `String(documentNumber)` returned `''` for an 088 bill (blank
     // number on the renewal email/success screen) and `'[object Object]'`
     // on legacy. Not flag-gated — the returned row's shape decides.
-    const invoiceNumber =
-      issued.billDocumentNumberRaw ?? issued.documentNumber?.raw ?? '';
+    const invoiceNumber = billFirstDocumentNumber(issued) ?? '';
     return {
       status: 'issued',
       invoiceId: issued.invoiceId,

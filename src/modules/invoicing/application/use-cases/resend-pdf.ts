@@ -45,7 +45,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
-import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import { asInvoiceId, billFirstDocumentNumber } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
 
 /**
@@ -244,7 +244,7 @@ async function resendInvoiceOrReceipt(
   const documentNumber =
     input.variant === 'receipt'
       ? (invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? '')
-      : (invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? '');
+      : (billFirstDocumentNumber(invoice) ?? '');
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
 

@@ -25,15 +25,14 @@
  * Pure + framework-free so it is unit-testable in isolation (the surrounding
  * Server Component's async render is not).
  */
-import type { Invoice } from '@/modules/invoicing';
+import { billFirstDocumentNumber, type Invoice } from '@/modules/invoicing';
 
 export function resolveMemberInvoiceDisplayNumber(
   inv: Pick<Invoice, 'billDocumentNumberRaw' | 'documentNumber' | 'receiptDocumentNumberRaw'>,
 ): string | null {
-  return (
-    inv.billDocumentNumberRaw ??
-    inv.documentNumber?.raw ??
-    inv.receiptDocumentNumberRaw ??
-    null
-  );
+  // Bill-first shared core (`billFirstDocumentNumber` = billDocumentNumberRaw ??
+  // documentNumber?.raw), then the member-detail-specific §105/RC tail so a
+  // no-TIN paid receipt still surfaces its printed number. Identical result to
+  // the former inline 3-way coalesce — see the docblock above.
+  return billFirstDocumentNumber(inv) ?? inv.receiptDocumentNumberRaw ?? null;
 }

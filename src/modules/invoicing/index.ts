@@ -17,6 +17,7 @@ export {
   enforceOneSubjectLine,
   displayDocumentNumber,
   issuedInvoiceIdentity,
+  billFirstDocumentNumber,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
