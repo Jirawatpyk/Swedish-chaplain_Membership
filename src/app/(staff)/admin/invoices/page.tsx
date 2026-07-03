@@ -118,6 +118,16 @@ interface SearchParams {
    * `'1'` = on, any other value (or absent) = off.
    */
   readonly pay?: string;
+  /**
+   * 088 T065b / FR-031 — three ADMIN-only tax-document filters (ภพ.30 support),
+   * honoured ONLY when `FEATURE_088_TAX_AT_PAYMENT` is on:
+   *   `?docType=sc|rc|re|cn` · `?taxPoint=pre_payment|at_payment` ·
+   *   `?vat=standard|zero_rated_80_1_5`. Any other value (or flag-off) = no
+   *   restriction.
+   */
+  readonly docType?: string;
+  readonly taxPoint?: string;
+  readonly vat?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -179,8 +189,40 @@ export default async function AdminInvoicesPage({
     query.subject === 'membership' || query.subject === 'event'
       ? query.subject
       : undefined;
+  // 088 (T065 / FR-016) — tax-at-payment flag gates the SC-bill ↔ RC-tax-receipt
+  // disambiguation (baked per-row below) AND the T065b tax-document filters +
+  // register entry. Read once here so the filter params + the InvoiceFilters
+  // render + the row mapper all share one value.
+  const f088TaxAtPayment = env.features.f088TaxAtPayment;
+  // 088 T065b / FR-031 — three tax-document filters, honoured ONLY when the
+  // flag is on (flag-off / member portal never thread them). Unknown values
+  // fall through to undefined (no restriction).
+  const documentTypeFilter =
+    f088TaxAtPayment &&
+    (query.docType === 'sc' ||
+      query.docType === 'rc' ||
+      query.docType === 're' ||
+      query.docType === 'cn')
+      ? query.docType
+      : undefined;
+  const taxPointFilter =
+    f088TaxAtPayment &&
+    (query.taxPoint === 'pre_payment' || query.taxPoint === 'at_payment')
+      ? query.taxPoint
+      : undefined;
+  const vatTreatmentFilter =
+    f088TaxAtPayment &&
+    (query.vat === 'standard' || query.vat === 'zero_rated_80_1_5')
+      ? query.vat
+      : undefined;
   const hasFilters =
-    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly || Boolean(subjectFilter);
+    Boolean(qTrim) ||
+    Boolean(statusFilter) ||
+    paidOnlineOnly ||
+    Boolean(subjectFilter) ||
+    Boolean(documentTypeFilter) ||
+    Boolean(taxPointFilter) ||
+    Boolean(vatTreatmentFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -211,6 +253,9 @@ export default async function AdminInvoicesPage({
     ...(qTrim ? { search: qTrim } : {}),
     ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
     ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+    ...(documentTypeFilter ? { documentType: documentTypeFilter } : {}),
+    ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
+    ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -360,10 +405,10 @@ export default async function AdminInvoicesPage({
     );
   }
   const nowUtcIso = new Date().toISOString();
-  // 088 (T065 / FR-016) — tax-at-payment flag gates the SC-bill ↔ RC-tax-receipt
-  // disambiguation. Baked into each row's `taxDocumentKind` server-side so the
-  // client table renders it without an env read.
-  const f088TaxAtPayment = env.features.f088TaxAtPayment;
+  // 088 (T065 / FR-016) — `f088TaxAtPayment` (hoisted to the filter-parse block
+  // above) gates the SC-bill ↔ RC-tax-receipt disambiguation, baked into each
+  // row's `taxDocumentKind` server-side so the client table renders it without
+  // an env read.
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => {
         // 088 (T065 / T065a) — disambiguation is applied only when the flag is
@@ -458,7 +503,22 @@ export default async function AdminInvoicesPage({
         subtitle={t('list.description')}
         actions={
           isAdmin ? (
-            <div className="flex items-center gap-2">
+            // flex-wrap: three actions (Registers + Export CSV + New Invoice)
+            // must wrap on a 320px viewport rather than overflow it
+            // (WCAG 1.4.10 reflow — B2 review FINDING 3).
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 088 T065b (FR-031) — period tax-document registers (§86/4 RC
+                  register + §80/1(5) zero-rate sales + §105 RE register) for
+                  ภ.พ.30. Admin + flag gated; the register page 404s when the
+                  flag is off. */}
+              {f088TaxAtPayment ? (
+                <Link
+                  href="/admin/invoices/registers"
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  {t('registers.entry')}
+                </Link>
+              ) : null}
               <CsvExportDialog />
               <Link
                 href="/admin/invoices/new"
@@ -473,7 +533,9 @@ export default async function AdminInvoicesPage({
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <InvoiceFilters />
+          {/* 088 T065b — the three tax-document filters render only when the
+              tax-at-payment flag is on (flag-off renders today's filter set). */}
+          <InvoiceFilters show088Filters={f088TaxAtPayment} />
           {payIntent && isAdmin && rows.length > 0 ? (
             // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
             // to the per-row Record payment button (role=status = polite, this

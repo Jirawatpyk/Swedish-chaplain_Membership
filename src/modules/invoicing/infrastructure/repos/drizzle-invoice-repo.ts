@@ -7,6 +7,7 @@
  */
 import { and, asc, desc, eq, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
+import type { TaxRegisterRepo } from '../../application/ports/tax-register-repo';
 import {
   asInvoiceId,
   type Invoice,
@@ -697,6 +698,50 @@ export function makeDrizzleInvoiceRepo(
           // Maps directly to the stored `invoice_subject` discriminator.
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
+        // 088 T065b (FR-031) — tax-document-type filter. Derived from the
+        // numbering columns + status (see the port doc + T065b report):
+        //   sc → 088 bill still awaiting payment (bill number, no §86/4 receipt).
+        //   rc → §86/4 tax receipt. `receipt_document_number_raw` carries BOTH
+        //        the §86/4 'RC' stream AND the §105 'RE' stream; the 'RE' prefix
+        //        is HARDCODED + reserved in tenant settings (see
+        //        issue-event-invoice-as-paid.ts:474 + update-tenant-invoice-
+        //        settings), so `NOT LIKE 'RE-%'` robustly isolates the §86/4
+        //        register (RC prefix is tenant-configurable, RE is not).
+        //   re → the §105 receipt register ('RE-' prefix).
+        //   cn → invoices carrying a credit note (credited / partially_credited);
+        //        the credit-note ROWS live in `credit_notes` — this is the
+        //        invoice-list cross-reference (a full ใบลดหนี้ register is
+        //        follow-on).
+        if (opts.documentType === 'sc') {
+          filters.push(isNotNull(invoices.billDocumentNumberRaw));
+          filters.push(isNull(invoices.receiptDocumentNumberRaw));
+        } else if (opts.documentType === 'rc') {
+          filters.push(isNotNull(invoices.receiptDocumentNumberRaw));
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'`);
+        } else if (opts.documentType === 're') {
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'`);
+        } else if (opts.documentType === 'cn') {
+          filters.push(
+            or(
+              eq(invoices.status, 'credited'),
+              eq(invoices.status, 'partially_credited'),
+            )!,
+          );
+        }
+        // 088 T065b (FR-031) — payment-tax-point state filter. Under the 088
+        // tax-at-payment model the tax point is the PAYMENT moment (§86/4/§105
+        // receipt issued), NOT issue. pre_payment = an 088 bill still awaiting
+        // payment; at_payment = a receipt has been issued.
+        if (opts.taxPointState === 'pre_payment') {
+          filters.push(isNotNull(invoices.billDocumentNumberRaw));
+          filters.push(isNull(invoices.receiptDocumentNumberRaw));
+        } else if (opts.taxPointState === 'at_payment') {
+          filters.push(isNotNull(invoices.receiptDocumentNumberRaw));
+        }
+        // 088 T065b (FR-031 / US8) — pinned per-invoice VAT treatment filter.
+        if (opts.vatTreatment) {
+          filters.push(eq(invoices.vatTreatment, opts.vatTreatment));
+        }
         if (opts.search && opts.search.length > 0) {
           // W1 (064 remediation) — match invoice doc number OR the §105
           // receipt number; see the `list` variant above for the rationale.
@@ -1340,6 +1385,97 @@ export function makeDrizzleInvoiceRepo(
             eq(invoices.invoiceId, input.invoiceId),
           ),
         );
+    },
+  };
+}
+
+/**
+ * 088 T065b (FR-031, ภพ.30 support) — Drizzle impl of {@link TaxRegisterRepo}.
+ *
+ * Period-scoped §86/4 RC tax-receipt register (+ its §80/1(5) zero-rate subset).
+ * Reuses the private `rowsToInvoice` mapper in this file (no line query — the
+ * register renders header fields only, so `lines: []`). RLS-scoped via
+ * `runInTenant` (the explicit `tenant_id` filter is defence-in-depth, mirroring
+ * `listPaged`).
+ *
+ * Bucketing basis (schema-invoices.ts:100-109): the PAYMENT date `paid_at`
+ * (Bangkok-local), NEVER the bill/issue `fiscal_year` column — the RC receipt's
+ * §87 fiscal year is set at payment and rides its `RC-{FY}-…` number.
+ *
+ * RC-vs-RE isolation: `receipt_document_number_raw` carries both the §86/4 'RC'
+ * stream and the §105 'RE' stream; the 'RE' prefix is HARDCODED + settings-
+ * reserved, so `NOT LIKE 'RE-%'` isolates the §86/4 register (rc_register /
+ * zero_rate_sales) while `LIKE 'RE-%'` isolates the §105 register (re_register)
+ * — both robust against a mis-configured prefix, both pure for the RD audit.
+ *
+ * 088 B2 review FINDING 1 — the §105 'RE' receipts carry REAL 7% output VAT, so
+ * `sumPeriodOutputVat` folds BOTH streams into the period ภ.พ.30 output-VAT
+ * figure (understating it by excluding §105 would be an under-filing).
+ */
+export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
+  const ctx = asTenantContext(tenantId);
+
+  return {
+    async listForPeriod(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const filters = [
+          eq(invoices.tenantId, tenantIdArg),
+          isNotNull(invoices.receiptDocumentNumberRaw),
+          // Bucket by PAYMENT date (Bangkok-local), inclusive both ends.
+          isNotNull(invoices.paidAt),
+          sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date >= ${opts.from}`,
+          sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date <= ${opts.to}`,
+        ];
+        if (opts.kind === 're_register') {
+          // §105 RE stream only (no-TIN event/member receipts).
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'`);
+        } else {
+          // §86/4 RC stream (see factory doc for why the prefix split is robust).
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'`);
+          if (opts.kind === 'zero_rate_sales') {
+            filters.push(eq(invoices.vatTreatment, 'zero_rated_80_1_5'));
+          }
+        }
+
+        // Ordered by the receipt number ASC. Every row in a given register
+        // shares one prefix ('RC' or 'RE'), so string ASC == sequential order.
+        const rows = (await tx
+          .select()
+          .from(invoices)
+          .where(and(...filters))
+          .orderBy(asc(invoices.receiptDocumentNumberRaw))) as InvoiceRow[];
+
+        return rows.map((r) => rowsToInvoice(r, []));
+      });
+    },
+
+    async sumPeriodOutputVat(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        // Single pass over the period's receipts, split by stream via a
+        // conditional aggregate. Summing `vat_satang` (not sales) means the
+        // §80/1(5) zero-rate subset contributes 0 output VAT with no explicit
+        // exclusion. COALESCE guards the empty-period → NULL sum.
+        const [agg] = await tx
+          .select({
+            rcVat: sql<string>`COALESCE(SUM(${invoices.vatSatang}) FILTER (WHERE ${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'), 0)::text`,
+            reVat: sql<string>`COALESCE(SUM(${invoices.vatSatang}) FILTER (WHERE ${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'), 0)::text`,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              isNotNull(invoices.receiptDocumentNumberRaw),
+              isNotNull(invoices.paidAt),
+              sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date >= ${opts.from}`,
+              sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date <= ${opts.to}`,
+            ),
+          );
+
+        return {
+          rcVatSatang: agg?.rcVat ?? '0',
+          reVatSatang: agg?.reVat ?? '0',
+        };
+      });
     },
   };
 }

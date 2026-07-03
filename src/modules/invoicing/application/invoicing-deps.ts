@@ -10,7 +10,10 @@
 import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { systemClock } from './ports/clock-port';
-import { makeDrizzleInvoiceRepo } from '../infrastructure/repos/drizzle-invoice-repo';
+import {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from '../infrastructure/repos/drizzle-invoice-repo';
 import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
 import { drizzleTenantSettingsRepo } from '../infrastructure/repos/drizzle-tenant-settings-repo';
 import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-sequence-allocator';
@@ -154,6 +157,16 @@ export function makeListInvoicesDeps(tenantId: string): ListInvoicesDeps {
 
 export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-cases/list-invoices-by-member').ListInvoicesByMemberDeps {
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
+}
+
+// 088 T065b (FR-031, ภ.พ.30 support) — period-scoped tax-document registers
+// (§86/4 RC register, §80/1(5) zero-rate sales, §105 RE register) + the combined
+// period output-VAT figure. Uses the narrow `TaxRegisterRepo` (kept off
+// `InvoiceRepo` so the invoice-repo mocks are unaffected).
+export function makeListTaxDocumentRegisterDeps(
+  tenantId: string,
+): import('./use-cases/list-tax-document-register').ListTaxDocumentRegisterDeps {
+  return { registerRepo: makeDrizzleTaxRegisterRepo(tenantId) };
 }
 
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {

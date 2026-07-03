@@ -1845,6 +1845,26 @@
             "all": "All types",
             "membership": "Membership",
             "event": "Event"
+          },
+          "documentType": {
+            "label": "Document",
+            "all": "All documents",
+            "sc": "Bill (SC)",
+            "rc": "Tax receipt (RC)",
+            "re": "Receipt (RE)",
+            "cn": "With credit note"
+          },
+          "taxPoint": {
+            "label": "Tax point",
+            "all": "Any tax point",
+            "prePayment": "Awaiting payment",
+            "atPayment": "Receipt issued"
+          },
+          "vatTreatment": {
+            "label": "VAT treatment",
+            "all": "All VAT",
+            "standard": "Standard VAT",
+            "zeroRated": "Zero-rated §80/1(5)"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
@@ -1858,7 +1878,7 @@
         "trigger": "Export CSV",
         "dialog": {
           "title": "Export paid invoices to CSV",
-          "description": "For Thai VAT monthly filing (ภพ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
+          "description": "For Thai VAT monthly filing (ภ.พ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
         },
         "fields": {
           "from": "From",
@@ -1872,6 +1892,54 @@
           "invalidDate": "Please choose valid dates.",
           "rangeInverted": "From-date must be on or before To-date.",
           "rangeTooWide": "Range cannot exceed 1 year."
+        }
+      },
+      "registers": {
+        "meta": { "title": "Tax registers" },
+        "title": "Tax document registers",
+        "description": "Period registers for the monthly VAT return (ภ.พ.30): §86/4 tax receipts, §105 receipts, and §80/1(5) zero-rate sales.",
+        "entry": "Tax registers (ภ.พ.30)",
+        "backToList": "Back to invoices",
+        "kind": {
+          "label": "Register",
+          "rcRegister": "§86/4 tax-receipt register",
+          "zeroRateSales": "§80/1(5) zero-rate sales",
+          "reRegister": "§105 receipt register"
+        },
+        "fields": { "from": "From", "to": "To" },
+        "actions": { "view": "View register" },
+        "outputVat": {
+          "title": "Period output VAT (ภ.พ.30)",
+          "combined": "Total output VAT",
+          "rc": "§86/4 (RC)",
+          "re": "§105 (RE)",
+          "note": "Total standard-rated output VAT for the period across both the §86/4 tax-receipt and §105 receipt streams — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
+        },
+        "summary": {
+          "count": "{count, plural, one {# receipt} other {# receipts}}",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        },
+        "columns": {
+          "receiptNo": "Receipt No.",
+          "paidDate": "Paid date",
+          "buyer": "Buyer",
+          "taxId": "Tax ID",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total",
+          "vatTreatment": "VAT",
+          "certNo": "Cert No."
+        },
+        "vatTreatment": {
+          "standard": "Standard",
+          "zeroRated": "Zero-rated"
+        },
+        "empty": "No tax documents in this period.",
+        "errors": {
+          "invalidRange": "From-date must be on or before To-date, within one year.",
+          "loadFailed": "Could not load the register. Please try again."
         }
       },
       "new": {

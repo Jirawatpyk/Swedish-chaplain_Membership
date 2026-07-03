@@ -70,11 +70,22 @@ interface InvoiceFiltersProps {
    * legitimate invoices vanish — it is meaningless for self-service.
    */
   readonly showPaidOnlineChip?: boolean;
+  /**
+   * 088 T065b (FR-031) — render the three ADMIN-only tax-document filters
+   * (document type SC/RC/RE/CN · payment-tax-point state · VAT treatment).
+   * Defaults to `false` so the member portal + a flag-OFF admin render exactly
+   * today's filter set. The page passes `env.features.f088TaxAtPayment`. When
+   * false, any stray `?docType`/`?taxPoint`/`?vat` URL param is IGNORED here
+   * (mirrors the `paidOnlineActive` guard) so a hand-typed link never surfaces
+   * a phantom clear-all button.
+   */
+  readonly show088Filters?: boolean;
 }
 
 export function InvoiceFilters({
   statusOptions = STATUS_VALUES,
   showPaidOnlineChip = true,
+  show088Filters = false,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
   const tStatus = useTranslations('admin.invoices.list.statuses');
@@ -124,6 +135,32 @@ export function InvoiceFilters({
   const rawSubject = searchParams.get('subject');
   const currentSubject =
     rawSubject === 'membership' || rawSubject === 'event' ? rawSubject : 'all';
+  // 088 T065b (FR-031) — admin-only tax-document filters. Each is clamped to
+  // its permitted vocabulary AND gated on `show088Filters`, so a stray URL
+  // param on the flag-OFF admin view (or the member portal) is treated as
+  // 'all' — no phantom clear-all, no split-brain (mirrors the subject +
+  // paidOnline guards above).
+  const rawDocType = searchParams.get('docType');
+  const currentDocType =
+    show088Filters &&
+    (rawDocType === 'sc' ||
+      rawDocType === 'rc' ||
+      rawDocType === 're' ||
+      rawDocType === 'cn')
+      ? rawDocType
+      : 'all';
+  const rawTaxPoint = searchParams.get('taxPoint');
+  const currentTaxPoint =
+    show088Filters &&
+    (rawTaxPoint === 'pre_payment' || rawTaxPoint === 'at_payment')
+      ? rawTaxPoint
+      : 'all';
+  const rawVat = searchParams.get('vat');
+  const currentVat =
+    show088Filters &&
+    (rawVat === 'standard' || rawVat === 'zero_rated_80_1_5')
+      ? rawVat
+      : 'all';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -153,7 +190,10 @@ export function InvoiceFilters({
     currentQ !== '' ||
     effectiveStatus !== 'all' ||
     currentSubject !== 'all' ||
-    paidOnlineActive;
+    paidOnlineActive ||
+    currentDocType !== 'all' ||
+    currentTaxPoint !== 'all' ||
+    currentVat !== 'all';
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
@@ -238,6 +278,114 @@ export function InvoiceFilters({
           <SelectItem value="event">{t('filters.subject.event')}</SelectItem>
         </SelectContent>
       </Select>
+      {/* 088 T065b (FR-031) — three ADMIN-only tax-document filters, rendered
+          only when the tax-at-payment flag is on. Each mirrors the status +
+          subject dropdowns: URL param is the source of truth; resetting to
+          "all" clears the param. `show088Filters=false` (member portal /
+          flag-off admin) renders none of them → today's filter set unchanged. */}
+      {show088Filters && (
+        <>
+          <Select
+            value={currentDocType}
+            onValueChange={(v) =>
+              pushUrl({ docType: v && v !== 'all' ? v : null })
+            }
+          >
+            <SelectTrigger
+              className="sm:w-[12rem]"
+              aria-label={t('filters.documentType.label')}
+              data-testid="invoice-document-type-filter"
+            >
+              <TranslatedSelectValue
+                placeholder={t('filters.documentType.all')}
+                translate={(v) =>
+                  v === 'sc' ||
+                  v === 'rc' ||
+                  v === 're' ||
+                  v === 'cn'
+                    ? t(`filters.documentType.${v}`)
+                    : t('filters.documentType.all')
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t('filters.documentType.all')}
+              </SelectItem>
+              <SelectItem value="sc">{t('filters.documentType.sc')}</SelectItem>
+              <SelectItem value="rc">{t('filters.documentType.rc')}</SelectItem>
+              <SelectItem value="re">{t('filters.documentType.re')}</SelectItem>
+              <SelectItem value="cn">{t('filters.documentType.cn')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={currentTaxPoint}
+            onValueChange={(v) =>
+              pushUrl({ taxPoint: v && v !== 'all' ? v : null })
+            }
+          >
+            <SelectTrigger
+              className="sm:w-[12rem]"
+              aria-label={t('filters.taxPoint.label')}
+              data-testid="invoice-tax-point-filter"
+            >
+              <TranslatedSelectValue
+                placeholder={t('filters.taxPoint.all')}
+                translate={(v) =>
+                  v === 'pre_payment'
+                    ? t('filters.taxPoint.prePayment')
+                    : v === 'at_payment'
+                      ? t('filters.taxPoint.atPayment')
+                      : t('filters.taxPoint.all')
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('filters.taxPoint.all')}</SelectItem>
+              <SelectItem value="pre_payment">
+                {t('filters.taxPoint.prePayment')}
+              </SelectItem>
+              <SelectItem value="at_payment">
+                {t('filters.taxPoint.atPayment')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={currentVat}
+            onValueChange={(v) =>
+              pushUrl({ vat: v && v !== 'all' ? v : null })
+            }
+          >
+            <SelectTrigger
+              className="sm:w-[12rem]"
+              aria-label={t('filters.vatTreatment.label')}
+              data-testid="invoice-vat-treatment-filter"
+            >
+              <TranslatedSelectValue
+                placeholder={t('filters.vatTreatment.all')}
+                translate={(v) =>
+                  v === 'standard'
+                    ? t('filters.vatTreatment.standard')
+                    : v === 'zero_rated_80_1_5'
+                      ? t('filters.vatTreatment.zeroRated')
+                      : t('filters.vatTreatment.all')
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t('filters.vatTreatment.all')}
+              </SelectItem>
+              <SelectItem value="standard">
+                {t('filters.vatTreatment.standard')}
+              </SelectItem>
+              <SelectItem value="zero_rated_80_1_5">
+                {t('filters.vatTreatment.zeroRated')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </>
+      )}
       {/* R3-fix N7 (2026-04-26): the staff admin layout already
           mounts `<TooltipProvider>` at the shell level — a local
           provider here would remount on every searchParam change
@@ -283,7 +431,15 @@ export function InvoiceFilters({
           variant="ghost"
           size="sm"
           onClick={() =>
-            pushUrl({ q: null, status: null, paidOnline: null, subject: null })
+            pushUrl({
+              q: null,
+              status: null,
+              paidOnline: null,
+              subject: null,
+              docType: null,
+              taxPoint: null,
+              vat: null,
+            })
           }
           aria-label={t('filters.clearAll')}
         >

@@ -1845,6 +1845,26 @@
             "all": "Alla typer",
             "membership": "Medlemskap",
             "event": "Evenemang"
+          },
+          "documentType": {
+            "label": "Dokument",
+            "all": "Alla dokument",
+            "sc": "Räkning (SC)",
+            "rc": "Skattekvitto (RC)",
+            "re": "Kvitto (RE)",
+            "cn": "Med kreditnota"
+          },
+          "taxPoint": {
+            "label": "Skattetidpunkt",
+            "all": "Alla skattetidpunkter",
+            "prePayment": "Väntar på betalning",
+            "atPayment": "Kvitto utställt"
+          },
+          "vatTreatment": {
+            "label": "Momsbehandling",
+            "all": "All moms",
+            "standard": "Standardmoms",
+            "zeroRated": "Nollskattesats §80/1(5)"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
@@ -1872,6 +1892,54 @@
           "invalidDate": "Välj giltiga datum.",
           "rangeInverted": "Från-datumet måste vara samma dag eller före Till-datumet.",
           "rangeTooWide": "Intervallet får inte överstiga ett år."
+        }
+      },
+      "registers": {
+        "meta": { "title": "Skatteregister" },
+        "title": "Skattedokumentregister",
+        "description": "Periodregister för den månatliga momsdeklarationen (ภ.พ.30): §86/4-skattekvitton, §105-kvitton och §80/1(5)-nollskatteförsäljning.",
+        "entry": "Skatteregister (ภ.พ.30)",
+        "backToList": "Tillbaka till fakturor",
+        "kind": {
+          "label": "Register",
+          "rcRegister": "§86/4-skattekvittoregister",
+          "zeroRateSales": "§80/1(5) nollskatteförsäljning",
+          "reRegister": "§105-kvittoregister"
+        },
+        "fields": { "from": "Från", "to": "Till" },
+        "actions": { "view": "Visa register" },
+        "outputVat": {
+          "title": "Periodens utgående moms (ภ.พ.30)",
+          "combined": "Total utgående moms",
+          "rc": "§86/4 (RC)",
+          "re": "§105 (RE)",
+          "note": "Total standardbeskattad utgående moms för perioden från båda dokumentströmmarna (§86/4-skattekvitton och §105-kvitton) — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
+        },
+        "summary": {
+          "count": "{count, plural, one {# kvitto} other {# kvitton}}",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        },
+        "columns": {
+          "receiptNo": "Kvittonr.",
+          "paidDate": "Betaldatum",
+          "buyer": "Köpare",
+          "taxId": "Skatte-ID",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt",
+          "vatTreatment": "Moms",
+          "certNo": "Intygsnr."
+        },
+        "vatTreatment": {
+          "standard": "Standard",
+          "zeroRated": "Nollskattesats"
+        },
+        "empty": "Inga skattedokument under denna period.",
+        "errors": {
+          "invalidRange": "Från-datumet måste vara samma dag eller före Till-datumet, inom ett år.",
+          "loadFailed": "Kunde inte ladda registret. Försök igen."
         }
       },
       "new": {

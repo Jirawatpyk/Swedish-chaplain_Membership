@@ -136,6 +136,17 @@ export interface InvoiceRepo {
       // 054-event-fee-invoices — restrict to a single invoice subject.
       // Absent = all subjects (membership + event).
       readonly invoiceSubject?: 'membership' | 'event' | undefined;
+      // 088 T065b (FR-031) — tax-document filters. Predicates derived from the
+      // invoices schema (see drizzle-invoice-repo.listPaged). Absent = no filter.
+      //   'sc' — bill_document_number_raw NOT NULL AND receipt_… IS NULL
+      //   'rc' — receipt_document_number_raw NOT NULL AND NOT LIKE 'RE-%'
+      //   're' — receipt_document_number_raw LIKE 'RE-%'
+      //   'cn' — status IN ('credited','partially_credited')
+      readonly documentType?: 'sc' | 'rc' | 're' | 'cn' | undefined;
+      //   'pre_payment' — SC bill awaiting payment; 'at_payment' — receipt issued.
+      readonly taxPointState?: 'pre_payment' | 'at_payment' | undefined;
+      //   pinned per-invoice §80/1(5) treatment → invoices.vat_treatment = ?
+      readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5' | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

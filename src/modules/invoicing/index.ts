@@ -245,6 +245,23 @@ export {
   type PaymentMethodLookupPort,
 } from './application/use-cases/export-paid-invoices-csv';
 
+// 088 T065b (FR-031, ภพ.30 support) — period-scoped §86/4 RC register +
+// §80/1(5) zero-rate sales list use-case + its narrow repo port.
+export {
+  listTaxDocumentRegister,
+  listTaxDocumentRegisterSchema,
+  type ListTaxDocumentRegisterInput,
+  type ListTaxDocumentRegisterOutput,
+  type ListTaxDocumentRegisterError,
+  type ListTaxDocumentRegisterDeps,
+  type TaxDocumentRegisterSummary,
+  type PeriodOutputVat,
+} from './application/use-cases/list-tax-document-register';
+export type {
+  TaxRegisterRepo,
+  TaxRegisterKind,
+} from './application/ports/tax-register-repo';
+
 export {
   previewInvoiceDraft,
   type PreviewInvoiceDraftInput,
@@ -415,6 +432,7 @@ export {
   makeIssueInvoiceDeps,
   makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
+  makeListTaxDocumentRegisterDeps,
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
   makeGetReceiptPdfSignedUrlDeps,
@@ -464,7 +482,10 @@ export {
 // is the cron-trigger adapter for the async receipt-PDF worker.
 export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
-export { makeDrizzleInvoiceRepo } from './infrastructure/repos/drizzle-invoice-repo';
+export {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from './infrastructure/repos/drizzle-invoice-repo';
 export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
