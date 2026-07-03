@@ -82,4 +82,27 @@ test.describe('LocaleSwitcher @i18n', () => {
       await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
     ).toBe(true);
   });
+
+  test('member portal switch persists preferred_locale (fires PATCH)', async ({ page }) => {
+    test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL/PASSWORD');
+    await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!, 'portal');
+    const patch = page.waitForRequest(
+      (r) => r.url().includes('/api/portal/preferred-locale') && r.method() === 'PATCH',
+      { timeout: 10_000 },
+    );
+    await chooseLanguage(page, /^ไทย$/);
+    await patch; // throws if the PATCH never fires
+  });
+
+  test('staff header switch does NOT fire a preferred-locale request', async ({ page }) => {
+    test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set E2E_ADMIN_EMAIL/PASSWORD');
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!, 'admin');
+    const seen: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/portal/preferred-locale')) seen.push(r.method());
+    });
+    await chooseLanguage(page, /^ไทย$/);
+    await page.waitForTimeout(1_000); // let any stray request surface
+    expect(seen).toEqual([]);
+  });
 });

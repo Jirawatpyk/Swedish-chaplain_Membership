@@ -90,7 +90,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
                 hidden switcher would strand a member in a language they can't
                 read. ThemeToggle stays hidden < 640px (OS prefers-color-scheme
                 is the mobile fallback). */}
-            <LocaleSwitcher />
+            <LocaleSwitcher persistToAccount />
             <span className="hidden sm:contents">
               <ThemeToggle />
             </span>

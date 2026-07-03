@@ -24,8 +24,10 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
-
-type PreferredLocale = 'en' | 'th' | 'sv' | null;
+import { locales } from '@/i18n/config';
+// Single source for the locale-or-tenant-default union (shared with the portal
+// form + switcher transport) so adding a locale can't leave this card behind.
+import type { PreferredLocale } from '@/components/portal/preferred-locale-client';
 
 export interface AdminPreferredLocaleCardProps {
   readonly memberId: string;
@@ -88,7 +90,7 @@ export function AdminPreferredLocaleCard({
             disabled={saving}
             className="space-y-2"
           >
-            {(['__null', 'en', 'th', 'sv'] as const).map((opt) => {
+            {(['__null', ...locales] as const).map((opt) => {
               const id = `admin-preferred-locale-${memberId}-${opt}`;
               const label =
                 opt === '__null' ? t('useTenantDefault') : tLang(`languageOptions.${opt}`);
