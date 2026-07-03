@@ -54,11 +54,15 @@ vi.mock(
     PortalInvoiceDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      className?: string;
     }) => (
       <button
         type="button"
         data-testid="invoice-download"
         aria-label={props.ariaLabel ?? props.label}
+        // Echo the card's className so the ≥44px target-size guard
+        // (T072b) can assert the min-h-11 the card passes actually lands.
+        className={props.className}
       >
         {props.label}
       </button>
@@ -66,11 +70,13 @@ vi.mock(
     PortalReceiptDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      className?: string;
     }) => (
       <button
         type="button"
         data-testid="receipt-download"
         aria-label={props.ariaLabel ?? props.label}
+        className={props.className}
       >
         {props.label}
       </button>
@@ -81,11 +87,15 @@ vi.mock(
 vi.mock(
   '@/app/(member)/portal/invoices/_components/resend-invoice-button',
   () => ({
-    ResendInvoiceButton: (props: { documentNumber: string }) => (
+    ResendInvoiceButton: (props: {
+      documentNumber: string;
+      className?: string;
+    }) => (
       <button
         type="button"
         data-testid="resend"
         aria-label={`resend ${props.documentNumber}`}
+        className={props.className}
       >
         resend
       </button>
@@ -697,5 +707,113 @@ describe('<PortalInvoiceCardList> — 088 flag reflected via VM kind "none"', ()
     expect(
       screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' }),
     ).toBeInTheDocument();
+  });
+});
+
+// ===========================================================================
+// 088 T072b (FR-036) — mobile-first target size + wrap guards.
+//
+// The @a11y e2e (portal-invoices-a11y.spec.ts) is preview-authoritative (it
+// emits documented 320px/target-size noise on local dev). These structural
+// guards are the LOAD-BEARING local verification for the mobile-first FIXES:
+// the card must pass ≥44px (min-h-11 / min-w-11) target-size classes to every
+// action control and wrap both the action group AND (for 088 rows) the header
+// doc-kind badge group so a 320px card never scrolls horizontally / clips
+// (WCAG 1.4.10 Reflow, 2.5.5 Target Size).
+// ===========================================================================
+describe('<PortalInvoiceCardList> — FR-036 mobile-first target size + wrap (T072b)', () => {
+  it('forwards ≥44px target-size classes to every action control and wraps the action group', () => {
+    renderCardFor({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RCP-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+
+    // Invoice + Receipt downloads carry the ≥44px min-h-11 the card passes.
+    expect(screen.getByTestId('invoice-download').className).toContain('min-h-11');
+    expect(screen.getByTestId('receipt-download').className).toContain('min-h-11');
+    // Resend is the icon-only square — ≥44px on BOTH axes.
+    const resend = screen.getByTestId('resend');
+    expect(resend.className).toContain('min-h-11');
+    expect(resend.className).toContain('min-w-11');
+
+    // The action group is a flex-wrap container so a 320px card never scrolls
+    // horizontally — the controls wrap to a second row instead of overflowing.
+    const actionGroup = theCard().querySelector('.flex-wrap');
+    expect(actionGroup).not.toBeNull();
+    expect(actionGroup?.contains(screen.getByTestId('invoice-download'))).toBe(true);
+    expect(actionGroup?.contains(screen.getByTestId('receipt-download'))).toBe(true);
+    expect(actionGroup?.contains(screen.getByTestId('resend'))).toBe(true);
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 doc-kind badge group wraps (T072b, WCAG 1.4.10)', () => {
+  it('wraps the header badge group for a paid 088 bill so a long TH doc-kind badge never clips at 320px', () => {
+    renderCard088For({
+      status: 'paid',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    // The doc-number <h2> sits inside the header badge group; that group MUST
+    // be a flex-wrap container when an 088 document-kind badge is present.
+    const heading = screen.getByRole('heading', { level: 2, name: 'RC-2026-000123' });
+    expect(heading.closest('.flex-wrap')).not.toBeNull();
+  });
+
+  it('does NOT wrap the header badge group for a legacy (non-088) row', () => {
+    renderCardFor({ status: 'issued' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' });
+    // Legacy header group is a non-wrapping flex row (the sole flex-wrap in a
+    // legacy card is the action group, which is NOT an ancestor of the heading).
+    expect(heading.closest('.flex-wrap')).toBeNull();
+  });
+});
+
+// ===========================================================================
+// 088 T063b (FR-009) — per-locale document dates on the portal list.
+//
+// Buddhist Era is DISPLAY-ONLY on th-TH surfaces (CLAUDE.md § Conventions);
+// storage/query values stay Gregorian ISO. Guard both: the rendered card shows
+// the BE year for th and the Gregorian year for en, while the underlying
+// view-model date stays Gregorian ISO. The dates paragraph is queried in
+// isolation (`p.text-muted-foreground`) so the assertion is not confused by the
+// year inside a document number (e.g. INV-2026-000001).
+// ===========================================================================
+describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', () => {
+  it('renders the Buddhist-Era year for th-TH while the stored issueDate stays Gregorian ISO', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ issueDate: '2026-04-01', dueDate: '2026-04-30' }),
+      NOW_BEFORE_DUE,
+    );
+    // Storage/query value is untouched Gregorian ISO — BE is DISPLAY-only.
+    expect(vm.issueDate).toBe('2026-04-01');
+    expect(vm.dueDate).toBe('2026-04-30');
+
+    render(
+      <PortalInvoiceCardList rows={[{ vm }]} locale="th" t={t} tStatus={tStatus} />,
+    );
+    const datesP = theCard().querySelector('p.text-muted-foreground');
+    expect(datesP).not.toBeNull();
+    // th-TH → Buddhist Era: CE 2026 displays as BE 2569 (+543).
+    expect(datesP?.textContent).toContain('2569');
+    expect(datesP?.textContent).not.toContain('2026');
+  });
+
+  it('renders the Gregorian year for en (display-only locale switch, no BE offset)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ issueDate: '2026-04-01', dueDate: '2026-04-30' }),
+      NOW_BEFORE_DUE,
+    );
+    render(
+      <PortalInvoiceCardList rows={[{ vm }]} locale="en" t={t} tStatus={tStatus} />,
+    );
+    const datesP = theCard().querySelector('p.text-muted-foreground');
+    expect(datesP).not.toBeNull();
+    expect(datesP?.textContent).toContain('2026');
+    expect(datesP?.textContent).not.toContain('2569');
   });
 });
