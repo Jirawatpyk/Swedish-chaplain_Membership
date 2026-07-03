@@ -10,7 +10,7 @@ export { buildFormats };
  *
  * Priority:
  *  1. requestLocale from routing middleware (future: URL-prefix routing)
- *  2. NEXT_LOCALE cookie (E2E tests + future locale-switcher in <UserMenu>)
+ *  2. NEXT_LOCALE cookie (set by the header <LocaleSwitcher /> and E2E tests)
  *  3. defaultLocale ('en')
  *
  * dateTime format presets live in `./formats` (pure module, no Next.js

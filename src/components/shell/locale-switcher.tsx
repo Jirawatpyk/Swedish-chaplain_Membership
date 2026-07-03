@@ -49,7 +49,10 @@ export function LocaleSwitcher({
   const [isPending, startTransition] = useTransition();
 
   const handleValueChange = (value: string) => {
-    if (!isLocale(value) || value === activeLocale) return;
+    // Ignore re-entrant selections while a refresh is still in flight:
+    // `activeLocale` only updates after the RSC re-render resolves, so a
+    // second pick would otherwise fire an overlapping `router.refresh()`.
+    if (isPending || !isLocale(value) || value === activeLocale) return;
     // 1-year, path=/ so it applies to every route; SameSite=Lax is fine for a
     // non-sensitive UI-preference cookie. Synchronous — written before the
     // refresh request is sent, so the RSC pass reads the new value.
