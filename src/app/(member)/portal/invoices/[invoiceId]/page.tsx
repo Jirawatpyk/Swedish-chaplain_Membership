@@ -93,6 +93,7 @@ import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
+import { ReceiptStatusWatcher } from '../_components/receipt-status-watcher';
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -202,6 +203,15 @@ export default async function PortalInvoiceDetailPage({
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+
+  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
+  // Surfaced as prominent body sections below (room for the aria-live announce
+  // + reassurance copy, and the graceful permanent-fail support path) rather
+  // than a cramped header-actions chip.
+  const receiptAsyncPending =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
+  const receiptAsyncFailed =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
 
   // F5 G4 T081 — load tenant payment settings to drive the Pay-now
   // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
@@ -337,18 +347,11 @@ export default async function PortalInvoiceDetailPage({
                   invoice.status === 'paid' &&
                   invoice.receiptPdfStatus === 'rendered' &&
                   invoice.receiptPdf !== null;
-                // T166-10 — async receipt PDF gate. When the receipt
-                // is still being rendered by the cron worker, surface
-                // a polite "preparing…" affordance ALONGSIDE the
-                // invoice button (separate-mode the member still gets
-                // the invoice; combined-mode the receipt IS the only
-                // doc so we show the preparing state on its own).
-                // 'pending' ONLY (S1 parity with invoice-row-view-model.ts
-                // receiptPending): a terminal 'failed' render must NOT show
-                // the aria-busy "preparing" spinner forever.
-                const receiptPending =
-                  invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus === 'pending';
+                // 088 T066a — the async receipt "generating" + graceful-fail
+                // states moved OUT of this cramped header-actions cell into
+                // prominent body sections below (room for the aria-live
+                // announce + reassurance / the support path). See
+                // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
                 // 088 T065c — the MAIN download serves the issue-time PDF: on a
                 // paid 088 bill that is the SC bill, so the control names the SC
                 // number (never the RC in `documentNumber`).
@@ -407,19 +410,6 @@ export default async function PortalInvoiceDetailPage({
                         )}
                         data-testid="portal-download-receipt"
                       />
-                    )}
-                    {receiptPending && (
-                      <span
-                        role="status"
-                        aria-live="polite"
-                        aria-busy="true"
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-4 cursor-progress',
-                        )}
-                      >
-                        {t('pdf.preparing')}
-                      </span>
                     )}
                   </>
                 );
@@ -495,6 +485,43 @@ export default async function PortalInvoiceDetailPage({
               </div>
             </section>
           )}
+        </section>
+      )}
+
+      {/* 088 T066a (FR-019) — async §86/4 RC receipt-PDF is still rendering.
+          The block watcher announces "your tax receipt is being generated"
+          (aria-live polite) + carries reassurance copy, AND polls the status
+          endpoint to auto-reveal the receipt download the moment the worker
+          finishes — no manual refresh. */}
+      {receiptAsyncPending && (
+        <ReceiptStatusWatcher invoiceId={invoice.invoiceId} variant="block" />
+      )}
+
+      {/* 088 T066a — the receipt-PDF render TERMINALLY failed. A calm
+          support-path state (payment recorded, receipt number reserved, team
+          notified — the reconcile cron re-renders the SAME pre-allocated RC) —
+          NOT a dead "unavailable". Informational (role=status, no aria-busy /
+          spinner). The member can still download the invoice PDF above. */}
+      {receiptAsyncFailed && (
+        <section
+          aria-labelledby="receipt-failed-heading"
+          data-testid="portal-invoice-receipt-failed-notice"
+          className="rounded-md border border-border border-l-4 border-l-primary bg-card p-4"
+        >
+          <h2
+            id="receipt-failed-heading"
+            className="text-sm font-medium text-foreground"
+          >
+            {t('receiptFailed.heading')}
+          </h2>
+          <div role="status">
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('receiptFailed.body')}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('receiptFailed.contact')}
+            </p>
+          </div>
         </section>
       )}
 

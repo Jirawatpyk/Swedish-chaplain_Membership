@@ -93,6 +93,27 @@ vi.mock(
   }),
 );
 
+// 088 T066a — the pending receipt affordance is now the CLIENT
+// `<ReceiptStatusWatcher>` (aria-live announce + auto-refresh poll). Mock it
+// with a stand-in so the card test asserts the card's CHOICE to mount it
+// (pending state) without pulling the client poller's fetch/router into jsdom.
+vi.mock(
+  '@/app/(member)/portal/invoices/_components/receipt-status-watcher',
+  () => ({
+    ReceiptStatusWatcher: (props: { invoiceId: string; variant?: string }) => (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-testid="receipt-status-watcher"
+        data-variant={props.variant ?? 'inline'}
+      >
+        receipt-generating
+      </div>
+    ),
+  }),
+);
+
 import { PortalInvoiceCardList } from '@/app/(member)/portal/invoices/_components/portal-invoice-card-list';
 import { toInvoiceRowViewModel } from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing';
@@ -430,46 +451,51 @@ describe('<PortalInvoiceCardList> — separate-paid', () => {
 // ===========================================================================
 // 4. receipt-pending (paid + receiptPdfStatus 'pending')
 // ===========================================================================
-describe('<PortalInvoiceCardList> — receipt-pending', () => {
-  it('shows the aria-busy "Receipt preparing…" live region and NO terminal failed text', () => {
+describe('<PortalInvoiceCardList> — receipt-pending (088 T066a)', () => {
+  it('mounts the ReceiptStatusWatcher (aria-live announce + auto-refresh poll), NO terminal failed copy', () => {
     renderCardFor({ status: 'paid', receiptPdfStatus: 'pending' });
 
-    // The live region: role=status + aria-busy + the preparing label.
-    const live = screen.getByRole('status');
-    expect(live).toHaveAttribute('aria-busy', 'true');
-    expect(live).toHaveTextContent('Receipt preparing…');
+    // The pending affordance is now the async watcher (aria-live status).
+    const watcher = screen.getByTestId('receipt-status-watcher');
+    expect(watcher).toHaveAttribute('role', 'status');
+    expect(watcher).toHaveAttribute('aria-busy', 'true');
 
-    // NOT the terminal failed copy (mutation guard vs case 5).
-    expect(theCard()).not.toHaveTextContent('Receipt unavailable');
+    // NOT the terminal graceful-fail affordance (mutation guard vs case 5).
+    expect(screen.queryByTestId('receipt-failed-support')).toBeNull();
     // Pending state offers no receipt download yet.
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
   });
 });
 
 // ===========================================================================
-// 5. receipt-failed (paid + receiptPdfStatus 'failed') — S1 / U4 affordance
+// 5. receipt-failed (paid + receiptPdfStatus 'failed') — 088 T066a graceful
+//    permanent-fail member state (calm support path, NOT a dead "unavailable")
 // ===========================================================================
-describe('<PortalInvoiceCardList> — receipt-failed (terminal)', () => {
-  it('shows the static "Receipt unavailable" text with NO aria-busy / role=status / "preparing"', () => {
+describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088 T066a)', () => {
+  it('shows a calm support-path affordance (NOT a dead "Receipt unavailable") with NO spinner/aria-busy', () => {
     renderCardFor({ status: 'paid', receiptPdfStatus: 'failed' });
 
     const card = theCard();
-    // The terminal affordance text.
-    expect(card).toHaveTextContent('Receipt unavailable');
+    // The new graceful support-path affordance is present…
+    expect(screen.getByTestId('receipt-failed-support')).toBeInTheDocument();
+    // …and the old dead "Receipt unavailable" copy is gone.
+    expect(card).not.toHaveTextContent('Receipt unavailable');
 
-    // MUTATION-SENSITIVE (the crux of S1): a terminal failure must NOT be
-    // rendered as the perpetual pending spinner. So NONE of the pending
-    // signals may appear.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // MUTATION-SENSITIVE (S1): a terminal failure must NOT be rendered as the
+    // in-progress watcher / spinner. So NONE of the pending signals may appear.
+    expect(screen.queryByTestId('receipt-status-watcher')).toBeNull();
     expect(
       document.querySelector('[aria-busy="true"]'),
     ).not.toBeInTheDocument();
-    expect(card).not.toHaveTextContent('Receipt preparing…');
 
     // A failed-receipt paid invoice still has its issue-time PDF → invoice
-    // download + resend remain (rowHasAnyAction true, not the '—' sentinel).
+    // download + resend remain (rowHasAnyAction true, so the EmptyCell '—'
+    // sentinel branch never runs). The presence of the invoice-download +
+    // resend + the support hint proves the action group rendered — we do NOT
+    // assert on the bare '—' here because the support copy itself legitimately
+    // contains an em-dash ("Receipt on the way — we're resolving it").
     expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
-    expect(card).not.toHaveTextContent('—');
+    expect(screen.getByTestId('resend')).toBeInTheDocument();
   });
 });
 

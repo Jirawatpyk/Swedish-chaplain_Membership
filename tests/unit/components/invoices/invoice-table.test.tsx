@@ -62,6 +62,10 @@ const messages = {
           downloadInvoiceAria: 'Download invoice {number}',
           downloadReceiptAria: 'Download receipt {number}',
           receiptPreparing: 'Receipt preparing…',
+          receiptGenerating: 'Receipt generating…',
+          receiptRenderFailed: 'Receipt render failed',
+          receiptRenderFailedAria:
+            'Receipt PDF render failed for invoice {number} — open to review',
         },
       },
       detail: {
@@ -373,6 +377,88 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
     const btn = screen.getByTestId('row-download-invoice');
     expect(btn).toHaveTextContent('Invoice');
     expect(btn).toHaveAttribute('aria-label', 'Download invoice INV-2026-0001');
+  });
+});
+
+/**
+ * 088 T066b (FR-019) — admin async receipt-PDF resilience on the invoices list.
+ *
+ * The action cell splits the former conflated "preparing…" affordance into two
+ * DISTINCT states so a permanent render failure is never mislabelled as forever
+ * in-progress (mirrors the portal S1 fix):
+ *   - paid + receiptPdfStatus 'pending'  → a SHIMMER "receipt generating" state
+ *     (shipped `<Skeleton>` primitive → reduced-motion-safe via skeleton-shimmer
+ *     CSS) inside a role=status aria-live region.
+ *   - paid + receiptPdfStatus 'failed'   → a visually-distinct inline ALERT-state
+ *     affordance that LINKS to the invoice detail (actionable). It must NOT show
+ *     the generating shimmer.
+ *   - paid + receiptPdfStatus 'rendered' → the Receipt download (existing) with
+ *     neither the shimmer nor the alert.
+ */
+describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
+  it('paid + pending → shimmer "receipt generating" (role=status), no failed alert', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0002',
+        receiptPdfStatus: 'pending',
+      }),
+    ]);
+    const generating = screen.getByTestId('row-receipt-generating');
+    expect(generating).toHaveAttribute('role', 'status');
+    expect(generating).toHaveAttribute('aria-live', 'polite');
+    // Uses the shipped Skeleton shimmer primitive (reduced-motion handled in CSS).
+    expect(generating.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.getByText('Receipt generating…')).toBeInTheDocument();
+    // NOT the terminal failed alert.
+    expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
+  });
+
+  it('paid + failed → inline alert-state row linking to detail (actionable), no shimmer', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0003',
+        receiptPdfStatus: 'failed',
+      }),
+    ]);
+    const failed = screen.getByTestId('row-receipt-render-failed');
+    expect(failed).toBeInTheDocument();
+    // Actionable — it is a link to the invoice detail page.
+    expect(failed.closest('a')).toHaveAttribute('href', '/admin/invoices/inv-1');
+    expect(failed).toHaveTextContent('Receipt render failed');
+    // A terminal failure must NOT reuse the in-progress shimmer.
+    expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
+  });
+
+  it('paid + rendered → Receipt download only (no generating shimmer, no failed alert)', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: true,
+        receiptDocumentNumberRaw: 'RC-2026-0004',
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
+    expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
+  });
+
+  it('failed receipt with NO invoice pdf still surfaces the alert (row does not collapse to em-dash)', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasPdf: false,
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0005',
+        receiptPdfStatus: 'failed',
+      }),
+    ]);
+    // The action cell must show the failed alert, not the '—' sentinel.
+    expect(screen.getByTestId('row-receipt-render-failed')).toBeInTheDocument();
   });
 });
 

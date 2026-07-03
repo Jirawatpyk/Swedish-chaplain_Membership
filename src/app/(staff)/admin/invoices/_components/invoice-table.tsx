@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
@@ -629,16 +630,23 @@ export function InvoicesTable({
                   const isCombinedPaid =
                     r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
-                  // Async receipt-PDF gate. Paid + receiptPdfStatus
-                  // pending/failed/null surfaces a "preparing…"
-                  // affordance alongside the Invoice button.
-                  // Bookkeepers otherwise saw a paid row with only
-                  // an Invoice download and no signal that the
-                  // §86/4+§105ทวิ legal doc is on its way.
-                  const receiptPending =
-                    r.status === 'paid' &&
-                    r.receiptPdfStatus !== null &&
-                    r.receiptPdfStatus !== 'rendered';
+                  // 088 T066b (FR-019) — async receipt-PDF resilience. The
+                  // former single "preparing…" affordance conflated pending +
+                  // failed, so a permanent render failure showed a perpetual
+                  // in-progress spinner (the portal S1 problem). Split into two
+                  // DISTINCT terminal-aware states (mirrors the portal VM):
+                  //   - pending  → a SHIMMER "receipt generating" placeholder
+                  //     (shipped <Skeleton> primitive → reduced-motion-safe via
+                  //     the skeleton-shimmer CSS) in a role=status live region.
+                  //   - failed   → a visually-distinct inline ALERT-state link
+                  //     to the invoice detail (actionable; the reconcile cron
+                  //     re-renders the SAME pre-allocated RC — never a re-alloc).
+                  // null/rendered fall into neither (rendered shows the Receipt
+                  // download; paid+null can't occur — CHECK enforces non-null).
+                  const receiptGenerating =
+                    r.status === 'paid' && r.receiptPdfStatus === 'pending';
+                  const receiptRenderFailed =
+                    r.status === 'paid' && r.receiptPdfStatus === 'failed';
                   // 088 T021c / FR-035 — per-row "Record payment" quick action
                   // on issued / overdue bills (admin-only). Opens the SAME
                   // money-mutation `RecordPaymentDialog` used on the detail page
@@ -660,7 +668,8 @@ export function InvoicesTable({
                   if (
                     !showInvoice &&
                     !r.hasReceiptPdf &&
-                    !receiptPending &&
+                    !receiptGenerating &&
+                    !receiptRenderFailed &&
                     !showRecordPayment
                   ) {
                     return <span className="text-sm text-muted-foreground">—</span>;
@@ -774,23 +783,49 @@ export function InvoicesTable({
                           {t('actions.downloadReceipt')}
                         </button>
                       )}
-                      {receiptPending && (
-                        // Paid + receipt-render in flight. `role=status
-                        // aria-live=polite` so SR users hear the async
-                        // state when the bookkeeper scans the table.
-                        // Style matches portal list for visual parity.
+                      {receiptGenerating && (
+                        // 088 T066b — paid + receipt-render in flight. SHIMMER
+                        // "generating" placeholder using the shipped <Skeleton>
+                        // primitive (reduced-motion-safe: skeleton-shimmer CSS
+                        // swaps the sweep for a gentle pulse under
+                        // prefers-reduced-motion). `role=status aria-live=polite`
+                        // so SR users hear the async state when scanning the table.
                         <span
                           role="status"
                           aria-live="polite"
                           aria-busy="true"
+                          className="inline-flex min-h-11 items-center gap-2 px-1"
+                          data-testid="row-receipt-generating"
+                        >
+                          <Skeleton className="h-4 w-4 rounded-full" />
+                          <span className="text-sm text-muted-foreground">
+                            {t('actions.receiptGenerating')}
+                          </span>
+                        </span>
+                      )}
+                      {receiptRenderFailed && (
+                        // 088 T066b — TERMINAL render failure (permanently
+                        // failed after the reconcile cron exhausted retries, or
+                        // in flight before the next re-enqueue). Visually
+                        // distinct (destructive-tinted) + ACTIONABLE: links to
+                        // the invoice detail where the admin can review the
+                        // FR-026 delivery banner / the reconcile status. NOT the
+                        // in-progress shimmer — a permanent failure must never be
+                        // mislabelled as forever-generating (portal S1 parity).
+                        <Link
+                          href={`/admin/invoices/${r.invoiceId}`}
+                          aria-label={t('actions.receiptRenderFailedAria', {
+                            number: r.documentNumber,
+                          })}
                           className={cn(
                             buttonVariants({ variant: 'outline', size: 'sm' }),
-                            'min-h-11 px-3 cursor-progress',
+                            'min-h-11 gap-1 border-destructive/40 bg-destructive/5 px-3 text-destructive hover:bg-destructive/10',
                           )}
-                          data-testid="row-receipt-pending"
+                          data-testid="row-receipt-render-failed"
                         >
-                          {t('actions.receiptPreparing')}
-                        </span>
+                          <AlertCircleIcon className="size-4" aria-hidden="true" />
+                          {t('actions.receiptRenderFailed')}
+                        </Link>
                       )}
                     </div>
                   );

@@ -64,6 +64,8 @@ import {
 import { CombinedReceiptHint } from './_components/combined-receipt-hint';
 import { EmptyCell } from './_components/empty-cell';
 import { PortalInvoiceCardList } from './_components/portal-invoice-card-list';
+import { ReceiptStatusWatcher } from './_components/receipt-status-watcher';
+import { ReceiptFailedSupportHint } from './_components/receipt-failed-support-hint';
 
 const PAGE_SIZE = 20;
 
@@ -591,34 +593,29 @@ export default async function PortalInvoicesPage({
                                       />
                                     );
                                   })()}
+                                {/* 088 T066a (FR-019) — receipt mid-render.
+                                    The async watcher announces "your tax receipt
+                                    is being generated" (aria-live polite) AND
+                                    polls the status endpoint, auto-revealing the
+                                    download the moment the worker finishes — no
+                                    manual refresh. Replaces the former static
+                                    "preparing…" span. */}
                                 {vm.receiptPending && (
-                                  <span
-                                    role="status"
-                                    aria-live="polite"
-                                    aria-busy="true"
-                                    className={cn(
-                                      buttonVariants({ variant: 'outline', size: 'sm' }),
-                                      'min-h-11 px-3 cursor-progress',
-                                    )}
-                                  >
-                                    {t('actions.receiptPreparing')}
-                                  </span>
+                                  <ReceiptStatusWatcher invoiceId={vm.invoiceId} />
                                 )}
-                                {/* S1 fix — TERMINAL receipt-render failure.
-                                    A 'failed' receiptPdfStatus is NOT in-progress,
-                                    so it must NOT reuse the receiptPending spinner
-                                    (role=status + aria-busy) — that mislabels a
-                                    permanent failure as a perpetual "preparing"
-                                    state. Render a static, muted "Receipt
-                                    unavailable" label with NO aria-busy and NO
-                                    spinner. The member can still grab the Invoice
-                                    PDF (showInvoice) and a receipt action surfaces
-                                    the existing 502 toast. Identical affordance on
-                                    the mobile card (same vm.receiptFailed flag). */}
+                                {/* 088 T066a — TERMINAL receipt-render failure.
+                                    A calm support-path affordance (payment
+                                    recorded, receipt number reserved, team
+                                    notified) — NOT a dead "unavailable". NO
+                                    aria-busy / spinner (terminal, not
+                                    in-progress). The member can still grab the
+                                    Invoice PDF (showInvoice). Identical affordance
+                                    on the mobile card (same vm.receiptFailed
+                                    flag + shared ReceiptFailedSupportHint). */}
                                 {vm.receiptFailed && (
-                                  <span className="text-sm text-muted-foreground">
-                                    {t('actions.receiptUnavailable')}
-                                  </span>
+                                  <ReceiptFailedSupportHint
+                                    label={t('actions.receiptFailedSupport')}
+                                  />
                                 )}
                               </div>
                             );

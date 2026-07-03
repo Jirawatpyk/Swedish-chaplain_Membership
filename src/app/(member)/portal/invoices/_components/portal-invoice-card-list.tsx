@@ -65,6 +65,8 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from './portal-pdf-download-button';
+import { ReceiptStatusWatcher } from './receipt-status-watcher';
+import { ReceiptFailedSupportHint } from './receipt-failed-support-hint';
 
 /**
  * One row's data for the card list — the SAME `{ vm }` shape the page
@@ -339,28 +341,20 @@ export function PortalInvoiceCardList({
                           />
                         );
                       })()}
+                    {/* 088 T066a — receipt mid-render: the async watcher
+                        (aria-live announce + auto-refresh poll). Mirrors the
+                        desktop table; both consume vm.receiptPending. */}
                     {vm.receiptPending && (
-                      <span
-                        role="status"
-                        aria-live="polite"
-                        aria-busy="true"
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-3 cursor-progress',
-                        )}
-                      >
-                        {t('actions.receiptPreparing')}
-                      </span>
+                      <ReceiptStatusWatcher invoiceId={vm.invoiceId} />
                     )}
-                    {/* S1 fix — TERMINAL receipt-render failure. Identical to
-                        the desktop table: a static, muted "Receipt unavailable"
-                        label with NO aria-busy and NO spinner (a 'failed' render
-                        is terminal, not in-progress). Both surfaces consume the
-                        SAME vm.receiptFailed flag so they can never drift. */}
+                    {/* 088 T066a — TERMINAL receipt-render failure: a calm
+                        support-path affordance (NOT a dead "unavailable"), NO
+                        aria-busy/spinner. Shared ReceiptFailedSupportHint with
+                        the desktop table so table + card can never drift. */}
                     {vm.receiptFailed && (
-                      <span className="text-sm text-muted-foreground">
-                        {t('actions.receiptUnavailable')}
-                      </span>
+                      <ReceiptFailedSupportHint
+                        label={t('actions.receiptFailedSupport')}
+                      />
                     )}
                     {/* Resend ("Email me a copy") — icon-only square LAST in the
                         row. The compact / icon-only treatment is shared with the

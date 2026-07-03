@@ -1800,6 +1800,9 @@
           "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
           "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
           "receiptPreparing": "Receipt preparing…",
+          "receiptGenerating": "Receipt generating…",
+          "receiptRenderFailed": "Receipt render failed",
+          "receiptRenderFailedAria": "Receipt PDF render failed for invoice {number} — open to review",
           "recordPayment": "Record payment",
           "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
@@ -4526,9 +4529,14 @@
         "downloadCombinedAria": "Download combined Tax Invoice / Official Receipt PDF for {number}",
         "receiptPreparing": "Receipt preparing…",
         "receiptUnavailable": "Receipt unavailable",
+        "receiptFailedSupport": "Receipt on the way — we're resolving it",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
+      },
+      "receiptStatus": {
+        "generating": "Your tax receipt is being generated",
+        "reassurance": "This usually takes just a moment. You can leave this page — your tax receipt is safe and will appear here automatically when it's ready."
       },
       "filters": {
         "noMatch": "No invoices match your filters."
@@ -4564,6 +4572,11 @@
         },
         "pdf": {
           "preparing": "Your tax receipt is being prepared. The PDF will be ready in a moment — please retry shortly."
+        },
+        "receiptFailed": {
+          "heading": "Your tax receipt is taking longer than expected",
+          "body": "We hit a snag generating your tax receipt PDF. Your payment is recorded and your receipt number is reserved — our team has been notified and will resolve this shortly.",
+          "contact": "If you need the document urgently, please contact the chamber staff."
         },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",

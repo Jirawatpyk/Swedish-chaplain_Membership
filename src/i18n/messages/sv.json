@@ -1800,6 +1800,9 @@
           "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
           "receiptPreparing": "Förbereder kvitto…",
+          "receiptGenerating": "Kvitto genereras…",
+          "receiptRenderFailed": "Kvittot kunde inte genereras",
+          "receiptRenderFailedAria": "Kvitto-PDF kunde inte genereras för faktura {number} — öppna för att granska",
           "recordPayment": "Registrera betalning",
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
@@ -4526,9 +4529,14 @@
         "downloadCombinedAria": "Ladda ner kombinerat dokument (faktura / kvitto) för {number}",
         "receiptPreparing": "Förbereder kvitto…",
         "receiptUnavailable": "Kvitto ej tillgängligt",
+        "receiptFailedSupport": "Kvittot är på väg — vi löser det",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
+      },
+      "receiptStatus": {
+        "generating": "Ditt skattekvitto genereras",
+        "reassurance": "Det tar oftast bara en stund. Du kan lämna sidan — ditt skattekvitto är säkert och visas här automatiskt när det är klart."
       },
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
@@ -4564,6 +4572,11 @@
         },
         "pdf": {
           "preparing": "Ditt skattekvitto förbereds. PDF-filen är klar inom kort — försök igen om en stund."
+        },
+        "receiptFailed": {
+          "heading": "Ditt skattekvitto tar längre tid än väntat",
+          "body": "Vi stötte på ett problem när ditt skattekvitto-PDF skulle genereras. Din betalning är registrerad och ditt kvittonummer är reserverat — vårt team har meddelats och löser detta inom kort.",
+          "contact": "Om du behöver dokumentet omgående, kontakta kammarens personal."
         },
         "title": "Faktura",
         "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
