@@ -37,6 +37,10 @@ describe('issueErrorStatus — shared issuance-route status map (wave-4 S16)', (
       invalid_lines: 422,
       no_buyer_snapshot: 422,
       overflow: 422,
+      // 088 US8 (FR-024 / FR-025) — zero-rate fail-closed rejects (no invoice issued).
+      membership_cannot_be_zero_rated: 422,
+      zero_rate_cert_required: 422,
+      zero_rate_cert_blob_key_invalid: 422,
       pdf_render_failed: 500,
       blob_upload_failed: 500,
     });
