@@ -251,6 +251,14 @@ export async function renderReceiptPdf(
             vatRate: loaded.vatRate,
             vat: loaded.vat,
             total: loaded.total,
+            // 054-event-fee-invoices / Fix #13 (whole-feature review) — thread
+            // `vatInclusive` so a Model-B (VAT-inclusive) event §86/4 receipt
+            // rendered by the ASYNC worker carries its "ราคารวมภาษีมูลค่าเพิ่มแล้ว
+            // / VAT included" annotation, matching the SYNC record-payment render
+            // (record-payment.ts passes `vatInclusive: loaded.vatInclusive`).
+            // Membership invoices carry `false` (VAT-exclusive) → annotation
+            // suppressed identically on both paths.
+            vatInclusive: loaded.vatInclusive,
             // 088 US5 (T041 / FR-012 / SC-007) — gate the tenant WHT note on the
             // membership §86/4 tax receipt. Threaded from the stored subject so
             // this async render matches the sync record-payment receipt render.

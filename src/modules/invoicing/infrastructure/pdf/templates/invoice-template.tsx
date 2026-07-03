@@ -730,6 +730,15 @@ function renderPageBody({
             input.tenant.bank_account_no != null ||
             input.tenant.bank_name != null ||
             input.tenant.bank_swift != null ||
+            // Fix #12 (whole-feature review) — these 3 fields are RENDERED inside
+            // the block (bank_branch/bank_account_type/bank_address below) but
+            // were missing from this outer visibility gate, so a tenant that
+            // configured ONLY one of them got the whole block suppressed and the
+            // admin-entered detail never printed. The block renders when ANY
+            // configured bank field is present.
+            input.tenant.bank_branch != null ||
+            input.tenant.bank_account_type != null ||
+            input.tenant.bank_address != null ||
             input.tenant.payment_instructions_th != null ||
             input.tenant.payment_instructions_en != null) && (
             <View style={styles.bankBlock}>

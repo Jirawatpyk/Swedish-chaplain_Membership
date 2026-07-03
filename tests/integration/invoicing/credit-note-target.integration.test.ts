@@ -86,7 +86,10 @@ const ANNOTATION_SHA = 'c'.repeat(64); // credit-note re-render bytes
 const ISSUE_DATE = '2026-04-18';
 const PAYMENT_DATE = '2026-04-19';
 
-function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
+function makeIssueDeps(
+  tenantSlug: string,
+  opts: { taxAtPayment?: boolean } = {},
+): IssueInvoiceDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
@@ -108,6 +111,12 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => `${ISSUE_DATE}T10:00:00Z` },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 1,
+    // Pin the flow EXPLICITLY rather than inheriting the ambient
+    // FEATURE_088_TAX_AT_PAYMENT env flag (frozen at boot; ON in the dev env).
+    // false → legacy §87 ใบกำกับภาษี at issue; true → NON-tax ใบแจ้งหนี้ bill
+    // (documentNumber NULL + billDocumentNumberRaw set). This keeps the legacy
+    // case deterministic regardless of the env flag.
+    taxAtPayment: opts.taxAtPayment === true,
   };
 }
 
@@ -116,7 +125,10 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
  * receipt renders INLINE into the separate receipt blob (receiptPdf non-null,
  * receipt_pdf_status='rendered', receiptDocumentNumberRaw=RC in separate mode).
  */
-function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
+function makeRecordPaymentDepsForPay(
+  tenantSlug: string,
+  opts: { taxAtPayment?: boolean } = {},
+): RecordPaymentDeps {
   const real = makeRecordPaymentDeps(tenantSlug);
   const { receiptPdfRenderEnqueue: _omitEnqueue, ...rest } = real;
   void _omitEnqueue;
@@ -134,6 +146,14 @@ function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
       delete: vi.fn(),
       list: vi.fn(async () => []),
     } as unknown as RecordPaymentDeps['blob'],
+    // Pin the flow EXPLICITLY rather than inheriting the ambient
+    // FEATURE_088_TAX_AT_PAYMENT env flag (makeRecordPaymentDeps injects it from
+    // env; it is ON in the dev env). false → legacy combined-reuse (receipt reuses
+    // the invoice number, dated at issueDate); true → mint a DISTINCT §86/4 RC
+    // (receiptDocumentNumberRaw) dated at the payment date. Forcing it here keeps
+    // the legacy case from tripping the FR-017 `legacy_invoice_needs_reissue`
+    // guard when the ambient flag is ON.
+    taxAtPayment: opts.taxAtPayment === true,
   };
 }
 
@@ -382,5 +402,143 @@ describe('issueCreditNote — US6 re-targets the CN to the §86/4 receipt (T046,
     expect(afterCn!.receiptPdfBlobKey).toBe(receiptBlobKey); // same content-addressed key
     // The receipt NUMBER is immutable (migration 0235) and unchanged by the CN.
     expect(afterCn!.receiptDocumentNumberRaw).toBe(beforeCn!.receiptDocumentNumberRaw);
+  }, 120_000);
+
+  // Fix #10 (whole-feature review) — the legacy case above runs the flag-OFF
+  // combined-reuse path, so `receiptDocumentNumberRaw` is NULL, the receipt
+  // number EQUALS the bill number, and the receipt is dated at the bill's
+  // issueDate → the "CN cites the receipt (not the bill) / payment date (not the
+  // issue date)" assertions are VACUOUS there (a revert to citing the bill number
+  // / issue date would still pass). This case runs the NEW flow (taxAtPayment)
+  // where the parent gets documentNumber NULL + a DISTINCT §86/4 RC
+  // (receiptDocumentNumberRaw, `RC-…`) dated at the PAYMENT date, so the same
+  // assertions now have real TEETH: the CN must cite the DISTINCT RC — never the
+  // `INV-…` bill number — and the PAYMENT date — never the ISSUE date.
+  it('NEW FLOW (taxAtPayment): CN cites the DISTINCT RC receipt number + PAYMENT date (not the INV bill number / issue date)', async () => {
+    // Fresh event + TIN-buyer registration for a self-contained new-flow sale.
+    const nfEventId = randomUUID();
+    const nfRegId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId: nfEventId,
+        source: 'eventcreate',
+        externalId: `evt-us6-nf-${nfRegId.slice(0, 8)}`,
+        name: 'US6 New-Flow Gala',
+        startDate: new Date('2026-09-20T11:00:00Z'),
+      } satisfies NewEventRow);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: nfRegId,
+        eventId: nfEventId,
+        externalId: `att-us6-nf-${nfRegId.slice(0, 8)}`,
+        attendeeEmail: BUYER.primary_contact_email,
+        attendeeName: 'Ken Trader',
+        attendeeCompany: BUYER.legal_name,
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 250,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2026-09-01T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
+    });
+
+    // Draft → issue as a NON-tax ใบแจ้งหนี้ bill (documentNumber NULL,
+    // billDocumentNumberRaw = INV-…).
+    const draft = await createEventInvoiceDraft(
+      makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-us6-nf-draft-${nfRegId}`,
+        eventRegistrationId: nfRegId,
+        buyer: BUYER,
+      },
+    );
+    if (!draft.ok) throw new Error(`nf draft failed: ${draft.error.code}`);
+    const nfInvoiceId = draft.value.invoiceId;
+
+    const issued = await issueInvoice(
+      makeIssueDeps(tenant.ctx.slug, { taxAtPayment: true }),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-us6-nf-issue-${nfInvoiceId}`,
+        invoiceId: nfInvoiceId,
+      },
+    );
+    if (!issued.ok) throw new Error(`nf issue failed: ${JSON.stringify(issued)}`);
+
+    async function readNfRow() {
+      const [row] = await db
+        .select()
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, nfInvoiceId)));
+      return row;
+    }
+
+    const billRow = await readNfRow();
+    expect(billRow!.status).toBe('issued');
+    // New-flow bill: §87 doc/seq NULL; the non-§87 bill number lives in
+    // billDocumentNumberRaw (INV prefix).
+    expect(billRow!.documentNumber).toBeNull();
+    expect(billRow!.billDocumentNumberRaw).not.toBeNull();
+    expect(billRow!.billDocumentNumberRaw).toMatch(/^INV-2026-\d{6}$/);
+    expect(billRow!.receiptDocumentNumberRaw).toBeNull();
+    const billNumber = billRow!.billDocumentNumberRaw;
+
+    // Pay → mint the DISTINCT §86/4 RC receipt, dated at the payment date.
+    const paid = await runInTenant(tenant.ctx, async () =>
+      recordPayment(makeRecordPaymentDepsForPay(tenant.ctx.slug, { taxAtPayment: true }), {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: `int-us6-nf-pay-${nfInvoiceId}`,
+        invoiceId: nfInvoiceId,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'seed-ref-nf',
+        paymentDate: PAYMENT_DATE,
+      }),
+    );
+    if (!paid.ok) throw new Error(`nf pay failed: ${JSON.stringify(paid)}`);
+
+    const paidRow = await readNfRow();
+    expect(paidRow!.status).toBe('paid');
+    // The distinct RC is minted at payment; documentNumber stays NULL; the RC is
+    // in the SEPARATE `receiptDocumentNumberRaw` (Shape 1) and dated at payment.
+    expect(paidRow!.documentNumber).toBeNull();
+    expect(paidRow!.receiptDocumentNumberRaw).toMatch(/^RC-2026-\d{6}$/);
+    expect(paidRow!.receiptPdfStatus).toBe('rendered');
+    expect(paidRow!.paymentDate).toBe(PAYMENT_DATE);
+    const rcNumber = paidRow!.receiptDocumentNumberRaw;
+    // Sanity — the RC is genuinely DISTINCT from the bill number (different §87
+    // stream + prefix), which is exactly what makes the CN assertions non-vacuous.
+    expect(rcNumber).not.toBe(billNumber);
+
+    // Issue a §86/10 credit note against the paid parent.
+    const { deps, captured } = makeCreditNoteDeps(tenant.ctx.slug);
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `int-us6-nf-cn-${nfInvoiceId}`,
+      invoiceId: nfInvoiceId,
+      creditTotalSatang: 12_500n, // 50% partial
+      reason: 'US6 new-flow target test',
+    });
+    expect(r.ok, r.ok ? 'ok' : `nf cn err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) throw new Error('nf cn failed');
+
+    const cnRender = captured.find((c) => c.kind === 'credit_note');
+    expect(cnRender, 'expected a credit_note render call').toBeDefined();
+    // TEETH #1 — the CN cites the DISTINCT RC receipt number, NEVER the bill.
+    expect(cnRender!.creditNote?.originalDocumentNumber).toBe(rcNumber);
+    expect(cnRender!.creditNote?.originalDocumentNumber).not.toBe(billNumber);
+    // TEETH #2 — the CN cites the PAYMENT date (the RC's date), NEVER the bill's
+    // issue date.
+    expect(cnRender!.creditNote?.originalIssueDate).toBe(PAYMENT_DATE);
+    expect(cnRender!.creditNote?.originalIssueDate).not.toBe(ISSUE_DATE);
+    // The single synthetic line references the RC number too (not the bill).
+    expect(cnRender!.lines[0]!.descriptionEn).toContain(rcNumber!);
+    expect(cnRender!.lines[0]!.descriptionTh).toContain(rcNumber!);
+    expect(cnRender!.lines[0]!.descriptionEn).not.toContain(billNumber!);
   }, 120_000);
 });

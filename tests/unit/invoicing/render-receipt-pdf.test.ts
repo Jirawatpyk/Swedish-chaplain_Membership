@@ -252,6 +252,38 @@ describe('renderReceiptPdf — async worker callback', () => {
     expect(captured[0]!.templateVersion).toBe(4);
   });
 
+  // Fix #13 (whole-feature review) — the async worker MUST thread
+  // `vatInclusive` into the render input, exactly like the SYNC
+  // record-payment path (record-payment.ts passes
+  // `vatInclusive: loaded.vatInclusive`). For a Model-B (VAT-inclusive)
+  // event §86/4 receipt rendered by the async worker, the template's
+  // `input.vatInclusive` gate drives the mandated "ราคารวมภาษีมูลค่าเพิ่มแล้ว
+  // / VAT included" annotation. Omitting it makes the async render diverge
+  // from the sync render (annotation silently dropped). Assert the render
+  // adapter's captured input carries `vatInclusive: true`.
+  it('Fix#13: VAT-inclusive event invoice → renderInput carries vatInclusive: true (async matches sync)', async () => {
+    const captured: PdfRenderInput[] = [];
+    const deps = makeDeps(
+      makePaidPendingInvoice({ invoiceSubject: 'event', vatInclusive: true }),
+      makeSettings(),
+      {
+        pdfRender: {
+          render: vi.fn(async (renderInput: PdfRenderInput) => {
+            captured.push(renderInput);
+            return {
+              bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+              sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+            };
+          }),
+        },
+      },
+    );
+    const r = await renderReceiptPdf(deps, input);
+    expect(r.ok).toBe(true);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.vatInclusive).toBe(true);
+  });
+
   it('idempotent: status=rendered → no-op return ok (no render, no upload, no audit)', async () => {
     const deps = makeDeps(
       makePaidPendingInvoice({ receiptPdfStatus: 'rendered' }),

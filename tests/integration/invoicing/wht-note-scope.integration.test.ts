@@ -86,6 +86,37 @@ function tenantWithNoteAndBank(): TenantIdentitySnapshot {
   };
 }
 
+/**
+ * Fix #12 (whole-feature review) — a tenant that configured ONLY `bank_branch`
+ * and left every OTHER bank field null. The outer bank-block visibility gate
+ * historically checked only 6 fields (payee/account_no/name/swift/instructions
+ * th+en) but RENDERS 3 more inside (bank_branch, bank_account_type,
+ * bank_address). With all 6 gate fields null, the whole block was suppressed and
+ * the admin-entered branch never printed. The block MUST render when ANY bank
+ * field is present.
+ */
+function tenantWithOnlyBankBranch(): TenantIdentitySnapshot {
+  return {
+    legal_name_th: 'หอการค้าไทย-สวีเดน',
+    legal_name_en: 'Thai-Swedish Chamber of Commerce',
+    tax_id: '0994000187203',
+    address_th: 'กรุงเทพมหานคร',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
+    wht_note_th: null,
+    wht_note_en: null,
+    // Every OUTER-GATE bank field is null …
+    bank_payee_name: null,
+    bank_account_no: null,
+    bank_name: null,
+    bank_swift: null,
+    payment_instructions_th: null,
+    payment_instructions_en: null,
+    // … only bank_branch is configured.
+    bank_branch: 'Ratchada Branch',
+  };
+}
+
 /** A tenant snapshot with NO WHT note + NO bank block. */
 function tenantWithoutNote(): TenantIdentitySnapshot {
   return {
@@ -267,6 +298,25 @@ describe('088 US5 — offline-payment bank block (FR-022)', () => {
     expect(text).toContain('Issued by');
     expect(text).toContain('Received by');
     expect(text).toContain('Date');
+  });
+
+  it('Fix#12: a v7 bill whose tenant set ONLY bank_branch (all 6 gate fields null) STILL renders the bank block', () => {
+    const page = pagesOf(
+      InvoiceTemplate(
+        makeInput({
+          templateVersion: 7,
+          kind: 'invoice',
+          billMode: true,
+          invoiceSubject: 'membership',
+          tenant: tenantWithOnlyBankBranch(),
+        }),
+      ),
+    )[0]!;
+    const text = pageText(page);
+    // The block header + the admin-entered branch value BOTH render.
+    expect(text).toContain('Payment Details');
+    expect(text).toContain(shapeThai('สาขา'));
+    expect(text).toContain('Ratchada Branch');
   });
 
   it('does NOT render the bank block on the paid tax receipt (receipt_combined) at v7', () => {

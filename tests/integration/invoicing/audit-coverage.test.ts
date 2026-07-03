@@ -686,11 +686,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       },
       // 088-invoice-tax-flow-redesign (§ F.6) — the enum value + retention land
       // in the foundational slice (migration 0230); the emit site (record-payment /
-      // issue-event-invoice-as-paid, in-tx with the RC §87 allocation) ships in
-      // US1 (T018/T019). Deferred here so CI keeps visibility until then.
+      // issue-event-invoice-as-paid, in-tx with the RC §87 allocation) SHIPPED in
+      // US1 (T018/T019) and is asserted live below. Flipped deferred → covered so
+      // the C4 real-test-file existence check runs for this 10y-retention tax
+      // event (a future dropped emit now fails the gate instead of shipping green).
       tax_receipt_issued: {
-        status: 'deferred',
-        where: 'US1 T018/T019 — RC allocation at payment (record-payment / issue-event-invoice-as-paid)',
+        status: 'covered',
+        where:
+          'tests/integration/invoicing/bill-to-receipt.integration.test.ts (SC-001 — asserts EXACTLY ONE tax_receipt_issued audit row lands at payment, keyed on the pay requestId, with receipt_document_number_raw + member_id + payment_date payload)',
         since: '2026-07-01',
       },
     };
@@ -789,6 +792,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // needle for the `event_buyer_pii_redacted` 'where' entry.
       'tests/integration/invoicing/redact-expired-event-buyers.test.ts':
         'tests/integration/invoicing/redact-expired-event-buyers.test.ts',
+      // 088-invoice-tax-flow-redesign (§ F.6) — bill→§86/4-RC-at-payment
+      // integration test needle for the `tax_receipt_issued` 'where' entry
+      // (Fix #15 whole-feature review — flips the entry deferred → covered).
+      'tests/integration/invoicing/bill-to-receipt.integration.test.ts':
+        'tests/integration/invoicing/bill-to-receipt.integration.test.ts',
     };
 
     for (const t of declared) {
