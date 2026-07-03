@@ -246,7 +246,12 @@ export default async function RenewalSuccessPage({
             // Paid but receipt PDF still rendering — give the member
             // the invoice (immediately available) + an explicit "your
             // receipt is being prepared" affordance.
-            const docNum = invoice.documentNumber?.raw ?? invoiceId;
+            // 088 T069 — an 088 ใบแจ้งหนี้ (bill) carries its number in
+            // `billDocumentNumberRaw`, NOT `documentNumber` (NULL for a bill);
+            // fall back to it before the UUID so the invoice download filename
+            // reads `SC-2026-…` (never the raw UUID) in the new flow.
+            const docNum =
+              invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
             return (
               <>
                 <PortalInvoiceDownloadButton
@@ -277,7 +282,10 @@ export default async function RenewalSuccessPage({
           // user-confusion bug: members saw "Download receipt PDF" but
           // got an invoice).
           if (invoice) {
-            const docNum = invoice.documentNumber?.raw ?? invoiceId;
+            // 088 T069 — bill number lives in `billDocumentNumberRaw` (the
+            // ใบแจ้งหนี้ has NULL `documentNumber` in the new flow).
+            const docNum =
+              invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
             return (
               <PortalInvoiceDownloadButton
                 invoiceId={invoiceId}
