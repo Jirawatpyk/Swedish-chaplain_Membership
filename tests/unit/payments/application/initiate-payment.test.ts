@@ -908,6 +908,26 @@ describe('initiatePayment (T055)', () => {
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
   });
 
+  // 088 SEC-MED — SYMMETRIC to the record-payment webhook guard. A NEW-FLOW
+  // bill issued while FEATURE_088_TAX_AT_PAYMENT was ON must never reach Stripe
+  // once the flag rolls back to OFF: the webhook-side `recordPayment` guard
+  // would refuse the captured payment (same code, no auto-refund → S0 stranded
+  // funds). The F4 bridge surfaces the typed discriminator; this use-case must
+  // short-circuit with its own typed code (route warn-log keeps the
+  // flag-rollback pointer) BEFORE any insert / createPaymentIntent.
+  it('new-flow bill after flag rollback (bridge new_flow_bill_requires_flag_on) — typed reject, no insert / no Stripe call', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'new_flow_bill_requires_flag_on' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+  });
+
   // W1 (audit 2026-04-25 follow-up): F4's `getInvoiceForPayment` returns
   // `ok({status: 'paid'})` for already-settled invoices (it only hard-
   // rejects on `null`/zero `total`). Without an explicit gate in the

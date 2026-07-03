@@ -121,6 +121,16 @@ export type InitiatePaymentError =
    * route's `useCaseErrorCode` warn log.
    */
   | { readonly code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — the F4 bridge rejected a NEW-FLOW bill (issued while
+   * FEATURE_088_TAX_AT_PAYMENT was ON) being paid after the flag rolled back
+   * to OFF. Creating a PI would let Stripe capture money the webhook-side
+   * `recordPayment` guard then refuses to apply (permanent, NO auto-refund) —
+   * S0 stranded funds. The route maps this to the EXISTING 409
+   * `invoice_not_payable` envelope; the dedicated code keeps the flag-rollback
+   * discriminator visible in the route's `useCaseErrorCode` warn log.
+   */
+  | { readonly code: 'new_flow_bill_requires_flag_on' }
   | { readonly code: 'online_payment_disabled' }
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
@@ -173,6 +183,16 @@ export interface InitiatePaymentDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT. Forwarded to the F4 payability
+   * read so a NEW-FLOW bill issued while the flag was ON cannot be self-paid
+   * after the flag rolls back to OFF (Stripe would capture funds the
+   * webhook-side guard then refuses to apply — S0 stranded funds). Wired from
+   * `env.features.f088TaxAtPayment` at `makeInitiatePaymentDeps`; omitted in
+   * older direct-call tests (undefined → the F4 guard, keyed on `=== false`,
+   * stays dormant).
+   */
+  readonly taxAtPayment?: boolean;
   /** Returns a fresh payment id, e.g., `pmt_<ulid>`. Injected for deterministic tests. */
   readonly generatePaymentId: () => PaymentId;
   /**
@@ -296,6 +316,13 @@ async function initiatePaymentBody(
       requestId: input.requestId,
       memberId: input.actorMemberId,
     },
+    // 088 SEC-MED — forward the feature flag so F4 can refuse a new-flow bill
+    // that was minted under the flag but is being paid after a flag rollback
+    // (stranded-funds guard). Only the initiate path sends it; the webhook
+    // confirm path omits it and stays unaffected.
+    ...(deps.taxAtPayment !== undefined
+      ? { taxAtPayment: deps.taxAtPayment }
+      : {}),
   });
   if (!invoiceResult.ok) {
     const e = invoiceResult.error;
@@ -341,6 +368,12 @@ async function initiatePaymentBody(
     // write or Stripe round-trip; see the error-union member for rationale.
     if (e.code === 'legacy_no_tin_event_not_payable') {
       return err({ code: 'legacy_no_tin_event_not_payable' });
+    }
+    // 088 SEC-MED — new-flow bill paid after a flag rollback. Short-circuit
+    // BEFORE any DB write or Stripe round-trip (no PI created); see the
+    // error-union member for rationale.
+    if (e.code === 'new_flow_bill_requires_flag_on') {
+      return err({ code: 'new_flow_bill_requires_flag_on' });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });

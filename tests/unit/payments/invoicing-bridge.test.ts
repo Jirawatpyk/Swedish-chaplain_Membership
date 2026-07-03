@@ -213,4 +213,21 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
       expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
     }
   });
+
+  // 088 SEC-MED — new-flow bill paid after a flag rollback. The bridge carries
+  // the F4 discriminator VERBATIM (not collapsed into `not_payable`) so the
+  // initiate warn log + route `useCaseErrorCode` keep the flag-rollback pointer.
+  it('F4 new_flow_bill_requires_flag_on propagates verbatim (088 SEC-MED)', async () => {
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      err({ code: 'new_flow_bill_requires_flag_on' as const }),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
+    }
+  });
 });

@@ -45,7 +45,17 @@ export type GetInvoiceForPaymentBridgeError =
    * `not_payable`) so initiate-payment's warn log + the route's
    * `useCaseErrorCode` keep the remediation-runbook pointer.
    */
-  | { readonly code: 'legacy_no_tin_event_not_payable' };
+  | { readonly code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — F4's payability read rejected a NEW-FLOW bill (issued while
+   * FEATURE_088_TAX_AT_PAYMENT was ON) being paid after the flag rolled back
+   * to OFF. Creating a PI would let Stripe capture money the webhook-side
+   * `recordPayment` guard then refuses to apply (same code, permanent, NO
+   * auto-refund) — S0 stranded funds. Carried VERBATIM (not collapsed into
+   * `not_payable`) so initiate-payment's warn log + the route's
+   * `useCaseErrorCode` keep the flag-rollback discriminator for ops.
+   */
+  | { readonly code: 'new_flow_bill_requires_flag_on' };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;
@@ -92,6 +102,15 @@ export interface InvoicingBridgePort {
       readonly requestId: string | null;
       readonly memberId?: string;
     };
+    /**
+     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT, passed ONLY by the INITIATE
+     * (self-pay) path so F4's new-flow-bill flag-rollback guard can refuse a
+     * stranded-funds capture. The webhook confirm path omits it (undefined),
+     * and F4's guard trips only on an explicit `=== false`, so the webhook
+     * path is unaffected. Wired from `env.features.f088TaxAtPayment` at
+     * `makeInitiatePaymentDeps`.
+     */
+    readonly taxAtPayment?: boolean;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**

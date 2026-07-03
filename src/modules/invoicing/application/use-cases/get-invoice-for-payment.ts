@@ -48,6 +48,16 @@ export interface GetInvoiceForPaymentInput {
     readonly requestId: string | null;
     readonly memberId?: string;
   };
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT, threaded ONLY by the initiate
+   * (portal/admin self-pay) path so the new-flow-bill flag-rollback guard
+   * below can refuse a stranded-funds capture. Webhook-side reconciliation
+   * reads (confirm-payment) OMIT this (undefined) — the guard trips only on an
+   * explicit `=== false`, so those reads are unaffected (mirrors the
+   * record-payment webhook guard's flag semantics). Wired from
+   * `env.features.f088TaxAtPayment` at the initiate deps factory.
+   */
+  readonly taxAtPayment?: boolean;
 }
 
 /**
@@ -92,7 +102,19 @@ export type GetInvoiceForPaymentError =
    * permanent `bridge_error` ack, NO auto-refund) — an S0 money trap.
    * Distinct from `not_payable` so F5's logs keep the runbook pointer.
    */
-  | { code: 'legacy_no_tin_event_not_payable' };
+  | { code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — SYMMETRIC to the record-payment webhook guard. A NEW-FLOW
+   * bill (NULL §87 `documentNumber` + non-§87 `billDocumentNumberRaw`, issued
+   * while FEATURE_088_TAX_AT_PAYMENT was ON) is being read for payment on the
+   * INITIATE side while the flag is now OFF. Creating a PI would let Stripe
+   * capture money the webhook-side `recordPayment` guard then refuses to apply
+   * (same code, permanent, NO auto-refund) — S0 stranded funds. Reject at the
+   * payability read so the PI is never created. Distinct from `not_payable`
+   * (mirroring `legacy_no_tin_event_not_payable`) so F5's logs keep the
+   * flag-rollback discriminator for ops.
+   */
+  | { code: 'new_flow_bill_requires_flag_on' };
 
 /** Deps: same as the underlying F4 use-case. */
 export type GetInvoiceForPaymentDeps = GetInvoiceDeps;
@@ -156,6 +178,28 @@ export async function getInvoiceForPayment(
     !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id)
   ) {
     return err({ code: 'legacy_no_tin_event_not_payable' });
+  }
+
+  // 088 SEC-MED — SYMMETRIC to the record-payment webhook guard
+  // (`new_flow_bill_requires_flag_on`, record-payment.ts). A NEW-FLOW bill
+  // (non-§87 `billDocumentNumberRaw`, NULL §87 `documentNumber`, issued while
+  // the flag was ON) must NOT be online-payable after the flag is rolled back
+  // to OFF: the initiate side would create a Stripe PI, Stripe would CAPTURE
+  // the money, then the webhook-side `recordPayment` guard refuses the flip
+  // (same code, permanent, no auto-refund) — captured-but-unappliable funds
+  // (S0). Reject at the payability read so the PI is NEVER created. `=== false`
+  // (not `!== true`) mirrors the webhook guard so ONLY the explicit prod
+  // flag-OFF initiate path trips it — webhook-side reconciliation reads
+  // (confirm-payment) omit `taxAtPayment` (undefined) and are unaffected.
+  // Status-scoped to 'issued' so paid/credited rows keep their read/refund
+  // behaviour. See the master rationale + runbook at the record-payment guard.
+  if (
+    input.taxAtPayment === false &&
+    invoice.documentNumber === null &&
+    invoice.billDocumentNumberRaw !== null &&
+    invoice.status === 'issued'
+  ) {
+    return err({ code: 'new_flow_bill_requires_flag_on' });
   }
 
   return ok({

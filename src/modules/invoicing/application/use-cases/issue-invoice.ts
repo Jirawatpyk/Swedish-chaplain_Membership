@@ -192,6 +192,16 @@ export type IssueInvoiceError =
    * Constitution I). 422.
    */
   | { code: 'zero_rate_cert_blob_key_invalid' }
+  /**
+   * 088 SEC-MED — a non-standard VAT treatment (`zero_rated_80_1_5`) was
+   * forwarded while `FEATURE_088_TAX_AT_PAYMENT` is OFF. The §80/1(5) zero
+   * rate is part of the tax-at-payment feature; the env.ts invariant is
+   * "flag off → every invoice is standard 7%". The issue form hides the
+   * toggle when the flag is dark, but a crafted request could still forward
+   * it — so refuse server-side (no invoice issued, no §87 number burned,
+   * cert fields not persisted). 422.
+   */
+  | { code: 'zero_rate_requires_flag' }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
@@ -319,6 +329,19 @@ export async function issueInvoice(
     //       (FR-024). The DB `invoices_zero_rate_cert_required` CHECK is
     //       defense-in-depth behind this app-layer gate.
     const vatTreatment: VatTreatment = input.vatTreatment ?? 'standard';
+    // (0) 088 SEC-MED — server-side FEATURE_088_TAX_AT_PAYMENT gate. The
+    //     §80/1(5) zero rate is part of the tax-at-payment feature; env.ts's
+    //     invariant is "flag off → every invoice is standard 7%". The issue
+    //     form only HIDES the zero-rate toggle when the flag is dark — a
+    //     crafted request could still forward `zero_rated_80_1_5` and mint a
+    //     0%-VAT §86/4 document (burning a §87 number). Refuse it here,
+    //     PRE-SEQUENCE (plain `return err`, before allocateNext — no number
+    //     consumed; cert fields never pinned), so the flag is the real gate,
+    //     not just the UI. `!== true` (not `=== false`) so undefined/omitted
+    //     flag (legacy direct callers) is also treated as OFF.
+    if (deps.taxAtPayment !== true && vatTreatment !== 'standard') {
+      return err({ code: 'zero_rate_requires_flag' });
+    }
     if (
       vatTreatment === 'zero_rated_80_1_5' &&
       draft.invoiceSubject === 'membership'

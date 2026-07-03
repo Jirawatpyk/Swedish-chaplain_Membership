@@ -451,6 +451,9 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
     it('issued → void', () => ok('issued', 'void'));
     it('paid → partially_credited', () => ok('paid', 'partially_credited'));
     it('paid → credited', () => ok('paid', 'credited'));
+    // 088 (data-model.md § 3.1 — `paid --void--> void`): an admin may void a
+    // PAID invoice (the void use-case's own guard accepts `paid`).
+    it('paid → void (admin void of a paid invoice)', () => ok('paid', 'void'));
     it('partially_credited → partially_credited (sequential CN)', () =>
       ok('partially_credited', 'partially_credited'));
     it('partially_credited → credited', () =>
@@ -462,8 +465,6 @@ describe('canTransition — invoice state-machine table (data-model.md § 3.1)',
       err('issued', 'credited', 'invalid_transition'));
     it('issued → partially_credited (must pay first)', () =>
       err('issued', 'partially_credited', 'invalid_transition'));
-    it('paid → void (mark paid then void is illegal)', () =>
-      err('paid', 'void', 'invalid_transition'));
     it('paid → issued (no rollback)', () =>
       err('paid', 'issued', 'invalid_transition'));
   });

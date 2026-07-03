@@ -466,7 +466,12 @@ export function canTransition(
   const legal: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
     draft: subject === 'event' ? ['issued', 'paid'] : ['issued'],
     issued: ['paid', 'void'],
-    paid: ['partially_credited', 'credited'],
+    // 088 (data-model.md § 3.1 — `paid --void--> void`; "any non-terminal →
+    // void by admin"): voiding a PAID invoice is legal (the void use-case's
+    // own guard already accepts `paid`, e.g. a wrongly-recorded offline
+    // payment on a membership). Previously omitted here, so routing a
+    // paid→void through this table wrongly returned `invalid_transition`.
+    paid: ['partially_credited', 'credited', 'void'],
     partially_credited: ['partially_credited', 'credited'],
     void: [],
     credited: [],

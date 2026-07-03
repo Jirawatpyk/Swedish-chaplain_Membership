@@ -101,6 +101,11 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     audit: f5AuditAdapter,
     clock: systemClock,
     generatePaymentId,
+    // 088 SEC-MED — thread FEATURE_088_TAX_AT_PAYMENT into the F4 payability
+    // read so a new-flow bill minted under the flag cannot be self-paid after
+    // the flag rolls back to OFF (stranded-funds guard). Mirrors how
+    // `makeRecordPaymentDeps` wires the same flag on the webhook side.
+    taxAtPayment: env.features.f088TaxAtPayment,
     // Idempotency-Key strategy, gated on Stripe LIVE vs TEST mode
     // (not NODE_ENV). Live mode: identity → the seq-based key is the
     // real dedupe contract (two concurrent retries map to the same

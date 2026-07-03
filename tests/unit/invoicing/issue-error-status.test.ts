@@ -41,6 +41,8 @@ describe('issueErrorStatus — shared issuance-route status map (wave-4 S16)', (
       membership_cannot_be_zero_rated: 422,
       zero_rate_cert_required: 422,
       zero_rate_cert_blob_key_invalid: 422,
+      // 088 SEC-MED — non-standard VAT treatment forwarded while the flag is off.
+      zero_rate_requires_flag: 422,
       pdf_render_failed: 500,
       blob_upload_failed: 500,
     });

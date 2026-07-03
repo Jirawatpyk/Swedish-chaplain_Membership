@@ -101,6 +101,12 @@ function httpStatusForUseCaseError(code: string): {
     // `useCaseErrorCode` warn-log field below.
     case 'legacy_no_tin_event_not_payable':
       return { status: 409, routeCode: 'invoice_not_payable' };
+    // 088 SEC-MED — new-flow bill paid after a flag rollback (S0 stranded
+    // funds). Reuses the EXISTING 409 envelope (the invoice genuinely is not
+    // payable right now); the dedicated use-case code stays visible
+    // server-side via the `useCaseErrorCode` warn-log field below.
+    case 'new_flow_bill_requires_flag_on':
+      return { status: 409, routeCode: 'invoice_not_payable' };
     case 'online_payment_disabled':
       return { status: 409, routeCode: 'online_payment_disabled' };
     case 'method_not_enabled':

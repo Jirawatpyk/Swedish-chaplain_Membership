@@ -11,6 +11,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { getInvoiceForPayment } from '@/modules/invoicing/application/use-cases/get-invoice-for-payment';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+
+/** A real §87 document number VO for the legacy-issued-row fixtures. */
+function docNum(raw = 'SC-2026-000007'): DocumentNumber {
+  const r = DocumentNumber.parse(raw);
+  if (!r.ok) throw new Error('docNum fixture failed');
+  return r.value;
+}
 
 function makeInvoice(overrides: Partial<Invoice>): Invoice {
   return {
@@ -239,5 +247,87 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('paid');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 088 SEC-MED — SYMMETRIC stranded-funds guard for the initiate side. A
+// NEW-FLOW bill (NULL §87 `documentNumber` + non-§87 `billDocumentNumberRaw`,
+// issued while FEATURE_088_TAX_AT_PAYMENT was ON) must NOT be online-payable
+// after the flag is rolled back to OFF: without this guard the initiate side
+// creates a Stripe PI, Stripe captures the money, then the webhook-side
+// `recordPayment` guard refuses the flip (same `new_flow_bill_requires_flag_on`
+// code, NO auto-refund) — captured-but-unappliable funds (S0). The flag is
+// threaded via the INPUT and passed ONLY by the initiate path; webhook-side
+// reconciliation reads omit it (undefined) so they stay unaffected.
+// ---------------------------------------------------------------------------
+describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () => {
+  it('flag OFF + a new-flow bill (issued, billDocumentNumberRaw set, documentNumber null) → new_flow_bill_requires_flag_on', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: false,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
+  });
+
+  it('flag ON + the SAME new-flow bill → payable (ok)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: true,
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('issued');
+    expect(result.value.totalSatang).toBe(1_070_00n);
+  });
+
+  it('flag OFF + a LEGACY issued row (documentNumber set, billDocumentNumberRaw null) → unaffected (payable)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: docNum(),
+      billDocumentNumberRaw: null,
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: false,
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+  });
+
+  it('flag OMITTED (webhook-style reconciliation read) + a new-flow bill → unaffected (guard trips only on === false)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      // taxAtPayment omitted — mirrors the confirm-payment webhook caller.
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
   });
 });

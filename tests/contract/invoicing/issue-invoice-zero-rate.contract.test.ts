@@ -450,3 +450,62 @@ describe('issue-invoice zero-rate contract (088 US8)', () => {
     expect(dto.zero_rate_below_threshold_warning).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 088 SEC-MED — the §80/1(5) zero rate is a FEATURE_088_TAX_AT_PAYMENT feature.
+// The issue form hides the toggle when the flag is dark, but a crafted request
+// could still forward `vatTreatment: 'zero_rated_80_1_5'` and mint a 0%-VAT
+// §86/4 document (burning a §87 number) while the feature is off. The
+// use-case MUST gate `vatTreatment !== 'standard'` on `deps.taxAtPayment ===
+// true`, PRE-SEQUENCE (no number burned, cert fields not persisted), so the
+// env.ts invariant "flag off → every invoice is standard 7%" holds
+// server-side, not only in the UI.
+// ---------------------------------------------------------------------------
+describe('issue-invoice zero-rate server flag-gate (088 SEC-MED)', () => {
+  it('flag OFF + zero_rated → zero_rate_requires_flag (no invoice issued, no number burned)', async () => {
+    const cap = emptyCap();
+    const r = await issueInvoice(
+      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: false },
+      {
+        ...baseInput,
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'กต 0404/1234',
+        zeroRateCertDate: '2026-03-10',
+      },
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('unreachable');
+    expect(r.error.code).toBe('zero_rate_requires_flag');
+    // Pre-sequence: no allocation / render / applyIssue happened.
+    expect(cap.applyIssueInputs).toHaveLength(0);
+    expect(cap.renderInputs).toHaveLength(0);
+  });
+
+  it('flag OFF + standard treatment → unaffected (issues normally)', async () => {
+    const cap = emptyCap();
+    const r = await issueInvoice(
+      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: false },
+      {
+        ...baseInput,
+        // vatTreatment omitted → resolves to 'standard'.
+      },
+    );
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(r.value.status).toBe('issued');
+  });
+
+  it('flag ON + zero_rated + cert → still succeeds (happy path unaffected by the gate)', async () => {
+    const cap = emptyCap();
+    // makeDeps hardcodes taxAtPayment: true.
+    const r = await issueInvoice(makeDeps(eventDraft(1_200_000n), cap), {
+      ...baseInput,
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'กต 0404/1234',
+      zeroRateCertDate: '2026-03-10',
+    });
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(cap.applyIssueInputs[0]!.vatTreatment).toBe('zero_rated_80_1_5');
+  });
+});
