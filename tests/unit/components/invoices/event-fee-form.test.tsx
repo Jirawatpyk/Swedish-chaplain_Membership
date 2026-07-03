@@ -109,11 +109,18 @@ function mockFetchRegistrations(rows: readonly unknown[]) {
   });
 }
 
-function renderForm(opts: { initialEventId?: string; initialRegistrationId?: string } = {}) {
+function renderForm(
+  opts: {
+    initialEventId?: string;
+    initialRegistrationId?: string;
+    taxAtPayment?: boolean;
+  } = {},
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <EventFeeForm
         events={events}
+        taxAtPayment={opts.taxAtPayment ?? false}
         {...(opts.initialEventId ? { initialEventId: opts.initialEventId } : {})}
         {...(opts.initialRegistrationId
           ? { initialRegistrationId: opts.initialRegistrationId }
@@ -321,6 +328,31 @@ describe('<EventFeeForm>', () => {
     expect(screen.getByTestId('doc-type-badge')).toHaveTextContent(
       enMessages.admin.invoices.eventFeeForm.docType.taxInvoice,
     );
+  });
+
+  it('088 flag ON: non-member + TIN in bill_first → badge shows the ใบแจ้งหนี้ (bill), never Tax Invoice (FR-014/SC-005)', async () => {
+    vi.stubGlobal('fetch', mockFetchRegistrations([nonMemberRegistration]));
+    renderForm({ initialEventId: 'ev-1', taxAtPayment: true });
+    fireEvent.click(await screen.findByRole('button', { name: /Bob/ }));
+
+    // No TIN → Receipt (the §105 path is unchanged by the flag).
+    expect(screen.getByTestId('doc-type-badge')).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.docType.receipt,
+    );
+
+    // Type a TIN → pending default is bill_first; under the flag the
+    // pre-payment document is a non-tax ใบแจ้งหนี้ (the §86/4 tax receipt is
+    // minted at payment), so the badge must NOT read "Tax Invoice".
+    fireEvent.change(screen.getByLabelText('Tax ID (optional)'), {
+      target: { value: '1234567890123' },
+    });
+    const badge = screen.getByTestId('doc-type-badge');
+    expect(badge).toHaveTextContent(
+      enMessages.admin.invoices.eventFeeForm.docType.bill088,
+    );
+    expect(badge).not.toHaveTextContent('Tax Invoice');
+    // The bill_first hint promises an invoice at issue, not a tax invoice.
+    expect(screen.getByText(modeMessages.billFirst.hint088)).toBeInTheDocument();
   });
 
   it('non-member submit posts the buyer object + no amountOverride when price untouched', async () => {

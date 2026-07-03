@@ -580,7 +580,11 @@ export function IssueInvoiceForm({
         <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
           <InfoIcon className="size-4" aria-hidden="true" />
           <AlertDescription className="text-amber-900 dark:text-amber-200">
-            {t('noTaxIdHint')}
+            {/* 088 (FR-014/SC-005) — under the bill→payment flow the issued
+                doc is a non-tax ใบแจ้งหนี้; the §86/4 tax invoice/receipt is
+                minted at payment. Legacy flow (flag OFF) still issues a §87
+                tax invoice at issue → keep the original copy. */}
+            {t(taxAtPayment ? 'noTaxIdHint088' : 'noTaxIdHint')}
           </AlertDescription>
         </Alert>
       )}

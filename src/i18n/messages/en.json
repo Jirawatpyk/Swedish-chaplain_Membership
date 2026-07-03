@@ -2028,7 +2028,9 @@
           "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
           "ariaTaxInvoiceReceipt": "A combined tax invoice/receipt will be issued because the buyer has a tax ID and the fee is already paid.",
           "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
-          "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued."
+          "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued.",
+          "bill088": "Invoice / ใบแจ้งหนี้",
+          "ariaBill088": "This will be issued as an invoice (ใบแจ้งหนี้); the §86/4 tax invoice/receipt is issued when payment is recorded."
         },
         "submit": "Create event-fee draft",
         "submitting": "Creating…",
@@ -2061,7 +2063,8 @@
           },
           "billFirst": {
             "label": "Bill first — issue an unpaid invoice",
-            "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID."
+            "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
+            "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
           "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
@@ -2299,6 +2302,7 @@
         "cancel": "Cancel",
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues as a valid tax invoice with name and address, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
+        "noTaxIdHint088": "This buyer has no Tax ID. The invoice (ใบแจ้งหนี้) issues with name and address, and its §86/4 tax invoice/receipt at payment stays valid, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
         "errors": {
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",

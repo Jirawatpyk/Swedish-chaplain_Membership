@@ -1782,7 +1782,7 @@
         "section8015Note": "Moms 0 % enligt §80/1(5) i thailändska skattelagen (ใบกำกับภาษี med nollskatt för ambassad/internationell organisation).",
         "bankBlockHeading": "Betalningsuppgifter för banköverföring",
         "badgeTaxReceipt": "Skattekvitto (ใบกำกับภาษี)",
-        "badgeBillPayableRecord": "Betalningspost — skattekvitto utfärdat",
+        "badgeBillPayableRecord": "Betalningspost — skattekvitto (ใบกำกับภาษี) utfärdat",
         "seeReceiptLink": "se skattekvitto {number}"
       },
       "meta": {
@@ -2028,7 +2028,9 @@
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
           "ariaTaxInvoiceReceipt": "Ett kombinerat dokument (skattefaktura/kvitto) utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
           "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
-          "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas."
+          "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas.",
+          "bill088": "ใบแจ้งหนี้ (Faktura)",
+          "ariaBill088": "Utfärdas som en ใบแจ้งหนี้ (faktura); §86/4-skattefakturan/kvittot utfärdas när betalningen registreras."
         },
         "submit": "Skapa utkast för evenemangsavgift",
         "submitting": "Skapar…",
@@ -2061,7 +2063,8 @@
           },
           "billFirst": {
             "label": "Fakturera först — utfärda en obetald faktura",
-            "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID."
+            "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID.",
+            "hint088": "Utfärda en ใบแจ้งหนี้ (faktura) nu och registrera betalningen senare; §86/4-skattekvittot utfärdas vid betalning. Kräver köparens skatte-ID."
           },
           "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
@@ -2299,6 +2302,7 @@
         "cancel": "Avbryt",
         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå som en giltig skattefaktura med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
+        "noTaxIdHint088": "Den här köparen saknar skattenummer. Fakturan (ใบแจ้งหนี้) utfärdas med namn och adress, och dess §86/4-skattefaktura/kvitto vid betalning förblir giltig, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",

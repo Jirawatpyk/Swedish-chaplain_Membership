@@ -30,7 +30,13 @@ const events = [{ eventId: 'ev-1', label: 'Gala (2026-06-01)' }];
 function renderSwitcher(props: Partial<Parameters<typeof InvoiceCreateSwitcher>[0]> = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <InvoiceCreateSwitcher members={members} plans={plans} events={events} {...props} />
+      <InvoiceCreateSwitcher
+        members={members}
+        plans={plans}
+        events={events}
+        taxAtPayment={false}
+        {...props}
+      />
     </NextIntlClientProvider>,
   );
 }

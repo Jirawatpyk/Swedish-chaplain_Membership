@@ -303,6 +303,7 @@ function IssuanceModeFieldset({
   disabled,
   hasTin,
   isWaitingNoTin,
+  taxAtPayment,
   children,
 }: {
   readonly effectiveMode: IssuanceMode | null;
@@ -310,6 +311,12 @@ function IssuanceModeFieldset({
   readonly disabled: boolean;
   readonly hasTin: boolean;
   readonly isWaitingNoTin: boolean;
+  /**
+   * 088 (FR-014/SC-005) — under the bill→payment flow, `bill_first` issues a
+   * non-tax ใบแจ้งหนี้ (§86/4 tax receipt at payment); the hint must not
+   * promise a "tax invoice". Flag OFF = legacy copy.
+   */
+  readonly taxAtPayment: boolean;
   readonly children?: React.ReactNode;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
@@ -372,7 +379,7 @@ function IssuanceModeFieldset({
               {t('mode.billFirst.label')}
             </span>
             <span className="text-xs font-normal text-muted-foreground">
-              {t('mode.billFirst.hint')}
+              {taxAtPayment ? t('mode.billFirst.hint088') : t('mode.billFirst.hint')}
             </span>
           </Label>
         </div>
@@ -553,12 +560,21 @@ export function EventFeeForm({
   events,
   initialEventId,
   initialRegistrationId,
+  taxAtPayment,
 }: {
   readonly events: readonly EventOption[];
   /** Pre-selected event from a `?eventRegistrationId=` deep-link. */
   readonly initialEventId?: string | undefined;
   /** Pre-selected attendee from the same deep-link. */
   readonly initialRegistrationId?: string | undefined;
+  /**
+   * 088 (FR-014/SC-005) — bill→payment flow flag. When ON, an
+   * event-with-TIN `bill_first` document is a non-tax ใบแจ้งหนี้ (the §86/4
+   * ใบกำกับภาษี/ใบเสร็จรับเงิน is minted at payment), so the doc-type preview
+   * must NOT label a pre-payment doc "Tax Invoice". Flag OFF = legacy §87
+   * tax invoice at issue → legacy copy stays.
+   */
+  readonly taxAtPayment: boolean;
 }) {
   const t = useTranslations('admin.invoices.eventFeeForm');
   // (S25 — the shared record-payment labels moved into AsPaidPaymentFields.)
@@ -1042,6 +1058,7 @@ export function EventFeeForm({
               disabled={pending}
               hasTin={hasTin}
               isWaitingNoTin={isWaitingNoTin}
+              taxAtPayment={taxAtPayment}
             >
               {/* Payment details — as-paid path only. */}
               {effectiveMode === 'already_paid' && (
@@ -1112,21 +1129,35 @@ export function EventFeeForm({
               <Badge
                 role="status"
                 variant={
-                  docType === 'taxInvoice' || docType === 'taxInvoiceReceipt'
+                  // 088 (FR-016) — a pre-payment ใบแจ้งหนี้ (bill_first under
+                  // the flag) is NOT the final tax document, so render it
+                  // secondary; keep the prominent primary variant for the
+                  // at-payment §86/4 combined doc + the legacy (flag-OFF) tax
+                  // invoice at issue.
+                  docType === 'taxInvoiceReceipt' ||
+                  (docType === 'taxInvoice' && !taxAtPayment)
                     ? 'default'
                     : 'secondary'
                 }
                 aria-label={
-                  ({
-                    taxInvoice: t('docType.ariaTaxInvoice'),
-                    taxInvoiceReceipt: t('docType.ariaTaxInvoiceReceipt'),
-                    receipt: t('docType.ariaReceipt'),
-                    pending: t('docType.ariaPending'),
-                  } satisfies Record<DocTypeKind, string>)[docType]
+                  // 088 (FR-014/SC-005) — a pre-payment `bill_first` doc is a
+                  // non-tax ใบแจ้งหนี้ under the flag; announce it as such, not
+                  // as a tax invoice. as-paid (taxInvoiceReceipt) + no-TIN
+                  // (receipt) already name the correct at-payment document.
+                  taxAtPayment && docType === 'taxInvoice'
+                    ? t('docType.ariaBill088')
+                    : ({
+                        taxInvoice: t('docType.ariaTaxInvoice'),
+                        taxInvoiceReceipt: t('docType.ariaTaxInvoiceReceipt'),
+                        receipt: t('docType.ariaReceipt'),
+                        pending: t('docType.ariaPending'),
+                      } satisfies Record<DocTypeKind, string>)[docType]
                 }
                 data-testid="doc-type-badge"
               >
-                {t(`docType.${docType}`)}
+                {taxAtPayment && docType === 'taxInvoice'
+                  ? t('docType.bill088')
+                  : t(`docType.${docType}`)}
               </Badge>
             </div>
             <dl className="flex flex-col gap-1 text-sm">
