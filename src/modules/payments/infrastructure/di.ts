@@ -101,15 +101,23 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     audit: f5AuditAdapter,
     clock: systemClock,
     generatePaymentId,
-    // Idempotency-Key strategy. Production: identity → seq-based key
-    // is the dedupe contract for true retries (two concurrent retries
-    // map to the same Stripe PI). Dev: `-d-<ms>` salt because Stripe
-    // caches keys 24h + rejects re-use with mismatched params
+    // Idempotency-Key strategy, gated on Stripe LIVE vs TEST mode
+    // (not NODE_ENV). Live mode: identity → the seq-based key is the
+    // real dedupe contract (two concurrent retries map to the same
+    // Stripe PI; no duplicate real charge). Any test-mode deploy
+    // (local dev, CI, and a test-key production/staging box such as
+    // swecham.zyncdata.app): `-d-<ms>` salt, because Stripe caches
+    // idempotency keys 24h + rejects re-use with mismatched params
     // (StripeIdempotencyError 400 → route 502 processor_unavailable),
-    // making manual repeat-testing impossible without the salt.
-    idempotencyKeyFactory: env.isDevelopment
-      ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
-      : (baseKey: string) => baseKey,
+    // which permanently blocks manual repeat-testing of an invoice
+    // whose key was already burned. Keying on `!liveMode` (was
+    // `isDevelopment`) fixes repeat-testing on a NODE_ENV=production
+    // deploy that still runs sk_test_ keys — the DB advisory lock +
+    // resume path stay the primary dedupe layer, so salting the key
+    // only ever affects a harmless duplicate TEST-mode PaymentIntent.
+    idempotencyKeyFactory: env.stripe.liveMode
+      ? (baseKey: string) => baseKey
+      : (baseKey: string) => `${baseKey}-d-${Date.now()}`,
   };
 }
 
@@ -262,13 +270,14 @@ export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
     audit: f5AuditAdapter,
     clock: systemClock,
     generateRefundId,
-    // Same dev-mode salt strategy as `makeInitiatePaymentDeps`. In
-    // production the seq-based key is the Stripe dedupe contract;
-    // dev adds a millisecond suffix so manual repeat-testing is not
-    // blocked by Stripe's 24h key cache.
-    idempotencyKeyFactory: env.isDevelopment
-      ? (baseKey: string) => `${baseKey}-d-${Date.now()}`
-      : (baseKey: string) => baseKey,
+    // Same salt strategy as `makeInitiatePaymentDeps`, gated on Stripe
+    // LIVE vs TEST mode. Live mode: identity (seq-based key is the
+    // Stripe dedupe contract — no duplicate real refund). Test mode
+    // (incl. a test-key production box): `-d-<ms>` suffix so manual
+    // repeat-testing is not blocked by Stripe's 24h key cache.
+    idempotencyKeyFactory: env.stripe.liveMode
+      ? (baseKey: string) => baseKey
+      : (baseKey: string) => `${baseKey}-d-${Date.now()}`,
     // R2 reliability (2026-04-27): wire paymentsLogger so the
     // double-fault `.catch()` at the failure-finalise tail emits a
     // structured warn instead of silent swallow.
