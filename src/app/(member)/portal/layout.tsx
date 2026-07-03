@@ -23,7 +23,7 @@ import { MarketingAcknowledgementBanner } from './_components/marketing-acknowle
  * their own portal. Members stay.
  *
  * Renders the persistent header with horizontal MemberNav +
- * UserMenu + ThemeToggle.
+ * LocaleSwitcher + UserMenu + ThemeToggle.
  */
 
 /**
@@ -63,6 +63,11 @@ export default async function MemberLayout({ children }: { children: ReactNode }
          * Desktop (≥ 640 px): right column expands to include the
          * ThemeToggle (via `sm:contents` on its wrapper); the grid
          * max-width is capped at the detail layout token.
+         *
+         * LocaleSwitcher sits in the same right column but OUTSIDE the
+         * `sm:contents` wrapper, so it stays always-visible at every
+         * width — locale has no OS-level fallback the way color scheme
+         * does for a hidden ThemeToggle.
          */}
         <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">

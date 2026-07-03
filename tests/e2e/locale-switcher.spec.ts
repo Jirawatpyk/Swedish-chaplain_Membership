@@ -7,7 +7,8 @@
  * directly):
  *   1. Staff header  — EN→TH updates <html lang> + cookie, then back to EN.
  *   2. Auth page     — switch to TH before signing in (no session).
- *   3. Member portal — switcher stays visible at a 360px mobile width.
+ *   3. Member portal — switcher stays visible at a 320px mobile width
+ *      with no horizontal overflow.
  *
  * Gated on E2E_ADMIN_* / E2E_MEMBER_* env vars.
  */
@@ -72,10 +73,13 @@ test.describe('LocaleSwitcher @i18n', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'th');
   });
 
-  test('member portal keeps the switcher visible at 360px', async ({ page }) => {
+  test('member portal keeps the switcher visible at 320px with no horizontal overflow', async ({ page }) => {
     test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL/PASSWORD');
-    await page.setViewportSize({ width: 360, height: 780 });
+    await page.setViewportSize({ width: 320, height: 780 });
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!, 'portal');
-    await expect(page.getByRole('button', { name: /change language/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: TRIGGER_NAME })).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    ).toBe(true);
   });
 });

@@ -25,7 +25,7 @@ import { requireSession } from '@/lib/auth-session';
  * Auth guard via `requireSession('staff')` — redirects to
  * `/admin/sign-in` if there is no valid session, or if the session
  * belongs to a non-staff role. Renders sidebar navigation with
- * collapsible sidebar + header with UserMenu + ThemeToggle.
+ * collapsible sidebar + header with LocaleSwitcher + ThemeToggle + UserMenu.
  */
 export default async function StaffLayout({ children }: { children: ReactNode }) {
   const { user } = await requireSession('staff');
