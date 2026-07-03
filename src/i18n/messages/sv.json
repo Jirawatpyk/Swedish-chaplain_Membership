@@ -1695,6 +1695,7 @@
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
+          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
           "codeFallback": "Felkod: {code}"
         }
       },

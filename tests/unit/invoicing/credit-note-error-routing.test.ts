@@ -32,6 +32,16 @@ describe('routeCreditNoteError (FR-032)', () => {
     });
   });
 
+  it('maps receipt_not_rendered to a dedicated "still generating — retry" message, NOT the raw codeFallback', () => {
+    // 088 whole-feature review — the async §86/4 receipt PDF is still pending
+    // (or failed) so a §86/10 note can't cite a rendered receipt. Give the admin
+    // the actionable retry/re-render guidance instead of "Error code: receipt_not_rendered".
+    expect(routeCreditNoteError('receipt_not_rendered')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.receiptNotRendered',
+    });
+  });
+
   it('an unrecognised but present code falls back to codeFallback with the raw code', () => {
     expect(routeCreditNoteError('overflow')).toEqual({
       kind: 'failure',

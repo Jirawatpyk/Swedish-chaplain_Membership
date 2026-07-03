@@ -1695,6 +1695,7 @@
           "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
           "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
+          "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
           "codeFallback": "Error code: {code}"
         }
       },

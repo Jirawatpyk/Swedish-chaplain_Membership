@@ -15,7 +15,8 @@
  *     (`credit_exceeds_remainder`). Show an inline "already credited/voided —
  *     refresh", NOT a red error, so the admin reloads the fresh remainder.
  *   - `failure`    — a dedicated operator-actionable message
- *     (`receipt_not_creditable` → refund/void guidance), a codeFallback
+ *     (`receipt_not_creditable` → refund/void guidance; `receipt_not_rendered`
+ *     → "tax receipt still generating, retry / re-render"), a codeFallback
  *     carrying the raw code, or the generic unknown copy.
  *
  * Pure `.ts` leaf (no React import graph) so the classification + i18n-key
@@ -51,6 +52,12 @@ const DEDICATED_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // §86/10 ruling — a §105 ใบเสร็จรับเงิน (receipt_separate, no-TIN buyer)
   // cannot be credited; point the admin at refund / void instead of a raw code.
   receipt_not_creditable: 'errors.receiptNotCreditable',
+  // 088 US6 (whole-feature review) — the paid invoice's §86/4 tax-receipt PDF
+  // has not rendered yet (async worker still 'pending', or 'failed' after its
+  // retry budget), so a §86/10 note cannot cite a rendered receipt. TRANSIENT:
+  // give the admin the actionable "still generating — retry / re-render"
+  // guidance instead of a raw `errors.codeFallback` code dump.
+  receipt_not_rendered: 'errors.receiptNotRendered',
 };
 
 export function routeCreditNoteError(
