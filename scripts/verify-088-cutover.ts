@@ -173,6 +173,43 @@ async function main(): Promise<void> {
       report('WHT note seeded', true, 'skipped — migration 0233 (US5) not yet applied');
     }
 
+    // 5b. Seller Tax ID present + not a placeholder — HARD (T070). A §86/4 tax
+    //     document MUST carry the seller's REAL 13-digit RD TIN; a dummy /
+    //     placeholder TIN is a ship blocker (RD §86/4 required particular).
+    //     TSCC = 0994000187203. Rejects null, non-13-digit, and repeated-digit
+    //     placeholders (e.g. 0000000000000, 1111111111111).
+    const sellerTin = await sql<{ tax_id: string | null }[]>`
+      SELECT tax_id FROM tenant_invoice_settings WHERE tenant_id = ${TENANT}`;
+    const tin = sellerTin[0]?.tax_id ?? null;
+    const tinValid = tin != null && /^\d{13}$/.test(tin) && !/^(\d)\1{12}$/.test(tin);
+    ok = report(
+      'seller Tax ID is a real 13-digit RD TIN (not a placeholder)',
+      tinValid,
+      tinValid
+        ? tin!
+        : `got '${tin ?? '(null)'}' — set the tenant's real RD TIN before first issuance (T070)`,
+    ) && ok;
+
+    // 5c. FR-022 offline bank block seeded — INFORMATIONAL + column-guarded
+    //     (lands migration 0233 / US5). A tenant taking online payment only may
+    //     legitimately leave it empty (it then renders nothing on the bill).
+    if (await columnExists(sql, 'tenant_invoice_settings', 'bank_payee_name')) {
+      const bank = await sql<
+        { bank_payee_name: string | null; bank_account_no: string | null }[]
+      >`
+        SELECT bank_payee_name, bank_account_no
+        FROM tenant_invoice_settings WHERE tenant_id = ${TENANT}`;
+      const seeded =
+        bank[0]?.bank_payee_name != null && bank[0]?.bank_account_no != null;
+      report(
+        'FR-022 offline bank block seeded (payee + account no)',
+        true,
+        seeded
+          ? 'seeded'
+          : 'empty — seed for offline payers (KBank, Emquartier per § Assumptions) or leave blank if online-only',
+      );
+    }
+
     // 6. Cutover data-audit — legal_entity_type populated (branch gate fails
     //    closed on NULL; T070). Informational count, not a hard fail here.
     const nullEntity = await sql<{ n: number }[]>`
