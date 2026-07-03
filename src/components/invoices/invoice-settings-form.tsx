@@ -532,6 +532,7 @@ export function InvoiceSettingsForm({
             <Label htmlFor="inv_prefix">{t('labels.invoicePrefix')}</Label>
             <Input
               id="inv_prefix"
+              className="min-h-11"
               value={invoicePrefix}
               onChange={(e) => setInvoicePrefix(e.target.value)}
               disabled={disabled}
@@ -543,6 +544,7 @@ export function InvoiceSettingsForm({
             <Label htmlFor="cn_prefix">{t('labels.creditNotePrefix')}</Label>
             <Input
               id="cn_prefix"
+              className="min-h-11"
               value={creditPrefix}
               onChange={(e) => setCreditPrefix(e.target.value)}
               disabled={disabled}
@@ -556,6 +558,7 @@ export function InvoiceSettingsForm({
                 fixed to "separate". Rendered read-only (no longer a selectable). */}
             <Input
               id="receipt_mode"
+              className="min-h-11"
               value={t('receiptMode.separate')}
               readOnly
               disabled
@@ -569,6 +572,7 @@ export function InvoiceSettingsForm({
             <Label htmlFor="rc_prefix">{t('labels.receiptPrefix')}</Label>
             <Input
               id="rc_prefix"
+              className="min-h-11"
               value={receiptPrefix}
               onChange={(e) => setReceiptPrefix(e.target.value)}
               disabled={disabled}
@@ -657,8 +661,10 @@ export function InvoiceSettingsForm({
       {/* 088 US5 — Seller §86/4 Head-Office / Branch */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
         <legend className="px-2 text-sm font-semibold">{t('sections.seller')}</legend>
-        <div className="flex items-center justify-between rounded-md border p-3">
-          <div>
+        {/* T072b (FR-036) — gap-3 + min-w-0 keep this new row from overflowing
+            at 320px if a long TH/SV label meets the fixed-width Switch. */}
+        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="min-w-0">
             <Label htmlFor="seller_ho" className="cursor-pointer">
               {t('labels.sellerIsHeadOffice')}
             </Label>
@@ -685,7 +691,8 @@ export function InvoiceSettingsForm({
               maxLength={5}
               pattern="\d{5}"
               aria-describedby="seller_branch_hint"
-              className="font-mono"
+              // T072b (FR-036) — ≥44px touch target (new US5 input).
+              className="min-h-11 font-mono"
             />
             <p id="seller_branch_hint" className="text-xs text-muted-foreground">
               {t('hints.sellerBranchCode')}
@@ -744,6 +751,8 @@ export function InvoiceSettingsForm({
               onChange={(e) => setBankPayeeName(e.target.value)}
               disabled={disabled}
               maxLength={200}
+              // T072b (FR-036) — ≥44px touch target (new US5 bank-block input).
+              className="min-h-11"
             />
           </div>
           <div className="space-y-2">
@@ -754,6 +763,7 @@ export function InvoiceSettingsForm({
               onChange={(e) => setBankName(e.target.value)}
               disabled={disabled}
               maxLength={200}
+              className="min-h-11"
             />
           </div>
           <div className="space-y-2">
@@ -766,7 +776,7 @@ export function InvoiceSettingsForm({
               inputMode="numeric"
               maxLength={50}
               aria-describedby="bank_account_no_hint"
-              className="font-mono"
+              className="min-h-11 font-mono"
             />
             <p id="bank_account_no_hint" className="text-xs text-muted-foreground">
               {t('hints.bankAccountNo')}
@@ -780,6 +790,7 @@ export function InvoiceSettingsForm({
               onChange={(e) => setBankAccountType(e.target.value)}
               disabled={disabled}
               maxLength={50}
+              className="min-h-11"
             />
           </div>
           <div className="space-y-2">
@@ -790,6 +801,7 @@ export function InvoiceSettingsForm({
               onChange={(e) => setBankBranch(e.target.value)}
               disabled={disabled}
               maxLength={200}
+              className="min-h-11"
             />
           </div>
           <div className="space-y-2">
@@ -805,7 +817,7 @@ export function InvoiceSettingsForm({
               inputMode="text"
               pattern="[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?"
               aria-describedby="bank_swift_hint"
-              className="font-mono uppercase"
+              className="min-h-11 font-mono uppercase"
             />
             <p id="bank_swift_hint" className="text-xs text-muted-foreground">
               {t('hints.bankSwift')}
@@ -903,7 +915,9 @@ export function InvoiceSettingsForm({
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
+          // tall + full-width so it stays a reachable tap target at 320px.
+          className="min-h-11 w-full"
           disabled={submitting}
           aria-busy={submitting}
         >

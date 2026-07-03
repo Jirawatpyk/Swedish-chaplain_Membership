@@ -395,6 +395,9 @@ export function IssueInvoiceForm({
               value={certNo}
               onChange={(e) => setCertNo(e.target.value)}
               placeholder={tForm('cert.noPlaceholder')}
+              // T072b (FR-036) — ≥44px touch target on this new feature input;
+              // the shared Input is 36px and is NOT changed (bumped inline here).
+              className="min-h-11"
               // T061g — mobile keyboard hint for the free-text cert number.
               inputMode="text"
               enterKeyHint="next"
@@ -424,6 +427,8 @@ export function IssueInvoiceForm({
               type="date"
               value={certDate}
               onChange={(e) => setCertDate(e.target.value)}
+              // T072b (FR-036) — ≥44px touch target (new feature input).
+              className="min-h-11"
               aria-invalid={certErrors.certDate ? true : undefined}
               aria-describedby={
                 certErrors.certDate ? 'zero-rate-cert-date-error' : undefined
@@ -619,6 +624,11 @@ export function IssueInvoiceForm({
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           placeholder={confirmPhrase}
+          // T072b (FR-036) — this typed-phrase gate predates 088 (F4), but it
+          // is bumped to ≥44px for intra-dialog target-size uniformity: it sits
+          // among the new 44px cert inputs and is the critical irreversible
+          // issue gate. One-class change; the shared Input primitive is unchanged.
+          className="min-h-11"
           autoComplete="off"
           inputMode="text"
           enterKeyHint="done"

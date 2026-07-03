@@ -353,3 +353,27 @@ describe('IssueInvoiceForm — beforeunload dirty guard (T061f-form)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 088 T072a/T072b (FR-036 / SC-011) — target-size guard. A cheap CI-running
+// assertion that the NEW zero-rate inputs carry the 44px min-height utility
+// (the shared shadcn Input is 36px; these feature inputs are bumped inline —
+// the global primitive is NOT changed). The @a11y E2E (boundingBox ≥44) is
+// preview-gated; this structural guard runs on every commit.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceForm — target-size min-h-11 on new inputs (FR-036 / SC-011)', () => {
+  it('cert number + cert date inputs carry min-h-11 (44px) once zero-rate is revealed', () => {
+    renderForm();
+    fireEvent.click(screen.getByRole('radio', { name: /Zero-rated/i }));
+    expect(screen.getByLabelText(/MFA certificate number/i)).toHaveClass(
+      'min-h-11',
+    );
+    expect(screen.getByLabelText(/Certificate date/i)).toHaveClass('min-h-11');
+  });
+
+  it('the immutable-snapshot confirm input carries min-h-11 (44px)', () => {
+    renderForm();
+    expect(screen.getByLabelText(/to confirm/i)).toHaveClass('min-h-11');
+  });
+});
