@@ -52,7 +52,7 @@ import {
 } from '@/modules/invoicing/domain/document-kind';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -67,7 +67,15 @@ export const recordPaymentSchema = z.object({
   paymentMethod: z.enum(['bank_transfer', 'cheque', 'cash', 'other']),
   paymentReference: z.string().max(200).optional(),
   paymentNotes: z.string().max(1000).optional(),
-  paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD
+  // Shape regex first, then real-calendar refine — the regex alone accepts
+  // impossible dates (2026-02-31) that reach `fiscalYearFromUtcIso` under
+  // `f088TaxAtPayment` and make js-joda `Instant.parse` throw RAW → an
+  // unhandled 500. The refine rejects at parse (typed 4xx), matching the
+  // sibling guard in `issueEventInvoiceAsPaidSchema`.
+  paymentDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' }), // YYYY-MM-DD
   // R7-S3 — `idempotencyKey` is accepted by the input schema but
   // CURRENTLY IGNORED by this use-case. Status-based replay detection
   // (the `status === 'paid'` short-circuit plus the applyPayment

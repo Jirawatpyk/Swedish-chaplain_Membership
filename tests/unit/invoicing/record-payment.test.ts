@@ -22,7 +22,10 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
-import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
+import {
+  recordPayment,
+  recordPaymentSchema,
+} from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
@@ -236,6 +239,27 @@ const input = {
   paymentReference: 'TRX-123',
   paymentDate: '2026-05-18',
 };
+
+describe('recordPaymentSchema — paymentDate calendar validation', () => {
+  it('schema — shape-valid but IMPOSSIBLE calendar dates rejected; real leap day accepted', () => {
+    // `^\d{4}-\d{2}-\d{2}$` alone accepts 2026-02-31; with f088TaxAtPayment ON
+    // that date reaches `fiscalYearFromUtcIso` → js-joda `Instant.parse` throws
+    // RAW → an unhandled 500. The `.refine(isValidCalendarDate)` rejects it at
+    // parse (typed validation failure), never a thrown DateTimeException.
+    expect(recordPaymentSchema.safeParse(input).success).toBe(true);
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2026-02-31' }).success,
+    ).toBe(false);
+    // 2027 is not a leap year.
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2027-02-29' }).success,
+    ).toBe(false);
+    // 2028 IS a leap year — Feb 29 must remain accepted.
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2028-02-29' }).success,
+    ).toBe(true);
+  });
+});
 
 describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());

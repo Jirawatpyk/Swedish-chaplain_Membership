@@ -1777,11 +1777,9 @@
     },
     "invoices": {
       "tax088": {
-        "billTitle": "ใบแจ้งหนี้",
         "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
         "section8015Note": "ภาษีมูลค่าเพิ่มอัตรา 0% ตามมาตรา 80/1(5) แห่งประมวลรัษฎากร (ขายให้สถานทูต/องค์การระหว่างประเทศ)",
         "bankBlockHeading": "รายละเอียดการชำระเงินผ่านธนาคาร",
-        "badgeTaxReceipt": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
         "seeReceiptLink": "ดูใบกำกับภาษี {number}"
       },
       "meta": {
@@ -1931,7 +1929,7 @@
           "subtotal": "ยอดก่อนภาษี",
           "vat": "VAT",
           "total": "รวม",
-          "vatTreatment": "VAT",
+          "vatTreatment": "ประเภทภาษี",
           "certNo": "เลขที่หนังสือรับรอง"
         },
         "vatTreatment": {

@@ -20,6 +20,7 @@ import { asSatang } from '@/lib/money';
 import { ok } from '@/lib/result';
 import {
   issueInvoice,
+  issueInvoiceSchema,
   type IssueInvoiceDeps,
 } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import {
@@ -293,6 +294,32 @@ const baseInput = {
 };
 
 describe('issue-invoice zero-rate contract (088 US8)', () => {
+  it('schema — an IMPOSSIBLE zeroRateCertDate is rejected at parse (typed 4xx, not a 500); optional/omit + real dates accepted', () => {
+    // `^\d{4}-\d{2}-\d{2}$` alone accepts 2026-02-30; that date then persists
+    // into the Postgres `date` column → DB rejects → unhandled 500. The
+    // `.refine(isValidCalendarDate)` rejects it at parse.
+    expect(
+      issueInvoiceSchema.safeParse({
+        ...baseInput,
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'กต 0404/1234',
+        zeroRateCertDate: '2026-02-30',
+      }).success,
+    ).toBe(false);
+    // A real date is accepted.
+    expect(
+      issueInvoiceSchema.safeParse({
+        ...baseInput,
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'กต 0404/1234',
+        zeroRateCertDate: '2026-03-10',
+      }).success,
+    ).toBe(true);
+    // Still optional — an omitted cert date bypasses the refine (undefined
+    // short-circuits before it runs).
+    expect(issueInvoiceSchema.safeParse(baseInput).success).toBe(true);
+  });
+
   it('FR-024 fail-closed — zero-rate WITHOUT a cert number is rejected (no invoice issued)', async () => {
     const cap = emptyCap();
     const r = await issueInvoice(makeDeps(eventDraft(1_200_000n), cap), {

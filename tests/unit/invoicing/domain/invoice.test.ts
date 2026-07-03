@@ -183,8 +183,18 @@ describe('issuedInvoiceIdentity — void/confirm identity of an ISSUED invoice (
   it('does NOT read the RC receipt number (distinct from displayDocumentNumber)', () => {
     // The void guard acts on the pre-payment bill, so a receipt number must
     // NEVER stand in for the bill's identity — hence the separate helper.
+    //
+    // Revert-survivable: the input ALSO carries an RC receipt number (cast in —
+    // `issuedInvoiceIdentity` does not declare the field). If the impl ever
+    // regressed to fall back to `receiptDocumentNumberRaw` (the
+    // displayDocumentNumber behaviour), this would return 'RC-2026-000015'
+    // instead of null and the assertion would fail.
     expect(
-      issuedInvoiceIdentity({ documentNumber: null, billDocumentNumberRaw: null }),
+      issuedInvoiceIdentity({
+        documentNumber: null,
+        billDocumentNumberRaw: null,
+        receiptDocumentNumberRaw: 'RC-2026-000015',
+      } as Parameters<typeof issuedInvoiceIdentity>[0]),
     ).toBeNull();
     // Same shape through displayDocumentNumber WOULD pick up the RC — proving
     // the two helpers are intentionally different reads.

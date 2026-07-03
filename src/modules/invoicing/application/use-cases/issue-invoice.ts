@@ -96,7 +96,7 @@ import {
   inferEventDocumentKind,
 } from '@/modules/invoicing/domain/document-kind';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
-import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
+import { bangkokLocalDate, addDays, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
@@ -121,7 +121,16 @@ export const issueInvoiceSchema = z.object({
   // the `?? 'standard'` default.
   vatTreatment: z.enum(['standard', 'zero_rated_80_1_5']).optional(),
   zeroRateCertNo: z.string().max(200).optional(),
-  zeroRateCertDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Shape regex first, then real-calendar refine — the regex alone accepts
+  // impossible dates (2026-02-30) that then persist into the Postgres `date`
+  // column → DB rejects → unhandled 500. The refine rejects at parse (typed
+  // 4xx). `.optional()` last so an omitted cert date still bypasses the string
+  // checks (undefined short-circuits before the refine runs).
+  zeroRateCertDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' })
+    .optional(),
   zeroRateCertBlobKey: z.string().max(1024).optional(),
 });
 
