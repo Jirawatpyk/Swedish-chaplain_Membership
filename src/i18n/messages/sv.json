@@ -1782,7 +1782,6 @@
         "section8015Note": "Moms 0 % enligt §80/1(5) i thailändska skattelagen (ใบกำกับภาษี med nollskatt för ambassad/internationell organisation).",
         "bankBlockHeading": "Betalningsuppgifter för banköverföring",
         "badgeTaxReceipt": "Skattekvitto (ใบกำกับภาษี)",
-        "badgeBillPayableRecord": "Betalningspost — skattekvitto (ใบกำกับภาษี) utfärdat",
         "seeReceiptLink": "se skattekvitto {number}"
       },
       "meta": {
@@ -1809,7 +1808,7 @@
           "configureInvoicing": "Konfigurera fakturering"
         },
         "columns": {
-          "documentNumber": "Nr",
+          "documentNumber": "Fakturanr.",
           "status": "Status",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
@@ -1817,7 +1816,7 @@
           "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
-          "receiptNumber": "Kvittonr."
+          "receiptNumber": "Skattekvittonr."
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -4514,8 +4513,8 @@
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
       "loaded": "Fakturalistan laddad.",
       "columns": {
-        "documentNumber": "Nr",
-        "receiptNumber": "Kvittonr.",
+        "documentNumber": "Fakturanr.",
+        "receiptNumber": "Skattekvittonr.",
         "status": "Status",
         "issueDate": "Utfärdad",
         "dueDate": "Förfaller",

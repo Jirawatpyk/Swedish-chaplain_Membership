@@ -131,8 +131,6 @@ export default async function InvoiceDetailPage({
   const { invoiceId } = await params;
   const t = await getTranslations('admin.invoices.detail');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
-  // 088 (T065c / FR-016) — SC-bill ↔ RC-tax-receipt disambiguation labels.
-  const tTax088 = await getTranslations('admin.invoices.tax088');
   const { user: currentUser } = await requireSession('staff');
   // M3 — use the next-intl locale for date display so TH/SV users
   // see their localised format instead of the browser default.
@@ -354,11 +352,11 @@ export default async function InvoiceDetailPage({
   // renders under the "Draft invoice" title/breadcrumb. Both-null = a true
   // draft → the draft label.
   const displayNumber = displayDocumentNumber(invoice);
-  // 088 (T065a / T065c / FR-016) — the two-document kind, gated on the flag AND
-  // this being a real 088 bill (bill number present). An UNPAID 088 bill's §87
-  // legs are both NULL so `displayDocumentNumber` is null → the header/breadcrumb
-  // would fall to the "Draft invoice" label for a legitimately-issued bill;
-  // `headerNumber` falls back to the SC bill number so it never does.
+  // 088 A-refined (FR-016) — the two-document kind, gated on the flag AND this
+  // being a real 088 bill (bill number present). The invoice is ALWAYS
+  // identified by its OWN (SC) NON-§87 bill number — paid or unpaid — so
+  // `headerNumber` is the SC bill for ANY 088 bill (never the RC on payment).
+  // The RC §86/4 tax receipt is surfaced in the "Receipt No." field below.
   const is088Bill =
     env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
   const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
@@ -367,7 +365,7 @@ export default async function InvoiceDetailPage({
       : 'bill'
     : 'none';
   const headerNumber =
-    taxDocKind === 'bill' ? invoice.billDocumentNumberRaw : displayNumber;
+    taxDocKind !== 'none' ? invoice.billDocumentNumberRaw : displayNumber;
   const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
@@ -404,17 +402,15 @@ export default async function InvoiceDetailPage({
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            {/* 088 — an UNPAID bill reads under its SC number (never "Draft
-                invoice"); a paid bill reads under its RC. */}
+            {/* 088 A-refined — the header ALWAYS reads under the invoice's OWN
+                (SC) bill number for a real 088 bill (paid or unpaid, never "Draft
+                invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
+                "Receipt No." field below. No extra document-kind tag — the SC-
+                prefix + the "Receipt No." field are self-documenting. */}
             <span>{headerNumber ?? displayNumber ?? t('draftTitle')}</span>
             <Badge variant={statusBadgeVariant(displayStatus)}>
               {tStatus(displayStatus)}
             </Badge>
-            {/* 088 T065c — a paid 088 bill ALSO carries the shipped Badge as the
-                "Tax receipt" document-kind marker (reused, no new component). */}
-            {taxDocKind === 'tax_receipt' ? (
-              <Badge variant="secondary">{tTax088('badgeTaxReceipt')}</Badge>
-            ) : null}
           </span>
         }
         actions={

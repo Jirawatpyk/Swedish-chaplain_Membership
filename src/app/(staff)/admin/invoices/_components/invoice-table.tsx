@@ -163,19 +163,20 @@ export type InvoicesTableRow = {
   /**
    * 088 (T065 / T065a / FR-016) — the pre-payment NON-§87 bill number (SC-…)
    * for the two-document disambiguation. Present only on a real 088 bill (with
-   * the flag on); `null` on legacy rows. Drives the paid bill's "payable
-   * record" line + the paid bill's main-download accessible name (the main pdf
-   * is the SC bill, not the RC). OPTIONAL so legacy row constructors are
+   * the flag on); `null` on legacy rows. `documentNumber` already carries this
+   * SC number as the row identity (A-refined), so this field is retained for the
+   * main-download accessible name. OPTIONAL so legacy row constructors are
    * unaffected (undefined → treated as `null`).
    */
   readonly billDocumentNumberRaw?: string | null;
   /**
    * 088 (T065 / T065a / FR-016) — the resolved §86/4 document kind, computed
-   * server-side in page.tsx with the tax-at-payment flag baked in:
+   * server-side in page.tsx with the tax-at-payment flag baked in (A-refined):
    *   - `'none'`        — legacy / flag off → render exactly as today.
-   *   - `'bill'`        — unpaid 088 bill → SC number + ใบแจ้งหนี้/Invoice label.
-   *   - `'tax_receipt'` — paid 088 bill → RC + "Tax receipt" badge (first) + the
-   *                       SC "payable record — tax receipt issued (see RC)".
+   *   - `'bill'`        — unpaid 088 bill → SC number + ใบแจ้งหนี้/Invoice tag.
+   *   - `'tax_receipt'` — paid 088 bill → SC number + ใบแจ้งหนี้/Invoice tag (the
+   *                       invoice's own identity); the RC §86/4 tax receipt is a
+   *                       clickable link in the Receipt No. column.
    * OPTIONAL (undefined → `'none'`) so legacy constructors are unaffected.
    */
   readonly taxDocumentKind?: 'none' | 'bill' | 'tax_receipt';
@@ -403,59 +404,38 @@ export function InvoicesTable({
               className="hover:bg-accent/40 focus-within:bg-accent/40"
             >
               <TableCell className="align-middle whitespace-nowrap">
-                {/* 088 (T065/T065a) — the Number column carries the row identity
-                    (RC for a paid bill / legacy rows; the SC bill for an UNPAID
-                    088 bill), plus the document-kind badge + the paid bill's
-                    "payable record" line. Renders legacy when taxDocumentKind is
-                    'none' / undefined. */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <Link
-                      href={`/admin/invoices/${r.invoiceId}`}
-                      className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                    >
-                      {r.documentNumber}
-                    </Link>
-                    {r.taxDocumentKind === 'tax_receipt' && (
-                      // 088 T065 — the RC IS the §86/4 tax receipt, presented
-                      // first next to the primary number. Text badge (WCAG 1.4.1).
-                      <Badge variant="secondary" className="font-normal">
-                        {tTax088('badgeTaxReceipt')}
-                      </Badge>
-                    )}
-                    {r.taxDocumentKind === 'bill' && (
-                      // 088 T065a — an UNPAID bill shows the ใบแจ้งหนี้/Invoice
-                      // document-kind label.
-                      <Badge variant="outline" className="font-normal">
-                        {tTax088('billTitle')}
-                      </Badge>
-                    )}
-                  </div>
-                  {r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw && (
-                    // 088 T065a — the SC bill of a PAID invoice is a payable
-                    // record (text + icon, WCAG 1.4.1) with a clickable
-                    // "see tax receipt RC-…" cross-reference naming its target
-                    // (T065c). `whitespace-normal` overrides the cell's nowrap so
-                    // the note wraps instead of forcing a wide column.
-                    <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5 whitespace-normal text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
-                      <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
-                      <span className="font-mono">{r.billDocumentNumberRaw}</span>
-                      <span aria-hidden="true">·</span>
-                      <span>{tTax088('badgeBillPayableRecord')}</span>
-                      <Link
-                        href={`/admin/invoices/${r.invoiceId}`}
-                        className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                      >
-                        {tTax088('seeReceiptLink', {
-                          number: r.receiptDocumentNumberRaw ?? '',
-                        })}
-                      </Link>
-                    </span>
-                  )}
-                </div>
+                {/* 088 A-refined (FR-016) — the Number column ALWAYS carries the
+                    invoice's OWN number: the SC bill for a real 088 bill (paid or
+                    unpaid — page.tsx resolves it), the §87 invoice number for
+                    legacy rows. The "SC-/IN-" prefix + the renamed "Invoice No."
+                    column header are self-documenting; the RC §86/4 tax receipt is
+                    a clickable link in the Receipt No. column. No per-row tag. */}
+                <Link
+                  href={`/admin/invoices/${r.invoiceId}`}
+                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                >
+                  {r.documentNumber}
+                </Link>
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
-                {r.receiptDocumentNumberRaw ? (
+                {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (
+                  // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on the
+                  // SAME invoice row, so it links to the invoice detail (same
+                  // target as the Number link). The aria-label names the document
+                  // so the two same-target links in a row are distinguishable to
+                  // screen readers; the "Receipt No." column header conveys the
+                  // ใบกำกับภาษี meaning (no per-row chip). This is the fix for the
+                  // "Receipt No. can't be clicked" report.
+                  <Link
+                    href={`/admin/invoices/${r.invoiceId}`}
+                    aria-label={tTax088('seeReceiptLink', {
+                      number: r.receiptDocumentNumberRaw,
+                    })}
+                    className="font-mono text-sm tabular-nums underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  >
+                    {r.receiptDocumentNumberRaw}
+                  </Link>
+                ) : r.receiptDocumentNumberRaw ? (
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
@@ -658,9 +638,11 @@ export function InvoicesTable({
                     canRecordPayment &&
                     todayIso !== undefined &&
                     (r.status === 'issued' || r.status === 'overdue');
-                  // 088 T065c — the MAIN download serves the issue-time PDF: on a
-                  // paid 088 bill that is the SC bill, so the control names the SC
-                  // (never the RC in `documentNumber`). Legacy rows keep it.
+                  // 088 A-refined — the MAIN download serves the issue-time PDF =
+                  // the SC bill on a paid 088 bill. `documentNumber` already IS the
+                  // SC number (the row identity), so the control names it directly;
+                  // the `billDocumentNumberRaw` fallback is a belt-and-suspenders
+                  // guard for the (impossible) NULL-bill case.
                   const mainDownloadNumber =
                     r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw
                       ? r.billDocumentNumberRaw

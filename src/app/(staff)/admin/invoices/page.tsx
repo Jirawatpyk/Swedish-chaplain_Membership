@@ -426,11 +426,12 @@ export default async function AdminInvoicesPage({
         // β as-paid no-TIN rows have a NULL invoice document number and carry
         // their printed §105 number in receipt_document_number_raw. The
         // shared helper resolves whichever exists; only true drafts fall
-        // back to the em-dash. 088 — an UNPAID bill shows its NON-§87 SC bill
-        // number (both §87 legs are NULL on a bill → displayDocumentNumber is
-        // null); a paid bill shows the RC (via displayDocumentNumber).
+        // back to the em-dash. 088 A-refined (FR-016) — an 088 invoice is
+        // ALWAYS identified by its OWN (SC) NON-§87 bill number, consistently
+        // for PAID and UNPAID rows (never swapped to the RC on payment). The RC
+        // §86/4 tax receipt is surfaced separately in the Receipt No. column.
         documentNumber:
-          taxDocumentKind === 'bill'
+          taxDocumentKind !== 'none'
             ? (r.billDocumentNumberRaw ?? '—')
             : (displayDocumentNumber(r) ?? '—'),
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
@@ -484,10 +485,11 @@ export default async function AdminInvoicesPage({
         // no-TIN / legacy issued no-TIN event rows): the table flips the
         // main download to the Receipt label + aria.
         mainDownloadIsReceipt: r.pdfDocKind === 'receipt_separate',
-        // 088 (T065 / T065a / FR-016) — two-document disambiguation. The SC
-        // bill number (for the paid bill's "payable record" line + the unpaid
-        // bill's identity) and the resolved document kind. Null/'none' unless
-        // this is a real 088 bill and the flag is on.
+        // 088 A-refined (FR-016) — two-document disambiguation. The SC bill
+        // number IS the row identity in the Number column (paid AND unpaid); the
+        // resolved document kind drives the ใบแจ้งหนี้/Invoice tag + the RC
+        // clickable link in the Receipt No. column. Null/'none' unless this is a
+        // real 088 bill and the flag is on.
         billDocumentNumberRaw: is088Bill ? r.billDocumentNumberRaw : null,
         taxDocumentKind,
         };

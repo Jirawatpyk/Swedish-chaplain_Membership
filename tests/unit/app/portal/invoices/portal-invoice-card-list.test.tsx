@@ -640,8 +640,8 @@ function renderCard088For(
   );
 }
 
-describe('<PortalInvoiceCardList> — 088 UNPAID bill', () => {
-  it('shows the SC bill number as the heading + the ใบแจ้งหนี้/Invoice label; NO Tax-receipt badge', () => {
+describe('<PortalInvoiceCardList> — 088 UNPAID bill (A-refined)', () => {
+  it('shows the SC bill number as the heading; NO per-row tag; no Receipt No. line yet', () => {
     renderCard088For({
       status: 'issued',
       documentNumber: null,
@@ -653,16 +653,18 @@ describe('<PortalInvoiceCardList> — 088 UNPAID bill', () => {
     expect(
       screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' }),
     ).toBeInTheDocument();
-    // The bill label (ใบแจ้งหนี้ / Invoice) is shown.
-    expect(theCard()).toHaveTextContent('ใบแจ้งหนี้ / Invoice');
-    // An unpaid bill is NOT a tax receipt.
+    // A-refined — no per-row ใบแจ้งหนี้/Invoice tag; the SC- prefix + heading are
+    // self-documenting.
+    expect(theCard()).not.toHaveTextContent('ใบแจ้งหนี้ / Invoice');
     expect(theCard()).not.toHaveTextContent('Tax receipt');
     expect(theCard()).not.toHaveTextContent('Payable record');
+    // No RC yet → no Receipt No. line.
+    expect(theCard()).not.toHaveTextContent('Receipt No.');
   });
 });
 
-describe('<PortalInvoiceCardList> — 088 PAID bill (tax receipt issued)', () => {
-  it('presents the RC as the heading with a "Tax receipt" badge, and the SC bill as a "payable record" with a clickable "see RC" link', () => {
+describe('<PortalInvoiceCardList> — 088 PAID bill (A-refined)', () => {
+  it('heading is the SC bill number (not the RC); the RC is a clickable "see tax receipt" link in the Receipt No. line; NO per-row tags', () => {
     renderCard088For({
       status: 'paid',
       documentNumber: null,
@@ -673,18 +675,24 @@ describe('<PortalInvoiceCardList> — 088 PAID bill (tax receipt issued)', () =>
     });
     const card = theCard();
 
-    // RC is the primary identity — the card heading (presented first).
+    // A-refined — the card heading is the invoice's OWN (SC) number, NOT the RC.
     expect(
-      screen.getByRole('heading', { level: 2, name: 'RC-2026-000123' }),
+      screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' }),
     ).toBeInTheDocument();
-    // "Tax receipt" text badge on the RC.
-    expect(card).toHaveTextContent('Tax receipt');
-    // The SC bill is marked as a payable record (text, not colour-only).
-    expect(card).toHaveTextContent('SC-2026-000045');
-    expect(card).toHaveTextContent('Payable record — tax receipt issued');
-    // Clickable "see tax receipt RC-…" cross-reference naming its target.
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'RC-2026-000123' }),
+    ).not.toBeInTheDocument();
+
+    // The RC is a clickable link (→ the invoice detail) in the "Receipt No." line;
+    // its accessible name (seeReceiptLink) distinguishes it from the header link,
+    // and its VISIBLE text is the RC number (WCAG 2.5.3 Label in Name).
     const seeRc = screen.getByRole('link', { name: 'see tax receipt RC-2026-000123' });
     expect(seeRc).toHaveAttribute('href', '/portal/invoices/11111111-2222-4333-8444-555555555555');
+    expect(seeRc).toHaveTextContent('RC-2026-000123');
+
+    // A-refined — NO per-row "Tax receipt" chip / "payable record" sub-line.
+    expect(card).not.toHaveTextContent('Tax receipt');
+    expect(card).not.toHaveTextContent('Payable record');
 
     // FR-015 — BOTH documents stay downloadable after payment.
     expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
@@ -748,8 +756,8 @@ describe('<PortalInvoiceCardList> — FR-036 mobile-first target size + wrap (T0
   });
 });
 
-describe('<PortalInvoiceCardList> — 088 doc-kind badge group wraps (T072b, WCAG 1.4.10)', () => {
-  it('wraps the header badge group for a paid 088 bill so a long TH doc-kind badge never clips at 320px', () => {
+describe('<PortalInvoiceCardList> — 088 A-refined header has no per-row tag (no wrap)', () => {
+  it('a paid 088 bill header group is NOT a flex-wrap container (the ใบแจ้งหนี้ tag was dropped)', () => {
     renderCard088For({
       status: 'paid',
       documentNumber: null,
@@ -758,17 +766,16 @@ describe('<PortalInvoiceCardList> — 088 doc-kind badge group wraps (T072b, WCA
       receiptPdfStatus: 'rendered',
       receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
     });
-    // The doc-number <h2> sits inside the header badge group; that group MUST
-    // be a flex-wrap container when an 088 document-kind badge is present.
-    const heading = screen.getByRole('heading', { level: 2, name: 'RC-2026-000123' });
-    expect(heading.closest('.flex-wrap')).not.toBeNull();
+    // A-refined dropped the per-row ใบแจ้งหนี้ tag → the header no longer wraps a
+    // long TH badge; the doc-number heading group is a plain (non-wrap) flex row,
+    // so the sole `flex-wrap` in a card is the action group (sentinel invariant).
+    const heading = screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' });
+    expect(heading.closest('.flex-wrap')).toBeNull();
   });
 
-  it('does NOT wrap the header badge group for a legacy (non-088) row', () => {
+  it('a legacy (non-088) row header group is also NOT a flex-wrap container', () => {
     renderCardFor({ status: 'issued' });
     const heading = screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' });
-    // Legacy header group is a non-wrapping flex row (the sole flex-wrap in a
-    // legacy card is the action group, which is NOT an ancestor of the heading).
     expect(heading.closest('.flex-wrap')).toBeNull();
   });
 });

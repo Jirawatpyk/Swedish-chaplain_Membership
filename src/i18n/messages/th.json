@@ -1782,7 +1782,6 @@
         "section8015Note": "ภาษีมูลค่าเพิ่มอัตรา 0% ตามมาตรา 80/1(5) แห่งประมวลรัษฎากร (ขายให้สถานทูต/องค์การระหว่างประเทศ)",
         "bankBlockHeading": "รายละเอียดการชำระเงินผ่านธนาคาร",
         "badgeTaxReceipt": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
-        "badgeBillPayableRecord": "รายการที่ต้องชำระ — ออกใบกำกับภาษีแล้ว",
         "seeReceiptLink": "ดูใบกำกับภาษี {number}"
       },
       "meta": {
@@ -1809,7 +1808,7 @@
           "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้"
         },
         "columns": {
-          "documentNumber": "เลขที่",
+          "documentNumber": "เลขที่ใบแจ้งหนี้",
           "status": "สถานะ",
           "issueDate": "วันที่ออก",
           "dueDate": "ครบกำหนด",
@@ -1817,7 +1816,7 @@
           "actions": "การดำเนินการ",
           "buyer": "ผู้ซื้อ",
           "method": "ช่องทางชำระ",
-          "receiptNumber": "เลขใบเสร็จ"
+          "receiptNumber": "เลขที่ใบกำกับภาษี"
         },
         "subjectChip": {
           "event": "อีเวนต์",
@@ -4514,8 +4513,8 @@
       "notLinked": "บัญชีของคุณยังไม่ถูกเชื่อมโยงกับสมาชิก กรุณาติดต่อผู้ดูแล",
       "loaded": "โหลดรายการใบแจ้งหนี้เสร็จแล้ว",
       "columns": {
-        "documentNumber": "เลขที่",
-        "receiptNumber": "เลขใบเสร็จ",
+        "documentNumber": "เลขที่ใบแจ้งหนี้",
+        "receiptNumber": "เลขที่ใบกำกับภาษี",
         "status": "สถานะ",
         "issueDate": "วันที่ออก",
         "dueDate": "ครบกำหนด",

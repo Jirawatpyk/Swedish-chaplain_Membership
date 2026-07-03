@@ -32,9 +32,7 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
-import { InfoIcon } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -371,62 +369,40 @@ export default async function PortalInvoicesPage({
                     {rows.map(({ vm }) => (
                       <TableRow key={vm.invoiceId}>
                         <TableCell className="align-middle text-xs">
-                          {/* 088 (T065/T065a) — the row identity is
-                              `primaryNumber` (RC for a paid bill / legacy rows;
-                              the SC bill for an UNPAID 088 bill). The
-                              disambiguation badges + payable-record line render
-                              only when the tax-at-payment flag is on (VM's
-                              `taxDocumentKind` non-'none'). */}
-                          <div className="flex flex-col gap-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Link
-                                href={`/portal/invoices/${vm.invoiceId}`}
-                                className="font-mono underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                                // 064 remediation S3 — displayNumber (via
-                                // primaryNumber) resolves β rows to their printed
-                                // §105 number so the cell never shows an
-                                // em-dash/UUID for a paid, numbered document.
-                                aria-label={`${t('actions.viewDetail')} ${vm.primaryNumber ?? vm.invoiceId}`}
-                              >
-                                {vm.primaryNumber ?? '—'}
-                              </Link>
-                              {vm.taxDocumentKind === 'tax_receipt' ? (
-                                // 088 T065 — the RC IS the §86/4 tax receipt,
-                                // presented first. Text badge (WCAG 1.4.1).
-                                <Badge variant="secondary" className="shrink-0">
-                                  {tTax088('badgeTaxReceipt')}
-                                </Badge>
-                              ) : null}
-                              {vm.taxDocumentKind === 'bill' ? (
-                                // 088 T065a — an UNPAID bill shows the
-                                // ใบแจ้งหนี้/Invoice document-kind label.
-                                <Badge variant="outline" className="shrink-0">
-                                  {tTax088('billTitle')}
-                                </Badge>
-                              ) : null}
-                            </div>
-                            {vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber ? (
-                              // 088 T065a — the SC bill of a PAID invoice is a
-                              // payable record (text + icon, WCAG 1.4.1) with a
-                              // clickable "see tax receipt RC-…" cross-reference
-                              // that names its target (T065c).
-                              <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] text-muted-foreground">
-                                <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
-                                <span className="font-mono">{vm.billDocumentNumber}</span>
-                                <span aria-hidden="true">·</span>
-                                <span>{tTax088('badgeBillPayableRecord')}</span>
-                                <Link
-                                  href={`/portal/invoices/${vm.invoiceId}`}
-                                  className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                                >
-                                  {tTax088('seeReceiptLink', { number: vm.receiptNumber ?? '' })}
-                                </Link>
-                              </p>
-                            ) : null}
-                          </div>
+                          {/* 088 A-refined (FR-016) — the row identity is
+                              `primaryNumber` = the invoice's OWN (SC) number for a
+                              real 088 bill (paid AND unpaid), the §87 number for
+                              legacy rows. The SC-/IN- prefix + the renamed
+                              "Invoice No." column header are self-documenting; the
+                              RC §86/4 tax receipt is a clickable link in the Receipt
+                              No. column. No per-row document-kind tag. */}
+                          <Link
+                            href={`/portal/invoices/${vm.invoiceId}`}
+                            className="font-mono underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                            // 064 remediation S3 — displayNumber (via
+                            // primaryNumber) resolves β rows to their printed
+                            // §105 number so the cell never shows an
+                            // em-dash/UUID for a paid, numbered document.
+                            aria-label={`${t('actions.viewDetail')} ${vm.primaryNumber ?? vm.invoiceId}`}
+                          >
+                            {vm.primaryNumber ?? '—'}
+                          </Link>
                         </TableCell>
                         <TableCell className="align-middle whitespace-nowrap">
-                          {vm.receiptNumber ? (
+                          {vm.taxDocumentKind === 'tax_receipt' && vm.receiptNumber ? (
+                            // 088 A-refined (FR-016) — the RC §86/4 tax receipt
+                            // lives on the SAME invoice row → a clickable link to
+                            // the detail (same target as the Number link). aria-label
+                            // names the doc; the "Receipt No." column header conveys
+                            // the ใบกำกับภาษี meaning (no per-row chip).
+                            <Link
+                              href={`/portal/invoices/${vm.invoiceId}`}
+                              aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
+                              className="font-mono text-sm tabular-nums underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                            >
+                              {vm.receiptNumber}
+                            </Link>
+                          ) : vm.receiptNumber ? (
                             <span className="font-mono text-sm tabular-nums">
                               {vm.receiptNumber}
                             </span>

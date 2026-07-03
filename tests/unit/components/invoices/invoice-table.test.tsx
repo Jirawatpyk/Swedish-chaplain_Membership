@@ -24,7 +24,7 @@ const messages = {
     invoices: {
       list: {
         columns: {
-          documentNumber: 'Number',
+          documentNumber: 'Invoice No.',
           status: 'Status',
           issueDate: 'Issued',
           dueDate: 'Due',
@@ -84,10 +84,11 @@ const messages = {
           receiptRateLimited: 'x',
         },
       },
+      // 088 A-refined — the ONLY tax088 label the list still renders is the
+      // Receipt-No link's accessible name. The per-row ใบแจ้งหนี้/ใบกำกับภาษี tags
+      // were dropped (the SC-/RC- prefixes + the renamed column headers are
+      // self-documenting).
       tax088: {
-        billTitle: 'ใบแจ้งหนี้ / Invoice',
-        badgeTaxReceipt: 'Tax receipt',
-        badgeBillPayableRecord: 'Payable record — tax receipt issued',
         seeReceiptLink: 'see tax receipt {number}',
       },
     },
@@ -507,27 +508,37 @@ describe('<InvoicesTable> date cell formatting', () => {
 });
 
 /**
- * 088 — tax-at-payment two-document disambiguation (T065 / T065a / T065c /
- * FR-016). page.tsx resolves each row's `taxDocumentKind` (with the flag baked
- * in) + `documentNumber` (RC for a paid bill, SC for an unpaid bill), so the
- * client table renders the SC-bill ↔ RC-§86/4-tax-receipt disambiguation from
- * those two fields alone — no env read in the client component.
+ * 088 A-refined — tax-at-payment two-document disambiguation (FR-016). page.tsx
+ * resolves each row's `taxDocumentKind` (with the flag baked in) + `documentNumber`
+ * (the invoice's OWN SC bill number for a real 088 bill, paid OR unpaid), so the
+ * client table renders the A-refined SC-bill ↔ RC-§86/4-tax-receipt separation
+ * from those fields alone — no env read in the client component.
+ *
+ * A-refined (product-owner ratified): the invoice is ALWAYS identified by its OWN
+ * (SC) number in the Number column; the RC §86/4 tax receipt is a clickable link
+ * in the Receipt No. column when paid. NO per-row ใบแจ้งหนี้/ใบกำกับภาษี tags — the
+ * SC-/RC- prefixes + the renamed column headers ("Invoice No." / "Receipt No.")
+ * are self-documenting.
  *
  *   - kind 'none' (legacy / flag off): render exactly as today.
- *   - kind 'bill'  (unpaid 088 bill): the SC number + ใบแจ้งหนี้/Invoice label.
- *   - kind 'tax_receipt' (paid 088 bill): the RC number + "Tax receipt" badge
- *     (presented first), the SC bill marked "payable record — tax receipt
- *     issued" + a clickable "see tax receipt RC-…" cross-reference.
+ *   - kind 'bill'  (unpaid 088 bill): the SC number in the Number column; the
+ *     Receipt No. column is an em-dash (no RC yet).
+ *   - kind 'tax_receipt' (paid 088 bill): the SC number in the Number column; the
+ *     RC is a clickable link (→ invoice detail) in the Receipt No. column.
  */
-describe('<InvoicesTable> — 088 tax-at-payment disambiguation', () => {
-  it('legacy row (taxDocumentKind omitted) shows NO 088 badge — byte-identical to today', () => {
+describe('<InvoicesTable> — 088 tax-at-payment disambiguation (A-refined)', () => {
+  it('legacy row (taxDocumentKind omitted) shows NO 088 tag/label — byte-identical to today', () => {
     renderTable([baseRow({})]);
     expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
     expect(screen.queryByText('ใบแจ้งหนี้ / Invoice')).not.toBeInTheDocument();
     expect(screen.queryByText(/Payable record/)).not.toBeInTheDocument();
+    // The legacy §87 invoice number stays the plain (non-underlined) Number link.
+    expect(
+      screen.getByRole('link', { name: 'INV-2026-0001' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
   });
 
-  it('UNPAID 088 bill: Number column shows the SC number + the ใบแจ้งหนี้/Invoice label; no Tax-receipt badge', () => {
+  it('UNPAID 088 bill: Number column is the SC number; NO per-row tag; Receipt No. is an em-dash (no RC yet)', () => {
     renderTable([
       baseRow({
         status: 'issued',
@@ -537,21 +548,24 @@ describe('<InvoicesTable> — 088 tax-at-payment disambiguation', () => {
         taxDocumentKind: 'bill',
       }),
     ]);
-    // The SC bill number is the Number-column link.
+    // The SC bill number IS the Number-column link (the row identity).
     expect(
       screen.getByRole('link', { name: 'SC-2026-000045' }),
     ).toHaveAttribute('href', '/admin/invoices/inv-1');
-    // The ใบแจ้งหนี้/Invoice bill label is shown.
-    expect(screen.getByText('ใบแจ้งหนี้ / Invoice')).toBeInTheDocument();
-    // An unpaid bill is NOT a tax receipt.
+    // A-refined — no per-row document-kind tags anywhere.
+    expect(screen.queryByText('ใบแจ้งหนี้ / Invoice')).not.toBeInTheDocument();
     expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    // No RC yet → no receipt link.
+    expect(
+      screen.queryByRole('link', { name: /see tax receipt/ }),
+    ).not.toBeInTheDocument();
   });
 
-  it('PAID 088 bill: RC number + "Tax receipt" badge presented first; SC marked payable record with a clickable "see RC" link naming its target', () => {
+  it('PAID 088 bill: Number column is the SC number; Receipt No. column is the RC as a clickable link (→ detail) with a naming aria-label; NO per-row tags', () => {
     renderTable([
       baseRow({
         status: 'paid',
-        documentNumber: 'RC-2026-000123',
+        documentNumber: 'SC-2026-000045',
         billDocumentNumberRaw: 'SC-2026-000045',
         receiptDocumentNumberRaw: 'RC-2026-000123',
         taxDocumentKind: 'tax_receipt',
@@ -560,24 +574,28 @@ describe('<InvoicesTable> — 088 tax-at-payment disambiguation', () => {
       }),
     ]);
 
-    // RC is the Number-column link (the tax document, presented first).
+    // A-refined — the Number column is the invoice's OWN (SC) number, NOT the RC.
     expect(
-      screen.getByRole('link', { name: 'RC-2026-000123' }),
+      screen.getByRole('link', { name: 'SC-2026-000045' }),
     ).toHaveAttribute('href', '/admin/invoices/inv-1');
-    // "Tax receipt" text badge on the RC.
-    expect(screen.getByText('Tax receipt')).toBeInTheDocument();
-    // SC bill marked as a payable record (text label, not colour-only).
-    expect(screen.getByText('SC-2026-000045')).toBeInTheDocument();
-    expect(
-      screen.getByText('Payable record — tax receipt issued'),
-    ).toBeInTheDocument();
-    // Clickable "see tax receipt RC-…" cross-reference naming its target.
-    const seeRc = screen.getByRole('link', { name: 'see tax receipt RC-2026-000123' });
-    expect(seeRc).toHaveAttribute('href', '/admin/invoices/inv-1');
 
-    // T065c / FR-015 — every document control has an accessible name naming its
-    // OWN document (kind + number). The MAIN download serves the SC bill PDF, so
-    // it names the SC number (never the RC); the receipt download names the RC.
+    // The RC lives in the Receipt No. column as a CLICKABLE link → the invoice
+    // detail (fix for "Receipt No. can't be clicked"). Its accessible name comes
+    // from `seeReceiptLink` so the two same-target links in the row are
+    // distinguishable to screen readers.
+    const receiptLink = screen.getByRole('link', {
+      name: 'see tax receipt RC-2026-000123',
+    });
+    expect(receiptLink).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // …and its VISIBLE text is the RC number (WCAG 2.5.3 Label in Name).
+    expect(receiptLink).toHaveTextContent('RC-2026-000123');
+
+    // A-refined — NO per-row document-kind tags / payable-record sub-line.
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payable record/)).not.toBeInTheDocument();
+
+    // FR-015 — every document control names its OWN document. The MAIN download
+    // serves the SC bill PDF (names the SC); the receipt download names the RC.
     const billDownload = screen.getByTestId('row-download-invoice');
     expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
     const receiptDownload = screen.getByTestId('row-download-receipt');

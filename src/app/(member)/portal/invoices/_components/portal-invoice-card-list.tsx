@@ -45,9 +45,7 @@
  *     (`flex flex-wrap`) so a 320px card never scrolls horizontally.
  */
 import Link from 'next/link';
-import { InfoIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -157,13 +155,12 @@ export function PortalInvoiceCardList({
                         legacy/none row stays non-wrapping so the sole
                         `flex-wrap` container in a no-action card remains the
                         action group — the card sentinel test relies on that. */}
-                    <div
-                      className={
-                        tTax088 && vm.taxDocumentKind !== 'none'
-                          ? 'flex flex-wrap items-center gap-2'
-                          : 'flex items-center gap-2'
-                      }
-                    >
+                    {/* 088 A-refined (FR-016) — a real 088 bill is ALWAYS shown
+                        under its OWN (SC) number (via `primaryNumber`, paid AND
+                        unpaid). The SC-/IN- prefix is self-documenting; the RC §86/4
+                        tax receipt is a clickable link in the Receipt No. line
+                        below. No per-row document-kind tag. */}
+                    <div className="flex items-center gap-2">
                       <Link
                         href={`/portal/invoices/${vm.invoiceId}`}
                         className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -173,43 +170,7 @@ export function PortalInvoiceCardList({
                           {primaryNumber}
                         </h2>
                       </Link>
-                      {/* 088 T065 — the RC IS the §86/4 tax receipt (presented
-                          first, next to the primary number). Text badge (WCAG
-                          1.4.1 — not colour alone). The `tTax088 &&` guard both
-                          gates on the flag (prop present) AND narrows the
-                          translator to defined for the call. */}
-                      {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          {tTax088('badgeTaxReceipt')}
-                        </Badge>
-                      ) : null}
-                      {/* 088 T065a — an UNPAID bill shows the ใบแจ้งหนี้/Invoice
-                          document-kind label. */}
-                      {tTax088 && vm.taxDocumentKind === 'bill' ? (
-                        <Badge variant="outline" className="shrink-0">
-                          {tTax088('billTitle')}
-                        </Badge>
-                      ) : null}
                     </div>
-                    {/* 088 T065a — the SC bill of a PAID invoice is a payable
-                        record, not a tax document. Text + icon (WCAG 1.4.1) +
-                        a clickable "see tax receipt RC-…" cross-reference that
-                        names its target (T065c) and navigates to the RC on the
-                        detail page. */}
-                    {tTax088 && vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber ? (
-                      <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs text-muted-foreground">
-                        <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
-                        <span className="font-mono">{vm.billDocumentNumber}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>{tTax088('badgeBillPayableRecord')}</span>
-                        <Link
-                          href={`/portal/invoices/${vm.invoiceId}`}
-                          className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                        >
-                          {tTax088('seeReceiptLink', { number: vm.receiptNumber ?? '' })}
-                        </Link>
-                      </p>
-                    ) : null}
                   </div>
                   <InvoiceStatusBadge
                     status={vm.displayStatus}
@@ -226,13 +187,32 @@ export function PortalInvoiceCardList({
 
                 {/* Receipt number — separate-mode only. Combined-mode (em-dash
                     + tooltip hint on the table) is omitted on the card; the
-                    combined Receipt download still appears in the action row. */}
+                    combined Receipt download still appears in the action row.
+                    088 A-refined (FR-016) — on a real 088 tax_receipt row the RC
+                    §86/4 tax receipt becomes a clickable link to the detail (same
+                    target as the header link) + a small ใบกำกับภาษี/Tax receipt
+                    affordance; aria-label names the doc. Legacy separate-mode rows
+                    keep the plain-text receipt number. */}
                 {vm.receiptNumber ? (
                   <p className="text-sm text-muted-foreground">
                     {t('columns.receiptNumber')}{' '}
-                    <span className="font-mono tabular-nums text-foreground">
-                      {vm.receiptNumber}
-                    </span>
+                    {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
+                      // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on
+                      // the SAME invoice → a clickable link to the detail (same
+                      // target as the header link). aria-label names the doc; the
+                      // "Receipt No." field label conveys the ใบกำกับภาษี meaning.
+                      <Link
+                        href={`/portal/invoices/${vm.invoiceId}`}
+                        aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
+                        className="font-mono tabular-nums text-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                      >
+                        {vm.receiptNumber}
+                      </Link>
+                    ) : (
+                      <span className="font-mono tabular-nums text-foreground">
+                        {vm.receiptNumber}
+                      </span>
+                    )}
                   </p>
                 ) : null}
 

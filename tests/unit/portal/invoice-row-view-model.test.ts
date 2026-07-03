@@ -694,7 +694,7 @@ describe('toInvoiceRowViewModel — 088 tax-at-payment disambiguation', () => {
     expect(vm.receiptNumber).toBeNull();
   });
 
-  it('flag ON, PAID 088 bill (RC minted) → kind "tax_receipt"; primaryNumber is the RC, billDocumentNumber is the SC, receiptNumber is the RC', () => {
+  it('flag ON, PAID 088 bill (RC minted) → kind "tax_receipt"; primaryNumber is the SC bill (A-refined), billDocumentNumber is the SC, receiptNumber is the RC', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'paid',
@@ -708,11 +708,16 @@ describe('toInvoiceRowViewModel — 088 tax-at-payment disambiguation', () => {
       true,
     );
     expect(vm.taxDocumentKind).toBe('tax_receipt');
-    // RC is the row's primary (tax) identity — "presented first" (T065).
-    expect(vm.primaryNumber).toBe('RC-2026-000123');
-    // SC bill exposed for the "payable record — tax receipt issued (see RC)".
+    // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+    // bill number, paid OR unpaid (never swapped to the RC on payment); the RC
+    // §86/4 tax receipt is surfaced separately in the Receipt-No column/line.
+    expect(vm.primaryNumber).toBe('SC-2026-000045');
+    // primaryNumber (SC) deliberately DIVERGES from displayNumber (the §87/§86-4
+    // resolver → the RC on a paid bill) under A-refined.
+    expect(vm.displayNumber).toBe('RC-2026-000123');
+    // SC bill exposed for the main-download accessible name.
     expect(vm.billDocumentNumber).toBe('SC-2026-000045');
-    // RC number for the "see RC" cross-reference link.
+    // RC number for the Receipt-No column clickable link.
     expect(vm.receiptNumber).toBe('RC-2026-000123');
     // The bill PDF stays downloadable after payment (FR-015): receipt number is
     // set → NOT combined-paid → showInvoice true; receipt also shown.

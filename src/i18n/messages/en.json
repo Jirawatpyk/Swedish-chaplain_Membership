@@ -1782,7 +1782,6 @@
         "section8015Note": "VAT 0% under Revenue Code §80/1(5) (embassy / international organisation zero-rate).",
         "bankBlockHeading": "Bank transfer details",
         "badgeTaxReceipt": "Tax receipt",
-        "badgeBillPayableRecord": "Payable record — tax receipt issued",
         "seeReceiptLink": "see tax receipt {number}"
       },
       "meta": {
@@ -1809,7 +1808,7 @@
           "configureInvoicing": "Configure Invoicing"
         },
         "columns": {
-          "documentNumber": "Number",
+          "documentNumber": "Invoice No.",
           "status": "Status",
           "issueDate": "Issued",
           "dueDate": "Due",
@@ -4514,7 +4513,7 @@
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loaded": "Invoices list loaded.",
       "columns": {
-        "documentNumber": "Number",
+        "documentNumber": "Invoice No.",
         "receiptNumber": "Receipt No.",
         "status": "Status",
         "issueDate": "Issued",

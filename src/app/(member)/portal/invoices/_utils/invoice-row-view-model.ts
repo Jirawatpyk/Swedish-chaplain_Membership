@@ -64,9 +64,11 @@ export type { InvoiceRowDisplayStatus };
  *                       Shown under its NON-§87 bill number (SC-…) + the
  *                       ใบแจ้งหนี้/Invoice label.
  *   - `'tax_receipt'` — a paid new-flow bill whose §86/4 RC receipt number has
- *                       been minted at payment. The RC is the row's primary
- *                       (tax) identity ("presented first"); the SC bill becomes
- *                       a "payable record — tax receipt issued (see RC)".
+ *                       been minted at payment. 088 A-refined (FR-016): the row
+ *                       stays identified by its OWN (SC) bill number + the
+ *                       ใบแจ้งหนี้/Invoice tag; the RC §86/4 tax receipt is
+ *                       surfaced separately (a clickable link) in the
+ *                       Receipt-No. column/line.
  */
 export type InvoiceTaxDocumentKind = 'none' | 'bill' | 'tax_receipt';
 
@@ -176,12 +178,14 @@ export interface InvoiceRowViewModel {
    */
   readonly billDocumentNumber: string | null;
   /**
-   * 088 — the number the row is DISPLAYED under, flag-aware. Same as
-   * `displayNumber` (the §87 invoice / §105 / §86-4 RC resolver) for legacy and
-   * paid rows, but falls back to the NON-§87 bill number for an UNPAID 088 bill
-   * (whose §87 pair is legitimately NULL) so the row never renders an em-dash.
-   * Surfaces use this for the row link text + aria; `displayNumber` stays
-   * unchanged for any consumer that specifically wants the §87 number.
+   * 088 A-refined (FR-016) — the number the row is DISPLAYED under, flag-aware.
+   * For ANY 088 bill (`taxDocumentKind !== 'none'`, paid OR unpaid) this is the
+   * invoice's OWN (SC) NON-§87 bill number — the invoice is always identified by
+   * its own bill number, never swapped to the RC on payment. For legacy rows it
+   * is `displayNumber` (the §87 invoice / §105 / §86-4 RC resolver). Surfaces use
+   * this for the row link text + aria; the RC is surfaced separately in the
+   * Receipt-No. column/line, and `displayNumber` stays unchanged for any consumer
+   * that specifically wants the §87 number.
    */
   readonly primaryNumber: string | null;
 }
@@ -344,10 +348,13 @@ export function toInvoiceRowViewModel(
       : 'bill'
     : 'none';
   const billDocumentNumber = is088Bill ? row.billDocumentNumberRaw : null;
-  // Row identity: RC (via `displayNumber`) for a paid bill / legacy rows; the
-  // SC bill for an UNPAID 088 bill (whose §87 legs are NULL → `displayNumber`
-  // is null and would otherwise render an em-dash).
-  const primaryNumber = taxDocumentKind === 'bill' ? billDocumentNumber : displayNumber;
+  // 088 A-refined (FR-016) — an 088 invoice is ALWAYS identified by its OWN
+  // (SC) bill number, consistently for PAID and UNPAID rows. The row identity
+  // is therefore the SC bill for ANY 088 bill (`taxDocumentKind !== 'none'`) —
+  // no longer the RC on a paid bill. The RC (§86/4 tax receipt) is surfaced
+  // separately in the Receipt-No. column/line. Legacy rows keep `displayNumber`.
+  const primaryNumber =
+    taxDocumentKind !== 'none' ? billDocumentNumber : displayNumber;
 
   return {
     invoiceId: row.invoiceId,

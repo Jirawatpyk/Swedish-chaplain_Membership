@@ -67,7 +67,6 @@ import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Table,
@@ -125,8 +124,6 @@ export default async function PortalInvoiceDetailPage({
   const t = await getTranslations('portal.invoices.detail');
   const tList = await getTranslations('portal.invoices');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
-  // 088 (T065c / FR-016) — SC-bill ↔ RC-tax-receipt disambiguation labels.
-  const tTax088 = await getTranslations('admin.invoices.tax088');
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -188,10 +185,12 @@ export default async function PortalInvoiceDetailPage({
   // shared helper resolves whichever exists so the title never reads
   // "Invoice —" on a paid, numbered receipt.
   const documentNumber = displayDocumentNumber(invoice) ?? '—';
-  // 088 (T065a / T065c / FR-016) — resolve the two-document kind, gated on the
-  // flag AND this being a real 088 bill (bill number present). An UNPAID bill's
-  // §87 legs are NULL so `displayDocumentNumber` is null → the header would read
-  // "Invoice —"; `headerNumber` falls back to the SC bill so it never does.
+  // 088 A-refined (FR-016) — resolve the two-document kind, gated on the flag AND
+  // this being a real 088 bill (bill number present). The invoice is ALWAYS
+  // identified by its OWN (SC) NON-§87 bill number — paid or unpaid — so the
+  // header ("Invoice {number}") reads under the SC bill for ANY 088 bill (never
+  // the RC on payment). The RC §86/4 tax receipt is surfaced in the "Receipt No."
+  // field below.
   const is088Bill = env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
   const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
     ? invoice.receiptDocumentNumberRaw !== null
@@ -199,7 +198,7 @@ export default async function PortalInvoiceDetailPage({
       : 'bill'
     : 'none';
   const headerNumber =
-    taxDocKind === 'bill' ? (invoice.billDocumentNumberRaw ?? '—') : documentNumber;
+    taxDocKind !== 'none' ? (invoice.billDocumentNumberRaw ?? '—') : documentNumber;
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
@@ -266,19 +265,16 @@ export default async function PortalInvoiceDetailPage({
       <PageHeader
         title={`${t('title')} ${headerNumber}`}
         badge={
-          // 088 T065c — the shipped StatusBadge (via OptimisticPaidOverlay) stays
-          // the header state signal; a paid 088 bill ALSO carries the shipped
-          // Badge as the "Tax receipt" document-kind marker (no new component).
-          <span className="flex items-center gap-2">
-            <OptimisticPaidOverlay
-              invoiceId={invoice.invoiceId}
-              whenUnpaid={renderStatusBadge(displayStatus)}
-              whenPaid={renderStatusBadge('paid')}
-            />
-            {taxDocKind === 'tax_receipt' ? (
-              <Badge variant="secondary">{tTax088('badgeTaxReceipt')}</Badge>
-            ) : null}
-          </span>
+          // 088 A-refined — the header reads under the invoice's OWN (SC) bill
+          // number ("Invoice {SC}"); the StatusBadge (via OptimisticPaidOverlay)
+          // is the sole header marker. A paid bill's RC §86/4 tax receipt is
+          // surfaced in the "Receipt No." field below — no header document-kind
+          // tag.
+          <OptimisticPaidOverlay
+            invoiceId={invoice.invoiceId}
+            whenUnpaid={renderStatusBadge(displayStatus)}
+            whenPaid={renderStatusBadge('paid')}
+          />
         }
         actions={
           invoice.pdf ? (
