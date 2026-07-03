@@ -1782,7 +1782,8 @@
         "section8015Note": "VAT 0% under Revenue Code §80/1(5) (embassy / international organisation zero-rate).",
         "bankBlockHeading": "Bank transfer details",
         "badgeTaxReceipt": "Tax receipt",
-        "badgeBillPayableRecord": "Payable record — tax receipt issued (see RC)"
+        "badgeBillPayableRecord": "Payable record — tax receipt issued",
+        "seeReceiptLink": "see tax receipt {number}"
       },
       "meta": {
         "title": "Invoices"

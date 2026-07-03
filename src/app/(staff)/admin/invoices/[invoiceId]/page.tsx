@@ -131,6 +131,8 @@ export default async function InvoiceDetailPage({
   const { invoiceId } = await params;
   const t = await getTranslations('admin.invoices.detail');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
+  // 088 (T065c / FR-016) — SC-bill ↔ RC-tax-receipt disambiguation labels.
+  const tTax088 = await getTranslations('admin.invoices.tax088');
   const { user: currentUser } = await requireSession('staff');
   // M3 — use the next-intl locale for date display so TH/SV users
   // see their localised format instead of the browser default.
@@ -352,7 +354,21 @@ export default async function InvoiceDetailPage({
   // renders under the "Draft invoice" title/breadcrumb. Both-null = a true
   // draft → the draft label.
   const displayNumber = displayDocumentNumber(invoice);
-  const breadcrumbLabel = displayNumber ?? t('draftTitle');
+  // 088 (T065a / T065c / FR-016) — the two-document kind, gated on the flag AND
+  // this being a real 088 bill (bill number present). An UNPAID 088 bill's §87
+  // legs are both NULL so `displayDocumentNumber` is null → the header/breadcrumb
+  // would fall to the "Draft invoice" label for a legitimately-issued bill;
+  // `headerNumber` falls back to the SC bill number so it never does.
+  const is088Bill =
+    env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
+  const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
+    ? invoice.receiptDocumentNumberRaw !== null
+      ? 'tax_receipt'
+      : 'bill'
+    : 'none';
+  const headerNumber =
+    taxDocKind === 'bill' ? invoice.billDocumentNumberRaw : displayNumber;
+  const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
   // can be rendered conditionally on succeeded-payment + remaining-
@@ -388,10 +404,17 @@ export default async function InvoiceDetailPage({
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <span>{displayNumber ?? t('draftTitle')}</span>
+            {/* 088 — an UNPAID bill reads under its SC number (never "Draft
+                invoice"); a paid bill reads under its RC. */}
+            <span>{headerNumber ?? displayNumber ?? t('draftTitle')}</span>
             <Badge variant={statusBadgeVariant(displayStatus)}>
               {tStatus(displayStatus)}
             </Badge>
+            {/* 088 T065c — a paid 088 bill ALSO carries the shipped Badge as the
+                "Tax receipt" document-kind marker (reused, no new component). */}
+            {taxDocKind === 'tax_receipt' ? (
+              <Badge variant="secondary">{tTax088('badgeTaxReceipt')}</Badge>
+            ) : null}
           </span>
         }
         actions={
@@ -550,6 +573,14 @@ export default async function InvoiceDetailPage({
                 // rows resolve to their printed §105 receipt number (drives
                 // the download filename + every aria inside the menu).
                 documentNumber={displayNumber ?? invoice.invoiceId}
+                // 088 (T065 review fix) — on a paid 088 bill `displayNumber`
+                // resolves to the RC §86/4 tax-receipt number, but the MAIN
+                // (`showDownload`) PDF is the non-tax SC bill, so name that
+                // download by the SC bill number (the receipt arm keeps the RC).
+                // Conditional spread honours `exactOptionalPropertyTypes`.
+                {...(taxDocKind === 'tax_receipt' && invoice.billDocumentNumberRaw
+                  ? { invoiceDownloadNumber: invoice.billDocumentNumberRaw }
+                  : {})}
                 showDownload={Boolean(invoice.pdf) && !isPaidCombined}
                 showResendInvoice={
                   isAdmin &&

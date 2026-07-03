@@ -80,6 +80,12 @@ const messages = {
           receiptRateLimited: 'x',
         },
       },
+      tax088: {
+        billTitle: 'ใบแจ้งหนี้ / Invoice',
+        badgeTaxReceipt: 'Tax receipt',
+        badgeBillPayableRecord: 'Payable record — tax receipt issued',
+        seeReceiptLink: 'see tax receipt {number}',
+      },
     },
     paymentReconciliation: {
       methodBadge: { card: 'Card', promptpay: 'PromptPay' },
@@ -411,5 +417,84 @@ describe('<InvoicesTable> date cell formatting', () => {
     // Gregorian year must NOT appear as the primary year token in a
     // Thai-locale cell.
     expect(screen.queryByText('2026-06-15')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 088 — tax-at-payment two-document disambiguation (T065 / T065a / T065c /
+ * FR-016). page.tsx resolves each row's `taxDocumentKind` (with the flag baked
+ * in) + `documentNumber` (RC for a paid bill, SC for an unpaid bill), so the
+ * client table renders the SC-bill ↔ RC-§86/4-tax-receipt disambiguation from
+ * those two fields alone — no env read in the client component.
+ *
+ *   - kind 'none' (legacy / flag off): render exactly as today.
+ *   - kind 'bill'  (unpaid 088 bill): the SC number + ใบแจ้งหนี้/Invoice label.
+ *   - kind 'tax_receipt' (paid 088 bill): the RC number + "Tax receipt" badge
+ *     (presented first), the SC bill marked "payable record — tax receipt
+ *     issued" + a clickable "see tax receipt RC-…" cross-reference.
+ */
+describe('<InvoicesTable> — 088 tax-at-payment disambiguation', () => {
+  it('legacy row (taxDocumentKind omitted) shows NO 088 badge — byte-identical to today', () => {
+    renderTable([baseRow({})]);
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    expect(screen.queryByText('ใบแจ้งหนี้ / Invoice')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payable record/)).not.toBeInTheDocument();
+  });
+
+  it('UNPAID 088 bill: Number column shows the SC number + the ใบแจ้งหนี้/Invoice label; no Tax-receipt badge', () => {
+    renderTable([
+      baseRow({
+        status: 'issued',
+        documentNumber: 'SC-2026-000045',
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: null,
+        taxDocumentKind: 'bill',
+      }),
+    ]);
+    // The SC bill number is the Number-column link.
+    expect(
+      screen.getByRole('link', { name: 'SC-2026-000045' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // The ใบแจ้งหนี้/Invoice bill label is shown.
+    expect(screen.getByText('ใบแจ้งหนี้ / Invoice')).toBeInTheDocument();
+    // An unpaid bill is NOT a tax receipt.
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+  });
+
+  it('PAID 088 bill: RC number + "Tax receipt" badge presented first; SC marked payable record with a clickable "see RC" link naming its target', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        documentNumber: 'RC-2026-000123',
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        taxDocumentKind: 'tax_receipt',
+        hasReceiptPdf: true,
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+
+    // RC is the Number-column link (the tax document, presented first).
+    expect(
+      screen.getByRole('link', { name: 'RC-2026-000123' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // "Tax receipt" text badge on the RC.
+    expect(screen.getByText('Tax receipt')).toBeInTheDocument();
+    // SC bill marked as a payable record (text label, not colour-only).
+    expect(screen.getByText('SC-2026-000045')).toBeInTheDocument();
+    expect(
+      screen.getByText('Payable record — tax receipt issued'),
+    ).toBeInTheDocument();
+    // Clickable "see tax receipt RC-…" cross-reference naming its target.
+    const seeRc = screen.getByRole('link', { name: 'see tax receipt RC-2026-000123' });
+    expect(seeRc).toHaveAttribute('href', '/admin/invoices/inv-1');
+
+    // T065c / FR-015 — every document control has an accessible name naming its
+    // OWN document (kind + number). The MAIN download serves the SC bill PDF, so
+    // it names the SC number (never the RC); the receipt download names the RC.
+    const billDownload = screen.getByTestId('row-download-invoice');
+    expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
+    const receiptDownload = screen.getByTestId('row-download-receipt');
+    expect(receiptDownload).toHaveAttribute('aria-label', 'Download receipt RC-2026-000123');
   });
 });

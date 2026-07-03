@@ -19,6 +19,7 @@ import type { Metadata } from 'next';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
 import {
@@ -31,7 +32,9 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { InfoIcon } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -123,6 +126,12 @@ export default async function PortalInvoicesPage({
   const { user } = await requireSession('member');
   const t = await getTranslations('portal.invoices');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
+  // 088 (T065 / FR-016) — the SC-bill ↔ RC-tax-receipt disambiguation labels
+  // live in the shared admin.invoices.tax088 namespace (reused by the portal,
+  // mirroring the existing tStatus reuse above). Only surfaced when the
+  // tax-at-payment flag is on.
+  const tTax088 = await getTranslations('admin.invoices.tax088');
+  const f088TaxAtPayment = env.features.f088TaxAtPayment;
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -256,7 +265,7 @@ export default async function PortalInvoicesPage({
   // so the card can never re-derive a flag the table didn't (and vice versa).
   const nowUtcIso = new Date().toISOString();
   const rows = rawRows.map((r) => ({
-    vm: toInvoiceRowViewModel(r, nowUtcIso),
+    vm: toInvoiceRowViewModel(r, nowUtcIso, f088TaxAtPayment),
   }));
 
   const hasActiveFilter =
@@ -359,18 +368,60 @@ export default async function PortalInvoicesPage({
                         mobile card. */}
                     {rows.map(({ vm }) => (
                       <TableRow key={vm.invoiceId}>
-                        <TableCell className="align-middle font-mono text-xs">
-                          <Link
-                            href={`/portal/invoices/${vm.invoiceId}`}
-                            className="underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                            // 064 remediation S3 — displayNumber resolves β
-                            // rows to their printed §105 receipt number so
-                            // the cell never shows an em-dash/UUID for a
-                            // paid, numbered document.
-                            aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
-                          >
-                            {vm.displayNumber ?? '—'}
-                          </Link>
+                        <TableCell className="align-middle text-xs">
+                          {/* 088 (T065/T065a) — the row identity is
+                              `primaryNumber` (RC for a paid bill / legacy rows;
+                              the SC bill for an UNPAID 088 bill). The
+                              disambiguation badges + payable-record line render
+                              only when the tax-at-payment flag is on (VM's
+                              `taxDocumentKind` non-'none'). */}
+                          <div className="flex flex-col gap-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link
+                                href={`/portal/invoices/${vm.invoiceId}`}
+                                className="font-mono underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                                // 064 remediation S3 — displayNumber (via
+                                // primaryNumber) resolves β rows to their printed
+                                // §105 number so the cell never shows an
+                                // em-dash/UUID for a paid, numbered document.
+                                aria-label={`${t('actions.viewDetail')} ${vm.primaryNumber ?? vm.invoiceId}`}
+                              >
+                                {vm.primaryNumber ?? '—'}
+                              </Link>
+                              {vm.taxDocumentKind === 'tax_receipt' ? (
+                                // 088 T065 — the RC IS the §86/4 tax receipt,
+                                // presented first. Text badge (WCAG 1.4.1).
+                                <Badge variant="secondary" className="shrink-0">
+                                  {tTax088('badgeTaxReceipt')}
+                                </Badge>
+                              ) : null}
+                              {vm.taxDocumentKind === 'bill' ? (
+                                // 088 T065a — an UNPAID bill shows the
+                                // ใบแจ้งหนี้/Invoice document-kind label.
+                                <Badge variant="outline" className="shrink-0">
+                                  {tTax088('billTitle')}
+                                </Badge>
+                              ) : null}
+                            </div>
+                            {vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber ? (
+                              // 088 T065a — the SC bill of a PAID invoice is a
+                              // payable record (text + icon, WCAG 1.4.1) with a
+                              // clickable "see tax receipt RC-…" cross-reference
+                              // that names its target (T065c).
+                              <p className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] text-muted-foreground">
+                                <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
+                                <span className="font-mono">{vm.billDocumentNumber}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{tTax088('badgeBillPayableRecord')}</span>
+                                <Link
+                                  href={`/portal/invoices/${vm.invoiceId}`}
+                                  className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                                >
+                                  {tTax088('seeReceiptLink', { number: vm.receiptNumber ?? '' })}
+                                </Link>
+                              </p>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="align-middle whitespace-nowrap">
                           {vm.receiptNumber ? (
@@ -452,12 +503,20 @@ export default async function PortalInvoicesPage({
                             if (!rowHasAnyAction(vm)) {
                               return <EmptyCell />;
                             }
+                            // 088 T065c — the MAIN download serves the issue-time
+                            // PDF: on a paid 088 bill that is the SC bill, so the
+                            // control names the SC (never the RC). Legacy/other
+                            // rows keep the primary number.
+                            const mainDownloadNumber =
+                              vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber
+                                ? vm.billDocumentNumber
+                                : (vm.primaryNumber ?? vm.invoiceId);
                             return (
                               <div className="flex items-center justify-end gap-1">
                                 {vm.resendable ? (
                                   <ResendInvoiceButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
+                                    documentNumber={vm.primaryNumber ?? vm.invoiceId}
                                     variant="ghost"
                                     layout="compact"
                                     className="min-h-11 min-w-11"
@@ -466,7 +525,7 @@ export default async function PortalInvoicesPage({
                                 {vm.showInvoice && (
                                   <PortalInvoiceDownloadButton
                                     invoiceId={vm.invoiceId}
-                                    documentNumber={vm.displayNumber ?? vm.invoiceId}
+                                    documentNumber={mainDownloadNumber}
                                     // 064 — as-paid rows: the main pdf IS the
                                     // final legal document; the shared
                                     // downloadLabelKeys helper (wave-4 S17)
@@ -482,7 +541,7 @@ export default async function PortalInvoicesPage({
                                         ? 'actions.downloadVoidedAria'
                                         : downloadLabelKeys(vm.mainPdfKind).ariaKey,
                                       {
-                                        number: vm.displayNumber ?? vm.invoiceId,
+                                        number: mainDownloadNumber,
                                       },
                                     )}
                                     className={cn(
@@ -577,6 +636,11 @@ export default async function PortalInvoicesPage({
                 locale={userLocale}
                 t={t}
                 tStatus={tStatus}
+                // 088 (T065/T065a) — pass the tax088 translator ONLY when the
+                // flag is on; the card renders the SC-bill ↔ RC-receipt
+                // disambiguation only when both this prop is present AND the VM's
+                // taxDocumentKind is non-'none' (byte-identical legacy otherwise).
+                {...(f088TaxAtPayment ? { tTax088 } : {})}
                 className="md:hidden"
               />
               <TablePagination

@@ -67,6 +67,7 @@ import { env } from '@/lib/env';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Table,
@@ -123,6 +124,8 @@ export default async function PortalInvoiceDetailPage({
   const t = await getTranslations('portal.invoices.detail');
   const tList = await getTranslations('portal.invoices');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
+  // 088 (T065c / FR-016) — SC-bill ↔ RC-tax-receipt disambiguation labels.
+  const tTax088 = await getTranslations('admin.invoices.tax088');
   const userLocale = await getLocale();
 
   const tenantCtx = resolveTenantFromRequest();
@@ -184,6 +187,18 @@ export default async function PortalInvoiceDetailPage({
   // shared helper resolves whichever exists so the title never reads
   // "Invoice —" on a paid, numbered receipt.
   const documentNumber = displayDocumentNumber(invoice) ?? '—';
+  // 088 (T065a / T065c / FR-016) — resolve the two-document kind, gated on the
+  // flag AND this being a real 088 bill (bill number present). An UNPAID bill's
+  // §87 legs are NULL so `displayDocumentNumber` is null → the header would read
+  // "Invoice —"; `headerNumber` falls back to the SC bill so it never does.
+  const is088Bill = env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
+  const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
+    ? invoice.receiptDocumentNumberRaw !== null
+      ? 'tax_receipt'
+      : 'bill'
+    : 'none';
+  const headerNumber =
+    taxDocKind === 'bill' ? (invoice.billDocumentNumberRaw ?? '—') : documentNumber;
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
@@ -239,13 +254,21 @@ export default async function PortalInvoiceDetailPage({
   return (
     <DetailContainer>
       <PageHeader
-        title={`${t('title')} ${documentNumber}`}
+        title={`${t('title')} ${headerNumber}`}
         badge={
-          <OptimisticPaidOverlay
-            invoiceId={invoice.invoiceId}
-            whenUnpaid={renderStatusBadge(displayStatus)}
-            whenPaid={renderStatusBadge('paid')}
-          />
+          // 088 T065c — the shipped StatusBadge (via OptimisticPaidOverlay) stays
+          // the header state signal; a paid 088 bill ALSO carries the shipped
+          // Badge as the "Tax receipt" document-kind marker (no new component).
+          <span className="flex items-center gap-2">
+            <OptimisticPaidOverlay
+              invoiceId={invoice.invoiceId}
+              whenUnpaid={renderStatusBadge(displayStatus)}
+              whenPaid={renderStatusBadge('paid')}
+            />
+            {taxDocKind === 'tax_receipt' ? (
+              <Badge variant="secondary">{tTax088('badgeTaxReceipt')}</Badge>
+            ) : null}
+          </span>
         }
         actions={
           invoice.pdf ? (
@@ -326,12 +349,19 @@ export default async function PortalInvoiceDetailPage({
                 const receiptPending =
                   invoice.status === 'paid' &&
                   invoice.receiptPdfStatus === 'pending';
+                // 088 T065c — the MAIN download serves the issue-time PDF: on a
+                // paid 088 bill that is the SC bill, so the control names the SC
+                // number (never the RC in `documentNumber`).
+                const mainDownloadNumber =
+                  taxDocKind === 'tax_receipt' && invoice.billDocumentNumberRaw
+                    ? invoice.billDocumentNumberRaw
+                    : documentNumber;
                 return (
                   <>
                     {showInvoicePdf && (
                       <PortalInvoiceDownloadButton
                         invoiceId={invoice.invoiceId}
-                        documentNumber={documentNumber}
+                        documentNumber={mainDownloadNumber}
                         // 064 — as-paid rows: the main pdf IS the final legal
                         // document; shared downloadLabelKeys helper (wave-4
                         // S17) maps mainPdfKind → label/aria keys (list
@@ -346,7 +376,7 @@ export default async function PortalInvoiceDetailPage({
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
                             : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
-                                number: documentNumber,
+                                number: mainDownloadNumber,
                               })
                         }`}
                         className={cn(

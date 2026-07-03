@@ -575,3 +575,101 @@ describe('<PortalInvoiceCardList> — list structure + per-item aria-label', () 
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 });
+
+// ===========================================================================
+// 088 — tax-at-payment two-document disambiguation (T065 / T065a / FR-016).
+//
+// The card receives an OPTIONAL `tTax088` translator (bound to
+// admin.invoices.tax088). It renders the SC-bill ↔ RC-tax-receipt
+// disambiguation ONLY when the VM's `taxDocumentKind !== 'none'` (which the
+// mapper only yields when the tax-at-payment flag is on) AND `tTax088` is
+// provided — so the flag-OFF cards above render byte-identically to legacy.
+// ===========================================================================
+const tTax088 = makeRealTranslator('admin.invoices.tax088');
+
+/** Render one card with the 088 flag ON (VM 3rd arg true) + tTax088 wired. */
+function renderCard088For(
+  overrides: Partial<Extract<Invoice, { invoiceSubject: 'membership' }>> = {},
+  now: string = NOW_BEFORE_DUE,
+) {
+  const vm = toInvoiceRowViewModel(buildInvoice(overrides), now, true);
+  return render(
+    <PortalInvoiceCardList
+      rows={[{ vm }]}
+      locale="en"
+      t={t}
+      tStatus={tStatus}
+      tTax088={tTax088}
+    />,
+  );
+}
+
+describe('<PortalInvoiceCardList> — 088 UNPAID bill', () => {
+  it('shows the SC bill number as the heading + the ใบแจ้งหนี้/Invoice label; NO Tax-receipt badge', () => {
+    renderCard088For({
+      status: 'issued',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: null,
+    });
+
+    // The SC bill number is the card heading (NOT an em-dash / UUID).
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' }),
+    ).toBeInTheDocument();
+    // The bill label (ใบแจ้งหนี้ / Invoice) is shown.
+    expect(theCard()).toHaveTextContent('ใบแจ้งหนี้ / Invoice');
+    // An unpaid bill is NOT a tax receipt.
+    expect(theCard()).not.toHaveTextContent('Tax receipt');
+    expect(theCard()).not.toHaveTextContent('Payable record');
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 PAID bill (tax receipt issued)', () => {
+  it('presents the RC as the heading with a "Tax receipt" badge, and the SC bill as a "payable record" with a clickable "see RC" link', () => {
+    renderCard088For({
+      status: 'paid',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    const card = theCard();
+
+    // RC is the primary identity — the card heading (presented first).
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'RC-2026-000123' }),
+    ).toBeInTheDocument();
+    // "Tax receipt" text badge on the RC.
+    expect(card).toHaveTextContent('Tax receipt');
+    // The SC bill is marked as a payable record (text, not colour-only).
+    expect(card).toHaveTextContent('SC-2026-000045');
+    expect(card).toHaveTextContent('Payable record — tax receipt issued');
+    // Clickable "see tax receipt RC-…" cross-reference naming its target.
+    const seeRc = screen.getByRole('link', { name: 'see tax receipt RC-2026-000123' });
+    expect(seeRc).toHaveAttribute('href', '/portal/invoices/11111111-2222-4333-8444-555555555555');
+
+    // FR-015 — BOTH documents stay downloadable after payment.
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    expect(screen.getByTestId('receipt-download')).toBeInTheDocument();
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 flag reflected via VM kind "none"', () => {
+  it('a legacy separate-mode paid row (no bill number) shows NO 088 disambiguation even with tTax088 wired', () => {
+    renderCard088For({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RC-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    // No bill number → kind 'none' → no Tax-receipt badge / payable-record note.
+    expect(theCard()).not.toHaveTextContent('Tax receipt');
+    expect(theCard()).not.toHaveTextContent('Payable record');
+    // Legacy §87 invoice number stays the heading.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' }),
+    ).toBeInTheDocument();
+  });
+});

@@ -159,6 +159,25 @@ export type InvoicesTableRow = {
    * download filename follows automatically.
    */
   readonly mainDownloadIsReceipt: boolean;
+  /**
+   * 088 (T065 / T065a / FR-016) — the pre-payment NON-§87 bill number (SC-…)
+   * for the two-document disambiguation. Present only on a real 088 bill (with
+   * the flag on); `null` on legacy rows. Drives the paid bill's "payable
+   * record" line + the paid bill's main-download accessible name (the main pdf
+   * is the SC bill, not the RC). OPTIONAL so legacy row constructors are
+   * unaffected (undefined → treated as `null`).
+   */
+  readonly billDocumentNumberRaw?: string | null;
+  /**
+   * 088 (T065 / T065a / FR-016) — the resolved §86/4 document kind, computed
+   * server-side in page.tsx with the tax-at-payment flag baked in:
+   *   - `'none'`        — legacy / flag off → render exactly as today.
+   *   - `'bill'`        — unpaid 088 bill → SC number + ใบแจ้งหนี้/Invoice label.
+   *   - `'tax_receipt'` — paid 088 bill → RC + "Tax receipt" badge (first) + the
+   *                       SC "payable record — tax receipt issued (see RC)".
+   * OPTIONAL (undefined → `'none'`) so legacy constructors are unaffected.
+   */
+  readonly taxDocumentKind?: 'none' | 'bill' | 'tax_receipt';
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -255,6 +274,10 @@ export function InvoicesTable({
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
+  // 088 (T065/T065a) — SC-bill ↔ RC-tax-receipt disambiguation labels (shared
+  // tax088 namespace). Rendered only for rows whose `taxDocumentKind` is
+  // non-'none' (page.tsx bakes the flag into that field).
+  const tTax088 = useTranslations('admin.invoices.tax088');
   const locale = useLocale();
   // Per-row spinner state keyed by `${variant}:${invoiceId}` so two
   // downloads on different rows don't overwrite each other's loader.
@@ -379,12 +402,56 @@ export function InvoicesTable({
               className="hover:bg-accent/40 focus-within:bg-accent/40"
             >
               <TableCell className="align-middle whitespace-nowrap">
-                <Link
-                  href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                >
-                  {r.documentNumber}
-                </Link>
+                {/* 088 (T065/T065a) — the Number column carries the row identity
+                    (RC for a paid bill / legacy rows; the SC bill for an UNPAID
+                    088 bill), plus the document-kind badge + the paid bill's
+                    "payable record" line. Renders legacy when taxDocumentKind is
+                    'none' / undefined. */}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/admin/invoices/${r.invoiceId}`}
+                      className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    >
+                      {r.documentNumber}
+                    </Link>
+                    {r.taxDocumentKind === 'tax_receipt' && (
+                      // 088 T065 — the RC IS the §86/4 tax receipt, presented
+                      // first next to the primary number. Text badge (WCAG 1.4.1).
+                      <Badge variant="secondary" className="font-normal">
+                        {tTax088('badgeTaxReceipt')}
+                      </Badge>
+                    )}
+                    {r.taxDocumentKind === 'bill' && (
+                      // 088 T065a — an UNPAID bill shows the ใบแจ้งหนี้/Invoice
+                      // document-kind label.
+                      <Badge variant="outline" className="font-normal">
+                        {tTax088('billTitle')}
+                      </Badge>
+                    )}
+                  </div>
+                  {r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw && (
+                    // 088 T065a — the SC bill of a PAID invoice is a payable
+                    // record (text + icon, WCAG 1.4.1) with a clickable
+                    // "see tax receipt RC-…" cross-reference naming its target
+                    // (T065c). `whitespace-normal` overrides the cell's nowrap so
+                    // the note wraps instead of forcing a wide column.
+                    <span className="flex flex-wrap items-center gap-x-1 gap-y-0.5 whitespace-normal text-[11px] font-normal normal-case tracking-normal text-muted-foreground">
+                      <InfoIcon className="size-3 shrink-0" aria-hidden="true" />
+                      <span className="font-mono">{r.billDocumentNumberRaw}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{tTax088('badgeBillPayableRecord')}</span>
+                      <Link
+                        href={`/admin/invoices/${r.invoiceId}`}
+                        className="underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                      >
+                        {tTax088('seeReceiptLink', {
+                          number: r.receiptDocumentNumberRaw ?? '',
+                        })}
+                      </Link>
+                    </span>
+                  )}
+                </div>
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
                 {r.receiptDocumentNumberRaw ? (
@@ -583,6 +650,13 @@ export function InvoicesTable({
                     canRecordPayment &&
                     todayIso !== undefined &&
                     (r.status === 'issued' || r.status === 'overdue');
+                  // 088 T065c — the MAIN download serves the issue-time PDF: on a
+                  // paid 088 bill that is the SC bill, so the control names the SC
+                  // (never the RC in `documentNumber`). Legacy rows keep it.
+                  const mainDownloadNumber =
+                    r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw
+                      ? r.billDocumentNumberRaw
+                      : r.documentNumber;
                   if (
                     !showInvoice &&
                     !r.hasReceiptPdf &&
@@ -635,20 +709,22 @@ export function InvoicesTable({
                             handleRowDownload(
                               'invoice',
                               r.invoiceId,
-                              `${r.documentNumber}.pdf`,
+                              `${mainDownloadNumber}.pdf`,
                             )
                           }
                           disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
                           // 064 remediation S7 — β rows: the main pdf IS the
                           // §105 receipt, so label + aria flip to the receipt
                           // wording (the endpoint/testid stay the main-pdf
-                          // ones; only the presentation changes).
+                          // ones; only the presentation changes). 088 — on a paid
+                          // bill the main pdf is the SC bill, so the aria names
+                          // the SC number (mainDownloadNumber), not the RC.
                           aria-label={t(
                             r.mainDownloadIsReceipt
                               ? 'actions.downloadReceiptAria'
                               : 'actions.downloadInvoiceAria',
                             {
-                              number: r.documentNumber,
+                              number: mainDownloadNumber,
                             },
                           )}
                           className={cn(

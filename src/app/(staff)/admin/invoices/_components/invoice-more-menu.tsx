@@ -41,6 +41,16 @@ import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-clien
 export interface InvoiceMoreMenuProps {
   readonly invoiceId: string;
   readonly documentNumber: string;
+  /**
+   * 088 (T065 review fix) — the number that names the MAIN (`showDownload`)
+   * invoice/bill download when it differs from `documentNumber`. On a paid
+   * 088 bill `documentNumber` resolves to the RC §86/4 tax-receipt number
+   * (via `displayDocumentNumber`), but the main PDF served by `showDownload`
+   * is the non-tax SC bill — so its filename + aria must carry the SC bill
+   * number, not the RC. The receipt arm keeps `documentNumber` (the RC).
+   * Defaults to `documentNumber` (byte-identical to the pre-088 behaviour).
+   */
+  readonly invoiceDownloadNumber?: string;
   readonly showDownload: boolean;
   readonly showResendInvoice: boolean;
   readonly showResendReceipt: boolean;
@@ -75,12 +85,17 @@ export interface InvoiceMoreMenuProps {
 export function InvoiceMoreMenu({
   invoiceId,
   documentNumber,
+  invoiceDownloadNumber,
   showDownload,
   showResendInvoice,
   showResendReceipt,
   showDownloadReceipt = false,
   mainDownloadKind,
 }: InvoiceMoreMenuProps) {
+  // 088 (T065 review fix) — name the MAIN (SC-bill) download by its own
+  // number, falling back to `documentNumber` when no distinct bill number is
+  // threaded (all pre-088 rows). The receipt arm always uses `documentNumber`.
+  const mainDownloadNumber = invoiceDownloadNumber ?? documentNumber;
   // Derive combined-mode receipt label state from the existing prop
   // matrix instead of exposing a separate `combinedModeReceipt` prop —
   // they were perfectly correlated (combined-mode hides the pre-payment
@@ -148,7 +163,7 @@ export function InvoiceMoreMenu({
     try {
       await downloadInvoice({
         invoiceId,
-        fallbackFilename: `${documentNumber}.pdf`,
+        fallbackFilename: `${mainDownloadNumber}.pdf`,
         toasts: {
           forbidden: t('toast.invoiceForbidden'),
           notFound: t('toast.invoiceNotFound'),
@@ -283,7 +298,7 @@ export function InvoiceMoreMenu({
               mainDownloadKind === 'receipt'
                 ? 'actions.downloadReceiptAria'
                 : 'actions.downloadInvoiceAria',
-              { number: documentNumber },
+              { number: mainDownloadNumber },
             )}
           >
             {downloadingInvoice ? (
