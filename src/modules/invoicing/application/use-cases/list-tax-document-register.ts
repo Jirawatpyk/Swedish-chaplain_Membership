@@ -9,16 +9,21 @@
  *   - 're_register'     — the §105 'RE' receipts (no-TIN event/member sales) in
  *                         the period. These carry REAL 7% output VAT.
  *
- * Bucketed by PAYMENT date (`paid_at`, Bangkok-local), reusing the period
- * precedent of `export-paid-invoices-csv` (which already names ภ.พ.30). This
- * use-case is a READ (no audit emit — mirrors `list-invoices`; the CSV export
- * audits because it materialises a downloadable file).
+ * Bucketed by the §78/1 PAYMENT-date tax point (`payment_date`, the admin-
+ * entered Bangkok-local calendar date; falls back to `paid_at` only when a
+ * receipt has no `payment_date`), reusing the period precedent of
+ * `export-paid-invoices-csv` (which already names ภ.พ.30). This use-case is a
+ * READ (no audit emit — mirrors `list-invoices`; the CSV export audits because
+ * it materialises a downloadable file).
  *
  * 088 B2 review FINDING 1 — every response ALSO carries {@link PeriodOutputVat}:
- * the period ภ.พ.30 output-VAT figure (§86/4 RC + §105 RE, both standard-rated
- * 7%), computed over the WHOLE period independent of the selected `kind`. Both
- * document forms owe the same output VAT, so an accountant reading any register
- * still sees the CORRECT total — excluding §105 would understate the liability.
+ * the NET period ภ.พ.30 output-VAT figure, computed over the WHOLE period
+ * independent of the selected `kind`:
+ *   combined = §86/4 RC + §105 RE (both standard-rated 7%, VOIDED receipts
+ *   excluded) − §86/10 credit notes issued in the period.
+ * Both receipt forms owe the same output VAT, so an accountant reading any
+ * register still sees the CORRECT total — excluding §105 would understate the
+ * liability; ignoring credit notes would overstate it.
  */
 import { err, ok, type Result } from '@/lib/result';
 import { z } from 'zod';
@@ -52,15 +57,25 @@ export interface TaxDocumentRegisterSummary {
 
 /**
  * The period ภ.พ.30 output-VAT figure — CORRECT and OBTAINABLE on every
- * register view (not just `rc_register`). `combinedVatSatang` is the total
- * standard-rated output VAT the seller owes for the period: §86/4 (RC) +
- * §105 (RE). The §80/1(5) zero-rate rows fold into `rcVatSatang` with a 0
- * contribution (summed from VAT, not sales), so no explicit exclusion is
- * needed. All values are satang decimal strings.
+ * register view (not just `rc_register`). `combinedVatSatang` is the NET
+ * standard-rated output VAT the seller owes for the period:
+ *
+ *   combined = rcVatSatang + reVatSatang − creditNoteVatSatang
+ *
+ * i.e. gross §86/4 (RC) + §105 (RE) receipt VAT, LESS the §86/10 credit-note
+ * (ใบลดหนี้) VAT issued in the period. The §80/1(5) zero-rate rows fold into
+ * `rcVatSatang` with a 0 contribution (summed from VAT, not sales), so no
+ * explicit exclusion is needed. VOIDED (cancelled) receipts are excluded from
+ * `rcVatSatang` / `reVatSatang` at the repo. `combinedVatSatang` MAY be
+ * negative in a period where credit notes exceed new receipt VAT (a legitimate
+ * ภ.พ.30 net credit) — the figure is a plain subtraction, never clamped. All
+ * values are satang decimal strings.
  */
 export interface PeriodOutputVat {
   readonly rcVatSatang: string;
   readonly reVatSatang: string;
+  /** §86/10 credit-note VAT issued in the period (subtracted into `combined`). */
+  readonly creditNoteVatSatang: string;
   readonly combinedVatSatang: string;
 }
 
@@ -90,7 +105,11 @@ export async function listTaxDocumentRegister(
   }
 
   let rows: readonly Invoice[];
-  let outputVat: { rcVatSatang: string; reVatSatang: string };
+  let outputVat: {
+    rcVatSatang: string;
+    reVatSatang: string;
+    creditNoteVatSatang: string;
+  };
   try {
     // The selected register's rows + the WHOLE-period output-VAT figure. The
     // latter is independent of `kind` so the ภ.พ.30 total is correct on every
@@ -110,17 +129,27 @@ export async function listTaxDocumentRegister(
     return err({ code: 'list_failed' });
   }
 
+  // Displayed money TOTALS exclude VOIDED (cancelled) receipts so they match
+  // the period output-VAT figure (which also excludes void). `rowCount` counts
+  // ALL listed rows including void — a cancelled receipt is still SHOWN in the
+  // register (marked cancelled) per the Revenue Code, just not summed.
   let subtotal = 0n;
   let vat = 0n;
   let total = 0n;
   for (const r of rows) {
+    if (r.status === 'void') continue;
     subtotal += r.subtotal?.satang ?? 0n;
     vat += r.vat?.satang ?? 0n;
     total += r.total?.satang ?? 0n;
   }
 
+  // Net ภ.พ.30 output VAT = gross RC + gross RE − §86/10 credit notes issued in
+  // the period. A plain subtraction (never clamped): a net credit is a valid
+  // ภ.พ.30 outcome when credit notes exceed new receipt VAT in the month.
   const combinedVat =
-    BigInt(outputVat.rcVatSatang) + BigInt(outputVat.reVatSatang);
+    BigInt(outputVat.rcVatSatang) +
+    BigInt(outputVat.reVatSatang) -
+    BigInt(outputVat.creditNoteVatSatang);
 
   return ok({
     rows,
@@ -133,6 +162,7 @@ export async function listTaxDocumentRegister(
     periodOutputVat: {
       rcVatSatang: outputVat.rcVatSatang,
       reVatSatang: outputVat.reVatSatang,
+      creditNoteVatSatang: outputVat.creditNoteVatSatang,
       combinedVatSatang: combinedVat.toString(),
     },
   });

@@ -148,6 +148,22 @@ export default async function TaxRegistersPage({
                   {t('outputVat.re')}{' '}
                   {formatSatangThb(BigInt(result.value.periodOutputVat.reVatSatang), locale)}
                 </p>
+                {/* R3 — make the §86/10 credit-note reduction VISIBLE:
+                    gross (RC + RE) − credit notes = the net figure above. */}
+                <p className="mt-1 text-sm tabular-nums text-muted-foreground">
+                  {t('outputVat.gross')}{' '}
+                  {formatSatangThb(
+                    BigInt(result.value.periodOutputVat.rcVatSatang) +
+                      BigInt(result.value.periodOutputVat.reVatSatang),
+                    locale,
+                  )}
+                  {' − '}
+                  {t('outputVat.creditNote')}{' '}
+                  {formatSatangThb(
+                    BigInt(result.value.periodOutputVat.creditNoteVatSatang),
+                    locale,
+                  )}
+                </p>
                 <p className="mt-2 text-xs text-muted-foreground">{t('outputVat.note')}</p>
               </section>
 
@@ -202,10 +218,32 @@ export default async function TaxRegistersPage({
                         </tr>
                       </thead>
                       <tbody>
-                        {result.value.rows.map((r) => (
-                          <tr key={r.invoiceId} className="border-b last:border-0">
+                        {result.value.rows.map((r) => {
+                          // R1 — a VOIDED (cancelled) receipt stays LISTED (RD:
+                          // cancelled tax invoices appear in the sales report)
+                          // but must NOT read as a live sale: mute the row,
+                          // strike the number, and tag it "Cancelled". Its VAT
+                          // is already excluded from the totals + output-VAT.
+                          const isVoid = r.status === 'void';
+                          return (
+                            <tr
+                              key={r.invoiceId}
+                              className={
+                                isVoid
+                                  ? 'border-b text-muted-foreground last:border-0'
+                                  : 'border-b last:border-0'
+                              }
+                              data-testid={isVoid ? 'register-row-void' : undefined}
+                            >
                             <td className="py-2 pr-4 font-medium tabular-nums">
-                              {r.receiptDocumentNumberRaw ?? '—'}
+                              <span className={isVoid ? 'line-through' : undefined}>
+                                {r.receiptDocumentNumberRaw ?? '—'}
+                              </span>
+                              {isVoid ? (
+                                <span className="ml-2 inline-flex items-center rounded-full border border-destructive/40 px-2 py-0.5 align-middle text-xs font-medium text-destructive">
+                                  {t('cancelled')}
+                                </span>
+                              ) : null}
                             </td>
                             <td className="py-2 pr-4 tabular-nums">
                               {r.paidAt ? bangkokLocalDate(r.paidAt) : '—'}
@@ -232,7 +270,8 @@ export default async function TaxRegistersPage({
                             </td>
                             <td className="py-2 tabular-nums">{r.zeroRateCertNo ?? '—'}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

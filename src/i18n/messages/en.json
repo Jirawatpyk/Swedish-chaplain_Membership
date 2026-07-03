@@ -1910,10 +1910,12 @@
         "actions": { "view": "View register" },
         "outputVat": {
           "title": "Period output VAT (ภ.พ.30)",
-          "combined": "Total output VAT",
+          "combined": "Net output VAT",
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
-          "note": "Total standard-rated output VAT for the period across both the §86/4 tax-receipt and §105 receipt streams — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
+          "gross": "Gross output VAT",
+          "creditNote": "less §86/10 credit notes",
+          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
         },
         "summary": {
           "count": "{count, plural, one {# receipt} other {# receipts}}",
@@ -1936,6 +1938,7 @@
           "standard": "Standard",
           "zeroRated": "Zero-rated"
         },
+        "cancelled": "Cancelled",
         "empty": "No tax documents in this period.",
         "errors": {
           "invalidRange": "From-date must be on or before To-date, within one year.",

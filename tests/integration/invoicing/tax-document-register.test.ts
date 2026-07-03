@@ -15,11 +15,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import {
   events,
   eventRegistrations,
@@ -410,8 +412,11 @@ describe('listTaxDocumentRegister — RC register + zero-rate sales (T065b)', ()
       expect(result.value.periodOutputVat.rcVatSatang).toBe('14000');
       // §105 RE-stream output VAT: 22897.
       expect(result.value.periodOutputVat.reVatSatang).toBe('22897');
-      // ภ.พ.30 output VAT = RC + RE = 36897. Summing VAT (not sales) means the
-      // zero-rate §80/1(5) row contributes 0 — no explicit exclusion needed.
+      // No §86/10 credit notes issued in this tenant's period → 0 reduction.
+      expect(result.value.periodOutputVat.creditNoteVatSatang).toBe('0');
+      // NET ภ.พ.30 output VAT = RC + RE − credit notes = 36897 − 0 = 36897.
+      // Summing VAT (not sales) means the zero-rate §80/1(5) row contributes 0
+      // — no explicit exclusion needed.
       expect(result.value.periodOutputVat.combinedVatSatang).toBe('36897');
     }
   });
@@ -446,5 +451,270 @@ describe('listTaxDocumentRegister — RC register + zero-rate sales (T065b)', ()
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('invalid_range');
+  });
+});
+
+/**
+ * Integration — ภ.พ.30 legal correctness (R1 void exclusion, R2 payment_date
+ * tax-point bucketing, R3 §86/10 credit-note netting). Own tenant + DISJOINT
+ * months (June void · July/Aug bucketing · Sep credit-note) so each scenario's
+ * period is fully isolated from the others' rows.
+ */
+describe('listTaxDocumentRegister — void / payment_date bucket / §86/10 netting (R1/R2/R3)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+
+  // R1 — June (void exclusion but still listed).
+  const rcVoidJun = randomUUID();
+  const rcLiveJun = randomUUID();
+  // R2 — July/Aug (payment_date ≠ paid_at month → proves payment_date bucketing).
+  const rcJulPayAugPaid = randomUUID();
+  const rcAugPayJulPaid = randomUUID();
+  // R3 — Sep (receipt + §86/10 credit note in the same period).
+  const rcSep = randomUUID();
+  const cnSep = randomUUID();
+
+  /**
+   * Paid §86/4 RC membership receipt with EXPLICIT tax point (`paymentDate`)
+   * and server mark-paid timestamp (`paidAt`) so a fixture can set them to
+   * DIFFERENT months (R2). `issueDate`/`dueDate` ride the tax point.
+   */
+  function paidReceipt(o: {
+    invoiceId: string;
+    bill: string;
+    rc: string;
+    paymentDate: string; // YYYY-MM-DD (§78/1 tax point)
+    paidAt: string; // ISO ts (server mark-paid)
+    subtotalSatang: bigint;
+    vatSatang: bigint;
+  }) {
+    return {
+      tenantId: tenant.ctx.slug,
+      invoiceId: o.invoiceId,
+      invoiceSubject: 'membership' as const,
+      memberId: MEMBER_ID,
+      planYear: 2026,
+      planId: 'reg-plan',
+      draftByUserId: user.userId,
+      status: 'paid' as const,
+      billDocumentNumberRaw: o.bill,
+      receiptDocumentNumberRaw: o.rc,
+      receiptPdfStatus: 'rendered' as const,
+      paidAt: new Date(o.paidAt),
+      paymentMethod: 'bank_transfer' as const,
+      paymentDate: o.paymentDate,
+      fiscalYear: 2026,
+      issueDate: o.paymentDate,
+      dueDate: o.paymentDate,
+      subtotalSatang: o.subtotalSatang,
+      vatRateSnapshot: '0.0700',
+      vatSatang: o.vatSatang,
+      totalSatang: o.subtotalSatang + o.vatSatang,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly',
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: SNAP_MEMBER,
+      pdfDocKind: 'invoice' as const,
+      pdfBlobKey: 'invoicing/reg/x.pdf',
+      pdfSha256: 'a'.repeat(64),
+      pdfTemplateVersion: 8,
+    };
+  }
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant();
+    const slug = tenant.ctx.slug;
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: slug,
+        planId: 'reg-plan',
+        planYear: 2026,
+        planName: { en: 'Reg Plan' },
+        description: { en: 'desc' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: slug,
+        memberId: MEMBER_ID,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Register Co',
+        country: 'TH',
+        planId: 'reg-plan',
+        planYear: 2026,
+      });
+
+      await tx.insert(invoices).values([
+        // R1 — June: a paid RC receipt (VAT 7000) that we then VOID.
+        paidReceipt({
+          invoiceId: rcVoidJun,
+          bill: 'SC-2026-000010',
+          rc: 'RC-2026-000010',
+          paymentDate: '2026-06-10',
+          paidAt: '2026-06-10T04:00:00Z',
+          subtotalSatang: 100_000n,
+          vatSatang: 7_000n,
+        }),
+        // R1 — June: a live RC receipt (VAT 14000) that STAYS counted.
+        paidReceipt({
+          invoiceId: rcLiveJun,
+          bill: 'SC-2026-000011',
+          rc: 'RC-2026-000011',
+          paymentDate: '2026-06-11',
+          paidAt: '2026-06-11T04:00:00Z',
+          subtotalSatang: 200_000n,
+          vatSatang: 14_000n,
+        }),
+        // R2 — tax point 2026-07-31 but server-marked 2026-08-02: MUST bucket
+        // in JULY (payment_date), NOT August (paid_at).
+        paidReceipt({
+          invoiceId: rcJulPayAugPaid,
+          bill: 'SC-2026-000020',
+          rc: 'RC-2026-000020',
+          paymentDate: '2026-07-31',
+          paidAt: '2026-08-02T04:00:00Z',
+          subtotalSatang: 100_000n,
+          vatSatang: 7_000n,
+        }),
+        // R2 — tax point 2026-08-05 but server-marked 2026-07-30: MUST bucket
+        // in AUGUST (payment_date), NOT July (paid_at). Distinct VAT (9100).
+        paidReceipt({
+          invoiceId: rcAugPayJulPaid,
+          bill: 'SC-2026-000021',
+          rc: 'RC-2026-000021',
+          paymentDate: '2026-08-05',
+          paidAt: '2026-07-30T04:00:00Z',
+          subtotalSatang: 130_000n,
+          vatSatang: 9_100n,
+        }),
+        // R3 — Sep: a paid RC receipt (VAT 7000) that a §86/10 CN reduces.
+        paidReceipt({
+          invoiceId: rcSep,
+          bill: 'SC-2026-000030',
+          rc: 'RC-2026-000030',
+          paymentDate: '2026-09-10',
+          paidAt: '2026-09-10T04:00:00Z',
+          subtotalSatang: 100_000n,
+          vatSatang: 7_000n,
+        }),
+      ]);
+
+      // R1 — void the June receipt (paid → void). The immutability trigger
+      // does NOT lock status/voided_at, and `invoices_void_has_reason` needs
+      // voided_at + void_reason + voided_by_user_id.
+      await tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidedAt: new Date('2026-06-10T05:00:00Z'),
+          voidReason: 'test cancellation',
+          voidedByUserId: user.userId,
+        })
+        .where(and(eq(invoices.tenantId, slug), eq(invoices.invoiceId, rcVoidJun)));
+
+      // R3 — a §86/10 credit note (VAT 3000) issued 2026-09-20 against rcSep.
+      await tx.insert(creditNotes).values({
+        tenantId: slug,
+        creditNoteId: cnSep,
+        originalInvoiceId: rcSep,
+        fiscalYear: 2026,
+        sequenceNumber: 1,
+        documentNumber: 'CN-2026-000001',
+        issueDate: '2026-09-20',
+        issuedByUserId: user.userId,
+        reason: 'partial credit',
+        creditAmountSatang: 42_857n,
+        vatSatang: 3_000n,
+        totalSatang: 45_857n,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: SNAP_MEMBER,
+        pdfBlobKey: 'invoicing/reg/cn.pdf',
+        pdfSha256: 'c'.repeat(64),
+        pdfTemplateVersion: 8,
+      });
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  });
+
+  it('R1 — a voided receipt STAYS listed but its VAT is EXCLUDED from totals + output VAT', async () => {
+    const result = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-06-01', to: '2026-06-30' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Both rows are LISTED (RD: a cancelled tax invoice still appears in the
+    // sales report), ordered by receipt number → void (…010) then live (…011).
+    expect(result.value.rows.map((r) => r.invoiceId)).toEqual([rcVoidJun, rcLiveJun]);
+    expect(result.value.rows.map((r) => r.invoiceId)).toContain(rcVoidJun);
+    // rowCount counts ALL listed rows (incl. void).
+    expect(result.value.summary.rowCount).toBe(2);
+    // Money totals EXCLUDE the voided receipt → only the live 14000 VAT.
+    expect(result.value.summary.totalVatSatang).toBe('14000');
+    expect(result.value.summary.totalSubtotalSatang).toBe('200000');
+    // Period output VAT ALSO excludes the void (7000) → 14000, not 21000.
+    expect(result.value.periodOutputVat.rcVatSatang).toBe('14000');
+    expect(result.value.periodOutputVat.reVatSatang).toBe('0');
+    expect(result.value.periodOutputVat.combinedVatSatang).toBe('14000');
+  });
+
+  it('R2 — a receipt is bucketed by payment_date (tax point), NOT paid_at', async () => {
+    // July: payment_date 2026-07-31 (paid_at is in AUGUST). Under a paid_at
+    // revert this row would vanish from July and rcAugPayJulPaid would wrongly
+    // appear — so this assertion FAILS if bucketing regresses to paid_at.
+    const jul = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-07-01', to: '2026-07-31' },
+    );
+    expect(jul.ok).toBe(true);
+    if (!jul.ok) return;
+    expect(jul.value.rows.map((r) => r.invoiceId)).toEqual([rcJulPayAugPaid]);
+    expect(jul.value.rows.map((r) => r.invoiceId)).not.toContain(rcAugPayJulPaid);
+    expect(jul.value.periodOutputVat.rcVatSatang).toBe('7000');
+
+    // August: payment_date 2026-08-05 (paid_at is in JULY). Mirror direction.
+    const aug = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-08-01', to: '2026-08-31' },
+    );
+    expect(aug.ok).toBe(true);
+    if (!aug.ok) return;
+    expect(aug.value.rows.map((r) => r.invoiceId)).toEqual([rcAugPayJulPaid]);
+    expect(aug.value.rows.map((r) => r.invoiceId)).not.toContain(rcJulPayAugPaid);
+    expect(aug.value.periodOutputVat.rcVatSatang).toBe('9100');
+  });
+
+  it('R3 — §86/10 credit note nets down the period output VAT', async () => {
+    const result = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-09-01', to: '2026-09-30' },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // One receipt (VAT 7000) in the period.
+    expect(result.value.rows.map((r) => r.invoiceId)).toEqual([rcSep]);
+    expect(result.value.periodOutputVat.rcVatSatang).toBe('7000');
+    expect(result.value.periodOutputVat.reVatSatang).toBe('0');
+    // §86/10 credit note VAT issued in the period.
+    expect(result.value.periodOutputVat.creditNoteVatSatang).toBe('3000');
+    // NET ภ.พ.30 output VAT = 7000 − 3000 = 4000.
+    expect(result.value.periodOutputVat.combinedVatSatang).toBe('4000');
   });
 });

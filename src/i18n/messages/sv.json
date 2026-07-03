@@ -1910,10 +1910,12 @@
         "actions": { "view": "Visa register" },
         "outputVat": {
           "title": "Periodens utgående moms (ภ.พ.30)",
-          "combined": "Total utgående moms",
+          "combined": "Netto utgående moms",
           "rc": "§86/4 (RC)",
           "re": "§105 (RE)",
-          "note": "Total standardbeskattad utgående moms för perioden från båda dokumentströmmarna (§86/4-skattekvitton och §105-kvitton) — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
+          "gross": "Brutto utgående moms",
+          "creditNote": "minus §86/10-kreditnotor",
+          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
         },
         "summary": {
           "count": "{count, plural, one {# kvitto} other {# kvitton}}",
@@ -1936,6 +1938,7 @@
           "standard": "Standard",
           "zeroRated": "Nollskattesats"
         },
+        "cancelled": "Annullerad",
         "empty": "Inga skattedokument under denna period.",
         "errors": {
           "invalidRange": "Från-datumet måste vara samma dag eller före Till-datumet, inom ett år.",

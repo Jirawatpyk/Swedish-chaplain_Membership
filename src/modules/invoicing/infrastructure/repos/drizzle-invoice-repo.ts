@@ -37,7 +37,13 @@ import {
   MalformedSnapshotError,
   type MemberIdentitySnapshot,
 } from '../../domain/value-objects/member-identity-snapshot';
-import { invoices, invoiceLines, type InvoiceRow, type InvoiceLineRow } from '../db';
+import {
+  invoices,
+  invoiceLines,
+  creditNotes,
+  type InvoiceRow,
+  type InvoiceLineRow,
+} from '../db';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -1440,9 +1446,14 @@ export function makeDrizzleInvoiceRepo(
  * `runInTenant` (the explicit `tenant_id` filter is defence-in-depth, mirroring
  * `listPaged`).
  *
- * Bucketing basis (schema-invoices.ts:100-109): the PAYMENT date `paid_at`
- * (Bangkok-local), NEVER the bill/issue `fiscal_year` column — the RC receipt's
- * §87 fiscal year is set at payment and rides its `RC-{FY}-…` number.
+ * Bucketing basis (§78/1 tax point): the admin-entered `payment_date`
+ * (Bangkok-local calendar date), falling back to `(paid_at AT TIME ZONE
+ * 'Asia/Bangkok')::date` only when a receipt row has no `payment_date` (so no
+ * receipt is ever dropped from a period). NEVER the server `paid_at` timestamp
+ * alone — a payment recorded on 2026-03-31 but server-marked after the UTC
+ * midnight roll belongs to the March filing, not April — and NEVER the
+ * bill/issue `fiscal_year` column (the RC receipt's §87 fiscal year rides its
+ * `RC-{FY}-…` number, dated by the tax point).
  *
  * RC-vs-RE isolation: `receipt_document_number_raw` carries both the §86/4 'RC'
  * stream and the §105 'RE' stream; the 'RE' prefix is HARDCODED + settings-
@@ -1453,6 +1464,14 @@ export function makeDrizzleInvoiceRepo(
  * 088 B2 review FINDING 1 — the §105 'RE' receipts carry REAL 7% output VAT, so
  * `sumPeriodOutputVat` folds BOTH streams into the period ภ.พ.30 output-VAT
  * figure (understating it by excluding §105 would be an under-filing).
+ *
+ * ภ.พ.30 correctness (Revenue Code):
+ *   - VOIDED receipts stay LISTED in `listForPeriod` (a cancelled tax invoice
+ *     must appear in the sales report, marked cancelled) but are EXCLUDED from
+ *     `sumPeriodOutputVat` (their VAT must not be counted in the period total).
+ *   - §86/10 credit notes (`credit_notes`) REDUCE output VAT in the month they
+ *     are ISSUED, so `sumPeriodOutputVat` also returns the period credit-note
+ *     VAT for the use-case to subtract (net = RC + RE − credit notes).
  */
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);
@@ -1463,10 +1482,17 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
         const filters = [
           eq(invoices.tenantId, tenantIdArg),
           isNotNull(invoices.receiptDocumentNumberRaw),
-          // Bucket by PAYMENT date (Bangkok-local), inclusive both ends.
-          isNotNull(invoices.paidAt),
-          sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date >= ${opts.from}`,
-          sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date <= ${opts.to}`,
+          // Bucket by the §78/1 PAYMENT-date tax point (`payment_date`,
+          // Bangkok-local calendar), falling back to `paid_at` only when a
+          // receipt has no `payment_date` so no receipt is ever dropped.
+          // Inclusive both ends. No explicit `paid_at IS NOT NULL` guard — the
+          // COALESCE + range comparison naturally excludes any date-less row.
+          // NOTE: NO status filter. Per the Revenue Code a VOIDED (cancelled)
+          // tax invoice must STILL appear in the sales report (marked
+          // cancelled), so void rows stay LISTED here; they are excluded only
+          // from the period output-VAT TOTAL (`sumPeriodOutputVat`).
+          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
+          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
         ];
         if (opts.kind === 're_register') {
           // §105 RE stream only (no-TIN event/member receipts).
@@ -1493,10 +1519,16 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
 
     async sumPeriodOutputVat(tenantIdArg, opts) {
       return runInTenant(ctx, async (tx) => {
-        // Single pass over the period's receipts, split by stream via a
-        // conditional aggregate. Summing `vat_satang` (not sales) means the
-        // §80/1(5) zero-rate subset contributes 0 output VAT with no explicit
-        // exclusion. COALESCE guards the empty-period → NULL sum.
+        // (1) GROSS output VAT: single pass over the period's receipts, split
+        // by stream via a conditional aggregate. Summing `vat_satang` (not
+        // sales) means the §80/1(5) zero-rate subset contributes 0 output VAT
+        // with no explicit exclusion. COALESCE guards the empty-period → NULL
+        // sum. Bucketed by the §78/1 PAYMENT-date tax point (`payment_date`,
+        // else `paid_at` fallback) — see `listForPeriod`. VOIDED receipts are
+        // EXCLUDED (`status <> 'void'`): a cancelled tax invoice is still shown
+        // in the sales report but its VAT is NOT counted in the period total.
+        // `credited` / `partially_credited` receipts STAY counted here — their
+        // reduction is the §86/10 credit note netted in step (2).
         const [agg] = await tx
           .select({
             rcVat: sql<string>`COALESCE(SUM(${invoices.vatSatang}) FILTER (WHERE ${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'), 0)::text`,
@@ -1507,15 +1539,34 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             and(
               eq(invoices.tenantId, tenantIdArg),
               isNotNull(invoices.receiptDocumentNumberRaw),
-              isNotNull(invoices.paidAt),
-              sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date >= ${opts.from}`,
-              sql`(${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date <= ${opts.to}`,
+              ne(invoices.status, 'void'),
+              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
+              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+            ),
+          );
+
+        // (2) §86/10 credit-note VAT ISSUED in the period — SUBTRACTED from
+        // gross output VAT for the net ภ.พ.30 figure (the use-case does the
+        // arithmetic). A credit note is terminal (no status column) and reduces
+        // output VAT in the month of its `issue_date`. RLS-scoped by the same
+        // `runInTenant` tx.
+        const [cnAgg] = await tx
+          .select({
+            cnVat: sql<string>`COALESCE(SUM(${creditNotes.vatSatang}), 0)::text`,
+          })
+          .from(creditNotes)
+          .where(
+            and(
+              eq(creditNotes.tenantId, tenantIdArg),
+              sql`${creditNotes.issueDate} >= ${opts.from}`,
+              sql`${creditNotes.issueDate} <= ${opts.to}`,
             ),
           );
 
         return {
           rcVatSatang: agg?.rcVat ?? '0',
           reVatSatang: agg?.reVat ?? '0',
+          creditNoteVatSatang: cnAgg?.cnVat ?? '0',
         };
       });
     },
