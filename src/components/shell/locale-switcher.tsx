@@ -6,9 +6,10 @@
  * Cookie-only: writes the `NEXT_LOCALE` cookie (`LOCALE_COOKIE_NAME`) then
  * `router.refresh()` so the RSC tree re-reads it via `getRequestConfig` — new
  * messages + Buddhist-Era date formats + `<html lang>` (set from `getLocale()`
- * in the root layout). Client-only, mirroring `ThemeToggle`. It does NOT touch
- * member `preferred_locale` (email language) — that stays an Account-settings
- * preference (see the design doc).
+ * in the root layout). Client-only, mirroring `ThemeToggle`. By default it is
+ * cookie-only; when `persistToAccount` is set (member portal), it ALSO
+ * best-effort persists the choice to `members.preferred_locale` (email
+ * language) via `runPreferredLocalePersist`. Staff/auth stay cookie-only.
  *
  * The trigger shows the current-language endonym so it is legible to someone
  * who cannot read the current UI language (an icon-only tooltip would be in
@@ -20,7 +21,7 @@
 import { LanguagesIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { useTransition } from 'react';
+import { useRef, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -30,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { runPreferredLocalePersist } from '@/components/shell/locale-persist';
 import {
   LOCALE_COOKIE_NAME,
   isLocale,
@@ -38,15 +40,40 @@ import {
   type Locale,
 } from '@/i18n/config';
 
+/** Abort a stuck preferred-locale sync after this long (captive-portal guard). */
+const PERSIST_TIMEOUT_MS = 8000;
+
 export function LocaleSwitcher({
   className,
+  persistToAccount = false,
 }: {
   readonly className?: string;
+  readonly persistToAccount?: boolean;
 } = {}) {
   const t = useTranslations('shell.locale');
   const activeLocale = useLocale() as Locale;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const syncAbortRef = useRef<AbortController | null>(null);
+
+  // Best-effort background write of preferred_locale for logged-in members.
+  // Detached: never blocks the cookie-driven UI refresh. INVARIANT: no setState
+  // / no toast here — only console.warn on a hard failure (a state update after
+  // router.refresh() would be an orphaned-update bug). Abort-previous: a newer
+  // pick supersedes an in-flight sync so a stale retry can't land out of order.
+  const persistPreferredLocale = (locale: Locale): void => {
+    syncAbortRef.current?.abort();
+    const controller = new AbortController();
+    syncAbortRef.current = controller;
+    const timer = setTimeout(() => controller.abort(), PERSIST_TIMEOUT_MS);
+    void runPreferredLocalePersist(locale, controller.signal)
+      .then((outcome) => {
+        if (outcome === 'failed') {
+          console.warn('[LocaleSwitcher] preferred_locale sync failed');
+        }
+      })
+      .finally(() => clearTimeout(timer));
+  };
 
   const handleValueChange = (value: string) => {
     // Ignore re-entrant selections while a refresh is still in flight:
@@ -57,6 +84,7 @@ export function LocaleSwitcher({
     // non-sensitive UI-preference cookie. Synchronous — written before the
     // refresh request is sent, so the RSC pass reads the new value.
     document.cookie = `${LOCALE_COOKIE_NAME}=${value}; path=/; max-age=31536000; samesite=lax`;
+    if (persistToAccount) persistPreferredLocale(value); // value is Locale (isLocale guard above)
     startTransition(() => router.refresh());
   };
 
