@@ -52,6 +52,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { MemberInvoicesFilters } from './member-invoices-filters';
+import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-number';
 
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
@@ -304,8 +305,16 @@ export async function MemberInvoicesSection({
                   </TableHeader>
                   <TableBody>
                     {rows.map((inv) => {
-                      const docNum =
-                        inv.documentNumber?.raw ?? t('draftPlaceholder');
+                      // 088 FR-030 — bill-first: an issued (or paid) 088
+                      // ใบแจ้งหนี้ carries its SC number in
+                      // `billDocumentNumberRaw` with the §87 `documentNumber`
+                      // NULL, so reading `documentNumber` alone rendered the
+                      // draft placeholder for a real issued bill. `null` (true
+                      // draft) falls back to the placeholder; the void
+                      // aria-label reuses the resolved number.
+                      const resolvedNumber =
+                        resolveMemberInvoiceDisplayNumber(inv);
+                      const docNum = resolvedNumber ?? t('draftPlaceholder');
                       const canRecordPayment = inv.status === 'issued';
                       // G-V1 / US7 AS1 — spec-required Void action
                       // per-row. Gate matches /admin/invoices/[id]/page.tsx
@@ -408,7 +417,7 @@ export async function MemberInvoicesSection({
                                       size: 'sm',
                                     })}
                                     aria-label={t('actions.voidAriaLabel', {
-                                      number: inv.documentNumber?.raw ?? inv.invoiceId,
+                                      number: resolvedNumber ?? inv.invoiceId,
                                     })}
                                   >
                                     {t('actions.void')}

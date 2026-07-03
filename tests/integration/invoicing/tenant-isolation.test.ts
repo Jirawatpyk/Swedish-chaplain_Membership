@@ -465,6 +465,95 @@ describe('F4 Tenant isolation — REVIEW-GATE BLOCKER (T015)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // 088 invoice columns — bill_document_number_raw / vat_treatment /
+  // zero_rate_cert_no / _date / _blob_key (T071).
+  //
+  // Constitution v1.4.0 Principle I clause 3 + 088 CHK033: migrations 0231 +
+  // 0234 add these five columns to the existing RLS+FORCE `invoices` table and
+  // add NO new policy — so they must inherit tenant isolation. This block
+  // proves cross-tenant READ + WRITE isolation on every one of them, with the
+  // explicit `bill_document_number_raw` lookup probe FR-030 / SC-012 relies on.
+  //
+  // The seeded invoices are MEMBERSHIP drafts, so `vat_treatment` stays
+  // 'standard' (`invoices_membership_is_standard` forbids zero-rate on
+  // membership) and the cert columns are written on a standard row
+  // (`invoices_zero_rate_cert_required` only fires when zero-rated). The RLS
+  // guarantee is column-on-table and identical for every value; B's would-be
+  // CHECK-violating hijack value below is never evaluated because RLS filters
+  // A's row out of B's context first (0 rows matched → no CHECK, no write).
+  //
+  // Runs after the base-column probes above and only mutates the 088 columns
+  // (never `status`), so the earlier `status`/id assertions are unaffected.
+  // ---------------------------------------------------------------------------
+
+  const A_BILL_NO = 'SC-ALPHA26-000001';
+  const A_CERT_NO = 'กต 0404/ALPHA-001';
+  const A_CERT_BLOB = 'invoicing/alpha/2026/cert-alpha.pdf';
+
+  it('A writes its 088 columns and reads them back within tenant', async () => {
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(invoices)
+        .set({
+          billDocumentNumberRaw: A_BILL_NO,
+          vatTreatment: 'standard',
+          zeroRateCertNo: A_CERT_NO,
+          zeroRateCertDate: '2026-06-01',
+          zeroRateCertBlobKey: A_CERT_BLOB,
+        })
+        .where(eq(invoices.invoiceId, aInvoiceId)),
+    );
+    const [row] = await runInTenant(tenantA.ctx, (tx) =>
+      tx.select().from(invoices).where(eq(invoices.invoiceId, aInvoiceId)),
+    );
+    expect(row!.billDocumentNumberRaw).toBe(A_BILL_NO);
+    expect(row!.vatTreatment).toBe('standard');
+    expect(row!.zeroRateCertNo).toBe(A_CERT_NO);
+    expect(row!.zeroRateCertDate).toBe('2026-06-01');
+    expect(row!.zeroRateCertBlobKey).toBe(A_CERT_BLOB);
+  });
+
+  it('B cannot SELECT A by bill_document_number_raw (cross-tenant probe → 0 rows)', async () => {
+    const rows = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(invoices).where(eq(invoices.billDocumentNumberRaw, A_BILL_NO)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('B cannot SELECT A by zero_rate_cert_no (RLS hides the cert columns)', async () => {
+    const rows = await runInTenant(tenantB.ctx, (tx) =>
+      tx.select().from(invoices).where(eq(invoices.zeroRateCertNo, A_CERT_NO)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('B.update(A 088 columns) affects 0 rows; A values survive', async () => {
+    const updated = await runInTenant(tenantB.ctx, (tx) =>
+      tx
+        .update(invoices)
+        .set({
+          billDocumentNumberRaw: 'SC-HIJACK-000001',
+          // A CHECK-violating value on membership — never evaluated because
+          // RLS filters A's row out of B's context (0 rows matched).
+          vatTreatment: 'zero_rated_80_1_5',
+          zeroRateCertNo: 'HIJACK',
+          zeroRateCertBlobKey: 'invoicing/beta/steal.pdf',
+        })
+        .where(eq(invoices.invoiceId, aInvoiceId))
+        .returning(),
+    );
+    expect(updated).toHaveLength(0);
+    // Confirm via A-scoped read — every 088 column keeps A's original value.
+    const [check] = await runInTenant(tenantA.ctx, (tx) =>
+      tx.select().from(invoices).where(eq(invoices.invoiceId, aInvoiceId)),
+    );
+    expect(check!.billDocumentNumberRaw).toBe(A_BILL_NO);
+    expect(check!.vatTreatment).toBe('standard');
+    expect(check!.zeroRateCertNo).toBe(A_CERT_NO);
+    expect(check!.zeroRateCertBlobKey).toBe(A_CERT_BLOB);
+  });
+
+  // ---------------------------------------------------------------------------
   // NULL tenant context — secure-by-default (FR-013)
   //
   // This invariant (no rows visible under NULL `app.current_tenant`) is
