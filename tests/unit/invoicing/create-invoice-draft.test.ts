@@ -203,6 +203,29 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       }
     });
 
+    it('pro-rate suffix "from/ตั้งแต่" date = the member join date (anchor), NOT the later issue date', async () => {
+      // A member who joined mid-FY (2026-03-15) but is invoiced LATER
+      // (2026-07-20): the pro-rate factor is anchored to the JOIN date, so the
+      // description's "from" date MUST be the registration date, never today's
+      // issue date. (Before this fix the suffix printed `issueDate`.)
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        makeMember({ registrationDate: '2026-03-15' }),
+        1_600_000n,
+        { clock: { nowIso: () => '2026-07-20T10:00:00Z' } },
+      );
+      const result = await createInvoiceDraft(deps, baseInput);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.proRateFactor).not.toBe('1.0000'); // suffix must be present
+        expect(line.descriptionEn).toContain('from 2026-03-15');
+        expect(line.descriptionEn).not.toContain('2026-07-20');
+        expect(line.descriptionTh).toContain('ตั้งแต่ 2026-03-15');
+        expect(line.descriptionTh).not.toContain('2026-07-20');
+      }
+    });
+
     it("policy 'none' → factor always 1.0 regardless of join date", async () => {
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'none' }),

@@ -260,17 +260,22 @@ export async function createInvoiceDraft(
     const { fyStartDate: coverageStart, fyEndDate: coverageEnd } =
       fiscalYearBoundaryForYear(input.planYear, settings.fiscalYearStartMonth);
     // The full-cycle base carries plan name + coverage period; a pro-rated line
-    // appends the factor + start date (the historical pro-rate detail retained).
+    // appends the factor + start date. The start date is the pro-rate ANCHOR
+    // (`proRateAnchor` — the member's join date when they joined mid-FY), i.e.
+    // the SAME date the factor was derived from, NOT `issueDate` (today). The
+    // two coincide only when a member is invoiced on the day they join; billing
+    // a mid-FY joiner later would otherwise print a "from" date that contradicts
+    // the factor (e.g. factor 0.8333 for a Mar join but "from <July issue>").
     const membershipDescTh =
       `ค่าสมาชิก ${planLabelTh}ปี ${input.planYear} (ระยะเวลา ${coverageStart} ถึง ${coverageEnd})` +
       (proRateFactor === '1.0000'
         ? ''
-        : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${issueDate})`);
+        : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${proRateAnchor})`);
     const membershipDescEn =
       `Membership ${planLabelEn}${input.planYear} (coverage ${coverageStart} to ${coverageEnd})` +
       (proRateFactor === '1.0000'
         ? ''
-        : ` (pro-rated ${proRateFactor}, from ${issueDate})`);
+        : ` (pro-rated ${proRateFactor}, from ${proRateAnchor})`);
 
     // --- Build line items ---------------------------------------------------
     const lines: InvoiceLine[] = [];
