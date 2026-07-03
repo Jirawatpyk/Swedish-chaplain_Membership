@@ -560,12 +560,16 @@ export function makeDrizzleInvoiceRepo(
           // W1 (064 remediation) — β as-paid no-TIN rows carry their printed
           // §105 number in receipt_document_number_raw with document_number
           // NULL, and paid separate-mode rows ALSO have an RC number admins
-          // search by. Match EITHER column so every printed §87/§105 number
-          // is findable. Kept in lockstep with `listPaged` below.
+          // search by. 088 T069/FR-030 — an issued ใบแจ้งหนี้ bill carries its
+          // non-§87 SC number in bill_document_number_raw (document_number NULL
+          // until payment), so match that column too or an issued 088 bill is
+          // unfindable by its printed SC number. Match ANY printed
+          // §87/§105/SC number. Kept in lockstep with `listPaged` below.
           filters.push(
             or(
               ilike(invoices.documentNumber, `%${opts.search}%`),
               ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+              ilike(invoices.billDocumentNumberRaw, `%${opts.search}%`),
             )!,
           );
         }
@@ -744,11 +748,15 @@ export function makeDrizzleInvoiceRepo(
         }
         if (opts.search && opts.search.length > 0) {
           // W1 (064 remediation) — match invoice doc number OR the §105
-          // receipt number; see the `list` variant above for the rationale.
+          // receipt number OR (088 T069/FR-030) the non-§87 SC bill number
+          // (bill_document_number_raw, NULL document_number until payment) so an
+          // issued 088 ใบแจ้งหนี้ is findable by its printed SC number; see the
+          // `list` variant above for the rationale. Kept in lockstep.
           filters.push(
             or(
               ilike(invoices.documentNumber, `%${opts.search}%`),
               ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+              ilike(invoices.billDocumentNumberRaw, `%${opts.search}%`),
             )!,
           );
         }

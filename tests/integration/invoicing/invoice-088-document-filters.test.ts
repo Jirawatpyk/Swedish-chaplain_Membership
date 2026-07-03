@@ -395,4 +395,19 @@ describe('invoice listPaged — 088 document/tax-point/vat filters (T065b)', () 
       [scBill, rcReceipt, rcCredited, reReceipt, legacyCtrl].sort(),
     );
   });
+
+  // 088 T069 / FR-030 — an issued ใบแจ้งหนี้ bill carries its number in
+  // bill_document_number_raw (document_number NULL until payment); it MUST be
+  // findable by that printed SC number, not only §87/§105 receipt numbers.
+  it('search by the SC bill number → finds the issued 088 bill (FR-030 find gap)', async () => {
+    expect(await idsFor({ search: 'SC-2026-000001' })).toEqual([scBill].sort());
+  });
+
+  it('search still finds a legacy §87 invoice by its document_number (unbroken)', async () => {
+    expect(await idsFor({ search: 'INV-2026-000001' })).toEqual([legacyCtrl].sort());
+  });
+
+  it('search finds a receipt by its RC number (unbroken)', async () => {
+    expect(await idsFor({ search: 'RC-2026-000003' })).toEqual([zeroRate].sort());
+  });
 });
