@@ -1020,6 +1020,12 @@ const eslintConfig = defineConfig([
     // (e.g. .superpowers/assemble-plan.js) surface as lint errors.
     ".superpowers/**",
     ".remember/**",
+    // Agent git worktrees — full nested repo checkouts of OTHER feature
+    // branches (e.g. .claude/worktrees/<branch>/). ESLint flat config does not
+    // read .gitignore, so without this bare `eslint` recurses into a sibling
+    // worktree's entire src/tests tree and lints another branch's code —
+    // breaking `pnpm lint` (and CI would too) whenever any worktree exists.
+    ".claude/worktrees/**",
   ]),
 ]);
 
