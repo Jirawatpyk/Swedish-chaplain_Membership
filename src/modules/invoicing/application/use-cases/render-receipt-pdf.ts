@@ -125,12 +125,19 @@ export async function renderReceiptPdf(
 
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
-      // No row lock — the worker doesn't transition `paid → x`. A
-      // read is sufficient. If the row is concurrently being voided
-      // / credited, our applyReceiptPdf write would still land
-      // (status='paid' isn't part of the WHERE clause), but that's
-      // fine — the receipt sha256 hash is informational once the
-      // invoice has transitioned past 'paid'.
+      // No row lock — the worker doesn't transition `paid → x`. A read is
+      // sufficient. The read-time `status !== 'paid'` guard below rejects a
+      // void/credited row that committed BEFORE this read.
+      //
+      // 088 T068 (async TOCTOU) — but a void can also commit AFTER this read
+      // yet BEFORE our `applyReceiptPdf` write (the row was still `paid` when
+      // we read it, so the guard below passes). That is NOT fine for a void
+      // row: landing an un-stamped receipt on a voided sale violates CHK027 /
+      // § F.3. The `applyReceiptPdf` UPDATE WHERE now excludes `status='void'`
+      // (drizzle-invoice-repo.ts) — Postgres re-evaluates that predicate
+      // against the latest committed row version under READ COMMITTED, so a
+      // concurrently-committed void makes the write a NO-OP even though this
+      // read saw `paid`.
       const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) {
         return err({ code: 'invoice_not_found' as const });

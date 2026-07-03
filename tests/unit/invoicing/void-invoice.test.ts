@@ -32,6 +32,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000099';
 const OPAQUE_TX = Symbol('tx');
@@ -137,6 +138,14 @@ function makeIssuedMembership(overrides: InvoiceFixtureOverrides = {}): Invoice 
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    // 088 fields — complete the row so ROW-SHAPE dispatch reads real values
+    // (a bare `as Invoice` cast leaves these `undefined`, which `!== null`
+    // would mis-read as "set").
+    billDocumentNumberRaw: null,
+    vatTreatment: 'standard',
+    zeroRateCertNo: null,
+    zeroRateCertDate: null,
+    zeroRateCertBlobKey: null,
     lines: [makeMembershipLine()],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -172,6 +181,71 @@ function makeLegacyNoTinEvent(overrides: InvoiceFixtureOverrides = {}): Invoice 
         position: 1,
       },
     ],
+    ...overrides,
+  });
+}
+
+const BILL_NO = 'SC-2026-000007';
+const RC_NO = 'RC-2026-000042';
+const RE_NO = 'RE-2026-000005';
+const RECEIPT_BLOB_KEY = `invoicing/test-swecham/2026/${INVOICE_ID}_receipt_v8.pdf`;
+const RECEIPT_ORIGINAL_SHA = 'd'.repeat(64);
+
+/**
+ * 088 T068 — new-flow ISSUED ใบแจ้งหนี้ bill (FEATURE_088_TAX_AT_PAYMENT on):
+ * documentNumber NULL, bill number in `billDocumentNumberRaw`, ONE blob (the
+ * bill), pdf_doc_kind 'invoice'. Void re-renders it under ใบแจ้งหนี้.
+ */
+function makeIssuedBill(overrides: InvoiceFixtureOverrides = {}): Invoice {
+  return makeIssuedMembership({
+    status: 'issued',
+    sequenceNumber: null,
+    documentNumber: null,
+    billDocumentNumberRaw: BILL_NO,
+    pdfDocKind: 'invoice',
+    ...overrides,
+  });
+}
+
+/**
+ * 088 T068 — PAID membership (record-payment separate-receipt path): the main
+ * `pdf` is the ใบแจ้งหนี้ bill (SC), a DISTINCT `receiptPdf` blob holds the
+ * §86/4 tax receipt (RC). Voiding stamps BOTH.
+ */
+function makePaidMembershipTwoBlob(overrides: InvoiceFixtureOverrides = {}): Invoice {
+  return makeIssuedMembership({
+    status: 'paid',
+    sequenceNumber: null,
+    documentNumber: null,
+    billDocumentNumberRaw: BILL_NO,
+    receiptDocumentNumberRaw: RC_NO,
+    pdfDocKind: 'invoice',
+    paymentDate: '2026-05-01',
+    receiptPdfStatus: 'rendered',
+    receiptPdf: {
+      blobKey: RECEIPT_BLOB_KEY,
+      sha256: Sha256Hex.ofUnsafe(RECEIPT_ORIGINAL_SHA),
+      templateVersion: 8,
+    },
+    ...overrides,
+  });
+}
+
+/**
+ * 088 T068 — PAID event-no-TIN §105 as-paid (β numbering): ONE blob (the main
+ * pdf IS the §105 receipt), documentNumber NULL, RE number in
+ * `receiptDocumentNumberRaw`, receiptPdf NULL. Voiding stamps its single blob.
+ */
+function makePaidAsPaidNoTinEvent(overrides: InvoiceFixtureOverrides = {}): Invoice {
+  return makeLegacyNoTinEvent({
+    status: 'paid',
+    sequenceNumber: null,
+    documentNumber: null,
+    receiptDocumentNumberRaw: RE_NO,
+    pdfDocKind: 'receipt_separate',
+    paymentDate: '2026-05-01',
+    receiptPdfStatus: 'rendered',
+    receiptPdf: null,
     ...overrides,
   });
 }
@@ -235,9 +309,17 @@ function makeDeps(
       readSequencesInTx: vi.fn(),
     } as unknown as VoidInvoiceDeps['tenantSettingsRepo'],
     pdfRender: {
-      render: vi.fn(async () => ({
+      // Kind-aware sha so a two-blob paid void yields DISTINCT bill vs receipt
+      // hashes: the main bill/§86/4/§105 render (voidUnderlyingKind ≠
+      // 'receipt_combined') → 'b'*64; the SEPARATE §86/4 receipt render
+      // (voidUnderlyingKind === 'receipt_combined') → 'c'*64.
+      render: vi.fn(async (input: PdfRenderInput) => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+        sha256: Sha256Hex.ofUnsafe(
+          input.voidUnderlyingKind === 'receipt_combined'
+            ? 'c'.repeat(64)
+            : 'b'.repeat(64),
+        ),
       })),
     },
     blob: {
@@ -344,5 +426,264 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
     const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
       .calls[0]![0] as PdfRenderInput;
     expect(renderInput.voidUnderlyingKind).toBe('invoice');
+  });
+
+  // ---- 088 T068: gap 1 (legacy byte-identity regression) ----
+  it('c — LEGACY §87 issued membership void: uses documentNumber, NO billMode, ONE blob (regression)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
+    expect(renderCalls).toHaveLength(1);
+    const renderInput = renderCalls[0]![0] as PdfRenderInput;
+    // The legacy §86/4 invoice keeps its §87 documentNumber + is NOT relabelled
+    // as a bill (billMode absent → default ใบกำกับภาษี title preserved).
+    expect(renderInput.documentNumber?.raw).toBe('SC-2026-000007');
+    expect(renderInput.voidUnderlyingKind).toBe('invoice');
+    expect(renderInput.billMode).toBeUndefined();
+    // ONE blob synced.
+    expect((deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
+  });
+});
+
+describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // ---- Gap 1: unpaid new-flow ใบแจ้งหนี้ bill ----
+  it('a — unpaid new-flow bill void: documentNumber NULL → bill number used, billMode + voidUnderlyingKind=invoice (ใบแจ้งหนี้), ONE blob', async () => {
+    const deps = makeDeps(makeIssuedBill());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+
+    const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
+    expect(renderCalls).toHaveLength(1);
+    const renderInput = renderCalls[0]![0] as PdfRenderInput;
+    // The bill number rides billDocumentNumberRaw (documentNumber is NULL).
+    expect(renderInput.documentNumber?.raw).toBe(BILL_NO);
+    // billMode + voidUnderlyingKind='invoice' → template titles it ใบแจ้งหนี้
+    // (never "Tax Invoice"); see void-kind-true-golden bill case.
+    expect(renderInput.voidUnderlyingKind).toBe('invoice');
+    expect(renderInput.billMode).toBe(true);
+    expect(renderInput.kind).toBe('void_stamped_invoice');
+
+    // Exactly ONE blob — no receipt to stamp.
+    expect((deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
+
+    // Audit + outbox carry the resolved bill number (not a null documentNumber).
+    const emitCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const voidedCall = emitCalls.find((c) => c[1].eventType === 'invoice_voided');
+    expect(voidedCall).toBeDefined();
+    const payload = voidedCall![1].payload as Record<string, unknown>;
+    expect(payload.document_number).toBe(BILL_NO);
+    expect(payload.new_pdf_sha256).toBe('b'.repeat(64));
+    expect('new_receipt_pdf_sha256' in payload).toBe(false);
+    const outboxCall = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(outboxCall![1].documentNumber).toBe(BILL_NO);
+  });
+
+  // ---- Gap 2: paid membership — BOTH blobs stamped ----
+  it('b — paid membership void: BOTH bill + receipt blobs re-rendered + synced, correct kinds/numbers/overlays', async () => {
+    const deps = makeDeps(makePaidMembershipTwoBlob());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+
+    // TWO renders: [0] = bill (Target A), [1] = §86/4 receipt (Target B).
+    const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
+    expect(renderCalls).toHaveLength(2);
+    const billRender = renderCalls[0]![0] as PdfRenderInput;
+    const receiptRender = renderCalls[1]![0] as PdfRenderInput;
+
+    // Target A — the ใบแจ้งหนี้ bill: SC number, billMode, invoice underlying.
+    expect(billRender.voidUnderlyingKind).toBe('invoice');
+    expect(billRender.billMode).toBe(true);
+    expect(billRender.documentNumber?.raw).toBe(BILL_NO);
+    // Target B — the §86/4 tax receipt: RC number, receipt_combined underlying,
+    // dated at the PAYMENT date (D7), NO billMode.
+    expect(receiptRender.voidUnderlyingKind).toBe('receipt_combined');
+    expect(receiptRender.billMode).toBeUndefined();
+    expect(receiptRender.documentNumber?.raw).toBe(RC_NO);
+    expect(receiptRender.issueDate).toBe('2026-05-01');
+
+    // BOTH blobs uploaded at their own content-addressed keys, overwrite on.
+    const uploadCalls = (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls;
+    expect(uploadCalls).toHaveLength(2);
+    const uploadedKeys = uploadCalls.map((c) => (c[0] as { key: string }).key);
+    expect(uploadedKeys).toContain(`invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`);
+    expect(uploadedKeys).toContain(RECEIPT_BLOB_KEY);
+    for (const c of uploadCalls) {
+      expect((c[0] as { allowOverwrite?: boolean }).allowOverwrite).toBe(true);
+    }
+
+    // BOTH sha columns synced — bill via applyInvoicePdfRegeneration, receipt
+    // via applyReceiptPdfRegeneration.
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).toHaveBeenCalledTimes(1);
+    const invoiceRegenArg = (
+      deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>
+    ).mock.calls[0]![1] as { pdfSha256: string };
+    const receiptRegenArg = (
+      deps.invoiceRepo.applyReceiptPdfRegeneration as ReturnType<typeof vi.fn>
+    ).mock.calls[0]![1] as { receiptPdfSha256: string };
+    expect(invoiceRegenArg.pdfSha256).toBe('b'.repeat(64));
+    expect(receiptRegenArg.receiptPdfSha256).toBe('c'.repeat(64));
+
+    // Audit payload carries BOTH before/after shas.
+    const voidedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    const payload = voidedCall![1].payload as Record<string, unknown>;
+    expect(payload.member_id).toBe('member-1');
+    expect(payload.original_pdf_sha256).toBe('a'.repeat(64));
+    expect(payload.new_pdf_sha256).toBe('b'.repeat(64));
+    expect(payload.original_receipt_pdf_sha256).toBe(RECEIPT_ORIGINAL_SHA);
+    expect(payload.new_receipt_pdf_sha256).toBe('c'.repeat(64));
+
+    // Returned Invoice reflects BOTH freshly-synced shas.
+    expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+    expect(r.value.receiptPdf?.sha256).toBe('c'.repeat(64));
+  });
+
+  // ---- Gap 2: paid single-blob (event-no-TIN §105 as-paid) ----
+  it('d — paid ONE-blob §105 as-paid void: stamps only its blob (receiptPdf null → no Target B)', async () => {
+    const deps = makeDeps(makePaidAsPaidNoTinEvent());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+
+    const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
+    expect(renderCalls).toHaveLength(1);
+    const renderInput = renderCalls[0]![0] as PdfRenderInput;
+    // Single §105 receipt blob: RE number, receipt_separate underlying, no billMode.
+    expect(renderInput.voidUnderlyingKind).toBe('receipt_separate');
+    expect(renderInput.billMode).toBeUndefined();
+    expect(renderInput.documentNumber?.raw).toBe(RE_NO);
+
+    expect((deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
+
+    // Non-member event → non-timeline audit branch (no member_id).
+    const voidedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    const payload = voidedCall![1].payload as Record<string, unknown>;
+    expect('member_id' in payload).toBe(false);
+    expect(payload.event_registration_id).toBe('reg-uuid-1');
+  });
+
+  // ---- FIX 1 (H-1): Target A void render preserves vatInclusive ----
+  it('H-1 — event as-paid §105 void: Target A passes vatInclusive=true (VOID copy keeps the "VAT included" annotation)', async () => {
+    // makePaidAsPaidNoTinEvent carries vatInclusive=true (event Model B). Before
+    // FIX 1 Target A dropped it → the §87/3 retained VOID copy misstated a
+    // VAT-inclusive doc as VAT-exclusive (SC-003 infidelity).
+    const deps = makeDeps(makePaidAsPaidNoTinEvent());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    expect(renderInput.vatInclusive).toBe(true);
+  });
+
+  it('H-1 — membership void: Target A passes vatInclusive=false (explicit, not undefined)', async () => {
+    const deps = makeDeps(makeIssuedBill());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    expect(renderInput.vatInclusive).toBe(false);
+  });
+
+  // ---- Refusals: only issued|paid voidable ----
+  it('refuses to void a credited invoice (invalid_status; no side effects)', async () => {
+    const deps = makeDeps(makePaidMembershipTwoBlob({ status: 'credited' }));
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('invalid_status');
+    if (r.error.code === 'invalid_status') expect(r.error.status).toBe('credited');
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+  });
+
+  // ---- Error/throw paths on the NEW branches ----
+  it('e1 — Target A render failure → pdf_render_failed, applyVoid NOT called (rollback)', async () => {
+    const deps = makeDeps(makeIssuedBill());
+    (deps.pdfRender.render as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('boom-A'),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('pdf_render_failed');
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+  });
+
+  it('e2 — Target B (receipt) render failure on a paid two-blob void → pdf_render_failed, applyVoid NOT called', async () => {
+    const deps = makeDeps(makePaidMembershipTwoBlob());
+    // First render (Target A / bill) succeeds; second (Target B / receipt) throws.
+    (deps.pdfRender.render as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
+      })
+      .mockRejectedValueOnce(new Error('boom-B'));
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('pdf_render_failed');
+    // Phase 1 rolled back — neither blob synced.
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
+  });
+
+  it('e3 — concurrent state change: applyVoid conflict → concurrent_state_change', async () => {
+    const deps = makeDeps(makeIssuedBill());
+    (deps.invoiceRepo.applyVoid as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new InvoiceApplyConflictError('applyVoid'),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('concurrent_state_change');
+  });
+
+  it('e4 — Phase 2 receipt-blob upload failure keeps void committed; bill sha still synced', async () => {
+    const deps = makeDeps(makePaidMembershipTwoBlob());
+    // Bill blob upload succeeds; receipt blob upload throws (2nd uploadPdf call).
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ key: 'bill', url: 'https://blob.test/bill' })
+      .mockRejectedValueOnce(new Error('receipt blob outage'));
+    const r = await voidInvoice(deps, INPUT);
+    // Void IS committed despite the Phase-2 receipt failure.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+    // Bill sha synced; receipt sha sync was never reached (upload threw first).
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
+    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
+    // Return value: bill sha patched, receipt sha left at the Phase-1 value.
+    expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+    expect(r.value.receiptPdf?.sha256).toBe(RECEIPT_ORIGINAL_SHA);
+    // A pdf_render_failed audit documents the deferred receipt overlay.
+    const syncFail = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) =>
+        c[1].eventType === 'pdf_render_failed' &&
+        (c[1].payload as Record<string, unknown>).context ===
+          'invoice_void_phase2_receipt_sync',
+    );
+    expect(syncFail).toBeDefined();
+    const pl = syncFail![1].payload as Record<string, unknown>;
+    expect(pl.phase).toBe('blob_upload');
+    expect(pl.blob_bytes_uploaded).toBe(false);
   });
 });

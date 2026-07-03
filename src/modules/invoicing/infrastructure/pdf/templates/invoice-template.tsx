@@ -687,8 +687,21 @@ function renderPageBody({
           ONLY when the pinned treatment is zero-rated; gated v>=8 so pre-v8
           documents re-render byte-stable (SC-003). Membership is always
           'standard', so the note never draws on a membership document; the
-          WHT note (US5, membership-only) never draws on a zero-rate document. */}
+          WHT note (US5, membership-only) never draws on a zero-rate document.
+
+          088 T068 M-2 — `!isBill` alone is INSUFFICIENT for a VOID: a void's
+          kind is 'void_stamped_invoice', so `isBill` (requires kind
+          invoice/invoice_preview) is FALSE even for a voided ใบแจ้งหนี้ bill —
+          which would wrongly print this §-citation note on the VOID copy of a
+          NON-tax bill (FR-001 forbids a §-citation on the bill; SC-003). The
+          void path passes `billMode:true` ONLY for the bill (Target A); the
+          §86/4 receipt void (Target B) + every LIVE receipt do NOT pass it, so
+          `billMode !== true` keeps the note on the tax receipt while suppressing
+          it on the bill. A LIVE bill is already excluded by `!isBill` (isBill is
+          true → the extra term never changes its outcome), so all existing
+          non-void renders stay byte-stable → NO template-version bump. */}
       {!isBill &&
+        input.billMode !== true &&
         input.templateVersion >= ZERO_RATE_NOTE_MIN_VERSION &&
         input.vatTreatment === 'zero_rated_80_1_5' && (
           <View style={styles.zeroRateNoteBlock}>
@@ -848,6 +861,25 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   } else if (isVoid && input.voidUnderlyingKind === 'receipt_separate') {
     titleTh = 'ใบเสร็จรับเงิน';
     titleEn = 'Official Receipt';
+  } else if (
+    isVoid &&
+    input.voidUnderlyingKind === 'invoice' &&
+    input.billMode === true
+  ) {
+    // 088 T068 — kind-true VOID title for a voided NON-tax ใบแจ้งหนี้ bill. A
+    // new-flow bill (FEATURE_088_TAX_AT_PAYMENT) carries voidUnderlyingKind
+    // 'invoice' (its pdf_doc_kind) — identical to a legacy §86/4 tax-invoice
+    // void — so the two are disambiguated by `billMode`, exactly as the LIVE
+    // (non-void) title is at line ~825. Without this branch the void re-render
+    // of a ใบแจ้งหนี้ would fall through to the default ใบกำกับภาษี / Tax
+    // Invoice title (spec § F.3: a voided bill MUST NEVER read "Tax Invoice").
+    // ADDITIVE + byte-safe (no template-version bump): no existing void render
+    // passes `billMode`, so a legacy §86/4 void (billMode absent) still falls
+    // through to the default title — pre-change output is unchanged (SC-003).
+    // `isBill` stays FALSE for voids so the bank block / signature stamps /
+    // ต้นฉบับ marker never draw on a voided document.
+    titleTh = 'ใบแจ้งหนี้';
+    titleEn = 'Invoice';
   }
   // Thai-RD §86/4 requires the document to mark whether it is the
   // original or a copy. Previews + voids have their own watermark;

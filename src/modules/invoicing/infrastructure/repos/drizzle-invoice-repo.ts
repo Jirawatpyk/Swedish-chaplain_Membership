@@ -1068,9 +1068,27 @@ export function makeDrizzleInvoiceRepo(
      *   - status='rendered' → no-op (return existing row unchanged)
      *   - status='failed'  → also flip to 'rendered' (reconciliation
      *     retry path) + clear `receipt_pdf_last_error`
-     * The WHERE clause excludes `status='rendered'` from the UPDATE so
-     * a duplicate worker call with stale bytes cannot overwrite a
-     * successful render. We then re-fetch the row to return it.
+     * The WHERE clause excludes `receipt_pdf_status='rendered'` from the
+     * UPDATE so a duplicate worker call with stale bytes cannot overwrite
+     * a successful render. We then re-fetch the row to return it.
+     *
+     * 088 T068 (reliability M-2 / async TOCTOU) — the WHERE ALSO excludes
+     * `status='void'`: the §86/4 receipt renders async (record-payment
+     * enqueues; § F.2), so a worker can read a still-`paid` row, render a
+     * NORMAL (un-stamped) receipt, and only THEN attempt this write — by
+     * which point a void may have committed (at void time the row had
+     * receiptPdf=null → voidInvoice Target B was skipped, only the bill was
+     * stamped). Without this guard the un-stamped receipt bytes would land
+     * on the void row → a voided sale serving a downloadable UN-stamped
+     * §86/4 receipt (violates CHK027 / § F.3). Postgres re-evaluates the
+     * WHERE against the latest row version under READ COMMITTED (EvalPlanQual),
+     * so a concurrently-committed void is caught here even when the read
+     * (render-receipt-pdf.ts:146) saw `paid`. A void row correctly ends with
+     * receiptPdf=null + its RC number retained (void is terminal; the FR-019
+     * "re-render on demand" tension is accepted — a void has no valid receipt).
+     * Only `void` is blocked: a `credited`/`partially_credited` receipt
+     * re-render still lands (and credit requires receiptPdfStatus='rendered'
+     * FIRST, so a pending-render + credit race cannot occur).
      */
     async applyReceiptPdf(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
@@ -1098,6 +1116,10 @@ export function makeDrizzleInvoiceRepo(
             // Idempotent re-arm: rendered rows skip the UPDATE so we
             // don't churn updated_at on every duplicate worker run.
             ne(invoices.receiptPdfStatus, 'rendered'),
+            // 088 T068 — never land an un-stamped receipt on a VOID row (see
+            // the method doc: async TOCTOU). Matches 0 rows → NO-OP; the
+            // re-fetch below still returns the (void) row unchanged.
+            ne(invoices.status, 'void'),
           ),
         );
       // Re-fetch via the public read path so callers always receive a
@@ -1302,13 +1324,25 @@ export function makeDrizzleInvoiceRepo(
 
     async applyVoid(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
-      // R-1 fix — atomic issued → void. The immutability trigger
+      // R-1 fix — atomic issued|paid → void. The immutability trigger
       // whitelists the void_* fields + pdf_sha256, but pdf_sha256 is
       // INTENTIONALLY NOT written here: the caller updates it via
       // `applyInvoicePdfRegeneration` in a second transaction AFTER
       // the blob upload succeeds, preventing DB/Blob desync on blob
-      // failure. WHERE guard on status='issued' prevents racing
-      // paid/credit-note/double-void.
+      // failure.
+      //
+      // 088 T068 — the WHERE CAS accepts BOTH `issued` AND `paid`. Voiding a
+      // PAID membership is the spec's edge path (§ F.3 / edge-case line 172):
+      // normally an issued §86/4 is cancelled via a §86/10 credit note, but a
+      // void must still stamp VOID on both the ใบแจ้งหนี้ bill AND the §86/4
+      // tax-receipt blobs. The CAS still rejects any concurrent transition to
+      // void / credited / partially_credited / draft (→ InvoiceApplyConflictError
+      // → typed `concurrent_state_change`) — the caller already holds the
+      // invoice-row FOR UPDATE lock, so this guard is defence-in-depth against a
+      // status flip between the lock read and this write. The DB immutability
+      // trigger + CHECKs permit paid→void (status is not locked; the
+      // receipt-status CHECK is vacuous for non-paid rows; the event-registration
+      // partial unique index explicitly frees voided rows).
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -1322,7 +1356,7 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
-            eq(invoices.status, 'issued'),
+            or(eq(invoices.status, 'issued'), eq(invoices.status, 'paid')),
           ),
         )
         .returning();
