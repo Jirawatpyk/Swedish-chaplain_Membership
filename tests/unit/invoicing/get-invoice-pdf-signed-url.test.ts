@@ -225,6 +225,37 @@ describe('getInvoicePdfSignedUrl — byte-identical admin↔portal (C1)', () => 
 
 // R1-CG-3 — async receipt PDF gate (T166-10).
 // Member sees 425 Too Early when paid+pending; admin/manager unaffected.
+describe('getInvoicePdfSignedUrl — 088 bill filename (FR-030)', () => {
+  it('an issued 088 bill (documentNumber NULL) → filename uses billDocumentNumberRaw (SC-…), not the generic "invoice.pdf"', async () => {
+    const bill = {
+      ...makeIssuedInvoice(),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    } as unknown as Invoice;
+    const { deps } = makeDeps(bill);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('SC-2026-000001.pdf');
+  });
+
+  it('a legacy §87 invoice (bill number NULL) → filename falls back to documentNumber', async () => {
+    const { deps } = makeDeps(makeIssuedInvoice());
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('I-2026-000001.pdf');
+  });
+});
+
 describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
   function makePaidPendingInvoice(): Invoice {
     return {

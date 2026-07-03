@@ -302,6 +302,9 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
     // `invoice_cross_tenant_probe` on not-found when actor context is
     // passed in the input.
     audit: f4AuditAdapter,
+    // 088 (FR-001 / FR-014) — preview the pre-payment draft as ใบแจ้งหนี้ under
+    // the flag (billMode), matching what issueInvoice renders at issue time.
+    taxAtPayment: env.features.f088TaxAtPayment,
   };
 }
 

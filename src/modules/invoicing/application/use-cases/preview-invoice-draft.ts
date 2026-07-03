@@ -51,6 +51,13 @@ export interface PreviewInvoiceDraftDeps {
    * input are supplied.
    */
   readonly audit?: AuditPort;
+  /**
+   * 088 (FR-001 / FR-014) — the bill→payment flag. When ON, a membership draft
+   * previews as the non-tax ใบแจ้งหนี้ (billMode), matching what `issueInvoice`
+   * will render; OFF = the legacy §86/4 Tax-Invoice title. Mirrors
+   * `IssueInvoiceDeps.taxAtPayment` so the preview equals the issued document.
+   */
+  readonly taxAtPayment?: boolean;
 }
 
 export async function previewInvoiceDraft(
@@ -114,6 +121,12 @@ export async function previewInvoiceDraft(
       vatRate: settings.vatRate,
       vat,
       total,
+      // 088 (FR-001 / FR-014) — render the pre-payment draft as the non-tax
+      // ใบแจ้งหนี้ (never "Tax Invoice") under the flag, so the preview title
+      // matches what issueInvoice will render (issue-invoice.ts passes the same
+      // `billMode: taxAtPayment`). Without this the draft preview mistitles the
+      // bill as ใบกำกับภาษี/Tax Invoice.
+      billMode: deps.taxAtPayment === true,
       // 088 US5 (T041 / FR-012) — gate the tenant WHT note on a membership draft
       // preview so the admin sees the note that will print on the issued document.
       invoiceSubject: draft.invoiceSubject,

@@ -133,7 +133,7 @@ export async function getInvoicePdfSignedUrl(
     requestId: input.requestId ?? null,
     eventType: 'invoice_pdf_downloaded',
     actorUserId: input.actorUserId,
-    summary: `Invoice PDF downloaded — ${invoice.documentNumber?.raw ?? invoiceId}`,
+    summary: `Invoice PDF downloaded — ${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId}`,
     payload: {
       invoice_id: invoiceId,
       member_id: invoice.memberId,
@@ -173,6 +173,11 @@ export async function getInvoicePdfSignedUrl(
     if (notFound) return err({ code: 'blob_missing', key: invoice.pdf.blobKey });
     throw e;
   }
-  const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
+  // 088 (FR-030) — an issued ใบแจ้งหนี้ bill carries its number in
+  // `billDocumentNumberRaw` (`document_number` is NULL until payment), so read
+  // it FIRST — otherwise the download filename falls back to the generic
+  // "invoice.pdf" instead of e.g. "SC-2026-000001.pdf". Legacy §87 rows (bill
+  // number NULL) fall through to `documentNumber`.
+  const filename = `${invoice.billDocumentNumberRaw ?? invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });
 }
