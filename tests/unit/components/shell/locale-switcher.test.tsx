@@ -135,4 +135,23 @@ describe('<LocaleSwitcher persistToAccount>', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(persistMock).not.toHaveBeenCalled();
   });
+
+  it('aborts a superseded in-flight persist when a newer locale is picked', async () => {
+    const signals: AbortSignal[] = [];
+    persistMock.mockImplementation((_locale, signal) => {
+      signals.push(signal);
+      return new Promise<never>(() => {}); // never resolves — stays in-flight
+    });
+    renderWithPersist('en');
+    // pick TH (persist #1 starts, never resolves)
+    fireEvent.click(screen.getByRole('button', { name: /change language/i }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'ไทย' }));
+    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(1));
+    // pick SV (should abort persist #1 before starting persist #2)
+    fireEvent.click(screen.getByRole('button', { name: /change language/i }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Svenska' }));
+    await waitFor(() => expect(persistMock).toHaveBeenCalledTimes(2));
+    expect(signals[0]?.aborted).toBe(true); // first sync superseded
+    expect(signals[1]?.aborted).toBe(false); // second still live
+  });
 });
