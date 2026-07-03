@@ -16,6 +16,7 @@ export {
   canTransition,
   enforceOneSubjectLine,
   displayDocumentNumber,
+  issuedInvoiceIdentity,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,

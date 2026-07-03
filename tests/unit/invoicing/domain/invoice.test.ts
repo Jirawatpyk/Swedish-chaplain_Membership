@@ -21,6 +21,7 @@ import {
   assertSnapshotsSet,
   canTransition,
   displayDocumentNumber,
+  issuedInvoiceIdentity,
   INVOICE_STATUSES,
   type Invoice,
   type InvoiceStatus,
@@ -133,6 +134,66 @@ describe('displayDocumentNumber — printed §87/§105 number for display (064 r
     expect(
       displayDocumentNumber({ documentNumber: null, receiptDocumentNumberRaw: null }),
     ).toBeNull();
+  });
+});
+
+describe('issuedInvoiceIdentity — void/confirm identity of an ISSUED invoice (088 FR-017)', () => {
+  const docNum = (raw: string): DocumentNumber => {
+    const r = DocumentNumber.parse(raw);
+    if (!r.ok) throw new Error('bad fixture doc number');
+    return r.value;
+  };
+
+  it('issued 088 bill (NULL §87 docnum) resolves the non-§87 ใบแจ้งหนี้ bill number', () => {
+    // Locks: an issued 088 bill is voidable — the guard does NOT 404 it.
+    expect(
+      issuedInvoiceIdentity({
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000003',
+      }),
+    ).toBe('SC-2026-000003');
+  });
+
+  it('legacy issued row prefers the §87 document number', () => {
+    expect(
+      issuedInvoiceIdentity({
+        documentNumber: docNum('IN-2026-000009'),
+        billDocumentNumberRaw: null,
+      }),
+    ).toBe('IN-2026-000009');
+  });
+
+  it('§87 document number wins even if a bill number is somehow also present', () => {
+    // Defensive: the §87-at-issue and 088-bill flows are disjoint, but the
+    // documentNumber-first order must hold if both are ever set on one row.
+    expect(
+      issuedInvoiceIdentity({
+        documentNumber: docNum('IN-2026-000009'),
+        billDocumentNumberRaw: 'SC-2026-000003',
+      }),
+    ).toBe('IN-2026-000009');
+  });
+
+  it('returns null when neither number is present (draft/corrupt row)', () => {
+    expect(
+      issuedInvoiceIdentity({ documentNumber: null, billDocumentNumberRaw: null }),
+    ).toBeNull();
+  });
+
+  it('does NOT read the RC receipt number (distinct from displayDocumentNumber)', () => {
+    // The void guard acts on the pre-payment bill, so a receipt number must
+    // NEVER stand in for the bill's identity — hence the separate helper.
+    expect(
+      issuedInvoiceIdentity({ documentNumber: null, billDocumentNumberRaw: null }),
+    ).toBeNull();
+    // Same shape through displayDocumentNumber WOULD pick up the RC — proving
+    // the two helpers are intentionally different reads.
+    expect(
+      displayDocumentNumber({
+        documentNumber: null,
+        receiptDocumentNumberRaw: 'RC-2026-000015',
+      }),
+    ).toBe('RC-2026-000015');
   });
 });
 

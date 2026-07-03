@@ -15,7 +15,7 @@ import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
-import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
+import { getInvoice, makeGetInvoiceDeps, displayDocumentNumber } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -53,9 +53,14 @@ export default async function NewCreditNotePage({
     notFound();
   }
   // 088 FR-030 — a paid 088 invoice has NULL §87 `documentNumber`; its
-  // §86/4 RC receipt number lives in `receiptDocumentNumberRaw`. Guard on
-  // EITHER so a paid 088 invoice is creditable (SC-006), not 404'd.
-  if (!invoice.total || (!invoice.documentNumber && !invoice.receiptDocumentNumberRaw)) {
+  // §86/4 RC receipt number lives in `receiptDocumentNumberRaw`. Resolve via
+  // the shared, unit-tested `displayDocumentNumber` (documentNumber-first, RC
+  // fallback, null only when both absent) so a paid 088 invoice is creditable
+  // (SC-006), not 404'd. Equivalent to the prior
+  // `!invoice.documentNumber && !invoice.receiptDocumentNumberRaw` — a validated
+  // DocumentNumber's `.raw` is never empty, so `!displayDocumentNumber(invoice)`
+  // is true iff both fields are absent.
+  if (!invoice.total || !displayDocumentNumber(invoice)) {
     notFound();
   }
 
@@ -73,8 +78,8 @@ export default async function NewCreditNotePage({
             // documentNumber-FIRST so legacy IN-…/separate-mode keep their
             // §87 number; a paid 088 invoice (documentNumber NULL) falls
             // through to its RC (SC-006). Display-only ("against invoice
-            // {number}" label).
-            documentNumber={invoice.documentNumber?.raw ?? invoice.receiptDocumentNumberRaw ?? ''}
+            // {number}" label). The guard above already proved this is non-null.
+            documentNumber={displayDocumentNumber(invoice) ?? ''}
             remainingSatang={remainingSatang}
             currencySymbol="THB"
           />

@@ -362,6 +362,26 @@ export function displayDocumentNumber(inv: {
 }
 
 /**
+ * FR-017 — the identity number an ISSUED invoice is CONFIRMED/VOIDED under: the
+ * §87 `documentNumber` (legacy §87-at-issue flow) OR the non-§87 ใบแจ้งหนี้ bill
+ * number (`billDocumentNumberRaw`, the 088 tax-at-payment flow where
+ * `documentNumber` stays NULL until — and unless — a receipt is minted at
+ * payment). NULL only for a draft/corrupt row that carries neither.
+ *
+ * Sibling of {@link displayDocumentNumber}, which CANNOT be reused by the void
+ * guard: it falls back to the RC receipt number (`receiptDocumentNumberRaw`),
+ * whereas voiding acts on the PRE-payment bill, whose identity is the bill
+ * number. Pure + framework-free (Domain); accepts the narrow inline shape so
+ * presentation view-models carrying only the two raw fields can call it too.
+ */
+export function issuedInvoiceIdentity(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly billDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.documentNumber?.raw ?? inv.billDocumentNumberRaw ?? null;
+}
+
+/**
  * LOW-14 — per-subject rule for the "exactly-one subject-defining line"
  * invariant. Each subject pins (1) the line `kind` that must appear exactly
  * once and (2) the two error builders for the 0-line and >1-line cases. A new
