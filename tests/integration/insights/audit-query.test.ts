@@ -276,11 +276,14 @@ describe('F9 auditQuery — integration (T040)', () => {
 
   it('keyset tie-breaks on id when two rows share the EXACT same µs timestamp (forward + backward id arm)', async () => {
     // The most fragile keyset arm is `(ts = c AND id </> c.id)` — only reached
-    // when two rows share the exact µs timestamp. Insert two with explicit,
-    // ordered UUIDs at one instant and page across the tie in both directions.
+    // when two rows share the exact µs timestamp. Insert two with ordered UUIDs
+    // at one instant and page across the tie in both directions.
     const tieActor = randomUUID();
-    const idLow = 'aaaaaaaa-0000-4000-8000-000000000001';
-    const idHigh = 'bbbbbbbb-0000-4000-8000-000000000002';
+    // Two RANDOM uuids, sorted so idLow < idHigh (lexicographic == the keyset's
+    // id ordering). Was two HARDCODED uuids, which collided with rows a prior
+    // run left on the shared Neon branch → INSERT 23505 audit_log_pkey. The query
+    // is isolated by `tieActor` (random per run), so any leftover rows are inert.
+    const [idLow, idHigh] = [randomUUID(), randomUUID()].sort() as [string, string];
     const ts = '2031-02-02 00:00:00.777777+00';
     await runInTenant(tenantA.ctx, async (tx) => {
       await tx.execute(sql`
