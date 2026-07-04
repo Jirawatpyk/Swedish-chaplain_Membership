@@ -1609,7 +1609,9 @@
         "receiptMode": "Kombinerad numrering har utgått – kvittot får sin egen §87-nummerserie.",
         "sellerIsHeadOffice": "På = huvudkontor (สำนักงานใหญ่). Av = en filial som anges med en femsiffrig kod.",
         "sellerBranchCode": "Exakt 5 siffror (skatteverkets filialkod).",
-        "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Lämna tomt för inget.",
+        "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Medlemsavgifter är befriade från källskatt enligt §65 bis (13) (beslut กค 0811/8542) — föreslagen text är förifylld nedan. Lämna tomt för inget.",
+        "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
+        "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
         "bank": "Visas endast på fakturan (ใบแจ้งหนี้), för betalning via banköverföring. Lämna tomt för inget.",
         "bankSwift": "8 eller 11 tecken (t.ex. KASITHBK).",
         "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."

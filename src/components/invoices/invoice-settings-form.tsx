@@ -716,6 +716,10 @@ export function InvoiceSettingsForm({
               maxLength={WHT_MAX}
               rows={3}
               lang="th"
+              // 088 US5 — RD-validated suggested wording (membership dues are
+              // WHT-exempt, §65 bis (13) / ruling กค 0811/8542). Placeholder, not
+              // a forced value: the admin still opts in per tenant.
+              placeholder={t('hints.whtNoteThExample')}
             />
             <p className="text-right text-xs text-muted-foreground">
               {t('charCount', { count: whtNoteTh.length, max: WHT_MAX })}
@@ -730,6 +734,7 @@ export function InvoiceSettingsForm({
               disabled={disabled}
               maxLength={WHT_MAX}
               rows={3}
+              placeholder={t('hints.whtNoteEnExample')}
             />
             <p className="text-right text-xs text-muted-foreground">
               {t('charCount', { count: whtNoteEn.length, max: WHT_MAX })}
