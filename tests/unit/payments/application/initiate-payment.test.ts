@@ -199,6 +199,14 @@ describe('initiatePayment (T055)', () => {
     expect(result.value.resumed).toBe(false);
     expect(result.value.clientSecret).toBe('pi_test_new_secret_abc');
     expect(result.value.publishableKey).toBe('pk_test_abc');
+    // Round-3 lock — the initiate READ MUST carry `reconciliationPath: false` so
+    // F4's stranded-funds guard is ARMED: a new-flow bill paid under a rolled-back
+    // flag is refused up front (no Stripe PI created → no captured-but-unappliable
+    // funds). A boolean flip here (false→true) opens that S0 window; the mocked
+    // bridge ignores the arg, so this pins the literal the use-case sets.
+    expect(deps.invoicingBridge.getInvoiceForPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ reconciliationPath: false }),
+    );
     expect(deps.audit.emit).toHaveBeenCalledTimes(1);
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(auditCall?.[1].eventType).toBe('payment_initiated');

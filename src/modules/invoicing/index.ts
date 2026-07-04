@@ -56,10 +56,12 @@ export {
   type VatTreatment,
 } from './domain/policies/vat-treatment';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
-// 088 (T2 type-design finding) — explicit tri-state for the tax-at-payment
-// flag, replacing the tri-read `boolean | undefined`. Payments imports the
-// TYPE from here (cross-context public interface); the `taxAtPaymentFlag`
-// mapper is used by both modules' composition roots.
+// 088 (T2 type-design finding) — the explicit 2-state FLOW flag for
+// tax-at-payment, replacing the tri-read `boolean | undefined`. The orthogonal
+// reconciliation axis is a separate `reconciliationPath: boolean` on the
+// stranded-funds read (not this flag). Payments imports the TYPE from here
+// (cross-context public interface); the `taxAtPaymentFlag` mapper is used by
+// both modules' composition roots.
 export {
   taxAtPaymentFlag,
   type TaxAtPaymentFlag,
