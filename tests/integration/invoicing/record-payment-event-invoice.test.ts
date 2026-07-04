@@ -190,6 +190,18 @@ function makeRecordPaymentDepsWithCapture(
   return {
     ...rest,
     asyncReceiptPdf: false,
+    // Pin the LEGACY flow EXPLICITLY rather than inheriting the ambient
+    // FEATURE_088_TAX_AT_PAYMENT env flag (makeRecordPaymentDeps injects it from
+    // env; it is ON in the dev env, frozen at boot). Every invoice paid in this
+    // file is LEGACY-shaped (documentNumber set at issue, billDocumentNumberRaw
+    // NULL — issueInvoice here runs in legacy mode) or a direct-inserted legacy
+    // row. Under the ambient flag ON those rows trip the FR-017
+    // `legacy_invoice_needs_reissue` guard (record-payment.ts) before the receipt
+    // renders. false → legacy combined-reuse (receipt reuses the invoice number,
+    // receiptDocumentNumberRaw stays NULL) — the exact flow these assertions
+    // document ("With the flag OFF (current prod default)…"). Decouples the test
+    // from the env flag. (whole-feature-review env-coupling fix.)
+    taxAtPayment: false,
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
         captured.push(renderInput);
