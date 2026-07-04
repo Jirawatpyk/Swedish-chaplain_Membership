@@ -354,24 +354,34 @@ test.describe('@us1 invoice draft → issue', () => {
         expect(pdfResp.status()).toBe(200);
         expect(pdfResp.headers()['content-type']).toContain('application/pdf');
         const pdfBuf = await pdfResp.body();
-        // FR-016 contract — Thai tax invoice MUST be bilingual.
-        // Decompress PDF text via pdf-parse + assert BOTH Thai
-        // ('ใบกำกับภาษี') AND English ('Tax Invoice') labels appear.
+        // 088 (§78/1 / FR-001) — the ISSUED membership document is the NON-tax
+        // bilingual ใบแจ้งหนี้ / Invoice bill, NOT a §86/4 ใบกำกับภาษี. The tax
+        // invoice (§86/4) is deferred to PAYMENT (§78/1 tax point), so the issued
+        // PDF MUST carry the bill title and MUST NOT read "Tax Invoice".
+        // (Was "ใบกำกับภาษี / Tax Invoice" pre-088 — stale before the redesign.)
         expect(pdfBuf.toString('latin1', 0, 4)).toBe('%PDF');
         const pdfText = await extractPdfText(pdfBuf);
-        // Thai-tax-invoice label normalisation: @react-pdf renders the
-        // glyph using U+0E4D + U+0E32 (NIKHAHIT + SARA AA = "ํา") which
-        // is visually equivalent to U+0E33 (SARA AM = "ำ") used in
-        // i18n source. Match BOTH forms so the test holds regardless
-        // of which Unicode normalisation the font happened to emit.
+        // "ใบแจ้ง" (bill) is the distinctive prefix of the ใบแจ้งหนี้ title —
+        // unique vs ใบกำกับภาษี / ใบเสร็จ / ใบลดหนี้; tolerant of the @react-pdf
+        // tone-mark placement.
         expect(
           pdfText,
-          'issued PDF MUST contain Thai label "ใบกำกับภาษี" per FR-016',
-        ).toMatch(/ใบก[ำํ]า?กับภาษี/);
+          'issued 088 PDF MUST carry the Thai ใบแจ้งหนี้ bill title (FR-001)',
+        ).toMatch(/ใบแจ.{0,2}ง/);
+        // The English bill title is "Invoice" (not "Tax Invoice").
         expect(
           pdfText,
-          'issued PDF MUST contain English label "Tax Invoice" per FR-016',
-        ).toMatch(/Tax Invoice/i);
+          'issued 088 PDF MUST contain the English "Invoice" bill title',
+        ).toMatch(/Invoice/i);
+        // §78/1 — no §86/4 tax invoice is issued at billing.
+        expect(
+          pdfText,
+          'issued 088 PDF MUST NOT be a §86/4 ใบกำกับภาษี (tax invoice deferred to payment)',
+        ).not.toMatch(/ใบก[ำํ]า?กับภาษี/);
+        expect(
+          pdfText,
+          'issued 088 PDF MUST NOT carry the English "Tax Invoice" title (§78/1)',
+        ).not.toMatch(/Tax Invoice/i);
 
         // 7. Sequence consumed (+1).
         const seqAfter = await db
