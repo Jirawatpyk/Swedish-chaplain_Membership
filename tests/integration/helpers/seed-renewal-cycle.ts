@@ -40,6 +40,14 @@ export interface SeedRenewalCycleSpec {
   readonly planIdAtCycleStart?: string;
   /** Defaults to 'regular' (matching tier name). */
   readonly tierAtCycleStart?: string;
+  /**
+   * Fixed `period_from` for the renewal_cycle. The F9 timeline view maps a
+   * renewal's `occurred_at` to `period_from` (migration 0189), so a test that
+   * asserts the renewal against a FIXED timeline window MUST pass a fixed date
+   * here — the default `now - 30d` drifts into a fixed window on ~3 calendar
+   * days/year (time-dependent flake). Defaults to `now - 30d` (unchanged).
+   */
+  readonly periodFrom?: Date;
 }
 
 export interface SeededRenewalCycle {
@@ -129,7 +137,7 @@ export async function seedMemberAndRenewalCycle(
       cycleId,
       memberId,
       status: 'upcoming',
-      periodFrom: new Date(now - 30 * MS_PER_DAY),
+      periodFrom: spec.periodFrom ?? new Date(now - 30 * MS_PER_DAY),
       periodTo: expiresAt,
       expiresAt,
       cycleLengthMonths: 12,
