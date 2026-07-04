@@ -114,6 +114,9 @@ export type MemberPatch = Partial<
     Member,
     | 'companyName'
     | 'legalEntityType'
+    // 088 US3 — §86/4 Head-Office / Branch particular (admin-managed edit).
+    | 'isHeadOffice'
+    | 'branchCode'
     | 'website'
     | 'description'
     | 'notes'

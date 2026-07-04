@@ -109,6 +109,12 @@ function mapF4GetError(
     // bridge-port union member for rationale.
     case 'legacy_no_tin_event_not_payable':
       return { code: 'legacy_no_tin_event_not_payable' };
+    // 088 SEC-MED — new-flow bill paid while the flag rolled back to OFF.
+    // Carried verbatim (not collapsed into `not_payable`) so the initiate
+    // warn log keeps the flag-rollback discriminator. See the bridge-port
+    // union member for rationale.
+    case 'new_flow_bill_requires_flag_on':
+      return { code: 'new_flow_bill_requires_flag_on' };
   }
 }
 
@@ -191,6 +197,13 @@ export const invoicingBridge: InvoicingBridgePort = {
       tenantId: input.tenantId,
       invoiceId: input.invoiceId,
       ...(input.actor ? { actor: input.actor } : {}),
+      // 088 SEC-MED — forward BOTH axes verbatim into F4's payability read: the
+      // 2-state flow flag AND the reconciliation bit. Initiate → {flag, false};
+      // webhook confirm → {flag, true} (guard dormant). Dropping either forward
+      // would silently re-arm/disarm the stranded-funds guard, so it is locked
+      // by an integration test (bridge-forwards-both-axes).
+      taxAtPayment: input.taxAtPayment,
+      reconciliationPath: input.reconciliationPath,
     });
     if (!result.ok) return err(mapF4GetError(result.error));
     // F5R3v3 H-1 (2026-05-16) — bridge may surface its OWN typed err

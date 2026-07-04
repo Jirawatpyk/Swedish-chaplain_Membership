@@ -29,6 +29,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { asSatang, type Satang } from '@/lib/money';
 import { getInvoice, type GetInvoiceDeps } from './get-invoice';
 import type { InvoiceStatus } from '../../domain/invoice';
+import type { TaxAtPaymentFlag } from '../../domain/tax-at-payment-flag';
 // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event payability guard below.
 import { buyerHasTin } from '../../domain/document-kind';
 
@@ -48,6 +49,24 @@ export interface GetInvoiceForPaymentInput {
     readonly requestId: string | null;
     readonly memberId?: string;
   };
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag), threaded on
+   * EVERY read as the honest `env.features.f088TaxAtPayment` value. The
+   * new-flow-bill flag-rollback guard below trips only when the flow is `'off'`
+   * AND this is NOT a reconciliation read (see `reconciliationPath`).
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
+  /**
+   * 088 SEC-MED — the ORTHOGONAL reconciliation axis. `true` on the webhook /
+   * confirm-payment reconciliation read: the money was already captured by the
+   * processor, so the stranded-funds guard MUST stay DORMANT regardless of the
+   * flow flag (refusing here would strand funds, not prevent a capture). `false`
+   * on the initiate (portal/admin self-pay) read, where the guard fires BEFORE a
+   * PaymentIntent is created so a new-flow bill minted under the flag cannot be
+   * paid after a flag rollback. Explicit boolean (not a magic flag value) so the
+   * dormancy is named, not encoded in the flow union.
+   */
+  readonly reconciliationPath: boolean;
 }
 
 /**
@@ -92,7 +111,19 @@ export type GetInvoiceForPaymentError =
    * permanent `bridge_error` ack, NO auto-refund) — an S0 money trap.
    * Distinct from `not_payable` so F5's logs keep the runbook pointer.
    */
-  | { code: 'legacy_no_tin_event_not_payable' };
+  | { code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — SYMMETRIC to the record-payment webhook guard. A NEW-FLOW
+   * bill (NULL §87 `documentNumber` + non-§87 `billDocumentNumberRaw`, issued
+   * while FEATURE_088_TAX_AT_PAYMENT was ON) is being read for payment on the
+   * INITIATE side while the flag is now OFF. Creating a PI would let Stripe
+   * capture money the webhook-side `recordPayment` guard then refuses to apply
+   * (same code, permanent, NO auto-refund) — S0 stranded funds. Reject at the
+   * payability read so the PI is never created. Distinct from `not_payable`
+   * (mirroring `legacy_no_tin_event_not_payable`) so F5's logs keep the
+   * flag-rollback discriminator for ops.
+   */
+  | { code: 'new_flow_bill_requires_flag_on' };
 
 /** Deps: same as the underlying F4 use-case. */
 export type GetInvoiceForPaymentDeps = GetInvoiceDeps;
@@ -156,6 +187,31 @@ export async function getInvoiceForPayment(
     !buyerHasTin(invoice.memberIdentitySnapshot?.tax_id)
   ) {
     return err({ code: 'legacy_no_tin_event_not_payable' });
+  }
+
+  // 088 SEC-MED — SYMMETRIC to the record-payment webhook guard
+  // (`new_flow_bill_requires_flag_on`, record-payment.ts). A NEW-FLOW bill
+  // (non-§87 `billDocumentNumberRaw`, NULL §87 `documentNumber`, issued while
+  // the flag was ON) must NOT be online-payable after the flag is rolled back
+  // to OFF: the initiate side would create a Stripe PI, Stripe would CAPTURE
+  // the money, then the webhook-side `recordPayment` guard refuses the flip
+  // (same code, permanent, no auto-refund) — captured-but-unappliable funds
+  // (S0). Reject at the payability read so the PI is NEVER created. Two axes gate
+  // it: (1) `reconciliationPath !== true` — a webhook/confirm-payment read is EXEMPT
+  // (the money is already captured; refusing would strand it, and the write-side
+  // record-payment guard still enforces the flag); (2) `taxAtPayment === 'off'` —
+  // only the explicit prod flag-OFF flow trips it (flag-ON is the intended state
+  // for a new-flow bill). Status-scoped to 'issued' so paid/credited rows keep
+  // their read/refund behaviour. See the master rationale + runbook at the
+  // record-payment guard.
+  if (
+    input.reconciliationPath !== true &&
+    input.taxAtPayment === 'off' &&
+    invoice.documentNumber === null &&
+    invoice.billDocumentNumberRaw !== null &&
+    invoice.status === 'issued'
+  ) {
+    return err({ code: 'new_flow_bill_requires_flag_on' });
   }
 
   return ok({

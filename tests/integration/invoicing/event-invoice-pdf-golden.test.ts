@@ -386,12 +386,14 @@ describe('054 Task 9 — event-invoice PDF golden (§86/4 doc-type render)', () 
 //          AS-VAT-01 amounts (1,070.00 gross / 1,000.00 net / 70.00 VAT) with
 //          the "VAT included" annotation, and the INVOICE-stream §87 number.
 //   (ii) no-TIN buyer → §105 receipt: title "ใบเสร็จรับเงิน / Official
-//          Receipt", the RECEIPT-stream RC number on the face, same
-//          VAT-inclusive breakdown, NO buyer Tax ID line.
+//          Receipt", the SEPARATE §105 register (RE) number on the face
+//          (US7/T050 — NOT the §86/4 RC number, even with 'RC' configured),
+//          same VAT-inclusive breakdown, NO buyer Tax ID line.
 //
-// Fresh tenant per describe ⇒ both §87 streams allocate deterministically
-// (EVG-2026-000001 / RC-2026-000001). All buyers are SIMULATED (fake names +
-// fake 13-digit TINs) — never real PII.
+// Fresh tenant per describe ⇒ each register allocates deterministically: the
+// TIN combined doc from the §87 invoice stream (EVG-2026-000001) and the no-TIN
+// §105 from its own separate receipt_105 register (RE-2026-000001). All buyers
+// are SIMULATED (fake names + fake 13-digit TINs) — never real PII.
 // =============================================================================
 
 /** Fixed clock (matches "today"); the payment is BACKDATED months earlier. */
@@ -451,6 +453,7 @@ function makeGoldenDeps(
     clock: { nowIso: () => G14_NOW_ISO },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
   };
 }
 
@@ -464,9 +467,11 @@ describe('064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)', (
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
-    // Settings — invoice prefix EVG + receipt prefix RC; fresh tenant ⇒
-    // first allocations are EVG-2026-000001 (invoice stream) and
-    // RC-2026-000001 (receipt stream), fully deterministic.
+    // Settings — invoice prefix EVG + §86/4 receipt prefix RC; fresh tenant ⇒
+    // first allocations are EVG-2026-000001 (invoice stream, TIN combined) and
+    // RE-2026-000001 (separate receipt_105 register, no-TIN §105 — the 'RC'
+    // prefix is deliberately NOT used by the §105 arm; US7/T050 split),
+    // fully deterministic.
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(tenantInvoiceSettings).values({
         tenantId: tenant.ctx.slug,
@@ -615,7 +620,7 @@ describe('064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)', (
     expect(text).toMatch(/^Tax ID: 1234512345123/m);
   }, 120_000);
 
-  it('(ii) no-TIN as-paid → §105 receipt title, RC receipt-stream number on the face, same VAT-inclusive breakdown, NO buyer Tax ID line', async () => {
+  it('(ii) no-TIN as-paid → §105 receipt title, separate receipt_105 (RE) number on the face, same VAT-inclusive breakdown, NO buyer Tax ID line', async () => {
     const capturedBytes: Uint8Array[] = [];
     const deps = makeGoldenDeps(tenant.ctx.slug, capturedBytes);
     const res = await issueEventInvoiceAsPaid(deps, {
@@ -640,11 +645,12 @@ describe('064 Task 14 — as-paid PDF goldens via the REAL chain (live Neon)', (
     expect(text).toMatch(/Official Receipt/i);
     expect(text).not.toMatch(/Tax Invoice/i);
 
-    // RECEIPT-stream RC number on the face (β numbering — the invoice
-    // stream is never burned for a §105 receipt).
-    expect(res.value.receiptDocumentNumberRaw).toBe('RC-2026-000001');
+    // Separate §105 register (RE) number on the face (US7/T050 — neither the
+    // §87 invoice stream nor the §86/4 RC receipt stream is burned for a §105
+    // receipt; the 'RC' prefix configured above is deliberately not used here).
+    expect(res.value.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(res.value.documentNumber).toBeNull();
-    expect(text, 'receipt-stream RC number on the face').toContain('RC-2026-000001');
+    expect(text, 'separate §105 (RE) number on the face').toContain('RE-2026-000001');
 
     // Document date = backdated paymentDate (CE face + BE display year).
     expect(text).toContain(`Date: ${G14_PAYMENT_DATE}`);

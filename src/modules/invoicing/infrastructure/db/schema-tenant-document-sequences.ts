@@ -10,7 +10,19 @@
  */
 import { pgTable, text, smallint, integer, timestamp, pgEnum, primaryKey } from 'drizzle-orm/pg-core';
 
-export const documentTypeEnum = pgEnum('document_type', ['invoice', 'receipt', 'credit_note']);
+// 088-invoice-tax-flow-redesign (T005, migration 0230) — two new streams:
+//   'bill'        — the non-§87 ใบแจ้งหนี้ stream (prefix SC), allocated at
+//                   issue; gaps are legal (NOT under §87 no-gaps).
+//   'receipt_105' — the SEPARATE §105 RE register for event-without-TIN
+//                   receipts (prefix RE), keeping the RC §86/4/§87 register
+//                   pure; sequential/tidy but NOT under §87 no-gaps.
+export const documentTypeEnum = pgEnum('document_type', [
+  'invoice',
+  'receipt',
+  'credit_note',
+  'bill',
+  'receipt_105',
+]);
 
 export const tenantDocumentSequences = pgTable(
   'tenant_document_sequences',

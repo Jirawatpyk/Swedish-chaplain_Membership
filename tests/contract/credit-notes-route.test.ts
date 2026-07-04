@@ -239,6 +239,9 @@ describe('POST /api/credit-notes — contract', () => {
     // §86/10 ruling (final-review HIGH 1) — crediting a §105 receipt_separate
     // is a legally-invalid request → 422 Unprocessable Entity.
     ['receipt_not_creditable', 422],
+    // 088 US6 (§ A.4) — the §86/4 tax receipt PDF has not yet rendered (async
+    // 'pending'/'failed') → 409 Conflict (transient, retriable once it lands).
+    ['receipt_not_rendered', 409],
     ['pdf_render_failed', 500],
     ['blob_upload_failed', 500],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {

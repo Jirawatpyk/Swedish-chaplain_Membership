@@ -179,6 +179,7 @@ function makeDepsWithCallbacks(
       lockForUpdate: vi.fn(async () => 'issued' as InvoiceStatus),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -222,6 +223,7 @@ function makeDepsWithCallbacks(
       markRegistrationFeePaid: vi.fn(async () => {}),
     },
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
     onPaidCallbacks,
   };
 }

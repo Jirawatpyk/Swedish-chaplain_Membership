@@ -24,7 +24,7 @@ const messages = {
     invoices: {
       list: {
         columns: {
-          documentNumber: 'Number',
+          documentNumber: 'Invoice No.',
           status: 'Status',
           issueDate: 'Issued',
           dueDate: 'Due',
@@ -62,6 +62,10 @@ const messages = {
           downloadInvoiceAria: 'Download invoice {number}',
           downloadReceiptAria: 'Download receipt {number}',
           receiptPreparing: 'Receipt preparing…',
+          receiptGenerating: 'Receipt generating…',
+          receiptRenderFailed: 'Receipt render failed',
+          receiptRenderFailedAria:
+            'Receipt PDF render failed for invoice {number} — open to review',
         },
       },
       detail: {
@@ -79,6 +83,13 @@ const messages = {
           receiptSessionExpired: 'x',
           receiptRateLimited: 'x',
         },
+      },
+      // 088 A-refined — the ONLY tax088 label the list still renders is the
+      // Receipt-No link's accessible name. The per-row ใบแจ้งหนี้/ใบกำกับภาษี tags
+      // were dropped (the SC-/RC- prefixes + the renamed column headers are
+      // self-documenting).
+      tax088: {
+        seeReceiptLink: 'see tax receipt {number}',
       },
     },
     paymentReconciliation: {
@@ -371,6 +382,88 @@ describe('<InvoicesTable> β as-paid main download (064 remediation S7)', () => 
 });
 
 /**
+ * 088 T066b (FR-019) — admin async receipt-PDF resilience on the invoices list.
+ *
+ * The action cell splits the former conflated "preparing…" affordance into two
+ * DISTINCT states so a permanent render failure is never mislabelled as forever
+ * in-progress (mirrors the portal S1 fix):
+ *   - paid + receiptPdfStatus 'pending'  → a SHIMMER "receipt generating" state
+ *     (shipped `<Skeleton>` primitive → reduced-motion-safe via skeleton-shimmer
+ *     CSS) inside a role=status aria-live region.
+ *   - paid + receiptPdfStatus 'failed'   → a visually-distinct inline ALERT-state
+ *     affordance that LINKS to the invoice detail (actionable). It must NOT show
+ *     the generating shimmer.
+ *   - paid + receiptPdfStatus 'rendered' → the Receipt download (existing) with
+ *     neither the shimmer nor the alert.
+ */
+describe('<InvoicesTable> receipt async-resilience (088 T066b)', () => {
+  it('paid + pending → shimmer "receipt generating" (role=status), no failed alert', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0002',
+        receiptPdfStatus: 'pending',
+      }),
+    ]);
+    const generating = screen.getByTestId('row-receipt-generating');
+    expect(generating).toHaveAttribute('role', 'status');
+    expect(generating).toHaveAttribute('aria-live', 'polite');
+    // Uses the shipped Skeleton shimmer primitive (reduced-motion handled in CSS).
+    expect(generating.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(screen.getByText('Receipt generating…')).toBeInTheDocument();
+    // NOT the terminal failed alert.
+    expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
+  });
+
+  it('paid + failed → inline alert-state row linking to detail (actionable), no shimmer', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0003',
+        receiptPdfStatus: 'failed',
+      }),
+    ]);
+    const failed = screen.getByTestId('row-receipt-render-failed');
+    expect(failed).toBeInTheDocument();
+    // Actionable — it is a link to the invoice detail page.
+    expect(failed.closest('a')).toHaveAttribute('href', '/admin/invoices/inv-1');
+    expect(failed).toHaveTextContent('Receipt render failed');
+    // A terminal failure must NOT reuse the in-progress shimmer.
+    expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
+  });
+
+  it('paid + rendered → Receipt download only (no generating shimmer, no failed alert)', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasReceiptPdf: true,
+        receiptDocumentNumberRaw: 'RC-2026-0004',
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    expect(screen.queryByTestId('row-receipt-generating')).toBeNull();
+    expect(screen.queryByTestId('row-receipt-render-failed')).toBeNull();
+  });
+
+  it('failed receipt with NO invoice pdf still surfaces the alert (row does not collapse to em-dash)', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        hasPdf: false,
+        hasReceiptPdf: false,
+        receiptDocumentNumberRaw: 'RC-2026-0005',
+        receiptPdfStatus: 'failed',
+      }),
+    ]);
+    // The action cell must show the failed alert, not the '—' sentinel.
+    expect(screen.getByTestId('row-receipt-render-failed')).toBeInTheDocument();
+  });
+});
+
+/**
  * Date-cell formatting tests (#2 speckit-review finding).
  *
  * `invoice-table.tsx` changed from raw `{r.issueDate ?? '—'}` to
@@ -411,5 +504,101 @@ describe('<InvoicesTable> date cell formatting', () => {
     // Gregorian year must NOT appear as the primary year token in a
     // Thai-locale cell.
     expect(screen.queryByText('2026-06-15')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 088 A-refined — tax-at-payment two-document disambiguation (FR-016). page.tsx
+ * resolves each row's `taxDocumentKind` (with the flag baked in) + `documentNumber`
+ * (the invoice's OWN SC bill number for a real 088 bill, paid OR unpaid), so the
+ * client table renders the A-refined SC-bill ↔ RC-§86/4-tax-receipt separation
+ * from those fields alone — no env read in the client component.
+ *
+ * A-refined (product-owner ratified): the invoice is ALWAYS identified by its OWN
+ * (SC) number in the Number column; the RC §86/4 tax receipt is a clickable link
+ * in the Receipt No. column when paid. NO per-row ใบแจ้งหนี้/ใบกำกับภาษี tags — the
+ * SC-/RC- prefixes + the renamed column headers ("Invoice No." / "Receipt No.")
+ * are self-documenting.
+ *
+ *   - kind 'none' (legacy / flag off): render exactly as today.
+ *   - kind 'bill'  (unpaid 088 bill): the SC number in the Number column; the
+ *     Receipt No. column is an em-dash (no RC yet).
+ *   - kind 'tax_receipt' (paid 088 bill): the SC number in the Number column; the
+ *     RC is a clickable link (→ invoice detail) in the Receipt No. column.
+ */
+describe('<InvoicesTable> — 088 tax-at-payment disambiguation (A-refined)', () => {
+  it('legacy row (taxDocumentKind omitted) shows NO 088 tag/label — byte-identical to today', () => {
+    renderTable([baseRow({})]);
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    expect(screen.queryByText('ใบแจ้งหนี้ / Invoice')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payable record/)).not.toBeInTheDocument();
+    // The legacy §87 invoice number stays the plain (non-underlined) Number link.
+    expect(
+      screen.getByRole('link', { name: 'INV-2026-0001' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+  });
+
+  it('UNPAID 088 bill: Number column is the SC number; NO per-row tag; Receipt No. is an em-dash (no RC yet)', () => {
+    renderTable([
+      baseRow({
+        status: 'issued',
+        documentNumber: 'SC-2026-000045',
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: null,
+        taxDocumentKind: 'bill',
+      }),
+    ]);
+    // The SC bill number IS the Number-column link (the row identity).
+    expect(
+      screen.getByRole('link', { name: 'SC-2026-000045' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // A-refined — no per-row document-kind tags anywhere.
+    expect(screen.queryByText('ใบแจ้งหนี้ / Invoice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    // No RC yet → no receipt link.
+    expect(
+      screen.queryByRole('link', { name: /see tax receipt/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('PAID 088 bill: Number column is the SC number; Receipt No. column is the RC as a clickable link (→ detail) with a naming aria-label; NO per-row tags', () => {
+    renderTable([
+      baseRow({
+        status: 'paid',
+        documentNumber: 'SC-2026-000045',
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        taxDocumentKind: 'tax_receipt',
+        hasReceiptPdf: true,
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+
+    // A-refined — the Number column is the invoice's OWN (SC) number, NOT the RC.
+    expect(
+      screen.getByRole('link', { name: 'SC-2026-000045' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-1');
+
+    // The RC lives in the Receipt No. column as a CLICKABLE link → the invoice
+    // detail (fix for "Receipt No. can't be clicked"). Its accessible name comes
+    // from `seeReceiptLink` so the two same-target links in the row are
+    // distinguishable to screen readers.
+    const receiptLink = screen.getByRole('link', {
+      name: 'see tax receipt RC-2026-000123',
+    });
+    expect(receiptLink).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // …and its VISIBLE text is the RC number (WCAG 2.5.3 Label in Name).
+    expect(receiptLink).toHaveTextContent('RC-2026-000123');
+
+    // A-refined — NO per-row document-kind tags / payable-record sub-line.
+    expect(screen.queryByText('Tax receipt')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Payable record/)).not.toBeInTheDocument();
+
+    // FR-015 — every document control names its OWN document. The MAIN download
+    // serves the SC bill PDF (names the SC); the receipt download names the RC.
+    const billDownload = screen.getByTestId('row-download-invoice');
+    expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
+    const receiptDownload = screen.getByTestId('row-download-receipt');
+    expect(receiptDownload).toHaveAttribute('aria-label', 'Download receipt RC-2026-000123');
   });
 });

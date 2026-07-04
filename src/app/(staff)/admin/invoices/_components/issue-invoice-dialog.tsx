@@ -3,245 +3,66 @@
 /**
  * F4 UX flow refactor — Issue invoice as AlertDialog.
  *
- * Replaces the previous `/admin/invoices/[id]/issue` full-page route
- * with an in-context AlertDialog triggered from the invoice detail
- * page. Aligns with the project's destructive-action pattern:
- *   - F3 `archive-member-button` (AlertDialog + reason textarea)
- *   - F2 `clone-year-dialog` (AlertDialog + typed confirmation)
- *   - F1 `idle-warning-dialog` (AlertDialog + decision)
+ * Replaces the previous `/admin/invoices/[id]/issue` full-page route with an
+ * in-context AlertDialog triggered from the invoice detail page. Aligns with
+ * the project's destructive-action pattern (F3 archive-member, F2 clone-year,
+ * F1 idle-warning).
  *
- * Why AlertDialog (not Dialog):
- *   - Issue is IRREVERSIBLE — §87 sequential number is permanently
- *     consumed; voiding requires a separate credit note.
- *   - AlertDialog forces explicit acknowledgement (Cancel + Continue
- *     are prominent, ESC/overlay click maps to Cancel).
+ * Why AlertDialog (not Dialog): issue pins an IMMUTABLE tax snapshot — under
+ * the 088 flow a non-§87 ใบแจ้งหนี้ (bill) number is allocated at issue and the
+ * §86/4 tax receipt (RC §87 number) is minted only at payment; either way,
+ * correcting the document requires a void. AlertDialog forces explicit
+ * acknowledgement (Cancel + Continue are prominent, ESC/overlay = Cancel).
  *
- * a11y:
- *   - `AlertDialogTitle` is the accessible name.
- *   - `AlertDialogDescription` includes the irreversible warning.
- *   - Pre-confirm summary is rendered inside the dialog body so SR
- *     users receive the numbers as part of the dialog content.
- *   - Typed-phrase input defers focus via `autoFocus={false}` (below)
- *     so the title/description are narrated first.
+ * 088 US8 (UX-A) split — the dialog BODY (summary + the `vat_treatment`
+ * control + MFA-cert fields + FR-027 review + typed-phrase gate + POST) lives
+ * in `<IssueInvoiceForm>`, which renders inside the open Popup. This wrapper
+ * owns only the trigger + open state, mirroring the RefundDialog/RefundForm
+ * split so the form is RTL-testable without the Base-UI-dialog jsdom hang.
+ * Because the Popup unmounts on close, the form's transient state (typed
+ * phrase, vat_treatment, cert fields) resets automatically each open.
+ *
+ * a11y: `AlertDialogTitle` is the accessible name; `AlertDialogDescription`
+ * carries the immutable-snapshot acknowledgement; the summary + review are
+ * inside the dialog body so SR users receive the numbers + warnings as part of
+ * the dialog content.
  */
 
-import { useState, useTransition, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { useLocale, useTranslations } from 'next-intl';
-import { toast } from 'sonner';
-import { InfoIcon, Loader2Icon } from 'lucide-react';
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
-  AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { IssueInvoiceForm, type IssueInvoiceFormProps } from './issue-invoice-form';
 
-type Props = {
-  readonly invoiceId: string;
-  /** Pre-confirm summary data — rendered inside the dialog body. */
-  readonly summary: {
-    readonly memberName: string;
-    readonly planDisplayName: string;
-    readonly planYear: number;
-    readonly subtotalText: string;
-    readonly vatText: string;
-    readonly vatPercent: string;
-    readonly totalText: string;
-  };
-  /**
-   * 066-membership-no-tin — show an informational note that this buyer has no
-   * Tax ID. The invoice still issues as a valid §86/4 (name+address), but a
-   * VAT-registered buyer cannot claim its input VAT without their TIN on the
-   * document (ภาษีซื้อต้องห้าม). Non-blocking — the page computes this only for
-   * a MEMBERSHIP draft whose buyer has no tax_id (events route to §105 as-paid
-   * and are blocked separately, so the hint never shows for them).
-   */
-  readonly showNoTaxIdHint?: boolean;
-};
+type Props = Omit<IssueInvoiceFormProps, 'onClose'>;
 
-export function IssueInvoiceDialog({
-  invoiceId,
-  summary,
-  showNoTaxIdHint = false,
-}: Props) {
+export function IssueInvoiceDialog(props: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
-  const locale = useLocale();
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState('');
-  const [pending, startTransition] = useTransition();
-
-  const confirmPhrase = t('confirmPhrase');
-  const matches =
-    typed.trim().toLocaleUpperCase(locale) ===
-    confirmPhrase.toLocaleUpperCase(locale);
-
-  // Reset transient state whenever dialog closes — prevents a stale
-  // typed value from leaking into a later re-open (same pattern as
-  // F3 archive-member-button R006).
-  const handleOpenChange = useCallback((next: boolean) => {
-    if (!next) setTyped('');
-    setOpen(next);
-  }, []);
-
-  function confirm() {
-    startTransition(async () => {
-      const res = await fetch(`/api/invoices/${invoiceId}/issue`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const code = (body as { error?: { code?: string } })?.error?.code;
-        toast.error(t('errors.failed'), {
-          description:
-            // 064 §105 ROOT FIX — human-readable copy for the no-TIN EVENT
-            // guard, pointing the admin at the record-as-paid flow instead of
-            // plain issue. (066 removed the membership tax_id_required gate — a
-            // no-TIN membership now issues a valid §86/4 with name+address, so
-            // there is no membership error code to surface here.)
-            code === 'event_no_tin_requires_paid_issue'
-              ? t('errors.event_no_tin_requires_paid_issue')
-              // 064 S1 — registration refunded between draft and issue
-              // (issuance-time TOCTOU re-check); human-readable copy so
-              // the admin knows the draft is now a dead end, not retryable.
-              : code === 'registration_refunded'
-                ? t('errors.registration_refunded')
-                : code
-                  ? t('errors.codeFallback', { code })
-                  : t('errors.unknown'),
-        });
-        return;
-      }
-      toast.success(t('success'));
-      setOpen(false);
-      setTyped('');
-      router.refresh();
-    });
-  }
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+    <AlertDialog open={open} onOpenChange={setOpen}>
       <AlertDialogTrigger className={buttonVariants({ variant: 'default' })}>
         {tDetail('actions.issue')}
       </AlertDialogTrigger>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t('irreversibleWarning')}
+            {props.taxAtPayment
+              ? t('review.immutableSnapshotAck')
+              : t('irreversibleWarning')}
           </AlertDialogDescription>
         </AlertDialogHeader>
-
-        {/* Pre-confirm summary — inside dialog body so SR narrates
-            these numbers as part of the dialog content (not after
-            closing). */}
-        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">{tDetail('fields.memberId')}</dt>
-            <dd className="font-medium">{summary.memberName}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">{tDetail('fields.plan')}</dt>
-            <dd className="font-medium">
-              {summary.planDisplayName}
-              <span className="ml-1 text-xs text-muted-foreground">
-                / {summary.planYear}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">{tDetail('fields.subtotal')}</dt>
-            <dd className="tabular-nums">{summary.subtotalText} THB</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">
-              {tDetail('fields.vat')}
-              {summary.vatPercent && (
-                <span className="ml-1 text-xs">({summary.vatPercent})</span>
-              )}
-            </dt>
-            <dd className="tabular-nums">{summary.vatText} THB</dd>
-          </div>
-          <div className="col-span-2 border-t pt-2">
-            <dt className="text-muted-foreground">{tDetail('fields.total')}</dt>
-            <dd className="text-lg font-semibold tabular-nums">
-              {summary.totalText} THB
-            </dd>
-          </div>
-        </dl>
-
-        {showNoTaxIdHint && (
-          <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-            <InfoIcon className="size-4" aria-hidden="true" />
-            <AlertDescription className="text-amber-900 dark:text-amber-200">
-              {t('noTaxIdHint')}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid gap-2">
-          <Label htmlFor="issue-confirm">
-            {t('confirmCopy', { phrase: confirmPhrase })}
-          </Label>
-          <Input
-            id="issue-confirm"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            placeholder={confirmPhrase}
-            autoComplete="off"
-            // R7-S9 — prevent iOS from auto-correcting the typed
-            // phrase (would silently mangle the exact-match check)
-            // and give Android a "Done" keyboard action on commit.
-            inputMode="text"
-            enterKeyHint="done"
-            autoCorrect="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            aria-invalid={typed.length > 0 && !matches}
-            aria-describedby={
-              typed.length > 0 && !matches ? 'issue-confirm-error' : undefined
-            }
-          />
-          {typed.length > 0 && !matches && (
-            <p
-              id="issue-confirm-error"
-              role="alert"
-              className="text-xs text-destructive"
-            >
-              {t('confirmMismatch', { phrase: confirmPhrase })}
-            </p>
-          )}
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              confirm();
-            }}
-            disabled={!matches || pending}
-            aria-busy={pending}
-          >
-            {pending && (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-            )}
-            {pending ? t('issuing') : t('issueButton')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
+        <IssueInvoiceForm {...props} onClose={() => setOpen(false)} />
       </AlertDialogContent>
     </AlertDialog>
   );

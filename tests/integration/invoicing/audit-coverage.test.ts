@@ -268,8 +268,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoices_csv_exported',
       // 054-event-fee-invoices (Task 15) — non-member event-buyer PII redaction.
       'event_buyer_pii_redacted',
+      // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 tax-receipt first-issuance
+      // signal (SC-001), minted in-tx with the RC §87 number at payment. 10y.
+      'tax_receipt_issued',
     ] as const;
-    expect(allF4Types).toHaveLength(25);
+    expect(allF4Types).toHaveLength(26);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -436,6 +439,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       clock: { nowIso: () => '2026-04-21T03:00:00Z' },
       outbox: resendEmailOutboxAdapter,
       currentTemplateVersion: 1,
+      taxAtPayment: 'off',
     };
 
     const result = await issueInvoice(deps, {
@@ -681,6 +685,18 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/integration/invoicing/redact-expired-event-buyers.test.ts (cron tombstones eligible row + emits 10y audit with redacted_fields names only; idempotent; trigger still blocks normal + financial changes) + this file (enum probe + insert probe)',
         since: '2026-06-04',
       },
+      // 088-invoice-tax-flow-redesign (§ F.6) — the enum value + retention land
+      // in the foundational slice (migration 0230); the emit site (record-payment /
+      // issue-event-invoice-as-paid, in-tx with the RC §87 allocation) SHIPPED in
+      // US1 (T018/T019) and is asserted live below. Flipped deferred → covered so
+      // the C4 real-test-file existence check runs for this 10y-retention tax
+      // event (a future dropped emit now fails the gate instead of shipping green).
+      tax_receipt_issued: {
+        status: 'covered',
+        where:
+          'tests/integration/invoicing/bill-to-receipt.integration.test.ts (SC-001 — asserts EXACTLY ONE tax_receipt_issued audit row lands at payment, keyed on the pay requestId, with receipt_document_number_raw + member_id + payment_date payload)',
+        since: '2026-07-01',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -717,6 +733,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'invoices_csv_exported',
       // 054-event-fee-invoices (Task 15) — non-member event-buyer PII redaction.
       'event_buyer_pii_redacted',
+      // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 first-issuance signal.
+      'tax_receipt_issued',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -775,6 +793,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // needle for the `event_buyer_pii_redacted` 'where' entry.
       'tests/integration/invoicing/redact-expired-event-buyers.test.ts':
         'tests/integration/invoicing/redact-expired-event-buyers.test.ts',
+      // 088-invoice-tax-flow-redesign (§ F.6) — bill→§86/4-RC-at-payment
+      // integration test needle for the `tax_receipt_issued` 'where' entry
+      // (Fix #15 whole-feature review — flips the entry deferred → covered).
+      'tests/integration/invoicing/bill-to-receipt.integration.test.ts':
+        'tests/integration/invoicing/bill-to-receipt.integration.test.ts',
     };
 
     for (const t of declared) {
@@ -821,7 +844,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // 054-event-fee-invoices (Task 15) — bumped 25 → 26 for
     // `event_buyer_pii_redacted` (emitted by the redact-expired-event-buyers
     // retention cron; migration 0204).
-    expect(coveredCount + deferredCount).toBe(26);
+    // 088-invoice-tax-flow-redesign (§ F.6) — bumped 26 → 27 for
+    // `tax_receipt_issued` (deferred; emit site ships in US1 T018/T019).
+    expect(coveredCount + deferredCount).toBe(27);
     // Behavioral coverage target: 23/26. Remaining 3 are post-MVP
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async

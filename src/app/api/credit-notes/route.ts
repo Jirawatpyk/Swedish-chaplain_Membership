@@ -65,6 +65,10 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   // (receipt_separate) is a legally-invalid request, not a transient conflict.
   // 422 Unprocessable Entity: the request is well-formed but cannot be acted on.
   receipt_not_creditable: 422,
+  // 088 US6 (§ A.4) — the parent's §86/4 tax receipt PDF has not yet rendered
+  // (async 'pending'/'failed'). 409 Conflict: transient, retriable once the
+  // receipt materialises (distinct from the 422 legal `receipt_not_creditable`).
+  receipt_not_rendered: 409,
   overflow: 422,
   pdf_render_failed: 500,
   blob_upload_failed: 500,

@@ -22,7 +22,10 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
-import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
+import {
+  recordPayment,
+  recordPaymentSchema,
+} from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
@@ -179,6 +182,7 @@ function makeDeps(
       ),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -222,6 +226,10 @@ function makeDeps(
       markRegistrationFeePaid: vi.fn(async () => {}),
     },
     currentTemplateVersion: 1,
+    // Default: the flag is not carried (legacy/dormant), exact-equivalent of the
+    // pre-refactor `undefined` — the stranded-funds guard (keyed on 'off') stays
+    // dormant. Individual tests override with 'on'/'off' as needed.
+    taxAtPayment: 'off',
     ...overrides,
   };
 }
@@ -235,6 +243,27 @@ const input = {
   paymentReference: 'TRX-123',
   paymentDate: '2026-05-18',
 };
+
+describe('recordPaymentSchema — paymentDate calendar validation', () => {
+  it('schema — shape-valid but IMPOSSIBLE calendar dates rejected; real leap day accepted', () => {
+    // `^\d{4}-\d{2}-\d{2}$` alone accepts 2026-02-31; with f088TaxAtPayment ON
+    // that date reaches `fiscalYearFromUtcIso` → js-joda `Instant.parse` throws
+    // RAW → an unhandled 500. The `.refine(isValidCalendarDate)` rejects it at
+    // parse (typed validation failure), never a thrown DateTimeException.
+    expect(recordPaymentSchema.safeParse(input).success).toBe(true);
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2026-02-31' }).success,
+    ).toBe(false);
+    // 2027 is not a leap year.
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2027-02-29' }).success,
+    ).toBe(false);
+    // 2028 IS a leap year — Feb 29 must remain accepted.
+    expect(
+      recordPaymentSchema.safeParse({ ...input, paymentDate: '2028-02-29' }).success,
+    ).toBe(true);
+  });
+});
 
 describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -331,8 +360,17 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
-  it('separate numbering — allocates receipt seq', async () => {
-    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings({ receiptNumberingMode: 'separate' }));
+  it('088 tax-at-payment — allocates the §87 RC receipt number + renders receipt_combined', async () => {
+    // 088 T008/T018 — RC allocation is now FLAG-gated (`taxAtPayment`), not
+    // settings-driven. A MEMBERSHIP receipt is receipt_combined (§86/4) — the
+    // old separate-mode rendered it as receipt_separate, a §105 mislabel that
+    // `inferReceiptKind` (D13) corrects.
+    const deps = makeDeps(
+      true,
+      makeIssuedInvoice(),
+      makeSettings({ receiptNumberingMode: 'separate' }),
+      { taxAtPayment: 'on' },
+    );
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
@@ -345,8 +383,86 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       expect.objectContaining({ documentType: 'receipt' }),
     );
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'receipt_separate' }),
+      expect.objectContaining({ kind: 'receipt_combined' }),
     );
+  });
+
+  it('088 FR-030 — invoice_paid audit summary names the SC bill (not "Invoice undefined marked paid")', async () => {
+    // record-payment.ts:820 — an 088 bill has NULL §87 `documentNumber`; the
+    // summary must fall back to `billDocumentNumberRaw` (SC) so the audit trail
+    // never reads "Invoice undefined marked paid". Pre-fix (documentNumber-only)
+    // this string interpolated `undefined`. Paying under the flag ON is a valid
+    // new-flow bill (documentNumber NULL → the FR-017 guard is skipped; the
+    // symmetric OFF guard is skipped because the flag is ON), so the flow reaches
+    // the audit emit.
+    const bill = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    });
+    const deps = makeDeps(
+      true,
+      bill,
+      makeSettings({ receiptNumberingMode: 'separate' }),
+      { taxAtPayment: 'on' },
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? bill
+        : makeIssuedInvoice({
+            documentNumber: null,
+            sequenceNumber: null,
+            billDocumentNumberRaw: 'SC-2026-000042',
+            status: 'paid',
+          });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect(paidEmit, 'expected an invoice_paid audit emit').toBeDefined();
+    const summary = (paidEmit![1] as { summary: string }).summary;
+    expect(summary).toContain('SC-2026-000042');
+    expect(summary).not.toContain('undefined');
+  });
+
+  it('088 FR-017 — rejects a legacy §87-numbered invoice (no bill number) paid under the new flow', async () => {
+    // Legacy shape: a §87 `document_number` (issued under the old flow) with NO
+    // bill_document_number_raw. Paying it under the flag would mint a 2nd §87.
+    const legacy = makeIssuedInvoice({ billDocumentNumberRaw: null });
+    const deps = makeDeps(true, legacy, makeSettings(), { taxAtPayment: 'on' });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => legacy);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected legacy_invoice_needs_reissue');
+    expect(r.error.code).toBe('legacy_invoice_needs_reissue');
+    // Pre-sequence reject — no §87 receipt number burned, no payment applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+  });
+
+  it('088 SEC-MED — rejects a new-flow bill paid after a flag ON→OFF rollback (no untaxed paid row)', async () => {
+    // A NEW-flow bill: non-§87 SC number, NULL §87 document_number (issued while
+    // the flag was ON). Paying it with the flag now OFF would reuse the NULL
+    // §87 number → a paid membership with NO §87 tax number + NO tax_receipt.
+    const newFlowBill = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    });
+    const deps = makeDeps(true, newFlowBill, makeSettings(), { taxAtPayment: 'off' });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => newFlowBill);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected new_flow_bill_requires_flag_on');
+    expect(r.error.code).toBe('new_flow_bill_requires_flag_on');
+    // Pre-sequence reject — nothing minted, nothing applied.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
   });
 
   it('FR-038 — receipt PDF uses ISSUE-TIME member snapshot, NOT live value', async () => {
@@ -520,6 +636,9 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       true,
       invoiceWithRegFee,
       makeSettings({ receiptNumberingMode: 'separate' }),
+      // 088 — RC allocation is flag-gated now; enable it so the member→advisory
+      // lock-order assertion still exercises the allocation.
+      { taxAtPayment: 'on' },
     );
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
@@ -599,7 +718,10 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     // a null member, and threads the event Model-B VAT-inclusive flag.
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: 'receipt_separate',
+        // 088 D13 — an event-with-TIN buyer's receipt is receipt_combined
+        // (§86/4), NOT receipt_separate (§105); `inferReceiptKind` fixes the
+        // former settings-driven mislabel.
+        kind: 'receipt_combined',
         vatInclusive: true,
         member: expect.objectContaining({ legal_name: 'Walk-in Buyer Co' }),
       }),

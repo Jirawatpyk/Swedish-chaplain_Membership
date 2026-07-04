@@ -41,6 +41,7 @@ import { makeDrizzleTenantPaymentSettingsRepo } from './repos/drizzle-tenant-pay
 import { stripeGateway } from './stripe/stripe-gateway';
 import { stripeWebhookVerifier } from './stripe/stripe-webhook-verifier';
 import { invoicingBridge } from './invoicing-bridge';
+import { taxAtPaymentFlag } from '@/modules/invoicing';
 
 // Re-exported so Group F's webhook route handler can import the verifier
 // adapter from the DI module (composition-root convention) rather than
@@ -101,6 +102,11 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     audit: f5AuditAdapter,
     clock: systemClock,
     generatePaymentId,
+    // 088 SEC-MED — thread FEATURE_088_TAX_AT_PAYMENT into the F4 payability
+    // read so a new-flow bill minted under the flag cannot be self-paid after
+    // the flag rolls back to OFF (stranded-funds guard). Mirrors how
+    // `makeRecordPaymentDeps` wires the same flag on the webhook side.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Idempotency-Key strategy, gated on Stripe LIVE vs TEST mode
     // (not NODE_ENV). Live mode: identity → the seq-based key is the
     // real dedupe contract (two concurrent retries map to the same
@@ -154,6 +160,10 @@ export async function makeProcessWebhookEventDeps(
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // 088 SEC-MED — thread the honest flow flag into the inner confirm read
+    // (which sets reconciliationPath: true → guard dormant). Mirrors
+    // makeInitiatePaymentDeps; no magic value.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
@@ -176,6 +186,9 @@ export async function makeConfirmPaymentDeps(
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // 088 SEC-MED — thread the honest flow flag into the confirm read (which
+    // sets reconciliationPath: true → guard dormant). No magic value.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),

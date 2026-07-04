@@ -29,11 +29,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   InlineAlert,
   InlineAlertDescription,
   InlineAlertTitle,
 } from '@/components/ui/inline-alert';
+import { routeVoidError } from './void-error-routing';
 
 type Props = {
   readonly invoiceId: string;
@@ -48,6 +50,18 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
   const reasonRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // 088 T021a / FR-032 — voiding RETIRES the §87 document number (terminal,
+  // irreversible-in-effect), so a failure MUST NOT be a transient toast: it is
+  // surfaced INLINE via a focused role="alert". A concurrent 409 (already
+  // voided/paid) shows an inline "already voided — refresh".
+  const [formError, setFormError] = useState<
+    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
+  >(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formError) errorRef.current?.focus();
+  }, [formError]);
 
   // CR-6: focus the reason field on mount + Esc → cancel route.
   useEffect(() => {
@@ -74,6 +88,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
 
   const submit = useCallback(() => {
     if (!canSubmit) return;
+    setFormError(null);
     startTransition(async () => {
       const res = await fetch(`/api/invoices/${invoiceId}/void`, {
         method: 'POST',
@@ -85,15 +100,28 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           error?: { code?: string };
         };
         const code = body.error?.code;
-        toast.error(t('errors.failed'), {
-          description: code ? t('errors.codeFallback', { code }) : t('errors.unknown'),
-        });
+        // FR-032 — the void is irreversible (§87 number retired), so route the
+        // failure to an INLINE focused role="alert" (the dialog stays open); a
+        // concurrent 409 (already voided/paid elsewhere) shows the "already
+        // voided — refresh" prompt instead of a raw error.
+        const routing = routeVoidError(code);
+        if (routing.kind === 'concurrent') {
+          setFormError({ kind: 'concurrent' });
+        } else {
+          const message =
+            routing.messageKey === 'errors.codeFallback' && routing.codeArg
+              ? t('errors.codeFallback', { code: routing.codeArg })
+              : t(routing.messageKey as 'errors.unknown');
+          setFormError({ kind: 'failure', message });
+        }
         return;
       }
-      toast.success(t('success'));
+      // FR-032 — doc-specific success toast: the invoice's document number is
+      // known here (it IS the typed-phrase gate), so name it.
+      toast.success(t('successWithNumber', { number: documentNumber }));
       router.push(`/admin/invoices/${invoiceId}`);
     });
-  }, [canSubmit, invoiceId, reason, t, router]);
+  }, [canSubmit, invoiceId, reason, documentNumber, t, router]);
 
   return (
     <form
@@ -115,6 +143,38 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
         </InlineAlertTitle>
         <InlineAlertDescription>{t('terminalNotice')}</InlineAlertDescription>
       </InlineAlert>
+
+      {/* 088 FR-032 — inline, focused failure surface for the irreversible void
+          mutation (never a transient toast). `tabIndex={-1}` + the focus effect
+          move focus here so the admin cannot miss it. A concurrent 409 shows a
+          "refresh" prompt; other failures show a destructive alert. */}
+      {formError && (
+        <Alert
+          ref={errorRef}
+          tabIndex={-1}
+          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          className="outline-none"
+          data-testid="void-invoice-error"
+        >
+          <AlertTriangleIcon className="size-4" aria-hidden="true" />
+          {formError.kind === 'concurrent' ? (
+            <AlertDescription className="flex flex-col items-start gap-2">
+              <span>{t('errors.concurrent')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={() => router.refresh()}
+              >
+                {t('errors.refreshAction')}
+              </Button>
+            </AlertDescription>
+          ) : (
+            <AlertDescription>{formError.message}</AlertDescription>
+          )}
+        </Alert>
+      )}
 
       <div className="grid gap-2">
         <Label htmlFor="void-reason">{t('reasonLabel')}</Label>

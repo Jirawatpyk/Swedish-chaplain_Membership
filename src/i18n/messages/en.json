@@ -1223,7 +1223,8 @@
         "invoicePaid": "Invoice paid via {paymentMethod}",
         "invoiceVoided": "Invoice voided — {reason}",
         "creditNoteIssued": "Credit note {documentNumber} issued — {creditAmount} THB",
-        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent"
+        "invoicePdfResent": "Invoice {documentNumber} PDF re-sent",
+        "taxReceiptIssued": "Tax receipt {documentNumber} issued"
       },
       "invoices": {
         "title": "Invoices",
@@ -1287,7 +1288,8 @@
         "sections": {
           "company": "Company",
           "address": "Address",
-          "primaryContact": "Primary contact"
+          "primaryContact": "Primary contact",
+          "taxBranch": "Head office / Branch (§86/4)"
         },
         "fields": {
           "companyName": "Company name",
@@ -1303,6 +1305,10 @@
           "city": "City / District",
           "province": "Province / State",
           "postalCode": "Postal code",
+          "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",
+          "branchCode": "Branch code",
+          "branchCodeHint": "5-digit RD branch code, e.g. 00001",
+          "branchHint": "For a §86/4 tax invoice, the buyer's head-office / branch line prints only for a VAT-registrant company.",
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",
@@ -1328,7 +1334,9 @@
             "taxIdChecksum": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
             "dobRequired": "Date of birth is required for this plan.",
             "foundedYear": "Enter a year between 1800 and this year.",
-            "turnover": "Enter a non-negative amount."
+            "turnover": "Enter a non-negative amount.",
+            "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
+            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -1558,7 +1566,10 @@
         "tax": "Tax",
         "numbering": "Document numbering",
         "defaults": "Invoicing defaults",
-        "logo": "Logo"
+        "logo": "Logo",
+        "seller": "Seller branch (§86/4)",
+        "whtNote": "Withholding-tax note",
+        "bank": "Offline payment (bank transfer)"
       },
       "labels": {
         "currencyCode": "Currency code",
@@ -1577,14 +1588,36 @@
         "defaultNetDays": "Default net days",
         "proRatePolicy": "Pro-rate policy",
         "autoEmail": "Auto-email on issue/payment",
-        "logo": "Upload logo"
+        "logo": "Upload logo",
+        "sellerIsHeadOffice": "Head office",
+        "sellerBranchCode": "Branch code",
+        "whtNoteTh": "WHT note (Thai)",
+        "whtNoteEn": "WHT note (English)",
+        "bankPayeeName": "Account name / payee",
+        "bankAccountNo": "Account number",
+        "bankAccountType": "Account type",
+        "bankName": "Bank",
+        "bankBranch": "Bank branch",
+        "bankAddress": "Bank address",
+        "bankSwift": "SWIFT / BIC",
+        "paymentInstructionsTh": "Payment instructions (Thai)",
+        "paymentInstructionsEn": "Payment instructions (English)"
       },
       "hints": {
         "currencyCode": "ISO 4217 — 3 uppercase letters (e.g. THB, USD, SEK).",
         "taxId": "13 digits (Thai Revenue Department format).",
         "receiptPrefix": "Only used when receipt numbering mode is \"separate\".",
         "autoEmail": "When on, new invoices default to auto-email their PDF on issue. Can be overridden per-invoice.",
-        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px."
+        "logo": "PNG or JPEG, ≤ 1 MB, width 200-2000 px, height 100-500 px.",
+        "receiptMode": "Combined numbering is retired — the tax receipt gets its own §87 stream.",
+        "sellerIsHeadOffice": "On = head office (สำนักงานใหญ่). Off = a branch identified by a 5-digit code.",
+        "sellerBranchCode": "Exactly 5 digits (Revenue Department branch code).",
+        "whtNote": "Shown on membership documents only (invoice + tax receipt). Membership dues are WHT-exempt under §65 bis (13) (ruling กค 0811/8542) — the suggested wording is pre-filled below. Leave blank for none.",
+        "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
+        "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
+        "bank": "Shown on the invoice (ใบแจ้งหนี้) only, for offline bank-transfer payment. Leave blank for none.",
+        "bankSwift": "8 or 11 characters (e.g. KASITHBK).",
+        "bankAccountNo": "Digits, with optional dashes or spaces."
       },
       "receiptMode": {
         "combined": "Combined tax invoice + receipt",
@@ -1617,7 +1650,11 @@
         "netDays": "Default net days must be 0-365.",
         "validation": "Please check the form — some fields need attention.",
         "forbidden": "Your role cannot modify invoice settings.",
-        "generic": "Save failed. Please try again."
+        "generic": "Save failed. Please try again.",
+        "sellerBranch": "A branch requires a 5-digit branch code; a head office must leave it blank.",
+        "bankSwift": "SWIFT/BIC must be 8 or 11 characters (letters and digits).",
+        "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
+        "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC."
       },
       "saving": "Saving…",
       "actions": {
@@ -1627,6 +1664,13 @@
       "toast": {
         "created": "Invoice settings created.",
         "updated": "Invoice settings updated."
+      },
+      "charCount": "{count}/{max}",
+      "prefixChange": {
+        "title": "Change document-number prefix?",
+        "description": "Changing an invoice, receipt, or credit-note prefix starts a NEW numbering stream. Already-issued documents keep their numbers; the §87 sequential trail records the change. Continue?",
+        "confirm": "Change prefix",
+        "cancel": "Cancel"
       }
     },
     "creditNotes": {
@@ -1648,11 +1692,15 @@
         "submitting": "Issuing…",
         "cancel": "Cancel",
         "success": "Credit note issued.",
+        "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
+          "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
+          "refreshAction": "Refresh",
           "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
+          "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
           "codeFallback": "Error code: {code}"
         }
       },
@@ -1734,6 +1782,12 @@
       }
     },
     "invoices": {
+      "tax088": {
+        "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน / Tax Invoice & Receipt",
+        "section8015Note": "VAT 0% under Revenue Code §80/1(5) (embassy / international organisation zero-rate).",
+        "bankBlockHeading": "Bank transfer details",
+        "seeReceiptLink": "see tax receipt {number}"
+      },
       "meta": {
         "title": "Invoices"
       },
@@ -1749,11 +1803,16 @@
           "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
           "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
           "receiptPreparing": "Receipt preparing…",
+          "receiptGenerating": "Receipt generating…",
+          "receiptRenderFailed": "Receipt render failed",
+          "receiptRenderFailedAria": "Receipt PDF render failed for invoice {number} — open to review",
+          "recordPayment": "Record payment",
+          "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
         "columns": {
-          "documentNumber": "Number",
+          "documentNumber": "Invoice No.",
           "status": "Status",
           "issueDate": "Issued",
           "dueDate": "Due",
@@ -1783,6 +1842,7 @@
         "searchLabel": "Search invoices",
         "loadMore": "Load more",
         "filteredEmpty": "No invoices match the current filters.",
+        "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
           "clearAll": "Clear filters",
@@ -1791,6 +1851,26 @@
             "all": "All types",
             "membership": "Membership",
             "event": "Event"
+          },
+          "documentType": {
+            "label": "Document",
+            "all": "All documents",
+            "sc": "Bill (SC)",
+            "rc": "Tax receipt (RC)",
+            "re": "Receipt (RE)",
+            "cn": "With credit note"
+          },
+          "taxPoint": {
+            "label": "Tax point",
+            "all": "Any tax point",
+            "prePayment": "Awaiting payment",
+            "atPayment": "Receipt issued"
+          },
+          "vatTreatment": {
+            "label": "VAT treatment",
+            "all": "All VAT",
+            "standard": "Standard VAT",
+            "zeroRated": "Zero-rated §80/1(5)"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
@@ -1804,7 +1884,7 @@
         "trigger": "Export CSV",
         "dialog": {
           "title": "Export paid invoices to CSV",
-          "description": "For Thai VAT monthly filing (ภพ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
+          "description": "For Thai VAT monthly filing (ภ.พ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
         },
         "fields": {
           "from": "From",
@@ -1818,6 +1898,57 @@
           "invalidDate": "Please choose valid dates.",
           "rangeInverted": "From-date must be on or before To-date.",
           "rangeTooWide": "Range cannot exceed 1 year."
+        }
+      },
+      "registers": {
+        "meta": { "title": "Tax registers" },
+        "title": "Tax document registers",
+        "description": "Period registers for the monthly VAT return (ภ.พ.30): §86/4 tax receipts, §105 receipts, and §80/1(5) zero-rate sales.",
+        "entry": "Tax registers (ภ.พ.30)",
+        "backToList": "Back to invoices",
+        "kind": {
+          "label": "Register",
+          "rcRegister": "§86/4 tax-receipt register",
+          "zeroRateSales": "§80/1(5) zero-rate sales",
+          "reRegister": "§105 receipt register"
+        },
+        "fields": { "from": "From", "to": "To" },
+        "actions": { "view": "View register" },
+        "outputVat": {
+          "title": "Period output VAT (ภ.พ.30)",
+          "combined": "Net output VAT",
+          "rc": "§86/4 (RC)",
+          "re": "§105 (RE)",
+          "gross": "Gross output VAT",
+          "creditNote": "less §86/10 credit notes",
+          "note": "Net standard-rated output VAT for the period: §86/4 tax-receipt + §105 receipt streams (cancelled receipts excluded), less §86/10 credit notes issued this period — the figure to report on ภ.พ.30. §80/1(5) zero-rate sales add 0. The table below shows only the selected register."
+        },
+        "summary": {
+          "count": "{count, plural, one {# receipt} other {# receipts}}",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total"
+        },
+        "columns": {
+          "receiptNo": "Receipt No.",
+          "paymentDate": "Payment date",
+          "buyer": "Buyer",
+          "taxId": "Tax ID",
+          "subtotal": "Subtotal",
+          "vat": "VAT",
+          "total": "Total",
+          "vatTreatment": "VAT treatment",
+          "certNo": "Cert No."
+        },
+        "vatTreatment": {
+          "standard": "Standard",
+          "zeroRated": "Zero-rated"
+        },
+        "cancelled": "Cancelled",
+        "empty": "No tax documents in this period.",
+        "errors": {
+          "invalidRange": "From-date must be on or before To-date, within one year.",
+          "loadFailed": "Could not load the register. Please try again."
         }
       },
       "new": {
@@ -1903,7 +2034,9 @@
           "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
           "ariaTaxInvoiceReceipt": "A combined tax invoice/receipt will be issued because the buyer has a tax ID and the fee is already paid.",
           "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
-          "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued."
+          "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued.",
+          "bill088": "Invoice / ใบแจ้งหนี้",
+          "ariaBill088": "This will be issued as an invoice (ใบแจ้งหนี้); the §86/4 tax invoice/receipt is issued when payment is recorded."
         },
         "submit": "Create event-fee draft",
         "submitting": "Creating…",
@@ -1936,7 +2069,8 @@
           },
           "billFirst": {
             "label": "Bill first — issue an unpaid invoice",
-            "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID."
+            "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
+            "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
           "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
@@ -2097,17 +2231,88 @@
       "issue": {
         "title": "Issue invoice",
         "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
+        "review": {
+          "heading": "Review — this pins an immutable §86/4 snapshot",
+          "immutableSnapshotAck": "Issuing pins an IMMUTABLE tax snapshot (buyer identity, Head Office / Branch, VAT treatment and notes). It can be changed only by voiding this document. Review the details below before you confirm.",
+          "billStreamNote": "A non-tax ใบแจ้งหนี้ (Invoice) number ({prefix}-…) is allocated now — NO §87 tax number is consumed at issue. The §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (with its RC number) is issued when payment is recorded.",
+          "fields": {
+            "branchLine": "Head Office / Branch",
+            "vatTreatment": "VAT treatment",
+            "cert": "MFA certificate (§80/1(5))",
+            "whtNote": "Withholding-tax note"
+          },
+          "branchLine": {
+            "headOffice": "สำนักงานใหญ่ (Head Office)",
+            "noneIndividual": "No branch line (individual buyer)",
+            "noneUnset": "No branch line (legal entity type not set)"
+          },
+          "vatTreatmentValue": {
+            "standard": "Standard — VAT 7%",
+            "zeroRated": "Zero-rated 0% — §80/1(5)"
+          },
+          "whtNoteValue": {
+            "willPrint": "Will print on this membership document",
+            "none": "None configured"
+          },
+          "warnings": {
+            "noPaymentPath": "This ใบแจ้งหนี้ will have NO payment path — online payment is off and no bank-transfer details are configured, so the member cannot pay it. Configure a payment method before issuing, or proceed knowing the bill is currently unpayable.",
+            "nullEntityType": "No §86/4 Head Office / Branch line will print — this buyer's legal entity type is not set. Set it on the member record first if this is a VAT-registrant company."
+          }
+        },
+        "form": {
+          "vatTreatment": {
+            "label": "VAT treatment",
+            "help": "For embassy / international-organization sales only — attach the Ministry of Foreign Affairs (MFA) §80/1(5) certificate. Every other sale stays at the standard VAT 7%.",
+            "standard": "Standard — VAT 7%",
+            "zeroRated": "Zero-rated 0% — §80/1(5) (embassy / int'l org)",
+            "membershipCaption": "Membership is always VAT 7%; §80/1(5) applies to non-membership (event / service) sales only."
+          },
+          "cert": {
+            "legend": "MFA §80/1(5) certificate",
+            "revealed": "Certificate fields shown — a certificate number is required to issue a zero-rated invoice.",
+            "noLabel": "MFA certificate number",
+            "noPlaceholder": "e.g. กต 0404/…",
+            "noRequired": "Enter the MFA certificate number to issue a zero-rated invoice.",
+            "dateLabel": "Certificate date",
+            "dateFormat": "Enter the certificate date as YYYY-MM-DD."
+          },
+          "lowAmountWarning": "This zero-rated sale is below 5,000 THB. An MFA certificate is normally required for purchases of 5,000 THB or more — confirm the certificate applies before issuing.",
+          "certUpload": {
+            "label": "MFA certificate scan (optional)",
+            "pickerLabel": "Choose a certificate scan to upload",
+            "uploadButton": "Attach certificate scan",
+            "uploadingLabel": "Uploading…",
+            "uploadingAria": "Uploading certificate — please wait",
+            "uploadedToast": "Certificate scan attached.",
+            "attached": "Attached: {filename}",
+            "remove": "Remove",
+            "helpText": "Optional. PDF, PNG or JPG up to 5 MB. The scan is virus-scanned before it is stored. The certificate NUMBER above is what makes the zero rate valid — the scan is supporting evidence only.",
+            "errors": {
+              "zero_rate_cert_too_large": "The certificate scan is larger than 5 MB.",
+              "zero_rate_cert_invalid_mime": "Only PDF, PNG or JPG files are allowed.",
+              "zero_rate_cert_unsafe": "The certificate scan was flagged by the virus scanner. The upload was rejected.",
+              "zero_rate_cert_scan_failed": "The certificate scan could not be virus-scanned. Try again, or issue with the certificate number only (the scan is optional).",
+              "invalid_body": "The upload request was malformed.",
+              "internal_error": "An unexpected error occurred during upload.",
+              "unknown": "Upload failed. Please try again."
+            }
+          }
+        },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
         "typeToConfirm": "Confirmation phrase",
         "issueButton": "Issue",
         "issuing": "Issuing…",
         "success": "Invoice issued",
+        "successWithNumber": "Invoice {number} issued",
         "cancel": "Cancel",
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues as a valid tax invoice with name and address, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
+        "noTaxIdHint088": "This buyer has no Tax ID. The invoice (ใบแจ้งหนี้) issues with name and address, and its §86/4 tax invoice/receipt at payment stays valid, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
         "errors": {
           "failed": "Issue failed",
+          "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
+          "refreshAction": "Refresh",
           "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "codeFallback": "Error code: {code}",
@@ -2158,16 +2363,22 @@
       "pay": {
         "title": "Record payment",
         "description": "Mark this invoice paid. A receipt PDF will be generated and emailed to the member.",
+        "payingForDocument": "Recording payment for {number}",
         "submit": "Record payment",
         "submitting": "Recording…",
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
+        "successReceipt": "Tax receipt {number} issued",
         "cancel": "Back to invoice",
         "cancelDialog": "Cancel",
         "errors": {
           "failed": "Could not record payment",
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
           "legacy_no_tin_event_needs_remediation": "This event invoice was issued to a buyer without a tax ID under the old flow — its issued PDF is already the official receipt, so recording a payment would create a second receipt. Please follow the remediation runbook instead.",
+          "legacy_invoice_needs_reissue": "This is a legacy invoice with no bill number — it must be voided and re-issued before a payment can be recorded.",
+          "new_flow_bill_requires_flag_on": "This bill was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the bill, before recording payment.",
+          "concurrent": "This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.",
+          "refreshAction": "Refresh",
           "dateRange": "Payment date must be on or after the issue date ({min}) and not in the future ({max}).",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
@@ -2202,9 +2413,12 @@
         "submitting": "Voiding…",
         "cancel": "Cancel",
         "success": "Invoice voided.",
+        "successWithNumber": "Invoice {number} voided.",
         "errors": {
           "failed": "Invoice could not be voided.",
           "unknown": "An unknown error occurred. Please try again.",
+          "concurrent": "This invoice was already voided or changed in another session. Refresh to see the latest status.",
+          "refreshAction": "Refresh",
           "codeFallback": "Error code: {code}"
         }
       }
@@ -4093,7 +4307,9 @@
       "issueRefund": "Issue refund — find paid invoice",
       "reviewBroadcasts": "Review broadcasts queue",
       "broadcastsHalted": "Halted members — broadcast review",
-      "newBroadcastTemplate": "Create new E-Blast template"
+      "newBroadcastTemplate": "Create new E-Blast template",
+      "recordPayment": "Record payment for an invoice",
+      "rerenderTaxReceipt": "Re-render tax receipt"
     },
     "navigate": {
       "plansList": "Plans list",
@@ -4304,7 +4520,7 @@
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loaded": "Invoices list loaded.",
       "columns": {
-        "documentNumber": "Number",
+        "documentNumber": "Invoice No.",
         "receiptNumber": "Receipt No.",
         "status": "Status",
         "issueDate": "Issued",
@@ -4323,9 +4539,14 @@
         "downloadCombinedAria": "Download combined Tax Invoice / Official Receipt PDF for {number}",
         "receiptPreparing": "Receipt preparing…",
         "receiptUnavailable": "Receipt unavailable",
+        "receiptFailedSupport": "Receipt on the way — we're resolving it",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
+      },
+      "receiptStatus": {
+        "generating": "Your tax receipt is being generated",
+        "reassurance": "This usually takes just a moment. You can leave this page — your tax receipt is safe and will appear here automatically when it's ready."
       },
       "filters": {
         "noMatch": "No invoices match your filters."
@@ -4361,6 +4582,11 @@
         },
         "pdf": {
           "preparing": "Your tax receipt is being prepared. The PDF will be ready in a moment — please retry shortly."
+        },
+        "receiptFailed": {
+          "heading": "Your tax receipt is taking longer than expected",
+          "body": "We hit a snag generating your tax receipt PDF. Your payment is recorded and your receipt number is reserved — our team has been notified and will resolve this shortly.",
+          "contact": "If you need the document urgently, please contact the chamber staff."
         },
         "title": "Invoice",
         "subtitle": "Read-only view — download the PDF for the official tax document.",
@@ -5089,6 +5315,7 @@
       "auto_email_delivery_failed": "Auto email delivery failed",
       "receipt_rendered": "Receipt rendered",
       "receipt_pdf_downloaded": "Receipt PDF downloaded",
+      "tax_receipt_issued": "Tax receipt issued",
       "tenant_receipt_prefix_changed": "Document-number prefix changed"
     },
     "eventcreate": {

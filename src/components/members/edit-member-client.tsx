@@ -393,6 +393,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           city: member.city ?? undefined,
           province: member.province ?? undefined,
           postal_code: member.postalCode ?? undefined,
+          // 088 US3 — §86/4 branch particular (seed the head-office toggle +
+          // branch code so the admin sees the present value before Save).
+          is_head_office: member.isHeadOffice ?? true,
+          branch_code: member.branchCode ?? null,
           // Round-4 R4-I3: the form schema now accepts `null` on input
           // (via `.nullable().optional()`) and transforms to `null` on
           // submit. Passing `member.notes` directly (string | null) is

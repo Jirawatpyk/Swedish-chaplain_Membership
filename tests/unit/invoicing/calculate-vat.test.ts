@@ -1,5 +1,7 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import { resolveVatRate } from '@/modules/invoicing/domain/policies/vat-treatment';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
@@ -31,5 +33,33 @@ describe('calculateVat (total-level rounding)', () => {
     const r = calculateVat(subtotal, VatRate.ofUnsafe('0.0700'));
     // 9999 × 700 / 10000 = 699.93 → 700 satang
     expect(r.vat.satang).toBe(700n);
+  });
+});
+
+// 088-invoice-tax-flow-redesign (T057 / US8) — the VAT-sum invariant must hold
+// for the §80/1(5) zero rate (0%) exactly as for the standard rate (7%): the
+// zero-rate row is driven through `resolveVatRate('zero_rated_80_1_5', …)` so
+// this pins the whole rate-selection → VAT-sum chain, not just calculateVat.
+describe('calculateVat — VAT-sum invariant across treatments (property)', () => {
+  it('forAll (subtotal ≥ 0) — subtotal + vat === total, and 0% yields vat=0 / total=subtotal', () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 0n, max: 1_000_000_000n }),
+        fc.constantFrom('standard' as const, 'zero_rated_80_1_5' as const),
+        (subtotalSatang, treatment) => {
+          const subtotal = Money.fromSatangUnsafe(subtotalSatang);
+          // vat_treatment DRIVES the rate — never chosen independently (G3).
+          const rate = resolveVatRate(treatment, VatRate.ofUnsafe('0.0700'));
+          const { vat, total } = calculateVat(subtotal, rate);
+          // Core invariant — holds for BOTH 0% and 7%.
+          expect(subtotal.satang + vat.satang).toBe(total.satang);
+          if (treatment === 'zero_rated_80_1_5') {
+            expect(vat.satang).toBe(0n);
+            expect(total.satang).toBe(subtotal.satang);
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 });

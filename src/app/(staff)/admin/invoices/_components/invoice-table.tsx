@@ -42,6 +42,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Tooltip,
   TooltipContent,
@@ -50,6 +51,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
+import { RecordPaymentDialog } from './record-payment-dialog';
 import type { InvoiceStatus } from '@/modules/invoicing';
 
 /**
@@ -158,6 +160,26 @@ export type InvoicesTableRow = {
    * download filename follows automatically.
    */
   readonly mainDownloadIsReceipt: boolean;
+  /**
+   * 088 (T065 / T065a / FR-016) — the pre-payment NON-§87 bill number (SC-…)
+   * for the two-document disambiguation. Present only on a real 088 bill (with
+   * the flag on); `null` on legacy rows. `documentNumber` already carries this
+   * SC number as the row identity (A-refined), so this field is retained for the
+   * main-download accessible name. OPTIONAL so legacy row constructors are
+   * unaffected (undefined → treated as `null`).
+   */
+  readonly billDocumentNumberRaw?: string | null;
+  /**
+   * 088 (T065 / T065a / FR-016) — the resolved §86/4 document kind, computed
+   * server-side in page.tsx with the tax-at-payment flag baked in (A-refined):
+   *   - `'none'`        — legacy / flag off → render exactly as today.
+   *   - `'bill'`        — unpaid 088 bill → SC number + ใบแจ้งหนี้/Invoice tag.
+   *   - `'tax_receipt'` — paid 088 bill → SC number + ใบแจ้งหนี้/Invoice tag (the
+   *                       invoice's own identity); the RC §86/4 tax receipt is a
+   *                       clickable link in the Receipt No. column.
+   * OPTIONAL (undefined → `'none'`) so legacy constructors are unaffected.
+   */
+  readonly taxDocumentKind?: 'none' | 'bill' | 'tax_receipt';
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -227,6 +249,8 @@ function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
 export function InvoicesTable({
   rows,
   showMethodColumn = false,
+  canRecordPayment = false,
+  todayIso,
 }: {
   rows: readonly InvoicesTableRow[];
   /**
@@ -235,9 +259,27 @@ export function InvoicesTable({
    * to keep the standard list compact (95% of rows would carry no badge).
    */
   showMethodColumn?: boolean;
+  /**
+   * 088 T021c / FR-035 — enable the per-row "Record payment" quick action on
+   * issued / overdue bills. Admin-only (money mutation); the list page passes
+   * `isAdmin`. Requires `todayIso` (below) to be threaded too.
+   */
+  canRecordPayment?: boolean;
+  /**
+   * Tenant-timezone (Asia/Bangkok) "today" as YYYY-MM-DD, computed server-side
+   * (`bangkokLocalDate`). Threaded to the per-row `RecordPaymentDialog` as the
+   * payment-date default + upper bound — never derived client-side from
+   * `new Date()` (UTC), which breaks the date clamp for ~7h/day. Only consumed
+   * when `canRecordPayment` is on; the per-row action stays hidden without it.
+   */
+  todayIso?: string;
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
+  // 088 (T065/T065a) — SC-bill ↔ RC-tax-receipt disambiguation labels (shared
+  // tax088 namespace). Rendered only for rows whose `taxDocumentKind` is
+  // non-'none' (page.tsx bakes the flag into that field).
+  const tTax088 = useTranslations('admin.invoices.tax088');
   const locale = useLocale();
   // Per-row spinner state keyed by `${variant}:${invoiceId}` so two
   // downloads on different rows don't overwrite each other's loader.
@@ -362,15 +404,38 @@ export function InvoicesTable({
               className="hover:bg-accent/40 focus-within:bg-accent/40"
             >
               <TableCell className="align-middle whitespace-nowrap">
+                {/* 088 A-refined (FR-016) — the Number column ALWAYS carries the
+                    invoice's OWN number: the SC bill for a real 088 bill (paid or
+                    unpaid — page.tsx resolves it), the §87 invoice number for
+                    legacy rows. The "SC-/IN-" prefix + the renamed "Invoice No."
+                    column header are self-documenting; the RC §86/4 tax receipt is
+                    a clickable link in the Receipt No. column. No per-row tag. */}
                 <Link
                   href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                 >
                   {r.documentNumber}
                 </Link>
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
-                {r.receiptDocumentNumberRaw ? (
+                {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (
+                  // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on the
+                  // SAME invoice row, so it links to the invoice detail (same
+                  // target as the Number link). The aria-label names the document
+                  // so the two same-target links in a row are distinguishable to
+                  // screen readers; the "Receipt No." column header conveys the
+                  // ใบกำกับภาษี meaning (no per-row chip). This is the fix for the
+                  // "Receipt No. can't be clicked" report.
+                  <Link
+                    href={`/admin/invoices/${r.invoiceId}`}
+                    aria-label={tTax088('seeReceiptLink', {
+                      number: r.receiptDocumentNumberRaw,
+                    })}
+                    className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  >
+                    {r.receiptDocumentNumberRaw}
+                  </Link>
+                ) : r.receiptDocumentNumberRaw ? (
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
@@ -545,21 +610,81 @@ export function InvoicesTable({
                   const isCombinedPaid =
                     r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
-                  // Async receipt-PDF gate. Paid + receiptPdfStatus
-                  // pending/failed/null surfaces a "preparing…"
-                  // affordance alongside the Invoice button.
-                  // Bookkeepers otherwise saw a paid row with only
-                  // an Invoice download and no signal that the
-                  // §86/4+§105ทวิ legal doc is on its way.
-                  const receiptPending =
-                    r.status === 'paid' &&
-                    r.receiptPdfStatus !== null &&
-                    r.receiptPdfStatus !== 'rendered';
-                  if (!showInvoice && !r.hasReceiptPdf && !receiptPending) {
+                  // 088 T066b (FR-019) — async receipt-PDF resilience. The
+                  // former single "preparing…" affordance conflated pending +
+                  // failed, so a permanent render failure showed a perpetual
+                  // in-progress spinner (the portal S1 problem). Split into two
+                  // DISTINCT terminal-aware states (mirrors the portal VM):
+                  //   - pending  → a SHIMMER "receipt generating" placeholder
+                  //     (shipped <Skeleton> primitive → reduced-motion-safe via
+                  //     the skeleton-shimmer CSS) in a role=status live region.
+                  //   - failed   → a visually-distinct inline ALERT-state link
+                  //     to the invoice detail (actionable; the reconcile cron
+                  //     re-renders the SAME pre-allocated RC — never a re-alloc).
+                  // null/rendered fall into neither (rendered shows the Receipt
+                  // download; paid+null can't occur — CHECK enforces non-null).
+                  const receiptGenerating =
+                    r.status === 'paid' && r.receiptPdfStatus === 'pending';
+                  const receiptRenderFailed =
+                    r.status === 'paid' && r.receiptPdfStatus === 'failed';
+                  // 088 T021c / FR-035 — per-row "Record payment" quick action
+                  // on issued / overdue bills (admin-only). Opens the SAME
+                  // money-mutation `RecordPaymentDialog` used on the detail page
+                  // (defaults today + bank-transfer). FR-028 — this is a
+                  // §87-minting mutation, so the dialog contract (no optimistic
+                  // close / no undo toast) is inherited unchanged; the row NEVER
+                  // reuses the bulk-mark-paid optimistic pattern.
+                  const showRecordPayment =
+                    canRecordPayment &&
+                    todayIso !== undefined &&
+                    (r.status === 'issued' || r.status === 'overdue');
+                  // 088 A-refined — the MAIN download serves the issue-time PDF =
+                  // the SC bill on a paid 088 bill. `documentNumber` already IS the
+                  // SC number (the row identity), so the control names it directly;
+                  // the `billDocumentNumberRaw` fallback is a belt-and-suspenders
+                  // guard for the (impossible) NULL-bill case.
+                  const mainDownloadNumber =
+                    r.taxDocumentKind === 'tax_receipt' && r.billDocumentNumberRaw
+                      ? r.billDocumentNumberRaw
+                      : r.documentNumber;
+                  if (
+                    !showInvoice &&
+                    !r.hasReceiptPdf &&
+                    !receiptGenerating &&
+                    !receiptRenderFailed &&
+                    !showRecordPayment
+                  ) {
                     return <span className="text-sm text-muted-foreground">—</span>;
                   }
                   return (
                     <div className="flex items-center justify-end gap-1">
+                      {showRecordPayment && todayIso !== undefined && (
+                        <RecordPaymentDialog
+                          invoiceId={r.invoiceId}
+                          // The row's display number is the bill number (SC-…)
+                          // or legacy invoice number; '—' means a true draft
+                          // (never issued) which can't appear here anyway →
+                          // pass null so the dialog's fallback copy stays clean.
+                          documentNumber={r.documentNumber === '—' ? null : r.documentNumber}
+                          issueDate={r.issueDate}
+                          todayIso={todayIso}
+                          triggerLabel={t('actions.recordPayment')}
+                          // a11y — number-bearing accessible name so a screen
+                          // reader (button-list nav strips row context) knows
+                          // which bill this money-mutation targets; mirrors the
+                          // sibling download buttons' aria in this same cell.
+                          triggerAriaLabel={t('actions.recordPaymentAria', {
+                            number: r.documentNumber,
+                          })}
+                          triggerVariant="ghost"
+                          triggerSize="sm"
+                          triggerClassName="min-h-11 px-3 gap-1"
+                          // Per-row unique id — many dialogs render on one page;
+                          // the default 'record-payment' id must not collide.
+                          triggerId={`record-payment-${r.invoiceId}`}
+                          triggerTestId="row-record-payment-trigger"
+                        />
+                      )}
                       {showInvoice && (
                         // Button (not <a download>) routes through
                         // the shared fetch+blob helper so 4xx/5xx
@@ -575,20 +700,22 @@ export function InvoicesTable({
                             handleRowDownload(
                               'invoice',
                               r.invoiceId,
-                              `${r.documentNumber}.pdf`,
+                              `${mainDownloadNumber}.pdf`,
                             )
                           }
                           disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
                           // 064 remediation S7 — β rows: the main pdf IS the
                           // §105 receipt, so label + aria flip to the receipt
                           // wording (the endpoint/testid stay the main-pdf
-                          // ones; only the presentation changes).
+                          // ones; only the presentation changes). 088 — on a paid
+                          // bill the main pdf is the SC bill, so the aria names
+                          // the SC number (mainDownloadNumber), not the RC.
                           aria-label={t(
                             r.mainDownloadIsReceipt
                               ? 'actions.downloadReceiptAria'
                               : 'actions.downloadInvoiceAria',
                             {
-                              number: r.documentNumber,
+                              number: mainDownloadNumber,
                             },
                           )}
                           className={cn(
@@ -638,23 +765,49 @@ export function InvoicesTable({
                           {t('actions.downloadReceipt')}
                         </button>
                       )}
-                      {receiptPending && (
-                        // Paid + receipt-render in flight. `role=status
-                        // aria-live=polite` so SR users hear the async
-                        // state when the bookkeeper scans the table.
-                        // Style matches portal list for visual parity.
+                      {receiptGenerating && (
+                        // 088 T066b — paid + receipt-render in flight. SHIMMER
+                        // "generating" placeholder using the shipped <Skeleton>
+                        // primitive (reduced-motion-safe: skeleton-shimmer CSS
+                        // swaps the sweep for a gentle pulse under
+                        // prefers-reduced-motion). `role=status aria-live=polite`
+                        // so SR users hear the async state when scanning the table.
                         <span
                           role="status"
                           aria-live="polite"
                           aria-busy="true"
+                          className="inline-flex min-h-11 items-center gap-2 px-1"
+                          data-testid="row-receipt-generating"
+                        >
+                          <Skeleton className="h-4 w-4 rounded-full" />
+                          <span className="text-sm text-muted-foreground">
+                            {t('actions.receiptGenerating')}
+                          </span>
+                        </span>
+                      )}
+                      {receiptRenderFailed && (
+                        // 088 T066b — TERMINAL render failure (permanently
+                        // failed after the reconcile cron exhausted retries, or
+                        // in flight before the next re-enqueue). Visually
+                        // distinct (destructive-tinted) + ACTIONABLE: links to
+                        // the invoice detail where the admin can review the
+                        // FR-026 delivery banner / the reconcile status. NOT the
+                        // in-progress shimmer — a permanent failure must never be
+                        // mislabelled as forever-generating (portal S1 parity).
+                        <Link
+                          href={`/admin/invoices/${r.invoiceId}`}
+                          aria-label={t('actions.receiptRenderFailedAria', {
+                            number: r.documentNumber,
+                          })}
                           className={cn(
                             buttonVariants({ variant: 'outline', size: 'sm' }),
-                            'min-h-11 px-3 cursor-progress',
+                            'min-h-11 gap-1 border-destructive/40 bg-destructive/5 px-3 text-destructive hover:bg-destructive/10',
                           )}
-                          data-testid="row-receipt-pending"
+                          data-testid="row-receipt-render-failed"
                         >
-                          {t('actions.receiptPreparing')}
-                        </span>
+                          <AlertCircleIcon className="size-4" aria-hidden="true" />
+                          {t('actions.receiptRenderFailed')}
+                        </Link>
                       )}
                     </div>
                   );

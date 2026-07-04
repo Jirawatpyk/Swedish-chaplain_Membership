@@ -16,6 +16,11 @@ export function serialiseMember(m: Member) {
     legal_entity_type: m.legalEntityType,
     country: m.country,
     tax_id: m.taxId,
+    // 088 US3 — §86/4 Head-Office / Branch particular (admin API only; the
+    // member self-service portal MUST NOT expose these tax-critical fields).
+    // Guarded `?? true` / `?? null` for a hand-built Member that omits them.
+    is_head_office: m.isHeadOffice ?? true,
+    branch_code: m.branchCode ?? null,
     website: m.website,
     description: m.description,
     address_line1: m.addressLine1,

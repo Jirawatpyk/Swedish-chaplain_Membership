@@ -31,6 +31,7 @@ export function InvoiceCreateSwitcher({
   initialMemberId,
   initialEventId,
   initialRegistrationId,
+  taxAtPayment,
 }: {
   readonly members: readonly MemberOption[];
   readonly plans: readonly PlanOption[];
@@ -38,6 +39,13 @@ export function InvoiceCreateSwitcher({
   readonly initialMemberId?: string | undefined;
   readonly initialEventId?: string | undefined;
   readonly initialRegistrationId?: string | undefined;
+  /**
+   * 088 (FR-014/SC-005) — when the bill→payment flow is ON, an
+   * event-with-TIN `bill_first` document is a non-tax ใบแจ้งหนี้ (the §86/4
+   * tax invoice/receipt is minted at payment), so the EventFeeForm preview
+   * must not label a pre-payment doc "Tax Invoice". Flag OFF = legacy copy.
+   */
+  readonly taxAtPayment: boolean;
 }) {
   const t = useTranslations('admin.invoices.new.type');
   // Deep-link wins: an event-registration deep-link starts on the Event tab.
@@ -108,6 +116,7 @@ export function InvoiceCreateSwitcher({
       ) : (
         <EventFeeForm
           events={events}
+          taxAtPayment={taxAtPayment}
           {...(initialEventId ? { initialEventId } : {})}
           {...(initialRegistrationId ? { initialRegistrationId } : {})}
         />

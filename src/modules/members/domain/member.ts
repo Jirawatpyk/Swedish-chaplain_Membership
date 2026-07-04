@@ -146,6 +146,21 @@ export type Member = {
   readonly legalEntityType: string | null;
   readonly country: IsoCountryCode;
   readonly taxId: TaxId | null;
+  /**
+   * 088-invoice-tax-flow-redesign (US3 / FR-008) — §86/4 Head-Office / Branch
+   * particular, admin-managed. `isHeadOffice=true` = สำนักงานใหญ่ (default);
+   * `false` = a branch carrying the 5-digit `branchCode`. Pinned into the
+   * immutable buyer identity snapshot at invoice issue.
+   *
+   * OPTIONAL on the aggregate so the ~60 partial-`Member` fixtures + the create
+   * draft (`Omit<Member,…>`) stay non-breaking: `rowToMember` ALWAYS populates
+   * them from the DB (NOT NULL flag + nullable code), so a Member loaded from
+   * the repo always carries real values; consumers that build a Member by hand
+   * (tests, create draft) may omit them and the DB DEFAULT (`true` / NULL)
+   * applies on insert. Read sites guard `?? true` / `?? null`.
+   */
+  readonly isHeadOffice?: boolean;
+  readonly branchCode?: string | null;
   readonly website: string | null;
   readonly description: string | null;
   readonly foundedYear: number | null;

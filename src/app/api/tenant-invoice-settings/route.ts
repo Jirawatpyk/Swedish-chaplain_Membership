@@ -78,7 +78,8 @@ const bodySchema = z.object({
   invoice_number_prefix: z.string().min(1).max(20).optional(),
   credit_note_number_prefix: z.string().min(1).max(20).optional(),
   receipt_number_prefix: z.string().min(1).max(20).nullable().optional(),
-  receipt_numbering_mode: z.enum(['combined', 'separate']).optional(),
+  // 088 T008 (F.5) — combined-numbering mode retired; only 'separate' accepted.
+  receipt_numbering_mode: z.enum(['separate']).optional(),
   fiscal_year_start_month: z.number().int().min(1).max(12).optional(),
   default_net_days: z.number().int().min(0).max(365).optional(),
   pro_rate_policy: z.enum(['none', 'monthly', 'daily']).optional(),
@@ -97,6 +98,77 @@ const bodySchema = z.object({
     )
     .nullable()
     .optional(),
+  // 088 US5 (T037 / FR-012) — tenant WHT footer note; null clears it.
+  wht_note_th: z.string().max(500).nullable().optional(),
+  wht_note_en: z.string().max(500).nullable().optional(),
+  // 088 US5 (T037 / § C.2) — seller §86/4 Head-Office/Branch (pairing enforced in
+  // the superRefine below + the DB seller-branch CHECK).
+  seller_is_head_office: z.boolean().optional(),
+  seller_branch_code: z
+    .string()
+    .regex(/^\d{5}$/, 'seller_branch_code must be exactly 5 digits')
+    .nullable()
+    .optional(),
+  // 088 US5 (T037 / FR-022) — offline-payment bank block; null clears each field.
+  bank_payee_name: z.string().max(200).nullable().optional(),
+  bank_account_no: z
+    .string()
+    .regex(/^[0-9][0-9\s-]{3,}$/, 'bank_account_no must be digits (with optional - or space separators)')
+    .max(50)
+    .nullable()
+    .optional(),
+  bank_account_type: z.string().max(50).nullable().optional(),
+  bank_name: z.string().max(200).nullable().optional(),
+  bank_branch: z.string().max(200).nullable().optional(),
+  bank_address: z.string().max(500).nullable().optional(),
+  bank_swift: z
+    .string()
+    .regex(
+      /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/,
+      'bank_swift must be a valid 8- or 11-character SWIFT/BIC code',
+    )
+    .nullable()
+    .optional(),
+  payment_instructions_th: z.string().max(500).nullable().optional(),
+  payment_instructions_en: z.string().max(500).nullable().optional(),
+}).superRefine((val, ctx) => {
+  // 088 US7 (review fix) — reserve 'RE' for the §105 `receipt_105` register.
+  // Mirrors the use-case superRefine (updateTenantInvoiceSettingsSchema): a
+  // §86/4 receipt prefix of 'RE' collides with the §105 register's hardcoded
+  // 'RE' on the shared `invoices_tenant_receipt_raw_uniq` index → 23505.
+  // Case-insensitive (document prefixes are uppercase-only per DocumentNumber);
+  // null / any other prefix (e.g. the 'RC' default) is fine.
+  if (
+    val.receipt_number_prefix != null &&
+    val.receipt_number_prefix.trim().toUpperCase() === 'RE'
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['receipt_number_prefix'],
+      message:
+        "receipt_number_prefix 'RE' is reserved for §105 event receipts; use a different §86/4 receipt prefix such as RC",
+    });
+  }
+  // 088 US5 (T037) — seller Head-Office/Branch pairing. Only validated when the
+  // flag is in the patch (a partial PATCH that omits it defers to the stored
+  // value + the DB CHECK). Mirrors the member branch pairing (US3).
+  if (
+    val.seller_is_head_office === false &&
+    (val.seller_branch_code == null || val.seller_branch_code === '')
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['seller_branch_code'],
+      message: 'A branch (seller_is_head_office=false) requires a 5-digit seller_branch_code',
+    });
+  }
+  if (val.seller_is_head_office === true && val.seller_branch_code != null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['seller_branch_code'],
+      message: 'A head office (seller_is_head_office=true) must not carry a seller_branch_code',
+    });
+  }
 });
 
 /**
@@ -194,6 +266,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         pro_rate_policy: view.proRatePolicy,
         auto_email_enabled: view.autoEmailEnabled,
         logo_blob_key: view.identity.logo_blob_key ?? null,
+        // 088 US5 (T037) — WHT note + seller branch + bank block ride the pinned
+        // identity snapshot; project them back so the settings form can round-trip.
+        wht_note_th: view.identity.wht_note_th ?? null,
+        wht_note_en: view.identity.wht_note_en ?? null,
+        seller_is_head_office: view.identity.seller_is_head_office ?? true,
+        seller_branch_code: view.identity.seller_branch_code ?? null,
+        bank_payee_name: view.identity.bank_payee_name ?? null,
+        bank_account_no: view.identity.bank_account_no ?? null,
+        bank_account_type: view.identity.bank_account_type ?? null,
+        bank_name: view.identity.bank_name ?? null,
+        bank_branch: view.identity.bank_branch ?? null,
+        bank_address: view.identity.bank_address ?? null,
+        bank_swift: view.identity.bank_swift ?? null,
+        payment_instructions_th: view.identity.payment_instructions_th ?? null,
+        payment_instructions_en: view.identity.payment_instructions_en ?? null,
       },
     },
     { status: 200 },
@@ -350,6 +437,20 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     ...(b.pro_rate_policy !== undefined && { proRatePolicy: b.pro_rate_policy }),
     ...(b.auto_email_enabled !== undefined && { autoEmailEnabled: b.auto_email_enabled }),
     ...(b.logo_blob_key !== undefined && { logoBlobKey: b.logo_blob_key }),
+    // 088 US5 (T037) — WHT note + seller branch + bank block (snake_case → camelCase).
+    ...(b.wht_note_th !== undefined && { whtNoteTh: b.wht_note_th }),
+    ...(b.wht_note_en !== undefined && { whtNoteEn: b.wht_note_en }),
+    ...(b.seller_is_head_office !== undefined && { sellerIsHeadOffice: b.seller_is_head_office }),
+    ...(b.seller_branch_code !== undefined && { sellerBranchCode: b.seller_branch_code }),
+    ...(b.bank_payee_name !== undefined && { bankPayeeName: b.bank_payee_name }),
+    ...(b.bank_account_no !== undefined && { bankAccountNo: b.bank_account_no }),
+    ...(b.bank_account_type !== undefined && { bankAccountType: b.bank_account_type }),
+    ...(b.bank_name !== undefined && { bankName: b.bank_name }),
+    ...(b.bank_branch !== undefined && { bankBranch: b.bank_branch }),
+    ...(b.bank_address !== undefined && { bankAddress: b.bank_address }),
+    ...(b.bank_swift !== undefined && { bankSwift: b.bank_swift }),
+    ...(b.payment_instructions_th !== undefined && { paymentInstructionsTh: b.payment_instructions_th }),
+    ...(b.payment_instructions_en !== undefined && { paymentInstructionsEn: b.payment_instructions_en }),
   });
 
   if (!result.ok) {

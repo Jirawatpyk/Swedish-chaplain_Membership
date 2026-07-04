@@ -18,6 +18,15 @@ const buildPlansDepsMock = vi.fn();
 // 055-member-number — runInTenant stub so we can supply a fake prefix
 // without touching Neon.
 const runInTenantMock = vi.fn();
+// F5 Phase 6 refundable-invoice palette group — vi.fn()-backed so a test can
+// drive the paid-invoice source + the remaining-refundable filter per-case
+// (defaults set in beforeEach return an empty palette). Referenced inside the
+// `@/modules/invoicing` + `@/modules/payments` factories below via closure
+// (same hoist-safe pattern as `searchPlansMock` — the factory is invoked
+// lazily on import, after these consts initialise).
+const listInvoicesPagedMock = vi.fn();
+const loadInvoicePaymentActivityMock = vi.fn();
+const computeRemainingRefundableMock = vi.fn();
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -60,16 +69,30 @@ vi.mock('@/lib/db', async (importActual) => {
   };
 });
 // F5 Phase 6 (T118a) — route augments the response with refundable-
-// invoice fuzzy search for admin role. Contract test stubs these to
-// empty OK so the new branch doesn't reach live infra; the dedicated
-// `palette.refundableInvoices` group has its own tests downstream.
+// invoice fuzzy search for admin role. The paid-invoice + payment-activity
+// sources are vi.fn()-backed (defaults in beforeEach return an empty palette
+// so the existing tests never reach live infra); one test drives real rows.
+// `displayDocumentNumber` MUST be provided — the route imports + calls it to
+// resolve each refundable row's printed number (088 FR-030). The mock mirrors
+// the real impl exactly (documentNumber-first, RC fallback, null when both
+// absent) so the number-resolution is genuinely exercised, not stubbed away.
 vi.mock('@/modules/invoicing', async () => ({
-  listInvoicesPaged: async () => ok({ rows: [], total: 0 }),
+  listInvoicesPaged: (...args: unknown[]) => listInvoicesPagedMock(...args),
   makeListInvoicesDeps: () => ({}),
+  displayDocumentNumber: (inv: {
+    documentNumber: { raw: string } | null;
+    receiptDocumentNumberRaw: string | null;
+  }) => inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw ?? null,
 }));
 vi.mock('@/modules/payments', async () => ({
-  loadInvoicePaymentActivity: async () => ok({ payments: [], refunds: [] }),
+  loadInvoicePaymentActivity: (...args: unknown[]) =>
+    loadInvoicePaymentActivityMock(...args),
   makeLoadInvoicePaymentActivityDeps: () => ({}),
+  // Route imports computeRemainingRefundable from @/modules/payments; it MUST
+  // be present (the prior mock omitted it — safe only because rows were always
+  // empty). vi.fn()-backed so a test can force a positive remaining balance.
+  computeRemainingRefundable: (...args: unknown[]) =>
+    computeRemainingRefundableMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -138,6 +161,14 @@ describe('contract: GET /api/plans/search (T064)', () => {
     runInTenantMock.mockImplementation(
       (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) => fn({}),
     );
+    // Refundable-invoice palette group — empty-palette defaults so every
+    // existing test sees `refundableInvoices: []`. The dedicated test below
+    // overrides these to drive real rows.
+    listInvoicesPagedMock.mockResolvedValue(ok({ rows: [], total: 0 }));
+    loadInvoicePaymentActivityMock.mockResolvedValue(
+      ok({ payments: [], refunds: [] }),
+    );
+    computeRemainingRefundableMock.mockReturnValue(null);
   });
   afterEach(() => {
     // resetAllMocks (vs clearAllMocks) also resets implementations, not just call history,
@@ -221,5 +252,64 @@ describe('contract: GET /api/plans/search (T064)', () => {
     // The stub returns prefix 'SCCM' and mockMemberRow.member.memberNumber = 42
     expect(member!.member_number_display).toBe('SCCM-0042');
     expect(member!.company_name).toBe('Acme Co');
+  });
+
+  // 088 FR-030 (fix #4) — refundable-invoice rows resolve their printed number
+  // via displayDocumentNumber (documentNumber-first, RC fallback). A paid 088
+  // invoice has a NULL §87 documentNumber → its §86/4 RC number must surface;
+  // a legacy paid invoice keeps its §87 number. Locks route.ts line ~223.
+  it('200 — refundable rows resolve invoice_number (088 RC fallback + legacy §87)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    stubPlansOk(true);
+
+    // Paid 088 invoice: documentNumber NULL → number lives in its RC receipt.
+    const row088 = {
+      invoiceId: 'inv-088',
+      documentNumber: null,
+      receiptDocumentNumberRaw: 'RC-2026-000015',
+      total: { satang: 53_500n },
+      currency: 'THB',
+      memberIdentitySnapshot: null,
+    };
+    // Legacy paid invoice: keeps its §87 documentNumber.
+    const rowLegacy = {
+      invoiceId: 'inv-legacy',
+      documentNumber: { raw: 'IN-2026-000002' },
+      receiptDocumentNumberRaw: null,
+      total: { satang: 10_000n },
+      currency: 'THB',
+      memberIdentitySnapshot: null,
+    };
+    listInvoicesPagedMock.mockResolvedValueOnce(
+      ok({ rows: [row088, rowLegacy], total: 2 }),
+    );
+    // Force a positive remaining balance so both rows survive the
+    // per-invoice remaining-refundable filter (the refund math itself is
+    // covered by loadInvoicePaymentActivity's own tests).
+    computeRemainingRefundableMock.mockReturnValue({
+      paymentId: 'pay-1',
+      remainingSatang: 1_000n,
+    });
+
+    const { GET } = await import('@/app/api/plans/search/route');
+    const res = await GET(makeRequest('inv'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      results: {
+        refundableInvoices: {
+          invoice_id: string;
+          invoice_number: string;
+        }[];
+      };
+    };
+    const refundable = body.results.refundableInvoices;
+    expect(refundable).toHaveLength(2);
+    const numberById = Object.fromEntries(
+      refundable.map((r) => [r.invoice_id, r.invoice_number]),
+    );
+    // 088 row → RC receipt number (documentNumber NULL fallback).
+    expect(numberById['inv-088']).toBe('RC-2026-000015');
+    // Legacy row → §87 document number.
+    expect(numberById['inv-legacy']).toBe('IN-2026-000002');
   });
 });

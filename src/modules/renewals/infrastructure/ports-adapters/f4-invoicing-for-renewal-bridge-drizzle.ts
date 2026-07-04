@@ -14,6 +14,7 @@
  * Pure Infrastructure — only F4 barrel imports + the port interface.
  */
 import {
+  billFirstDocumentNumber,
   createInvoiceDraft,
   issueInvoice,
   makeCreateInvoiceDraftDeps,
@@ -62,8 +63,11 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     }
     const draft = createResult.value;
 
-    // ---- Step 2: issueInvoice — promotes draft → issued. Allocates
-    // §87 sequence number, renders bilingual PDF, uploads to Vercel Blob.
+    // ---- Step 2: issueInvoice — promotes draft → issued, renders the
+    // bilingual PDF, uploads to Vercel Blob. Number stream depends on
+    // FEATURE_088_TAX_AT_PAYMENT (read inside the F4 deps): flag ON allocates
+    // the NON-§87 `SC` bill number (ใบแจ้งหนี้; the §86/4 §87 `RC` number is
+    // minted later at payment); flag OFF allocates the legacy §87 §86/4 number.
     const issueResult = await issueInvoice(
       makeIssueInvoiceDeps(input.tenantId),
       {
@@ -85,14 +89,25 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     }
     const issued = issueResult.value;
 
-    // documentNumber + total are non-null after `issued` per F4's
-    // status-discriminated invariant. Defensive nullish coalescing
-    // just in case the upstream type widens.
+    // total is non-null after `issued` per F4's status-discriminated
+    // invariant. Defensive nullish coalescing just in case the upstream
+    // type widens.
     // F5R3 H-5 (2026-05-16) — brand at F4→F8 bridge boundary.
     const totalSatang =
       issued.total !== null ? asSatang(BigInt(issued.total.satang)) : asSatang(0n);
-    const invoiceNumber =
-      issued.documentNumber !== null ? String(issued.documentNumber) : '';
+    // 088 T069 (FR-018 / US1 AS5) — surface the issued document's PRINTED
+    // number, ROW-SHAPE-correct across both flag states (an issued invoice
+    // carries exactly one of the two, never both):
+    //   NEW flow  — the §86/4 §87 number is minted at PAYMENT, so at issue
+    //     `documentNumber` is NULL and the non-§87 `SC` bill number lives in
+    //     `billDocumentNumberRaw`.
+    //   LEGACY    — the §87 number is in `documentNumber` (a `DocumentNumber`
+    //     value object → read `.raw`, NEVER `String()` which yields
+    //     "[object Object]"); `billDocumentNumberRaw` is NULL.
+    // The prior `String(documentNumber)` returned `''` for an 088 bill (blank
+    // number on the renewal email/success screen) and `'[object Object]'`
+    // on legacy. Not flag-gated — the returned row's shape decides.
+    const invoiceNumber = billFirstDocumentNumber(issued) ?? '';
     return {
       status: 'issued',
       invoiceId: issued.invoiceId,

@@ -274,6 +274,8 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
             mocks.invoicingBridge as unknown as Parameters<typeof confirmPayment>[0]['invoicingBridge'],
           audit: f5AuditAdapter,
           clock: systemClock,
+          // Inert for the confirm READ (reconciliationPath:true → dormant).
+          taxAtPayment: 'off',
         },
         {
           tenantId: tenant.ctx.slug,

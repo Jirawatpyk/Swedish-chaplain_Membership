@@ -30,6 +30,9 @@ describe('Invoice state machine', () => {
       ['issued', 'void'],
       ['paid', 'partially_credited'],
       ['paid', 'credited'],
+      // 088 (data-model.md § 3.1) — an admin may void a PAID invoice; the
+      // void use-case's own guard already accepts `paid`.
+      ['paid', 'void'],
       ['partially_credited', 'partially_credited'],
       ['partially_credited', 'credited'],
     ];
@@ -45,7 +48,6 @@ describe('Invoice state machine', () => {
       ['draft', 'void'],
       ['issued', 'draft'],
       ['paid', 'issued'],
-      ['paid', 'void'], // void must happen before payment
       ['void', 'issued'],
       ['void', 'paid'],
       ['credited', 'issued'],
@@ -170,6 +172,11 @@ describe('Invoice state machine', () => {
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
+    vatTreatment: 'standard',
+    zeroRateCertNo: null,
+    zeroRateCertDate: null,
+    zeroRateCertBlobKey: null,
       lines: [],
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',

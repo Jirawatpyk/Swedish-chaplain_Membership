@@ -58,6 +58,7 @@ import {
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 
 export interface InitiatePaymentInput {
   readonly tenantId: string;
@@ -121,6 +122,16 @@ export type InitiatePaymentError =
    * route's `useCaseErrorCode` warn log.
    */
   | { readonly code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — the F4 bridge rejected a NEW-FLOW bill (issued while
+   * FEATURE_088_TAX_AT_PAYMENT was ON) being paid after the flag rolled back
+   * to OFF. Creating a PI would let Stripe capture money the webhook-side
+   * `recordPayment` guard then refuses to apply (permanent, NO auto-refund) —
+   * S0 stranded funds. The route maps this to the EXISTING 409
+   * `invoice_not_payable` envelope; the dedicated code keeps the flag-rollback
+   * discriminator visible in the route's `useCaseErrorCode` warn log.
+   */
+  | { readonly code: 'new_flow_bill_requires_flag_on' }
   | { readonly code: 'online_payment_disabled' }
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
@@ -173,6 +184,17 @@ export interface InitiatePaymentDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag). Forwarded to
+   * the F4 payability read WITH `reconciliationPath: false` (initiate IS the
+   * self-pay path) so a NEW-FLOW bill issued while the flag was ON cannot be
+   * self-paid after the flag rolls back to OFF (Stripe would capture funds the
+   * webhook-side guard then refuses to apply — S0 stranded funds). Wired from
+   * `env.features.f088TaxAtPayment` at `makeInitiatePaymentDeps`. The SEPARATE
+   * webhook reconciliation read (`confirm-payment`) forwards the same flag but
+   * with `reconciliationPath: true`, which keeps the F4 guard dormant there.
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /** Returns a fresh payment id, e.g., `pmt_<ulid>`. Injected for deterministic tests. */
   readonly generatePaymentId: () => PaymentId;
   /**
@@ -296,6 +318,13 @@ async function initiatePaymentBody(
       requestId: input.requestId,
       memberId: input.actorMemberId,
     },
+    // 088 SEC-MED — forward the flow flag + arm the guard (`reconciliationPath:
+    // false`) so F4 refuses a new-flow bill minted under the flag that is being
+    // self-paid after a flag rollback (stranded-funds guard fires BEFORE the PI
+    // is created). The webhook confirm path sends the same flag with
+    // `reconciliationPath: true`, keeping the guard dormant there.
+    taxAtPayment: deps.taxAtPayment,
+    reconciliationPath: false,
   });
   if (!invoiceResult.ok) {
     const e = invoiceResult.error;
@@ -341,6 +370,12 @@ async function initiatePaymentBody(
     // write or Stripe round-trip; see the error-union member for rationale.
     if (e.code === 'legacy_no_tin_event_not_payable') {
       return err({ code: 'legacy_no_tin_event_not_payable' });
+    }
+    // 088 SEC-MED — new-flow bill paid after a flag rollback. Short-circuit
+    // BEFORE any DB write or Stripe round-trip (no PI created); see the
+    // error-union member for rationale.
+    if (e.code === 'new_flow_bill_requires_flag_on') {
+      return err({ code: 'new_flow_bill_requires_flag_on' });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });

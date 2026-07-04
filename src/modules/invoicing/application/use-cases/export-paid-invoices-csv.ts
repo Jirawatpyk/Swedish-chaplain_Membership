@@ -37,7 +37,7 @@ import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { AuditPort } from '../ports/audit-port';
-import type { Invoice } from '../../domain/invoice';
+import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
 
 // --- Input + Output ----------------------------------------------------
 
@@ -228,7 +228,10 @@ function buildRow(
 
   const cells: readonly string[] = [
     inv.issueDate ?? '',
-    inv.documentNumber?.raw ?? '',
+    // 088 FR-030 — the "Invoice No." column shows an 088 bill's SC number
+    // (`billDocumentNumberRaw`; §87 `documentNumber` NULL); the §86/4 RC stays
+    // in the "Receipt No." column below. Legacy §87 rows keep documentNumber.
+    billFirstDocumentNumber(inv) ?? '',
     inv.receiptDocumentNumberRaw ?? '',
     legalName,
     taxId,

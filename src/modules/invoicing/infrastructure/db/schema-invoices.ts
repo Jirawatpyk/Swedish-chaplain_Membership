@@ -96,6 +96,17 @@ export const invoices = pgTable(
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
 
+    // 088 L1 — this is the BILL / issue-time fiscal year by design (derived
+    // from the ISSUE date in `issueInvoice`). It is NOT the §87 fiscal year of
+    // the payment-time `RC` tax receipt: for a cross-year sale (bill FY2025 →
+    // paid FY2026) the RC is `RC-2026-…` while `fiscal_year` stays 2025. The
+    // RC's true §87 fiscal year lives on the RC number string
+    // (`receipt_document_number_raw`, `RC-{FY}-…`) AND in the
+    // `tax_receipt_issued` audit payload's `fiscal_year`. Any future §87 RC-
+    // register / ภพ.30 report (T065b, unbuilt) MUST bucket RC receipts by THAT
+    // payment fiscal year, never by this column. The current readers of this
+    // column (F9 YTD-paid-revenue KPI + the invoice list `fiscalYear` filter)
+    // are intentionally on the bill/issue-FY basis — leave them unchanged.
     fiscalYear: smallint('fiscal_year'),
     sequenceNumber: integer('sequence_number'),
     documentNumber: text('document_number'),
@@ -177,6 +188,32 @@ export const invoices = pgTable(
     // worker retries. NULL for combined-mode + pre-T166 + non-paid rows.
     receiptDocumentNumberRaw: text('receipt_document_number_raw'),
 
+    // 088-invoice-tax-flow-redesign (T006, migration 0231) — the pre-payment
+    // ใบแจ้งหนี้'s NON-§87 bill number (e.g. SC-2026-000123), allocated at
+    // issue from the `bill` stream. Disjoint from sequence_number /
+    // document_number so it can NEVER enter invoices_tenant_fiscal_seq_unique
+    // (SC-003); has its own per-tenant partial unique index
+    // invoices_tenant_bill_raw_uniq below. NULL for drafts + all pre-088 rows.
+    // Written once in the draft→issued UPDATE, then locked by
+    // invoices_enforce_immutability (migration 0231, mirrors document_number).
+    billDocumentNumberRaw: text('bill_document_number_raw'),
+
+    // 088-invoice-tax-flow-redesign (T055, migration 0234, US8 / § F.8) —
+    // per-invoice VAT treatment (case-by-case, NOT per-member). 'standard' =
+    // VAT 7% (membership + all defaults); 'zero_rated_80_1_5' = VAT 0% embassy /
+    // int'l-org zero-rate (§80/1(5)). NOT NULL DEFAULT 'standard' → every
+    // pre-088 row backfills cleanly; the value DRIVES the VAT rate (FR-025).
+    // Pinned at issue, then locked by invoices_enforce_immutability (0234).
+    vatTreatment: text('vat_treatment').notNull().default('standard'),
+    // MFA (Protocol Dept) certificate particulars — REQUIRED when zero-rated
+    // (fail-closed, invoices_zero_rate_cert_required CHECK below + app layer).
+    // NULL on every standard row. Also pinned/locked at issue (0234).
+    zeroRateCertNo: text('zero_rate_cert_no'),
+    zeroRateCertDate: date('zero_rate_cert_date'),
+    // Optional Vercel-Blob key of the cert scan (tax-document class, 10y,
+    // admin-only — reference only, NOT appended to the PDF).
+    zeroRateCertBlobKey: text('zero_rate_cert_blob_key'),
+
     // 054-event-fee-invoices (code-review HIGH-3) — retryable PDF-blob purge
     // marker for the 10-year non-member event-buyer PII redaction sweep.
     // Set to now() ONLY by the redact-expired-event-buyers cron AFTER it has
@@ -256,7 +293,9 @@ export const invoices = pgTable(
           AND fiscal_year IS NOT NULL
           AND (
             (sequence_number IS NOT NULL AND document_number IS NOT NULL)
-            OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL
+            OR (bill_document_number_raw IS NOT NULL
+                AND sequence_number IS NULL AND document_number IS NULL)
+            OR (receipt_document_number_raw IS NOT NULL
                 AND sequence_number IS NULL AND document_number IS NULL)
           )
           AND issue_date IS NOT NULL
@@ -281,6 +320,7 @@ export const invoices = pgTable(
       sql`(
         status = 'draft'
         OR sequence_number IS NOT NULL
+        OR bill_document_number_raw IS NOT NULL
         OR (invoice_subject = 'event' AND receipt_document_number_raw IS NOT NULL)
       )`,
     ),
@@ -299,6 +339,22 @@ export const invoices = pgTable(
     check(
       'invoices_non_draft_has_doc_kind',
       sql`(status = 'draft' OR pdf_doc_kind IS NOT NULL)`,
+    ),
+    // 088-invoice-tax-flow-redesign (T055, migration 0234, US8 / § F.8.2) —
+    // mirror the LIVE predicates so the Drizzle schema reflects the DB shape.
+    // (a) accepted-value gate; (b) fail-closed cert-required-when-zero-rated;
+    // (c) US8 review fix — membership can never be zero-rated (FR-023 layer 3).
+    check(
+      'invoices_vat_treatment_valid',
+      sql`vat_treatment IN ('standard', 'zero_rated_80_1_5')`,
+    ),
+    check(
+      'invoices_zero_rate_cert_required',
+      sql`vat_treatment <> 'zero_rated_80_1_5' OR zero_rate_cert_no IS NOT NULL`,
+    ),
+    check(
+      'invoices_membership_is_standard',
+      sql`invoice_subject <> 'membership' OR vat_treatment = 'standard'`,
     ),
     // 054-event-fee-invoices — one non-void event invoice per registration.
     // Predicate uses `status <> 'void'` because the void status value is
@@ -319,6 +375,15 @@ export const invoices = pgTable(
     uniqueIndex('invoices_tenant_receipt_raw_uniq')
       .on(table.tenantId, table.receiptDocumentNumberRaw)
       .where(sql`receipt_document_number_raw IS NOT NULL`),
+    // 088-invoice-tax-flow-redesign (T006, migration 0231) — per-tenant
+    // uniqueness backstop for the NON-§87 bill number. Mirrors the receipt-raw
+    // index above; partial (NULL drafts/pre-088 rows stay outside), per-tenant
+    // (tenants legitimately share raws). Disjoint from
+    // invoices_tenant_fiscal_seq_unique so a bill number can never collide with
+    // a §87 tax number (SC-003).
+    uniqueIndex('invoices_tenant_bill_raw_uniq')
+      .on(table.tenantId, table.billDocumentNumberRaw)
+      .where(sql`bill_document_number_raw IS NOT NULL`),
     // FK DECISION (054-event-fee-invoices, Task 3+4):
     //   `(tenant_id, event_registration_id)` → `event_registrations
     //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware

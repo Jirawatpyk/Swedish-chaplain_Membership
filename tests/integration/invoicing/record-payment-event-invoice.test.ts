@@ -161,6 +161,7 @@ function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
   };
 }
 
@@ -190,6 +191,18 @@ function makeRecordPaymentDepsWithCapture(
   return {
     ...rest,
     asyncReceiptPdf: false,
+    // Pin the LEGACY flow EXPLICITLY rather than inheriting the ambient
+    // FEATURE_088_TAX_AT_PAYMENT env flag (makeRecordPaymentDeps injects it from
+    // env; it is ON in the dev env, frozen at boot). Every invoice paid in this
+    // file is LEGACY-shaped (documentNumber set at issue, billDocumentNumberRaw
+    // NULL — issueInvoice here runs in legacy mode) or a direct-inserted legacy
+    // row. Under the ambient flag ON those rows trip the FR-017
+    // `legacy_invoice_needs_reissue` guard (record-payment.ts) before the receipt
+    // renders. false → legacy combined-reuse (receipt reuses the invoice number,
+    // receiptDocumentNumberRaw stays NULL) — the exact flow these assertions
+    // document ("With the flag OFF (current prod default)…"). Decouples the test
+    // from the env flag. (whole-feature-review env-coupling fix.)
+    taxAtPayment: 'off',
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
         captured.push(renderInput);
@@ -424,13 +437,18 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
     expect(row!.paidAt).not.toBeNull();
     expect(row!.memberId).toBeNull(); // non-member event invoice.
 
-    // 064 Task 10 (reviewer carry-forward) — α-shape explicit pin: a TIN
-    // bill-first row paid under SEPARATE receipt numbering legitimately
-    // carries the FULL §87 invoice-stream pair AND a receipt-stream raw
-    // number side by side. Migration 0212's relaxed leg applies only when
-    // the pair is ABSENT — this α shape must stay legal under it.
+    // 088 US1 (T008) retired the settings-driven combined/separate receipt
+    // numbering in favour of the FEATURE_088_TAX_AT_PAYMENT flag. With the flag
+    // OFF (current prod default; this test uses the default deps), an
+    // event-with-TIN combined receipt REUSES the §87 invoice number (one §87 —
+    // `reuseInvoiceNumber = !taxAtPayment && !forceSeparate` in record-payment.ts):
+    // the invoice-stream pair is allocated at ISSUE (sequenceNumber set) and NO
+    // separate receipt-stream number is minted (receiptDocumentNumberRaw stays
+    // NULL). The flag-ON bill→RC flow (non-§87 SC bill + a separate §87 RC) is
+    // covered by the dedicated US1 tests (bill-to-receipt / payment-parity), not
+    // here. (Was the retired pre-088 "separate receipt numbering" α-shape.)
     expect(row!.sequenceNumber).not.toBeNull();
-    expect(row!.receiptDocumentNumberRaw).not.toBeNull();
+    expect(row!.receiptDocumentNumberRaw).toBeNull();
 
     // Receipt render invoked with the PRE-PINNED non-member buyer snapshot
     // (NOT a deref of a null member) + Model-B vatInclusive threaded.
@@ -686,7 +704,7 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
 
     const result = await getInvoiceForPayment(
       makeGetInvoiceDeps(tenant.ctx.slug),
-      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId },
+      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId, taxAtPayment: 'off', reconciliationPath: true },
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected legacy_no_tin_event_not_payable, got ok');

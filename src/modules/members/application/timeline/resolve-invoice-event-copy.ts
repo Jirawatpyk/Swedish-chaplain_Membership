@@ -31,7 +31,21 @@ interface AuditPayloadLike {
   readonly invoice_id?: string;
   readonly credit_note_id?: string;
   readonly document_number?: string;
+  /**
+   * 088 (FR-030) — the SC bill number of an issued 088 ใบแจ้งหนี้, whose §87
+   * `document_number` is NULL until payment. The `invoice_issued` audit event
+   * emits it (issue-invoice.ts). Without this fallback the timeline renders
+   * `invoiceIssued` with a MISSING {documentNumber} for every 088 bill.
+   */
+  readonly bill_document_number_raw?: string;
   readonly receipt_document_number?: string;
+  /**
+   * 088 (FR-029) — the §87 `RC` tax-receipt number, carried by the
+   * `tax_receipt_issued` audit event (record-payment.ts emit payload). Distinct
+   * key from the older `receipt_document_number`; both are accepted so the copy
+   * resolves regardless of which emit site produced the row.
+   */
+  readonly receipt_document_number_raw?: string;
   readonly payment_method?: string;
   readonly total_satang?: string | number;
   readonly credit_amount_satang?: string | number;
@@ -54,7 +68,11 @@ export function resolveInvoiceEventCopy(
   const p = (payload ?? {}) as AuditPayloadLike;
   const invoiceId = str(p.invoice_id);
   const creditNoteId = str(p.credit_note_id);
-  const docNum = str(p.document_number) ?? str(p.receipt_document_number);
+  const docNum =
+    str(p.document_number) ??
+    str(p.bill_document_number_raw) ??
+    str(p.receipt_document_number) ??
+    str(p.receipt_document_number_raw);
 
   const linkForInvoice = invoiceId ? `/admin/invoices/${invoiceId}` : null;
   const linkForCreditNote = creditNoteId
@@ -95,6 +113,9 @@ export function resolveInvoiceEventCopy(
     invoice_voided: 'invoiceVoided',
     credit_note_issued: 'creditNoteIssued',
     invoice_pdf_resent: 'invoicePdfResent',
+    // 088 (FR-029) — §86/4 tax receipt minted at payment; interpolates the
+    // `RC-…` number (from `receipt_document_number_raw`) + links the document.
+    tax_receipt_issued: 'taxReceiptIssued',
   };
 
   const key = keyByType[eventType as F4MemberTimelineEventType];

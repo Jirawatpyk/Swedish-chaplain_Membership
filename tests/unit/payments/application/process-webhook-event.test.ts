@@ -166,6 +166,9 @@ function makeDeps(): ProcessWebhookEventDeps {
     invoicingBridge: invoicingBridge as unknown as ProcessWebhookEventDeps['invoicingBridge'],
     audit: audit as unknown as ProcessWebhookEventDeps['audit'],
     clock,
+    // Inert in this unit test: the bridge is mocked, so the flow flag only
+    // reaches the (stubbed) inner confirm read (reconciliationPath:true → dormant).
+    taxAtPayment: 'off' as const,
   };
 }
 

@@ -138,6 +138,13 @@ function formatAuditPayload(
       const reason = get('reason');
       return reason ? tPayload('archiveReason', { reason }) : null;
     }
+    // 088 (T019a / FR-029) — surface the §87 `RC` tax-receipt number minted at
+    // payment so the "Tax receipt issued" row names WHICH receipt. The RC lives
+    // in `receipt_document_number_raw` (record-payment / issue-event-invoice-as-
+    // paid emit). No i18n key: the number is a stable identifier, shown verbatim
+    // like the `member_created` company one-liner.
+    case 'tax_receipt_issued':
+      return get('receipt_document_number_raw');
     default:
       return null;
   }

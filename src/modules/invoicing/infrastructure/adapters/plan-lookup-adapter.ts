@@ -44,4 +44,35 @@ export const planLookupAdapter: PlanLookupPort = {
     // `annualFeeMinorUnits` is stored as F2's minor units (satang for THB).
     return BigInt(row.fee);
   },
+
+  // 088 T036 (FR-011) — resolve the plan display name for the membership line
+  // description. SAME (tenant, plan, year) + `deleted_at IS NULL` filter as
+  // `getAnnualFeeSatang` (so a create-invoice-draft that passed the fee gate
+  // resolves a name here too). `plan_name` is a NOT-NULL `LocaleText` jsonb
+  // (`{ en, th?, sv? }`, `en` required); flatten it to two plain strings at the
+  // boundary so the plans-domain type never leaks into the Application port.
+  async getPlanName(
+    tenantId: string,
+    planId: string,
+    planYear: number,
+  ): Promise<{ th: string; en: string } | null> {
+    const ctx = asTenantContext(tenantId);
+    const rows = await runInTenant(ctx, (tx) =>
+      tx
+        .select({ name: membershipPlans.planName })
+        .from(membershipPlans)
+        .where(
+          and(
+            eq(membershipPlans.tenantId, tenantId),
+            eq(membershipPlans.planId, planId),
+            eq(membershipPlans.planYear, planYear),
+            isNull(membershipPlans.deletedAt),
+          ),
+        )
+        .limit(1),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { th: row.name.th ?? row.name.en, en: row.name.en };
+  },
 };

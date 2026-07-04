@@ -178,6 +178,7 @@ export default async function NewInvoiceDraftPage({
             members={members}
             plans={plans}
             events={events}
+            taxAtPayment={env.features.f088TaxAtPayment}
             {...(initialMemberId ? { initialMemberId } : {})}
             {...(initialEventId ? { initialEventId } : {})}
             {...(initialRegistrationId ? { initialRegistrationId } : {})}

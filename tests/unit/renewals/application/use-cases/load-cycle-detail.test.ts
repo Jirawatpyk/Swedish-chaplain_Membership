@@ -9,6 +9,7 @@ import { loadCycleDetail } from '@/modules/renewals/application/use-cases/load-c
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c3';
@@ -71,15 +72,20 @@ describe('loadCycleDetail (T057)', () => {
     }
   });
 
-  it('hydrates linked invoice when linkedInvoiceId set', async () => {
+  it('hydrates linked invoice number from documentNumber.raw (legacy §87)', async () => {
     const cycle = buildCycle({
       linkedInvoiceId: '11111111-1111-1111-1111-111111111111',
     });
     const { deps } = fakeDeps(cycle);
+    // The REAL F4 `getInvoice` returns `documentNumber` as a `DocumentNumber`
+    // value object (NOT a bare string) — the use-case must read `.raw`.
+    const legacyDoc = DocumentNumber.of('INV', 2026, 1);
+    if (!legacyDoc.ok) throw new Error('fixture doc number invalid');
     getInvoiceMock.mockResolvedValueOnce({
       ok: true,
       value: {
-        documentNumber: 'INV-2026-0001',
+        documentNumber: legacyDoc.value,
+        billDocumentNumberRaw: null,
         status: 'paid',
         total: { satang: 5000000n },
       },
@@ -87,8 +93,32 @@ describe('loadCycleDetail (T057)', () => {
     const r = await loadCycleDetail(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok && r.value.linkedInvoice) {
-      expect(r.value.linkedInvoice.invoiceNumber).toBe('INV-2026-0001');
+      expect(r.value.linkedInvoice.invoiceNumber).toBe('INV-2026-000001');
       expect(r.value.linkedInvoice.totalSatang).toBe(5000000n);
+    }
+  });
+
+  it('088 T069 — hydrates the SC bill number when documentNumber is NULL (ใบแจ้งหนี้)', async () => {
+    const cycle = buildCycle({
+      linkedInvoiceId: '11111111-1111-1111-1111-111111111111',
+    });
+    const { deps } = fakeDeps(cycle);
+    // A renewal-generated 088 ใบแจ้งหนี้: NULL `documentNumber`, non-§87 `SC`
+    // bill number in `billDocumentNumberRaw`. The cycle-detail surface must
+    // show the SC number, never blank (FR-018).
+    getInvoiceMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000123',
+        status: 'issued',
+        total: { satang: 1284000n },
+      },
+    });
+    const r = await loadCycleDetail(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.linkedInvoice) {
+      expect(r.value.linkedInvoice.invoiceNumber).toBe('SC-2026-000123');
     }
   });
 

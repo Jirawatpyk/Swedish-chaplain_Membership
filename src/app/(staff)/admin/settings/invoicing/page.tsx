@@ -51,13 +51,28 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
   registration_fee_baht: '0',
   invoice_number_prefix: 'INV',
   credit_note_number_prefix: 'CN',
-  receipt_numbering_mode: 'combined',
+  // 088 US5 (F.5) — combined numbering retired; new tenants default to separate.
+  receipt_numbering_mode: 'separate',
   receipt_number_prefix: null,
   fiscal_year_start_month: 1,
   default_net_days: 30,
   pro_rate_policy: 'monthly',
   auto_email_enabled: true,
   logo_blob_key: null,
+  // 088 US5 (T043) — seller §86/4 branch + WHT note + bank block defaults.
+  seller_is_head_office: true,
+  seller_branch_code: null,
+  wht_note_th: null,
+  wht_note_en: null,
+  bank_payee_name: null,
+  bank_account_no: null,
+  bank_account_type: null,
+  bank_name: null,
+  bank_branch: null,
+  bank_address: null,
+  bank_swift: null,
+  payment_instructions_th: null,
+  payment_instructions_en: null,
 };
 
 export default async function InvoiceSettingsPage() {
@@ -91,6 +106,21 @@ export default async function InvoiceSettingsPage() {
         pro_rate_policy: existing.proRatePolicy,
         auto_email_enabled: existing.autoEmailEnabled,
         logo_blob_key: existing.identity.logo_blob_key ?? null,
+        // 088 US5 (T043) — seller branch + WHT note + bank block ride the pinned
+        // identity snapshot; hydrate the form from it.
+        seller_is_head_office: existing.identity.seller_is_head_office ?? true,
+        seller_branch_code: existing.identity.seller_branch_code ?? null,
+        wht_note_th: existing.identity.wht_note_th ?? null,
+        wht_note_en: existing.identity.wht_note_en ?? null,
+        bank_payee_name: existing.identity.bank_payee_name ?? null,
+        bank_account_no: existing.identity.bank_account_no ?? null,
+        bank_account_type: existing.identity.bank_account_type ?? null,
+        bank_name: existing.identity.bank_name ?? null,
+        bank_branch: existing.identity.bank_branch ?? null,
+        bank_address: existing.identity.bank_address ?? null,
+        bank_swift: existing.identity.bank_swift ?? null,
+        payment_instructions_th: existing.identity.payment_instructions_th ?? null,
+        payment_instructions_en: existing.identity.payment_instructions_en ?? null,
       }
     : DEFAULTS;
 

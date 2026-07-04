@@ -174,6 +174,10 @@ function makeDeps(
     audit: audit as unknown as InitiatePaymentDeps['audit'],
     clock,
     generatePaymentId,
+    // Default: flag not carried (exact-equivalent of the pre-refactor `undefined`
+    // → the F4 stranded-funds guard, keyed on 'off', stays dormant). Flag-specific
+    // forwarding is covered by the get-invoice-for-payment guard tests.
+    taxAtPayment: 'off',
     ...overrides,
   };
 }
@@ -195,6 +199,14 @@ describe('initiatePayment (T055)', () => {
     expect(result.value.resumed).toBe(false);
     expect(result.value.clientSecret).toBe('pi_test_new_secret_abc');
     expect(result.value.publishableKey).toBe('pk_test_abc');
+    // Round-3 lock — the initiate READ MUST carry `reconciliationPath: false` so
+    // F4's stranded-funds guard is ARMED: a new-flow bill paid under a rolled-back
+    // flag is refused up front (no Stripe PI created → no captured-but-unappliable
+    // funds). A boolean flip here (false→true) opens that S0 window; the mocked
+    // bridge ignores the arg, so this pins the literal the use-case sets.
+    expect(deps.invoicingBridge.getInvoiceForPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ reconciliationPath: false }),
+    );
     expect(deps.audit.emit).toHaveBeenCalledTimes(1);
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(auditCall?.[1].eventType).toBe('payment_initiated');
@@ -904,6 +916,26 @@ describe('initiatePayment (T055)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('legacy_no_tin_event_not_payable');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+  });
+
+  // 088 SEC-MED — SYMMETRIC to the record-payment webhook guard. A NEW-FLOW
+  // bill issued while FEATURE_088_TAX_AT_PAYMENT was ON must never reach Stripe
+  // once the flag rolls back to OFF: the webhook-side `recordPayment` guard
+  // would refuse the captured payment (same code, no auto-refund → S0 stranded
+  // funds). The F4 bridge surfaces the typed discriminator; this use-case must
+  // short-circuit with its own typed code (route warn-log keeps the
+  // flag-rollback pointer) BEFORE any insert / createPaymentIntent.
+  it('new-flow bill after flag rollback (bridge new_flow_bill_requires_flag_on) — typed reject, no insert / no Stripe call', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'new_flow_bill_requires_flag_on' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
   });

@@ -11,6 +11,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { getInvoiceForPayment } from '@/modules/invoicing/application/use-cases/get-invoice-for-payment';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+
+/** A real §87 document number VO for the legacy-issued-row fixtures. */
+function docNum(raw = 'SC-2026-000007'): DocumentNumber {
+  const r = DocumentNumber.parse(raw);
+  if (!r.ok) throw new Error('docNum fixture failed');
+  return r.value;
+}
 
 function makeInvoice(overrides: Partial<Invoice>): Invoice {
   return {
@@ -59,6 +67,8 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -75,6 +85,8 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -89,6 +101,8 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -102,6 +116,8 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(null), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -125,6 +141,8 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -165,6 +183,8 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -182,6 +202,8 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -202,6 +224,8 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(true);
   });
@@ -220,6 +244,8 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(true);
   });
@@ -235,9 +261,106 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: true,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.status).toBe('paid');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 088 SEC-MED — SYMMETRIC stranded-funds guard for the initiate side. A
+// NEW-FLOW bill (NULL §87 `documentNumber` + non-§87 `billDocumentNumberRaw`,
+// issued while FEATURE_088_TAX_AT_PAYMENT was ON) must NOT be online-payable
+// after the flag is rolled back to OFF: without this guard the initiate side
+// creates a Stripe PI, Stripe captures the money, then the webhook-side
+// `recordPayment` guard refuses the flip (same `new_flow_bill_requires_flag_on`
+// code, NO auto-refund) — captured-but-unappliable funds (S0). Two orthogonal
+// INPUT axes gate it: the initiate path passes { taxAtPayment: 'on'/'off',
+// reconciliationPath: false }; webhook-side reconciliation reads pass
+// { taxAtPayment: <honest flag>, reconciliationPath: true } so they stay dormant.
+// ---------------------------------------------------------------------------
+describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () => {
+  it('flag OFF + a new-flow bill (issued, billDocumentNumberRaw set, documentNumber null) → new_flow_bill_requires_flag_on', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: false,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
+  });
+
+  it('flag ON + the SAME new-flow bill → payable (ok)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'on',
+      reconciliationPath: false,
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('issued');
+    expect(result.value.totalSatang).toBe(1_070_00n);
+  });
+
+  it('flag OFF + a LEGACY issued row (documentNumber set, billDocumentNumberRaw null) → unaffected (payable)', async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: docNum(),
+      billDocumentNumberRaw: null,
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'off',
+      reconciliationPath: false,
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+  });
+
+  // LOCK (b) — the reconciliationPath exemption. reconciliationPath:true +
+  // taxAtPayment:'off' + a NEW-FLOW bill MUST stay payable (ok). This is the
+  // webhook/confirm-payment read: the flow flag is genuinely OFF, but because it
+  // is a reconciliation read the guard MUST NOT trip (the money is already
+  // captured; refusing would strand it). If the `input.reconciliationPath !== true`
+  // clause is ever removed from the guard, taxAtPayment:'off' + new-flow bill would
+  // trip `new_flow_bill_requires_flag_on` → err → THIS TEST FAILS.
+  it("reconciliationPath:true (webhook read) + flag OFF + a new-flow bill → payable (guard exempt on the reconciliation axis)", async () => {
+    const invoice = makeInvoice({
+      status: 'issued',
+      memberId: 'mem-1',
+      total: Money.fromSatangUnsafe(1_070_00n),
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000001',
+    });
+    const result = await getInvoiceForPayment(mkDeps(invoice), {
+      tenantId: 'ten-1',
+      invoiceId: '00000000-0000-0000-0000-000000000001',
+      // Honest flow flag is OFF, but this is a reconciliation read → guard DORMANT.
+      taxAtPayment: 'off',
+      reconciliationPath: true,
+    });
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
   });
 });

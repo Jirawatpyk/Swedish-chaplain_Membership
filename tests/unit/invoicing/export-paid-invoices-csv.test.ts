@@ -140,6 +140,30 @@ describe('exportPaidInvoicesCsv', () => {
     expect(result.value.csv).toContain(',1070.00,');
   });
 
+  it('088 tax-at-payment paid bill — Invoice No. = SC, Receipt No. = RC (FR-030)', async () => {
+    // A new-flow 088 bill paid → the §87 `documentNumber` is NULL forever; the
+    // SC bill number lives in `billDocumentNumberRaw` and the §86/4 RC in
+    // `receiptDocumentNumberRaw`. The ภ.พ.30 CSV must show SC in the "Invoice
+    // No." column (was blank — the FR-030 bug) and RC in "Receipt No.".
+    const inv = makeInvoice({
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000009',
+      receiptDocumentNumberRaw: 'RC-2026-000009',
+    });
+    const deps = makeDeps([inv]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.rowCount).toBe(1);
+    // Same row, right columns: `<issueDate>,SC,RC,...` — SC in Invoice No.,
+    // RC in Receipt No. (never blank, never swapped).
+    expect(result.value.csv).toMatch(/2026-05-15,SC-2026-000009,RC-2026-000009,/);
+  });
+
   it('leaves Receipt No. blank for combined-mode rows', async () => {
     const inv = makeInvoice({
       receiptDocumentNumberRaw: null, // combined

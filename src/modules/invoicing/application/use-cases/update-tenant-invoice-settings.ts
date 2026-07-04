@@ -50,12 +50,88 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   invoiceNumberPrefix: z.string().min(1).max(20).optional(),
   creditNoteNumberPrefix: z.string().min(1).max(20).optional(),
   receiptNumberPrefix: z.string().min(1).max(20).nullable().optional(),
-  receiptNumberingMode: z.enum(['combined', 'separate']).optional(),
+  // 088 T008 (F.5) — combined-numbering mode is RETIRED: the pre-payment bill
+  // carries a non-§87 `SC` number, so the payment-time §86/4 receipt can never
+  // reuse a §87 number from it. Only `'separate'` is accepted now (fail-closed);
+  // a `'combined'` PATCH is rejected. The read type keeps the historical union
+  // for legacy rows, but no new `'combined'` value can be written.
+  receiptNumberingMode: z.enum(['separate']).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
   defaultNetDays: z.number().int().min(0).max(365).optional(),
   proRatePolicy: z.enum(['none', 'monthly', 'daily']).optional(),
   autoEmailEnabled: z.boolean().optional(),
   logoBlobKey: z.string().max(500).nullable().optional(),
+  // 088 US5 (T040 / FR-012) — tenant WHT footer note; null clears it.
+  whtNoteTh: z.string().max(500).nullable().optional(),
+  whtNoteEn: z.string().max(500).nullable().optional(),
+  // 088 US5 (T040 / § C.2) — seller §86/4 Head-Office/Branch. Pairing validated
+  // in the superRefine below (mirrors tenant_invoice_settings_seller_branch_ck).
+  sellerIsHeadOffice: z.boolean().optional(),
+  sellerBranchCode: z
+    .string()
+    .regex(/^\d{5}$/, 'sellerBranchCode must be exactly 5 digits')
+    .nullable()
+    .optional(),
+  // 088 US5 (T040 / FR-022) — offline-payment bank block; null clears each field.
+  bankPayeeName: z.string().max(200).nullable().optional(),
+  bankAccountNo: z
+    .string()
+    .regex(/^[0-9][0-9\s-]{3,}$/, 'bankAccountNo must be digits (with optional - or space separators)')
+    .max(50)
+    .nullable()
+    .optional(),
+  bankAccountType: z.string().max(50).nullable().optional(),
+  bankName: z.string().max(200).nullable().optional(),
+  bankBranch: z.string().max(200).nullable().optional(),
+  bankAddress: z.string().max(500).nullable().optional(),
+  bankSwift: z
+    .string()
+    .regex(
+      /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/,
+      'bankSwift must be a valid 8- or 11-character SWIFT/BIC code',
+    )
+    .nullable()
+    .optional(),
+  paymentInstructionsTh: z.string().max(500).nullable().optional(),
+  paymentInstructionsEn: z.string().max(500).nullable().optional(),
+}).superRefine((val, ctx) => {
+  // 088 US7 (review fix) — reserve 'RE' for the §105 `receipt_105` register.
+  // The §86/4 RC-role receipt register and the §105 register both write into
+  // `invoices.receipt_document_number_raw` and share ONE unpartitioned unique
+  // index `invoices_tenant_receipt_raw_uniq (tenant_id,
+  // receipt_document_number_raw)`; each is a separate counter (both seq 1 in a
+  // fresh FY). The §105 prefix is HARDCODED 'RE', so a §86/4 receipt prefix of
+  // 'RE' would render the identical raw → 23505. Reject it (case-insensitively,
+  // since document prefixes are uppercase-only per DocumentNumber). null / a
+  // different prefix (e.g. the 'RC' default) is fine.
+  if (
+    val.receiptNumberPrefix != null &&
+    val.receiptNumberPrefix.trim().toUpperCase() === 'RE'
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['receiptNumberPrefix'],
+      message:
+        "receiptNumberPrefix 'RE' is reserved for §105 event receipts; use a different §86/4 receipt prefix such as RC",
+    });
+  }
+  // 088 US5 (T040) — seller Head-Office/Branch pairing (only when the flag is in
+  // the patch — a partial PATCH that omits the flag defers to the DB CHECK
+  // against the stored value). Mirrors the member branch superRefine (US3).
+  if (val.sellerIsHeadOffice === false && (val.sellerBranchCode == null || val.sellerBranchCode === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sellerBranchCode'],
+      message: 'A branch (seller_is_head_office=false) requires a 5-digit sellerBranchCode',
+    });
+  }
+  if (val.sellerIsHeadOffice === true && val.sellerBranchCode != null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['sellerBranchCode'],
+      message: 'A head office (seller_is_head_office=true) must not carry a sellerBranchCode',
+    });
+  }
 });
 
 export type UpdateTenantInvoiceSettingsInput = z.infer<typeof updateTenantInvoiceSettingsSchema>;
@@ -121,6 +197,21 @@ export async function updateTenantInvoiceSettings(
     ...(input.proRatePolicy !== undefined && { proRatePolicy: input.proRatePolicy }),
     ...(input.autoEmailEnabled !== undefined && { autoEmailEnabled: input.autoEmailEnabled }),
     ...(input.logoBlobKey !== undefined && { logoBlobKey: input.logoBlobKey }),
+    // 088 US5 (T040) — WHT note + seller branch + bank block. Each threaded only
+    // when explicitly provided so a partial PATCH never stomps unrelated columns.
+    ...(input.whtNoteTh !== undefined && { whtNoteTh: input.whtNoteTh }),
+    ...(input.whtNoteEn !== undefined && { whtNoteEn: input.whtNoteEn }),
+    ...(input.sellerIsHeadOffice !== undefined && { sellerIsHeadOffice: input.sellerIsHeadOffice }),
+    ...(input.sellerBranchCode !== undefined && { sellerBranchCode: input.sellerBranchCode }),
+    ...(input.bankPayeeName !== undefined && { bankPayeeName: input.bankPayeeName }),
+    ...(input.bankAccountNo !== undefined && { bankAccountNo: input.bankAccountNo }),
+    ...(input.bankAccountType !== undefined && { bankAccountType: input.bankAccountType }),
+    ...(input.bankName !== undefined && { bankName: input.bankName }),
+    ...(input.bankBranch !== undefined && { bankBranch: input.bankBranch }),
+    ...(input.bankAddress !== undefined && { bankAddress: input.bankAddress }),
+    ...(input.bankSwift !== undefined && { bankSwift: input.bankSwift }),
+    ...(input.paymentInstructionsTh !== undefined && { paymentInstructionsTh: input.paymentInstructionsTh }),
+    ...(input.paymentInstructionsEn !== undefined && { paymentInstructionsEn: input.paymentInstructionsEn }),
   };
 
   if (Object.keys(patch).length === 0) return err({ code: 'no_op' });

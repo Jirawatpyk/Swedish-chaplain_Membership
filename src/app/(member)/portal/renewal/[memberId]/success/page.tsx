@@ -23,7 +23,11 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeRenewalsDeps } from '@/modules/renewals';
-import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
+import {
+  billFirstDocumentNumber,
+  getInvoice,
+  makeGetInvoiceDeps,
+} from '@/modules/invoicing';
 import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
@@ -246,7 +250,11 @@ export default async function RenewalSuccessPage({
             // Paid but receipt PDF still rendering — give the member
             // the invoice (immediately available) + an explicit "your
             // receipt is being prepared" affordance.
-            const docNum = invoice.documentNumber?.raw ?? invoiceId;
+            // 088 T069 — an 088 ใบแจ้งหนี้ (bill) carries its number in
+            // `billDocumentNumberRaw`, NOT `documentNumber` (NULL for a bill);
+            // fall back to it before the UUID so the invoice download filename
+            // reads `SC-2026-…` (never the raw UUID) in the new flow.
+            const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
             return (
               <>
                 <PortalInvoiceDownloadButton
@@ -277,7 +285,9 @@ export default async function RenewalSuccessPage({
           // user-confusion bug: members saw "Download receipt PDF" but
           // got an invoice).
           if (invoice) {
-            const docNum = invoice.documentNumber?.raw ?? invoiceId;
+            // 088 T069 — bill number lives in `billDocumentNumberRaw` (the
+            // ใบแจ้งหนี้ has NULL `documentNumber` in the new flow).
+            const docNum = billFirstDocumentNumber(invoice) ?? invoiceId;
             return (
               <PortalInvoiceDownloadButton
                 invoiceId={invoiceId}

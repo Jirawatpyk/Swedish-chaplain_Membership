@@ -169,6 +169,39 @@ describe("InvoiceMoreMenu — β receipt main download (064 remediation A4, main
   });
 });
 
+describe('InvoiceMoreMenu — 088 paid bill SC-vs-RC naming (T065 review fix)', () => {
+  it('names the MAIN (SC bill) download by invoiceDownloadNumber while the receipt arm keeps documentNumber (RC)', () => {
+    // On a paid 088 bill `documentNumber` resolves to the RC §86/4 tax-receipt
+    // number, but the main download serves the non-tax SC bill — so the two
+    // download affordances must carry DISTINCT numbers (SC vs RC).
+    render(
+      <InvoiceMoreMenu
+        {...BASE}
+        documentNumber="RC-2026-000123"
+        invoiceDownloadNumber="SC-2026-000045"
+        showDownload
+        showDownloadReceipt
+      />,
+    );
+    expect(screen.getByTestId('download-invoice-trigger')).toHaveAttribute(
+      'aria-label',
+      'actions.downloadInvoiceAria {"number":"SC-2026-000045"}',
+    );
+    expect(screen.getByTestId('download-receipt-trigger')).toHaveAttribute(
+      'aria-label',
+      'actions.downloadReceiptAria {"number":"RC-2026-000123"}',
+    );
+  });
+
+  it('falls back to documentNumber for the main download when invoiceDownloadNumber is omitted (pre-088 byte-identical)', () => {
+    render(<InvoiceMoreMenu {...BASE} showDownload />);
+    expect(screen.getByTestId('download-invoice-trigger')).toHaveAttribute(
+      'aria-label',
+      'actions.downloadInvoiceAria {"number":"INV-2026-000001"}',
+    );
+  });
+});
+
 describe('InvoiceMoreMenu — pre-064 matrix pinned (regression net)', () => {
   it('bill-first combined-mode paid: receipt item carries the combined label, main download hidden', () => {
     // combinedModeReceipt is derived inside the menu from

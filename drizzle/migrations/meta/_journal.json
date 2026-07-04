@@ -1611,6 +1611,55 @@
 			"when": 1798535800000,
 			"tag": "0229_broadcasts_audience_deleted_at",
 			"breakpoints": true
+		},
+		{
+			"idx": 230,
+			"version": "7",
+			"when": 1798535900000,
+			"tag": "0230_document_type_add_bill",
+			"breakpoints": true
+		},
+		{
+			"idx": 231,
+			"version": "7",
+			"when": 1798536000000,
+			"tag": "0231_invoices_bill_number_and_checks",
+			"breakpoints": true
+		},
+		{
+			"idx": 235,
+			"version": "7",
+			"when": 1798536100000,
+			"tag": "0235_invoices_freeze_receipt_number",
+			"breakpoints": true
+		},
+		{
+			"idx": 236,
+			"version": "7",
+			"when": 1798536200000,
+			"tag": "0232_members_branch_fields",
+			"breakpoints": true
+		},
+		{
+			"idx": 237,
+			"version": "7",
+			"when": 1798536300000,
+			"tag": "0233_tenant_invoice_settings_wht_and_seller_branch",
+			"breakpoints": true
+		},
+		{
+			"idx": 238,
+			"version": "7",
+			"when": 1798536400000,
+			"tag": "0236_members_branch_pairing_ck_fix",
+			"breakpoints": true
+		},
+		{
+			"idx": 239,
+			"version": "7",
+			"when": 1798536500000,
+			"tag": "0234_invoices_vat_treatment_zero_rate",
+			"breakpoints": true
 		}
 	]
 }

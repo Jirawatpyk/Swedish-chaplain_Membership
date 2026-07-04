@@ -139,7 +139,13 @@ export async function loadCycleDetail(
       const inv = invoiceResult.value;
       linkedInvoice = {
         invoiceId: cycle.linkedInvoiceId,
-        invoiceNumber: inv.documentNumber as string | null,
+        // 088 T069 (FR-018) — resolve the invoice's PRINTED number ROW-shape-
+        // correct: `documentNumber` is a `DocumentNumber` value object (read
+        // `.raw` — the prior `as string` cast leaked the object), NULL for an
+        // 088 ใบแจ้งหนี้ whose non-§87 `SC` bill number rides
+        // `billDocumentNumberRaw`. Fall back to the bill number so a renewal
+        // bill on the cycle-detail surface never shows a blank / raw object.
+        invoiceNumber: inv.documentNumber?.raw ?? inv.billDocumentNumberRaw ?? null,
         status: inv.status,
         // F5R3 H-5 (2026-05-16) — brand at Money VO escape.
         totalSatang: asSatang(inv.total?.satang ?? 0n),

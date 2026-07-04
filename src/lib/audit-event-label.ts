@@ -82,7 +82,13 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
     eventType.startsWith('plan_') ||
     eventType.startsWith('fee_') ||
     eventType.startsWith('webhook_') ||
-    eventType.startsWith('out_of_band_')
+    eventType.startsWith('out_of_band_') ||
+    // 088 L1 — the §86/4 tax-receipt lifecycle events (`tax_receipt_issued`,
+    // `receipt_rendered`, `receipt_pdf_downloaded`, …) are billing/tax-document
+    // events; without this guard they fell through to 'other' in the audit
+    // viewer's grouped event-type filter.
+    eventType.startsWith('tax_') ||
+    eventType.startsWith('receipt_')
   ) {
     return 'billing';
   }

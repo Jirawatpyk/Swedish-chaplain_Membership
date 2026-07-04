@@ -5,7 +5,7 @@
  * `JSON.stringify` on a `Money` returns `{"satang":"..."}` because BigInt
  * throws. We map to a plain object here so the HTTP envelope is simple.
  */
-import type { Invoice } from '@/modules/invoicing';
+import { isZeroRateBelowThreshold, type Invoice } from '@/modules/invoicing';
 
 /**
  * Strip the `reason` field from a typed error object before returning
@@ -55,6 +55,13 @@ export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   invalid_lines: 422,
   no_buyer_snapshot: 422,
   overflow: 422,
+  // 088 US8 (FR-024 / FR-025) — zero-rate fail-closed rejects (no invoice issued).
+  membership_cannot_be_zero_rated: 422,
+  zero_rate_cert_required: 422,
+  zero_rate_cert_blob_key_invalid: 422,
+  // 088 SEC-MED — non-standard VAT treatment forwarded while
+  // FEATURE_088_TAX_AT_PAYMENT is off (crafted request; UI hides the toggle).
+  zero_rate_requires_flag: 422,
   pdf_render_failed: 500,
   blob_upload_failed: 500,
 };
@@ -111,6 +118,20 @@ export function serialiseInvoice(invoice: Invoice) {
     // route). pdf_sha256 (content hash for integrity) is retained.
     pdf_sha256: invoice.pdf?.sha256 ?? null,
     pdf_template_version: invoice.pdf?.templateVersion ?? null,
+    // 088 — the pre-payment ใบแจ้งหนี้'s NON-§87 bill number (SC), allocated
+    // at issue in the new tax-at-payment flow. NULL on drafts + legacy rows.
+    bill_document_number_raw: invoice.billDocumentNumberRaw,
+    // 088 US8 (§ F.8 / SC-008) — pinned per-invoice VAT treatment + MFA cert
+    // number (the scan blob key is withheld, same posture as pdf_blob_key).
+    vat_treatment: invoice.vatTreatment,
+    zero_rate_cert_no: invoice.zeroRateCertNo,
+    // FR-024 advisory (defense-in-depth echo — the PRIMARY surface is the inline
+    // pre-submit form warning): a zero-rated invoice whose subtotal is below the
+    // ~5,000-THB floor. The invoice still issued; this is non-blocking.
+    zero_rate_below_threshold_warning: isZeroRateBelowThreshold(
+      invoice.vatTreatment,
+      invoice.subtotal?.satang ?? 0n,
+    ),
     // Receipt-PDF surface (separate-mode keeps its own §87 sequence
     // number + its own rendered bytes; combined-mode reuses the
     // invoice document number with `receipt_document_number_raw` = null).

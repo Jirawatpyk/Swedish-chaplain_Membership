@@ -140,7 +140,20 @@ export type F4AuditEventType =
    * evidence log, which needs `member_id` to join). The legacy non-member arm
    * (member_id absent) stays off the timeline. No new audit type was added.
    */
-  | 'event_buyer_pii_redacted';
+  | 'event_buyer_pii_redacted'
+  /**
+   * 088-invoice-tax-flow-redesign (§ F.6, migration 0230) — the §86/4 tax
+   * receipt FIRST-ISSUANCE signal (SC-001). Emitted IN-TX with the §87 `RC`
+   * receipt-number allocation at the payment moment on BOTH the offline
+   * (`record-payment.ts`) and event as-paid (`issue-event-invoice-as-paid.ts`)
+   * paths — and therefore on the online passthrough that funnels through
+   * `recordPayment`. DISTINCT from `invoice_paid`: it marks the moment a §86/4
+   * tax receipt (RC §87 number) comes into existence, not the payment itself.
+   * The subsequent async `render-receipt-pdf` worker does NOT re-fire it (the
+   * event marks allocation, not render). 10y retention (Thai RD §87/3
+   * tax-document class), same posture as `invoice_paid` / the F4 backfill.
+   */
+  | 'tax_receipt_issued';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -198,6 +211,9 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // document, so the erasure event itself keeps the 10y forensic window
   // (the RD must be able to see WHICH columns were minimised WHEN).
   event_buyer_pii_redacted: 10,
+  // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 tax-receipt first-issuance
+  // signal. Tax-document class (Thai RD §87/3) → 10y.
+  tax_receipt_issued: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */

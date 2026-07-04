@@ -15,15 +15,17 @@
  *  - Typed-phrase confirmation before the Submit button enables.
  *  - Post-commit: toast + router.refresh() + navigate to invoice detail.
  */
-import { useMemo, useState, useTransition, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import { Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { routeCreditNoteError } from './credit-note-error-routing';
 
 type Props = {
   readonly invoiceId: string;
@@ -60,6 +62,19 @@ export function CreditNoteForm({
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
 
+  // 088 T021a / FR-032 — issuing a credit note MINTS a §87 tax-document number
+  // in-tx and moves the invoice to credited; it cannot be rolled back
+  // client-side, so a failure MUST NOT be a transient toast: it is surfaced
+  // INLINE via a focused role="alert" so the admin cannot miss it. A concurrent
+  // 409 is shown as an inline "already credited/voided — refresh".
+  const [formError, setFormError] = useState<
+    { readonly kind: 'concurrent' } | { readonly kind: 'failure'; readonly message: string } | null
+  >(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (formError) errorRef.current?.focus();
+  }, [formError]);
+
   const confirmPhrase = t('confirmPhrase');
   const matches =
     typed.trim().toLocaleUpperCase(locale) ===
@@ -86,6 +101,7 @@ export function CreditNoteForm({
 
   const submit = useCallback(() => {
     if (!canSubmit || proposedSatang === null) return;
+    setFormError(null);
     startTransition(async () => {
       const res = await fetch('/api/credit-notes', {
         method: 'POST',
@@ -101,31 +117,42 @@ export function CreditNoteForm({
           error?: { code?: string };
         };
         const code = body.error?.code;
-        // §86/10 ruling (final-review HIGH 1) — a §105 ใบเสร็จรับเงิน
-        // (receipt_separate) cannot be credited. Surface the actionable
-        // guidance (refund / void) rather than a bare error code.
-        const description =
-          code === 'receipt_not_creditable'
-            ? t('errors.receiptNotCreditable')
-            : code
-              ? t('errors.codeFallback', { code })
-              : t('errors.unknown');
-        toast.error(t('errors.failed'), { description });
+        // FR-032 — the credit-note mint is irreversible, so route the failure to
+        // an INLINE focused role="alert" (the form stays put); a concurrent 409
+        // (voided / fully-credited / remainder-shrank) shows the "already
+        // credited/voided — refresh" prompt. The §86/10 receipt_not_creditable
+        // guidance still resolves via routeCreditNoteError.
+        const routing = routeCreditNoteError(code);
+        if (routing.kind === 'concurrent') {
+          setFormError({ kind: 'concurrent' });
+        } else {
+          const message =
+            routing.messageKey === 'errors.codeFallback' && routing.codeArg
+              ? t('errors.codeFallback', { code: routing.codeArg })
+              : t(routing.messageKey as 'errors.unknown');
+          setFormError({ kind: 'failure', message });
+        }
         return;
       }
-      // MEDIUM-5 — read the email-delivery signal so the admin gets a
-      // non-blocking notice when the buyer has no email on file (the CN is
-      // still fully issued; only the auto-email was skipped). `sent` /
-      // `not_requested` / absent → plain success toast (nothing went wrong).
+      // FR-032 — doc-specific success toast interpolating the freshly-minted
+      // credit-note number (`document_number`, known only post-commit).
+      // MEDIUM-5 — the email-delivery signal rides alongside: a
+      // `skipped_no_recipient` value means the CN is still fully issued but the
+      // buyer has no email on file, so the auto-email was skipped (non-blocking
+      // description). Both fields come from ONE parse of the success body.
       const successBody = (await res.json().catch(() => ({}))) as {
+        document_number?: string | null;
         email_delivery?: string;
       };
+      const cnNumber =
+        typeof successBody.document_number === 'string' && successBody.document_number
+          ? successBody.document_number
+          : null;
+      const title = cnNumber ? t('successWithNumber', { number: cnNumber }) : t('success');
       if (successBody.email_delivery === 'skipped_no_recipient') {
-        toast.success(t('success'), {
-          description: t('emailSkippedNoRecipient'),
-        });
+        toast.success(title, { description: t('emailSkippedNoRecipient') });
       } else {
-        toast.success(t('success'));
+        toast.success(title);
       }
       // Destination page (`/admin/invoices/[id]`) is a server component
       // that fetches fresh on mount; `router.refresh()` here would
@@ -144,6 +171,37 @@ export function CreditNoteForm({
       method="post"
       className="flex flex-col gap-6"
     >
+      {/* 088 FR-032 — inline, focused failure surface for the irreversible §87
+          credit-note mint (never a transient toast). `tabIndex={-1}` + the focus
+          effect move focus here so the admin cannot miss it. A concurrent 409
+          shows a "refresh" prompt; other failures show a destructive alert. */}
+      {formError && (
+        <Alert
+          ref={errorRef}
+          tabIndex={-1}
+          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          className="outline-none"
+          data-testid="credit-note-error"
+        >
+          <TriangleAlertIcon className="size-4" aria-hidden="true" />
+          {formError.kind === 'concurrent' ? (
+            <AlertDescription className="flex flex-col items-start gap-2">
+              <span>{t('errors.concurrent')}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={() => router.refresh()}
+              >
+                {t('errors.refreshAction')}
+              </Button>
+            </AlertDescription>
+          ) : (
+            <AlertDescription>{formError.message}</AlertDescription>
+          )}
+        </Alert>
+      )}
       <div className="rounded-md border bg-muted/40 p-3 text-sm">
         <p className="text-muted-foreground">
           {t('againstInvoice')}{' '}

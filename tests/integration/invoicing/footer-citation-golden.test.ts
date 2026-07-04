@@ -22,7 +22,7 @@
  *
  * Section B — live-Neon as-paid β sanity: the REAL chain
  * (createEventInvoiceDraft → issueEventInvoiceAsPaid, no-TIN buyer)
- * pins pdf_template_version = CURRENT (v3) on the row and the §105
+ * pins pdf_template_version = CURRENT on the row and the §105
  * receipt bytes carry "มาตรา 105" — proving new issuance is wired to
  * the bumped constant end-to-end, not just at the template boundary.
  *
@@ -270,8 +270,10 @@ describe('T31 §A — OLD-VERSION regression: v1/v2 keep the legacy unconditiona
 });
 
 // =============================================================================
-// §B — live-Neon as-paid β sanity: new issuance pins v3 on the row and the
-// §105 receipt bytes carry มาตรา 105. SIMULATED buyer only (fake PII).
+// §B — live-Neon as-paid β sanity: new issuance pins CURRENT_TEMPLATE_VERSION on
+// the row. 088 US5 (T041 / FR-012): at v7 the hardcoded §-citation footer is
+// DROPPED, so the §105 receipt bytes no longer carry มาตรา 105 — the assertion
+// below now proves its ABSENCE. SIMULATED buyer only (fake PII).
 // =============================================================================
 
 const B_NOW_ISO = '2026-06-11T10:00:00Z';
@@ -314,10 +316,11 @@ function makeAsPaidDeps(
     // The REAL constant — this is the point of §B: the bumped version
     // flows from the registry into the row pin + the rendered bytes.
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    taxAtPayment: 'off',
   };
 }
 
-describe('T31 §B — as-paid β issue pins v3 + §105 footer (live Neon)', () => {
+describe('T31 §B — as-paid β issue pins CURRENT; v7 drops §-citation footer (live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let draftNoTin: InvoiceId;
@@ -392,7 +395,7 @@ describe('T31 §B — as-paid β issue pins v3 + §105 footer (live Neon)', () =
     await deleteTestUser(user).catch(() => {});
   });
 
-  it('no-TIN as-paid → row pins pdf_template_version = CURRENT (v3) + bytes cite มาตรา 105 (not 86/4)', async () => {
+  it('no-TIN as-paid → row pins pdf_template_version = CURRENT + v7 bytes drop the §105 §-citation footer', async () => {
     const capturedBytes: Uint8Array[] = [];
     const deps = makeAsPaidDeps(tenant.ctx.slug, capturedBytes);
     const res = await issueEventInvoiceAsPaid(deps, {
@@ -423,10 +426,18 @@ describe('T31 §B — as-paid β issue pins v3 + §105 footer (live Neon)', () =
       KIND_AWARE_CITATION_MIN_VERSION,
     );
 
-    // Bytes — the §105 receipt carries the kind-true citation.
+    // Bytes — 088 US5 (T041 / FR-012): from v7 the hardcoded "Rendered by
+    // Chamber-OS (§-citation)" footer is DROPPED on every kind, so the §105
+    // citation no longer appears anywhere on the document (it lived only in that
+    // footer; the title ใบเสร็จรับเงิน carries the legal identity). This event
+    // §105 receipt (invoice_subject='event') also gets NO tenant WHT note
+    // (membership-only). The row still pins CURRENT_TEMPLATE_VERSION (asserted
+    // above), proving new issuance is wired to the bumped constant end-to-end.
     expect(capturedBytes).toHaveLength(1);
     const text = await extractPdfText(capturedBytes[0]!);
-    expect(text, 'live §105 receipt must cite มาตรา 105').toMatch(RX_S105);
+    expect(text, 'v7 drops the §-citation footer — มาตรา 105 must be GONE').not.toMatch(
+      RX_S105,
+    );
     expect(text, 'live §105 receipt must NOT cite §86/4').not.toContain('86/4');
     expect(text).toContain('ใบเสร็จรับเงิน');
     expect(text).not.toMatch(/Tax Invoice/i);

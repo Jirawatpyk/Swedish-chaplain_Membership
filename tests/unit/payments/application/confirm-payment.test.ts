@@ -102,6 +102,10 @@ function makeDeps(): ConfirmPaymentDeps {
     invoicingBridge: invoicingBridge as unknown as ConfirmPaymentDeps['invoicingBridge'],
     audit: audit as unknown as ConfirmPaymentDeps['audit'],
     clock,
+    // Inert in this unit test: the bridge is mocked, so the flow flag only
+    // reaches the (stubbed) payability read. The webhook read sets
+    // reconciliationPath:true, so the guard would be dormant regardless.
+    taxAtPayment: 'off' as const,
   };
 }
 
@@ -122,6 +126,14 @@ describe('confirmPayment (T057)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
+    // Round-3 lock — the reconciliation READ MUST carry `reconciliationPath: true`
+    // so F4's stranded-funds guard stays DORMANT on the webhook path. A boolean
+    // flip here (true→false) would wrongly reject/auto-refund a Stripe-captured
+    // payment; the mocked bridge ignores the arg, so this pins the literal the
+    // use-case sets (get-invoice call-site wiring, Round-3 test-lens gap).
+    expect(deps.invoicingBridge.getInvoiceForPayment).toHaveBeenCalledWith(
+      expect.objectContaining({ reconciliationPath: true }),
+    );
     expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     const succeededCall = auditCalls.find((c) => c[1].eventType === 'payment_succeeded');

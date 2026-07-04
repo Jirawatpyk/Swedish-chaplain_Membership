@@ -131,23 +131,33 @@ async function setupIssuedInvoice(
     );
   }
 
-  // Read the allocated documentNumber from DB.
+  // Read the allocated number. Legacy §87 flow writes `documentNumber`; the
+  // 088 bill-first flow (FEATURE_088_TAX_AT_PAYMENT on) leaves `documentNumber`
+  // NULL at issue and carries the non-§87 ใบแจ้งหนี้ number in
+  // `billDocumentNumberRaw` until payment mints the §86/4 RC. Read bill-first so
+  // the fixture works under either flag state (this is the FR-030 class in the
+  // e2e fixture — it predates the 088 redesign).
   const row = await runInTenant(tenant.ctx, async (tx) =>
     tx
       .select({
         invoiceId: invoices.invoiceId,
         documentNumber: invoices.documentNumber,
+        billDocumentNumberRaw: invoices.billDocumentNumberRaw,
       })
       .from(invoices)
       .where(eq(invoices.invoiceId, draftId)),
   );
-  if (row.length === 0 || !row[0]!.documentNumber) {
-    throw new Error('setupIssuedInvoice: invoice not found or no document number');
+  const issuedNumber =
+    row[0]?.documentNumber ?? row[0]?.billDocumentNumberRaw ?? null;
+  if (row.length === 0 || !issuedNumber) {
+    throw new Error(
+      'setupIssuedInvoice: invoice not found or no document/bill number',
+    );
   }
   return {
     tenant,
     invoiceId: draftId,
-    documentNumber: row[0]!.documentNumber,
+    documentNumber: issuedNumber,
   };
 }
 
@@ -201,7 +211,17 @@ test.describe('@us5 void-invoice', () => {
       }
     });
 
-    test('AS2 paid invoice cannot be voided', async ({ page }) => {
+    test('AS2 a paid invoice CAN be voided (088 §F.3 error-correction edge)', async ({ page }) => {
+      // 088 §F.3 — voiding a PAID membership is a supported edge path (the
+      // ยกเลิก / same-period error-correction mechanism; the void stamps VOID on
+      // BOTH the bill + §86/4 tax-receipt blobs — see void-kind-true-golden). It
+      // is DISTINCT from a genuine refund/reduction, which goes through a §86/10
+      // ใบลดหนี้ credit note (US6). The void UI intentionally exposes only the
+      // issued-invoice path (routine reversals → credit-note); this paid-void
+      // edge is reachable via the API for admin error correction. A voided §86/4
+      // receipt is correctly EXCLUDED from the ภ.พ.30 output-VAT total (register
+      // status<>'void' filter) while staying LISTED as cancelled.
+      // (Was pre-088 "paid invoice CANNOT be voided" — stale before §F.3 landed.)
       const { tenant, invoiceId } = await setupIssuedInvoice(page);
       try {
         // Record payment via API → status flips to paid.
@@ -229,7 +249,7 @@ test.describe('@us5 void-invoice', () => {
           );
         }
 
-        // Try to void → MUST be rejected with 4xx (typically 409 or 422).
+        // Void the PAID invoice → §F.3 supports it (2xx).
         const voidResp = await page.context().request.post(
           `/api/invoices/${invoiceId}/void`,
           {
@@ -238,22 +258,27 @@ test.describe('@us5 void-invoice', () => {
               Origin: new URL(page.url()).origin,
               'X-Tenant': tenant.slug,
             },
-            data: { voidReason: 'Should be rejected' },
+            data: { voidReason: 'E2E §F.3 — cancelling an erroneous paid record' },
           },
         );
         const voidStatus = voidResp.status();
-        // Accept any 4xx — server-component-style 404 + use-case 409.
-        expect(voidStatus).toBeGreaterThanOrEqual(400);
-        expect(voidStatus).toBeLessThan(500);
+        if (!(voidStatus >= 200 && voidStatus < 300)) {
+          const body = await voidResp.text();
+          throw new Error(
+            `POST /api/invoices/${invoiceId}/void (paid, §F.3) → ${voidStatus}: ${body.slice(0, 500)}`,
+          );
+        }
 
-        // Verify status stayed 'paid' (not flipped to void).
+        // Status flips to 'void'; the paid_at / receipt fields are retained
+        // (the register excludes the VAT via its status<>'void' filter).
         const row = await runInTenant(tenant.ctx, async (tx) =>
           tx
             .select()
             .from(invoices)
             .where(eq(invoices.invoiceId, invoiceId)),
         );
-        expect(row[0]!.status).toBe('paid');
+        expect(row[0]!.status).toBe('void');
+        expect(row[0]!.voidedAt).not.toBeNull();
       } finally {
         await tenant.cleanup().catch(() => {});
       }

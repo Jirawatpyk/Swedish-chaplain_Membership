@@ -67,6 +67,11 @@ function rowToMember(row: MemberRow): Member {
     legalEntityType: row.legalEntityType,
     country: row.country as IsoCountryCode,
     taxId: row.taxId as TaxId | null,
+    // 088 US3 — §86/4 Head-Office / Branch particular. Always populated from the
+    // DB (NOT NULL flag + nullable char(5) code); the optional interface fields
+    // are for hand-built drafts/fixtures, not for a loaded row.
+    isHeadOffice: row.isHeadOffice,
+    branchCode: row.branchCode,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -103,6 +108,11 @@ function applyMemberPatch(
   const set: typeof members.$inferInsert = { updatedAt: new Date() } as typeof members.$inferInsert;
   if (patch.companyName !== undefined) set.companyName = patch.companyName;
   if (patch.legalEntityType !== undefined) set.legalEntityType = patch.legalEntityType;
+  // 088 US3 — §86/4 branch particular. The `members_branch_pairing_ck` DB CHECK
+  // is the backstop (head office ⇒ NULL code; branch ⇒ 5 digits); the caller
+  // (updateMember zod superRefine + the admin form) sends a CHECK-consistent pair.
+  if (patch.isHeadOffice !== undefined) set.isHeadOffice = patch.isHeadOffice;
+  if (patch.branchCode !== undefined) set.branchCode = patch.branchCode;
   if (patch.website !== undefined) set.website = patch.website;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.notes !== undefined) set.notes = patch.notes;
@@ -654,6 +664,12 @@ export const drizzleMemberRepo: MemberRepo = {
           city: null,
           province: null,
           postalCode: null,
+          // 088 US3 — reset the §86/4 Head-Office / Branch particular to its
+          // head-office DEFAULT on erasure (drops the RD branch identifier). The
+          // pair stays CHECK-consistent (`members_branch_pairing_ck`): head
+          // office ⇒ NULL branch code.
+          isHeadOffice: true,
+          branchCode: null,
           // H1 — F8-era admin free-text + derived risk cluster. The blocked-
           // reactivation flag + `..._at` collapse to FALSE/NULL alongside their
           // provenance to satisfy the 0094 consistency CHECK (see comment above).

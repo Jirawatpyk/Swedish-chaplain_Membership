@@ -20,6 +20,7 @@ import { asMemberId, asTenantId } from '@/modules/members';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
+  billFirstDocumentNumber,
   vercelBlobAdapter,
   type Invoice,
 } from '@/modules/invoicing';
@@ -66,6 +67,12 @@ function serialiseInvoiceRecord(inv: Invoice): Record<string, unknown> {
     // `documentNumber` is a DocumentNumber CLASS (no toString) — use `.raw` or it
     // serialises to "[object Object]" (security-review F9-US6-03).
     documentNumber: inv.documentNumber === null ? null : inv.documentNumber.raw,
+    // 088 FR-030 — an 088 invoice's §87 `documentNumber` is NULL; its SC bill
+    // number lives in `billDocumentNumberRaw` and (once paid) the §86/4 RC in
+    // `receiptDocumentNumberRaw`. Carry both so the archive JSON is complete
+    // (GDPR Art. 20 portability) for tax-at-payment rows.
+    billDocumentNumberRaw: inv.billDocumentNumberRaw,
+    receiptDocumentNumberRaw: inv.receiptDocumentNumberRaw,
     status: inv.status,
     fiscalYear: inv.fiscalYear === null ? null : Number(inv.fiscalYear),
     issueDate: inv.issueDate,
@@ -150,10 +157,14 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
             // but the entry key `invoices/<filename>` must never be able to escape
             // the `invoices/` prefix or smuggle a path. Collapse anything outside
             // [A-Za-z0-9._-] to `_`; invoiceId (UUID) keeps each entry unique.
+            // 088 FR-030 — bill-first so an 088 bill's PDF is named by its SC
+            // (or paid RC) number, not a bare UUID. The `-${invoiceId}` suffix
+            // is PRESERVED for zip-entry uniqueness (two invoices can share a
+            // number; a draft has none). `documentNumber.raw` (NOT the VO).
+            const numberPart =
+              billFirstDocumentNumber(inv) ?? inv.receiptDocumentNumberRaw ?? null;
             const stem =
-              inv.documentNumber !== null
-                ? `${inv.documentNumber.raw}-${inv.invoiceId}`
-                : inv.invoiceId;
+              numberPart !== null ? `${numberPart}-${inv.invoiceId}` : inv.invoiceId;
             const filename = `${stem.replace(/[^A-Za-z0-9._-]/g, '_')}.pdf`;
             pdf = { filename, bytes };
           } catch (e) {

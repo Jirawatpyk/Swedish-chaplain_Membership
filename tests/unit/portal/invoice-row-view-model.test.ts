@@ -153,6 +153,11 @@ function buildInvoice(
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
+    vatTreatment: 'standard',
+    zeroRateCertNo: null,
+    zeroRateCertDate: null,
+    zeroRateCertBlobKey: null,
     lines: [],
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',
@@ -625,5 +630,119 @@ describe('toInvoiceRowViewModel — raw field passthrough', () => {
       NOW_PAST_DUE,
     );
     expect(separate.receiptNumber).toBe('RCP-2026-000009');
+  });
+});
+
+// ===========================================================================
+// 088 — tax-at-payment two-document (SC bill ↔ RC §86/4 tax receipt)
+// disambiguation (T065 / T065a / FR-016).
+//
+// The mapper's THIRD arg (`taxAtPayment`, default false) gates the new
+// disambiguation fields so a flag-OFF render stays byte-identical to legacy
+// (every existing 2-arg call above resolves `taxDocumentKind: 'none'`). An
+// 088 row's document identity lives across two columns:
+//   - `billDocumentNumberRaw` — the pre-payment NON-§87 bill (SC-…).
+//   - `documentNumber`         — NULL on a new-flow bill (never a §87 invoice).
+//   - `receiptDocumentNumberRaw` — the §86/4 §87 RC receipt, minted at payment.
+// So a PAID 088 bill has documentNumber NULL + billDocumentNumberRaw set +
+// receiptDocumentNumberRaw set; an UNPAID 088 bill has both §87 legs NULL and
+// only the SC bill number (which `displayDocumentNumber` does NOT resolve →
+// the row would render an em-dash without `primaryNumber`'s bill fallback).
+// ===========================================================================
+describe('toInvoiceRowViewModel — 088 tax-at-payment disambiguation', () => {
+  it('flag OFF (default 2-arg): an 088-bill-shaped row resolves taxDocumentKind "none" (backward compat)', () => {
+    // Even a paid 088-bill shape (documentNumber null, bill + receipt set)
+    // stays legacy when the flag is off — the surfaces render as today.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+      }),
+      NOW_PAST_DUE,
+      // taxAtPayment omitted → false
+    );
+    expect(vm.taxDocumentKind).toBe('none');
+    expect(vm.billDocumentNumber).toBeNull();
+    // primaryNumber falls back to displayNumber (here the RC via the §105/§86-4
+    // fallback) exactly as the legacy surfaces already show.
+    expect(vm.primaryNumber).toBe(vm.displayNumber);
+    expect(vm.primaryNumber).toBe('RC-2026-000123');
+  });
+
+  it('flag ON, UNPAID 088 bill (both §87 legs NULL) → kind "bill"; primaryNumber is the SC number (never em-dash)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'issued',
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: null,
+      }),
+      NOW_BEFORE_DUE,
+      true,
+    );
+    expect(vm.taxDocumentKind).toBe('bill');
+    expect(vm.billDocumentNumber).toBe('SC-2026-000045');
+    // displayNumber (the §87 resolver) is null for an unpaid bill; primaryNumber
+    // falls back to the SC bill so the row never renders '—'.
+    expect(vm.displayNumber).toBeNull();
+    expect(vm.primaryNumber).toBe('SC-2026-000045');
+    // No RC receipt yet.
+    expect(vm.receiptNumber).toBeNull();
+  });
+
+  it('flag ON, PAID 088 bill (RC minted) → kind "tax_receipt"; primaryNumber is the SC bill (A-refined), billDocumentNumber is the SC, receiptNumber is the RC', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        documentNumber: null,
+        billDocumentNumberRaw: 'SC-2026-000045',
+        receiptDocumentNumberRaw: 'RC-2026-000123',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+      }),
+      NOW_PAST_DUE,
+      true,
+    );
+    expect(vm.taxDocumentKind).toBe('tax_receipt');
+    // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+    // bill number, paid OR unpaid (never swapped to the RC on payment); the RC
+    // §86/4 tax receipt is surfaced separately in the Receipt-No column/line.
+    expect(vm.primaryNumber).toBe('SC-2026-000045');
+    // primaryNumber (SC) deliberately DIVERGES from displayNumber (the §87/§86-4
+    // resolver → the RC on a paid bill) under A-refined.
+    expect(vm.displayNumber).toBe('RC-2026-000123');
+    // SC bill exposed for the main-download accessible name.
+    expect(vm.billDocumentNumber).toBe('SC-2026-000045');
+    // RC number for the Receipt-No column clickable link.
+    expect(vm.receiptNumber).toBe('RC-2026-000123');
+    // The bill PDF stays downloadable after payment (FR-015): receipt number is
+    // set → NOT combined-paid → showInvoice true; receipt also shown.
+    expect(vm.isCombinedPaid).toBe(false);
+    expect(vm.showInvoice).toBe(true);
+    expect(vm.showReceipt).toBe(true);
+  });
+
+  it('flag ON, legacy row (billDocumentNumberRaw NULL) → kind "none" (only real 088 bills disambiguate)', () => {
+    // A legacy separate-mode paid row can coexist while the flag is on. It has a
+    // §87 invoice number AND an RC — but NO bill number, so it is NOT an 088
+    // two-document row and must render legacy.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'paid',
+        receiptDocumentNumberRaw: 'RC-2026-000009',
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+      }),
+      NOW_PAST_DUE,
+      true,
+    );
+    expect(vm.taxDocumentKind).toBe('none');
+    expect(vm.billDocumentNumber).toBeNull();
+    // Legacy row keeps its §87 invoice number as the primary identity.
+    expect(vm.primaryNumber).toBe('INV-2026-000001');
   });
 });

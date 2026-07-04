@@ -63,6 +63,8 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from './portal-pdf-download-button';
+import { ReceiptStatusWatcher } from './receipt-status-watcher';
+import { ReceiptFailedSupportHint } from './receipt-failed-support-hint';
 
 /**
  * One row's data for the card list — the SAME `{ vm }` shape the page
@@ -92,6 +94,14 @@ export interface PortalInvoiceCardListProps {
    * type-checks unchanged.
    */
   readonly tStatus: (key: InvoiceRowDisplayStatus) => string;
+  /**
+   * 088 (T065 / T065a / FR-016) — OPTIONAL translator bound to
+   * `admin.invoices.tax088`, used to render the SC-bill ↔ RC-tax-receipt
+   * disambiguation labels. Omitted (flag off) → the card renders no 088 UI and
+   * is byte-identical to legacy; the page passes it only when the tax-at-payment
+   * flag is on (and the VM's `taxDocumentKind` is then non-`'none'`).
+   */
+  readonly tTax088?: (key: string, values?: Record<string, string | number>) => string;
   /** Forwarded to the root `<ul>` — the page passes `md:hidden`. */
   readonly className?: string;
 }
@@ -101,6 +111,7 @@ export function PortalInvoiceCardList({
   locale,
   t,
   tStatus,
+  tTax088,
   className,
 }: PortalInvoiceCardListProps): React.ReactElement {
   return (
@@ -111,27 +122,56 @@ export function PortalInvoiceCardList({
     >
       {rows.map(({ vm }) => {
         const statusLabel = tStatus(vm.displayStatus);
+        // 088 (T065/T065a) — the card's row identity is `primaryNumber` (RC for
+        // a paid bill / legacy rows, the SC bill for an UNPAID 088 bill). The
+        // 088 disambiguation renders only when `tTax088` is wired (flag on) AND
+        // the VM's `taxDocumentKind` is non-`'none'`.
+        const primaryNumber = vm.primaryNumber ?? vm.invoiceId;
+        // The MAIN download serves the issue-time PDF: the SC bill on a paid 088
+        // bill (T065c — name the control after its OWN document, not the RC).
+        const mainDownloadNumber =
+          vm.taxDocumentKind === 'tax_receipt' && vm.billDocumentNumber
+            ? vm.billDocumentNumber
+            : primaryNumber;
         return (
           <li
             key={vm.invoiceId}
             // 064 remediation S3 — displayNumber resolves β as-paid rows to
             // their printed §105 receipt number; the row UUID fallback is a
-            // last-resort that no numbered row reaches any more.
-            aria-label={`${t('detail.title')} ${vm.displayNumber ?? vm.invoiceId}, ${statusLabel}`}
+            // last-resort that no numbered row reaches any more. 088 — an unpaid
+            // bill's summary reads under its SC number (via `primaryNumber`).
+            aria-label={`${t('detail.title')} ${primaryNumber}, ${statusLabel}`}
           >
             <Card>
               <CardContent className="flex flex-col gap-3">
-                {/* Header: doc-number link (left) + status badge (right). */}
+                {/* Header: doc-number link + document-kind badge (left) +
+                    status badge (right). */}
                 <div className="flex items-start justify-between gap-3">
-                  <Link
-                    href={`/portal/invoices/${vm.invoiceId}`}
-                    className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    aria-label={`${t('actions.viewDetail')} ${vm.displayNumber ?? vm.invoiceId}`}
-                  >
-                    <h2 className="font-mono text-sm font-medium leading-snug">
-                      {vm.displayNumber ?? vm.invoiceId}
-                    </h2>
-                  </Link>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    {/* 088 review fix — wrap ONLY when an 088 document-kind
+                        badge is present (a long TH/SV badge e.g.
+                        "ใบกำกับภาษี/ใบเสร็จรับเงิน" would otherwise clip against the
+                        `overflow-hidden` Card at 320px, WCAG 1.4.10/1.4.1). A
+                        legacy/none row stays non-wrapping so the sole
+                        `flex-wrap` container in a no-action card remains the
+                        action group — the card sentinel test relies on that. */}
+                    {/* 088 A-refined (FR-016) — a real 088 bill is ALWAYS shown
+                        under its OWN (SC) number (via `primaryNumber`, paid AND
+                        unpaid). The SC-/IN- prefix is self-documenting; the RC §86/4
+                        tax receipt is a clickable link in the Receipt No. line
+                        below. No per-row document-kind tag. */}
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/portal/invoices/${vm.invoiceId}`}
+                        className="rounded-sm underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        aria-label={`${t('actions.viewDetail')} ${primaryNumber}`}
+                      >
+                        <h2 className="font-mono text-sm font-medium leading-snug">
+                          {primaryNumber}
+                        </h2>
+                      </Link>
+                    </div>
+                  </div>
                   <InvoiceStatusBadge
                     status={vm.displayStatus}
                     label={statusLabel}
@@ -147,13 +187,32 @@ export function PortalInvoiceCardList({
 
                 {/* Receipt number — separate-mode only. Combined-mode (em-dash
                     + tooltip hint on the table) is omitted on the card; the
-                    combined Receipt download still appears in the action row. */}
+                    combined Receipt download still appears in the action row.
+                    088 A-refined (FR-016) — on a real 088 tax_receipt row the RC
+                    §86/4 tax receipt becomes a clickable link to the detail (same
+                    target as the header link) + a small ใบกำกับภาษี/Tax receipt
+                    affordance; aria-label names the doc. Legacy separate-mode rows
+                    keep the plain-text receipt number. */}
                 {vm.receiptNumber ? (
                   <p className="text-sm text-muted-foreground">
                     {t('columns.receiptNumber')}{' '}
-                    <span className="font-mono tabular-nums text-foreground">
-                      {vm.receiptNumber}
-                    </span>
+                    {tTax088 && vm.taxDocumentKind === 'tax_receipt' ? (
+                      // 088 A-refined (FR-016) — the RC §86/4 tax receipt lives on
+                      // the SAME invoice → a clickable link to the detail (same
+                      // target as the header link). aria-label names the doc; the
+                      // "Receipt No." field label conveys the ใบกำกับภาษี meaning.
+                      <Link
+                        href={`/portal/invoices/${vm.invoiceId}`}
+                        aria-label={tTax088('seeReceiptLink', { number: vm.receiptNumber })}
+                        className="font-mono tabular-nums text-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                      >
+                        {vm.receiptNumber}
+                      </Link>
+                    ) : (
+                      <span className="font-mono tabular-nums text-foreground">
+                        {vm.receiptNumber}
+                      </span>
+                    )}
                   </p>
                 ) : null}
 
@@ -188,11 +247,12 @@ export function PortalInvoiceCardList({
                     {vm.showInvoice && (
                       <PortalInvoiceDownloadButton
                         invoiceId={vm.invoiceId}
-                        documentNumber={vm.displayNumber ?? vm.invoiceId}
+                        documentNumber={mainDownloadNumber}
                         // 064 — as-paid rows: the main pdf IS the final legal
                         // document; shared downloadLabelKeys helper (wave-4
                         // S17) maps mainPdfKind → label/aria keys. Mirrors
-                        // the desktop table.
+                        // the desktop table. 088 — on a paid bill the main pdf
+                        // is the SC bill, so the control names the SC (not RC).
                         label={
                           vm.displayStatus === 'void'
                             ? t('actions.downloadVoided')
@@ -202,7 +262,7 @@ export function PortalInvoiceCardList({
                           vm.displayStatus === 'void'
                             ? 'actions.downloadVoidedAria'
                             : downloadLabelKeys(vm.mainPdfKind).ariaKey,
-                          { number: vm.displayNumber ?? vm.invoiceId },
+                          { number: mainDownloadNumber },
                         )}
                         className={cn(
                           buttonVariants({ variant: 'outline', size: 'sm' }),
@@ -261,28 +321,20 @@ export function PortalInvoiceCardList({
                           />
                         );
                       })()}
+                    {/* 088 T066a — receipt mid-render: the async watcher
+                        (aria-live announce + auto-refresh poll). Mirrors the
+                        desktop table; both consume vm.receiptPending. */}
                     {vm.receiptPending && (
-                      <span
-                        role="status"
-                        aria-live="polite"
-                        aria-busy="true"
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-3 cursor-progress',
-                        )}
-                      >
-                        {t('actions.receiptPreparing')}
-                      </span>
+                      <ReceiptStatusWatcher invoiceId={vm.invoiceId} />
                     )}
-                    {/* S1 fix — TERMINAL receipt-render failure. Identical to
-                        the desktop table: a static, muted "Receipt unavailable"
-                        label with NO aria-busy and NO spinner (a 'failed' render
-                        is terminal, not in-progress). Both surfaces consume the
-                        SAME vm.receiptFailed flag so they can never drift. */}
+                    {/* 088 T066a — TERMINAL receipt-render failure: a calm
+                        support-path affordance (NOT a dead "unavailable"), NO
+                        aria-busy/spinner. Shared ReceiptFailedSupportHint with
+                        the desktop table so table + card can never drift. */}
                     {vm.receiptFailed && (
-                      <span className="text-sm text-muted-foreground">
-                        {t('actions.receiptUnavailable')}
-                      </span>
+                      <ReceiptFailedSupportHint
+                        label={t('actions.receiptFailedSupport')}
+                      />
                     )}
                     {/* Resend ("Email me a copy") — icon-only square LAST in the
                         row. The compact / icon-only treatment is shared with the

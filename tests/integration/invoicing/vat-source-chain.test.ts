@@ -195,6 +195,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
       clock: { nowIso: () => '2026-04-18T10:00:00Z' },
       outbox: resendEmailOutboxAdapter,
       currentTemplateVersion: 1,
+      taxAtPayment: 'off',
     };
 
     const result = await issueInvoice(deps, {

@@ -120,6 +120,7 @@ function makeAsPaidFixtureDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps 
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
   };
 }
 
@@ -217,9 +218,11 @@ describe('issueCreditNote — BLOCKS §105 receipt_separate (HIGH 1, live Neon)'
     // Task 10): draft via createEventInvoiceDraft (no-TIN buyer snapshot
     // pinned at DRAFT) → issueEventInvoiceAsPaid (β receipt-stream
     // numbering). The committed row carries pdf_doc_kind 'receipt_separate',
-    // sequence_number/document_number NULL, and
-    // receipt_document_number_raw 'RCPR-2026-000001' (fresh tenant, receipt
-    // prefix 'RCPR') — exactly what production writes for a walk-in buyer.
+    // sequence_number/document_number NULL, and receipt_document_number_raw
+    // 'RE-2026-000001' — 088 US7/T050 numbers the §105 from the SEPARATE
+    // `receipt_105`/`RE` register with a HARDCODED 'RE' prefix, IGNORING the
+    // tenant's receipt prefix ('RCPR') — exactly what production writes for a
+    // walk-in buyer.
     const draft = await createEventInvoiceDraft(
       makeCreateEventInvoiceDraftDeps(tenant.ctx.slug),
       {
@@ -284,10 +287,13 @@ describe('issueCreditNote — BLOCKS §105 receipt_separate (HIGH 1, live Neon)'
     const issueSha = before!.pdfSha256;
     expect(issueSha).toBe(ISSUE_SHA);
     // β fixture shape (064 Task 10) — the REAL as-paid no-TIN path committed
-    // a receipt-STREAM row: no invoice-stream pair, RCPR receipt number.
+    // a receipt-STREAM row: no invoice-stream pair. 088 US7/T050 — the §105
+    // event-no-TIN receipt allocates from the SEPARATE `receipt_105`/`RE`
+    // register with a HARDCODED `RE` prefix, INDEPENDENT of the tenant's
+    // `receiptNumberPrefix` ('RCPR' here) → 'RE-2026-000001', NOT 'RCPR-…'.
     expect(before!.sequenceNumber).toBeNull();
     expect(before!.documentNumber).toBeNull();
-    expect(before!.receiptDocumentNumberRaw).toBe('RCPR-2026-000001');
+    expect(before!.receiptDocumentNumberRaw).toBe('RE-2026-000001');
     expect(before!.pdfDocKind).toBe('receipt_separate');
 
     // §87 credit-note sequence counter BEFORE the blocked attempt. The guard

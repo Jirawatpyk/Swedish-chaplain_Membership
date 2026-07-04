@@ -105,6 +105,16 @@ function payloadFor(
         member_id: memberId,
         document_number: 'INV-2026-0042',
       };
+    case 'tax_receipt_issued':
+      // 088 (T019a / FR-029) — mirrors record-payment.ts emit: the §87 `RC`
+      // number lives in `receipt_document_number_raw` (NOT `document_number`).
+      return {
+        invoice_id: invoiceId,
+        member_id: memberId,
+        receipt_document_number_raw: 'RC-2026-000045',
+        fiscal_year: 2026,
+        payment_date: '2026-04-10',
+      };
   }
 }
 
@@ -173,7 +183,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
     await tenant.cleanup().catch(() => {});
   });
 
-  it('timeline surfaces all 6 F4 member-timeline event types (AS2)', async () => {
+  it('timeline surfaces all 7 F4 member-timeline event types (AS2)', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const r = await timelineList(
       { memberId, limit: 100 },
@@ -214,8 +224,9 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
       if (!copy) continue;
 
       // Every F4 timeline event produces a non-empty i18n key that
-      // matches the `invoice*` / `creditNoteIssued` namespace.
-      expect(copy.i18nKey).toMatch(/^(invoice|creditNote)/);
+      // matches the `invoice*` / `creditNoteIssued` / `taxReceiptIssued`
+      // namespace (088 added the tax-receipt-at-payment copy).
+      expect(copy.i18nKey).toMatch(/^(invoice|creditNote|taxReceipt)/);
 
       // Per-event interpolation invariants — a missing `vars` key
       // would render the locale string with an empty `{placeholder}`
@@ -239,6 +250,12 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
         // the original invoice — required so admins land on the
         // correct document.
         expect(copy.link).toBe(`/admin/credit-notes/${creditNoteId}`);
+      }
+      if (t === 'tax_receipt_issued') {
+        // 088 (FR-029) — RC number sourced from receipt_document_number_raw,
+        // link points at the invoice detail (where the RC PDF is downloaded).
+        expect(copy.vars.documentNumber).toBe('RC-2026-000045');
+        expect(copy.link).toBe(`/admin/invoices/${invoiceId}`);
       }
     }
   });

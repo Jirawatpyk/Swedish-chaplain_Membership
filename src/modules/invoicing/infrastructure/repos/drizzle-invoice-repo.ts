@@ -7,6 +7,7 @@
  */
 import { and, asc, desc, eq, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
+import type { TaxRegisterRepo } from '../../application/ports/tax-register-repo';
 import {
   asInvoiceId,
   type Invoice,
@@ -14,6 +15,7 @@ import {
   type InvoiceStatus,
   type InvoiceSubjectFields,
 } from '../../domain/invoice';
+import type { VatTreatment } from '../../domain/policies/vat-treatment';
 import {
   asInvoiceLineId,
   type InvoiceLine,
@@ -35,7 +37,13 @@ import {
   MalformedSnapshotError,
   type MemberIdentitySnapshot,
 } from '../../domain/value-objects/member-identity-snapshot';
-import { invoices, invoiceLines, type InvoiceRow, type InvoiceLineRow } from '../db';
+import {
+  invoices,
+  invoiceLines,
+  creditNotes,
+  type InvoiceRow,
+  type InvoiceLineRow,
+} from '../db';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -316,6 +324,16 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
     receiptPdfRenderAttempts: row.receiptPdfRenderAttempts ?? 0,
     receiptPdfLastError: row.receiptPdfLastError ?? null,
     receiptDocumentNumberRaw: row.receiptDocumentNumberRaw ?? null,
+    // 088 US1 — non-§87 bill number (SC) allocated at issue in the new flow.
+    billDocumentNumberRaw: row.billDocumentNumberRaw ?? null,
+    // 088 US8 (§ F.8) — per-invoice VAT treatment + pinned MFA cert. The DB
+    // column is NOT NULL DEFAULT 'standard'; the narrow cast is safe because
+    // `invoices_vat_treatment_valid` pins the value set (a corrupt value would
+    // be a dropped-CHECK anomaly, out of scope for a silent coerce here).
+    vatTreatment: (row.vatTreatment ?? 'standard') as VatTreatment,
+    zeroRateCertNo: row.zeroRateCertNo ?? null,
+    zeroRateCertDate: row.zeroRateCertDate ?? null,
+    zeroRateCertBlobKey: row.zeroRateCertBlobKey ?? null,
 
     lines,
     createdAt: row.createdAt.toISOString(),
@@ -548,12 +566,16 @@ export function makeDrizzleInvoiceRepo(
           // W1 (064 remediation) — β as-paid no-TIN rows carry their printed
           // §105 number in receipt_document_number_raw with document_number
           // NULL, and paid separate-mode rows ALSO have an RC number admins
-          // search by. Match EITHER column so every printed §87/§105 number
-          // is findable. Kept in lockstep with `listPaged` below.
+          // search by. 088 T069/FR-030 — an issued ใบแจ้งหนี้ bill carries its
+          // non-§87 SC number in bill_document_number_raw (document_number NULL
+          // until payment), so match that column too or an issued 088 bill is
+          // unfindable by its printed SC number. Match ANY printed
+          // §87/§105/SC number. Kept in lockstep with `listPaged` below.
           filters.push(
             or(
               ilike(invoices.documentNumber, `%${opts.search}%`),
               ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+              ilike(invoices.billDocumentNumberRaw, `%${opts.search}%`),
             )!,
           );
         }
@@ -686,13 +708,61 @@ export function makeDrizzleInvoiceRepo(
           // Maps directly to the stored `invoice_subject` discriminator.
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
+        // 088 T065b (FR-031) — tax-document-type filter. Derived from the
+        // numbering columns + status (see the port doc + T065b report):
+        //   sc → 088 bill still awaiting payment (bill number, no §86/4 receipt).
+        //   rc → §86/4 tax receipt. `receipt_document_number_raw` carries BOTH
+        //        the §86/4 'RC' stream AND the §105 'RE' stream; the 'RE' prefix
+        //        is HARDCODED + reserved in tenant settings (see
+        //        issue-event-invoice-as-paid.ts:474 + update-tenant-invoice-
+        //        settings), so `NOT LIKE 'RE-%'` robustly isolates the §86/4
+        //        register (RC prefix is tenant-configurable, RE is not).
+        //   re → the §105 receipt register ('RE-' prefix).
+        //   cn → invoices carrying a credit note (credited / partially_credited);
+        //        the credit-note ROWS live in `credit_notes` — this is the
+        //        invoice-list cross-reference (a full ใบลดหนี้ register is
+        //        follow-on).
+        if (opts.documentType === 'sc') {
+          filters.push(isNotNull(invoices.billDocumentNumberRaw));
+          filters.push(isNull(invoices.receiptDocumentNumberRaw));
+        } else if (opts.documentType === 'rc') {
+          filters.push(isNotNull(invoices.receiptDocumentNumberRaw));
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'`);
+        } else if (opts.documentType === 're') {
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'`);
+        } else if (opts.documentType === 'cn') {
+          filters.push(
+            or(
+              eq(invoices.status, 'credited'),
+              eq(invoices.status, 'partially_credited'),
+            )!,
+          );
+        }
+        // 088 T065b (FR-031) — payment-tax-point state filter. Under the 088
+        // tax-at-payment model the tax point is the PAYMENT moment (§86/4/§105
+        // receipt issued), NOT issue. pre_payment = an 088 bill still awaiting
+        // payment; at_payment = a receipt has been issued.
+        if (opts.taxPointState === 'pre_payment') {
+          filters.push(isNotNull(invoices.billDocumentNumberRaw));
+          filters.push(isNull(invoices.receiptDocumentNumberRaw));
+        } else if (opts.taxPointState === 'at_payment') {
+          filters.push(isNotNull(invoices.receiptDocumentNumberRaw));
+        }
+        // 088 T065b (FR-031 / US8) — pinned per-invoice VAT treatment filter.
+        if (opts.vatTreatment) {
+          filters.push(eq(invoices.vatTreatment, opts.vatTreatment));
+        }
         if (opts.search && opts.search.length > 0) {
           // W1 (064 remediation) — match invoice doc number OR the §105
-          // receipt number; see the `list` variant above for the rationale.
+          // receipt number OR (088 T069/FR-030) the non-§87 SC bill number
+          // (bill_document_number_raw, NULL document_number until payment) so an
+          // issued 088 ใบแจ้งหนี้ is findable by its printed SC number; see the
+          // `list` variant above for the rationale. Kept in lockstep.
           filters.push(
             or(
               ilike(invoices.documentNumber, `%${opts.search}%`),
               ilike(invoices.receiptDocumentNumberRaw, `%${opts.search}%`),
+              ilike(invoices.billDocumentNumberRaw, `%${opts.search}%`),
             )!,
           );
         }
@@ -770,6 +840,16 @@ export function makeDrizzleInvoiceRepo(
           fiscalYear: input.fiscalYear,
           sequenceNumber: input.sequenceNumber,
           documentNumber: input.documentNumber,
+          // 088 US1 — non-§87 bill number (SC) written in the new flow; the
+          // legacy §87-at-issue path leaves it undefined → NULL (unchanged).
+          billDocumentNumberRaw: input.billDocumentNumberRaw ?? null,
+          // 088 US8 (§ F.8) — pinned per-invoice VAT treatment + MFA cert.
+          // Default 'standard' keeps every pre-US8 caller (and the legacy path)
+          // on the unchanged VAT-7% behaviour; cert fields NULL unless zero-rated.
+          vatTreatment: input.vatTreatment ?? 'standard',
+          zeroRateCertNo: input.zeroRateCertNo ?? null,
+          zeroRateCertDate: input.zeroRateCertDate ?? null,
+          zeroRateCertBlobKey: input.zeroRateCertBlobKey ?? null,
           issueDate: input.issueDate,
           dueDate: input.dueDate,
           subtotalSatang: input.subtotalSatang,
@@ -1002,9 +1082,27 @@ export function makeDrizzleInvoiceRepo(
      *   - status='rendered' → no-op (return existing row unchanged)
      *   - status='failed'  → also flip to 'rendered' (reconciliation
      *     retry path) + clear `receipt_pdf_last_error`
-     * The WHERE clause excludes `status='rendered'` from the UPDATE so
-     * a duplicate worker call with stale bytes cannot overwrite a
-     * successful render. We then re-fetch the row to return it.
+     * The WHERE clause excludes `receipt_pdf_status='rendered'` from the
+     * UPDATE so a duplicate worker call with stale bytes cannot overwrite
+     * a successful render. We then re-fetch the row to return it.
+     *
+     * 088 T068 (reliability M-2 / async TOCTOU) — the WHERE ALSO excludes
+     * `status='void'`: the §86/4 receipt renders async (record-payment
+     * enqueues; § F.2), so a worker can read a still-`paid` row, render a
+     * NORMAL (un-stamped) receipt, and only THEN attempt this write — by
+     * which point a void may have committed (at void time the row had
+     * receiptPdf=null → voidInvoice Target B was skipped, only the bill was
+     * stamped). Without this guard the un-stamped receipt bytes would land
+     * on the void row → a voided sale serving a downloadable UN-stamped
+     * §86/4 receipt (violates CHK027 / § F.3). Postgres re-evaluates the
+     * WHERE against the latest row version under READ COMMITTED (EvalPlanQual),
+     * so a concurrently-committed void is caught here even when the read
+     * (render-receipt-pdf.ts:146) saw `paid`. A void row correctly ends with
+     * receiptPdf=null + its RC number retained (void is terminal; the FR-019
+     * "re-render on demand" tension is accepted — a void has no valid receipt).
+     * Only `void` is blocked: a `credited`/`partially_credited` receipt
+     * re-render still lands (and credit requires receiptPdfStatus='rendered'
+     * FIRST, so a pending-render + credit race cannot occur).
      */
     async applyReceiptPdf(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
@@ -1032,6 +1130,10 @@ export function makeDrizzleInvoiceRepo(
             // Idempotent re-arm: rendered rows skip the UPDATE so we
             // don't churn updated_at on every duplicate worker run.
             ne(invoices.receiptPdfStatus, 'rendered'),
+            // 088 T068 — never land an un-stamped receipt on a VOID row (see
+            // the method doc: async TOCTOU). Matches 0 rows → NO-OP; the
+            // re-fetch below still returns the (void) row unchanged.
+            ne(invoices.status, 'void'),
           ),
         );
       // Re-fetch via the public read path so callers always receive a
@@ -1236,13 +1338,25 @@ export function makeDrizzleInvoiceRepo(
 
     async applyVoid(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
-      // R-1 fix — atomic issued → void. The immutability trigger
+      // R-1 fix — atomic issued|paid → void. The immutability trigger
       // whitelists the void_* fields + pdf_sha256, but pdf_sha256 is
       // INTENTIONALLY NOT written here: the caller updates it via
       // `applyInvoicePdfRegeneration` in a second transaction AFTER
       // the blob upload succeeds, preventing DB/Blob desync on blob
-      // failure. WHERE guard on status='issued' prevents racing
-      // paid/credit-note/double-void.
+      // failure.
+      //
+      // 088 T068 — the WHERE CAS accepts BOTH `issued` AND `paid`. Voiding a
+      // PAID membership is the spec's edge path (§ F.3 / edge-case line 172):
+      // normally an issued §86/4 is cancelled via a §86/10 credit note, but a
+      // void must still stamp VOID on both the ใบแจ้งหนี้ bill AND the §86/4
+      // tax-receipt blobs. The CAS still rejects any concurrent transition to
+      // void / credited / partially_credited / draft (→ InvoiceApplyConflictError
+      // → typed `concurrent_state_change`) — the caller already holds the
+      // invoice-row FOR UPDATE lock, so this guard is defence-in-depth against a
+      // status flip between the lock read and this write. The DB immutability
+      // trigger + CHECKs permit paid→void (status is not locked; the
+      // receipt-status CHECK is vacuous for non-paid rows; the event-registration
+      // partial unique index explicitly frees voided rows).
       const [updated] = await tx
         .update(invoices)
         .set({
@@ -1256,7 +1370,7 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
-            eq(invoices.status, 'issued'),
+            or(eq(invoices.status, 'issued'), eq(invoices.status, 'paid')),
           ),
         )
         .returning();
@@ -1295,6 +1409,166 @@ export function makeDrizzleInvoiceRepo(
             eq(invoices.invoiceId, input.invoiceId),
           ),
         );
+    },
+
+    async applyReceiptPdfRegeneration(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // 088 US6 — single-column UPDATE, receipt_pdf_sha256 only. Receipt blob
+      // key + template version are fixed by the content-addressed key + the
+      // pinned templateVersion stored at payment time; only the sha changes to
+      // match the CREDITED-annotated re-render. The invoices immutability
+      // trigger does NOT lock receipt_pdf_sha256 (it locks the receipt NUMBER,
+      // migration 0235), so this write lands on a partially_credited/credited
+      // row. Mirrors `applyInvoicePdfRegeneration` (pdf_sha256) for the Shape-1
+      // parent whose §86/4 receipt lives in the SEPARATE receipt blob.
+      await tx
+        .update(invoices)
+        .set({
+          receiptPdfSha256: input.receiptPdfSha256,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+  };
+}
+
+/**
+ * 088 T065b (FR-031, ภพ.30 support) — Drizzle impl of {@link TaxRegisterRepo}.
+ *
+ * Period-scoped §86/4 RC tax-receipt register (+ its §80/1(5) zero-rate subset).
+ * Reuses the private `rowsToInvoice` mapper in this file (no line query — the
+ * register renders header fields only, so `lines: []`). RLS-scoped via
+ * `runInTenant` (the explicit `tenant_id` filter is defence-in-depth, mirroring
+ * `listPaged`).
+ *
+ * Bucketing basis (§78/1 tax point): the admin-entered `payment_date`
+ * (Bangkok-local calendar date), falling back to `(paid_at AT TIME ZONE
+ * 'Asia/Bangkok')::date` only when a receipt row has no `payment_date` (so no
+ * receipt is ever dropped from a period). NEVER the server `paid_at` timestamp
+ * alone — a payment recorded on 2026-03-31 but server-marked after the UTC
+ * midnight roll belongs to the March filing, not April — and NEVER the
+ * bill/issue `fiscal_year` column (the RC receipt's §87 fiscal year rides its
+ * `RC-{FY}-…` number, dated by the tax point).
+ *
+ * RC-vs-RE isolation: `receipt_document_number_raw` carries both the §86/4 'RC'
+ * stream and the §105 'RE' stream; the 'RE' prefix is HARDCODED + settings-
+ * reserved, so `NOT LIKE 'RE-%'` isolates the §86/4 register (rc_register /
+ * zero_rate_sales) while `LIKE 'RE-%'` isolates the §105 register (re_register)
+ * — both robust against a mis-configured prefix, both pure for the RD audit.
+ *
+ * 088 B2 review FINDING 1 — the §105 'RE' receipts carry REAL 7% output VAT, so
+ * `sumPeriodOutputVat` folds BOTH streams into the period ภ.พ.30 output-VAT
+ * figure (understating it by excluding §105 would be an under-filing).
+ *
+ * ภ.พ.30 correctness (Revenue Code):
+ *   - VOIDED receipts stay LISTED in `listForPeriod` (a cancelled tax invoice
+ *     must appear in the sales report, marked cancelled) but are EXCLUDED from
+ *     `sumPeriodOutputVat` (their VAT must not be counted in the period total).
+ *   - §86/10 credit notes (`credit_notes`) REDUCE output VAT in the month they
+ *     are ISSUED, so `sumPeriodOutputVat` also returns the period credit-note
+ *     VAT for the use-case to subtract (net = RC + RE − credit notes).
+ */
+export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
+  const ctx = asTenantContext(tenantId);
+
+  return {
+    async listForPeriod(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        const filters = [
+          eq(invoices.tenantId, tenantIdArg),
+          isNotNull(invoices.receiptDocumentNumberRaw),
+          // Bucket by the §78/1 PAYMENT-date tax point (`payment_date`,
+          // Bangkok-local calendar), falling back to `paid_at` only when a
+          // receipt has no `payment_date` so no receipt is ever dropped.
+          // Inclusive both ends. No explicit `paid_at IS NOT NULL` guard — the
+          // COALESCE + range comparison naturally excludes any date-less row.
+          // NOTE: NO status filter. Per the Revenue Code a VOIDED (cancelled)
+          // tax invoice must STILL appear in the sales report (marked
+          // cancelled), so void rows stay LISTED here; they are excluded only
+          // from the period output-VAT TOTAL (`sumPeriodOutputVat`).
+          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
+          sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+        ];
+        if (opts.kind === 're_register') {
+          // §105 RE stream only (no-TIN event/member receipts).
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'`);
+        } else {
+          // §86/4 RC stream (see factory doc for why the prefix split is robust).
+          filters.push(sql`${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'`);
+          if (opts.kind === 'zero_rate_sales') {
+            filters.push(eq(invoices.vatTreatment, 'zero_rated_80_1_5'));
+          }
+        }
+
+        // Ordered by the receipt number ASC. Every row in a given register
+        // shares one prefix ('RC' or 'RE'), so string ASC == sequential order.
+        const rows = (await tx
+          .select()
+          .from(invoices)
+          .where(and(...filters))
+          .orderBy(asc(invoices.receiptDocumentNumberRaw))) as InvoiceRow[];
+
+        return rows.map((r) => rowsToInvoice(r, []));
+      });
+    },
+
+    async sumPeriodOutputVat(tenantIdArg, opts) {
+      return runInTenant(ctx, async (tx) => {
+        // (1) GROSS output VAT: single pass over the period's receipts, split
+        // by stream via a conditional aggregate. Summing `vat_satang` (not
+        // sales) means the §80/1(5) zero-rate subset contributes 0 output VAT
+        // with no explicit exclusion. COALESCE guards the empty-period → NULL
+        // sum. Bucketed by the §78/1 PAYMENT-date tax point (`payment_date`,
+        // else `paid_at` fallback) — see `listForPeriod`. VOIDED receipts are
+        // EXCLUDED (`status <> 'void'`): a cancelled tax invoice is still shown
+        // in the sales report but its VAT is NOT counted in the period total.
+        // `credited` / `partially_credited` receipts STAY counted here — their
+        // reduction is the §86/10 credit note netted in step (2).
+        const [agg] = await tx
+          .select({
+            rcVat: sql<string>`COALESCE(SUM(${invoices.vatSatang}) FILTER (WHERE ${invoices.receiptDocumentNumberRaw} NOT LIKE 'RE-%'), 0)::text`,
+            reVat: sql<string>`COALESCE(SUM(${invoices.vatSatang}) FILTER (WHERE ${invoices.receiptDocumentNumberRaw} LIKE 'RE-%'), 0)::text`,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              isNotNull(invoices.receiptDocumentNumberRaw),
+              ne(invoices.status, 'void'),
+              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) >= ${opts.from}`,
+              sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date) <= ${opts.to}`,
+            ),
+          );
+
+        // (2) §86/10 credit-note VAT ISSUED in the period — SUBTRACTED from
+        // gross output VAT for the net ภ.พ.30 figure (the use-case does the
+        // arithmetic). A credit note is terminal (no status column) and reduces
+        // output VAT in the month of its `issue_date`. RLS-scoped by the same
+        // `runInTenant` tx.
+        const [cnAgg] = await tx
+          .select({
+            cnVat: sql<string>`COALESCE(SUM(${creditNotes.vatSatang}), 0)::text`,
+          })
+          .from(creditNotes)
+          .where(
+            and(
+              eq(creditNotes.tenantId, tenantIdArg),
+              sql`${creditNotes.issueDate} >= ${opts.from}`,
+              sql`${creditNotes.issueDate} <= ${opts.to}`,
+            ),
+          );
+
+        return {
+          rcVatSatang: agg?.rcVat ?? '0',
+          reVatSatang: agg?.reVat ?? '0',
+          creditNoteVatSatang: cnAgg?.cnVat ?? '0',
+        };
+      });
     },
   };
 }

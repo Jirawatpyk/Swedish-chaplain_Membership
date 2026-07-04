@@ -19,12 +19,14 @@ export async function generateMetadata(): Promise<Metadata> {
 import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import {
   listInvoicesPaged,
   makeListInvoicesDeps,
   isTenantInvoiceSetupComplete,
   computeIsOverdue,
   displayDocumentNumber,
+  resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 import {
   listSucceededPaymentMethods,
@@ -110,6 +112,23 @@ interface SearchParams {
    * list to one invoice subject. Any other value (or absent) = all.
    */
   readonly subject?: string;
+  /**
+   * 088 T021b / FR-035 — `?pay=1` payment-intent marker set by the command-
+   * palette "Record payment for …" action (alongside `?status=issued`). Drives
+   * a guiding hint pointing the admin at the per-row Record payment button;
+   * `'1'` = on, any other value (or absent) = off.
+   */
+  readonly pay?: string;
+  /**
+   * 088 T065b / FR-031 — three ADMIN-only tax-document filters (ภพ.30 support),
+   * honoured ONLY when `FEATURE_088_TAX_AT_PAYMENT` is on:
+   *   `?docType=sc|rc|re|cn` · `?taxPoint=pre_payment|at_payment` ·
+   *   `?vat=standard|zero_rated_80_1_5`. Any other value (or flag-off) = no
+   *   restriction.
+   */
+  readonly docType?: string;
+  readonly taxPoint?: string;
+  readonly vat?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -160,14 +179,51 @@ export default async function AdminInvoicesPage({
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
   const includeDrafts = statusFilter === 'draft';
   const paidOnlineOnly = query.paidOnline === '1';
+  // 088 T021b / FR-035 — the command-palette "Record payment for …" action
+  // deep-links to ?status=issued&pay=1. The action is generic (no specific
+  // invoice), so it can't auto-open a row's dialog; instead we surface a hint
+  // that lands the admin on the payable list + points at the per-row button.
+  const payIntent = query.pay === '1';
   // 054-event-fee-invoices — subject filter. Only the two known subjects
   // are honoured; any other value falls through to "all".
   const subjectFilter =
     query.subject === 'membership' || query.subject === 'event'
       ? query.subject
       : undefined;
+  // 088 (T065 / FR-016) — tax-at-payment flag gates the SC-bill ↔ RC-tax-receipt
+  // disambiguation (baked per-row below) AND the T065b tax-document filters +
+  // register entry. Read once here so the filter params + the InvoiceFilters
+  // render + the row mapper all share one value.
+  const f088TaxAtPayment = env.features.f088TaxAtPayment;
+  // 088 T065b / FR-031 — three tax-document filters, honoured ONLY when the
+  // flag is on (flag-off / member portal never thread them). Unknown values
+  // fall through to undefined (no restriction).
+  const documentTypeFilter =
+    f088TaxAtPayment &&
+    (query.docType === 'sc' ||
+      query.docType === 'rc' ||
+      query.docType === 're' ||
+      query.docType === 'cn')
+      ? query.docType
+      : undefined;
+  const taxPointFilter =
+    f088TaxAtPayment &&
+    (query.taxPoint === 'pre_payment' || query.taxPoint === 'at_payment')
+      ? query.taxPoint
+      : undefined;
+  const vatTreatmentFilter =
+    f088TaxAtPayment &&
+    (query.vat === 'standard' || query.vat === 'zero_rated_80_1_5')
+      ? query.vat
+      : undefined;
   const hasFilters =
-    Boolean(qTrim) || Boolean(statusFilter) || paidOnlineOnly || Boolean(subjectFilter);
+    Boolean(qTrim) ||
+    Boolean(statusFilter) ||
+    paidOnlineOnly ||
+    Boolean(subjectFilter) ||
+    Boolean(documentTypeFilter) ||
+    Boolean(taxPointFilter) ||
+    Boolean(vatTreatmentFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -198,6 +254,9 @@ export default async function AdminInvoicesPage({
     ...(qTrim ? { search: qTrim } : {}),
     ...(paidOnlineOnly ? { paidOnlineOnly: true } : {}),
     ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+    ...(documentTypeFilter ? { documentType: documentTypeFilter } : {}),
+    ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
+    ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -347,15 +406,30 @@ export default async function AdminInvoicesPage({
     );
   }
   const nowUtcIso = new Date().toISOString();
+  // 088 (T065 / FR-016) — `f088TaxAtPayment` (hoisted to the filter-parse block
+  // above) gates the SC-bill ↔ RC-tax-receipt disambiguation, baked into each
+  // row's `taxDocumentKind` server-side so the client table renders it without
+  // an env read.
   const rows: InvoicesTableRow[] = invoicesResult.ok
-    ? invoicesResult.value.rows.map((r) => ({
+    ? invoicesResult.value.rows.map((r) => {
+        // 088 (T065 / T065a) — disambiguation is applied only when the flag is
+        // on AND the row is a real 088 bill (bill number present). A legacy row
+        // (no bill number) stays 'none' and renders exactly as today.
+        const taxDocumentKind = resolveTaxDocumentKind(r, f088TaxAtPayment);
+        return {
         invoiceId: r.invoiceId,
         // 064 remediation S7 — display number, never '—' on a numbered row:
         // β as-paid no-TIN rows have a NULL invoice document number and carry
         // their printed §105 number in receipt_document_number_raw. The
         // shared helper resolves whichever exists; only true drafts fall
-        // back to the em-dash.
-        documentNumber: displayDocumentNumber(r) ?? '—',
+        // back to the em-dash. 088 A-refined (FR-016) — an 088 invoice is
+        // ALWAYS identified by its OWN (SC) NON-§87 bill number, consistently
+        // for PAID and UNPAID rows (never swapped to the RC on payment). The RC
+        // §86/4 tax receipt is surfaced separately in the Receipt No. column.
+        documentNumber:
+          taxDocumentKind !== 'none'
+            ? (r.billDocumentNumberRaw ?? '—')
+            : (displayDocumentNumber(r) ?? '—'),
         status: computeIsOverdue(r, nowUtcIso) ? 'overdue' : r.status,
         // 054-event-fee-invoices — subject discriminator drives the Event
         // chip; the buyer column renders membership + event invoices alike.
@@ -407,7 +481,16 @@ export default async function AdminInvoicesPage({
         // no-TIN / legacy issued no-TIN event rows): the table flips the
         // main download to the Receipt label + aria.
         mainDownloadIsReceipt: r.pdfDocKind === 'receipt_separate',
-      }))
+        // 088 A-refined (FR-016) — two-document disambiguation. The SC bill
+        // number IS the row identity in the Number column (paid AND unpaid); the
+        // resolved document kind drives the ใบแจ้งหนี้/Invoice tag + the RC
+        // clickable link in the Receipt No. column. Null/'none' unless this is a
+        // real 088 bill and the flag is on.
+        billDocumentNumberRaw:
+          taxDocumentKind !== 'none' ? r.billDocumentNumberRaw : null,
+        taxDocumentKind,
+        };
+      })
     : [];
 
   const total = invoicesResult.ok ? invoicesResult.value.total : 0;
@@ -419,7 +502,22 @@ export default async function AdminInvoicesPage({
         subtitle={t('list.description')}
         actions={
           isAdmin ? (
-            <div className="flex items-center gap-2">
+            // flex-wrap: three actions (Registers + Export CSV + New Invoice)
+            // must wrap on a 320px viewport rather than overflow it
+            // (WCAG 1.4.10 reflow — B2 review FINDING 3).
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 088 T065b (FR-031) — period tax-document registers (§86/4 RC
+                  register + §80/1(5) zero-rate sales + §105 RE register) for
+                  ภ.พ.30. Admin + flag gated; the register page 404s when the
+                  flag is off. */}
+              {f088TaxAtPayment ? (
+                <Link
+                  href="/admin/invoices/registers"
+                  className={buttonVariants({ variant: 'outline' })}
+                >
+                  {t('registers.entry')}
+                </Link>
+              ) : null}
               <CsvExportDialog />
               <Link
                 href="/admin/invoices/new"
@@ -434,7 +532,21 @@ export default async function AdminInvoicesPage({
       />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <InvoiceFilters />
+          {/* 088 T065b — the three tax-document filters render only when the
+              tax-at-payment flag is on (flag-off renders today's filter set). */}
+          <InvoiceFilters show088Filters={f088TaxAtPayment} />
+          {payIntent && isAdmin && rows.length > 0 ? (
+            // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
+            // to the per-row Record payment button (role=status = polite, this
+            // is guidance not an error).
+            <div
+              role="status"
+              className="rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground"
+              data-testid="record-payment-intent-hint"
+            >
+              {t('list.recordPaymentIntentHint')}
+            </div>
+          ) : null}
           {rows.length === 0 ? (
             <div className="py-12 text-center">
               <p className="text-muted-foreground">
@@ -464,7 +576,17 @@ export default async function AdminInvoicesPage({
             </div>
           ) : (
             <>
-              <InvoicesTable rows={rows} showMethodColumn={paidOnlineOnly} />
+              <InvoicesTable
+                rows={rows}
+                showMethodColumn={paidOnlineOnly}
+                // 088 T021c / FR-035 — per-row Record payment quick action.
+                // Admin-only (money mutation); managers are read-only on
+                // finance. `todayIso` is the tenant-timezone (Bangkok) today —
+                // the SAME value the detail page threads to the dialog so the
+                // payment-date clamp never off-by-ones for ~7h/day.
+                canRecordPayment={isAdmin}
+                todayIso={bangkokLocalDate(nowUtcIso)}
+              />
               <TablePagination
                 page={page}
                 pageSize={PAGE_SIZE}

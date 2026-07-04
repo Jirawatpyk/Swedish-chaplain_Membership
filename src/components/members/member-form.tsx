@@ -28,6 +28,7 @@ import { useForm, Controller, type Path } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslations } from 'next-intl';
+import { isVatRegistrantEntityType } from '@/lib/legal-entity';
 import { Loader2Icon } from 'lucide-react';
 // Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
 // (pulls only `@/lib/result`) so it is safe in this client component and
@@ -97,6 +98,13 @@ export function buildMemberFormSchema(
   city: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   province: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   postal_code: z.string().max(20, tv('tooLong', { max: 20 })).optional(),
+  // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular. Rendered on the
+  // EDIT form only (tax-critical, admin-managed). `is_head_office` defaults true
+  // (สำนักงานใหญ่); a branch carries a 5-digit `branch_code`. The 5-digit +
+  // registrant checks live in the superRefine so a blank code on a head office
+  // never trips the base rule.
+  is_head_office: z.boolean().optional(),
+  branch_code: z.string().nullable().optional(),
   founded_year: z
     .union([z.string(), z.number()])
     .optional()
@@ -209,6 +217,29 @@ export function buildMemberFormSchema(
         path: ['primary_contact', 'date_of_birth'],
         message: tf('errors.dobRequired'),
       });
+    }
+    // 088 US3 (FR-008) — §86/4 branch cross-field validation. A branch (NOT head
+    // office) requires a 5-digit code AND is only valid for a VAT-registrant
+    // juristic buyer (legal_entity_type set and ≠ 'individual'; the same
+    // discriminator the identity adapter uses for `buyer_is_vat_registrant`).
+    // A head office skips this (its code is cleared before submit). Mirrors the
+    // server updateMember superRefine + the `members_branch_pairing_ck` DB CHECK.
+    if (data.is_head_office === false) {
+      const code = data.branch_code?.trim() ?? '';
+      if (!/^\d{5}$/.test(code)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['branch_code'],
+          message: tf('errors.branchCodeFormat'),
+        });
+      }
+      if (!isVatRegistrantEntityType(data.legal_entity_type)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['branch_code'],
+          message: tf('errors.branchOnNonRegistrant'),
+        });
+      }
     }
   });
 }
@@ -349,6 +380,13 @@ export function MemberForm({
   );
   const countryIsTH = country.toUpperCase() === 'TH';
 
+  // 088 US3 (FR-008) — the head-office toggle drives the conditional 5-digit
+  // branch_code input (rendered on the EDIT form only). Local state so the
+  // conditional field mounts/unmounts without a RHF `watch()` dependency loop.
+  const [isHeadOffice, setIsHeadOffice] = useState<boolean>(
+    initialValues?.is_head_office ?? true,
+  );
+
   // Surface a server-rejected field (email-in-use, bad tax-id checksum, …)
   // inline: highlight + focus the originating input per WCAG 3.3.1 instead of
   // the old generic toast with nothing marked. A new `serverFieldError` object
@@ -395,6 +433,15 @@ export function MemberForm({
     [
       'date_of_birth',
       needsDob ? errors.primary_contact?.date_of_birth?.message : undefined,
+    ],
+    // 088 US3 — only when the branch_code input is actually rendered (edit mode +
+    // NOT head office); otherwise a stale error would point the jump-link at an
+    // unmounted #branch_code.
+    [
+      'branch_code',
+      mode === 'edit' && !isHeadOffice
+        ? errors.branch_code?.message
+        : undefined,
     ],
   ];
   const summaryItems = summaryEntries
@@ -711,6 +758,61 @@ export function MemberForm({
           </div>
         </div>
       </fieldset>
+
+      {/* --- Tax branch (§86/4) section — EDIT only, admin-managed --- */}
+      {mode === 'edit' && (
+        <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+          <legend className="px-2 text-base font-semibold">
+            {t('sections.taxBranch')}
+          </legend>
+          <p className="text-xs text-muted-foreground">{tf('branchHint')}</p>
+          <div className="flex items-start gap-2">
+            <input
+              id="is_head_office"
+              type="checkbox"
+              className="mt-0.5 size-4 rounded border-input accent-primary"
+              {...register('is_head_office', {
+                onChange: (e) => setIsHeadOffice(e.target.checked),
+              })}
+            />
+            <Label htmlFor="is_head_office" className="font-normal">
+              {tf('isHeadOffice')}
+            </Label>
+          </div>
+          {!isHeadOffice && (
+            <div className="max-w-xs">
+              <Label htmlFor="branch_code">
+                {tf('branchCode')}
+                <RequiredMark />
+              </Label>
+              <Input
+                id="branch_code"
+                inputMode="numeric"
+                maxLength={5}
+                placeholder="00000"
+                {...register('branch_code')}
+                aria-required="true"
+                aria-invalid={Boolean(errors.branch_code)}
+                aria-describedby={
+                  errors.branch_code
+                    ? 'branch_code-error branch_code-hint'
+                    : 'branch_code-hint'
+                }
+              />
+              <p
+                id="branch_code-hint"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {tf('branchCodeHint')}
+              </p>
+              <FieldError
+                id="branch_code-error"
+                message={errors.branch_code?.message}
+              />
+            </div>
+          )}
+        </fieldset>
+      )}
 
       {/* --- Primary contact section --- */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">

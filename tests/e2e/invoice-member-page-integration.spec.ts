@@ -79,13 +79,11 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
   }) => {
     await signInAdmin(page);
     await openAnyMemberDetail(page);
-    // The section title is the localised "Invoices" string; match the
-    // CardTitle heading specifically to avoid the sidebar "Invoices"
-    // nav link on the same page.
-    const card = page.locator('[data-slot="card-title"]').filter({
-      hasText: /invoices/i,
-    });
-    await expect(card.first()).toBeVisible();
+    // 056 fix #1 — the section title is a real <h2> (was a CardTitle <div>),
+    // inside a <section aria-labelledby> region. Match the h2 heading
+    // specifically to avoid the sidebar "Invoices" nav link on the same page.
+    const heading = page.getByRole('heading', { level: 2, name: /invoices/i });
+    await expect(heading.first()).toBeVisible();
   });
 
   test('AS3 manager: mutating actions hidden in Invoices section', async ({
@@ -98,12 +96,10 @@ test.describe('@us7 F3 × F4 integration on admin member page', () => {
     await signInManager(page);
     await openAnyMemberDetail(page);
 
-    // Locate the Invoices section (scoped so we don't pick up list
-    // filters / table headers on an unrelated card).
-    const invoicesCard = page
-      .locator('[data-slot="card"]')
-      .filter({ has: page.locator('[data-slot="card-title"]', { hasText: /invoices/i }) })
-      .first();
+    // Locate the Invoices section via its accessible region (the <section
+    // aria-labelledby> whose name resolves to the "Invoices" <h2> — 056 fix)
+    // so we don't pick up list filters / table headers on an unrelated card.
+    const invoicesCard = page.getByRole('region', { name: /invoices/i }).first();
     await expect(invoicesCard).toBeVisible();
 
     // Pre-condition: prove the section's content container is

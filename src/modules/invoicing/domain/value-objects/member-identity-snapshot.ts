@@ -54,6 +54,24 @@ export interface MemberIdentitySnapshot {
    * both the read and write boundaries), not merely a doc convention.
    */
   readonly member_number_display: string | null;
+  /**
+   * 088-invoice-tax-flow-redesign (§ C.1 / § F.1) — §86/4 Head-Office/Branch
+   * particular for the BUYER, pinned at issue. `buyer_is_head_office=true` =
+   * สำนักงานใหญ่ (default); `false` = a branch with `buyer_branch_code` carrying
+   * the 5-digit code. The branch LINE is only DRAWN for a VAT-registrant
+   * juristic buyer — gated on `buyer_is_vat_registrant` (populated at issue from
+   * `members.legal_entity_type ≠ 'individual'` AND non-NULL; NULL/unknown →
+   * false → NO line, fail-closed — NEVER `buyerHasTin`).
+   *
+   * OPTIONAL on the interface (wired per-story later, T030/US3): the zod schema
+   * fills defaults (head-office / null / not-registrant) so a PARSED snapshot
+   * always carries a value; a raw fixture / historical JSONB snapshot that omits
+   * the keys reads back as the fail-closed defaults. Consumers guard `?? false`
+   * / `?? true` accordingly.
+   */
+  readonly buyer_is_head_office?: boolean;
+  readonly buyer_branch_code?: string | null;
+  readonly buyer_is_vat_registrant?: boolean;
 }
 
 /**
@@ -102,6 +120,19 @@ export const memberIdentitySnapshotSchema = z.object({
   // undeclared keys, so an interface-only add would silently drop the value at
   // both write (makeMemberIdentitySnapshot) and read (repo boundary parse).
   member_number_display: z.string().min(1).nullable().optional().default(null),
+  // 088-invoice-tax-flow-redesign (§ C.1 / § F.1) — buyer §86/4 branch particular
+  // + VAT-registrant discriminator, pinned at issue. SAME `.optional().default(…)`
+  // posture as member_number (a MISSING key parses to the fail-closed default,
+  // NOT undefined) — declaring them here is mandatory (z.object STRIPS undeclared
+  // keys, so an interface-only add would silently drop the value at write/read).
+  buyer_is_head_office: z.boolean().optional().default(true),
+  buyer_branch_code: z
+    .string()
+    .regex(/^\d{5}$/, 'buyer_branch_code must be 5 digits')
+    .nullable()
+    .optional()
+    .default(null),
+  buyer_is_vat_registrant: z.boolean().optional().default(false),
 }).superRefine((data, ctx) => {
   // 055-member-number — the bare integer and the formatted display string are
   // PINNED together: both null (event/non-member buyer or historical snapshot)
@@ -120,6 +151,25 @@ export const memberIdentitySnapshotSchema = z.object({
       path: ['member_number_display'],
       message:
         'member_number and member_number_display must be pinned together (both null, or both non-null)',
+    });
+  }
+  // 088-invoice-tax-flow-redesign (§ C.1) — buyer_is_head_office ⇔ branch_code
+  // are pinned: head-office ⇒ code MUST be null; branch ⇒ code MUST be a 5-digit
+  // string. Both defaults run BEFORE this refine, so a snapshot omitting the keys
+  // resolves to head-office / null and passes. A half-populated pair is a
+  // representable illegal state → reject it at both the read and write boundary.
+  if (data.buyer_is_head_office && data.buyer_branch_code !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['buyer_branch_code'],
+      message: 'head-office buyer must have a null branch_code',
+    });
+  }
+  if (!data.buyer_is_head_office && data.buyer_branch_code === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['buyer_branch_code'],
+      message: 'branch buyer must carry a 5-digit branch_code',
     });
   }
 });

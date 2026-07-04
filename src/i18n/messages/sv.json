@@ -1223,7 +1223,8 @@
         "invoicePaid": "Faktura betald via {paymentMethod}",
         "invoiceVoided": "Faktura makulerad — {reason}",
         "creditNoteIssued": "Kreditnota {documentNumber} utställd — {creditAmount} THB",
-        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt"
+        "invoicePdfResent": "PDF för faktura {documentNumber} skickad på nytt",
+        "taxReceiptIssued": "Skattekvitto {documentNumber} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)"
       },
       "invoices": {
         "title": "Fakturor",
@@ -1287,7 +1288,8 @@
         "sections": {
           "company": "Företag",
           "address": "Adress",
-          "primaryContact": "Primär kontakt"
+          "primaryContact": "Primär kontakt",
+          "taxBranch": "Huvudkontor / Filial (สำนักงานใหญ่/สาขา, §86/4)"
         },
         "fields": {
           "companyName": "Företagsnamn",
@@ -1303,6 +1305,10 @@
           "city": "Ort/Stad",
           "province": "Län/Region",
           "postalCode": "Postnummer",
+          "isHeadOffice": "Denna medlem är huvudkontoret (สำนักงานใหญ่)",
+          "branchCode": "Filialkod",
+          "branchCodeHint": "5-siffrig filialkod (RD), t.ex. 00001",
+          "branchHint": "För en §86/4-skattefaktura skrivs köparens rad för huvudkontor/filial ut endast för ett momsregistrerat bolag.",
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
@@ -1328,7 +1334,9 @@
             "taxIdChecksum": "Detta skatte-ID är ogiltigt. Kontrollera det 13-siffriga numret och checksiffran.",
             "dobRequired": "Födelsedatum krävs för denna plan.",
             "foundedYear": "Ange ett år mellan 1800 och i år.",
-            "turnover": "Ange ett icke-negativt belopp."
+            "turnover": "Ange ett icke-negativt belopp.",
+            "branchCodeFormat": "Ange en 5-siffrig filialkod, t.ex. 00001.",
+            "branchOnNonRegistrant": "En filialkod gäller endast ett momsregistrerat bolag. Ange den juridiska personens typ först."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
@@ -1558,7 +1566,10 @@
         "tax": "Skatt",
         "numbering": "Dokumentnumrering",
         "defaults": "Faktureringsstandard",
-        "logo": "Logotyp"
+        "logo": "Logotyp",
+        "seller": "Säljarens filial (§86/4)",
+        "whtNote": "Notering om källskatt",
+        "bank": "Offlinebetalning (banköverföring)"
       },
       "labels": {
         "currencyCode": "Valutakod",
@@ -1577,14 +1588,36 @@
         "defaultNetDays": "Standard kreditdagar",
         "proRatePolicy": "Proportionerlig beräkning",
         "autoEmail": "Auto-e-post vid utfärdande/betalning",
-        "logo": "Ladda upp logotyp"
+        "logo": "Ladda upp logotyp",
+        "sellerIsHeadOffice": "Huvudkontor",
+        "sellerBranchCode": "Filialkod",
+        "whtNoteTh": "Källskattsnotering (thailändska)",
+        "whtNoteEn": "Källskattsnotering (engelska)",
+        "bankPayeeName": "Kontonamn / betalningsmottagare",
+        "bankAccountNo": "Kontonummer",
+        "bankAccountType": "Kontotyp",
+        "bankName": "Bank",
+        "bankBranch": "Bankkontor",
+        "bankAddress": "Bankadress",
+        "bankSwift": "SWIFT / BIC",
+        "paymentInstructionsTh": "Betalningsinstruktioner (thailändska)",
+        "paymentInstructionsEn": "Betalningsinstruktioner (engelska)"
       },
       "hints": {
         "currencyCode": "ISO 4217 — 3 versaler (t.ex. THB, USD, SEK).",
         "taxId": "13 siffror (thailändskt skattemyndighetsformat).",
         "receiptPrefix": "Används endast när kvittoläge är \"separat\".",
         "autoEmail": "När på skickas nya fakturor automatiskt via e-post vid utfärdande. Kan åsidosättas per faktura.",
-        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt."
+        "logo": "PNG eller JPEG, ≤ 1 MB, 200-2000 px brett, 100-500 px högt.",
+        "receiptMode": "Kombinerad numrering har utgått – kvittot får sin egen §87-nummerserie.",
+        "sellerIsHeadOffice": "På = huvudkontor (สำนักงานใหญ่). Av = en filial som anges med en femsiffrig kod.",
+        "sellerBranchCode": "Exakt 5 siffror (skatteverkets filialkod).",
+        "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Medlemsavgifter är befriade från källskatt enligt §65 bis (13) (beslut กค 0811/8542) — föreslagen text är förifylld nedan. Lämna tomt för inget.",
+        "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
+        "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
+        "bank": "Visas endast på fakturan (ใบแจ้งหนี้), för betalning via banköverföring. Lämna tomt för inget.",
+        "bankSwift": "8 eller 11 tecken (t.ex. KASITHBK).",
+        "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."
       },
       "receiptMode": {
         "combined": "Kombinerad faktura + kvitto",
@@ -1617,7 +1650,11 @@
         "netDays": "Standard kreditdagar måste vara 0-365.",
         "validation": "Kontrollera formuläret — vissa fält behöver uppmärksamhet.",
         "forbidden": "Din roll kan inte ändra fakturainställningar.",
-        "generic": "Sparning misslyckades. Försök igen."
+        "generic": "Sparning misslyckades. Försök igen.",
+        "sellerBranch": "En filial kräver en femsiffrig filialkod; ett huvudkontor måste lämna den tom.",
+        "bankSwift": "SWIFT/BIC måste vara 8 eller 11 tecken (bokstäver och siffror).",
+        "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna).",
+        "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC."
       },
       "saving": "Sparar…",
       "actions": {
@@ -1627,6 +1664,13 @@
       "toast": {
         "created": "Fakturainställningar skapade.",
         "updated": "Fakturainställningar uppdaterade."
+      },
+      "charCount": "{count}/{max}",
+      "prefixChange": {
+        "title": "Ändra dokumentnummerprefix?",
+        "description": "Att ändra ett prefix för faktura, kvitto eller kreditnota startar en NY nummerserie. Redan utfärdade dokument behåller sina nummer; §87-spårningen registrerar ändringen. Fortsätta?",
+        "confirm": "Ändra prefix",
+        "cancel": "Avbryt"
       }
     },
     "creditNotes": {
@@ -1648,11 +1692,15 @@
         "submitting": "Utfärdar…",
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
+        "successWithNumber": "Kreditnota {number} utfärdad.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "errors": {
+          "concurrent": "Denna faktura har redan krediterats eller makulerats i en annan session. Uppdatera för att se den senaste statusen.",
+          "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
+          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
           "codeFallback": "Felkod: {code}"
         }
       },
@@ -1734,6 +1782,12 @@
       }
     },
     "invoices": {
+      "tax088": {
+        "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน (Skattefaktura/Kvitto)",
+        "section8015Note": "Moms 0 % enligt §80/1(5) i thailändska skattelagen (ใบกำกับภาษี med nollskatt för ambassad/internationell organisation).",
+        "bankBlockHeading": "Betalningsuppgifter för banköverföring",
+        "seeReceiptLink": "se skattekvitto {number}"
+      },
       "meta": {
         "title": "Fakturor"
       },
@@ -1749,11 +1803,16 @@
           "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
           "receiptPreparing": "Förbereder kvitto…",
+          "receiptGenerating": "Kvitto genereras…",
+          "receiptRenderFailed": "Kvittot kunde inte genereras",
+          "receiptRenderFailedAria": "Kvitto-PDF kunde inte genereras för faktura {number} — öppna för att granska",
+          "recordPayment": "Registrera betalning",
+          "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
         "columns": {
-          "documentNumber": "Nr",
+          "documentNumber": "Fakturanr.",
           "status": "Status",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
@@ -1761,7 +1820,7 @@
           "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
-          "receiptNumber": "Kvittonr."
+          "receiptNumber": "Skattekvittonr."
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -1783,6 +1842,7 @@
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
+        "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
           "clearAll": "Rensa filter",
@@ -1791,6 +1851,26 @@
             "all": "Alla typer",
             "membership": "Medlemskap",
             "event": "Evenemang"
+          },
+          "documentType": {
+            "label": "Dokument",
+            "all": "Alla dokument",
+            "sc": "Räkning (SC)",
+            "rc": "Skattekvitto (RC)",
+            "re": "Kvitto (RE)",
+            "cn": "Med kreditnota"
+          },
+          "taxPoint": {
+            "label": "Skattetidpunkt",
+            "all": "Alla skattetidpunkter",
+            "prePayment": "Väntar på betalning",
+            "atPayment": "Kvitto utställt"
+          },
+          "vatTreatment": {
+            "label": "Momsbehandling",
+            "all": "All moms",
+            "standard": "Standardmoms",
+            "zeroRated": "Nollskattesats §80/1(5)"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
@@ -1818,6 +1898,57 @@
           "invalidDate": "Välj giltiga datum.",
           "rangeInverted": "Från-datumet måste vara samma dag eller före Till-datumet.",
           "rangeTooWide": "Intervallet får inte överstiga ett år."
+        }
+      },
+      "registers": {
+        "meta": { "title": "Skatteregister" },
+        "title": "Skattedokumentregister",
+        "description": "Periodregister för den månatliga momsdeklarationen (ภ.พ.30): §86/4-skattekvitton, §105-kvitton och §80/1(5)-nollskatteförsäljning.",
+        "entry": "Skatteregister (ภ.พ.30)",
+        "backToList": "Tillbaka till fakturor",
+        "kind": {
+          "label": "Register",
+          "rcRegister": "§86/4-skattekvittoregister",
+          "zeroRateSales": "§80/1(5) nollskatteförsäljning",
+          "reRegister": "§105-kvittoregister"
+        },
+        "fields": { "from": "Från", "to": "Till" },
+        "actions": { "view": "Visa register" },
+        "outputVat": {
+          "title": "Periodens utgående moms (ภ.พ.30)",
+          "combined": "Netto utgående moms",
+          "rc": "§86/4 (RC)",
+          "re": "§105 (RE)",
+          "gross": "Brutto utgående moms",
+          "creditNote": "minus §86/10-kreditnotor",
+          "note": "Netto standardbeskattad utgående moms för perioden: §86/4-skattekvitton + §105-kvitton (annullerade kvitton exkluderade), minus §86/10-kreditnotor utfärdade denna period — beloppet som ska rapporteras i ภ.พ.30. §80/1(5)-nollskatteförsäljning bidrar med 0. Tabellen nedan visar endast det valda registret."
+        },
+        "summary": {
+          "count": "{count, plural, one {# kvitto} other {# kvitton}}",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt"
+        },
+        "columns": {
+          "receiptNo": "Kvittonr.",
+          "paymentDate": "Betalningsdatum",
+          "buyer": "Köpare",
+          "taxId": "Skatte-ID",
+          "subtotal": "Delsumma",
+          "vat": "Moms",
+          "total": "Totalt",
+          "vatTreatment": "Momsbehandling",
+          "certNo": "Intygsnr."
+        },
+        "vatTreatment": {
+          "standard": "Standard",
+          "zeroRated": "Nollskattesats"
+        },
+        "cancelled": "Annullerad",
+        "empty": "Inga skattedokument under denna period.",
+        "errors": {
+          "invalidRange": "Från-datumet måste vara samma dag eller före Till-datumet, inom ett år.",
+          "loadFailed": "Kunde inte ladda registret. Försök igen."
         }
       },
       "new": {
@@ -1903,7 +2034,9 @@
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
           "ariaTaxInvoiceReceipt": "Ett kombinerat dokument (skattefaktura/kvitto) utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
           "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
-          "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas."
+          "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas.",
+          "bill088": "ใบแจ้งหนี้ (Faktura)",
+          "ariaBill088": "Utfärdas som en ใบแจ้งหนี้ (faktura); §86/4-skattefakturan/kvittot utfärdas när betalningen registreras."
         },
         "submit": "Skapa utkast för evenemangsavgift",
         "submitting": "Skapar…",
@@ -1936,7 +2069,8 @@
           },
           "billFirst": {
             "label": "Fakturera först — utfärda en obetald faktura",
-            "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID."
+            "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID.",
+            "hint088": "Utfärda en ใบแจ้งหนี้ (faktura) nu och registrera betalningen senare; §86/4-skattekvittot utfärdas vid betalning. Kräver köparens skatte-ID."
           },
           "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
@@ -2097,17 +2231,88 @@
       "issue": {
         "title": "Utfärda faktura",
         "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
+        "review": {
+          "heading": "Granska innan utfärdande — detta låser en oföränderlig §86/4-ögonblicksbild",
+          "immutableSnapshotAck": "Utfärdande låser en OFÖRÄNDERLIG skatteögonblicksbild (köparidentitet, huvudkontor/filial, momsbehandling och noteringar). Den kan endast ändras genom att annullera detta dokument. Granska detaljerna nedan innan du bekräftar.",
+          "billStreamNote": "Ett icke-skattemässigt ใบแจ้งหนี้ (faktura)-nummer ({prefix}-…) tilldelas nu — INGET §87-skattenummer förbrukas vid utfärdande. §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (skattekvitto) med sitt RC-nummer utfärdas när betalning registreras.",
+          "fields": {
+            "branchLine": "Huvudkontor/filial (สำนักงานใหญ่/สาขา)",
+            "vatTreatment": "Momsbehandling",
+            "cert": "Intyg (§80/1(5))",
+            "whtNote": "Källskattenotering"
+          },
+          "branchLine": {
+            "headOffice": "สำนักงานใหญ่ (huvudkontor)",
+            "noneIndividual": "Ingen filialrad (privatperson)",
+            "noneUnset": "Ingen filialrad (juridisk typ ej angiven)"
+          },
+          "vatTreatmentValue": {
+            "standard": "Standard — moms 7%",
+            "zeroRated": "Nollskattesats 0% — §80/1(5)"
+          },
+          "whtNoteValue": {
+            "willPrint": "Skrivs ut på detta medlemsdokument",
+            "none": "Ingen konfigurerad"
+          },
+          "warnings": {
+            "noPaymentPath": "Denna ใบแจ้งหนี้ (faktura) får INGEN betalningsväg — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Konfigurera en betalningsmetod innan utfärdande, eller fortsätt med vetskapen att fakturan för närvarande inte kan betalas.",
+            "nullEntityType": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparens juridiska typ är inte angiven. Ange den i medlemsposten först om detta är ett momsregistrerat företag."
+          }
+        },
+        "form": {
+          "vatTreatment": {
+            "label": "Momsbehandling",
+            "help": "Endast för försäljning till ambassader / internationella organisationer — bifoga intyget från utrikesministeriet (MFA) enligt §80/1(5). All annan försäljning har standardmoms 7%.",
+            "standard": "Standard — moms 7%",
+            "zeroRated": "Nollskattesats 0% — §80/1(5) (ambassad / int. org.)",
+            "membershipCaption": "Medlemskap har alltid moms 7%; §80/1(5) gäller endast icke-medlemsförsäljning (evenemang / tjänst)."
+          },
+          "cert": {
+            "legend": "MFA-intyg §80/1(5)",
+            "revealed": "Intygsfält visas — ett intygsnummer krävs för att utfärda en nollskattefaktura.",
+            "noLabel": "MFA-intygsnummer",
+            "noPlaceholder": "t.ex. กต 0404/…",
+            "noRequired": "Ange MFA-intygsnumret för att utfärda en nollskattefaktura.",
+            "dateLabel": "Intygsdatum",
+            "dateFormat": "Ange intygsdatum som ÅÅÅÅ-MM-DD."
+          },
+          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB. Ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer — bekräfta att intyget gäller innan du utfärdar.",
+          "certUpload": {
+            "label": "Skanning av MFA-intyg (valfritt)",
+            "pickerLabel": "Välj en intygsskanning att ladda upp",
+            "uploadButton": "Bifoga intygsskanning",
+            "uploadingLabel": "Laddar upp…",
+            "uploadingAria": "Laddar upp intyg — vänta",
+            "uploadedToast": "Intygsskanning bifogad.",
+            "attached": "Bifogad: {filename}",
+            "remove": "Ta bort",
+            "helpText": "Valfritt. PDF, PNG eller JPG upp till 5 MB. Skanningen virusgranskas innan den lagras. Det är intygsNUMRET ovan som gör nollskatten giltig — skanningen är endast stödjande bevis.",
+            "errors": {
+              "zero_rate_cert_too_large": "Intygsskanningen är större än 5 MB.",
+              "zero_rate_cert_invalid_mime": "Endast PDF-, PNG- eller JPG-filer tillåts.",
+              "zero_rate_cert_unsafe": "Intygsskanningen flaggades av virusgranskaren. Uppladdningen avvisades.",
+              "zero_rate_cert_scan_failed": "Intygsskanningen kunde inte virusgranskas. Försök igen, eller utfärda med endast intygsnumret (skanningen är valfri).",
+              "invalid_body": "Uppladdningsbegäran var felaktig.",
+              "internal_error": "Ett oväntat fel uppstod under uppladdningen.",
+              "unknown": "Uppladdningen misslyckades. Försök igen."
+            }
+          }
+        },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
         "typeToConfirm": "Bekräftelsefras",
         "issueButton": "Utfärda",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
+        "successWithNumber": "Faktura {number} utfärdad",
         "cancel": "Avbryt",
         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå som en giltig skattefaktura med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
+        "noTaxIdHint088": "Den här köparen saknar skattenummer. Fakturan (ใบแจ้งหนี้) utfärdas med namn och adress, och dess §86/4-skattefaktura/kvitto vid betalning förblir giltig, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
         "errors": {
           "failed": "Kunde inte utfärda",
+          "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",
+          "refreshAction": "Uppdatera",
           "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "codeFallback": "Felkod: {code}",
@@ -2158,16 +2363,22 @@
       "pay": {
         "title": "Registrera betalning",
         "description": "Markera fakturan som betald. Ett kvitto-PDF genereras och skickas till medlemmen.",
+        "payingForDocument": "Registrerar betalning för {number}",
         "submit": "Registrera",
         "submitting": "Registrerar…",
         "success": "Betalning registrerad",
         "successDetail": "Faktura {number} är nu betald.",
+        "successReceipt": "Skattekvitto {number} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
         "cancel": "Tillbaka",
         "cancelDialog": "Avbryt",
         "errors": {
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
           "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
+          "legacy_invoice_needs_reissue": "Detta är en äldre faktura utan fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
+          "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
+          "concurrent": "Denna faktura har redan betalats eller ändrats i en annan session. Uppdatera för att se den senaste statusen och kvittots (RC) nummer.",
+          "refreshAction": "Uppdatera",
           "dateRange": "Betalningsdatum måste vara på eller efter utfärdandedatumet ({min}) och får inte vara i framtiden ({max}).",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
@@ -2202,9 +2413,12 @@
         "submitting": "Annullerar…",
         "cancel": "Avbryt",
         "success": "Fakturan annullerad.",
+        "successWithNumber": "Faktura {number} annullerad.",
         "errors": {
           "failed": "Fakturan kunde inte annulleras.",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
+          "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}"
         }
       }
@@ -4093,7 +4307,9 @@
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
       "reviewBroadcasts": "Granska utskickskön",
       "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning",
-      "newBroadcastTemplate": "Skapa ny E-Blast-mall"
+      "newBroadcastTemplate": "Skapa ny E-Blast-mall",
+      "recordPayment": "Registrera betalning för en faktura",
+      "rerenderTaxReceipt": "Återskapa skattekvitto"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -4304,8 +4520,8 @@
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
       "loaded": "Fakturalistan laddad.",
       "columns": {
-        "documentNumber": "Nr",
-        "receiptNumber": "Kvittonr.",
+        "documentNumber": "Fakturanr.",
+        "receiptNumber": "Skattekvittonr.",
         "status": "Status",
         "issueDate": "Utfärdad",
         "dueDate": "Förfaller",
@@ -4323,9 +4539,14 @@
         "downloadCombinedAria": "Ladda ner kombinerat dokument (faktura / kvitto) för {number}",
         "receiptPreparing": "Förbereder kvitto…",
         "receiptUnavailable": "Kvitto ej tillgängligt",
+        "receiptFailedSupport": "Kvittot är på väg — vi löser det",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
+      },
+      "receiptStatus": {
+        "generating": "Ditt skattekvitto genereras",
+        "reassurance": "Det tar oftast bara en stund. Du kan lämna sidan — ditt skattekvitto är säkert och visas här automatiskt när det är klart."
       },
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
@@ -4361,6 +4582,11 @@
         },
         "pdf": {
           "preparing": "Ditt skattekvitto förbereds. PDF-filen är klar inom kort — försök igen om en stund."
+        },
+        "receiptFailed": {
+          "heading": "Ditt skattekvitto tar längre tid än väntat",
+          "body": "Vi stötte på ett problem när ditt skattekvitto-PDF skulle genereras. Din betalning är registrerad och ditt kvittonummer är reserverat — vårt team har meddelats och löser detta inom kort.",
+          "contact": "Om du behöver dokumentet omgående, kontakta kammarens personal."
         },
         "title": "Faktura",
         "subtitle": "Skrivskyddad vy — ladda ner PDF för det officiella skattedokumentet.",
@@ -5089,6 +5315,7 @@
       "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
       "receipt_rendered": "Kvitto renderat",
       "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
+      "tax_receipt_issued": "Skattekvitto utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
       "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat"
     },
     "eventcreate": {

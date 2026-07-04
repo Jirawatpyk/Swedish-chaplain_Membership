@@ -46,6 +46,49 @@ export interface PdfRenderInput {
    * exclusive without change.
    */
   readonly vatInclusive?: boolean;
+  /**
+   * 088-invoice-tax-flow-redesign (US1 / T016) — render the `'invoice'` /
+   * `'invoice_preview'` kind as the NON-tax ใบแจ้งหนี้ / Invoice (no §86/4
+   * title, no ต้นฉบับ/ORIGINAL marker, no §-citation footer) instead of the
+   * legacy §86/4 ใบกำกับภาษี / Tax Invoice. Set to `true` by `issueInvoice`
+   * ONLY when `FEATURE_088_TAX_AT_PAYMENT` is on (the bill is then a non-§87
+   * `SC` document). OPTIONAL + defaults to the legacy titles when absent, so
+   * every pre-088 render input is byte-identical and the receipt / credit-note
+   * / void kinds are unaffected (only the pre-payment bill kind relabels).
+   */
+  readonly billMode?: boolean;
+  /**
+   * 088-invoice-tax-flow-redesign (US5 / T041 / FR-012 / SC-007) — the subject of
+   * the underlying invoice. Gates the tenant WHT footer note, which renders on
+   * `'membership'` documents ONLY (both the ใบแจ้งหนี้ bill AND the §86/4 tax
+   * receipt), NEVER on `'event'` documents. Threaded from `draft.invoiceSubject`
+   * (issuance / preview) or the stored `invoice.invoiceSubject` (receipt / void
+   * re-render) so every render path of a given document gates consistently.
+   *
+   * OPTIONAL / undefined-guarded: a render input that omits it (credit-note, or
+   * any pre-088 caller) → the WHT-note gate is `=== 'membership'` → false → no
+   * note. `undefined` is omitted by `JSON.stringify`, so the deterministic render
+   * seed is unchanged for callers that do not set it (SC-003 byte-stable).
+   */
+  readonly invoiceSubject?: 'membership' | 'event';
+  /**
+   * 088-invoice-tax-flow-redesign (US8 / T058 / FR-025 / SC-008) — the pinned
+   * per-invoice VAT treatment. When `'zero_rated_80_1_5'` AND `templateVersion
+   * >= ZERO_RATE_NOTE_MIN_VERSION` (=8), the §86/4 tax receipt renders the
+   * §80/1(5) note ("VAT 0% under §80/1(5); MFA certificate no. … / date …")
+   * from `zeroRateCertNo` + `zeroRateCertDate`. The scan is NOT appended — the
+   * cert is referenced by number/date only (G6).
+   *
+   * OPTIONAL + undefined-guarded: threaded ONLY on a zero-rated document, so a
+   * `'standard'` invoice (and every pre-088 caller) omits it → the deterministic
+   * render seed is unchanged and the note never renders (SC-003 byte-stable).
+   * VAT 0% / 0.00 itself is driven by `subtotal`/`vat`/`vatRate` (already
+   * present) — the note is the only new element. Membership is always
+   * `'standard'`, so the note never draws on a membership document.
+   */
+  readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5';
+  readonly zeroRateCertNo?: string | null;
+  readonly zeroRateCertDate?: string | null;
   readonly voidReason?: string | null;
   /**
    * 064 W1 S31 — what the document being VOID-stamped ORIGINALLY was.

@@ -78,6 +78,28 @@ export const listInvoicesPagedSchema = z.object({
   // 054-event-fee-invoices — subject discriminator filter. Absent = all
   // subjects; 'membership'/'event' restrict to that invoice kind.
   invoiceSubject: z.enum(['membership', 'event']).optional(),
+  // 088 T065b (FR-031, ภพ.30 support) — three ADMIN-only tax-document filters
+  // (gated on FEATURE_088_TAX_AT_PAYMENT at the page; the member portal never
+  // threads them). Absent = no restriction. Mapping is derived from the
+  // invoices schema (see drizzle-invoice-repo.listPaged + the T065b report):
+  //   - documentType 'sc' — unpaid 088 bill (ใบแจ้งหนี้): bill number present,
+  //                         no §86/4 receipt yet.
+  //   - documentType 'rc' — §86/4 tax receipt (receipt number, NOT the §105 'RE'
+  //                         register).
+  //   - documentType 're' — §105 legacy/event-no-TIN receipt ('RE' register).
+  //   - documentType 'cn' — invoices carrying a credit note (credited /
+  //                         partially_credited). The invoice LIST cannot render
+  //                         credit-note ROWS (separate table); a full ใบลดหนี้
+  //                         register is follow-on — this is a cross-reference.
+  documentType: z.enum(['sc', 'rc', 're', 'cn']).optional(),
+  //   - taxPointState 'pre_payment' — bill awaiting payment (tax point not yet
+  //                         reached under the 088 tax-at-payment model).
+  //   - taxPointState 'at_payment'  — a §86/4/§105 receipt has been issued (tax
+  //                         point reached).
+  taxPointState: z.enum(['pre_payment', 'at_payment']).optional(),
+  //   - vatTreatment 'standard' | 'zero_rated_80_1_5' — the pinned per-invoice
+  //                         §80/1(5) treatment (drives the VAT rate, FR-025).
+  vatTreatment: z.enum(['standard', 'zero_rated_80_1_5']).optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -103,6 +125,9 @@ export async function listInvoicesPaged(
     includeDrafts: input.includeDrafts,
     paidOnlineOnly: input.paidOnlineOnly,
     invoiceSubject: input.invoiceSubject,
+    documentType: input.documentType,
+    taxPointState: input.taxPointState,
+    vatTreatment: input.vatTreatment,
   });
   return ok({ rows, total });
 }

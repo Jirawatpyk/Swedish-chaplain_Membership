@@ -108,6 +108,11 @@ function makeIssuedInvoice(): Invoice {
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
+    vatTreatment: 'standard',
+    zeroRateCertNo: null,
+    zeroRateCertDate: null,
+    zeroRateCertBlobKey: null,
     lines: [line],
     createdAt: '2026-04-18T00:00:00Z',
     updatedAt: '2026-04-18T00:00:00Z',
@@ -157,6 +162,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
       lockForUpdate: vi.fn(async () => 'issued' as InvoiceStatus),
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
+      applyReceiptPdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -196,6 +202,9 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     currentTemplateVersion: 1,
     asyncReceiptPdf: true,
     receiptPdfRenderEnqueue: { enqueue: vi.fn(async () => {}) },
+    // Default: flag not carried (legacy/dormant), exact-equivalent of the
+    // pre-refactor `undefined`. Tests that exercise the RC path override with 'on'.
+    taxAtPayment: 'off',
   };
 }
 
@@ -290,15 +299,29 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
   // the allocated raw doc num is persisted on the invoice row via
   // applyPayment so the worker reads it back instead of re-allocating
   // (which would create §87 gaps on every retry).
-  it('separate-mode async: pre-allocates receipt seq + persists receiptDocumentNumberRaw on applyPayment', async () => {
-    const draft = makeIssuedInvoice();
-    const deps = makeAsyncDeps(
-      draft,
-      makeSettings({
-        receiptNumberingMode: 'separate',
-        receiptNumberPrefix: 'RE',
-      }),
-    );
+  it('088 async: pre-allocates the §87 receipt number + persists receiptDocumentNumberRaw on applyPayment', async () => {
+    // 088 — a NEW-flow bill (non-§87 SC number, NULL §87 document_number). The
+    // legacy §87 shape would (correctly) trip the FR-017 guard under the flag.
+    const draft = {
+      ...makeIssuedInvoice(),
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    } as Invoice;
+    // 088 T008/T018 — RC allocation is flag-gated (`taxAtPayment`), not
+    // settings-driven. Enable it so the async pre-allocation path runs.
+    const deps = {
+      ...makeAsyncDeps(
+        draft,
+        makeSettings({
+          receiptNumberingMode: 'separate',
+          // 088 US7 — the §86/4 RC-role receipt prefix. Uses 'RC' (the new
+          // default); 'RE' is now reserved for the §105 event-receipt register.
+          receiptNumberPrefix: 'RC',
+        }),
+      ),
+      taxAtPayment: 'on' as const,
+    };
     // Allocator returns sequence 7 — the test asserts that 7 is the
     // value that lands on the row (NOT some later value from a
     // worker re-allocation).
@@ -311,7 +334,7 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     const callArg = (deps.invoiceRepo.applyPayment as ReturnType<typeof vi.fn>)
       .mock.calls[0]![1];
     expect(callArg.receiptPdf.kind).toBe('pending');
-    expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RE-2026-000007');
+    expect(callArg.receiptPdf.receiptDocumentNumberRaw).toBe('RC-2026-000007');
   });
 
   // R1-CG-1 + R2-CG-1 — atomicity: enqueue throw must roll the whole

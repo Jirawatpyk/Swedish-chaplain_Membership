@@ -78,7 +78,7 @@ describe('migration 0209 — post-apply verification', () => {
     expect(r.total).toBeGreaterThan(0);
   });
 
-  it('member_numbers are contiguous 1..N per REAL tenant with no duplicates', async () => {
+  it('member_numbers are positive + unique per REAL tenant (gaps allowed after deletes)', async () => {
     // Scope to REAL (migrated) tenants. Throwaway INTEGRATION tenants
     // (`test-…` / `__test…`) are created post-migration by other suites'
     // raw `members` inserts using `nextSeedMemberNumber()` (a HIGH 900_000+
@@ -109,10 +109,18 @@ describe('migration 0209 — post-apply verification', () => {
         maxn: number;
         distinctn: number;
       };
-      // 1..N: smallest is 1, largest equals the count, all distinct.
-      expect(r.minn, `tenant ${r.tenant_id} min`).toBe(1);
-      expect(r.maxn, `tenant ${r.tenant_id} max == count`).toBe(r.cnt);
+      // Durable member-number invariants: POSITIVE + NO DUPLICATES. Member
+      // numbers are MONOTONICALLY allocated (a sequence high-water mark), NOT
+      // gap-free — a member DELETE leaves a permanent gap, so `max` can exceed
+      // `count` and `min` can exceed 1. Unlike §87 tax-invoice numbers, member
+      // numbers carry NO legal no-gap requirement, so strict 1..N contiguity is
+      // NOT asserted (any delete would false-fail it — 2026-07-04 gate incident).
+      expect(r.minn, `tenant ${r.tenant_id} positive`).toBeGreaterThanOrEqual(1);
       expect(r.distinctn, `tenant ${r.tenant_id} no duplicates`).toBe(r.cnt);
+      expect(
+        r.maxn,
+        `tenant ${r.tenant_id} max >= count (N distinct positives ⇒ max >= N)`,
+      ).toBeGreaterThanOrEqual(r.cnt);
     }
   });
 
@@ -176,7 +184,7 @@ describe('migration 0209 — post-apply verification', () => {
     expect(r.member_number_prefix).toBe('SCCM');
   });
 
-  it('swecham seed row in tenant_member_sequences has last_number == MAX(member_number)', async () => {
+  it('swecham seed row in tenant_member_sequences has last_number >= MAX(member_number)', async () => {
     const seqRows = await db.execute(sql`
       SELECT last_number FROM tenant_member_sequences WHERE tenant_id = 'swecham'
     `);
@@ -189,8 +197,11 @@ describe('migration 0209 — post-apply verification', () => {
       SELECT MAX(member_number)::int AS m FROM members WHERE tenant_id = 'swecham'
     `);
     const maxN = (maxRows[0] as { m: number | null }).m;
-    // Counter seeded to the current high-water mark (next member = last + 1).
-    expect(last).toBe(maxN ?? 0);
+    // The counter is a monotonic high-water mark: last_number >= MAX(member_number).
+    // After a member DELETE (esp. the highest-numbered one) last_number can EXCEED
+    // the surviving max, so assert >= not == (== false-fails after any top delete).
+    // Next allocation = last_number + 1.
+    expect(last).toBeGreaterThanOrEqual(maxN ?? 0);
   });
 
   it('DB backstop: INSERT member_number = 0 violates positive CHECK', async () => {

@@ -37,7 +37,11 @@
  * — Simplicity; Reusable Components). The card reuses the column keys.
  */
 import type { Invoice } from '@/modules/invoicing';
-import { computeIsOverdue, displayDocumentNumber } from '@/modules/invoicing';
+import {
+  computeIsOverdue,
+  displayDocumentNumber,
+  resolveTaxDocumentKind,
+} from '@/modules/invoicing';
 import type { Money } from '@/modules/invoicing';
 import type { InvoiceRowDisplayStatus } from './format';
 
@@ -51,6 +55,26 @@ import type { InvoiceRowDisplayStatus } from './format';
  * surface — and the `displayStatus` field below — stay unchanged.
  */
 export type { InvoiceRowDisplayStatus };
+
+/**
+ * 088 (T065 / T065a / FR-016) — the kind of §86/4 tax document a row
+ * represents, for the SC-bill ↔ RC-tax-receipt disambiguation. Resolved by
+ * `toInvoiceRowViewModel` ONLY when the tax-at-payment flag is passed true AND
+ * the row is a real 088 bill (`billDocumentNumberRaw !== null`):
+ *
+ *   - `'none'`        — flag off, OR a legacy / non-088 row. Surfaces render
+ *                       exactly as today (backward compatible).
+ *   - `'bill'`        — a new-flow ใบแจ้งหนี้ not yet paid (both §87 legs NULL).
+ *                       Shown under its NON-§87 bill number (SC-…) + the
+ *                       ใบแจ้งหนี้/Invoice label.
+ *   - `'tax_receipt'` — a paid new-flow bill whose §86/4 RC receipt number has
+ *                       been minted at payment. 088 A-refined (FR-016): the row
+ *                       stays identified by its OWN (SC) bill number + the
+ *                       ใบแจ้งหนี้/Invoice tag; the RC §86/4 tax receipt is
+ *                       surfaced separately (a clickable link) in the
+ *                       Receipt-No. column/line.
+ */
+export type InvoiceTaxDocumentKind = 'none' | 'bill' | 'tax_receipt';
 
 /**
  * Everything a single invoice list row needs to render, computed once
@@ -143,6 +167,31 @@ export interface InvoiceRowViewModel {
   readonly receiptFailed: boolean;
   /** Resend the invoice email (not void + invoice PDF exists). */
   readonly resendable: boolean;
+  /**
+   * 088 (T065 / T065a / FR-016) — SC-bill ↔ RC-tax-receipt disambiguation
+   * discriminator. `'none'` unless the caller passed `taxAtPayment: true` AND
+   * this is a real 088 bill; see {@link InvoiceTaxDocumentKind}.
+   */
+  readonly taxDocumentKind: InvoiceTaxDocumentKind;
+  /**
+   * 088 — the pre-payment NON-§87 bill number (SC-…) to display, flag-aware:
+   * the raw `billDocumentNumberRaw` when `taxDocumentKind !== 'none'`, else
+   * `null` (a flag-off surface never surfaces it → byte-identical legacy).
+   * Drives the "payable record" line on a paid bill and the row identity on an
+   * unpaid bill.
+   */
+  readonly billDocumentNumber: string | null;
+  /**
+   * 088 A-refined (FR-016) — the number the row is DISPLAYED under, flag-aware.
+   * For ANY 088 bill (`taxDocumentKind !== 'none'`, paid OR unpaid) this is the
+   * invoice's OWN (SC) NON-§87 bill number — the invoice is always identified by
+   * its own bill number, never swapped to the RC on payment. For legacy rows it
+   * is `displayNumber` (the §87 invoice / §105 / §86-4 RC resolver). Surfaces use
+   * this for the row link text + aria; the RC is surfaced separately in the
+   * Receipt-No. column/line, and `displayNumber` stays unchanged for any consumer
+   * that specifically wants the §87 number.
+   */
+  readonly primaryNumber: string | null;
 }
 
 /**
@@ -221,6 +270,13 @@ export function downloadLabelKeys(mainPdfKind: InvoiceRowViewModel['mainPdfKind'
 export function toInvoiceRowViewModel(
   row: Invoice,
   nowUtcIso: string,
+  /**
+   * 088 (T065 / FR-016) — tax-at-payment flag (`env.features.f088TaxAtPayment`).
+   * Defaults to `false` so every existing 2-arg call — and thus every flag-off
+   * surface — resolves `taxDocumentKind: 'none'` and renders byte-identically to
+   * legacy. The caller (the list page) passes the live flag.
+   */
+  taxAtPayment = false,
 ): InvoiceRowViewModel {
   // T109 / FR-028 — `'issued'` swaps to `'overdue'` once Bangkok-today
   // has passed dueDate; every other stored status passes through.
@@ -276,14 +332,37 @@ export function toInvoiceRowViewModel(
 
   const resendable = row.status !== 'void' && row.pdf !== null;
 
+  // 064 remediation S3 — the printed §87/§105 number for display: the shared
+  // Domain helper falls back to the §105 receipt number on β rows (NULL invoice
+  // docnum) so surfaces never show an em-dash/UUID for a paid, numbered doc.
+  // Hoisted so the 088 `primaryNumber` fallback can reuse it.
+  const displayNumber = displayDocumentNumber(row);
+
+  // 088 (T065 / T065a / FR-016) — the SC-bill ↔ RC-§86/4-tax-receipt
+  // disambiguation, gated on the flag AND the row actually being a new-flow
+  // bill (`billDocumentNumberRaw !== null`). A legacy separate-mode paid row
+  // (§87 invoice number + RC, no bill number) is NOT an 088 two-document row
+  // and stays `'none'` even with the flag on. The RC lives in
+  // `receiptDocumentNumberRaw` (minted at payment) — its presence discriminates
+  // a paid bill (`'tax_receipt'`) from an unpaid one (`'bill'`).
+  const taxDocumentKind: InvoiceTaxDocumentKind = resolveTaxDocumentKind(
+    row,
+    taxAtPayment,
+  );
+  const billDocumentNumber =
+    taxDocumentKind !== 'none' ? row.billDocumentNumberRaw : null;
+  // 088 A-refined (FR-016) — an 088 invoice is ALWAYS identified by its OWN
+  // (SC) bill number, consistently for PAID and UNPAID rows. The row identity
+  // is therefore the SC bill for ANY 088 bill (`taxDocumentKind !== 'none'`) —
+  // no longer the RC on a paid bill. The RC (§86/4 tax receipt) is surfaced
+  // separately in the Receipt-No. column/line. Legacy rows keep `displayNumber`.
+  const primaryNumber =
+    taxDocumentKind !== 'none' ? billDocumentNumber : displayNumber;
+
   return {
     invoiceId: row.invoiceId,
     documentNumber: row.documentNumber?.raw ?? null,
-    // 064 remediation S3 — the printed §87/§105 number for display: the
-    // shared Domain helper falls back to the §105 receipt number on β rows
-    // (NULL invoice docnum) so surfaces never show an em-dash/UUID for a
-    // paid, numbered document.
-    displayNumber: displayDocumentNumber(row),
+    displayNumber,
     displayStatus,
     receiptNumber: row.receiptDocumentNumberRaw,
     issueDate: row.issueDate,
@@ -296,5 +375,8 @@ export function toInvoiceRowViewModel(
     receiptPending,
     receiptFailed,
     resendable,
+    taxDocumentKind,
+    billDocumentNumber,
+    primaryNumber,
   };
 }

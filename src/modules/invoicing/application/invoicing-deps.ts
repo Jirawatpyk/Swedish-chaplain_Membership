@@ -10,7 +10,10 @@
 import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { systemClock } from './ports/clock-port';
-import { makeDrizzleInvoiceRepo } from '../infrastructure/repos/drizzle-invoice-repo';
+import {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from '../infrastructure/repos/drizzle-invoice-repo';
 import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
 import { drizzleTenantSettingsRepo } from '../infrastructure/repos/drizzle-tenant-settings-repo';
 import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-sequence-allocator';
@@ -19,6 +22,7 @@ import { vercelBlobAdapter } from '../infrastructure/adapters/vercel-blob-adapte
 import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-email-outbox-adapter';
 import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
+import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
 import { eventDetailsLookupAdapter } from '../infrastructure/adapters/event-details-lookup-adapter';
@@ -32,6 +36,7 @@ import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-ad
 // that touch the F8 barrel to compile cleanly under Turbopack 16
 // without dragging `sharp` into the client bundle.
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
+import { taxAtPaymentFlag } from '../domain/tax-at-payment-flag';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
 import type { CreateEventInvoiceDraftDeps } from './use-cases/create-event-invoice-draft';
@@ -39,6 +44,8 @@ import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
 import type { IssueEventInvoiceAsPaidDeps } from './use-cases/issue-event-invoice-as-paid';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
+import type { UploadZeroRateCertDeps } from './use-cases/upload-zero-rate-cert';
+import type { GetZeroRateCertSignedUrlDeps } from './use-cases/get-zero-rate-cert-signed-url';
 import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
 import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices-csv';
 import {
@@ -104,6 +111,8 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // 088 T022 — new bill→§87-at-payment flow when the flag is on.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
   };
 }
 
@@ -136,6 +145,9 @@ export function makeIssueEventInvoiceAsPaidDeps(
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // 088 T022 — mirror record-payment's §87-RC-at-payment behaviour for the
+    // event as-paid path when the flag is on (FR-005 / FR-006).
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
@@ -148,7 +160,47 @@ export function makeListInvoicesByMemberDeps(tenantId: string): import('./use-ca
   return { invoiceRepo: makeDrizzleInvoiceRepo(tenantId) };
 }
 
+// 088 T065b (FR-031, ภ.พ.30 support) — period-scoped tax-document registers
+// (§86/4 RC register, §80/1(5) zero-rate sales, §105 RE register) + the combined
+// period output-VAT figure. Uses the narrow `TaxRegisterRepo` (kept off
+// `InvoiceRepo` so the invoice-repo mocks are unaffected).
+export function makeListTaxDocumentRegisterDeps(
+  tenantId: string,
+): import('./use-cases/list-tax-document-register').ListTaxDocumentRegisterDeps {
+  return { registerRepo: makeDrizzleTaxRegisterRepo(tenantId) };
+}
+
 export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfSignedUrlDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+  };
+}
+
+/**
+ * 088 US8 UX-B1 (T061e-2) — composition for the OPTIONAL zero-rate cert-scan
+ * upload use-case. Own invoicing ClamAV adapter (NOT the broadcasts one —
+ * Constitution III), reusing the F4 Vercel Blob adapter for storage. `tenantId`
+ * unused in the deps graph today (the scanner + blob are tenant-agnostic
+ * adapters); kept in the signature for factory-shape parity + future DI.
+ */
+export function makeUploadZeroRateCertDeps(_tenantId: string): UploadZeroRateCertDeps {
+  return {
+    scanner: makeClamavVirusScanner(),
+    blob: vercelBlobAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * 088 US8 UX-B1 (T061e-3) — composition for the admin cert-view use-case
+ * (retrievability of the pinned 10y admin-only cert scan). Same shape as
+ * `makeGetInvoicePdfSignedUrlDeps` (repo + blob + audit).
+ */
+export function makeGetZeroRateCertSignedUrlDeps(
+  tenantId: string,
+): GetZeroRateCertSignedUrlDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     blob: vercelBlobAdapter,
@@ -251,6 +303,9 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
     // `invoice_cross_tenant_probe` on not-found when actor context is
     // passed in the input.
     audit: f4AuditAdapter,
+    // 088 (FR-001 / FR-014) — preview the pre-payment draft as ใบแจ้งหนี้ under
+    // the flag (billMode), matching what issueInvoice renders at issue time.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
   };
 }
 
@@ -423,6 +478,8 @@ export function makeRecordPaymentDeps(
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
+    // 088 T022 — mint the §86/4 §87 RC receipt number at payment when on.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }

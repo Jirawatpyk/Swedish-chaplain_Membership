@@ -52,6 +52,7 @@ import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { TxAbort } from '../lib/tx-abort';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import { inferReceiptKind } from '@/modules/invoicing/domain/document-kind';
 
 export interface RenderReceiptPdfInput {
   readonly tenantId: string;
@@ -124,12 +125,19 @@ export async function renderReceiptPdf(
 
   try {
     return await deps.invoiceRepo.withTx(async (tx) => {
-      // No row lock — the worker doesn't transition `paid → x`. A
-      // read is sufficient. If the row is concurrently being voided
-      // / credited, our applyReceiptPdf write would still land
-      // (status='paid' isn't part of the WHERE clause), but that's
-      // fine — the receipt sha256 hash is informational once the
-      // invoice has transitioned past 'paid'.
+      // No row lock — the worker doesn't transition `paid → x`. A read is
+      // sufficient. The read-time `status !== 'paid'` guard below rejects a
+      // void/credited row that committed BEFORE this read.
+      //
+      // 088 T068 (async TOCTOU) — but a void can also commit AFTER this read
+      // yet BEFORE our `applyReceiptPdf` write (the row was still `paid` when
+      // we read it, so the guard below passes). That is NOT fine for a void
+      // row: landing an un-stamped receipt on a voided sale violates CHK027 /
+      // § F.3. The `applyReceiptPdf` UPDATE WHERE now excludes `status='void'`
+      // (drizzle-invoice-repo.ts) — Postgres re-evaluates that predicate
+      // against the latest committed row version under READ COMMITTED, so a
+      // concurrently-committed void makes the write a NO-OP even though this
+      // read saw `paid`.
       const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) {
         return err({ code: 'invoice_not_found' as const });
@@ -150,8 +158,12 @@ export async function renderReceiptPdf(
         });
       }
 
-      // Snapshots required for the render — same invariant as
-      // record-payment.ts:188.
+      // Snapshots required for the render.
+      //
+      // 088 T020 — `documentNumber` is NO LONGER required: a membership bill in
+      // the new tax-at-payment flow carries `document_number = NULL` (its §87
+      // number lives in `receipt_document_number_raw`). Requiring it here would
+      // reject / NPE every membership receipt on the live async path.
       if (
         !loaded.memberIdentitySnapshot ||
         !loaded.tenantIdentitySnapshot ||
@@ -159,39 +171,29 @@ export async function renderReceiptPdf(
         !loaded.vat ||
         !loaded.total ||
         !loaded.vatRate ||
-        !loaded.fiscalYear ||
-        !loaded.documentNumber
+        !loaded.fiscalYear
       ) {
         return err({ code: 'no_snapshot_on_invoice' as const });
       }
 
-      // Combined-mode: receipt IS the invoice; reuse the invoice
-      // document number.
-      //
-      // Separate-mode: read the pre-allocated receipt doc number from
-      // the invoice row. record-payment.ts allocated it inside the
-      // same tx as the `paid` flip (atomic with sequential numbering),
-      // and persisted it on `invoices.receipt_document_number_raw` so
-      // the worker can pick it up here without re-allocating.
-      //
-      // Re-allocating in the worker (the original T166-05 shape) is a
-      // §87 NO-GAPS violation: every retry burns a fresh receipt
-      // sequence number, leaving the prior allocations as gaps in
-      // `tenant_document_sequences.receipt`. R1-C1 review fix.
-      const combinedMode = settings.receiptNumberingMode === 'combined';
-      let receiptDocNum = loaded.documentNumber;
-      if (!combinedMode) {
-        if (!loaded.receiptDocumentNumberRaw) {
-          // Defensive guard. record-payment.ts MUST have stamped this
-          // when running under `asyncReceiptPdf=true` + separate-mode.
-          // Treat as a permanent state corruption — surface it to the
-          // reconcile cron as `render_failed` so on-call investigates.
-          throw new RenderReceiptInternalError({
-            kind: 'data_corruption',
-            reason:
-              'separate_mode_receipt_doc_num_missing — invoice row has no receipt_document_number_raw; record-payment did not persist it (pre-T166 row?)',
-          });
-        }
+      // 088 T020 (D13) — recompute the receipt KIND from the invoice subject +
+      // buyer TIN via the shared `inferReceiptKind` resolver. The retired
+      // `receiptNumberingMode='combined'` setting no longer drives it (F.5);
+      // sourcing the kind from the row means a membership receipt on the async
+      // path can never mis-render as §105 (losing its §86/4 identity).
+      const receiptKind = inferReceiptKind(
+        loaded.invoiceSubject,
+        loaded.memberIdentitySnapshot.tax_id,
+      );
+
+      // Receipt number resolution (§87 NO-GAPS — the worker NEVER re-allocates;
+      // record-payment.ts minted + persisted the number in-tx with the `paid`
+      // flip). Prefer the pre-allocated `receipt_document_number_raw` (the
+      // new-flow §86/4 RC, the §105 RE, or a legacy separate-mode RC); fall back
+      // to the invoice's §87 `document_number` ONLY on the legacy reuse path
+      // (retired combined mode: receipt reuses the invoice number).
+      let receiptDocNum: DocumentNumber;
+      if (loaded.receiptDocumentNumberRaw) {
         const docResult = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
         if (!docResult.ok) {
           throw new RenderReceiptInternalError({
@@ -200,7 +202,28 @@ export async function renderReceiptPdf(
           });
         }
         receiptDocNum = docResult.value;
+      } else if (loaded.documentNumber) {
+        receiptDocNum = loaded.documentNumber;
+      } else {
+        // Neither number present — a paid row that reached async render with no
+        // receipt number at all is deterministic data corruption (a
+        // record-payment bug); short-circuit the retry ladder.
+        throw new RenderReceiptInternalError({
+          kind: 'data_corruption',
+          reason:
+            'receipt_doc_num_missing — paid row has neither receipt_document_number_raw nor document_number',
+        });
       }
+
+      // 088 D7 — a new-flow receipt is dated at the PAYMENT date; the legacy
+      // reuse path (the combined document IS the invoice) keeps the issue date.
+      // The new flow is distinguished by a NULL invoice `document_number` (the
+      // bill carried only a non-§87 SC number). `paymentDate` is stamped on the
+      // row by record-payment's `applyPayment`.
+      const renderIssueDate =
+        loaded.documentNumber === null
+          ? (loaded.paymentDate ?? loaded.issueDate)
+          : loaded.issueDate;
 
       const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${input.templateVersion}.pdf`;
       // Round-3 fix R3-H3 — pass the input.templateVersion so v1
@@ -215,10 +238,10 @@ export async function renderReceiptPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
           renderInput: {
-            kind: combinedMode ? 'receipt_combined' : 'receipt_separate',
+            kind: receiptKind,
             templateVersion: input.templateVersion,
             documentNumber: receiptDocNum,
-            issueDate: loaded.issueDate,
+            issueDate: renderIssueDate,
             dueDate: loaded.dueDate,
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo,
@@ -228,6 +251,32 @@ export async function renderReceiptPdf(
             vatRate: loaded.vatRate,
             vat: loaded.vat,
             total: loaded.total,
+            // 054-event-fee-invoices / Fix #13 (whole-feature review) — thread
+            // `vatInclusive` so a Model-B (VAT-inclusive) event §86/4 receipt
+            // rendered by the ASYNC worker carries its "ราคารวมภาษีมูลค่าเพิ่มแล้ว
+            // / VAT included" annotation, matching the SYNC record-payment render
+            // (record-payment.ts passes `vatInclusive: loaded.vatInclusive`).
+            // Membership invoices carry `false` (VAT-exclusive) → annotation
+            // suppressed identically on both paths.
+            vatInclusive: loaded.vatInclusive,
+            // 088 US5 (T041 / FR-012 / SC-007) — gate the tenant WHT note on the
+            // membership §86/4 tax receipt. Threaded from the stored subject so
+            // this async render matches the sync record-payment receipt render.
+            invoiceSubject: loaded.invoiceSubject,
+            // 088 US8 (T059 / FR-025 / SC-008 / G1) — source the PINNED VAT
+            // treatment + MFA cert from the row (NEVER default to 7%) so an
+            // async-rendered §86/4 receipt on a zero-rated bill computes VAT 0%
+            // + renders the §80/1(5) note. The VAT amounts (subtotal/vat/total/
+            // vatRate) already come from the pinned row above; this adds the
+            // note inputs. Threaded ONLY on a zero-rated row → a standard async
+            // render is byte-identical (undefined omitted from the seed, SC-003).
+            ...(loaded.vatTreatment === 'zero_rated_80_1_5'
+              ? {
+                  vatTreatment: loaded.vatTreatment,
+                  zeroRateCertNo: loaded.zeroRateCertNo,
+                  zeroRateCertDate: loaded.zeroRateCertDate,
+                }
+              : {}),
           },
           blobKey: receiptBlobKey,
           // Allow overwrite — failed-retry path may upload twice.
@@ -253,13 +302,16 @@ export async function renderReceiptPdf(
         requestId,
         eventType: 'receipt_rendered',
         actorUserId,
-        summary: `Receipt rendered for invoice ${loaded.documentNumber.raw}`,
+        // 088 T020 — null-safe: `documentNumber` is NULL on a new-flow bill;
+        // key the summary + payload off the resolved receipt number instead.
+        summary: `Receipt rendered for ${receiptDocNum.raw}`,
         payload: {
           invoice_id: invoiceId,
           member_id: loaded.memberId,
           receipt_blob_key: receiptBlobKey,
           receipt_pdf_sha256: rendered.sha256,
-          receipt_document_number: combinedMode ? null : receiptDocNum.raw,
+          // The reuse (legacy combined) path has no distinct receipt number.
+          receipt_document_number: loaded.receiptDocumentNumberRaw ?? null,
           template_version: input.templateVersion,
         },
       });

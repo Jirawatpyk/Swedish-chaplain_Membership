@@ -119,6 +119,12 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       tenant: tenant.ctx,
       planIdAtCycleStart: PLAN_ID,
       tierAtCycleStart: 'regular',
+      // FIXED date < the AS-3 window [06-03, 06-05] so the renewal (whose
+      // timeline occurred_at = period_from) is DETERMINISTICALLY excluded. The
+      // helper's default `now - 30d` drifts into the window when the suite runs
+      // on ~3 calendar days/year (e.g. 2026-07-04 → now-30d = 06-04) — a
+      // pre-existing time-dependent flake, unrelated to 088.
+      periodFrom: new Date('2026-05-20T00:00:00.000Z'),
     });
     memberId = seeded.memberId;
 

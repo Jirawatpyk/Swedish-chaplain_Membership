@@ -30,6 +30,12 @@ vi.mock('@/modules/invoicing', () => ({
   listInvoicesByMember: (...a: unknown[]) => listInvoicesByMemberMock(...a),
   makeListInvoicesByMemberDeps: () => ({}),
   vercelBlobAdapter: { downloadBytes: (...a: unknown[]) => downloadBytesMock(...a) },
+  // Faithful reimplementation of domain/invoice.ts billFirstDocumentNumber
+  // (barrel pulls in Drizzle infra; real helper is unit-tested in its own suite).
+  billFirstDocumentNumber: (inv: {
+    documentNumber?: { raw: string } | null;
+    billDocumentNumberRaw?: string | null;
+  }) => inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null,
 }));
 vi.mock('@/modules/events', () => ({
   getEventAttendeesByMember: () => Promise.resolve([]),
@@ -192,6 +198,38 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     expect(Array.from(data!.invoices[0]!.pdf!.bytes)).toEqual([0x25, 0x50, 0x44, 0x46]);
     // invoices.json record serialises documentNumber via .raw (not [object Object]).
     expect(data!.invoices[0]!.record.documentNumber).toBe('INV-2026-0001');
+  });
+
+  it('088 tax-at-payment invoice — record carries bill/receipt raw numbers + PDF stem uses SC (FR-030)', async () => {
+    // A new-flow 088 invoice has NULL §87 `documentNumber`; the SC bill number
+    // lives in `billDocumentNumberRaw` and (once paid) the §86/4 RC in
+    // `receiptDocumentNumberRaw`. The archive record must carry BOTH (GDPR Art.20
+    // completeness) and the zip PDF stem must use the SC (bill-first) + the
+    // invoiceId uniqueness suffix — never a bare UUID.
+    listInvoicesByMemberMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          {
+            ...invoiceWithPdf(),
+            documentNumber: null,
+            billDocumentNumberRaw: 'SC-2026-000123',
+            receiptDocumentNumberRaw: 'RC-2026-000123',
+          },
+        ],
+        total: 1,
+      },
+    });
+    downloadBytesMock.mockResolvedValue(new Uint8Array([0x25]));
+    const data = await gdprArchiveSourceAdapter.gather(CTX, { subjectMemberId: MEMBER });
+    expect(data).not.toBeNull();
+    expect(data!.invoices[0]!.record).toMatchObject({
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000123',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+    });
+    // Bill-first stem + invoiceId suffix (collision-safe zip entry key).
+    expect(data!.invoices[0]!.pdf!.filename).toBe('SC-2026-000123-inv-1.pdf');
   });
 
   it('returns null when the subject member does not exist (→ member_not_found)', async () => {

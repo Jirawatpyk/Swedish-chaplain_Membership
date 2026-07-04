@@ -135,6 +135,35 @@ describe('S31 — kind-true VOID title (adapter golden)', () => {
     expect(text).toMatch(/VOID/);
   }, 120_000);
 
+  it('088 T068 — voidUnderlyingKind=invoice + billMode — a voided ใบแจ้งหนี้ bill keeps the non-tax bill title, NEVER "Tax Invoice"', async () => {
+    // A new-flow bill carries voidUnderlyingKind='invoice' (its pdf_doc_kind)
+    // — identical to a legacy §86/4 void — so `billMode` disambiguates the two.
+    // Spec § F.3: a voided bill re-renders under ใบแจ้งหนี้, never "Tax Invoice".
+    const input: PdfRenderInput = {
+      ...makeVoidInput(),
+      voidUnderlyingKind: 'invoice',
+      billMode: true,
+    };
+    const out = await reactPdfRenderAdapter.render(input);
+    const text = await extractPdfText(out.bytes);
+    expect(text, 'expected Thai bill title ใบแจ้งหนี้').toContain('ใบแจ้งหนี้');
+    // The non-tax bill must NEVER read as a §86/4 tax invoice.
+    expect(text).not.toMatch(/Tax Invoice/i);
+    expect(text).not.toContain('ใบกำกับภาษี');
+    // The VOID watermark is kept.
+    expect(text).toMatch(/VOID/);
+  }, 120_000);
+
+  it('088 T068 — billMode WITHOUT the bill void kind is inert: a legacy §86/4 void (billMode absent) still reads Tax Invoice', async () => {
+    // Regression guard: the new title branch requires BOTH billMode===true AND
+    // voidUnderlyingKind==='invoice'. A legacy §86/4 void passes neither
+    // (billMode absent) → default ใบกำกับภาษี / Tax Invoice title unchanged.
+    const legacyVoid = await reactPdfRenderAdapter.render(makeVoidInput());
+    const legacyText = await extractPdfText(legacyVoid.bytes);
+    expect(legacyText).toMatch(/Tax Invoice/i);
+    expect(legacyText).not.toContain('ใบแจ้งหนี้');
+  }, 120_000);
+
   it('voidUnderlyingKind=invoice — extracted text is IDENTICAL to the absent-field render (explicit value adds no content drift)', async () => {
     // Bytes legitimately differ (the extra JSON key changes the
     // deterministic font-subset seed); the CONTENT must not.
@@ -146,5 +175,56 @@ describe('S31 — kind-true VOID title (adapter golden)', () => {
     const absentText = await extractPdfText(absent.bytes);
     const explicitText = await extractPdfText(explicit.bytes);
     expect(explicitText).toBe(absentText);
+  }, 120_000);
+
+  // ---- 088 T068 FIX 1 (H-1): vatInclusive preserved on the VOID copy ----
+  it('088 T068 H-1 — void render with vatInclusive=true keeps the "VAT included" annotation (SC-003 fidelity of an event as-paid VOID copy)', async () => {
+    const input: PdfRenderInput = {
+      ...makeVoidInput(),
+      voidUnderlyingKind: 'receipt_separate',
+      vatInclusive: true,
+    };
+    const out = await reactPdfRenderAdapter.render(input);
+    const text = await extractPdfText(out.bytes);
+    expect(text).toMatch(/VAT included/i);
+    expect(text).toMatch(/VOID/);
+  }, 120_000);
+
+  // ---- 088 T068 FIX 2 (M-2): §80/1(5) note gated off the VOIDED bill ----
+  it('088 T068 M-2 — voided zero-rate ใบแจ้งหนี้ bill (billMode) does NOT print the §80/1(5) note', async () => {
+    const input: PdfRenderInput = {
+      ...makeVoidInput(),
+      templateVersion: 8,
+      voidUnderlyingKind: 'invoice',
+      billMode: true,
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'MFA-2026-000042',
+      zeroRateCertDate: '2026-03-01',
+    };
+    const out = await reactPdfRenderAdapter.render(input);
+    const text = await extractPdfText(out.bytes);
+    // FR-001 — a non-tax ใบแจ้งหนี้ bill carries NO §-citation, even voided.
+    expect(text).not.toMatch(/VAT 0% under Revenue Code 80\/1\(5\)/i);
+    expect(text).not.toMatch(/MFA certificate no\./i);
+    // It is still a bill + still VOID.
+    expect(text).toContain('ใบแจ้งหนี้');
+    expect(text).toMatch(/VOID/);
+  }, 120_000);
+
+  it('088 T068 M-2 — voided zero-rate §86/4 RECEIPT (no billMode) STILL prints the §80/1(5) note', async () => {
+    const input: PdfRenderInput = {
+      ...makeVoidInput(),
+      templateVersion: 8,
+      voidUnderlyingKind: 'receipt_combined',
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'MFA-2026-000042',
+      zeroRateCertDate: '2026-03-01',
+    };
+    const out = await reactPdfRenderAdapter.render(input);
+    const text = await extractPdfText(out.bytes);
+    // The tax receipt MUST keep its legal §80/1(5) basis note on the VOID copy.
+    expect(text).toMatch(/VAT 0% under Revenue Code 80\/1\(5\)/i);
+    expect(text).toMatch(/MFA certificate no\.: MFA-2026-000042/i);
+    expect(text).toMatch(/VOID/);
   }, 120_000);
 });

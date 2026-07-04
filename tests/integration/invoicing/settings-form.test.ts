@@ -71,7 +71,8 @@ describe('T091 — F4 tenant invoice settings lifecycle', () => {
     registeredAddressEn: 'Bangkok',
     invoiceNumberPrefix: 'SC',
     creditNoteNumberPrefix: 'CN',
-    receiptNumberingMode: 'combined' as const,
+    // 088 T008 — combined-numbering mode retired; only 'separate' is accepted.
+    receiptNumberingMode: 'separate' as const,
     fiscalYearStartMonth: 1,
     defaultNetDays: 30,
     proRatePolicy: 'monthly' as const,

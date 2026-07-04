@@ -238,7 +238,16 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
 // Mirror of `ACTION_REGISTRY` entries that carry `requires: 'admin'`
 // in `search-plans.ts`. Kept as a string-set check here rather than an
 // import to keep this file free of server-side module imports.
-const ADMIN_ONLY_ACTION_IDS = new Set(['plan.new', 'plan.clone', 'fee.edit']);
+// 088 T021b / FR-035 — the two invoice money actions are admin-only (managers
+// are read-only on finance); include them so a server-filter bug can never
+// flash them to a manager.
+const ADMIN_ONLY_ACTION_IDS = new Set([
+  'plan.new',
+  'plan.clone',
+  'fee.edit',
+  'invoice.recordPayment',
+  'invoice.rerenderReceipt',
+]);
 
 function isAdminOnlyAction(id: string): boolean {
   return ADMIN_ONLY_ACTION_IDS.has(id);

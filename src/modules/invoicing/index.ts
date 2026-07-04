@@ -16,6 +16,9 @@ export {
   canTransition,
   enforceOneSubjectLine,
   displayDocumentNumber,
+  issuedInvoiceIdentity,
+  billFirstDocumentNumber,
+  resolveTaxDocumentKind,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,
@@ -43,7 +46,26 @@ export { Money } from './domain/value-objects/money';
 export { Money as AmountSatang } from './domain/value-objects/money';
 export { VatRate } from './domain/value-objects/vat-rate';
 export { calculateVat } from './domain/policies/calculate-vat';
+// 088 US8 (§ F.8) — per-invoice VAT-treatment policy (drives the rate + the
+// ≥5,000-THB advisory-warn threshold). Public so the serialiser/route surfaces
+// can compute the FR-024 non-blocking warning without a deep domain import.
+export {
+  resolveVatRate,
+  isZeroRateBelowThreshold,
+  ZERO_RATE_MIN_SUBTOTAL_SATANG,
+  type VatTreatment,
+} from './domain/policies/vat-treatment';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
+// 088 (T2 type-design finding) — the explicit 2-state FLOW flag for
+// tax-at-payment, replacing the tri-read `boolean | undefined`. The orthogonal
+// reconciliation axis is a separate `reconciliationPath: boolean` on the
+// stranded-funds read (not this flag). Payments imports the TYPE from here
+// (cross-context public interface); the `taxAtPaymentFlag` mapper is used by
+// both modules' composition roots.
+export {
+  taxAtPaymentFlag,
+  type TaxAtPaymentFlag,
+} from './domain/tax-at-payment-flag';
 // FIX 5 — shared §86/4 buyer-TIN / event-document-kind discriminator (dedup of
 // the inline check formerly repeated across issue-invoice / record-payment /
 // issue-credit-note).
@@ -117,6 +139,13 @@ export const F4_MEMBER_TIMELINE_EVENT_TYPES = [
   'invoice_voided',
   'credit_note_issued',
   'invoice_pdf_resent',
+  // 088-invoice-tax-flow-redesign (T019a / FR-029) — the §86/4 tax-receipt
+  // minted at payment. Emitted in-tx by record-payment / issue-event-invoice-
+  // as-paid with `member_id` (membership) or `event_registration_id` (event)
+  // + `receipt_document_number_raw` (the §87 `RC` number). Surfaces on the F3
+  // member timeline alongside `invoice_paid` so the payment moment is not
+  // doubled; the copy resolver interpolates the `RC-…` number + links the doc.
+  'tax_receipt_issued',
 ] as const;
 
 export type F4MemberTimelineEventType =
@@ -190,6 +219,35 @@ export {
   type GetReceiptPdfSignedUrlError,
 } from './application/use-cases/get-receipt-pdf-signed-url';
 
+// 088 US8 UX-B1 — OPTIONAL §80/1(5) zero-rate cert-scan upload + admin cert-view.
+export {
+  uploadZeroRateCert,
+  isCertMimeType,
+  type UploadZeroRateCertInput,
+  type UploadZeroRateCertError,
+  type UploadZeroRateCertOutput,
+  type UploadZeroRateCertDeps,
+} from './application/use-cases/upload-zero-rate-cert';
+export {
+  getZeroRateCertSignedUrl,
+  type GetZeroRateCertSignedUrlInput,
+  type GetZeroRateCertSignedUrlError,
+  type GetZeroRateCertSignedUrlDeps,
+} from './application/use-cases/get-zero-rate-cert-signed-url';
+
+// 088 US8 UX-B2 — daily TTL sweep for ABANDONED/SUPERSEDED §80/1(5) cert-scan
+// blobs (uploaded onto a draft that was never issued → never pinned). Composed
+// by `src/lib/invoicing-cert-prune-deps.ts` for the cron route.
+export {
+  pruneOrphanedZeroRateCerts,
+  parseZeroRateCertKey,
+  ORPHAN_CERT_GRACE_MS,
+  type PruneOrphanedZeroRateCertsInput,
+  type PruneOrphanedZeroRateCertsOutput,
+  type PruneOrphanedZeroRateCertsDeps,
+} from './application/use-cases/prune-orphaned-zero-rate-certs';
+export type { ZeroRateCertPruneRepo } from './application/ports/zero-rate-cert-prune-repo';
+
 export {
   exportPaidInvoicesCsv,
   exportPaidInvoicesCsvSchema,
@@ -199,6 +257,23 @@ export {
   type ExportPaidInvoicesCsvDeps,
   type PaymentMethodLookupPort,
 } from './application/use-cases/export-paid-invoices-csv';
+
+// 088 T065b (FR-031, ภพ.30 support) — period-scoped §86/4 RC register +
+// §80/1(5) zero-rate sales list use-case + its narrow repo port.
+export {
+  listTaxDocumentRegister,
+  listTaxDocumentRegisterSchema,
+  type ListTaxDocumentRegisterInput,
+  type ListTaxDocumentRegisterOutput,
+  type ListTaxDocumentRegisterError,
+  type ListTaxDocumentRegisterDeps,
+  type TaxDocumentRegisterSummary,
+  type PeriodOutputVat,
+} from './application/use-cases/list-tax-document-register';
+export type {
+  TaxRegisterRepo,
+  TaxRegisterKind,
+} from './application/ports/tax-register-repo';
 
 export {
   previewInvoiceDraft,
@@ -370,9 +445,12 @@ export {
   makeIssueInvoiceDeps,
   makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
+  makeListTaxDocumentRegisterDeps,
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
   makeGetReceiptPdfSignedUrlDeps,
+  makeUploadZeroRateCertDeps,
+  makeGetZeroRateCertSignedUrlDeps,
   makeExportPaidInvoicesCsvDeps,
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
@@ -417,7 +495,11 @@ export {
 // is the cron-trigger adapter for the async receipt-PDF worker.
 export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
-export { makeDrizzleInvoiceRepo } from './infrastructure/repos/drizzle-invoice-repo';
+export {
+  makeDrizzleInvoiceRepo,
+  makeDrizzleTaxRegisterRepo,
+} from './infrastructure/repos/drizzle-invoice-repo';
+export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle-zero-rate-cert-prune-repo';
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
 export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';

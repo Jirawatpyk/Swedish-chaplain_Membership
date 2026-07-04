@@ -50,11 +50,23 @@ export async function POST(
     return rateLimitedJson(rl);
   }
 
+  // 088 US8 (FR-023 / FR-024) — the VAT-treatment + MFA-cert fields ride the
+  // request BODY (the issue action's only client-supplied inputs); tenantId /
+  // actorUserId / requestId stay server-derived. A body-less standard issue
+  // (empty POST) is valid — default to {} so the schema applies its
+  // vatTreatment='standard' default. Only the four allow-listed fields are read;
+  // any client-sent tenantId/actorUserId is ignored (server values win below).
+  const body: unknown = await request.json().catch(() => ({}));
+  const b = (body ?? {}) as Record<string, unknown>;
   const parsed = issueInvoiceSchema.safeParse({
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
     invoiceId,
+    vatTreatment: b.vatTreatment,
+    zeroRateCertNo: b.zeroRateCertNo,
+    zeroRateCertDate: b.zeroRateCertDate,
+    zeroRateCertBlobKey: b.zeroRateCertBlobKey,
   });
   if (!parsed.success) {
     return NextResponse.json({ error: { code: 'invalid' } }, { status: 400 });

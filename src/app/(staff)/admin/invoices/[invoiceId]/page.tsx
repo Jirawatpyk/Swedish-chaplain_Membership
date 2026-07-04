@@ -26,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { env } from '@/lib/env';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -36,6 +37,8 @@ import {
   calculateVat,
   computeIsOverdue,
   displayDocumentNumber,
+  billFirstDocumentNumber,
+  resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
 } from '@/modules/invoicing';
@@ -191,6 +194,11 @@ export default async function InvoiceDetailPage({
   // draft buyer with no TIN. Drafts have no pinned snapshot, so this live member
   // lookup (already done for the display name) is the source of truth.
   let buyerHasTaxId = true;
+  // 088 T017a / FR-027 — buyer legal_entity_type drives the pre-issue Head-Office/
+  // Branch preview + the fail-closed NULL-entity warning. Loaded from the live
+  // member (drafts only) alongside the display name; NULL for a non-member event
+  // draft (which the review dialog treats as non-membership).
+  let buyerLegalEntityType: string | null = null;
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
@@ -200,6 +208,7 @@ export default async function InvoiceDetailPage({
     if (memberResult.ok) {
       memberDisplayName = memberResult.value.member.companyName;
       buyerHasTaxId = memberResult.value.member.taxId !== null;
+      buyerLegalEntityType = memberResult.value.member.legalEntityType;
     }
   }
 
@@ -345,7 +354,18 @@ export default async function InvoiceDetailPage({
   // renders under the "Draft invoice" title/breadcrumb. Both-null = a true
   // draft → the draft label.
   const displayNumber = displayDocumentNumber(invoice);
-  const breadcrumbLabel = displayNumber ?? t('draftTitle');
+  // 088 A-refined (FR-016) — the two-document kind, gated on the flag AND this
+  // being a real 088 bill (bill number present). The invoice is ALWAYS
+  // identified by its OWN (SC) NON-§87 bill number — paid or unpaid — so
+  // `headerNumber` is the SC bill for ANY 088 bill (never the RC on payment).
+  // The RC §86/4 tax receipt is surfaced in the "Receipt No." field below.
+  const taxDocKind = resolveTaxDocumentKind(
+    invoice,
+    env.features.f088TaxAtPayment,
+  );
+  const headerNumber =
+    taxDocKind !== 'none' ? invoice.billDocumentNumberRaw : displayNumber;
+  const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');
 
   // Load payment activity at page level so the Refund action button
   // can be rendered conditionally on succeeded-payment + remaining-
@@ -381,7 +401,12 @@ export default async function InvoiceDetailPage({
       <PageHeader
         title={
           <span className="flex items-center gap-3">
-            <span>{displayNumber ?? t('draftTitle')}</span>
+            {/* 088 A-refined — the header ALWAYS reads under the invoice's OWN
+                (SC) bill number for a real 088 bill (paid or unpaid, never "Draft
+                invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
+                "Receipt No." field below. No extra document-kind tag — the SC-
+                prefix + the "Receipt No." field are self-documenting. */}
+            <span>{headerNumber ?? displayNumber ?? t('draftTitle')}</span>
             <Badge variant={statusBadgeVariant(displayStatus)}>
               {tStatus(displayStatus)}
             </Badge>
@@ -412,6 +437,22 @@ export default async function InvoiceDetailPage({
                   showNoTaxIdHint={
                     invoice.invoiceSubject === 'membership' && !buyerHasTaxId
                   }
+                  // 088 T017a / FR-027 — pre-issue review + immutable-snapshot
+                  // acknowledgement, gated by the tax-at-payment flag. The §86/4
+                  // branch preview + WHT-note row are membership-scoped;
+                  // vatTreatment / cert / bank-block-payment-path light up when
+                  // US8 / US5 land (default off until then).
+                  taxAtPayment={env.features.f088TaxAtPayment}
+                  isMembership={invoice.invoiceSubject === 'membership'}
+                  legalEntityType={buyerLegalEntityType}
+                  // 088 US8 (T061d) — draft subtotal in satang (plain number;
+                  // a bigint cannot cross the RSC → client-prop boundary)
+                  // drives the ≥ 5,000 THB zero-rate advisory in the form.
+                  subtotalSatang={
+                    displaySubtotalSatang !== null
+                      ? Number(displaySubtotalSatang)
+                      : null
+                  }
                   summary={{
                     memberName: memberDisplayName,
                     planDisplayName,
@@ -433,7 +474,9 @@ export default async function InvoiceDetailPage({
               // number in the background card.
               <RecordPaymentDialog
                 invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? null}
+                // 088 FR-030 — bill-first: an issued 088 bill's number is its SC
+                // (`billDocumentNumberRaw`); legacy §87 rows keep documentNumber.
+                documentNumber={billFirstDocumentNumber(invoice)}
                 issueDate={invoice.issueDate}
                 todayIso={bangkokTodayIso}
               />
@@ -501,7 +544,8 @@ export default async function InvoiceDetailPage({
                       ?.currency_code ?? 'THB'
                   }
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
-                  invoiceDocumentNumber={invoice.documentNumber?.raw ?? null}
+                  // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
+                  invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
                 />
               </Suspense>
             )}
@@ -526,7 +570,17 @@ export default async function InvoiceDetailPage({
                 // 064 remediation S2 — display number, never a raw UUID: β
                 // rows resolve to their printed §105 receipt number (drives
                 // the download filename + every aria inside the menu).
-                documentNumber={displayNumber ?? invoice.invoiceId}
+                // 088 FR-030 — fall back to the SC bill number before the UUID so
+                // an unpaid 088 bill (displayNumber NULL) is named by its SC.
+                documentNumber={displayNumber ?? invoice.billDocumentNumberRaw ?? invoice.invoiceId}
+                // 088 (T065 review fix) — on a paid 088 bill `displayNumber`
+                // resolves to the RC §86/4 tax-receipt number, but the MAIN
+                // (`showDownload`) PDF is the non-tax SC bill, so name that
+                // download by the SC bill number (the receipt arm keeps the RC).
+                // Conditional spread honours `exactOptionalPropertyTypes`.
+                {...(taxDocKind === 'tax_receipt' && invoice.billDocumentNumberRaw
+                  ? { invoiceDownloadNumber: invoice.billDocumentNumberRaw }
+                  : {})}
                 showDownload={Boolean(invoice.pdf) && !isPaidCombined}
                 showResendInvoice={
                   isAdmin &&

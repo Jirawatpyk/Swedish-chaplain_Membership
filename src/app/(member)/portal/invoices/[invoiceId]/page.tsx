@@ -37,6 +37,7 @@ import {
   makeGetInvoiceDeps,
   computeIsOverdue,
   displayDocumentNumber,
+  resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
@@ -92,6 +93,7 @@ import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
+import { ReceiptStatusWatcher } from '../_components/receipt-status-watcher';
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -184,9 +186,28 @@ export default async function PortalInvoiceDetailPage({
   // shared helper resolves whichever exists so the title never reads
   // "Invoice —" on a paid, numbered receipt.
   const documentNumber = displayDocumentNumber(invoice) ?? '—';
+  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
+  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
+  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
+  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
+  // matters here, so the specific bill/tax_receipt value is not bound.
+  const headerNumber =
+    resolveTaxDocumentKind(invoice, env.features.f088TaxAtPayment) !== 'none'
+      ? (invoice.billDocumentNumberRaw ?? '—')
+      : documentNumber;
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;
+
+  // 088 T066a (FR-019) — async §86/4 RC receipt-PDF state (paid only).
+  // Surfaced as prominent body sections below (room for the aria-live announce
+  // + reassurance copy, and the graceful permanent-fail support path) rather
+  // than a cramped header-actions chip.
+  const receiptAsyncPending =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
+  const receiptAsyncFailed =
+    invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
 
   // F5 G4 T081 — load tenant payment settings to drive the Pay-now
   // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
@@ -239,8 +260,13 @@ export default async function PortalInvoiceDetailPage({
   return (
     <DetailContainer>
       <PageHeader
-        title={`${t('title')} ${documentNumber}`}
+        title={`${t('title')} ${headerNumber}`}
         badge={
+          // 088 A-refined — the header reads under the invoice's OWN (SC) bill
+          // number ("Invoice {SC}"); the StatusBadge (via OptimisticPaidOverlay)
+          // is the sole header marker. A paid bill's RC §86/4 tax receipt is
+          // surfaced in the "Receipt No." field below — no header document-kind
+          // tag.
           <OptimisticPaidOverlay
             invoiceId={invoice.invoiceId}
             whenUnpaid={renderStatusBadge(displayStatus)}
@@ -256,7 +282,9 @@ export default async function PortalInvoiceDetailPage({
               {invoice.status !== 'void' ? (
                 <ResendInvoiceButton
                   invoiceId={invoice.invoiceId}
-                  documentNumber={documentNumber}
+                  // 088 FR-030 — use the SC bill number for an 088 bill (the
+                  // bare `documentNumber` local resolves to '—' on an 088 bill).
+                  documentNumber={headerNumber}
                   variant="ghost"
                   layout="full"
                   className="min-h-11 px-3"
@@ -314,24 +342,25 @@ export default async function PortalInvoiceDetailPage({
                   invoice.status === 'paid' &&
                   invoice.receiptPdfStatus === 'rendered' &&
                   invoice.receiptPdf !== null;
-                // T166-10 — async receipt PDF gate. When the receipt
-                // is still being rendered by the cron worker, surface
-                // a polite "preparing…" affordance ALONGSIDE the
-                // invoice button (separate-mode the member still gets
-                // the invoice; combined-mode the receipt IS the only
-                // doc so we show the preparing state on its own).
-                // 'pending' ONLY (S1 parity with invoice-row-view-model.ts
-                // receiptPending): a terminal 'failed' render must NOT show
-                // the aria-busy "preparing" spinner forever.
-                const receiptPending =
-                  invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus === 'pending';
+                // 088 T066a — the async receipt "generating" + graceful-fail
+                // states moved OUT of this cramped header-actions cell into
+                // prominent body sections below (room for the aria-live
+                // announce + reassurance / the support path). See
+                // `receiptAsyncPending` / `receiptAsyncFailed` at the top.
+                // 088 T065c / FIX 4 — the MAIN download is the SC bill PDF for
+                // ANY 088 bill (paid OR unpaid), never the RC in `documentNumber`.
+                // Reuse the already-correct `headerNumber` (declared above:
+                // `billDocumentNumberRaw ?? '—'` for any 088 bill, else the
+                // resolved `documentNumber`). The prior ternary only used the SC
+                // number on the paid `tax_receipt` branch, so an UNPAID 088 bill
+                // fell to `documentNumber` = '—' → the download was named "—.pdf".
+                const mainDownloadNumber = headerNumber;
                 return (
                   <>
                     {showInvoicePdf && (
                       <PortalInvoiceDownloadButton
                         invoiceId={invoice.invoiceId}
-                        documentNumber={documentNumber}
+                        documentNumber={mainDownloadNumber}
                         // 064 — as-paid rows: the main pdf IS the final legal
                         // document; shared downloadLabelKeys helper (wave-4
                         // S17) maps mainPdfKind → label/aria keys (list
@@ -346,7 +375,7 @@ export default async function PortalInvoiceDetailPage({
                           invoice.status === 'void'
                             ? t('void.downloadVoidedPdf')
                             : tList(downloadLabelKeys(mainPdfKind).ariaKey, {
-                                number: documentNumber,
+                                number: mainDownloadNumber,
                               })
                         }`}
                         className={cn(
@@ -377,19 +406,6 @@ export default async function PortalInvoiceDetailPage({
                         )}
                         data-testid="portal-download-receipt"
                       />
-                    )}
-                    {receiptPending && (
-                      <span
-                        role="status"
-                        aria-live="polite"
-                        aria-busy="true"
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-4 cursor-progress',
-                        )}
-                      >
-                        {t('pdf.preparing')}
-                      </span>
                     )}
                   </>
                 );
@@ -465,6 +481,43 @@ export default async function PortalInvoiceDetailPage({
               </div>
             </section>
           )}
+        </section>
+      )}
+
+      {/* 088 T066a (FR-019) — async §86/4 RC receipt-PDF is still rendering.
+          The block watcher announces "your tax receipt is being generated"
+          (aria-live polite) + carries reassurance copy, AND polls the status
+          endpoint to auto-reveal the receipt download the moment the worker
+          finishes — no manual refresh. */}
+      {receiptAsyncPending && (
+        <ReceiptStatusWatcher invoiceId={invoice.invoiceId} variant="block" />
+      )}
+
+      {/* 088 T066a — the receipt-PDF render TERMINALLY failed. A calm
+          support-path state (payment recorded, receipt number reserved, team
+          notified — the reconcile cron re-renders the SAME pre-allocated RC) —
+          NOT a dead "unavailable". Informational (role=status, no aria-busy /
+          spinner). The member can still download the invoice PDF above. */}
+      {receiptAsyncFailed && (
+        <section
+          aria-labelledby="receipt-failed-heading"
+          data-testid="portal-invoice-receipt-failed-notice"
+          className="rounded-md border border-border border-l-4 border-l-primary bg-card p-4"
+        >
+          <h2
+            id="receipt-failed-heading"
+            className="text-sm font-medium text-foreground"
+          >
+            {t('receiptFailed.heading')}
+          </h2>
+          <div role="status">
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('receiptFailed.body')}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t('receiptFailed.contact')}
+            </p>
+          </div>
         </section>
       )}
 
@@ -678,7 +731,8 @@ export default async function PortalInvoiceDetailPage({
           <PayNowButton
             invoice={{
               id: invoice.invoiceId,
-              invoiceNumber: documentNumber,
+              // 088 FR-030 — an issued 088 bill's number is its SC (headerNumber).
+              invoiceNumber: headerNumber,
               amountDue: total !== null ? Number(total) : 0,
               currency: 'THB',
               status: invoice.status,
@@ -687,13 +741,14 @@ export default async function PortalInvoiceDetailPage({
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
         ) : (
-          // FR-030 — the kill-switch fallback offers a "Contact administrator"
-          // mailto. No per-tenant contact_email column exists yet (multi-tenant /
-          // Phase 9 admin payment-settings), so fall back to the bootstrap admin
-          // email; the card degrades to the disabled "no email configured" state
-          // when BOOTSTRAP_ADMIN_EMAIL is unset at runtime (no regression).
+          // FR-030 (#145) — the kill-switch fallback offers a "Contact
+          // administrator" mailto. No per-tenant contact_email column exists yet
+          // (multi-tenant / Phase 9 admin payment-settings), so fall back to the
+          // bootstrap admin email; the card degrades to the disabled "no email
+          // configured" state when BOOTSTRAP_ADMIN_EMAIL is unset at runtime.
+          // 088 — `invoiceNumber` uses `headerNumber` (bill-first SC number).
           <OnlinePaymentDisabledCard
-            invoiceNumber={documentNumber}
+            invoiceNumber={headerNumber}
             tenantContactEmail={env.bootstrap.adminEmail ?? null}
           />
         )

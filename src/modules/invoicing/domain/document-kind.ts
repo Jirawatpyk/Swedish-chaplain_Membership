@@ -69,3 +69,35 @@ export function inferEventDocumentKind(
     ? 'receipt_separate'
     : 'invoice';
 }
+
+/**
+ * The two PAYMENT-TIME §105/§86-4 receipt kinds. Both are a strict subset of
+ * the Application-layer `PdfDocKind` union.
+ */
+export type ReceiptDocumentKind = 'receipt_combined' | 'receipt_separate';
+
+/**
+ * 088-invoice-tax-flow-redesign (D13) — resolves the PAYMENT-TIME receipt PDF
+ * kind from the invoice subject + buyer TIN. Distinct from
+ * {@link inferEventDocumentKind} (which returns the ISSUE-time kind, where a
+ * membership resolves to the non-tax `'invoice'` ใบแจ้งหนี้): at payment a
+ * membership/event-with-TIN buyer receives the combined §86/4 + §105ทวิ
+ * ใบกำกับภาษี/ใบเสร็จรับเงิน, while only an event-without-TIN buyer keeps the
+ * §105 `receipt_separate` ใบเสร็จรับเงิน.
+ *
+ *   membership        → 'receipt_combined'  (ALWAYS a §86/4 tax receipt)
+ *   event + TIN       → 'receipt_combined'
+ *   event + no TIN    → 'receipt_separate'  (§105 ใบเสร็จรับเงิน)
+ *
+ * Used by `record-payment.ts` and the async `render-receipt-pdf.ts` worker so
+ * the payment-time render can never mis-label a membership receipt as §105 —
+ * replacing the retired `receiptNumberingMode='combined'` setting check (F.5).
+ */
+export function inferReceiptKind(
+  subject: InvoiceSubject,
+  taxId: string | null | undefined,
+): ReceiptDocumentKind {
+  return subject === 'event' && !buyerHasTin(taxId)
+    ? 'receipt_separate'
+    : 'receipt_combined';
+}

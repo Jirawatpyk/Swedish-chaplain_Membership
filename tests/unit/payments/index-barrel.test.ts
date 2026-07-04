@@ -98,6 +98,11 @@ describe('payments barrel — public API contract', () => {
         'invoicingBridge',
         'paymentsRepo',
         'processorGateway',
+        // 088 #3 (whole-feature review) — the stranded-funds guard threads
+        // FEATURE_088_TAX_AT_PAYMENT into the initiate deps so getInvoiceForPayment
+        // can refuse a new-flow bill after a flag rollback (symmetric to the
+        // record-payment webhook guard). Wired in di.ts makeInitiatePaymentDeps.
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );
@@ -121,6 +126,9 @@ describe('payments barrel — public API contract', () => {
         'processorEventsRepo',
         'processorGateway',
         'refundsRepo',
+        // 088 SEC-MED (T2 structural decouple) — the honest flow flag threaded so
+        // the inner confirm read carries it (reconciliationPath:true → dormant).
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );
@@ -141,6 +149,9 @@ describe('payments barrel — public API contract', () => {
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
+        // 088 SEC-MED (T2 structural decouple) — honest flow flag threaded into
+        // the confirm read (reconciliationPath:true → dormant); no magic value.
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );

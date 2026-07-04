@@ -45,7 +45,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
-import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import { asInvoiceId, billFirstDocumentNumber } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
 
 /**
@@ -236,7 +236,15 @@ async function resendInvoiceOrReceipt(
     return err({ code: 'not_issued' });
   }
 
-  const documentNumber = invoice.documentNumber?.raw ?? '';
+  // 088 FR-030 — restore the SC/RC number to the resent audit summary + outbox
+  // payload for an 088 invoice (§87 `documentNumber` NULL). Variant-aware: the
+  // receipt copy names its §86/4 RC (`receiptDocumentNumberRaw`); the invoice
+  // copy names its SC bill (`billDocumentNumberRaw`). Legacy §87 rows fall back
+  // to `documentNumber?.raw` in both arms.
+  const documentNumber =
+    input.variant === 'receipt'
+      ? (invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? '')
+      : (billFirstDocumentNumber(invoice) ?? '');
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
 

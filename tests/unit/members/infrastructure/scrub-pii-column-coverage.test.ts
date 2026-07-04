@@ -39,6 +39,12 @@ const SCRUBBED = new Set<string>([
   // Business quasi-identifiers (GDPR Recital 26 at small-chamber scale).
   'foundedYear',
   'turnoverThb',
+  // 088 US3 — §86/4 Head-Office / Branch particular (business quasi-identifier).
+  // Reset to the head-office DEFAULT on erasure: `is_head_office` → TRUE,
+  // `branch_code` → NULL (drops the RD branch identifier; the pair stays CHECK-
+  // consistent, head office ⇒ NULL code).
+  'isHeadOffice',
+  'branchCode',
   // Postal address.
   'addressLine1',
   'addressLine2',

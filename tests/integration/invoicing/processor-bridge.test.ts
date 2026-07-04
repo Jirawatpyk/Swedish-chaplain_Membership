@@ -76,6 +76,33 @@ vi.mock('@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter
   },
 }));
 
+// 088 env-coupling fix — every invoice seeded in this bridge suite is
+// LEGACY-shaped (documentNumber set at issue, billDocumentNumberRaw NULL). The
+// `markPaidFromProcessor` wrapper builds its recordPayment deps INTERNALLY via
+// `makeRecordPaymentDeps`, which injects `taxAtPayment` from the ambient
+// FEATURE_088_TAX_AT_PAYMENT env flag (ON in the dev env, frozen at boot) — the
+// wrapper exposes NO seam to override it at the call site. Under the flag ON a
+// legacy invoice trips the FR-017 `legacy_invoice_needs_reissue` guard, so
+// `recordPayment` returns a typed `err` and the bridge assertions
+// (`expect(result.ok).toBe(true)`) fail. Pin the LEGACY flow here by overriding
+// just the factory to force the reuse path; every other export passes through
+// unchanged so `makeGetInvoiceDeps` / `makeIssueCreditNoteDeps` stay real.
+vi.mock('@/modules/invoicing/application/invoicing-deps', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/modules/invoicing/application/invoicing-deps')>();
+  return {
+    ...actual,
+    makeRecordPaymentDeps: ((
+      tenantId: string,
+      externalTx?: unknown,
+      onPaidCallbacks?: Parameters<typeof actual.makeRecordPaymentDeps>[2],
+    ) => ({
+      ...actual.makeRecordPaymentDeps(tenantId, externalTx, onPaidCallbacks),
+      taxAtPayment: 'off',
+    })) as typeof actual.makeRecordPaymentDeps,
+  };
+});
+
 // Imports that depend on the mocked modules MUST come after the vi.mock calls.
 import { getInvoiceForPayment } from '@/modules/invoicing/application/use-cases/get-invoice-for-payment';
 import { markPaidFromProcessor } from '@/modules/invoicing/application/use-cases/mark-paid-from-processor';
@@ -269,6 +296,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId,
+        taxAtPayment: 'off', reconciliationPath: true,
       });
     });
 
@@ -287,6 +315,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId: fakeId,
+        taxAtPayment: 'off', reconciliationPath: true,
       });
     });
     expect(result.ok).toBe(false);

@@ -86,13 +86,18 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
+import {
+  resolveVatRate,
+  type VatTreatment,
+} from '@/modules/invoicing/domain/policies/vat-treatment';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import {
   buyerHasTin,
   inferEventDocumentKind,
 } from '@/modules/invoicing/domain/document-kind';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
-import { bangkokLocalDate, addDays } from '@/lib/fiscal-year';
+import { bangkokLocalDate, addDays, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
@@ -107,6 +112,27 @@ export const issueInvoiceSchema = z.object({
   actorUserId: z.string().min(1),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
+  // 088 US8 (§ F.8 / FR-023..025) — per-invoice VAT treatment + MFA certificate.
+  // `vatTreatment` defaults to 'standard' (VAT 7%); `'zero_rated_80_1_5'` is the
+  // embassy / int'l-org §80/1(5) zero rate. The cert fields are supporting
+  // evidence — `zeroRateCertNo` is the FAIL-CLOSED gate (checked in-use-case,
+  // 422 `zero_rate_cert_required`), the scan (`zeroRateCertBlobKey`) is optional.
+  // `.optional()` WITHOUT `.default()` keeps `IssueInvoiceInput.vatTreatment`
+  // optional so existing direct callers need not pass it; the use-case applies
+  // the `?? 'standard'` default.
+  vatTreatment: z.enum(['standard', 'zero_rated_80_1_5']).optional(),
+  zeroRateCertNo: z.string().max(200).optional(),
+  // Shape regex first, then real-calendar refine — the regex alone accepts
+  // impossible dates (2026-02-30) that then persist into the Postgres `date`
+  // column → DB rejects → unhandled 500. The refine rejects at parse (typed
+  // 4xx). `.optional()` last so an omitted cert date still bypasses the string
+  // checks (undefined short-circuits before the refine runs).
+  zeroRateCertDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isValidCalendarDate, { message: 'not a real calendar date' })
+    .optional(),
+  zeroRateCertBlobKey: z.string().max(1024).optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -144,6 +170,39 @@ export type IssueInvoiceError =
    */
   | { code: 'registration_lookup_failed' }
   | { code: 'invalid_lines'; reason: string }
+  /**
+   * 088 US8 (FR-025) — a MEMBERSHIP subject supplied as `zero_rated_80_1_5` is
+   * illegal (membership is ALWAYS VAT 7%). REJECTED (no invoice issued) — a
+   * reject, NOT a silent coerce. Defense-in-depth behind the form hiding the
+   * toggle for membership subjects. 422.
+   */
+  | { code: 'membership_cannot_be_zero_rated' }
+  /**
+   * 088 US8 (FR-024, fail-closed) — a `zero_rated_80_1_5` issue with a
+   * missing/blank `zeroRateCertNo` is BLOCKED (no invoice issued). The DB
+   * `invoices_zero_rate_cert_required` CHECK is defense-in-depth behind this. 422.
+   */
+  | { code: 'zero_rate_cert_required' }
+  /**
+   * 088 US8 UX-B1 review fix (SEC/reliability MED, CWE-639/CWE-20) — the OPTIONAL
+   * cert-scan `zeroRateCertBlobKey` is client-supplied at issue, so it MUST be
+   * re-validated to this tenant + this invoice's server-derived cert namespace
+   * (`invoicing/<tenant>/zero-rate-certs/<invoiceId>_`). Rejects pinning an
+   * arbitrary / never-ClamAV-scanned / cross-tenant blob onto the 10y-immutable
+   * §86/4 tax document (Blob has no RLS → this is the isolation boundary,
+   * Constitution I). 422.
+   */
+  | { code: 'zero_rate_cert_blob_key_invalid' }
+  /**
+   * 088 SEC-MED — a non-standard VAT treatment (`zero_rated_80_1_5`) was
+   * forwarded while `FEATURE_088_TAX_AT_PAYMENT` is OFF. The §80/1(5) zero
+   * rate is part of the tax-at-payment feature; the env.ts invariant is
+   * "flag off → every invoice is standard 7%". The issue form hides the
+   * toggle when the flag is dark, but a crafted request could still forward
+   * it — so refuse server-side (no invoice issued, no §87 number burned,
+   * cert fields not persisted). 422.
+   */
+  | { code: 'zero_rate_requires_flag' }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string };
@@ -185,6 +244,13 @@ export interface IssueInvoiceDeps {
    * pass the row's stored `pdf_template_version` instead (R3-E4).
    */
   readonly currentTemplateVersion: number;
+  /**
+   * 088-invoice-tax-flow-redesign (T022) — FEATURE_088_TAX_AT_PAYMENT
+   * (2-state flow flag). When `'on'`, issue allocates ONLY the non-§87 `bill`
+   * number (SC) and renders the ใบแจ้งหนี้; the §86/4 §87 number is minted later
+   * at payment. When `'off'` the legacy §87-at-issue §86/4 flow runs unchanged.
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
 }
 
 export async function issueInvoice(
@@ -254,6 +320,58 @@ export async function issueInvoice(
     // C2. Draft invoice (now safely inside the row lock)
     const draft = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
     if (!draft) return err({ code: 'invoice_not_found' });
+
+    // 088 US8 (§ F.8 / FR-024 / FR-025) — VAT-treatment gates. FAIL-FAST +
+    // PRE-SEQUENCE (plain `return err` — no §87/bill number consumed; runs
+    // before buyer resolution, the event gates, and allocateNext):
+    //   (1) membership can NEVER be zero-rated (VAT 7% always) → reject, not
+    //       coerce (FR-025);
+    //   (2) a zero-rated issue REQUIRES a non-blank MFA certificate number
+    //       (FR-024). The DB `invoices_zero_rate_cert_required` CHECK is
+    //       defense-in-depth behind this app-layer gate.
+    const vatTreatment: VatTreatment = input.vatTreatment ?? 'standard';
+    // (0) 088 SEC-MED — server-side FEATURE_088_TAX_AT_PAYMENT gate. The
+    //     §80/1(5) zero rate is part of the tax-at-payment feature; env.ts's
+    //     invariant is "flag off → every invoice is standard 7%". The issue
+    //     form only HIDES the zero-rate toggle when the flag is dark — a
+    //     crafted request could still forward `zero_rated_80_1_5` and mint a
+    //     0%-VAT §86/4 document (burning a §87 number). Refuse it here,
+    //     PRE-SEQUENCE (plain `return err`, before allocateNext — no number
+    //     consumed; cert fields never pinned), so the flag is the real gate,
+    //     not just the UI. `!== 'on'` so the legacy `'off'` flow gates the zero
+    //     rate off (`!== 'on'` ≡ `=== 'off'` on the 2-state flow flag).
+    if (deps.taxAtPayment !== 'on' && vatTreatment !== 'standard') {
+      return err({ code: 'zero_rate_requires_flag' });
+    }
+    if (
+      vatTreatment === 'zero_rated_80_1_5' &&
+      draft.invoiceSubject === 'membership'
+    ) {
+      return err({ code: 'membership_cannot_be_zero_rated' });
+    }
+    if (
+      vatTreatment === 'zero_rated_80_1_5' &&
+      (input.zeroRateCertNo ?? '').trim() === ''
+    ) {
+      return err({ code: 'zero_rate_cert_required' });
+    }
+    //   (3) UX-B1 review fix — the OPTIONAL cert-scan blob key is client-supplied
+    //       (round-tripped from the upload response), so re-validate it here to
+    //       THIS tenant + THIS invoice's server-derived cert namespace. A key
+    //       matching `invoicing/<tenant>/zero-rate-certs/<invoiceId>_` can only
+    //       exist because upload-zero-rate-cert (ClamAV-scanned, server-derived
+    //       key) produced it; any other value = an injected arbitrary / unscanned
+    //       / cross-tenant blob and is rejected BEFORE it is pinned onto the
+    //       10y-immutable row + served by the cert-view route (Blob has no RLS).
+    const certBlobKey = input.zeroRateCertBlobKey ?? null;
+    if (
+      certBlobKey !== null &&
+      !certBlobKey.startsWith(
+        `invoicing/${input.tenantId}/zero-rate-certs/${input.invoiceId}_`,
+      )
+    ) {
+      return err({ code: 'zero_rate_cert_blob_key_invalid' });
+    }
 
     // B. Buyer resolution — subject-aware (054-event-fee-invoices Task 7;
     // extracted VERBATIM to `lib/resolve-invoice-buyer.ts` in 064 Task 3 so
@@ -391,21 +509,31 @@ export async function issueInvoice(
     // an `IssueInvoiceInternalError` so withTx rolls back and the
     // allocator's increment is NOT committed.
 
-    // E. Allocate sequence.
-    // Event + membership invoices INTENTIONALLY share the single
-    // `documentType:'invoice'` §87 stream. Thai RD §87 requires a
-    // continuous, no-gaps sequence across ALL tax invoices for the
-    // fiscal year — a separate stream for events would create gaps in
-    // the membership stream and vice versa.
+    // E. Allocate the document number.
+    //
+    // 088 US1 (T017) — the stream depends on FEATURE_088_TAX_AT_PAYMENT:
+    //   NEW flow (taxAtPayment) — the pre-payment document is a NON-tax
+    //     ใบแจ้งหนี้ numbered from the `bill` stream (prefix from
+    //     `invoiceNumberPrefix` → 'SC' at cutover). NO §87 number is consumed
+    //     at issue; the §86/4 §87 `RC` number is minted later at payment
+    //     (record-payment.ts). A gap in the bill stream is LEGAL — §87 does not
+    //     govern a non-tax document (research §2/§3). The overflow-must-throw
+    //     §87 no-gaps discipline moves WITH the §87 allocation to payment time.
+    //   LEGACY flow — the §86/4 §87 `invoice`-stream number is allocated HERE.
+    //     Event + membership invoices INTENTIONALLY share the single
+    //     `documentType:'invoice'` §87 stream (Thai RD §87 continuity).
+    const taxAtPayment = deps.taxAtPayment === 'on';
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
-      documentType: 'invoice',
+      documentType: taxAtPayment ? 'bill' : 'invoice',
       fiscalYear: fy,
     });
     const docNum = DocumentNumber.of(settings.invoiceNumberPrefix, fy, seq);
     if (!docNum.ok) {
       // Critical: overflow happens AFTER allocateNext — must throw, not
-      // return err, otherwise the tx commits and we leak a §87 gap.
+      // return err, otherwise the tx commits. On the legacy stream this leaks
+      // a §87 gap; on the bill stream a gap is legal but the tx must still roll
+      // back so a bill row without a valid number never commits.
       throw new IssueInvoiceInternalError({ code: 'overflow', fiscalYear: fy });
     }
 
@@ -427,15 +555,21 @@ export async function issueInvoice(
     for (const line of draft.lines) {
       lineSum = lineSum.add(line.total);
     }
+    // 088 US8 (FR-025 / G3) — `vat_treatment` DRIVES the rate (single source of
+    // truth): a `'zero_rated_80_1_5'` issue computes at 0%, everything else at
+    // the tenant's configured standard rate. The rate is NEVER chosen
+    // independently of the treatment. Both the inclusive + exclusive branches +
+    // the persisted `vatRateSnapshot` use THIS derived rate.
+    const effectiveVatRate = resolveVatRate(vatTreatment, settings.vatRate);
     let subtotal: Money;
     let vat: Money;
     let total: Money;
     if (draft.vatInclusive) {
       total = lineSum;
-      ({ subtotal, vat } = splitVatInclusive(total, settings.vatRate.numerator));
+      ({ subtotal, vat } = splitVatInclusive(total, effectiveVatRate.numerator));
     } else {
       subtotal = lineSum;
-      ({ vat, total } = calculateVat(subtotal, settings.vatRate));
+      ({ vat, total } = calculateVat(subtotal, effectiveVatRate));
     }
 
     // G. Snapshots — `tenantSnap` is the seller; `memberSnap` is the BUYER,
@@ -480,13 +614,33 @@ export async function issueInvoice(
           member: memberSnap,
           lines: draft.lines,
           subtotal,
-          vatRate: settings.vatRate,
+          // 088 US8 (FR-025) — the DERIVED rate (0% for zero-rate), never the
+          // raw tenant standard rate.
+          vatRate: effectiveVatRate,
           vat,
           total,
           // 054-event-fee-invoices — VAT-inclusive flag drives the "VAT included"
           // annotation on event Model-B documents (gross line + net subtotal +
           // VAT + total read coherently). Membership invoices are VAT-exclusive.
           vatInclusive: draft.vatInclusive,
+          // 088 T016 — render the pre-payment document as the non-tax ใบแจ้งหนี้
+          // (no §86/4 title / ORIGINAL marker / §-citation) in the new flow.
+          billMode: taxAtPayment,
+          // 088 US5 (T041 / FR-012) — gate the tenant WHT note (membership only)
+          // + let the template render the bank block on a membership bill.
+          invoiceSubject: draft.invoiceSubject,
+          // 088 US8 (T058 / FR-025 / SC-008) — thread the pinned zero-rate
+          // treatment + cert ONLY on a zero-rated document so a standard render
+          // is byte-identical (undefined → omitted from the JSON seed, SC-003).
+          // The bill itself renders no §80/1(5) note (the note is §86/4-receipt
+          // only) but the 0% VAT is already driven by `vatRate`/`vat` above.
+          ...(vatTreatment === 'zero_rated_80_1_5'
+            ? {
+                vatTreatment,
+                zeroRateCertNo: input.zeroRateCertNo ?? null,
+                zeroRateCertDate: input.zeroRateCertDate ?? null,
+              }
+            : {}),
         },
         blobKey,
       },
@@ -503,13 +657,26 @@ export async function issueInvoice(
         tenantId: input.tenantId,
         invoiceId,
         fiscalYear: fy,
-        sequenceNumber: seq,
-        documentNumber: docNum.value.raw,
+        // 088 US1 — NEW flow writes the non-§87 bill number (SC) to
+        // bill_document_number_raw with a NULL §87 sequence/document pair;
+        // LEGACY writes the §87 pair. The DB CHECK enforces exactly one leg.
+        sequenceNumber: taxAtPayment ? null : seq,
+        documentNumber: taxAtPayment ? null : docNum.value.raw,
+        billDocumentNumberRaw: taxAtPayment ? docNum.value.raw : null,
+        // 088 US8 (§ F.8 / FR-023) — pin the per-invoice VAT treatment + MFA
+        // certificate onto the issued row (immutable via the 0234 trigger).
+        // 'standard' + NULL cert on every non-zero-rate issue.
+        vatTreatment,
+        zeroRateCertNo: input.zeroRateCertNo ?? null,
+        zeroRateCertDate: input.zeroRateCertDate ?? null,
+        zeroRateCertBlobKey: certBlobKey,
         issueDate,
         dueDate,
         // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
         subtotalSatang: asSatang(subtotal.satang),
-        vatRate: settings.vatRate.raw,
+        // 088 US8 (FR-025) — persist the DERIVED rate (0% for zero-rate), so the
+        // stored snapshot matches the rendered document.
+        vatRate: effectiveVatRate.raw,
         vatSatang: asSatang(vat.satang),
         totalSatang: asSatang(total.satang),
         // 054-event-fee-invoices — pro-rating is membership-only, so event
@@ -563,14 +730,25 @@ export async function issueInvoice(
     //   entirely. Mirrors the `emitNonTimelineDraftCreated` precedent in
     //   create-event-invoice-draft.ts.
     const issuedSummary = `Invoice ${docNum.value.raw} issued`;
-    const issuedPayloadBase = {
+    // 088 US1 — the audit payload reflects WHICH number was minted. NEW flow:
+    // the non-§87 bill number (bill_document_number_raw) + a `tax_number_consumed:
+    // false` marker (the §87 §86/4 number is minted at payment, on
+    // tax_receipt_issued). LEGACY: the §87 sequence/document pair as before.
+    const issuedPayloadBase: Record<string, unknown> = {
       invoice_id: invoiceId,
       fiscal_year: fy,
-      sequence_number: seq,
-      document_number: docNum.value.raw,
+      sequence_number: taxAtPayment ? null : seq,
+      document_number: taxAtPayment ? null : docNum.value.raw,
+      ...(taxAtPayment
+        ? { bill_document_number_raw: docNum.value.raw, tax_number_consumed: false }
+        : {}),
       total_satang: total.satang.toString(),
       pdf_sha256: rendered.sha256,
-    } as const;
+      // 088 US8 (T060 / § F.8.3) — record the pinned VAT treatment + (when
+      // zero-rated) the MFA cert number on `invoice_issued`. No new event type.
+      vat_treatment: vatTreatment,
+      zero_rate_cert_no: input.zeroRateCertNo ?? null,
+    };
     if (memberId !== null) {
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,

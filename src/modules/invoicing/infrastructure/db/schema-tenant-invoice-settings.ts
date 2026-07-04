@@ -12,6 +12,7 @@ import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
+  char,
   numeric,
   bigint,
   smallint,
@@ -57,8 +58,10 @@ export const tenantInvoiceSettings = pgTable(
       .notNull()
       .default('yearly'),
     receiptNumberingMode: text('receipt_numbering_mode').notNull().default('combined'),
-    // Receipt-number prefix used only when receipt_numbering_mode = 'separate'.
-    // Nullable — when null the record-payment use case falls back to 'RE'.
+    // Receipt-number prefix for the §86/4 RC-role receipt register. Nullable —
+    // when null the record-payment / issue-event-invoice-as-paid use cases fall
+    // back to 'RC' (088 US7; disjoint from the §105 'receipt_105' register's
+    // hardcoded 'RE'). 'RE' is reserved and rejected by the settings update path.
     // Added by migration 0142.
     receiptNumberPrefix: text('receipt_number_prefix'),
     creditNoteNumberPrefix: text('credit_note_number_prefix').notNull(),
@@ -74,6 +77,39 @@ export const tenantInvoiceSettings = pgTable(
     billingFromName: text('billing_from_name'),
     tenantLogoCount: integer('tenant_logo_count').notNull().default(0),
 
+    // 088-invoice-tax-flow-redesign (US5 / T039 / FR-012 / data-model § F.7) —
+    // tenant-configurable withholding-tax (WHT) footer note. Rendered on
+    // `invoice_subject='membership'` documents ONLY (both the ใบแจ้งหนี้ bill AND
+    // the §86/4 tax receipt), NEVER event documents. NULL ⇒ render nothing. The
+    // text is PINNED into the immutable `TenantIdentitySnapshot` at issue
+    // (FR-011) — the template reads the snapshot, never live settings.
+    whtNoteTh: text('wht_note_th'),
+    whtNoteEn: text('wht_note_en'),
+
+    // 088 US5 / T039 (§ C.2 / § F.7) — seller §86/4 Head-Office/Branch particular
+    // pinned into the tenant snapshot at issue. `seller_is_head_office=true` =
+    // สำนักงานใหญ่ (TSCC default); `false` = a branch identified by the 5-digit RD
+    // `seller_branch_code`. The pairing CHECK below mirrors the member branch
+    // pairing (migration 0232) + the update-tenant-invoice-settings superRefine.
+    sellerIsHeadOffice: boolean('seller_is_head_office').notNull().default(true),
+    sellerBranchCode: char('seller_branch_code', { length: 5 }),
+
+    // 088 US5 / T039 (FR-022 / § F.7) — offline-payment bank block, rendered on
+    // the ใบแจ้งหนี้ (bill) ONLY (never the paid §86/4 tax receipt). All NULL by
+    // default ⇒ no bank block. Structured fields (NOT one free-text blob) so the
+    // template lays out a clean bilingual payment box + the free-text
+    // `payment_instructions_*` line carries any extra cheque/fee note. Pinned
+    // into the tenant snapshot at issue (immutable, FR-011).
+    bankPayeeName: text('bank_payee_name'),
+    bankAccountNo: text('bank_account_no'),
+    bankAccountType: text('bank_account_type'),
+    bankName: text('bank_name'),
+    bankBranch: text('bank_branch'),
+    bankAddress: text('bank_address'),
+    bankSwift: text('bank_swift'),
+    paymentInstructionsTh: text('payment_instructions_th'),
+    paymentInstructionsEn: text('payment_instructions_en'),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -81,6 +117,17 @@ export const tenantInvoiceSettings = pgTable(
     check(
       'receipt_numbering_mode_check',
       sql`${table.receiptNumberingMode} IN ('combined', 'separate')`,
+    ),
+    // 088 US5 / T039 — seller Head-Office/Branch pairing: a head office carries a
+    // NULL code; a branch carries an exactly-5-digit code. `char(5)` space-pads a
+    // shorter value → the `^[0-9]{5}$` anchor also enforces the digit count.
+    // NULL-safe: the branch leg carries an explicit `IS NOT NULL` so a
+    // `(false, NULL)` row evaluates FALSE (rejected), not NULL (which a Postgres
+    // CHECK treats as satisfied). See migration 0233 comment.
+    check(
+      'tenant_invoice_settings_seller_branch_ck',
+      sql`(${table.sellerIsHeadOffice} = true AND ${table.sellerBranchCode} IS NULL)
+        OR (${table.sellerIsHeadOffice} = false AND ${table.sellerBranchCode} IS NOT NULL AND ${table.sellerBranchCode} ~ '^[0-9]{5}$')`,
     ),
   ],
 );

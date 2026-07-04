@@ -113,6 +113,7 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
   };
 }
 
@@ -148,8 +149,12 @@ function makeCreditNoteDeps(tenantSlug: string): {
 /**
  * Real recordPayment composition root with PDF/Blob mocked + the async-receipt
  * flag forced OFF (the shared integration setup forces it ON, which skips the
- * inline receipt render). We only need the invoice to reach `paid` so the
- * credit-note status guard passes — no assertions on the receipt itself here.
+ * inline receipt render). Also pins `taxAtPayment: false` — this seed pays a
+ * direct-inserted LEGACY §86/4-at-issue invoice, which under the ambient
+ * FEATURE_088_TAX_AT_PAYMENT=true (dev/local) would be rejected by the FR-017
+ * guard with `legacy_invoice_needs_reissue`; the legacy flow is this test's
+ * intent (a paid creditable §86/4). We only need the invoice to reach `paid` so
+ * the credit-note status guard passes — no assertions on the receipt itself.
  */
 function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
   const real = makeRecordPaymentDeps(tenantSlug);
@@ -158,6 +163,8 @@ function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
   return {
     ...rest,
     asyncReceiptPdf: false,
+    // Decouple from the ambient 088 flag — see the docblock above.
+    taxAtPayment: 'off',
     pdfRender: {
       render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('d'.repeat(64)) })),
     },
@@ -356,6 +363,7 @@ describe('issueCreditNote — NON-member EVENT invoice (Task 8, live Neon)', () 
     const result = await getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       invoiceId,
+      taxAtPayment: 'off', reconciliationPath: true,
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;

@@ -428,3 +428,108 @@ describe('member_number / member_number_display pairing (055-member-number)', ()
     ).toThrow(InvalidMemberIdentitySnapshotError);
   });
 });
+
+// ── 088-invoice-tax-flow-redesign (T010, § C.1 / § F.1) ──
+// The snapshot carries the buyer §86/4 Head-Office/Branch particular + the
+// VAT-registrant discriminator (the actual branch-line render gate). All three
+// keys are `.optional().default(…)` and fail closed: a MISSING key resolves to
+// head-office / null / NOT-registrant (never `buyerHasTin`). The head-office ⇔
+// branch-code pair is pinned by a superRefine.
+describe('buyer branch + VAT-registrant fields (088-invoice-tax-flow-redesign)', () => {
+  it('defaults MISSING keys to head-office / null / not-registrant (fail-closed)', () => {
+    // validSnapshot omits all three keys — models a pre-088 historical snapshot.
+    const result = memberIdentitySnapshotSchema.safeParse(validSnapshot);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.buyer_is_head_office).toBe(true);
+      expect(result.data.buyer_branch_code).toBeNull();
+      expect(result.data.buyer_is_vat_registrant).toBe(false);
+    }
+  });
+
+  it('KEEPS an explicit branch (head-office=false + 5-digit code) — strip-regression', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      buyer_is_head_office: false,
+      buyer_branch_code: '00005',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // If the field were on the interface but NOT the schema, z.object strips it.
+      expect(result.data.buyer_branch_code).toBe('00005');
+      expect(result.data.buyer_is_head_office).toBe(false);
+    }
+  });
+
+  it('KEEPS an explicit buyer_is_vat_registrant=true (render gate) — strip-regression', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      buyer_is_vat_registrant: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.buyer_is_vat_registrant).toBe(true);
+  });
+
+  it('rejects a head-office buyer carrying a branch_code (pairing violation)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      buyer_is_head_office: true,
+      buyer_branch_code: '00005',
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((i) => i.path[0] === 'buyer_branch_code'),
+      ).toBe(true);
+    }
+  });
+
+  it('rejects a branch buyer with a null branch_code (pairing violation)', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      buyer_is_head_office: false,
+      buyer_branch_code: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-5-digit branch_code', () => {
+    expect(
+      memberIdentitySnapshotSchema.safeParse({
+        ...validSnapshot,
+        buyer_is_head_office: false,
+        buyer_branch_code: '5',
+      }).success,
+    ).toBe(false);
+    expect(
+      memberIdentitySnapshotSchema.safeParse({
+        ...validSnapshot,
+        buyer_is_head_office: false,
+        buyer_branch_code: 'ABCDE',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('makeMemberIdentitySnapshot keeps a valid branch + registrant flag', () => {
+    const snap = makeMemberIdentitySnapshot({
+      ...validSnapshot,
+      buyer_is_head_office: false,
+      buyer_branch_code: '00012',
+      buyer_is_vat_registrant: true,
+    });
+    expect(snap.buyer_branch_code).toBe('00012');
+    expect(snap.buyer_is_head_office).toBe(false);
+    expect(snap.buyer_is_vat_registrant).toBe(true);
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('makeMemberIdentitySnapshot throws on a head-office buyer with a branch_code', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        buyer_is_head_office: true,
+        buyer_branch_code: '00005',
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+});

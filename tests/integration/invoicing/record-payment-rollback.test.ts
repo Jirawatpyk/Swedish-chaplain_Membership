@@ -206,7 +206,15 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
     let thrown: unknown = null;
     try {
       await runInTenant(tenant.ctx, async () =>
-        recordPayment(makeRecordPaymentDeps(tenant.ctx.slug), {
+        // Pin the LEGACY flow EXPLICITLY (taxAtPayment: false) rather than
+        // inheriting the ambient FEATURE_088_TAX_AT_PAYMENT env flag (ON in the
+        // dev env, frozen at boot). The seeded invoice is legacy-shaped
+        // (documentNumber set, billDocumentNumberRaw NULL); under the flag ON it
+        // would trip the FR-017 `legacy_invoice_needs_reissue` guard with a typed
+        // `err` BEFORE the enqueue mock runs — the use-case would NOT throw and
+        // this rollback test's `expect(thrown).not.toBeNull()` would fail. Forcing
+        // false exercises the intended reuse path so the enqueue throw is reached.
+        recordPayment({ ...makeRecordPaymentDeps(tenant.ctx.slug), taxAtPayment: 'off' }, {
           tenantId: tenant.ctx.slug,
           actorUserId: user.userId,
           invoiceId,
@@ -273,13 +281,21 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
     try {
       await runInTenant(tenant.ctx, async () =>
         recordPayment(
-          makeRecordPaymentDeps(tenant.ctx.slug, undefined, [
-            async () => {
-              throw new Error(
-                'D1 simulated F8 cross-module callback failure',
-              );
-            },
-          ]),
+          // Pin the LEGACY flow EXPLICITLY (taxAtPayment: false) — see the sibling
+          // test above. The seeded row is legacy-shaped; under the ambient flag ON
+          // the FR-017 guard returns a typed `err` before the onPaidCallback fires,
+          // so nothing would throw and the rollback assertion would fail. Forcing
+          // false reaches the callback so its throw drives the tx rollback.
+          {
+            ...makeRecordPaymentDeps(tenant.ctx.slug, undefined, [
+              async () => {
+                throw new Error(
+                  'D1 simulated F8 cross-module callback failure',
+                );
+              },
+            ]),
+            taxAtPayment: 'off',
+          },
           {
             tenantId: tenant.ctx.slug,
             actorUserId: user.userId,

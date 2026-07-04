@@ -99,10 +99,14 @@ describe('contract: GET /api/portal/invoices/search (T086)', () => {
     });
     listInvoicesByMemberMock.mockResolvedValueOnce(
       ok({
+        // Realistic domain shape: `documentNumber` is a DocumentNumber VO with a
+        // `.raw` string (NOT a `toString`) — the prior `{ toString }` mock masked
+        // the real `String(valueObject)`→"[object Object]" bug the route fix closes.
         rows: [
           {
             invoiceId: 'inv-1',
-            documentNumber: { toString: () => 'TSCC-2026-0007' },
+            documentNumber: { raw: 'TSCC-2026-0007' },
+            billDocumentNumberRaw: null,
             total: { satang: 5_350_000n },
             currency: 'THB',
           },
@@ -143,6 +147,39 @@ describe('contract: GET /api/portal/invoices/search (T086)', () => {
     expect(input.memberId).toBe('mem-1');
   });
 
+  it('088 FR-030: an issued bill (documentNumber NULL, billDocumentNumberRaw set) → invoiceNumber = SC', async () => {
+    // This route is issued-ONLY (status:'issued'), so an 088 bill's number is its
+    // SC (`billDocumentNumberRaw`); the §87 `documentNumber` stays NULL. The
+    // palette must surface the SC, not '' — bill-first resolution.
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    rateLimiterCheckMock.mockResolvedValueOnce({
+      success: true,
+      reset: Date.now() + 60_000,
+    });
+    listInvoicesByMemberMock.mockResolvedValueOnce(
+      ok({
+        rows: [
+          {
+            invoiceId: 'inv-088',
+            documentNumber: null,
+            billDocumentNumberRaw: 'SC-2026-000123',
+            total: { satang: 1_000_000n },
+            currency: 'THB',
+          },
+        ],
+        total: 1,
+      }),
+    );
+
+    const { GET } = await import('@/app/api/portal/invoices/search/route');
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      invoices: Array<{ id: string; invoiceNumber: string }>;
+    };
+    expect(body.invoices[0]?.invoiceNumber).toBe('SC-2026-000123');
+  });
+
   it('F-02: preserves newest-first ordering from the use-case (issueDate desc)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     rateLimiterCheckMock.mockResolvedValueOnce({
@@ -157,19 +194,22 @@ describe('contract: GET /api/portal/invoices/search (T086)', () => {
         rows: [
           {
             invoiceId: 'inv-newest',
-            documentNumber: { toString: () => 'TSCC-2026-0009' },
+            documentNumber: { raw: 'TSCC-2026-0009' },
+            billDocumentNumberRaw: null,
             total: { satang: 30_000_00n },
             currency: 'THB',
           },
           {
             invoiceId: 'inv-mid',
-            documentNumber: { toString: () => 'TSCC-2026-0008' },
+            documentNumber: { raw: 'TSCC-2026-0008' },
+            billDocumentNumberRaw: null,
             total: { satang: 20_000_00n },
             currency: 'THB',
           },
           {
             invoiceId: 'inv-oldest',
-            documentNumber: { toString: () => 'TSCC-2026-0007' },
+            documentNumber: { raw: 'TSCC-2026-0007' },
+            billDocumentNumberRaw: null,
             total: { satang: 10_000_00n },
             currency: 'THB',
           },

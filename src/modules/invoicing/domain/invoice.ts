@@ -28,6 +28,7 @@ import type { ProRatePolicy } from './value-objects/pro-rate-policy';
 import type { TenantIdentitySnapshot } from './value-objects/tenant-identity-snapshot';
 import type { MemberIdentitySnapshot } from './value-objects/member-identity-snapshot';
 import type { Sha256Hex } from './value-objects/sha256-hex';
+import type { VatTreatment } from './policies/vat-treatment';
 import type { InvoiceLine } from './invoice-line';
 
 export const INVOICE_STATUSES = [
@@ -272,6 +273,36 @@ export interface InvoiceCommon {
    * gap on every retry).
    */
   readonly receiptDocumentNumberRaw: string | null;
+  /**
+   * 088-invoice-tax-flow-redesign (US1) — the pre-payment ใบแจ้งหนี้'s
+   * NON-§87 bill number (e.g. `SC-2026-000123`), allocated at issue from the
+   * `bill` stream when `FEATURE_088_TAX_AT_PAYMENT` is on. Disjoint from
+   * `sequenceNumber`/`documentNumber` (which stay NULL for a non-§87 bill), so
+   * it can never enter the §87 uniqueness index (SC-003). NULL on drafts, on
+   * every pre-088 row, and on the legacy §87-at-issue path (flag off). Written
+   * once in the draft→issued UPDATE, then locked by the immutability trigger.
+   */
+  readonly billDocumentNumberRaw: string | null;
+
+  /**
+   * 088-invoice-tax-flow-redesign (US8 / § F.8) — per-invoice VAT treatment
+   * (case-by-case, NOT per-member), pinned at issue + immutable (FR-023):
+   * 'standard' (VAT 7%, membership + all defaults) or 'zero_rated_80_1_5'
+   * (VAT 0% embassy / int'l-org §80/1(5)). The DB column is NOT NULL DEFAULT
+   * 'standard', so every persisted row (incl. pre-088) resolves to a value.
+   * DRIVES the VAT rate (FR-025 / G3).
+   */
+  readonly vatTreatment: VatTreatment;
+  /**
+   * MFA (Protocol Dept) certificate particulars for a `'zero_rated_80_1_5'`
+   * invoice — REQUIRED when zero-rated (fail-closed, FR-024), NULL otherwise.
+   * The cert is REFERENCED by number/date on the §86/4 tax invoice; the scan
+   * (`zeroRateCertBlobKey`) is retained separately (10y, admin-only) and NOT
+   * appended to the PDF (G6).
+   */
+  readonly zeroRateCertNo: string | null;
+  readonly zeroRateCertDate: string | null;
+  readonly zeroRateCertBlobKey: string | null;
 
   readonly lines: readonly InvoiceLine[];
 
@@ -328,6 +359,76 @@ export function displayDocumentNumber(inv: {
   readonly receiptDocumentNumberRaw: string | null;
 }): string | null {
   return inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw;
+}
+
+/**
+ * FR-017 — the identity number an ISSUED invoice is CONFIRMED/VOIDED under: the
+ * §87 `documentNumber` (legacy §87-at-issue flow) OR the non-§87 ใบแจ้งหนี้ bill
+ * number (`billDocumentNumberRaw`, the 088 tax-at-payment flow where
+ * `documentNumber` stays NULL until — and unless — a receipt is minted at
+ * payment). NULL only for a draft/corrupt row that carries neither.
+ *
+ * Sibling of {@link displayDocumentNumber}, which CANNOT be reused by the void
+ * guard: it falls back to the RC receipt number (`receiptDocumentNumberRaw`),
+ * whereas voiding acts on the PRE-payment bill, whose identity is the bill
+ * number. Pure + framework-free (Domain); accepts the narrow inline shape so
+ * presentation view-models carrying only the two raw fields can call it too.
+ */
+export function issuedInvoiceIdentity(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly billDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.documentNumber?.raw ?? inv.billDocumentNumberRaw ?? null;
+}
+
+/**
+ * The bill-first display identity of an invoice: the non-§87 ใบแจ้งหนี้ bill
+ * number (SC) if present, else the §87 documentNumber, else null. The single
+ * source for the ~14 inline `billDocumentNumberRaw ?? documentNumber?.raw`
+ * sites (each applies its own tail: ?? invoiceId / ?? '' / ?? receiptRaw).
+ * Distinct from `displayDocumentNumber` (documentNumber-first, RC fallback —
+ * for PAID/receipt surfaces) and `issuedInvoiceIdentity` (documentNumber-first,
+ * bill fallback — for the void/confirm guard). Pure/framework-free.
+ */
+export function billFirstDocumentNumber(inv: {
+  readonly documentNumber: DocumentNumber | null;
+  readonly billDocumentNumberRaw: string | null;
+}): string | null {
+  return inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null;
+}
+
+/**
+ * 088 (FR-016) — the two-document tax kind an invoice row displays as, the
+ * single source for the copy-pasted `is088Bill`/`taxDocKind` derivation across
+ * the admin + portal invoice list/detail surfaces:
+ *
+ *   - `'none'`   — the flag is off, OR the row is not a real 088 bill (no
+ *     non-§87 ใบแจ้งหนี้ bill number). A legacy separate-mode paid row (§87
+ *     invoice number + RC, no bill number) stays `'none'` even with the flag on
+ *     and renders exactly as before 088.
+ *   - `'bill'`   — an 088 bill that has NOT been paid yet: the SC bill number
+ *     exists but no §86/4 §87 `RC` tax receipt has been minted
+ *     (`receiptDocumentNumberRaw === null`).
+ *   - `'tax_receipt'` — an 088 bill that HAS been paid: the RC (minted at
+ *     payment into `receiptDocumentNumberRaw`) discriminates it from an unpaid
+ *     bill.
+ *
+ * Pure + framework-free (Domain); accepts the narrow inline shape so
+ * presentation view-models carrying only the two raw fields can call it too.
+ * Takes a plain `boolean` (NOT `TaxAtPaymentFlag`): the display layer only knows
+ * "is the 088 flow on?" and never deals with the reconciliation axis (that lives
+ * on the get-invoice-for-payment READ, not on display). Keeping this a bare
+ * boolean avoids importing the flow-flag union into presentation view-models.
+ */
+export function resolveTaxDocumentKind(
+  inv: {
+    readonly billDocumentNumberRaw: string | null;
+    readonly receiptDocumentNumberRaw: string | null;
+  },
+  flagOn: boolean,
+): 'none' | 'bill' | 'tax_receipt' {
+  if (!flagOn || inv.billDocumentNumberRaw === null) return 'none';
+  return inv.receiptDocumentNumberRaw !== null ? 'tax_receipt' : 'bill';
 }
 
 /**
@@ -400,7 +501,8 @@ export function assertSnapshotsSet(inv: Invoice): Result<void, InvoiceTransition
 
 /**
  * Transition-guard table. Returns ok on legal, err on illegal.
- * Matches data-model.md § 3.1 state machine diagram.
+ * Base transitions follow 007 data-model.md § 3.1; the `paid → void` edge
+ * follows 088 data-model.md § E ("any non-terminal state → void by admin").
  */
 export function canTransition(
   from: InvoiceStatus,
@@ -415,7 +517,12 @@ export function canTransition(
   const legal: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
     draft: subject === 'event' ? ['issued', 'paid'] : ['issued'],
     issued: ['paid', 'void'],
-    paid: ['partially_credited', 'credited'],
+    // 088 (data-model.md § E — "any non-terminal state → void by admin"):
+    // voiding a PAID invoice is legal (the void use-case's
+    // own guard already accepts `paid`, e.g. a wrongly-recorded offline
+    // payment on a membership). Previously omitted here, so routing a
+    // paid→void through this table wrongly returned `invalid_transition`.
+    paid: ['partially_credited', 'credited', 'void'],
     partially_credited: ['partially_credited', 'credited'],
     void: [],
     credited: [],

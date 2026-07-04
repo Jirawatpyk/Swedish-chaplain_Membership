@@ -302,6 +302,12 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       primary_contact_email: 'jane@beta.example',
       member_number: null,
       member_number_display: null,
+      // 088-invoice-tax-flow-redesign (T010) — the read-boundary zod parse
+      // materialises the buyer §86/4 branch particulars at their fail-closed
+      // defaults for a manually-pinned non-member event buyer.
+      buyer_is_head_office: true,
+      buyer_branch_code: null,
+      buyer_is_vat_registrant: false,
     });
 
     // event_fee line = ticketPriceThb × 100 inclusive.

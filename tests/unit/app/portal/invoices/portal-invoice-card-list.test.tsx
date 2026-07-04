@@ -54,11 +54,15 @@ vi.mock(
     PortalInvoiceDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      className?: string;
     }) => (
       <button
         type="button"
         data-testid="invoice-download"
         aria-label={props.ariaLabel ?? props.label}
+        // Echo the card's className so the ≥44px target-size guard
+        // (T072b) can assert the min-h-11 the card passes actually lands.
+        className={props.className}
       >
         {props.label}
       </button>
@@ -66,11 +70,13 @@ vi.mock(
     PortalReceiptDownloadButton: (props: {
       label: string;
       ariaLabel?: string;
+      className?: string;
     }) => (
       <button
         type="button"
         data-testid="receipt-download"
         aria-label={props.ariaLabel ?? props.label}
+        className={props.className}
       >
         {props.label}
       </button>
@@ -81,14 +87,39 @@ vi.mock(
 vi.mock(
   '@/app/(member)/portal/invoices/_components/resend-invoice-button',
   () => ({
-    ResendInvoiceButton: (props: { documentNumber: string }) => (
+    ResendInvoiceButton: (props: {
+      documentNumber: string;
+      className?: string;
+    }) => (
       <button
         type="button"
         data-testid="resend"
         aria-label={`resend ${props.documentNumber}`}
+        className={props.className}
       >
         resend
       </button>
+    ),
+  }),
+);
+
+// 088 T066a — the pending receipt affordance is now the CLIENT
+// `<ReceiptStatusWatcher>` (aria-live announce + auto-refresh poll). Mock it
+// with a stand-in so the card test asserts the card's CHOICE to mount it
+// (pending state) without pulling the client poller's fetch/router into jsdom.
+vi.mock(
+  '@/app/(member)/portal/invoices/_components/receipt-status-watcher',
+  () => ({
+    ReceiptStatusWatcher: (props: { invoiceId: string; variant?: string }) => (
+      <div
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-testid="receipt-status-watcher"
+        data-variant={props.variant ?? 'inline'}
+      >
+        receipt-generating
+      </div>
     ),
   }),
 );
@@ -222,6 +253,11 @@ function buildInvoice(
     receiptPdfRenderAttempts: 0,
     receiptPdfLastError: null,
     receiptDocumentNumberRaw: null,
+    billDocumentNumberRaw: null,
+    vatTreatment: 'standard',
+    zeroRateCertNo: null,
+    zeroRateCertDate: null,
+    zeroRateCertBlobKey: null,
     lines: [],
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',
@@ -425,46 +461,51 @@ describe('<PortalInvoiceCardList> — separate-paid', () => {
 // ===========================================================================
 // 4. receipt-pending (paid + receiptPdfStatus 'pending')
 // ===========================================================================
-describe('<PortalInvoiceCardList> — receipt-pending', () => {
-  it('shows the aria-busy "Receipt preparing…" live region and NO terminal failed text', () => {
+describe('<PortalInvoiceCardList> — receipt-pending (088 T066a)', () => {
+  it('mounts the ReceiptStatusWatcher (aria-live announce + auto-refresh poll), NO terminal failed copy', () => {
     renderCardFor({ status: 'paid', receiptPdfStatus: 'pending' });
 
-    // The live region: role=status + aria-busy + the preparing label.
-    const live = screen.getByRole('status');
-    expect(live).toHaveAttribute('aria-busy', 'true');
-    expect(live).toHaveTextContent('Receipt preparing…');
+    // The pending affordance is now the async watcher (aria-live status).
+    const watcher = screen.getByTestId('receipt-status-watcher');
+    expect(watcher).toHaveAttribute('role', 'status');
+    expect(watcher).toHaveAttribute('aria-busy', 'true');
 
-    // NOT the terminal failed copy (mutation guard vs case 5).
-    expect(theCard()).not.toHaveTextContent('Receipt unavailable');
+    // NOT the terminal graceful-fail affordance (mutation guard vs case 5).
+    expect(screen.queryByTestId('receipt-failed-support')).toBeNull();
     // Pending state offers no receipt download yet.
     expect(screen.queryByTestId('receipt-download')).not.toBeInTheDocument();
   });
 });
 
 // ===========================================================================
-// 5. receipt-failed (paid + receiptPdfStatus 'failed') — S1 / U4 affordance
+// 5. receipt-failed (paid + receiptPdfStatus 'failed') — 088 T066a graceful
+//    permanent-fail member state (calm support path, NOT a dead "unavailable")
 // ===========================================================================
-describe('<PortalInvoiceCardList> — receipt-failed (terminal)', () => {
-  it('shows the static "Receipt unavailable" text with NO aria-busy / role=status / "preparing"', () => {
+describe('<PortalInvoiceCardList> — receipt-failed (graceful support path, 088 T066a)', () => {
+  it('shows a calm support-path affordance (NOT a dead "Receipt unavailable") with NO spinner/aria-busy', () => {
     renderCardFor({ status: 'paid', receiptPdfStatus: 'failed' });
 
     const card = theCard();
-    // The terminal affordance text.
-    expect(card).toHaveTextContent('Receipt unavailable');
+    // The new graceful support-path affordance is present…
+    expect(screen.getByTestId('receipt-failed-support')).toBeInTheDocument();
+    // …and the old dead "Receipt unavailable" copy is gone.
+    expect(card).not.toHaveTextContent('Receipt unavailable');
 
-    // MUTATION-SENSITIVE (the crux of S1): a terminal failure must NOT be
-    // rendered as the perpetual pending spinner. So NONE of the pending
-    // signals may appear.
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // MUTATION-SENSITIVE (S1): a terminal failure must NOT be rendered as the
+    // in-progress watcher / spinner. So NONE of the pending signals may appear.
+    expect(screen.queryByTestId('receipt-status-watcher')).toBeNull();
     expect(
       document.querySelector('[aria-busy="true"]'),
     ).not.toBeInTheDocument();
-    expect(card).not.toHaveTextContent('Receipt preparing…');
 
     // A failed-receipt paid invoice still has its issue-time PDF → invoice
-    // download + resend remain (rowHasAnyAction true, not the '—' sentinel).
+    // download + resend remain (rowHasAnyAction true, so the EmptyCell '—'
+    // sentinel branch never runs). The presence of the invoice-download +
+    // resend + the support hint proves the action group rendered — we do NOT
+    // assert on the bare '—' here because the support copy itself legitimately
+    // contains an em-dash ("Receipt on the way — we're resolving it").
     expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
-    expect(card).not.toHaveTextContent('—');
+    expect(screen.getByTestId('resend')).toBeInTheDocument();
   });
 });
 
@@ -568,5 +609,218 @@ describe('<PortalInvoiceCardList> — list structure + per-item aria-label', () 
       />,
     );
     expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  });
+});
+
+// ===========================================================================
+// 088 — tax-at-payment two-document disambiguation (T065 / T065a / FR-016).
+//
+// The card receives an OPTIONAL `tTax088` translator (bound to
+// admin.invoices.tax088). It renders the SC-bill ↔ RC-tax-receipt
+// disambiguation ONLY when the VM's `taxDocumentKind !== 'none'` (which the
+// mapper only yields when the tax-at-payment flag is on) AND `tTax088` is
+// provided — so the flag-OFF cards above render byte-identically to legacy.
+// ===========================================================================
+const tTax088 = makeRealTranslator('admin.invoices.tax088');
+
+/** Render one card with the 088 flag ON (VM 3rd arg true) + tTax088 wired. */
+function renderCard088For(
+  overrides: Partial<Extract<Invoice, { invoiceSubject: 'membership' }>> = {},
+  now: string = NOW_BEFORE_DUE,
+) {
+  const vm = toInvoiceRowViewModel(buildInvoice(overrides), now, true);
+  return render(
+    <PortalInvoiceCardList
+      rows={[{ vm }]}
+      locale="en"
+      t={t}
+      tStatus={tStatus}
+      tTax088={tTax088}
+    />,
+  );
+}
+
+describe('<PortalInvoiceCardList> — 088 UNPAID bill (A-refined)', () => {
+  it('shows the SC bill number as the heading; NO per-row tag; no Receipt No. line yet', () => {
+    renderCard088For({
+      status: 'issued',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: null,
+    });
+
+    // The SC bill number is the card heading (NOT an em-dash / UUID).
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' }),
+    ).toBeInTheDocument();
+    // A-refined — no per-row ใบแจ้งหนี้/Invoice tag; the SC- prefix + heading are
+    // self-documenting.
+    expect(theCard()).not.toHaveTextContent('ใบแจ้งหนี้ / Invoice');
+    expect(theCard()).not.toHaveTextContent('Tax receipt');
+    expect(theCard()).not.toHaveTextContent('Payable record');
+    // No RC yet → no Receipt No. line.
+    expect(theCard()).not.toHaveTextContent('Receipt No.');
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 PAID bill (A-refined)', () => {
+  it('heading is the SC bill number (not the RC); the RC is a clickable "see tax receipt" link in the Receipt No. line; NO per-row tags', () => {
+    renderCard088For({
+      status: 'paid',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    const card = theCard();
+
+    // A-refined — the card heading is the invoice's OWN (SC) number, NOT the RC.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 2, name: 'RC-2026-000123' }),
+    ).not.toBeInTheDocument();
+
+    // The RC is a clickable link (→ the invoice detail) in the "Receipt No." line;
+    // its accessible name (seeReceiptLink) distinguishes it from the header link,
+    // and its VISIBLE text is the RC number (WCAG 2.5.3 Label in Name).
+    const seeRc = screen.getByRole('link', { name: 'see tax receipt RC-2026-000123' });
+    expect(seeRc).toHaveAttribute('href', '/portal/invoices/11111111-2222-4333-8444-555555555555');
+    expect(seeRc).toHaveTextContent('RC-2026-000123');
+
+    // A-refined — NO per-row "Tax receipt" chip / "payable record" sub-line.
+    expect(card).not.toHaveTextContent('Tax receipt');
+    expect(card).not.toHaveTextContent('Payable record');
+
+    // FR-015 — BOTH documents stay downloadable after payment.
+    expect(screen.getByTestId('invoice-download')).toBeInTheDocument();
+    expect(screen.getByTestId('receipt-download')).toBeInTheDocument();
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 flag reflected via VM kind "none"', () => {
+  it('a legacy separate-mode paid row (no bill number) shows NO 088 disambiguation even with tTax088 wired', () => {
+    renderCard088For({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RC-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    // No bill number → kind 'none' → no Tax-receipt badge / payable-record note.
+    expect(theCard()).not.toHaveTextContent('Tax receipt');
+    expect(theCard()).not.toHaveTextContent('Payable record');
+    // Legacy §87 invoice number stays the heading.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' }),
+    ).toBeInTheDocument();
+  });
+});
+
+// ===========================================================================
+// 088 T072b (FR-036) — mobile-first target size + wrap guards.
+//
+// The @a11y e2e (portal-invoices-a11y.spec.ts) is preview-authoritative (it
+// emits documented 320px/target-size noise on local dev). These structural
+// guards are the LOAD-BEARING local verification for the mobile-first FIXES:
+// the card must pass ≥44px (min-h-11 / min-w-11) target-size classes to every
+// action control and wrap both the action group AND (for 088 rows) the header
+// doc-kind badge group so a 320px card never scrolls horizontally / clips
+// (WCAG 1.4.10 Reflow, 2.5.5 Target Size).
+// ===========================================================================
+describe('<PortalInvoiceCardList> — FR-036 mobile-first target size + wrap (T072b)', () => {
+  it('forwards ≥44px target-size classes to every action control and wraps the action group', () => {
+    renderCardFor({
+      status: 'paid',
+      receiptDocumentNumberRaw: 'RCP-2026-000009',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+
+    // Invoice + Receipt downloads carry the ≥44px min-h-11 the card passes.
+    expect(screen.getByTestId('invoice-download').className).toContain('min-h-11');
+    expect(screen.getByTestId('receipt-download').className).toContain('min-h-11');
+    // Resend is the icon-only square — ≥44px on BOTH axes.
+    const resend = screen.getByTestId('resend');
+    expect(resend.className).toContain('min-h-11');
+    expect(resend.className).toContain('min-w-11');
+
+    // The action group is a flex-wrap container so a 320px card never scrolls
+    // horizontally — the controls wrap to a second row instead of overflowing.
+    const actionGroup = theCard().querySelector('.flex-wrap');
+    expect(actionGroup).not.toBeNull();
+    expect(actionGroup?.contains(screen.getByTestId('invoice-download'))).toBe(true);
+    expect(actionGroup?.contains(screen.getByTestId('receipt-download'))).toBe(true);
+    expect(actionGroup?.contains(screen.getByTestId('resend'))).toBe(true);
+  });
+});
+
+describe('<PortalInvoiceCardList> — 088 A-refined header has no per-row tag (no wrap)', () => {
+  it('a paid 088 bill header group is NOT a flex-wrap container (the ใบแจ้งหนี้ tag was dropped)', () => {
+    renderCard088For({
+      status: 'paid',
+      documentNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000045',
+      receiptDocumentNumberRaw: 'RC-2026-000123',
+      receiptPdfStatus: 'rendered',
+      receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+    });
+    // A-refined dropped the per-row ใบแจ้งหนี้ tag → the header no longer wraps a
+    // long TH badge; the doc-number heading group is a plain (non-wrap) flex row,
+    // so the sole `flex-wrap` in a card is the action group (sentinel invariant).
+    const heading = screen.getByRole('heading', { level: 2, name: 'SC-2026-000045' });
+    expect(heading.closest('.flex-wrap')).toBeNull();
+  });
+
+  it('a legacy (non-088) row header group is also NOT a flex-wrap container', () => {
+    renderCardFor({ status: 'issued' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'INV-2026-000001' });
+    expect(heading.closest('.flex-wrap')).toBeNull();
+  });
+});
+
+// ===========================================================================
+// 088 T063b (FR-009) — per-locale document dates on the portal list.
+//
+// Buddhist Era is DISPLAY-ONLY on th-TH surfaces (CLAUDE.md § Conventions);
+// storage/query values stay Gregorian ISO. Guard both: the rendered card shows
+// the BE year for th and the Gregorian year for en, while the underlying
+// view-model date stays Gregorian ISO. The dates paragraph is queried in
+// isolation (`p.text-muted-foreground`) so the assertion is not confused by the
+// year inside a document number (e.g. INV-2026-000001).
+// ===========================================================================
+describe('<PortalInvoiceCardList> — FR-009 locale date formatting (T063b)', () => {
+  it('renders the Buddhist-Era year for th-TH while the stored issueDate stays Gregorian ISO', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ issueDate: '2026-04-01', dueDate: '2026-04-30' }),
+      NOW_BEFORE_DUE,
+    );
+    // Storage/query value is untouched Gregorian ISO — BE is DISPLAY-only.
+    expect(vm.issueDate).toBe('2026-04-01');
+    expect(vm.dueDate).toBe('2026-04-30');
+
+    render(
+      <PortalInvoiceCardList rows={[{ vm }]} locale="th" t={t} tStatus={tStatus} />,
+    );
+    const datesP = theCard().querySelector('p.text-muted-foreground');
+    expect(datesP).not.toBeNull();
+    // th-TH → Buddhist Era: CE 2026 displays as BE 2569 (+543).
+    expect(datesP?.textContent).toContain('2569');
+    expect(datesP?.textContent).not.toContain('2026');
+  });
+
+  it('renders the Gregorian year for en (display-only locale switch, no BE offset)', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({ issueDate: '2026-04-01', dueDate: '2026-04-30' }),
+      NOW_BEFORE_DUE,
+    );
+    render(
+      <PortalInvoiceCardList rows={[{ vm }]} locale="en" t={t} tStatus={tStatus} />,
+    );
+    const datesP = theCard().querySelector('p.text-muted-foreground');
+    expect(datesP).not.toBeNull();
+    expect(datesP?.textContent).toContain('2026');
+    expect(datesP?.textContent).not.toContain('2569');
   });
 });

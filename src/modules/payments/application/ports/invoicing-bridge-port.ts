@@ -9,7 +9,11 @@
  * talks to an interface; F5 Infrastructure provides the wire-up to F4.
  */
 import type { Result } from '@/lib/result';
-import type { InvoiceStatus, F4InvoicePaidEvent } from '@/modules/invoicing';
+import type {
+  InvoiceStatus,
+  F4InvoicePaidEvent,
+  TaxAtPaymentFlag,
+} from '@/modules/invoicing';
 import type { Satang } from '@/lib/money';
 
 export interface InvoiceForPaymentDTO {
@@ -45,7 +49,17 @@ export type GetInvoiceForPaymentBridgeError =
    * `not_payable`) so initiate-payment's warn log + the route's
    * `useCaseErrorCode` keep the remediation-runbook pointer.
    */
-  | { readonly code: 'legacy_no_tin_event_not_payable' };
+  | { readonly code: 'legacy_no_tin_event_not_payable' }
+  /**
+   * 088 SEC-MED — F4's payability read rejected a NEW-FLOW bill (issued while
+   * FEATURE_088_TAX_AT_PAYMENT was ON) being paid after the flag rolled back
+   * to OFF. Creating a PI would let Stripe capture money the webhook-side
+   * `recordPayment` guard then refuses to apply (same code, permanent, NO
+   * auto-refund) — S0 stranded funds. Carried VERBATIM (not collapsed into
+   * `not_payable`) so initiate-payment's warn log + the route's
+   * `useCaseErrorCode` keep the flag-rollback discriminator for ops.
+   */
+  | { readonly code: 'new_flow_bill_requires_flag_on' };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;
@@ -92,6 +106,21 @@ export interface InvoicingBridgePort {
       readonly requestId: string | null;
       readonly memberId?: string;
     };
+    /**
+     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag), forwarded
+     * verbatim into F4's payability read. Wired from `env.features.f088TaxAtPayment`
+     * at `makeInitiatePaymentDeps` (initiate) / `makeConfirmPaymentDeps` +
+     * `makeProcessWebhookEventDeps` (webhook confirm).
+     */
+    readonly taxAtPayment: TaxAtPaymentFlag;
+    /**
+     * 088 SEC-MED — the orthogonal reconciliation axis. `false` on the INITIATE
+     * (self-pay) read → F4's new-flow-bill flag-rollback guard is armed (refuse a
+     * capture the webhook-side guard would then reject). `true` on the webhook
+     * confirm read → the guard stays DORMANT (money already captured; the
+     * write-side record-payment guard still enforces the flag). Forwarded verbatim.
+     */
+    readonly reconciliationPath: boolean;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**

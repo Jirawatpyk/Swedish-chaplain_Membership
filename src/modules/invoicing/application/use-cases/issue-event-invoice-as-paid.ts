@@ -17,14 +17,16 @@
  * receipt document exists; as-paid has exactly one document).
  *
  * No-TIN buyers receive the §105 ใบเสร็จรับเงิน (`receipt_separate`) numbered
- * from the RECEIPT stream (Path β — operator decision 2026-06-10 per the
- * tax auditor's safe reading; accountant verification still OPEN, design
- * §6 item 2; live since Task 10 + migration 0212): `documentType:'receipt'`
- * allocation with the tenant's
- * receipt prefix (`'RE'` fallback — recordPayment separate-mode parity), the
- * number lands in `receipt_document_number_raw` and the invoice-stream pair
- * stays NULL, so the shared §87 invoice stream is never burned for a receipt
- * document.
+ * from the SEPARATE `receipt_105`/`RE` register (088 US7/T050; live since
+ * migration 0230 added the `receipt_105` document_type): `documentType:
+ * 'receipt_105'` allocation with a HARDCODED `'RE'` prefix (NOT
+ * settings.receiptNumberPrefix — see the E. Numbering block). The number lands
+ * in `receipt_document_number_raw` and the invoice-stream pair stays NULL, so
+ * NEITHER the shared §87 invoice stream NOR the §86/4 `RC` receipt stream is
+ * ever burned for a §105 receipt — keeping the §86/4/§87 `RC` register pure
+ * (un-pollutable) for a clean RD audit. The `RE` register is sequential/tidy
+ * but deliberately NOT under the strict §87 no-gaps guarantee (§105 is a
+ * non-tax receipt, not §86/4).
  *
  * Canonical lock order (mirrors issueInvoice — R7-S1 deadlock rationale at
  * issue-invoice.ts:14 applies verbatim):
@@ -86,6 +88,7 @@ import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { addDays, bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -183,6 +186,15 @@ export interface IssueEventInvoiceAsPaidDeps {
   readonly outbox: EmailOutboxPort;
   /** PDF template version pinned on THIS issuance (T045 registry). */
   readonly currentTemplateVersion: number;
+  /**
+   * 088-invoice-tax-flow-redesign (T019 / T022) — FEATURE_088_TAX_AT_PAYMENT
+   * (2-state flow flag). When `'on'`, a TIN buyer's combined §86/4 receipt is
+   * minted from the §87 `RC` receipt stream (mirroring `record-payment`) and a
+   * `tax_receipt_issued` audit event fires; when `'off'` the legacy path
+   * allocates the §87 `invoice`-stream number as today. The no-TIN §105 arm is
+   * unchanged.
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /**
    * F8 cross-module on-paid hooks — SAME contract as
    * `RecordPaymentDeps.onPaidCallbacks` (fired in registration order inside
@@ -419,23 +431,54 @@ export async function issueEventInvoiceAsPaid(
       // E. Numbering — stream depends on the §86/4 doc-kind:
       //   TIN    → the SHARED §87 invoice stream (events + membership
       //            intentionally share `documentType:'invoice'` — see
-      //            issueInvoice E) with the invoice prefix.
-      //   no-TIN → the RECEIPT stream (`documentType:'receipt'`) with the
-      //            tenant receipt prefix, `'RE'` fallback — EXACT parity with
-      //            recordPayment's separate-mode allocation so a β receipt
-      //            number is indistinguishable from a payment-time receipt
-      //            number. The invoice-stream pair stays NULL on the row
-      //            (migration 0212 relaxed leg) so a receipt number can never
-      //            collide inside invoices_tenant_fiscal_seq_unique.
+      //            issueInvoice E) with the invoice prefix; OR, in the new flow
+      //            (`taxAtPayment`), the §87 `RC` receipt stream (see 088 T019
+      //            below).
+      //   no-TIN → the SEPARATE §105 `receipt_105` register with a HARDCODED
+      //            `'RE'` prefix (088 US7/T050 — NOT settings.receiptNumberPrefix,
+      //            NOT the §86/4 `receipt`/RC stream). The number lands in
+      //            `receipt_document_number_raw` with the invoice-stream pair
+      //            NULL on the row (migration 0212 relaxed leg) so it can never
+      //            collide inside invoices_tenant_fiscal_seq_unique, and it can
+      //            never pollute the §86/4/§87 `RC` register (which stays pure
+      //            for a clean RD audit). `receipt_105` is sequential/tidy but
+      //            deliberately NOT under the strict §87 no-gaps guarantee.
       // `docNum` is the document's PRINTED number either way — threaded into
       // the PDF render and both audit summaries below. (Wave-4 S22: the two
       // formerly copy-pasted allocate/build/overflow arms are collapsed —
       // only documentType + prefix differ; the overflow throw rolls the tx
       // back so the consumed increment never commits, either stream.)
+      // 088 T019 — a TIN buyer's combined §86/4 receipt is minted from the §87
+      // `RC` receipt stream in the new flow (`taxAtPayment`), mirroring
+      // record-payment so the §86/4 RC register stays contiguous across
+      // membership + event-with-TIN payments (SC-002). Legacy allocates the
+      // shared §87 `invoice` stream as before. The no-TIN §105 arm always uses
+      // its own separate `receipt_105`/`RE` register (US7/T050), independent of
+      // both the `taxAtPayment` flag and the tenant's receipt prefix.
+      const taxAtPayment = deps.taxAtPayment === 'on';
       const stream =
         pdfKind === 'receipt_combined'
-          ? ({ documentType: 'invoice', prefix: settings.invoiceNumberPrefix } as const)
-          : ({ documentType: 'receipt', prefix: settings.receiptNumberPrefix ?? 'RE' } as const);
+          ? taxAtPayment
+            ? // 088 US7 fix — the §86/4 RC-role receipt defaults to 'RC' (NOT the
+              // stale pre-088 'RE'). This prefix MUST stay disjoint from the §105
+              // register's hardcoded 'RE' below: both write
+              // `receipt_document_number_raw` and share the single unpartitioned
+              // `invoices_tenant_receipt_raw_uniq` index, and each register is a
+              // separate counter (both seq 1 in a fresh FY). An 'RE' default would
+              // render the same raw on both → 23505 on the 2nd commit. The tenant
+              // settings guard (update-tenant-invoice-settings) reserves 'RE' so a
+              // configured prefix can never re-open this collision.
+              ({ documentType: 'receipt', prefix: settings.receiptNumberPrefix ?? 'RC' } as const)
+            : ({ documentType: 'invoice', prefix: settings.invoiceNumberPrefix } as const)
+          : // 088 US7/T050 — the §105 event-no-TIN receipt allocates from the
+            // SEPARATE `receipt_105`/`RE` register (spec §272 working default,
+            // revisable per accountant, NOT under the §87 no-gaps guarantee).
+            // The `RE` prefix is HARDCODED (never settings.receiptNumberPrefix)
+            // so a §105 receipt can never number onto the §86/4 `RC` register —
+            // even when the tenant has `receiptNumberPrefix='RC'` configured for
+            // its §86/4 tax receipts. That split keeps the §86/4/§87 RC register
+            // pure (un-pollutable, un-renumberable) for a clean RD audit.
+            ({ documentType: 'receipt_105', prefix: 'RE' } as const);
       const seq = await deps.sequenceAllocator.allocateNext(tx, {
         tenantId: input.tenantId,
         documentType: stream.documentType,
@@ -499,6 +542,9 @@ export async function issueEventInvoiceAsPaid(
             vat,
             total,
             vatInclusive: true,
+            // 088 US5 (T041 / SC-007) — event as-paid receipt: explicitly 'event'
+            // so the tenant WHT note (membership-only) is never drawn here.
+            invoiceSubject: 'event',
           },
           blobKey,
         },
@@ -640,6 +686,33 @@ export async function issueEventInvoiceAsPaid(
           actorUserId: input.actorUserId,
           summary: paidSummary,
           extraPayload: paidPayloadBase,
+        });
+      }
+
+      // 088 US1 (F.6) — `tax_receipt_issued`: the §86/4 tax-receipt
+      // FIRST-ISSUANCE signal (SC-001), fired IN-TX at the RC-allocation moment
+      // for a TIN buyer in the new flow (identical to record-payment; FR-005 /
+      // FR-006). The no-TIN §105 arm mints no §86/4 → no event. Carries
+      // member_id for a matched member (F3 timeline, FR-029) else
+      // event_registration_id. 10y retention via the audit adapter.
+      if (taxAtPayment && pdfKind === 'receipt_combined') {
+        const taxReceiptPayload: Record<string, unknown> = {
+          invoice_id: invoiceId,
+          receipt_document_number_raw: docNum.raw,
+          fiscal_year: fy,
+          payment_date: input.paymentDate,
+          invoice_subject: 'event',
+          ...(memberId !== null
+            ? { member_id: memberId }
+            : { event_registration_id: draft.eventRegistrationId }),
+        };
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'tax_receipt_issued',
+          actorUserId: input.actorUserId,
+          summary: `Tax receipt ${docNum.raw} issued`,
+          payload: taxReceiptPayload,
         });
       }
 

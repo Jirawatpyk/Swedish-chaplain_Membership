@@ -27,7 +27,11 @@ import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
-import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
+import {
+  billFirstDocumentNumber,
+  listInvoicesPaged,
+  makeListInvoicesDeps,
+} from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
   Card,
@@ -200,7 +204,14 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
           <p className="text-caption text-muted-foreground">{t('empty')}</p>
         ) : (
           <ul className="divide-y">
-            {rows.map((r) => (
+            {rows.map((r) => {
+              // 088 FR-030 — an 088 bill has NULL §87 `documentNumber`; its
+              // number lives in `billDocumentNumberRaw` (unpaid/paid) and, once
+              // paid, the §86/4 RC in `receiptDocumentNumberRaw`. Bill-first so
+              // this widget's "latest invoices" rows never render '—'/UUID.
+              const displayNo =
+                billFirstDocumentNumber(r) ?? r.receiptDocumentNumberRaw;
+              return (
               <li
                 key={r.invoiceId}
                 /* items-start aligns the two stacked columns at their tops
@@ -218,9 +229,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   <Link
                     href={`/portal/invoices/${r.invoiceId}`}
                     className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
-                    aria-label={`${t('actions.viewDetail')} ${r.documentNumber?.raw ?? r.invoiceId}`}
+                    aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
                   >
-                    {r.documentNumber?.raw ?? '—'}
+                    {displayNo ?? '—'}
                   </Link>
                   <div className="flex flex-wrap items-center gap-2">
                     <InvoiceStatusBadge status={r.status} label={tStatus(r.status)} />
@@ -240,7 +251,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   {r.pdf ? (
                     <PortalInvoiceDownloadButton
                       invoiceId={r.invoiceId}
-                      documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                      documentNumber={displayNo ?? r.invoiceId}
                       label={
                         r.status === 'void'
                           ? t('actions.downloadVoided')
@@ -251,7 +262,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                           ? 'actions.downloadVoidedAria'
                           : 'actions.downloadInvoiceAria',
                         {
-                          number: r.documentNumber?.raw ?? r.invoiceId,
+                          number: displayNo ?? r.invoiceId,
                         },
                       )}
                       className={cn(
@@ -262,7 +273,8 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   ) : null}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </CardContent>

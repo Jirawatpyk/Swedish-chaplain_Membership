@@ -148,6 +148,7 @@ function makeIssueDepsWithMocks(
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    taxAtPayment: 'off',
   };
 }
 
@@ -439,6 +440,12 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
       primary_contact_email: 'jane@beta.example',
       member_number: null,
       member_number_display: null,
+      // 088-invoice-tax-flow-redesign (T010) — the read-boundary zod parse
+      // materialises the buyer §86/4 branch particulars at their fail-closed
+      // defaults for the pinned non-member event buyer.
+      buyer_is_head_office: true,
+      buyer_branch_code: null,
+      buyer_is_vat_registrant: false,
     });
 
     // Audit: non-member → NON-timeline `invoice_issued` (no member_id, has event_registration_id).

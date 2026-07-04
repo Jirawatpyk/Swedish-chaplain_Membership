@@ -38,6 +38,7 @@ import type {
 } from '../ports';
 import type { Payment } from '../../domain/payment';
 import { canTransition } from '../../domain/policies/payment-status-transitions';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
@@ -137,6 +138,15 @@ export interface ConfirmPaymentDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag), threaded so the
+   * webhook payability read forwards the HONEST flag (no magic value). The read
+   * sets `reconciliationPath: true`, so the F4 stranded-funds guard stays dormant
+   * regardless of this flag — the write-side record-payment guard is what enforces
+   * a flag rollback here. Wired from `env.features.f088TaxAtPayment` at
+   * `makeConfirmPaymentDeps` / `makeProcessWebhookEventDeps`.
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /**
    * Optional — when supplied alongside `input.processorEventId`,
    * `markProcessed` runs inside this use-case's withTx so the dispatch
@@ -313,10 +323,17 @@ async function confirmPaymentBody(
       return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
-    // Step 2 — invoice payability
+    // Step 2 — invoice payability. Webhook / reconciliation read:
+    // `reconciliationPath: true` keeps F4's new-flow-bill stranded-funds guard
+    // DORMANT — a Stripe-captured payment is never refused at reconciliation just
+    // because the flow flag rolled back (refusing would strand the funds; the
+    // write-side record-payment guard is what enforces the flag). The honest flow
+    // flag is still forwarded (no magic value) but the guard ignores it here.
     const invoiceResult = await deps.invoicingBridge.getInvoiceForPayment({
       tenantId: input.tenantId,
       invoiceId: payment.invoiceId,
+      taxAtPayment: deps.taxAtPayment,
+      reconciliationPath: true,
     });
     if (!invoiceResult.ok) {
       if (invoiceResult.error.code === 'not_found') {
