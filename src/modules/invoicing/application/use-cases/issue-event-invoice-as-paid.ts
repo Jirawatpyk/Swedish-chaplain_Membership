@@ -187,11 +187,12 @@ export interface IssueEventInvoiceAsPaidDeps {
   /** PDF template version pinned on THIS issuance (T045 registry). */
   readonly currentTemplateVersion: number;
   /**
-   * 088-invoice-tax-flow-redesign (T019 / T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When `'on'`, a TIN buyer's combined §86/4 receipt is minted from the §87
-   * `RC` receipt stream (mirroring `record-payment`) and a `tax_receipt_issued`
-   * audit event fires; when `'off'`/`'not-forwarded'` the legacy path allocates
-   * the §87 `invoice`-stream number as today. The no-TIN §105 arm is unchanged.
+   * 088-invoice-tax-flow-redesign (T019 / T022) — FEATURE_088_TAX_AT_PAYMENT
+   * (2-state flow flag). When `'on'`, a TIN buyer's combined §86/4 receipt is
+   * minted from the §87 `RC` receipt stream (mirroring `record-payment`) and a
+   * `tax_receipt_issued` audit event fires; when `'off'` the legacy path
+   * allocates the §87 `invoice`-stream number as today. The no-TIN §105 arm is
+   * unchanged.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
   /**

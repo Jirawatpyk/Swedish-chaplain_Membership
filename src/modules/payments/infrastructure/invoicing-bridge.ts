@@ -197,11 +197,13 @@ export const invoicingBridge: InvoicingBridgePort = {
       tenantId: input.tenantId,
       invoiceId: input.invoiceId,
       ...(input.actor ? { actor: input.actor } : {}),
-      // 088 SEC-MED — forward the caller's flag verbatim. The initiate side
-      // sends `'on'`/`'off'`; the webhook confirm path sends `'not-forwarded'`,
-      // and F4's guard (=== 'off') never trips on it, so the webhook path stays
-      // dormant.
+      // 088 SEC-MED — forward BOTH axes verbatim into F4's payability read: the
+      // 2-state flow flag AND the reconciliation bit. Initiate → {flag, false};
+      // webhook confirm → {flag, true} (guard dormant). Dropping either forward
+      // would silently re-arm/disarm the stranded-funds guard, so it is locked
+      // by an integration test (bridge-forwards-both-axes).
       taxAtPayment: input.taxAtPayment,
+      reconciliationPath: input.reconciliationPath,
     });
     if (!result.ok) return err(mapF4GetError(result.error));
     // F5R3v3 H-1 (2026-05-16) — bridge may surface its OWN typed err

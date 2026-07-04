@@ -128,7 +128,8 @@ export async function listTaxDocumentRegister(
     ]);
   } catch (e) {
     // Error-audit (whole-feature review) — this catch now guards TWO DB queries
-    // (the register rows + the §86/10 credit-note VAT aggregate); a failure on
+    // (the register rows + the period output-VAT aggregate: RC + RE gross VAT
+    // netted by §86/10 credit-note VAT); a failure on
     // the legally-significant ภ.พ.30 surface MUST be diagnosable (RLS/tenant-GUC
     // misconfig, column/type drift after a migration, Neon transient). Log
     // before degrading to the typed error, matching the sibling use-cases

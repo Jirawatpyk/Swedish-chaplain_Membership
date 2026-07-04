@@ -50,15 +50,23 @@ export interface GetInvoiceForPaymentInput {
     readonly memberId?: string;
   };
   /**
-   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT, threaded by the initiate
-   * (portal/admin self-pay) path as `'on'`/`'off'` so the new-flow-bill
-   * flag-rollback guard below can refuse a stranded-funds capture. Webhook-side
-   * reconciliation reads (confirm-payment) carry `'not-forwarded'` — the guard
-   * trips only on an explicit `=== 'off'`, so those reads stay DORMANT (mirrors
-   * the record-payment webhook guard's flag semantics). Wired from
-   * `env.features.f088TaxAtPayment` at the initiate deps factory.
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag), threaded on
+   * EVERY read as the honest `env.features.f088TaxAtPayment` value. The
+   * new-flow-bill flag-rollback guard below trips only when the flow is `'off'`
+   * AND this is NOT a reconciliation read (see `reconciliationPath`).
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
+  /**
+   * 088 SEC-MED — the ORTHOGONAL reconciliation axis. `true` on the webhook /
+   * confirm-payment reconciliation read: the money was already captured by the
+   * processor, so the stranded-funds guard MUST stay DORMANT regardless of the
+   * flow flag (refusing here would strand funds, not prevent a capture). `false`
+   * on the initiate (portal/admin self-pay) read, where the guard fires BEFORE a
+   * PaymentIntent is created so a new-flow bill minted under the flag cannot be
+   * paid after a flag rollback. Explicit boolean (not a magic flag value) so the
+   * dormancy is named, not encoded in the flow union.
+   */
+  readonly reconciliationPath: boolean;
 }
 
 /**
@@ -188,13 +196,16 @@ export async function getInvoiceForPayment(
   // to OFF: the initiate side would create a Stripe PI, Stripe would CAPTURE
   // the money, then the webhook-side `recordPayment` guard refuses the flip
   // (same code, permanent, no auto-refund) — captured-but-unappliable funds
-  // (S0). Reject at the payability read so the PI is NEVER created. `=== 'off'`
-  // (NOT `!== 'on'`) mirrors the webhook guard so ONLY the explicit prod
-  // flag-OFF initiate path trips it — webhook-side reconciliation reads
-  // (confirm-payment) carry `'not-forwarded'` (never `'off'`) and stay DORMANT.
-  // Status-scoped to 'issued' so paid/credited rows keep their read/refund
-  // behaviour. See the master rationale + runbook at the record-payment guard.
+  // (S0). Reject at the payability read so the PI is NEVER created. Two axes gate
+  // it: (1) `reconciliationPath !== true` — a webhook/confirm-payment read is EXEMPT
+  // (the money is already captured; refusing would strand it, and the write-side
+  // record-payment guard still enforces the flag); (2) `taxAtPayment === 'off'` —
+  // only the explicit prod flag-OFF flow trips it (flag-ON is the intended state
+  // for a new-flow bill). Status-scoped to 'issued' so paid/credited rows keep
+  // their read/refund behaviour. See the master rationale + runbook at the
+  // record-payment guard.
   if (
+    input.reconciliationPath !== true &&
     input.taxAtPayment === 'off' &&
     invoice.documentNumber === null &&
     invoice.billDocumentNumberRaw !== null &&

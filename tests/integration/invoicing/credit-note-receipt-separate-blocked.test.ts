@@ -120,7 +120,7 @@ function makeAsPaidFixtureDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps 
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

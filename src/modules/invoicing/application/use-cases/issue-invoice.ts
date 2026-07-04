@@ -245,11 +245,10 @@ export interface IssueInvoiceDeps {
    */
   readonly currentTemplateVersion: number;
   /**
-   * 088-invoice-tax-flow-redesign (T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When `'on'`, issue allocates ONLY the non-§87 `bill` number (SC) and
-   * renders the ใบแจ้งหนี้; the §86/4 §87 number is minted later at payment.
-   * When `'off'`/`'not-forwarded'` the legacy §87-at-issue §86/4 flow runs
-   * unchanged (issue is a staff path, so `'not-forwarded'` behaves as `'off'`).
+   * 088-invoice-tax-flow-redesign (T022) — FEATURE_088_TAX_AT_PAYMENT
+   * (2-state flow flag). When `'on'`, issue allocates ONLY the non-§87 `bill`
+   * number (SC) and renders the ใบแจ้งหนี้; the §86/4 §87 number is minted later
+   * at payment. When `'off'` the legacy §87-at-issue §86/4 flow runs unchanged.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
 }
@@ -339,8 +338,8 @@ export async function issueInvoice(
     //     0%-VAT §86/4 document (burning a §87 number). Refuse it here,
     //     PRE-SEQUENCE (plain `return err`, before allocateNext — no number
     //     consumed; cert fields never pinned), so the flag is the real gate,
-    //     not just the UI. `!== 'on'` (not `=== 'off'`) so BOTH `'off'` AND
-    //     `'not-forwarded'` (legacy direct callers) gate the zero rate off.
+    //     not just the UI. `!== 'on'` so the legacy `'off'` flow gates the zero
+    //     rate off (`!== 'on'` ≡ `=== 'off'` on the 2-state flow flag).
     if (deps.taxAtPayment !== 'on' && vatTreatment !== 'standard') {
       return err({ code: 'zero_rate_requires_flag' });
     }

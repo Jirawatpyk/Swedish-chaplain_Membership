@@ -148,7 +148,7 @@ function makeIssueDepsWithMocks(
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

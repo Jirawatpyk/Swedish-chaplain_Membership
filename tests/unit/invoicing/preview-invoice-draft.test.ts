@@ -86,7 +86,7 @@ describe('previewInvoiceDraft — 088 billMode threading (FR-001 / FR-014)', () 
     expect(cap.input?.billMode).toBe(true);
   });
 
-  it("billMode:false when the flag is 'off' or 'not-forwarded' (legacy §86/4 Tax-Invoice preview)", async () => {
+  it("billMode:false when the flag is 'off' (legacy §86/4 Tax-Invoice preview)", async () => {
     const capOff: { input?: PdfRenderInput } = {};
     await previewInvoiceDraft(makeDeps('off', capOff), {
       tenantId: 't',
@@ -95,7 +95,7 @@ describe('previewInvoiceDraft — 088 billMode threading (FR-001 / FR-014)', () 
     expect(capOff.input?.billMode).toBe(false);
 
     const capUndef: { input?: PdfRenderInput } = {};
-    await previewInvoiceDraft(makeDeps('not-forwarded', capUndef), {
+    await previewInvoiceDraft(makeDeps('off', capUndef), {
       tenantId: 't',
       invoiceId: INVOICE_ID,
     });

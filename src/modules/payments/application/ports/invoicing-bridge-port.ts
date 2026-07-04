@@ -107,14 +107,20 @@ export interface InvoicingBridgePort {
       readonly memberId?: string;
     };
     /**
-     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT. The INITIATE (self-pay) path
-     * passes `'on'`/`'off'` so F4's new-flow-bill flag-rollback guard can refuse
-     * a stranded-funds capture. The webhook confirm path passes `'not-forwarded'`,
-     * and F4's guard trips only on an explicit `=== 'off'`, so the webhook path
-     * stays dormant. Wired from `env.features.f088TaxAtPayment` at
-     * `makeInitiatePaymentDeps`.
+     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag), forwarded
+     * verbatim into F4's payability read. Wired from `env.features.f088TaxAtPayment`
+     * at `makeInitiatePaymentDeps` (initiate) / `makeConfirmPaymentDeps` +
+     * `makeProcessWebhookEventDeps` (webhook confirm).
      */
     readonly taxAtPayment: TaxAtPaymentFlag;
+    /**
+     * 088 SEC-MED — the orthogonal reconciliation axis. `false` on the INITIATE
+     * (self-pay) read → F4's new-flow-bill flag-rollback guard is armed (refuse a
+     * capture the webhook-side guard would then reject). `true` on the webhook
+     * confirm read → the guard stays DORMANT (money already captured; the
+     * write-side record-payment guard still enforces the flag). Forwarded verbatim.
+     */
+    readonly reconciliationPath: boolean;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**

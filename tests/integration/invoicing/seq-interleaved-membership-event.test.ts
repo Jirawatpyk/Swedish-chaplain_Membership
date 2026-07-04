@@ -163,7 +163,7 @@ function makeIssueDeps(
     clock: { nowIso: () => '2026-07-01T09:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

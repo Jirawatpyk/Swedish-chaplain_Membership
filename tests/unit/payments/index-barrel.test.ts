@@ -126,6 +126,9 @@ describe('payments barrel — public API contract', () => {
         'processorEventsRepo',
         'processorGateway',
         'refundsRepo',
+        // 088 SEC-MED (T2 structural decouple) — the honest flow flag threaded so
+        // the inner confirm read carries it (reconciliationPath:true → dormant).
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );
@@ -146,6 +149,9 @@ describe('payments barrel — public API contract', () => {
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
+        // 088 SEC-MED (T2 structural decouple) — honest flow flag threaded into
+        // the confirm read (reconciliationPath:true → dormant); no magic value.
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );

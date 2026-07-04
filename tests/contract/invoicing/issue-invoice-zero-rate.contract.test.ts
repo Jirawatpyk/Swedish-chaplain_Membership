@@ -497,7 +497,7 @@ describe('issue-invoice zero-rate server flag-gate (088 SEC-MED)', () => {
 
   it('flag ON + zero_rated + cert → still succeeds (happy path unaffected by the gate)', async () => {
     const cap = emptyCap();
-    // makeDeps hardcodes taxAtPayment: true.
+    // makeDeps hardcodes taxAtPayment: 'on'.
     const r = await issueInvoice(makeDeps(eventDraft(1_200_000n), cap), {
       ...baseInput,
       vatTreatment: 'zero_rated_80_1_5',

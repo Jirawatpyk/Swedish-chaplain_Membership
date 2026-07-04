@@ -316,7 +316,7 @@ function makeAsPaidDeps(
     // The REAL constant — this is the point of §B: the bumped version
     // flows from the registry into the row pin + the rendered bytes.
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

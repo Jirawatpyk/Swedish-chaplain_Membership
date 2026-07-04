@@ -204,7 +204,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     receiptPdfRenderEnqueue: { enqueue: vi.fn(async () => {}) },
     // Default: flag not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined`. Tests that exercise the RC path override with 'on'.
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

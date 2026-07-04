@@ -272,7 +272,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     // Default: flag not carried (legacy §86/4-at-issue), exact-equivalent of the
     // pre-refactor `undefined`. Flag-specific behaviour is covered by the
     // issue-invoice contract tests; these unit tests exercise the legacy path.
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
     ...overrides,
   };
 }

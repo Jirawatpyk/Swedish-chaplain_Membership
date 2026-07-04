@@ -200,15 +200,19 @@ export interface RecordPaymentDeps {
   readonly memberIdentity: MemberIdentityPort;
   readonly currentTemplateVersion: number;
   /**
-   * 088-invoice-tax-flow-redesign (T018 / T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When `'on'`, the §86/4 §87 `RC` receipt number is minted HERE at payment
-   * (the bill carried only a non-§87 `SC` number), the receipt is dated at the
-   * payment date, and a `tax_receipt_issued` audit event fires. When
-   * `'off'`/`'not-forwarded'` the legacy flow runs: the receipt reuses the
-   * issue-time §87 invoice number (the retired combined mode) — no second §87
-   * number is minted (the `combinedMode` settings branch is retired, F.5 / T008).
-   * `'not-forwarded'` (webhook / confirm-payment reconciliation) never trips the
-   * new_flow_bill_requires_flag_on stranded-funds guard — that keys on `'off'`.
+   * 088-invoice-tax-flow-redesign (T018 / T022) — FEATURE_088_TAX_AT_PAYMENT
+   * (2-state flow flag). When `'on'`, the §86/4 §87 `RC` receipt number is minted
+   * HERE at payment (the bill carried only a non-§87 `SC` number), the receipt is
+   * dated at the payment date, and a `tax_receipt_issued` audit event fires. When
+   * `'off'` the legacy flow runs: the receipt reuses the issue-time §87 invoice
+   * number (the retired combined mode) — no second §87 number is minted (the
+   * `combinedMode` settings branch is retired, F.5 / T008). record-payment is
+   * ALWAYS built by `makeRecordPaymentDeps` (env → `'on'`/`'off'`) on BOTH the
+   * admin and the webhook (markPaidFromProcessor) apply paths — so the stranded-
+   * funds WRITE guard below (`=== 'off'`) DOES fire on the webhook apply after a
+   * mid-flight flag rollback. This is deliberate: the reconciliation-exemption
+   * lives on the get-invoice-for-payment READ (its `reconciliationPath` axis),
+   * NOT on this write — the write must keep enforcing the flag.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
   /**
@@ -476,11 +480,15 @@ export async function recordPayment(
     // `tax_receipt_issued` (an untaxed paid row + a blank receipt). Refuse until
     // the flag is restored ON (the correct action — the bill was minted for the
     // new flow) or the row is voided + re-issued under the legacy flow.
-    // Pre-sequence (`return err`, no number burned). `=== 'off'` (NOT `!== 'on'`)
-    // so ONLY the explicit prod flag-OFF path trips it — the webhook / confirm-
-    // payment reconciliation path carries `'not-forwarded'` (never `'off'`) and
-    // stays DORMANT here, and legacy callers pass `'off'` only against a legacy-
-    // shaped row (documentNumber non-null) that never reaches a new-flow bill.
+    // Pre-sequence (`return err`, no number burned). record-payment is always
+    // built by `makeRecordPaymentDeps` → the 2-state flow flag `'on'`/`'off'`
+    // (there is NO reconciliation axis on this WRITE — that exemption lives on the
+    // get-invoice-for-payment READ). On the webhook apply path
+    // (markPaidFromProcessor) after a mid-flight flag rollback to OFF this guard
+    // DOES fire and refuses the apply; the initiate-side read is the primary gate
+    // that blocks PI creation up front.
+    // Legacy callers pass `'off'` only against a legacy-shaped row (documentNumber
+    // non-null) that never reaches a new-flow bill.
     if (
       deps.taxAtPayment === 'off' &&
       loaded.billDocumentNumberRaw !== null &&

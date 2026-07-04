@@ -185,13 +185,14 @@ export interface InitiatePaymentDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
-   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT. Forwarded to the F4 payability
-   * read so a NEW-FLOW bill issued while the flag was ON cannot be self-paid
-   * after the flag rolls back to OFF (Stripe would capture funds the
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag). Forwarded to
+   * the F4 payability read WITH `reconciliationPath: false` (initiate IS the
+   * self-pay path) so a NEW-FLOW bill issued while the flag was ON cannot be
+   * self-paid after the flag rolls back to OFF (Stripe would capture funds the
    * webhook-side guard then refuses to apply — S0 stranded funds). Wired from
-   * `env.features.f088TaxAtPayment` (→ `'on'`/`'off'`) at `makeInitiatePaymentDeps`.
-   * Non-self-pay callers pass `'not-forwarded'` → the F4 guard, keyed on
-   * `=== 'off'`, stays dormant.
+   * `env.features.f088TaxAtPayment` at `makeInitiatePaymentDeps`. The SEPARATE
+   * webhook reconciliation read (`confirm-payment`) forwards the same flag but
+   * with `reconciliationPath: true`, which keeps the F4 guard dormant there.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
   /** Returns a fresh payment id, e.g., `pmt_<ulid>`. Injected for deterministic tests. */
@@ -317,11 +318,13 @@ async function initiatePaymentBody(
       requestId: input.requestId,
       memberId: input.actorMemberId,
     },
-    // 088 SEC-MED — forward the feature flag so F4 can refuse a new-flow bill
-    // that was minted under the flag but is being paid after a flag rollback
-    // (stranded-funds guard). The initiate path sends `'on'`/`'off'`; the
-    // webhook confirm path sends `'not-forwarded'` and stays unaffected.
+    // 088 SEC-MED — forward the flow flag + arm the guard (`reconciliationPath:
+    // false`) so F4 refuses a new-flow bill minted under the flag that is being
+    // self-paid after a flag rollback (stranded-funds guard fires BEFORE the PI
+    // is created). The webhook confirm path sends the same flag with
+    // `reconciliationPath: true`, keeping the guard dormant there.
     taxAtPayment: deps.taxAtPayment,
+    reconciliationPath: false,
   });
   if (!invoiceResult.ok) {
     const e = invoiceResult.error;

@@ -453,7 +453,7 @@ function makeGoldenDeps(
     clock: { nowIso: () => G14_NOW_ISO },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

@@ -468,6 +468,9 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
           invoicingBridge,
           audit: f5AuditAdapter,
           clock: systemClock,
+          // Inert for the confirm READ (reconciliationPath:true → dormant); the
+          // WRITE flag is pinned 'off' by the invoicing-deps mock above.
+          taxAtPayment: 'off',
         },
         {
           tenantId: tenant.ctx.slug,

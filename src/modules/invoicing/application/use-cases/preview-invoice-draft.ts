@@ -53,11 +53,11 @@ export interface PreviewInvoiceDraftDeps {
    */
   readonly audit?: AuditPort;
   /**
-   * 088 (FR-001 / FR-014) — the bill→payment flag. When `'on'`, a membership
-   * draft previews as the non-tax ใบแจ้งหนี้ (billMode), matching what
-   * `issueInvoice` will render; `'off'`/`'not-forwarded'` = the legacy §86/4
-   * Tax-Invoice title. Mirrors `IssueInvoiceDeps.taxAtPayment` so the preview
-   * equals the issued document.
+   * 088 (FR-001 / FR-014) — the bill→payment flow flag (2-state). When `'on'`, a
+   * membership draft previews as the non-tax ใบแจ้งหนี้ (billMode), matching what
+   * `issueInvoice` will render; `'off'` = the legacy §86/4 Tax-Invoice title.
+   * Mirrors `IssueInvoiceDeps.taxAtPayment` so the preview equals the issued
+   * document.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
 }

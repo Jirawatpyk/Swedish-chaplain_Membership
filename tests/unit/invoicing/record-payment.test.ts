@@ -229,7 +229,7 @@ function makeDeps(
     // Default: the flag is not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined` — the stranded-funds guard (keyed on 'off') stays
     // dormant. Individual tests override with 'on'/'off' as needed.
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
     ...overrides,
   };
 }

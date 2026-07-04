@@ -76,7 +76,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -99,7 +99,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(metricsSpy).toHaveBeenCalledTimes(1);
     expect(metricsSpy).toHaveBeenCalledWith('f4_invoice_total_negative');
@@ -117,7 +117,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
     const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
@@ -141,7 +141,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -171,7 +171,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -186,7 +186,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(false);
     if (!result.ok && result.error.code === 'not_payable') {
@@ -206,7 +206,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -223,11 +223,56 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'off', reconciliationPath: true });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
     }
+  });
+});
+
+// LOCK (a) — the bridge MUST forward BOTH orthogonal axes (the 2-state flow flag
+// AND the reconciliation bit) verbatim into F4's getInvoiceForPayment. If a future
+// refactor drops either forward, the F4 stranded-funds guard silently re-arms or
+// disarms (a money-path regression). These tests fail on a dropped forward.
+describe('invoicingBridge.getInvoiceForPayment — LOCK (a): forwards BOTH axes into F4', () => {
+  beforeEach(() => f4Mock.getInvoiceForPayment.mockReset());
+
+  it('initiate read: forwards { taxAtPayment: "on", reconciliationPath: false } verbatim', async () => {
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      ok({ id: invoiceId, status: 'issued', totalSatang: 535_000n, memberId, tenantId }),
+    );
+    const bridge = await loadBridge();
+    await bridge.getInvoiceForPayment({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'on',
+      reconciliationPath: false,
+    });
+    expect(f4Mock.getInvoiceForPayment).toHaveBeenCalledTimes(1);
+    // Bridge calls f4GetInvoiceForPayment(deps, input) — assert the INPUT (2nd arg).
+    const [, f4Input] = f4Mock.getInvoiceForPayment.mock.calls[0]!;
+    expect(f4Input).toMatchObject({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'on',
+      reconciliationPath: false,
+    });
+  });
+
+  it('webhook reconciliation read: forwards { taxAtPayment: "off", reconciliationPath: true } verbatim', async () => {
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      ok({ id: invoiceId, status: 'issued', totalSatang: 535_000n, memberId, tenantId }),
+    );
+    const bridge = await loadBridge();
+    await bridge.getInvoiceForPayment({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'off',
+      reconciliationPath: true,
+    });
+    const [, f4Input] = f4Mock.getInvoiceForPayment.mock.calls[0]!;
+    expect(f4Input).toMatchObject({ taxAtPayment: 'off', reconciliationPath: true });
   });
 });

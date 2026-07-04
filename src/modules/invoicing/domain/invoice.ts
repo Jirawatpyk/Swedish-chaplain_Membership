@@ -415,6 +415,10 @@ export function billFirstDocumentNumber(inv: {
  *
  * Pure + framework-free (Domain); accepts the narrow inline shape so
  * presentation view-models carrying only the two raw fields can call it too.
+ * Takes a plain `boolean` (NOT `TaxAtPaymentFlag`): the display layer only knows
+ * "is the 088 flow on?" and never deals with the reconciliation axis (that lives
+ * on the get-invoice-for-payment READ, not on display). Keeping this a bare
+ * boolean avoids importing the flow-flag union into presentation view-models.
  */
 export function resolveTaxDocumentKind(
   inv: {

@@ -160,6 +160,10 @@ export async function makeProcessWebhookEventDeps(
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // 088 SEC-MED — thread the honest flow flag into the inner confirm read
+    // (which sets reconciliationPath: true → guard dormant). Mirrors
+    // makeInitiatePaymentDeps; no magic value.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
@@ -182,6 +186,9 @@ export async function makeConfirmPaymentDeps(
     invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
+    // 088 SEC-MED — thread the honest flow flag into the confirm read (which
+    // sets reconciliationPath: true → guard dormant). No magic value.
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),

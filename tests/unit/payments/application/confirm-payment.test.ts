@@ -102,6 +102,10 @@ function makeDeps(): ConfirmPaymentDeps {
     invoicingBridge: invoicingBridge as unknown as ConfirmPaymentDeps['invoicingBridge'],
     audit: audit as unknown as ConfirmPaymentDeps['audit'],
     clock,
+    // Inert in this unit test: the bridge is mocked, so the flow flag only
+    // reaches the (stubbed) payability read. The webhook read sets
+    // reconciliationPath:true, so the guard would be dormant regardless.
+    taxAtPayment: 'off' as const,
   };
 }
 

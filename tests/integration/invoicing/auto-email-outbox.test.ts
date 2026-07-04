@@ -259,7 +259,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 
@@ -275,7 +275,7 @@ function makePaymentDeps(tenant: TestTenant): RecordPaymentDeps {
     outbox: resendEmailOutboxAdapter,
     memberIdentity: makeIssueDeps(tenant).memberIdentity,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

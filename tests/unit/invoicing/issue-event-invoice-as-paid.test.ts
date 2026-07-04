@@ -355,7 +355,7 @@ function makeDeps(
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy path), exact-equivalent of the
     // pre-refactor `undefined`. Flag-on behaviour is covered by event-parity.
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
     ...overrides,
   };
 }

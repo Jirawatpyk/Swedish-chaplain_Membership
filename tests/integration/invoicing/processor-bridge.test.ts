@@ -296,7 +296,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId,
-        taxAtPayment: 'not-forwarded',
+        taxAtPayment: 'off', reconciliationPath: true,
       });
     });
 
@@ -315,7 +315,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId: fakeId,
-        taxAtPayment: 'not-forwarded',
+        taxAtPayment: 'off', reconciliationPath: true,
       });
     });
     expect(result.ok).toBe(false);

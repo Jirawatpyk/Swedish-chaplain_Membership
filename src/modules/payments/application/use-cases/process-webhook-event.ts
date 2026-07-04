@@ -48,6 +48,7 @@ import { confirmPayment } from './confirm-payment';
 import { failPayment } from './fail-payment';
 import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -227,6 +228,14 @@ export interface ProcessWebhookEventDeps {
   readonly invoicingBridge: InvoicingBridgePort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT (2-state flow flag). Forwarded into
+   * the inner `confirmPayment` deps for the `payment_intent.succeeded` branch, so
+   * the webhook payability read carries the honest flag (the read sets
+   * `reconciliationPath: true`, keeping the F4 stranded-funds guard dormant).
+   * Wired from `env.features.f088TaxAtPayment` at `makeProcessWebhookEventDeps`.
+   */
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /**
    * Optional structured logger. Currently the dispatcher emits via the
    * module-level `paymentsLogger` (see `route.ts`) and OTel spans; this
@@ -437,6 +446,9 @@ async function processWebhookEventBody(
           invoicingBridge: deps.invoicingBridge,
           audit: deps.audit,
           clock: deps.clock,
+          // 088 SEC-MED — forward the honest flow flag into the webhook
+          // confirm read (which sets reconciliationPath: true → guard dormant).
+          taxAtPayment: deps.taxAtPayment,
           // Audit 2026-04-25 #4: pass processorEventsRepo so the
           // sub-use-case can fold markProcessed into its own withTx.
           processorEventsRepo: deps.processorEventsRepo,

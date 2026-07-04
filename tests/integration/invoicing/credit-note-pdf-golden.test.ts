@@ -359,7 +359,7 @@ function makeAsPaidDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps {
     clock: { nowIso: () => `${J2_PAYMENT_DATE}T10:00:00Z` },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 

@@ -161,7 +161,7 @@ function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
-    taxAtPayment: 'not-forwarded',
+    taxAtPayment: 'off',
   };
 }
 
@@ -704,7 +704,7 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
 
     const result = await getInvoiceForPayment(
       makeGetInvoiceDeps(tenant.ctx.slug),
-      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId, taxAtPayment: 'not-forwarded' },
+      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId, taxAtPayment: 'off', reconciliationPath: true },
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected legacy_no_tin_event_not_payable, got ok');
