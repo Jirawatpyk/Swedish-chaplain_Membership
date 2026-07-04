@@ -174,6 +174,10 @@ function makeDeps(
     audit: audit as unknown as InitiatePaymentDeps['audit'],
     clock,
     generatePaymentId,
+    // Default: flag not carried (exact-equivalent of the pre-refactor `undefined`
+    // → the F4 stranded-funds guard, keyed on 'off', stays dormant). Flag-specific
+    // forwarding is covered by the get-invoice-for-payment guard tests.
+    taxAtPayment: 'not-forwarded',
     ...overrides,
   };
 }

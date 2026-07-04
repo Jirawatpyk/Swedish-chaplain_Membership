@@ -98,7 +98,7 @@ vi.mock('@/modules/invoicing/application/invoicing-deps', async (importOriginal)
       onPaidCallbacks?: Parameters<typeof actual.makeRecordPaymentDeps>[2],
     ) => ({
       ...actual.makeRecordPaymentDeps(tenantId, externalTx, onPaidCallbacks),
-      taxAtPayment: false,
+      taxAtPayment: 'off',
     })) as typeof actual.makeRecordPaymentDeps,
   };
 });
@@ -296,6 +296,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId,
+        taxAtPayment: 'not-forwarded',
       });
     });
 
@@ -314,6 +315,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
       return getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
         tenantId: tenant.ctx.slug,
         invoiceId: fakeId,
+        taxAtPayment: 'not-forwarded',
       });
     });
     expect(result.ok).toBe(false);

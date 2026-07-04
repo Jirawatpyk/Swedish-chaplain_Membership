@@ -88,6 +88,7 @@ import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { addDays, bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -187,12 +188,12 @@ export interface IssueEventInvoiceAsPaidDeps {
   readonly currentTemplateVersion: number;
   /**
    * 088-invoice-tax-flow-redesign (T019 / T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When true, a TIN buyer's combined §86/4 receipt is minted from the §87
+   * When `'on'`, a TIN buyer's combined §86/4 receipt is minted from the §87
    * `RC` receipt stream (mirroring `record-payment`) and a `tax_receipt_issued`
-   * audit event fires; when false/undefined the legacy path allocates the §87
-   * `invoice`-stream number as today. The no-TIN §105 arm is unchanged.
+   * audit event fires; when `'off'`/`'not-forwarded'` the legacy path allocates
+   * the §87 `invoice`-stream number as today. The no-TIN §105 arm is unchanged.
    */
-  readonly taxAtPayment?: boolean;
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /**
    * F8 cross-module on-paid hooks — SAME contract as
    * `RecordPaymentDeps.onPaidCallbacks` (fired in registration order inside
@@ -453,7 +454,7 @@ export async function issueEventInvoiceAsPaid(
       // shared §87 `invoice` stream as before. The no-TIN §105 arm always uses
       // its own separate `receipt_105`/`RE` register (US7/T050), independent of
       // both the `taxAtPayment` flag and the tenant's receipt prefix.
-      const taxAtPayment = deps.taxAtPayment === true;
+      const taxAtPayment = deps.taxAtPayment === 'on';
       const stream =
         pdfKind === 'receipt_combined'
           ? taxAtPayment

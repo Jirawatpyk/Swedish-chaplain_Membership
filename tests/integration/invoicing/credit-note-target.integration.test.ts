@@ -116,7 +116,7 @@ function makeIssueDeps(
     // false → legacy §87 ใบกำกับภาษี at issue; true → NON-tax ใบแจ้งหนี้ bill
     // (documentNumber NULL + billDocumentNumberRaw set). This keeps the legacy
     // case deterministic regardless of the env flag.
-    taxAtPayment: opts.taxAtPayment === true,
+    taxAtPayment: opts.taxAtPayment === true ? 'on' : 'off',
   };
 }
 
@@ -153,7 +153,7 @@ function makeRecordPaymentDepsForPay(
     // (receiptDocumentNumberRaw) dated at the payment date. Forcing it here keeps
     // the legacy case from tripping the FR-017 `legacy_invoice_needs_reissue`
     // guard when the ambient flag is ON.
-    taxAtPayment: opts.taxAtPayment === true,
+    taxAtPayment: opts.taxAtPayment === true ? 'on' : 'off',
   };
 }
 

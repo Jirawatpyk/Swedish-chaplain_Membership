@@ -30,6 +30,7 @@ import {
   type Invoice,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
@@ -161,7 +162,7 @@ interface Captured {
   allocateCalls: Array<{ documentType: string; fiscalYear: number }>;
 }
 
-function makeDeps(taxAtPayment: boolean, cap: Captured): IssueInvoiceDeps {
+function makeDeps(taxAtPayment: TaxAtPaymentFlag, cap: Captured): IssueInvoiceDeps {
   const draft = membershipDraft();
   return {
     invoiceRepo: {
@@ -270,7 +271,7 @@ describe('issue-invoice contract (088 US1) — bill (ใบแจ้งหนี
 
   it('flag ON — allocates the `bill` stream (SC), NOT the §87 `invoice` stream', async () => {
     const cap = emptyCap();
-    const r = await issueInvoice(makeDeps(true, cap), input);
+    const r = await issueInvoice(makeDeps('on', cap), input);
     expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
     expect(cap.allocateCalls).toHaveLength(1);
     expect(cap.allocateCalls[0]!.documentType).toBe('bill');
@@ -279,7 +280,7 @@ describe('issue-invoice contract (088 US1) — bill (ใบแจ้งหนี
 
   it('flag ON — renders the ใบแจ้งหนี้ (billMode, kind=invoice)', async () => {
     const cap = emptyCap();
-    await issueInvoice(makeDeps(true, cap), input);
+    await issueInvoice(makeDeps('on', cap), input);
     expect(cap.renderInputs).toHaveLength(1);
     expect(cap.renderInputs[0]!.kind).toBe('invoice');
     expect(cap.renderInputs[0]!.billMode).toBe(true);
@@ -288,7 +289,7 @@ describe('issue-invoice contract (088 US1) — bill (ใบแจ้งหนี
 
   it('flag ON — bill number lands in bill_document_number_raw; §87 seq/doc NULL', async () => {
     const cap = emptyCap();
-    const r = await issueInvoice(makeDeps(true, cap), input);
+    const r = await issueInvoice(makeDeps('on', cap), input);
     expect(r.ok).toBe(true);
     const applied = cap.applyIssueInputs[0]!;
     expect(applied.billDocumentNumberRaw).toBe('SC-2026-000042');
@@ -305,7 +306,7 @@ describe('issue-invoice contract (088 US1) — bill (ใบแจ้งหนี
 
   it('flag ON — invoice_issued audit records the bill number + no §87 consumed', async () => {
     const cap = emptyCap();
-    await issueInvoice(makeDeps(true, cap), input);
+    await issueInvoice(makeDeps('on', cap), input);
     const issued = cap.auditEvents.find((e) => e.eventType === 'invoice_issued');
     expect(issued).toBeDefined();
     const p = issued!.payload as Record<string, unknown>;
@@ -317,7 +318,7 @@ describe('issue-invoice contract (088 US1) — bill (ใบแจ้งหนี
 
   it('flag OFF — legacy §86/4-at-issue: §87 `invoice` stream, bill number NULL', async () => {
     const cap = emptyCap();
-    const r = await issueInvoice(makeDeps(false, cap), input);
+    const r = await issueInvoice(makeDeps('off', cap), input);
     expect(r.ok).toBe(true);
     expect(cap.allocateCalls[0]!.documentType).toBe('invoice');
     expect(cap.renderInputs[0]!.billMode).toBe(false);

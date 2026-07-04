@@ -278,7 +278,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-03-15T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 8,
-    taxAtPayment: true,
+    taxAtPayment: 'on',
   };
 }
 
@@ -465,7 +465,7 @@ describe('issue-invoice zero-rate server flag-gate (088 SEC-MED)', () => {
   it('flag OFF + zero_rated → zero_rate_requires_flag (no invoice issued, no number burned)', async () => {
     const cap = emptyCap();
     const r = await issueInvoice(
-      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: false },
+      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: 'off' },
       {
         ...baseInput,
         vatTreatment: 'zero_rated_80_1_5',
@@ -484,7 +484,7 @@ describe('issue-invoice zero-rate server flag-gate (088 SEC-MED)', () => {
   it('flag OFF + standard treatment → unaffected (issues normally)', async () => {
     const cap = emptyCap();
     const r = await issueInvoice(
-      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: false },
+      { ...makeDeps(eventDraft(1_200_000n), cap), taxAtPayment: 'off' },
       {
         ...baseInput,
         // vatTreatment omitted → resolves to 'standard'.

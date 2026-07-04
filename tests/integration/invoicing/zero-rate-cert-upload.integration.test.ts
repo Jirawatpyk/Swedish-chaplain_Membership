@@ -49,7 +49,7 @@ function issueDeps(slug: string): IssueInvoiceDeps {
   return {
     ...makeIssueInvoiceDeps(slug),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
     pdfRender: {
       render: vi.fn(async () => ({
         bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),

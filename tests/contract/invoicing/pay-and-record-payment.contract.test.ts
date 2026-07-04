@@ -30,6 +30,7 @@ import {
   type Invoice,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
@@ -163,7 +164,7 @@ interface Cap {
   allocateCalls: Array<{ documentType: string; fiscalYear: number }>;
 }
 
-function makeDeps(taxAtPayment: boolean, legacy: boolean, cap: Cap): RecordPaymentDeps {
+function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): RecordPaymentDeps {
   const loaded = issuedMembership(legacy);
   return {
     invoiceRepo: {
@@ -249,7 +250,7 @@ const input = {
 describe('record-payment contract (088 US1) — §86/4 RC receipt at payment', () => {
   it('flag ON — mints the §87 RC number from the `receipt` stream (payment-date FY)', async () => {
     const cap = emptyCap();
-    const r = await recordPayment(makeDeps(true, false, cap), input);
+    const r = await recordPayment(makeDeps('on', false, cap), input);
     expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
     expect(cap.allocateCalls).toHaveLength(1);
     expect(cap.allocateCalls[0]!.documentType).toBe('receipt');
@@ -258,7 +259,7 @@ describe('record-payment contract (088 US1) — §86/4 RC receipt at payment', (
 
   it('flag ON — receipt renders receipt_combined dated at the PAYMENT date (D7)', async () => {
     const cap = emptyCap();
-    await recordPayment(makeDeps(true, false, cap), input);
+    await recordPayment(makeDeps('on', false, cap), input);
     expect(cap.renderInputs).toHaveLength(1);
     expect(cap.renderInputs[0]!.kind).toBe('receipt_combined');
     expect(cap.renderInputs[0]!.issueDate).toBe('2026-05-20');
@@ -267,7 +268,7 @@ describe('record-payment contract (088 US1) — §86/4 RC receipt at payment', (
 
   it('flag ON — persists receipt_document_number_raw = RC on the row', async () => {
     const cap = emptyCap();
-    await recordPayment(makeDeps(true, false, cap), input);
+    await recordPayment(makeDeps('on', false, cap), input);
     const applied = cap.applyPaymentInputs[0]!;
     expect((applied.receiptPdf as { receiptDocumentNumberRaw: string }).receiptDocumentNumberRaw).toBe(
       'RC-2026-000007',
@@ -276,7 +277,7 @@ describe('record-payment contract (088 US1) — §86/4 RC receipt at payment', (
 
   it('flag ON — emits `tax_receipt_issued` (SC-001) in-tx with the RC number + member_id, distinct from invoice_paid', async () => {
     const cap = emptyCap();
-    await recordPayment(makeDeps(true, false, cap), input);
+    await recordPayment(makeDeps('on', false, cap), input);
     const taxReceipt = cap.auditEvents.find((e) => e.eventType === 'tax_receipt_issued');
     const paid = cap.auditEvents.find((e) => e.eventType === 'invoice_paid');
     expect(paid).toBeDefined();
@@ -289,7 +290,7 @@ describe('record-payment contract (088 US1) — §86/4 RC receipt at payment', (
 
   it('flag OFF — legacy: reuses the §87 invoice number, mints NO second §87, fires NO tax_receipt_issued', async () => {
     const cap = emptyCap();
-    const r = await recordPayment(makeDeps(false, true, cap), input);
+    const r = await recordPayment(makeDeps('off', true, cap), input);
     expect(r.ok).toBe(true);
     expect(cap.allocateCalls).toHaveLength(0);
     expect(cap.auditEvents.find((e) => e.eventType === 'tax_receipt_issued')).toBeUndefined();

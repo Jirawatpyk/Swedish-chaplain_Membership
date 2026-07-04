@@ -87,7 +87,7 @@ function issueDepsFlagOn(slug: string, captured?: PdfRenderInput[]): IssueInvoic
     ...makeIssueInvoiceDeps(slug),
     ...mockPdfBlob(captured),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
   };
 }
 
@@ -96,7 +96,7 @@ function recordDepsFlagOn(slug: string, captured?: PdfRenderInput[]): RecordPaym
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(captured),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
     // Force the SYNCHRONOUS receipt render for a deterministic assertion (this
     // dev env has FEATURE_F5_ASYNC_RECEIPT_PDF on). The §87 RC allocation +
     // `tax_receipt_issued` fire in-tx on BOTH paths — only the render timing

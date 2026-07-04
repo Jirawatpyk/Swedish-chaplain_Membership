@@ -95,6 +95,7 @@ import {
   buyerHasTin,
   inferEventDocumentKind,
 } from '@/modules/invoicing/domain/document-kind';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { bangkokLocalDate, addDays, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -245,11 +246,12 @@ export interface IssueInvoiceDeps {
   readonly currentTemplateVersion: number;
   /**
    * 088-invoice-tax-flow-redesign (T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When true, issue allocates ONLY the non-§87 `bill` number (SC) and
+   * When `'on'`, issue allocates ONLY the non-§87 `bill` number (SC) and
    * renders the ใบแจ้งหนี้; the §86/4 §87 number is minted later at payment.
-   * When false/undefined the legacy §87-at-issue §86/4 flow runs unchanged.
+   * When `'off'`/`'not-forwarded'` the legacy §87-at-issue §86/4 flow runs
+   * unchanged (issue is a staff path, so `'not-forwarded'` behaves as `'off'`).
    */
-  readonly taxAtPayment?: boolean;
+  readonly taxAtPayment: TaxAtPaymentFlag;
 }
 
 export async function issueInvoice(
@@ -337,9 +339,9 @@ export async function issueInvoice(
     //     0%-VAT §86/4 document (burning a §87 number). Refuse it here,
     //     PRE-SEQUENCE (plain `return err`, before allocateNext — no number
     //     consumed; cert fields never pinned), so the flag is the real gate,
-    //     not just the UI. `!== true` (not `=== false`) so undefined/omitted
-    //     flag (legacy direct callers) is also treated as OFF.
-    if (deps.taxAtPayment !== true && vatTreatment !== 'standard') {
+    //     not just the UI. `!== 'on'` (not `=== 'off'`) so BOTH `'off'` AND
+    //     `'not-forwarded'` (legacy direct callers) gate the zero rate off.
+    if (deps.taxAtPayment !== 'on' && vatTreatment !== 'standard') {
       return err({ code: 'zero_rate_requires_flag' });
     }
     if (
@@ -521,7 +523,7 @@ export async function issueInvoice(
     //   LEGACY flow — the §86/4 §87 `invoice`-stream number is allocated HERE.
     //     Event + membership invoices INTENTIONALLY share the single
     //     `documentType:'invoice'` §87 stream (Thai RD §87 continuity).
-    const taxAtPayment = deps.taxAtPayment === true;
+    const taxAtPayment = deps.taxAtPayment === 'on';
     const seq = await deps.sequenceAllocator.allocateNext(tx, {
       tenantId: input.tenantId,
       documentType: taxAtPayment ? 'bill' : 'invoice',

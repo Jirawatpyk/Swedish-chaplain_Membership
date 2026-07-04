@@ -76,7 +76,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -99,7 +99,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(metricsSpy).toHaveBeenCalledTimes(1);
     expect(metricsSpy).toHaveBeenCalledWith('f4_invoice_total_negative');
@@ -117,7 +117,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
     const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
@@ -141,7 +141,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -171,7 +171,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -186,7 +186,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(false);
     if (!result.ok && result.error.code === 'not_payable') {
@@ -206,7 +206,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -223,7 +223,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     );
 
     const bridge = await loadBridge();
-    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId });
+    const result = await bridge.getInvoiceForPayment({ tenantId, invoiceId, taxAtPayment: 'not-forwarded' });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {

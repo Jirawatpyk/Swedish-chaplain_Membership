@@ -223,6 +223,7 @@ function makeDepsWithCallbacks(
       markRegistrationFeePaid: vi.fn(async () => {}),
     },
     currentTemplateVersion: 1,
+    taxAtPayment: 'not-forwarded',
     onPaidCallbacks,
   };
 }

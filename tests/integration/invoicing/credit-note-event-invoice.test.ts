@@ -113,6 +113,7 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 1,
+    taxAtPayment: 'not-forwarded',
   };
 }
 
@@ -163,7 +164,7 @@ function makeRecordPaymentDepsForPay(tenantSlug: string): RecordPaymentDeps {
     ...rest,
     asyncReceiptPdf: false,
     // Decouple from the ambient 088 flag — see the docblock above.
-    taxAtPayment: false,
+    taxAtPayment: 'off',
     pdfRender: {
       render: vi.fn(async () => ({ bytes: PDF_BYTES, sha256: Sha256Hex.ofUnsafe('d'.repeat(64)) })),
     },
@@ -362,6 +363,7 @@ describe('issueCreditNote — NON-member EVENT invoice (Task 8, live Neon)', () 
     const result = await getInvoiceForPayment(makeGetInvoiceDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       invoiceId,
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;

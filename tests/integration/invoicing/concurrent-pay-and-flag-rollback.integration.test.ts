@@ -29,6 +29,7 @@ import {
   makeRecordPaymentDeps,
 } from '@/modules/invoicing/application/invoicing-deps';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
@@ -74,9 +75,9 @@ function mockPdfBlob() {
   };
 }
 function issueDeps(slug: string) {
-  return { ...makeIssueInvoiceDeps(slug), ...mockPdfBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: true };
+  return { ...makeIssueInvoiceDeps(slug), ...mockPdfBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: 'on' as const };
 }
-function recordDeps(slug: string, taxAtPayment: boolean) {
+function recordDeps(slug: string, taxAtPayment: TaxAtPaymentFlag) {
   return {
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(),
@@ -201,7 +202,7 @@ describe('088 US1-hardening — concurrent double-pay + flag rollback (live Neon
 
     // Two record-payment calls race on the SAME issued bill.
     const [a, b] = await Promise.all([
-      recordPayment(recordDeps(tenant.ctx.slug, true), {
+      recordPayment(recordDeps(tenant.ctx.slug, 'on'), {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
         requestId: `cr-pay-a-${invoiceId}`,
@@ -209,7 +210,7 @@ describe('088 US1-hardening — concurrent double-pay + flag rollback (live Neon
         paymentMethod: 'bank_transfer',
         paymentDate: PAYMENT_DATE,
       }),
-      recordPayment(recordDeps(tenant.ctx.slug, true), {
+      recordPayment(recordDeps(tenant.ctx.slug, 'on'), {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
         requestId: `cr-pay-b-${invoiceId}`,
@@ -246,7 +247,7 @@ describe('088 US1-hardening — concurrent double-pay + flag rollback (live Neon
     const invoiceId = await issueBill(memberId, 'rollback');
 
     // Roll the flag back OFF and try to pay the new-flow bill.
-    const paid = await recordPayment(recordDeps(tenant.ctx.slug, false), {
+    const paid = await recordPayment(recordDeps(tenant.ctx.slug, 'off'), {
       tenantId: tenant.ctx.slug,
       actorUserId: user.userId,
       requestId: `cr-rollback-pay-${invoiceId}`,

@@ -202,6 +202,9 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     currentTemplateVersion: 1,
     asyncReceiptPdf: true,
     receiptPdfRenderEnqueue: { enqueue: vi.fn(async () => {}) },
+    // Default: flag not carried (legacy/dormant), exact-equivalent of the
+    // pre-refactor `undefined`. Tests that exercise the RC path override with 'on'.
+    taxAtPayment: 'not-forwarded',
   };
 }
 
@@ -317,7 +320,7 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
           receiptNumberPrefix: 'RC',
         }),
       ),
-      taxAtPayment: true,
+      taxAtPayment: 'on' as const,
     };
     // Allocator returns sequence 7 — the test asserts that 7 is the
     // value that lands on the row (NOT some later value from a

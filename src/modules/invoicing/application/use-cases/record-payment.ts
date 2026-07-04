@@ -50,6 +50,7 @@ import {
   buyerHasTin,
   inferReceiptKind,
 } from '@/modules/invoicing/domain/document-kind';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
@@ -200,14 +201,16 @@ export interface RecordPaymentDeps {
   readonly currentTemplateVersion: number;
   /**
    * 088-invoice-tax-flow-redesign (T018 / T022) — FEATURE_088_TAX_AT_PAYMENT.
-   * When true, the §86/4 §87 `RC` receipt number is minted HERE at payment
+   * When `'on'`, the §86/4 §87 `RC` receipt number is minted HERE at payment
    * (the bill carried only a non-§87 `SC` number), the receipt is dated at the
    * payment date, and a `tax_receipt_issued` audit event fires. When
-   * false/undefined the legacy flow runs: the receipt reuses the issue-time
-   * §87 invoice number (the retired combined mode) — no second §87 number is
-   * minted (the `combinedMode` settings branch is retired, F.5 / T008).
+   * `'off'`/`'not-forwarded'` the legacy flow runs: the receipt reuses the
+   * issue-time §87 invoice number (the retired combined mode) — no second §87
+   * number is minted (the `combinedMode` settings branch is retired, F.5 / T008).
+   * `'not-forwarded'` (webhook / confirm-payment reconciliation) never trips the
+   * new_flow_bill_requires_flag_on stranded-funds guard — that keys on `'off'`.
    */
-  readonly taxAtPayment?: boolean;
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /**
    * T166-03 — Async receipt PDF render enqueue port. Required when
    * `asyncReceiptPdf=true`; never invoked when the flag is false.
@@ -458,7 +461,7 @@ export async function recordPayment(
     // Only reachable under the flag — the legacy flow reuses the invoice number
     // (`reuseInvoiceNumber`) and never allocates a second §87 number.
     if (
-      deps.taxAtPayment === true &&
+      deps.taxAtPayment === 'on' &&
       loaded.documentNumber !== null &&
       loaded.billDocumentNumberRaw === null
     ) {
@@ -473,12 +476,13 @@ export async function recordPayment(
     // `tax_receipt_issued` (an untaxed paid row + a blank receipt). Refuse until
     // the flag is restored ON (the correct action — the bill was minted for the
     // new flow) or the row is voided + re-issued under the legacy flow.
-    // Pre-sequence (`return err`, no number burned). `=== false` (not `!== true`)
-    // so only the explicit prod flag-OFF path trips it — legacy callers that
-    // never set the flag carry a legacy-shaped row (documentNumber non-null) and
-    // never reach a new-flow bill here.
+    // Pre-sequence (`return err`, no number burned). `=== 'off'` (NOT `!== 'on'`)
+    // so ONLY the explicit prod flag-OFF path trips it — the webhook / confirm-
+    // payment reconciliation path carries `'not-forwarded'` (never `'off'`) and
+    // stays DORMANT here, and legacy callers pass `'off'` only against a legacy-
+    // shaped row (documentNumber non-null) that never reaches a new-flow bill.
     if (
-      deps.taxAtPayment === false &&
+      deps.taxAtPayment === 'off' &&
       loaded.billDocumentNumberRaw !== null &&
       loaded.documentNumber === null
     ) {
@@ -560,7 +564,7 @@ export async function recordPayment(
       loaded.memberIdentitySnapshot.tax_id,
     );
     const forceSeparate = receiptKind === 'receipt_separate';
-    const taxAtPayment = deps.taxAtPayment === true;
+    const taxAtPayment = deps.taxAtPayment === 'on';
     const reuseInvoiceNumber = !taxAtPayment && !forceSeparate;
     // §87 fiscal year for a freshly-minted receipt number — the PAYMENT-date FY
     // (Asia/Bangkok) in the new flow; the frozen issue-time FY in legacy.

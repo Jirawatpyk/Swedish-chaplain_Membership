@@ -93,7 +93,7 @@ function issueDeps(slug: string, captured: Uint8Array[]): IssueInvoiceDeps {
     ...makeIssueInvoiceDeps(slug),
     ...realRenderCapture(captured),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
   };
 }
 
@@ -102,7 +102,7 @@ function recordDeps(slug: string, captured: Uint8Array[]): RecordPaymentDeps {
     ...makeRecordPaymentDeps(slug),
     ...realRenderCapture(captured),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
     asyncReceiptPdf: false,
   };
 }

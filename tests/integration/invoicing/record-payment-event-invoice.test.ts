@@ -161,6 +161,7 @@ function makeIssueDepsWithMocks(tenantSlug: string): IssueInvoiceDeps {
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    taxAtPayment: 'not-forwarded',
   };
 }
 
@@ -201,7 +202,7 @@ function makeRecordPaymentDepsWithCapture(
     // receiptDocumentNumberRaw stays NULL) — the exact flow these assertions
     // document ("With the flag OFF (current prod default)…"). Decouples the test
     // from the env flag. (whole-feature-review env-coupling fix.)
-    taxAtPayment: false,
+    taxAtPayment: 'off',
     pdfRender: {
       render: vi.fn(async (renderInput: PdfRenderInput) => {
         captured.push(renderInput);
@@ -703,7 +704,7 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
 
     const result = await getInvoiceForPayment(
       makeGetInvoiceDeps(tenant.ctx.slug),
-      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId },
+      { tenantId: tenant.ctx.slug, invoiceId: legacyMatchedInvoiceId, taxAtPayment: 'not-forwarded' },
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected legacy_no_tin_event_not_payable, got ok');

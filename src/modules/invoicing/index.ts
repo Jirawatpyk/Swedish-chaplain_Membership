@@ -56,6 +56,14 @@ export {
   type VatTreatment,
 } from './domain/policies/vat-treatment';
 export { splitVatInclusive } from './domain/value-objects/vat-inclusive';
+// 088 (T2 type-design finding) — explicit tri-state for the tax-at-payment
+// flag, replacing the tri-read `boolean | undefined`. Payments imports the
+// TYPE from here (cross-context public interface); the `taxAtPaymentFlag`
+// mapper is used by both modules' composition roots.
+export {
+  taxAtPaymentFlag,
+  type TaxAtPaymentFlag,
+} from './domain/tax-at-payment-flag';
 // FIX 5 — shared §86/4 buyer-TIN / event-document-kind discriminator (dedup of
 // the inline check formerly repeated across issue-invoice / record-payment /
 // issue-credit-note).

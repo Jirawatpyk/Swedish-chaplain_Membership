@@ -439,6 +439,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       clock: { nowIso: () => '2026-04-21T03:00:00Z' },
       outbox: resendEmailOutboxAdapter,
       currentTemplateVersion: 1,
+      taxAtPayment: 'not-forwarded',
     };
 
     const result = await issueInvoice(deps, {

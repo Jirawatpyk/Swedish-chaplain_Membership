@@ -236,6 +236,7 @@ function makeIssueDeps(
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     currentTemplateVersion: 1,
+    taxAtPayment: 'not-forwarded',
   };
   return { ...base, ...overrides };
 }

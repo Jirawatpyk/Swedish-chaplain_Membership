@@ -9,7 +9,11 @@
  * talks to an interface; F5 Infrastructure provides the wire-up to F4.
  */
 import type { Result } from '@/lib/result';
-import type { InvoiceStatus, F4InvoicePaidEvent } from '@/modules/invoicing';
+import type {
+  InvoiceStatus,
+  F4InvoicePaidEvent,
+  TaxAtPaymentFlag,
+} from '@/modules/invoicing';
 import type { Satang } from '@/lib/money';
 
 export interface InvoiceForPaymentDTO {
@@ -103,14 +107,14 @@ export interface InvoicingBridgePort {
       readonly memberId?: string;
     };
     /**
-     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT, passed ONLY by the INITIATE
-     * (self-pay) path so F4's new-flow-bill flag-rollback guard can refuse a
-     * stranded-funds capture. The webhook confirm path omits it (undefined),
-     * and F4's guard trips only on an explicit `=== false`, so the webhook
-     * path is unaffected. Wired from `env.features.f088TaxAtPayment` at
+     * 088 SEC-MED — FEATURE_088_TAX_AT_PAYMENT. The INITIATE (self-pay) path
+     * passes `'on'`/`'off'` so F4's new-flow-bill flag-rollback guard can refuse
+     * a stranded-funds capture. The webhook confirm path passes `'not-forwarded'`,
+     * and F4's guard trips only on an explicit `=== 'off'`, so the webhook path
+     * stays dormant. Wired from `env.features.f088TaxAtPayment` at
      * `makeInitiatePaymentDeps`.
      */
-    readonly taxAtPayment?: boolean;
+    readonly taxAtPayment: TaxAtPaymentFlag;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**

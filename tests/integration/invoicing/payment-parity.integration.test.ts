@@ -85,7 +85,7 @@ function issueDeps(slug: string) {
     ...makeIssueInvoiceDeps(slug),
     ...mockPdfBlob([]),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on' as const,
   };
 }
 function recordDeps(slug: string, captured: PdfRenderInput[]) {
@@ -93,7 +93,7 @@ function recordDeps(slug: string, captured: PdfRenderInput[]) {
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(captured),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on' as const,
     asyncReceiptPdf: false,
   };
 }

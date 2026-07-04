@@ -53,6 +53,7 @@ import {
   type IssueEventInvoiceAsPaidDeps,
 } from '@/modules/invoicing/application/use-cases/issue-event-invoice-as-paid';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import type {
   DocumentTypeCode,
   SequenceAllocatorPort,
@@ -113,7 +114,7 @@ function makeAllocSpy() {
  */
 function makeDeps(
   tenantSlug: string,
-  opts: { taxAtPayment: boolean; allocSpy: AllocSpy; captured?: PdfRenderInput[] },
+  opts: { taxAtPayment: TaxAtPaymentFlag; allocSpy: AllocSpy; captured?: PdfRenderInput[] },
 ): IssueEventInvoiceAsPaidDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
@@ -254,7 +255,7 @@ describe('event parity + §105/§86-4 register split (US7/T049, live Neon)', () 
     const allocSpy = makeAllocSpy();
     const captured: PdfRenderInput[] = [];
     const res = await issueEventInvoiceAsPaid(
-      makeDeps(tenant.ctx.slug, { taxAtPayment: true, allocSpy, captured }),
+      makeDeps(tenant.ctx.slug, { taxAtPayment: 'on', allocSpy, captured }),
       {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
@@ -299,7 +300,7 @@ describe('event parity + §105/§86-4 register split (US7/T049, live Neon)', () 
     const allocSpy = makeAllocSpy();
     const captured: PdfRenderInput[] = [];
     const res = await issueEventInvoiceAsPaid(
-      makeDeps(tenant.ctx.slug, { taxAtPayment: true, allocSpy, captured }),
+      makeDeps(tenant.ctx.slug, { taxAtPayment: 'on', allocSpy, captured }),
       {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
@@ -403,7 +404,7 @@ describe('DEFAULT (NULL)-prefix tenant: §86/4 RC-role + §105 receipts do not c
   it('issues a §86/4 combined tax receipt (RC-…) AND a §105 receipt (RE-…) with DISTINCT receipt_document_number_raw — no unique-index collision', async () => {
     // §86/4 combined (TIN buyer, taxAtPayment) → 'receipt' register, NULL→'RC'.
     const res1 = await issueEventInvoiceAsPaid(
-      makeDeps(tenant.ctx.slug, { taxAtPayment: true, allocSpy: makeAllocSpy() }),
+      makeDeps(tenant.ctx.slug, { taxAtPayment: 'on', allocSpy: makeAllocSpy() }),
       {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
@@ -423,7 +424,7 @@ describe('DEFAULT (NULL)-prefix tenant: §86/4 RC-role + §105 receipts do not c
     // tenant + fiscal year. Pre-fix THIS commit hit 23505 against the §86/4
     // 'RE-2026-000001' the first issuance would have taken under the old default.
     const res2 = await issueEventInvoiceAsPaid(
-      makeDeps(tenant.ctx.slug, { taxAtPayment: true, allocSpy: makeAllocSpy() }),
+      makeDeps(tenant.ctx.slug, { taxAtPayment: 'on', allocSpy: makeAllocSpy() }),
       {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,

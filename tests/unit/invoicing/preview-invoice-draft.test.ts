@@ -17,11 +17,12 @@ import {
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeDeps(
-  taxAtPayment: boolean | undefined,
+  taxAtPayment: TaxAtPaymentFlag,
   capture: { input?: PdfRenderInput },
 ): PreviewInvoiceDraftDeps {
   const draft = {
@@ -75,7 +76,7 @@ function makeDeps(
 describe('previewInvoiceDraft — 088 billMode threading (FR-001 / FR-014)', () => {
   it('threads billMode:true when taxAtPayment is ON (preview = non-tax ใบแจ้งหนี้)', async () => {
     const cap: { input?: PdfRenderInput } = {};
-    const r = await previewInvoiceDraft(makeDeps(true, cap), {
+    const r = await previewInvoiceDraft(makeDeps('on', cap), {
       tenantId: 't',
       invoiceId: INVOICE_ID,
     });
@@ -85,16 +86,16 @@ describe('previewInvoiceDraft — 088 billMode threading (FR-001 / FR-014)', () 
     expect(cap.input?.billMode).toBe(true);
   });
 
-  it('billMode:false when the flag is OFF or omitted (legacy §86/4 Tax-Invoice preview)', async () => {
+  it("billMode:false when the flag is 'off' or 'not-forwarded' (legacy §86/4 Tax-Invoice preview)", async () => {
     const capOff: { input?: PdfRenderInput } = {};
-    await previewInvoiceDraft(makeDeps(false, capOff), {
+    await previewInvoiceDraft(makeDeps('off', capOff), {
       tenantId: 't',
       invoiceId: INVOICE_ID,
     });
     expect(capOff.input?.billMode).toBe(false);
 
     const capUndef: { input?: PdfRenderInput } = {};
-    await previewInvoiceDraft(makeDeps(undefined, capUndef), {
+    await previewInvoiceDraft(makeDeps('not-forwarded', capUndef), {
       tenantId: 't',
       invoiceId: INVOICE_ID,
     });

@@ -167,6 +167,7 @@ function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    taxAtPayment: 'not-forwarded',
   };
 }
 

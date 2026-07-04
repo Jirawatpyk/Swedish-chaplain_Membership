@@ -71,6 +71,7 @@ describe('getInvoiceForPayment — totalSatang <= 0n invariant (property)', () =
           const result = await getInvoiceForPayment(deps, {
             tenantId: 'ten-1',
             invoiceId: '00000000-0000-0000-0000-000000000001',
+            taxAtPayment: 'not-forwarded',
           });
 
           expect(result.ok).toBe(false);
@@ -94,6 +95,7 @@ describe('getInvoiceForPayment — totalSatang <= 0n invariant (property)', () =
         const result = await getInvoiceForPayment(deps, {
           tenantId: 'ten-1',
           invoiceId: '00000000-0000-0000-0000-000000000001',
+          taxAtPayment: 'not-forwarded',
         });
 
         expect(result.ok).toBe(false);
@@ -123,6 +125,7 @@ describe('getInvoiceForPayment — totalSatang <= 0n invariant (property)', () =
           const result = await getInvoiceForPayment(deps, {
             tenantId: 'ten-1',
             invoiceId: '00000000-0000-0000-0000-000000000001',
+            taxAtPayment: 'not-forwarded',
           });
 
           expect(result.ok).toBe(true);

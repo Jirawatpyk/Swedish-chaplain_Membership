@@ -313,10 +313,14 @@ async function confirmPaymentBody(
       return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
     }
 
-    // Step 2 — invoice payability
+    // Step 2 — invoice payability. Webhook / reconciliation path: the flag is
+    // NOT carried here (`'not-forwarded'`), so F4's new-flow-bill stranded-funds
+    // guard (keyed on `=== 'off'`) stays DORMANT — a Stripe-captured payment is
+    // never refused at reconciliation just because the flag rolled back.
     const invoiceResult = await deps.invoicingBridge.getInvoiceForPayment({
       tenantId: input.tenantId,
       invoiceId: payment.invoiceId,
+      taxAtPayment: 'not-forwarded',
     });
     if (!invoiceResult.ok) {
       if (invoiceResult.error.code === 'not_found') {

@@ -395,6 +395,7 @@ describe('invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neo
       clock: { nowIso: () => '2026-06-10T10:00:00Z' },
       outbox: { enqueue: vi.fn(async () => {}) },
       currentTemplateVersion: 1,
+      taxAtPayment: 'not-forwarded',
     };
   }
 

@@ -58,6 +58,7 @@ import {
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 
 export interface InitiatePaymentInput {
   readonly tenantId: string;
@@ -188,11 +189,11 @@ export interface InitiatePaymentDeps {
    * read so a NEW-FLOW bill issued while the flag was ON cannot be self-paid
    * after the flag rolls back to OFF (Stripe would capture funds the
    * webhook-side guard then refuses to apply — S0 stranded funds). Wired from
-   * `env.features.f088TaxAtPayment` at `makeInitiatePaymentDeps`; omitted in
-   * older direct-call tests (undefined → the F4 guard, keyed on `=== false`,
-   * stays dormant).
+   * `env.features.f088TaxAtPayment` (→ `'on'`/`'off'`) at `makeInitiatePaymentDeps`.
+   * Non-self-pay callers pass `'not-forwarded'` → the F4 guard, keyed on
+   * `=== 'off'`, stays dormant.
    */
-  readonly taxAtPayment?: boolean;
+  readonly taxAtPayment: TaxAtPaymentFlag;
   /** Returns a fresh payment id, e.g., `pmt_<ulid>`. Injected for deterministic tests. */
   readonly generatePaymentId: () => PaymentId;
   /**
@@ -318,11 +319,9 @@ async function initiatePaymentBody(
     },
     // 088 SEC-MED — forward the feature flag so F4 can refuse a new-flow bill
     // that was minted under the flag but is being paid after a flag rollback
-    // (stranded-funds guard). Only the initiate path sends it; the webhook
-    // confirm path omits it and stays unaffected.
-    ...(deps.taxAtPayment !== undefined
-      ? { taxAtPayment: deps.taxAtPayment }
-      : {}),
+    // (stranded-funds guard). The initiate path sends `'on'`/`'off'`; the
+    // webhook confirm path sends `'not-forwarded'` and stays unaffected.
+    taxAtPayment: deps.taxAtPayment,
   });
   if (!invoiceResult.ok) {
     const e = invoiceResult.error;

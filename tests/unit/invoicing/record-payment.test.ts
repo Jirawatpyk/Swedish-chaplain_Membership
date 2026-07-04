@@ -226,6 +226,10 @@ function makeDeps(
       markRegistrationFeePaid: vi.fn(async () => {}),
     },
     currentTemplateVersion: 1,
+    // Default: the flag is not carried (legacy/dormant), exact-equivalent of the
+    // pre-refactor `undefined` — the stranded-funds guard (keyed on 'off') stays
+    // dormant. Individual tests override with 'on'/'off' as needed.
+    taxAtPayment: 'not-forwarded',
     ...overrides,
   };
 }
@@ -365,7 +369,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       true,
       makeIssuedInvoice(),
       makeSettings({ receiptNumberingMode: 'separate' }),
-      { taxAtPayment: true },
+      { taxAtPayment: 'on' },
     );
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
@@ -400,7 +404,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       true,
       bill,
       makeSettings({ receiptNumberingMode: 'separate' }),
-      { taxAtPayment: true },
+      { taxAtPayment: 'on' },
     );
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
@@ -430,7 +434,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     // Legacy shape: a §87 `document_number` (issued under the old flow) with NO
     // bill_document_number_raw. Paying it under the flag would mint a 2nd §87.
     const legacy = makeIssuedInvoice({ billDocumentNumberRaw: null });
-    const deps = makeDeps(true, legacy, makeSettings(), { taxAtPayment: true });
+    const deps = makeDeps(true, legacy, makeSettings(), { taxAtPayment: 'on' });
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => legacy);
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
@@ -450,7 +454,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       sequenceNumber: null,
       billDocumentNumberRaw: 'SC-2026-000042',
     });
-    const deps = makeDeps(true, newFlowBill, makeSettings(), { taxAtPayment: false });
+    const deps = makeDeps(true, newFlowBill, makeSettings(), { taxAtPayment: 'off' });
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => newFlowBill);
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(false);
@@ -634,7 +638,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       makeSettings({ receiptNumberingMode: 'separate' }),
       // 088 — RC allocation is flag-gated now; enable it so the member→advisory
       // lock-order assertion still exercises the allocation.
-      { taxAtPayment: true },
+      { taxAtPayment: 'on' },
     );
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);

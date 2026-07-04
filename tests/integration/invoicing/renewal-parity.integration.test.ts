@@ -101,7 +101,7 @@ function issueDepsFlagOn(slug: string): IssueInvoiceDeps {
     ...makeIssueInvoiceDeps(slug),
     ...mockPdfBlob(),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
   };
 }
 
@@ -110,7 +110,7 @@ function recordDepsFlagOn(slug: string): RecordPaymentDeps {
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
     // Force the SYNCHRONOUS receipt render for a deterministic assertion (the
     // §87 RC allocation + `tax_receipt_issued` fire in-tx on BOTH paths).
     asyncReceiptPdf: false,

@@ -95,14 +95,14 @@ function mockPdfBlob() {
 }
 
 function issueDeps(slug: string) {
-  return { ...makeIssueInvoiceDeps(slug), ...mockPdfBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: true };
+  return { ...makeIssueInvoiceDeps(slug), ...mockPdfBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: 'on' as const };
 }
 function recordDeps(slug: string) {
   return {
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on' as const,
     asyncReceiptPdf: false,
   };
 }
@@ -111,7 +111,7 @@ function asPaidDeps(slug: string) {
     ...makeIssueEventInvoiceAsPaidDeps(slug),
     ...mockPdfBlob(),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on' as const,
   };
 }
 

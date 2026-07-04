@@ -36,6 +36,7 @@ import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-ad
 // that touch the F8 barrel to compile cleanly under Turbopack 16
 // without dragging `sharp` into the client bundle.
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
+import { taxAtPaymentFlag } from '../domain/tax-at-payment-flag';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
 import type { CreateEventInvoiceDraftDeps } from './use-cases/create-event-invoice-draft';
@@ -111,7 +112,7 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // 088 T022 — new bill→§87-at-payment flow when the flag is on.
-    taxAtPayment: env.features.f088TaxAtPayment,
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
   };
 }
 
@@ -146,7 +147,7 @@ export function makeIssueEventInvoiceAsPaidDeps(
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // 088 T022 — mirror record-payment's §87-RC-at-payment behaviour for the
     // event as-paid path when the flag is on (FR-005 / FR-006).
-    taxAtPayment: env.features.f088TaxAtPayment,
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
@@ -304,7 +305,7 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
     audit: f4AuditAdapter,
     // 088 (FR-001 / FR-014) — preview the pre-payment draft as ใบแจ้งหนี้ under
     // the flag (billMode), matching what issueInvoice renders at issue time.
-    taxAtPayment: env.features.f088TaxAtPayment,
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
   };
 }
 
@@ -478,7 +479,7 @@ export function makeRecordPaymentDeps(
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
     // 088 T022 — mint the §86/4 §87 RC receipt number at payment when on.
-    taxAtPayment: env.features.f088TaxAtPayment,
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }

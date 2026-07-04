@@ -41,6 +41,7 @@ import { makeDrizzleTenantPaymentSettingsRepo } from './repos/drizzle-tenant-pay
 import { stripeGateway } from './stripe/stripe-gateway';
 import { stripeWebhookVerifier } from './stripe/stripe-webhook-verifier';
 import { invoicingBridge } from './invoicing-bridge';
+import { taxAtPaymentFlag } from '@/modules/invoicing';
 
 // Re-exported so Group F's webhook route handler can import the verifier
 // adapter from the DI module (composition-root convention) rather than
@@ -105,7 +106,7 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     // read so a new-flow bill minted under the flag cannot be self-paid after
     // the flag rolls back to OFF (stranded-funds guard). Mirrors how
     // `makeRecordPaymentDeps` wires the same flag on the webhook side.
-    taxAtPayment: env.features.f088TaxAtPayment,
+    taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
     // Idempotency-Key strategy, gated on Stripe LIVE vs TEST mode
     // (not NODE_ENV). Live mode: identity → the seq-based key is the
     // real dedupe contract (two concurrent retries map to the same

@@ -473,6 +473,9 @@ function makeUseCaseDeps(
     clock: { nowIso: () => opts.nowIso },
     outbox: resendEmailOutboxAdapter,
     currentTemplateVersion: 1,
+    // Default: flag not carried (legacy §87 stream), exact-equivalent of the
+    // pre-refactor `undefined`. The 088 RC-stream behaviour is covered elsewhere.
+    taxAtPayment: 'not-forwarded',
   };
 }
 

@@ -67,6 +67,7 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -83,6 +84,7 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -97,6 +99,7 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -110,6 +113,7 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(null), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -133,6 +137,7 @@ describe('getInvoiceForPayment — payability error paths', () => {
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -173,6 +178,7 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -190,6 +196,7 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -210,6 +217,7 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(true);
   });
@@ -228,6 +236,7 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(true);
   });
@@ -243,6 +252,7 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -258,8 +268,8 @@ describe('getInvoiceForPayment — REMOVE-WITH-064-REMEDIATION legacy no-TIN eve
 // creates a Stripe PI, Stripe captures the money, then the webhook-side
 // `recordPayment` guard refuses the flip (same `new_flow_bill_requires_flag_on`
 // code, NO auto-refund) — captured-but-unappliable funds (S0). The flag is
-// threaded via the INPUT and passed ONLY by the initiate path; webhook-side
-// reconciliation reads omit it (undefined) so they stay unaffected.
+// threaded via the INPUT: the initiate path passes 'on'/'off'; webhook-side
+// reconciliation reads pass 'not-forwarded' so they stay unaffected.
 // ---------------------------------------------------------------------------
 describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () => {
   it('flag OFF + a new-flow bill (issued, billDocumentNumberRaw set, documentNumber null) → new_flow_bill_requires_flag_on', async () => {
@@ -273,7 +283,7 @@ describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () =>
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
-      taxAtPayment: false,
+      taxAtPayment: 'off',
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -291,7 +301,7 @@ describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () =>
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
-      taxAtPayment: true,
+      taxAtPayment: 'on',
     });
     expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
@@ -310,12 +320,12 @@ describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () =>
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
-      taxAtPayment: false,
+      taxAtPayment: 'off',
     });
     expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
   });
 
-  it('flag OMITTED (webhook-style reconciliation read) + a new-flow bill → unaffected (guard trips only on === false)', async () => {
+  it("flag 'not-forwarded' (webhook-style reconciliation read) + a new-flow bill → unaffected (guard trips only on === 'off')", async () => {
     const invoice = makeInvoice({
       status: 'issued',
       memberId: 'mem-1',
@@ -326,7 +336,9 @@ describe('getInvoiceForPayment — 088 new-flow-bill flag-rollback guard', () =>
     const result = await getInvoiceForPayment(mkDeps(invoice), {
       tenantId: 'ten-1',
       invoiceId: '00000000-0000-0000-0000-000000000001',
-      // taxAtPayment omitted — mirrors the confirm-payment webhook caller.
+      // 'not-forwarded' — mirrors the confirm-payment webhook caller, which
+      // does not carry the flag; the stranded-funds guard stays DORMANT.
+      taxAtPayment: 'not-forwarded',
     });
     expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
   });

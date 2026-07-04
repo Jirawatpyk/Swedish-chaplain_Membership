@@ -214,7 +214,7 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
         // `err` BEFORE the enqueue mock runs — the use-case would NOT throw and
         // this rollback test's `expect(thrown).not.toBeNull()` would fail. Forcing
         // false exercises the intended reuse path so the enqueue throw is reached.
-        recordPayment({ ...makeRecordPaymentDeps(tenant.ctx.slug), taxAtPayment: false }, {
+        recordPayment({ ...makeRecordPaymentDeps(tenant.ctx.slug), taxAtPayment: 'off' }, {
           tenantId: tenant.ctx.slug,
           actorUserId: user.userId,
           invoiceId,
@@ -294,7 +294,7 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
                 );
               },
             ]),
-            taxAtPayment: false,
+            taxAtPayment: 'off',
           },
           {
             tenantId: tenant.ctx.slug,

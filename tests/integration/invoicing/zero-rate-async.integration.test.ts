@@ -69,7 +69,7 @@ function mockRenderBlob() {
 }
 
 function issueDeps(slug: string): IssueInvoiceDeps {
-  return { ...makeIssueInvoiceDeps(slug), ...mockRenderBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: true };
+  return { ...makeIssueInvoiceDeps(slug), ...mockRenderBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment: 'on' };
 }
 
 function recordDepsAsync(slug: string): RecordPaymentDeps {
@@ -77,7 +77,7 @@ function recordDepsAsync(slug: string): RecordPaymentDeps {
     ...makeRecordPaymentDeps(slug),
     ...mockRenderBlob(),
     clock: { nowIso: () => FIXED_NOW },
-    taxAtPayment: true,
+    taxAtPayment: 'on',
     // Async path — receipt left 'pending', RC pre-allocated, NO sync render.
     asyncReceiptPdf: true,
   };

@@ -68,6 +68,31 @@ vi.mock('@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter
   },
 }));
 
+// LEGACY-seed decoupling (mirrors processor-bridge.test.ts). `markPaidFromProcessor`
+// builds its recordPayment deps INTERNALLY via `makeRecordPaymentDeps`, which injects
+// `taxAtPayment` from the ambient FEATURE_088_TAX_AT_PAYMENT env flag (ON in the dev
+// env, frozen at boot) with NO call-site seam. This file seeds a LEGACY invoice
+// (documentNumber set, billDocumentNumberRaw NULL) and asserts markPaid/atomicity
+// mechanics, NOT the 088 flag — under the flag ON the markPaid tests trip the FR-017
+// `legacy_invoice_needs_reissue` guard. Pin the LEGACY flow by overriding just the
+// factory's `taxAtPayment` to 'off'; every other export passes through unchanged. (The
+// getInvoiceForPayment call in the happy-path test carries its own 'not-forwarded'.)
+vi.mock('@/modules/invoicing/application/invoicing-deps', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/modules/invoicing/application/invoicing-deps')>();
+  return {
+    ...actual,
+    makeRecordPaymentDeps: ((
+      tenantId: string,
+      externalTx?: unknown,
+      onPaidCallbacks?: Parameters<typeof actual.makeRecordPaymentDeps>[2],
+    ) => ({
+      ...actual.makeRecordPaymentDeps(tenantId, externalTx, onPaidCallbacks),
+      taxAtPayment: 'off',
+    })) as typeof actual.makeRecordPaymentDeps,
+  };
+});
+
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
   website_page_type: 'member_news_update',
@@ -228,6 +253,8 @@ describe('InvoicingBridge (F5 → F4) — live Neon', () => {
     const dto = await invoicingBridge.getInvoiceForPayment({
       tenantId: tenant.ctx.slug,
       invoiceId,
+      // Webhook-style payability read — the flag is not carried.
+      taxAtPayment: 'not-forwarded',
     });
     expect(dto.ok).toBe(true);
     if (!dto.ok) return;

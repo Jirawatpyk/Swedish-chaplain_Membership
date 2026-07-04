@@ -33,6 +33,7 @@ import {
   makeRecordPaymentDeps,
 } from '@/modules/invoicing/application/invoicing-deps';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
@@ -76,10 +77,10 @@ function mockPdfBlob() {
     },
   };
 }
-function issueDeps(slug: string, taxAtPayment: boolean) {
+function issueDeps(slug: string, taxAtPayment: TaxAtPaymentFlag) {
   return { ...makeIssueInvoiceDeps(slug), ...mockPdfBlob(), clock: { nowIso: () => FIXED_NOW }, taxAtPayment };
 }
-function recordDeps(slug: string, taxAtPayment: boolean) {
+function recordDeps(slug: string, taxAtPayment: TaxAtPaymentFlag) {
   return {
     ...makeRecordPaymentDeps(slug),
     ...mockPdfBlob(),
@@ -150,7 +151,7 @@ async function seedTenant(): Promise<{ tenant: TestTenant; user: TestUser; membe
   return { tenant, user, memberId };
 }
 
-async function issueBill(t: { tenant: TestTenant; user: TestUser; memberId: string }, taxAtPayment: boolean): Promise<string> {
+async function issueBill(t: { tenant: TestTenant; user: TestUser; memberId: string }, taxAtPayment: TaxAtPaymentFlag): Promise<string> {
   const slug = t.tenant.ctx.slug;
   const draft = await createInvoiceDraft(makeCreateInvoiceDraftDeps(slug), {
     tenantId: slug,
@@ -182,7 +183,7 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
     const t = await seedTenant();
     created.push(t.tenant);
     const slug = t.tenant.ctx.slug;
-    const invoiceId = await issueBill(t, true);
+    const invoiceId = await issueBill(t, 'on');
 
     // Normal UPDATE → rejected by invoices_enforce_immutability.
     await expect(
@@ -220,8 +221,8 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
     const b = await seedTenant();
     created.push(a.tenant, b.tenant);
 
-    const aInvoice = await issueBill(a, true);
-    const bInvoice = await issueBill(b, true);
+    const aInvoice = await issueBill(a, 'on');
+    const bInvoice = await issueBill(b, 'on');
 
     const [aRow] = await db
       .select()
@@ -255,7 +256,7 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
     // Issue under the LEGACY flow (flag off) → §87 invoice number, no bill
     // number. The issue succeeding proves the widened non-draft CHECK still
     // accepts a pre-088 §87-numbered row (no regression).
-    const invoiceId = await issueBill(t, false);
+    const invoiceId = await issueBill(t, 'off');
     const [legacyRow] = await db
       .select()
       .from(invoices)
@@ -267,7 +268,7 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
 
     // Paying it under the NEW flow (flag on) is REJECTED — otherwise it would
     // mint a 2nd §87 number (the RC) on top of the legacy §87 invoice number.
-    const paid = await recordPayment(recordDeps(slug, true), {
+    const paid = await recordPayment(recordDeps(slug, 'on'), {
       tenantId: slug,
       actorUserId: t.user.userId,
       requestId: `inv-legacy-pay-${invoiceId}`,
@@ -295,9 +296,9 @@ describe('088 US1 — bill/receipt numbering invariants (live Neon)', () => {
     const t = await seedTenant();
     created.push(t.tenant);
     const slug = t.tenant.ctx.slug;
-    const invoiceId = await issueBill(t, true);
+    const invoiceId = await issueBill(t, 'on');
 
-    const paid = await recordPayment(recordDeps(slug, true), {
+    const paid = await recordPayment(recordDeps(slug, 'on'), {
       tenantId: slug,
       actorUserId: t.user.userId,
       requestId: `inv-freeze-pay-${invoiceId}`,
