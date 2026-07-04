@@ -98,6 +98,11 @@ describe('payments barrel — public API contract', () => {
         'invoicingBridge',
         'paymentsRepo',
         'processorGateway',
+        // 088 #3 (whole-feature review) — the stranded-funds guard threads
+        // FEATURE_088_TAX_AT_PAYMENT into the initiate deps so getInvoiceForPayment
+        // can refuse a new-flow bill after a flag rollback (symmetric to the
+        // record-payment webhook guard). Wired in di.ts makeInitiatePaymentDeps.
+        'taxAtPayment',
         'tenantSettingsRepo',
       ].sort(),
     );
