@@ -38,6 +38,7 @@ import {
   computeIsOverdue,
   displayDocumentNumber,
   billFirstDocumentNumber,
+  resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
 } from '@/modules/invoicing';
@@ -358,13 +359,10 @@ export default async function InvoiceDetailPage({
   // identified by its OWN (SC) NON-§87 bill number — paid or unpaid — so
   // `headerNumber` is the SC bill for ANY 088 bill (never the RC on payment).
   // The RC §86/4 tax receipt is surfaced in the "Receipt No." field below.
-  const is088Bill =
-    env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
-  const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
-    ? invoice.receiptDocumentNumberRaw !== null
-      ? 'tax_receipt'
-      : 'bill'
-    : 'none';
+  const taxDocKind = resolveTaxDocumentKind(
+    invoice,
+    env.features.f088TaxAtPayment,
+  );
   const headerNumber =
     taxDocKind !== 'none' ? invoice.billDocumentNumberRaw : displayNumber;
   const breadcrumbLabel = headerNumber ?? displayNumber ?? t('draftTitle');

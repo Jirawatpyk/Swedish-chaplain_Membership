@@ -1928,7 +1928,7 @@
         },
         "columns": {
           "receiptNo": "Kvittonr.",
-          "paidDate": "Betaldatum",
+          "paymentDate": "Betalningsdatum",
           "buyer": "Köpare",
           "taxId": "Skatte-ID",
           "subtotal": "Delsumma",

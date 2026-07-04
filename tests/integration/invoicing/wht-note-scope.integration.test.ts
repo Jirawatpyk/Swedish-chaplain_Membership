@@ -46,6 +46,9 @@ const BANK_ACCOUNT_NO = '005-3-92003-9';
 const BANK_SWIFT = 'KASITHBK';
 const BANK_INSTRUCTIONS_EN =
   "If you pay by cheque, make it 'Account Payee Only'. All bank fees to be covered by the payer.";
+// Fix#12 companions — the single inner-only bank value each solo-field case pins.
+const BANK_ACCOUNT_TYPE_ONLY = 'Current Account';
+const BANK_ADDRESS_ONLY = 'KBank Ratchada Branch, Bangkok 10310';
 
 function makeLines(): InvoiceLine[] {
   return [
@@ -114,6 +117,56 @@ function tenantWithOnlyBankBranch(): TenantIdentitySnapshot {
     payment_instructions_en: null,
     // … only bank_branch is configured.
     bank_branch: 'Ratchada Branch',
+  };
+}
+
+/**
+ * Fix #12 companions — tenants that configured ONLY `bank_account_type` (resp.
+ * `bank_address`) and left every OTHER bank field null. Each pins the OTHER two
+ * inner gate lines Fix #12 added (invoice-template.tsx:739-741) so a revert of
+ * EITHER `bank_account_type != null ||` or `bank_address != null ||` would
+ * suppress the whole block and fail here — not just the `bank_branch` line the
+ * sibling test above covers.
+ */
+function tenantWithOnlyBankAccountType(): TenantIdentitySnapshot {
+  return {
+    legal_name_th: 'หอการค้าไทย-สวีเดน',
+    legal_name_en: 'Thai-Swedish Chamber of Commerce',
+    tax_id: '0994000187203',
+    address_th: 'กรุงเทพมหานคร',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
+    wht_note_th: null,
+    wht_note_en: null,
+    bank_payee_name: null,
+    bank_account_no: null,
+    bank_name: null,
+    bank_swift: null,
+    payment_instructions_th: null,
+    payment_instructions_en: null,
+    // … only bank_account_type is configured.
+    bank_account_type: BANK_ACCOUNT_TYPE_ONLY,
+  };
+}
+
+function tenantWithOnlyBankAddress(): TenantIdentitySnapshot {
+  return {
+    legal_name_th: 'หอการค้าไทย-สวีเดน',
+    legal_name_en: 'Thai-Swedish Chamber of Commerce',
+    tax_id: '0994000187203',
+    address_th: 'กรุงเทพมหานคร',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
+    wht_note_th: null,
+    wht_note_en: null,
+    bank_payee_name: null,
+    bank_account_no: null,
+    bank_name: null,
+    bank_swift: null,
+    payment_instructions_th: null,
+    payment_instructions_en: null,
+    // … only bank_address is configured.
+    bank_address: BANK_ADDRESS_ONLY,
   };
 }
 
@@ -318,6 +371,46 @@ describe('088 US5 — offline-payment bank block (FR-022)', () => {
     expect(text).toContain(shapeThai('สาขา'));
     expect(text).toContain('Ratchada Branch');
   });
+
+  // Fix #12 — the sibling above pins only the `bank_branch` gate line; these two
+  // pin the OTHER two inner fields added to the outer visibility gate so a revert
+  // of either would suppress the whole block and fail here. `bank_address` renders
+  // via `shapeThai(...)` (invoice-template.tsx:778) so its value is asserted
+  // shaped; `bank_account_type` renders raw (line 765).
+  it.each([
+    {
+      name: 'bank_account_type',
+      tenant: tenantWithOnlyBankAccountType(),
+      label: shapeThai('ประเภทบัญชี'),
+      value: BANK_ACCOUNT_TYPE_ONLY,
+    },
+    {
+      name: 'bank_address',
+      tenant: tenantWithOnlyBankAddress(),
+      label: shapeThai('ที่อยู่ธนาคาร'),
+      value: shapeThai(BANK_ADDRESS_ONLY),
+    },
+  ])(
+    'Fix#12: a v7 bill whose tenant set ONLY $name (all other bank fields null) STILL renders the bank block',
+    ({ tenant, label, value }) => {
+      const page = pagesOf(
+        InvoiceTemplate(
+          makeInput({
+            templateVersion: 7,
+            kind: 'invoice',
+            billMode: true,
+            invoiceSubject: 'membership',
+            tenant,
+          }),
+        ),
+      )[0]!;
+      const text = pageText(page);
+      // The block header + the sole admin-entered value BOTH render.
+      expect(text).toContain('Payment Details');
+      expect(text).toContain(label);
+      expect(text).toContain(value);
+    },
+  );
 
   it('does NOT render the bank block on the paid tax receipt (receipt_combined) at v7', () => {
     const pages = pagesOf(

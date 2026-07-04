@@ -192,7 +192,7 @@ export default async function TaxRegistersPage({
                             {t('columns.receiptNo')}
                           </th>
                           <th scope="col" className="py-2 pr-4 font-medium">
-                            {t('columns.paidDate')}
+                            {t('columns.paymentDate')}
                           </th>
                           <th scope="col" className="py-2 pr-4 font-medium">
                             {t('columns.buyer')}
@@ -246,7 +246,15 @@ export default async function TaxRegistersPage({
                               ) : null}
                             </td>
                             <td className="py-2 pr-4 tabular-nums">
-                              {r.paidAt ? bangkokLocalDate(r.paidAt) : '—'}
+                              {/* Show the SAME date the row was BUCKETED under:
+                                  the §78/1 payment-date tax point (payment_date),
+                                  falling back to the Bangkok-local paid_at only
+                                  for a legacy receipt with no payment_date —
+                                  mirrors the repo's COALESCE(payment_date,
+                                  paid_at) filter so a backdated receipt's date
+                                  always matches its filing period. */}
+                              {r.paymentDate ??
+                                (r.paidAt ? bangkokLocalDate(r.paidAt) : '—')}
                             </td>
                             <td className="py-2 pr-4">
                               {r.memberIdentitySnapshot?.legal_name ?? '—'}

@@ -37,7 +37,11 @@
  * — Simplicity; Reusable Components). The card reuses the column keys.
  */
 import type { Invoice } from '@/modules/invoicing';
-import { computeIsOverdue, displayDocumentNumber } from '@/modules/invoicing';
+import {
+  computeIsOverdue,
+  displayDocumentNumber,
+  resolveTaxDocumentKind,
+} from '@/modules/invoicing';
 import type { Money } from '@/modules/invoicing';
 import type { InvoiceRowDisplayStatus } from './format';
 
@@ -341,13 +345,12 @@ export function toInvoiceRowViewModel(
   // and stays `'none'` even with the flag on. The RC lives in
   // `receiptDocumentNumberRaw` (minted at payment) — its presence discriminates
   // a paid bill (`'tax_receipt'`) from an unpaid one (`'bill'`).
-  const is088Bill = taxAtPayment && row.billDocumentNumberRaw !== null;
-  const taxDocumentKind: InvoiceTaxDocumentKind = is088Bill
-    ? row.receiptDocumentNumberRaw !== null
-      ? 'tax_receipt'
-      : 'bill'
-    : 'none';
-  const billDocumentNumber = is088Bill ? row.billDocumentNumberRaw : null;
+  const taxDocumentKind: InvoiceTaxDocumentKind = resolveTaxDocumentKind(
+    row,
+    taxAtPayment,
+  );
+  const billDocumentNumber =
+    taxDocumentKind !== 'none' ? row.billDocumentNumberRaw : null;
   // 088 A-refined (FR-016) — an 088 invoice is ALWAYS identified by its OWN
   // (SC) bill number, consistently for PAID and UNPAID rows. The row identity
   // is therefore the SC bill for ANY 088 bill (`taxDocumentKind !== 'none'`) —

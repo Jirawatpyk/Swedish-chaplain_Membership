@@ -20,6 +20,7 @@ import { asMemberId, asTenantId } from '@/modules/members';
 import {
   listInvoicesByMember,
   makeListInvoicesByMemberDeps,
+  billFirstDocumentNumber,
   vercelBlobAdapter,
   type Invoice,
 } from '@/modules/invoicing';
@@ -161,10 +162,7 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
             // is PRESERVED for zip-entry uniqueness (two invoices can share a
             // number; a draft has none). `documentNumber.raw` (NOT the VO).
             const numberPart =
-              inv.billDocumentNumberRaw ??
-              inv.documentNumber?.raw ??
-              inv.receiptDocumentNumberRaw ??
-              null;
+              billFirstDocumentNumber(inv) ?? inv.receiptDocumentNumberRaw ?? null;
             const stem =
               numberPart !== null ? `${numberPart}-${inv.invoiceId}` : inv.invoiceId;
             const filename = `${stem.replace(/[^A-Za-z0-9._-]/g, '_')}.pdf`;

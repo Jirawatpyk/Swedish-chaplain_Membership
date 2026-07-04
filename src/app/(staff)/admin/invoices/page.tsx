@@ -26,6 +26,7 @@ import {
   isTenantInvoiceSetupComplete,
   computeIsOverdue,
   displayDocumentNumber,
+  resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 import {
   listSucceededPaymentMethods,
@@ -414,12 +415,7 @@ export default async function AdminInvoicesPage({
         // 088 (T065 / T065a) — disambiguation is applied only when the flag is
         // on AND the row is a real 088 bill (bill number present). A legacy row
         // (no bill number) stays 'none' and renders exactly as today.
-        const is088Bill = f088TaxAtPayment && r.billDocumentNumberRaw !== null;
-        const taxDocumentKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
-          ? r.receiptDocumentNumberRaw !== null
-            ? 'tax_receipt'
-            : 'bill'
-          : 'none';
+        const taxDocumentKind = resolveTaxDocumentKind(r, f088TaxAtPayment);
         return {
         invoiceId: r.invoiceId,
         // 064 remediation S7 — display number, never '—' on a numbered row:
@@ -490,7 +486,8 @@ export default async function AdminInvoicesPage({
         // resolved document kind drives the ใบแจ้งหนี้/Invoice tag + the RC
         // clickable link in the Receipt No. column. Null/'none' unless this is a
         // real 088 bill and the flag is on.
-        billDocumentNumberRaw: is088Bill ? r.billDocumentNumberRaw : null,
+        billDocumentNumberRaw:
+          taxDocumentKind !== 'none' ? r.billDocumentNumberRaw : null,
         taxDocumentKind,
         };
       })

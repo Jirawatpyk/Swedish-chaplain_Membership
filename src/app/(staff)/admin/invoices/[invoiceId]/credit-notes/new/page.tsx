@@ -83,8 +83,10 @@ export default async function NewCreditNotePage({
   // (SC-006), not 404'd. `!displayDocumentNumber(invoice)` is equivalent to
   // `!invoice.documentNumber && !invoice.receiptDocumentNumberRaw` — a validated
   // DocumentNumber's `.raw` is never empty, so `!displayDocumentNumber(invoice)`
-  // is true iff both fields are absent.
-  if (!invoice.total || !displayDocumentNumber(invoice)) {
+  // is true iff both fields are absent. Hoisted to one call — reused by the
+  // guard below AND the CreditNoteForm `documentNumber` prop.
+  const displayNumber = displayDocumentNumber(invoice);
+  if (!invoice.total || !displayNumber) {
     notFound();
   }
 
@@ -103,7 +105,7 @@ export default async function NewCreditNotePage({
             // §87 number; a paid 088 invoice (documentNumber NULL) falls
             // through to its RC (SC-006). Display-only ("against invoice
             // {number}" label). The guard above already proved this is non-null.
-            documentNumber={displayDocumentNumber(invoice) ?? ''}
+            documentNumber={displayNumber ?? ''}
             remainingSatang={remainingSatang}
             currencySymbol="THB"
           />

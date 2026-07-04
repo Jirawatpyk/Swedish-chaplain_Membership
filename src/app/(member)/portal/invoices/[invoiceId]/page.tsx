@@ -37,6 +37,7 @@ import {
   makeGetInvoiceDeps,
   computeIsOverdue,
   displayDocumentNumber,
+  resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
 // tenant-settings + credit-note reads on the admin invoice detail
@@ -185,20 +186,16 @@ export default async function PortalInvoiceDetailPage({
   // shared helper resolves whichever exists so the title never reads
   // "Invoice —" on a paid, numbered receipt.
   const documentNumber = displayDocumentNumber(invoice) ?? '—';
-  // 088 A-refined (FR-016) — resolve the two-document kind, gated on the flag AND
-  // this being a real 088 bill (bill number present). The invoice is ALWAYS
-  // identified by its OWN (SC) NON-§87 bill number — paid or unpaid — so the
-  // header ("Invoice {number}") reads under the SC bill for ANY 088 bill (never
-  // the RC on payment). The RC §86/4 tax receipt is surfaced in the "Receipt No."
-  // field below.
-  const is088Bill = env.features.f088TaxAtPayment && invoice.billDocumentNumberRaw !== null;
-  const taxDocKind: 'none' | 'bill' | 'tax_receipt' = is088Bill
-    ? invoice.receiptDocumentNumberRaw !== null
-      ? 'tax_receipt'
-      : 'bill'
-    : 'none';
+  // 088 A-refined (FR-016) — the invoice is ALWAYS identified by its OWN (SC)
+  // NON-§87 bill number — paid or unpaid — so the header ("Invoice {number}")
+  // reads under the SC bill for ANY 088 bill (the shared resolver returns a
+  // non-'none' kind), never the RC on payment. The RC §86/4 tax receipt is
+  // surfaced in the "Receipt No." field below. Only the bill-vs-none distinction
+  // matters here, so the specific bill/tax_receipt value is not bound.
   const headerNumber =
-    taxDocKind !== 'none' ? (invoice.billDocumentNumberRaw ?? '—') : documentNumber;
+    resolveTaxDocumentKind(invoice, env.features.f088TaxAtPayment) !== 'none'
+      ? (invoice.billDocumentNumberRaw ?? '—')
+      : documentNumber;
   const subtotal = invoice.subtotal?.satang ?? null;
   const vat = invoice.vat?.satang ?? null;
   const total = invoice.total?.satang ?? null;

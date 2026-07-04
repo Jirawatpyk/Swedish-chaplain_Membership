@@ -18,6 +18,7 @@ export {
   displayDocumentNumber,
   issuedInvoiceIdentity,
   billFirstDocumentNumber,
+  resolveTaxDocumentKind,
   type Invoice,
   type InvoiceId,
   type InvoiceStatus,

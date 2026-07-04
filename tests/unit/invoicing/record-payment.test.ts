@@ -383,6 +383,49 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     );
   });
 
+  it('088 FR-030 — invoice_paid audit summary names the SC bill (not "Invoice undefined marked paid")', async () => {
+    // record-payment.ts:820 — an 088 bill has NULL §87 `documentNumber`; the
+    // summary must fall back to `billDocumentNumberRaw` (SC) so the audit trail
+    // never reads "Invoice undefined marked paid". Pre-fix (documentNumber-only)
+    // this string interpolated `undefined`. Paying under the flag ON is a valid
+    // new-flow bill (documentNumber NULL → the FR-017 guard is skipped; the
+    // symmetric OFF guard is skipped because the flag is ON), so the flow reaches
+    // the audit emit.
+    const bill = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    });
+    const deps = makeDeps(
+      true,
+      bill,
+      makeSettings({ receiptNumberingMode: 'separate' }),
+      { taxAtPayment: true },
+    );
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1
+        ? bill
+        : makeIssuedInvoice({
+            documentNumber: null,
+            sequenceNumber: null,
+            billDocumentNumberRaw: 'SC-2026-000042',
+            status: 'paid',
+          });
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect(paidEmit, 'expected an invoice_paid audit emit').toBeDefined();
+    const summary = (paidEmit![1] as { summary: string }).summary;
+    expect(summary).toContain('SC-2026-000042');
+    expect(summary).not.toContain('undefined');
+  });
+
   it('088 FR-017 — rejects a legacy §87-numbered invoice (no bill number) paid under the new flow', async () => {
     // Legacy shape: a §87 `document_number` (issued under the old flow) with NO
     // bill_document_number_raw. Paying it under the flag would mint a 2nd §87.

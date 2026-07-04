@@ -30,6 +30,12 @@ vi.mock('@/modules/invoicing', () => ({
   listInvoicesByMember: (...a: unknown[]) => listInvoicesByMemberMock(...a),
   makeListInvoicesByMemberDeps: () => ({}),
   vercelBlobAdapter: { downloadBytes: (...a: unknown[]) => downloadBytesMock(...a) },
+  // Faithful reimplementation of domain/invoice.ts billFirstDocumentNumber
+  // (barrel pulls in Drizzle infra; real helper is unit-tested in its own suite).
+  billFirstDocumentNumber: (inv: {
+    documentNumber?: { raw: string } | null;
+    billDocumentNumberRaw?: string | null;
+  }) => inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null,
 }));
 vi.mock('@/modules/events', () => ({
   getEventAttendeesByMember: () => Promise.resolve([]),

@@ -718,3 +718,123 @@ describe('listTaxDocumentRegister — void / payment_date bucket / §86/10 netti
     expect(result.value.periodOutputVat.combinedVatSatang).toBe('4000');
   });
 });
+
+/**
+ * Integration — R2 companion: the `COALESCE(payment_date, paid_at)` bucketing
+ * FALLBACK (drizzle-invoice-repo.ts:1494/1543). A legacy / webhook paid RC
+ * receipt whose admin `payment_date` tax point was NEVER set (NULL — the R7-W5
+ * `payment_date` column post-dates some paid rows) MUST still be bucketed by its
+ * server mark-paid timestamp (`paid_at`, Bangkok-local). Without the COALESCE
+ * fallback (a `payment_date`-only filter) this row would match NO period — its
+ * output VAT silently dropped from every ภ.พ.30 window. `invoices_paid_has_payment`
+ * (migration 0019) requires only `paid_at` + `payment_method` on a paid row, so
+ * `payment_date` NULL is a legal, seedable shape. Own tenant + disjoint month
+ * (October) so it never perturbs the R1/R2/R3 rows above.
+ */
+describe('listTaxDocumentRegister — COALESCE(payment_date, paid_at) fallback (R2 companion)', () => {
+  let tenant: TestTenant;
+  let user: TestUser;
+  const rcNullPayDate = randomUUID();
+
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant();
+    const slug = tenant.ctx.slug;
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(membershipPlans).values({
+        tenantId: slug,
+        planId: 'reg-plan',
+        planYear: 2026,
+        planName: { en: 'Reg Plan' },
+        description: { en: 'desc' },
+        sortOrder: 10,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: slug,
+        memberId: MEMBER_ID,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Register Co',
+        country: 'TH',
+        planId: 'reg-plan',
+        planYear: 2026,
+      });
+      await tx.insert(invoices).values({
+        tenantId: slug,
+        invoiceId: rcNullPayDate,
+        invoiceSubject: 'membership',
+        memberId: MEMBER_ID,
+        planYear: 2026,
+        planId: 'reg-plan',
+        draftByUserId: user.userId,
+        status: 'paid',
+        billDocumentNumberRaw: 'SC-2026-000040',
+        receiptDocumentNumberRaw: 'RC-2026-000040',
+        receiptPdfStatus: 'rendered',
+        // payment_date DELIBERATELY OMITTED (NULL) — the R7-W5 tax-point column
+        // was never backfilled for this legacy paid row.
+        paidAt: new Date('2026-10-15T04:00:00Z'), // Bangkok-local 2026-10-15
+        paymentMethod: 'bank_transfer',
+        fiscalYear: 2026,
+        issueDate: '2026-10-01',
+        dueDate: '2026-10-01',
+        subtotalSatang: 100_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: 'monthly',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: SNAP_MEMBER,
+        pdfDocKind: 'invoice',
+        pdfBlobKey: 'invoicing/reg/coalesce.pdf',
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 8,
+      });
+    });
+  }, 60_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  });
+
+  it('a paid RC receipt with NULL payment_date buckets by paid_at (Bangkok-local)', async () => {
+    // October — the paid_at month. Under a payment_date-ONLY filter (COALESCE
+    // reverted) this NULL-payment_date row would match NO window, so this
+    // `toEqual([rcNullPayDate])` FAILS if the fallback regresses.
+    const oct = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-10-01', to: '2026-10-31' },
+    );
+    expect(oct.ok).toBe(true);
+    if (!oct.ok) return;
+    expect(oct.value.rows.map((r) => r.invoiceId)).toEqual([rcNullPayDate]);
+    expect(oct.value.summary.rowCount).toBe(1);
+    expect(oct.value.summary.totalVatSatang).toBe('7000');
+    expect(oct.value.periodOutputVat.rcVatSatang).toBe('7000');
+
+    // September — an adjacent month. The row buckets SPECIFICALLY in October
+    // (its paid_at), never leaking into a neighbouring period.
+    const sep = await listTaxDocumentRegister(
+      makeListTaxDocumentRegisterDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, kind: 'rc_register', from: '2026-09-01', to: '2026-09-30' },
+    );
+    expect(sep.ok).toBe(true);
+    if (!sep.ok) return;
+    expect(sep.value.rows.map((r) => r.invoiceId)).not.toContain(rcNullPayDate);
+    expect(sep.value.summary.rowCount).toBe(0);
+  });
+});

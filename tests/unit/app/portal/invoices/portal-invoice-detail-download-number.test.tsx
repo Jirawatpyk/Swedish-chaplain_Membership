@@ -66,6 +66,20 @@ vi.mock('@/modules/invoicing', () => ({
     documentNumber?: { raw: string } | null;
     receiptDocumentNumberRaw?: string | null;
   }) => inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw ?? undefined,
+  // Faithful reimplementation of domain/invoice.ts resolveTaxDocumentKind
+  // (barrel pulls in Drizzle infra; real helper is unit-tested in its own suite).
+  resolveTaxDocumentKind: (
+    inv: {
+      billDocumentNumberRaw?: string | null;
+      receiptDocumentNumberRaw?: string | null;
+    },
+    flagOn: boolean,
+  ): 'none' | 'bill' | 'tax_receipt' =>
+    !flagOn || inv.billDocumentNumberRaw == null
+      ? 'none'
+      : inv.receiptDocumentNumberRaw != null
+        ? 'tax_receipt'
+        : 'bill',
 }));
 
 vi.mock('@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo', () => ({

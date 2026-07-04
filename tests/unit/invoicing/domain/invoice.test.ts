@@ -23,6 +23,7 @@ import {
   displayDocumentNumber,
   issuedInvoiceIdentity,
   billFirstDocumentNumber,
+  resolveTaxDocumentKind,
   INVOICE_STATUSES,
   type Invoice,
   type InvoiceStatus,
@@ -249,6 +250,45 @@ describe('billFirstDocumentNumber — bill-first display identity (088 FR-030 sh
         billDocumentNumberRaw: 'SC-2026-000003',
       }),
     ).toBe('SC-2026-000003');
+  });
+});
+
+describe('resolveTaxDocumentKind — 088 two-document kind (FR-016 shared core)', () => {
+  it('flag OFF → none even when a bill + receipt number exist', () => {
+    expect(
+      resolveTaxDocumentKind(
+        { billDocumentNumberRaw: 'SC-2026-000001', receiptDocumentNumberRaw: 'RC-2026-000009' },
+        false,
+      ),
+    ).toBe('none');
+  });
+
+  it('flag ON but no bill number (legacy separate-mode paid row) → none', () => {
+    // §87 invoice number + RC, no ใบแจ้งหนี้ bill number → NOT an 088 two-doc row.
+    expect(
+      resolveTaxDocumentKind(
+        { billDocumentNumberRaw: null, receiptDocumentNumberRaw: 'RC-2026-000009' },
+        true,
+      ),
+    ).toBe('none');
+  });
+
+  it('flag ON + bill present + no RC → bill (unpaid 088 bill)', () => {
+    expect(
+      resolveTaxDocumentKind(
+        { billDocumentNumberRaw: 'SC-2026-000001', receiptDocumentNumberRaw: null },
+        true,
+      ),
+    ).toBe('bill');
+  });
+
+  it('flag ON + bill present + RC present → tax_receipt (paid 088 bill)', () => {
+    expect(
+      resolveTaxDocumentKind(
+        { billDocumentNumberRaw: 'SC-2026-000001', receiptDocumentNumberRaw: 'RC-2026-000009' },
+        true,
+      ),
+    ).toBe('tax_receipt');
   });
 });
 
