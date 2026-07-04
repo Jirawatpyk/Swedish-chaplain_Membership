@@ -164,6 +164,9 @@
       "dark": "Mörkt",
       "system": "System"
     },
+    "locale": {
+      "label": "Byt språk"
+    },
     "roleBadge": {
       "admin": "Administratör",
       "manager": "Chef",

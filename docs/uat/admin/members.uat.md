@@ -11,7 +11,7 @@
 - [ ] เข้าถึงกล่องอีเมลทดสอบได้ (สำหรับ invite / email-change / revert token)
 - [ ] ทราบสถานะ feature flag F8 (risk) / F9 (benefits, data export) บน preview
 
-**วิธีกรอก:** แต่ละ TC ทำเครื่องหมาย ✅ ผ่าน / ❌ ไม่ผ่าน ในช่อง "ผล" + ใส่หลักฐาน (member number/ภาพหน้าจอ/เลข audit) ในช่อง "หมายเหตุ"
+**วิธีกรอก:** แต่ละ TC ทำเครื่องหมายในช่อง "ผล" (☐ ผ่าน หรือ ☐ ไม่ผ่าน) + ใส่หลักฐาน (member number/ภาพหน้าจอ/เลข audit) ในช่อง "หมายเหตุ"
 
 ---
 
@@ -36,7 +36,7 @@
 |---|---|---|
 | 1 | สร้างสมาชิกเลือก plan ที่ต้องการ turnover สูง (เช่น Premium) แต่ใส่ turnover ต่ำกว่าเกณฑ์ | ขึ้น warning ว่า turnover ไม่เข้าเกณฑ์ plan; save ไม่ผ่านจนกว่าจะ override |
 | 2 | กล่อง "Reason for bypassing validation" เลือก Reason = **Other** แต่เว้น Note | บล็อก: "Note is required when reason is \"Other\"." |
-| 3 | ใส่ Note แล้วกด **Proceed with override** | บันทึกสำเร็จ; เหตุผล (code+note) ถูกเก็บใน audit log |
+| 3 | ใส่ Note แล้วกด **Proceed with override** | บันทึกสำเร็จ; เหตุผล (code+note) ถูกเก็บใน audit payload ของ event `member_created` (`override_reason_code` + `override_reason_note`) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -47,19 +47,19 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | เลือก plan **Thai Alumni**, ใส่ Date of birth ที่ทำให้อายุ > 35 ณ วันเริ่ม plan | warning เรื่องอายุ; save ต้อง override + เหตุผล (audit) |
+| 1 | เลือก plan **Thai Alumni**, ใส่ Date of birth ที่ทำให้อายุ > 35 ณ วันเริ่ม plan | warning เรื่องอายุ; save ต้อง override + เหตุผล (เก็บใน audit ของ `member_created`) |
 | 2 | เลือก plan **Start-up**, ใส่ Founded year ที่ทำให้บริษัทอายุ > 2 ปี | warning เรื่องอายุบริษัท; save ต้อง override + เหตุผล |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
 ---
 
-## TC-MBR-04 — กฎ tax_id ตาม tier (Corporate/Partnership บังคับ; TH 13 หลัก)
+## TC-MBR-04 — กฎ tax_id: format TH 13 หลัก (tax_id ไม่บังคับตาม tier — บางสมาชิกไม่มี)
 **อ้างอิง:** FR-009a · **บทบาท:** admin
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | สร้างสมาชิก Corporate/Partnership แต่เว้น **Tax ID** | save ถูกบล็อก (tax_id บังคับสำหรับ tier นี้) |
+| 1 | สร้างสมาชิก Corporate/Partnership แต่เว้น **Tax ID** | save ผ่านได้ — tax_id **ไม่บังคับตาม tier** (โดยตั้งใจ: บางสมาชิกไม่มี tax_id); ระบบตรวจเฉพาะ *format* (TH 13 หลัก/checksum) เมื่อมีการกรอกเท่านั้น |
 | 2 | ตั้ง Country=`TH` ใส่ tax_id ที่ไม่ใช่ 13 หลัก/checksum ผิด | ถูกปฏิเสธด้วยข้อความ format ไทย |
 | 3 | สร้างสมาชิก **Individual / Thai Alumni** เว้น Tax ID | save ผ่านได้ (ไม่บังคับ) |
 
@@ -72,7 +72,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | สร้างสมาชิกชื่อ + ประเทศ ตรงกับรายที่มีอยู่ → กด Create | ขึ้นกล่อง "Possible duplicate found" แสดงสมาชิกเดิม (ชื่อ/plan/status) |
+| 1 | สร้างสมาชิกชื่อ + ประเทศ ตรงกับรายที่มีอยู่ → กด Create | ขึ้นกล่อง "Possible duplicate found" แสดงสมาชิกเดิม (ชื่อบริษัท + ลิงก์ "Open existing member") |
 | 2 | กด **Proceed anyway** | สร้างเป็นรายการใหม่ที่แยกกัน (ไม่บล็อก) |
 | 3 | (ทำซ้ำ) กด **Open existing member** | นำไปหน้าสมาชิกเดิมแทน ไม่สร้างใหม่ |
 
@@ -98,7 +98,7 @@
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
 | 1 | พิมพ์บางส่วนของชื่อบริษัทในช่อง "Search by company, contact name, email, or member number" | ผลลัพธ์แคบลงตาม company/contact name/email (case-insensitive) ภายใน ~500 ms |
-| 2 | ค้นด้วยบางส่วนของ **member number** (เช่น `00`) | match ตามเลขสมาชิกด้วย |
+| 2 | ค้นด้วย **member number** เต็ม (เช่น `SCCM-0001`, `0001`, หรือ `1`) | match แบบ **exact** ตามเลขสมาชิก (member number เป็น exact-match ไม่ใช่ substring — เศษตัวเลขบางส่วนจะไม่ match) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -134,7 +134,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | ดูคอลัมน์ Risk/Engagement ของสมาชิกที่ยังไม่ถูกคำนวณ | ขึ้น "—" (neutral placeholder) ไม่ throw, ไม่แสดงข้อมูลปลอม; tooltip อธิบายว่าคำนวณหลัง 30 วัน |
+| 1 | ดูคอลัมน์ Risk/Engagement ของสมาชิกที่ยังไม่ถูกคำนวณ | ขึ้น "—" (neutral placeholder) ไม่ throw, ไม่แสดงข้อมูลปลอม (ปัจจุบัน cell ยัง**ไม่มี tooltip** อธิบาย 30 วัน — string `riskNotComputedTooltip` มีใน en.json แต่ยังไม่ wire เข้า cell) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -206,7 +206,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | ผู้ติดต่อที่ผูกบัญชีพอร์ทัล → **Edit** มองหาช่อง email | ช่อง email แก้ไม่ได้ + โน้ต "To change this contact's email, use the portal invitation flow." |
+| 1 | ผู้ติดต่อที่ผูกบัญชีพอร์ทัล → **Edit** มองหาช่อง email | ช่อง email แก้ไม่ได้ + โน้ต "To change this contact's email, edit it on the member Edit page. An unlinked contact must be invited to the portal first." |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -220,7 +220,7 @@
 | 1 | ผ่าน flow เปลี่ยน email พอร์ทัล เปลี่ยน email ของผู้ติดต่อที่มีบัญชี F1 | ใน 1 ธุรกรรม: อัปเดต contact+user email, **ตัด session ผู้ใช้นั้นทันที**, ปิด email เก่าล็อกอินไม่ได้ |
 | 2 | ตรวจกล่อง email ใหม่ | ได้อีเมลยืนยัน token 24 ชม. (ใช้ได้หลังหน่วง 5 นาที); email ใหม่ล็อกอินไม่ได้จนกว่าจะยืนยัน |
 | 3 | ตรวจกล่อง email เก่า | ได้อีเมล "this wasn't me — revert + freeze" token 48 ชม. |
-| 4 | ดู audit | มี `member_contact_email_changed` (high), `user_sessions_revoked`, `email_verification_sent`, `email_change_notification_sent_to_old_address` |
+| 4 | ดู audit | มี **4 events** ใน 1 ธุรกรรม: `member_contact_email_changed` (high) + `user_sessions_revoked` + `email_verification_sent` + `email_change_notification_sent_to_old_address` (ข้อมูล session-revoke-count / outbox-row-id อยู่ใน payload ของแต่ละ event) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -247,7 +247,7 @@
 |---|---|---|
 | 1 | จำลอง outbox ล้มเหลวถาวร (retry หมด → `permanently_failed`) สำหรับอีเมลยืนยันของผู้ติดต่อที่ผูกพอร์ทัล | มี outbox row สถานะ `permanently_failed` พร้อมให้ re-send |
 | 2 | ในฐานะ admin ยิง `POST /api/members/:memberId/contacts/:contactId/resend-verification` (เช่น ผ่าน REST client) | **200** `{ outbox_row_id, invalidated_prior }`; ออก token ยืนยัน 24 ชม. + outbox row ใหม่; audit `email_verification_resent`; ไม่ต้องพึ่ง DB operator |
-| 3 | ยิงเมื่อผู้ติดต่อ **ไม่เข้าเงื่อนไข** (ไม่มี outbox ล้มเหลว/ไม่มี linked user) | **409** `not_eligible` (ไม่ออก token ใหม่) |
+| 3 | ยิงเมื่อผู้ติดต่อ **ไม่เข้าเงื่อนไข** (ไม่มี linked user / email ยืนยันแล้ว / ผู้ติดต่อถูกลบ) | **409** `not_eligible` (ไม่ออก token ใหม่) — เงื่อนไขจริงคือ `no_linked_user` / `email_verified` / `contact_removed` (ไม่ได้ gate ที่ outbox ล้มเหลว) |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 
@@ -271,7 +271,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | จำลองอีเมลเชิญตีกลับ (Resend `email.bounced`) | ผู้ติดต่อมี badge "Invite bounced"; แถว directory มีสัญญาณเตือน; audit `invitation_bounced` |
+| 1 | จำลองอีเมลเชิญตีกลับ (Resend `email.bounced`) | ผู้ติดต่อมี badge **"Invite bounced"** — แสดงทั้งบน**แถว directory** (คอลัมน์ Primary contact) และหน้ารายละเอียดสมาชิก; audit `invitation_bounced` |
 | 2 | กด **Re-send invite** | ส่งคำเชิญใหม่ + เคลียร์ flag bounce; toast "Invitation re-sent." |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
@@ -396,7 +396,7 @@
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
 | 1 | สมาชิกที่มีหลาย event → หน้ารายละเอียด → **View all activity** | หน้า Timeline แสดง event **ใหม่สุดก่อน** พร้อมเวลา (ค.ศ. เก็บ / พ.ศ. แสดง th-TH), ชื่อผู้กระทำ (หรือ "System"), label localised, สรุป diff |
-| 2 | กด **Load older events** | โหลดเพิ่มทีละ 50 ไม่ค้างหน้าจอ; query ยัง tenant+member scoped |
+| 2 | กด **Load older activity** | โหลดเพิ่มทีละ 50 ไม่ค้างหน้าจอ; query ยัง tenant+member scoped |
 | 3 | กรอง source / actor / ช่วงวันที่ | รายการกรองถูกต้อง |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
@@ -433,7 +433,7 @@
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
 | 1 | สมาชิก Archived (ภายใน 90 วัน) → แบนเนอร์ "Archived on {date}" กด **Restore** | สถานะกลับ **Active**, เคลียร์ archived_at, audit `member_undeleted`; toast "Member restored." |
-| 2 | สมาชิก Archived เกิน 90 วัน → เปิดหน้ารายละเอียด | ปุ่ม **Restore** disable + tooltip "Archived > 90 days — contact a system admin to restore"; ข้อมูลยังอ่านได้ |
+| 2 | สมาชิก Archived เกิน 90 วัน → เปิดหน้ารายละเอียด | ปุ่ม **Restore** disable + tooltip "Archived > 90 days — contact a system admin to restore."; ข้อมูลยังอ่านได้ |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
 

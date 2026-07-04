@@ -247,3 +247,41 @@ describe('CM-4 — allocator throw aborts the create cleanly (no orphan member r
     expect(deps.audit.recordInTx).not.toHaveBeenCalled();
   });
 });
+
+describe('CM-5 — createMember persists the override reason on member_created (FR-006a)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function memberCreatedPayload(deps: CreateMemberDeps): Record<string, unknown> {
+    const recordInTx = deps.audit.recordInTx as ReturnType<typeof vi.fn>;
+    const call = recordInTx.mock.calls.find((c) => c[2].type === 'member_created');
+    expect(call).toBeDefined();
+    return call![2].payload as Record<string, unknown>;
+  }
+
+  it('member_created payload carries override_reason_code + note when an override is asserted', async () => {
+    const deps = makeDeps();
+    const result = await createMember(
+      {
+        ...input,
+        override_reason_code: 'data_correction',
+        override_reason_note: 'below plan band; approved by finance',
+      },
+      meta,
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(memberCreatedPayload(deps)).toMatchObject({
+      override_reason_code: 'data_correction',
+      override_reason_note: 'below plan band; approved by finance',
+    });
+  });
+
+  it('member_created payload omits the override fields when no override is asserted', async () => {
+    const deps = makeDeps();
+    const result = await createMember(input, meta, deps);
+    expect(result.ok).toBe(true);
+    const payload = memberCreatedPayload(deps);
+    expect(payload).not.toHaveProperty('override_reason_code');
+    expect(payload).not.toHaveProperty('override_reason_note');
+  });
+});

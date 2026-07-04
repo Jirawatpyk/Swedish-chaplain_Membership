@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
+import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
@@ -24,7 +25,7 @@ import { requireSession } from '@/lib/auth-session';
  * Auth guard via `requireSession('staff')` — redirects to
  * `/admin/sign-in` if there is no valid session, or if the session
  * belongs to a non-staff role. Renders sidebar navigation with
- * collapsible sidebar + header with UserMenu + ThemeToggle.
+ * collapsible sidebar + header with LocaleSwitcher + ThemeToggle + UserMenu.
  */
 export default async function StaffLayout({ children }: { children: ReactNode }) {
   const { user } = await requireSession('staff');
@@ -63,6 +64,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
               <Suspense fallback={null}>
                 <OutboxHealthBadge />
               </Suspense>
+              <LocaleSwitcher />
               <ThemeToggle />
               <UserMenu
                 displayName={user.displayName}

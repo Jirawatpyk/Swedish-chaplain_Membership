@@ -25,8 +25,12 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useAriaAnnounce } from '@/hooks/use-aria-announce';
+import {
+  updatePreferredLocale,
+  PREFERRED_LOCALE_ENDPOINT,
+  type PreferredLocale,
+} from '@/components/portal/preferred-locale-client';
 
-type PreferredLocale = 'en' | 'th' | 'sv' | null;
 type LoadState = 'loading' | 'ready' | 'error';
 
 export interface PreferredLocaleFormProps {
@@ -55,7 +59,7 @@ export function PreferredLocaleForm({
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch('/api/portal/preferred-locale', {
+        const res = await fetch(PREFERRED_LOCALE_ENDPOINT, {
           credentials: 'same-origin',
         });
         if (!res.ok) {
@@ -80,12 +84,7 @@ export function PreferredLocaleForm({
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch('/api/portal/preferred-locale', {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ preferredLocale: value }),
-      });
+      const res = await updatePreferredLocale(value);
       if (res.ok) {
         toast.success(t('savedToast'));
         announce(t('savedToast'));

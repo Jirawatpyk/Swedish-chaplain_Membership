@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { getRequestConfig } from 'next-intl/server';
-import { defaultLocale, isLocale, type Locale } from './config';
+import { defaultLocale, isLocale, LOCALE_COOKIE_NAME, type Locale } from './config';
 import { buildFormats } from './formats';
 
 export { buildFormats };
@@ -10,7 +10,7 @@ export { buildFormats };
  *
  * Priority:
  *  1. requestLocale from routing middleware (future: URL-prefix routing)
- *  2. NEXT_LOCALE cookie (E2E tests + future locale-switcher in <UserMenu>)
+ *  2. NEXT_LOCALE cookie (set by the header <LocaleSwitcher /> and E2E tests)
  *  3. defaultLocale ('en')
  *
  * dateTime format presets live in `./formats` (pure module, no Next.js
@@ -22,7 +22,7 @@ export default getRequestConfig(async ({ requestLocale }) => {
   const fromRouting = await requestLocale;
 
   const cookieStore = await cookies();
-  const fromCookie = cookieStore.get('NEXT_LOCALE')?.value;
+  const fromCookie = cookieStore.get(LOCALE_COOKIE_NAME)?.value;
 
   const raw = fromRouting ?? fromCookie;
   const locale: Locale = raw && isLocale(raw) ? raw : defaultLocale;

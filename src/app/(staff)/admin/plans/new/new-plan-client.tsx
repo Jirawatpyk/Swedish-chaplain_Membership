@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { PlanFormWizard } from '@/components/plans/plan-form-wizard';
 import type { PlanSchemaInput } from '@/modules/plans';
+import { resolvePlanCreateErrorKey } from './error-key';
 
 export interface NewPlanClientProps {
   readonly currentYear: number;
@@ -60,8 +61,13 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
       if (errorCode === 'read_only_mode' || errorCode === 'read-only-mode') {
         toast.error(t('errors.readOnlyMode'));
       } else {
-        const message = errorCode in (t.raw('errors') as Record<string, string>)
-          ? t(`errors.${errorCode}` as 'generic')
+        // API error codes are snake_case; a couple differ from their i18n
+        // key and would otherwise fall through to errors.generic. See
+        // ./error-key (duplicate_plan → duplicateKey, idempotency_conflict →
+        // idempotencyConflict).
+        const messageKey = resolvePlanCreateErrorKey(errorCode);
+        const message = messageKey in (t.raw('errors') as Record<string, string>)
+          ? t(`errors.${messageKey}` as 'generic')
           : t('errors.generic');
         toast.error(message);
       }

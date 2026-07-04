@@ -11,7 +11,7 @@
 - [ ] มีบัญชีทดสอบครบ 3 บทบาท: admin, manager, member (ที่บริษัทตรงกับใบ)
 - [ ] บัตรทดสอบ Stripe: สำเร็จ `4242 4242 4242 4242` · 3DS `4000 0027 6000 3184` · ปฏิเสธ `4000 0000 0000 0002` · เงินไม่พอ `4000 0000 0000 9995`
 
-**วิธีกรอก:** แต่ละ TC ทำเครื่องหมาย ✅ ผ่าน / ❌ ไม่ผ่าน ในช่อง "ผล" + ใส่หลักฐาน (เลข charge id / เลขใบลดหนี้ / ภาพหน้าจอ / event audit) ในช่อง "หมายเหตุ"
+**วิธีกรอก:** แต่ละ TC ทำเครื่องหมายในช่อง "ผล" (☐ ผ่าน หรือ ☐ ไม่ผ่าน) + ใส่หลักฐาน (เลข charge id / เลขใบลดหนี้ / ภาพหน้าจอ / event audit) ในช่อง "หมายเหตุ"
 
 > ℹ️ การจ่ายเงิน "ฝั่งสมาชิก" (กดบัตร / สแกน PromptPay) ใช้เพื่อ **สร้างสถานะตั้งต้น** ของ TC ฝั่ง admin — รายละเอียด UX ฝั่งสมาชิกอยู่ใน UAT member quick-start
 
@@ -24,7 +24,7 @@
 |---|---|---|
 | 1 | member: เปิดใบ Issued → Pay now → ใส่บัตร `4242…4242` → จ่าย | ขึ้นหน้าจ่ายสำเร็จ + ดาวน์โหลดใบเสร็จได้ |
 | 2 | admin: เปิดใบเดิมที่ `/admin/invoices/[id]` | สถานะใบ **Paid** โดย admin **ไม่ต้องกดบันทึกชำระเอง** |
-| 3 | ดูการ์ด **Payment activity** ท้ายหน้า | timeline มี **Payment initiated → Payment succeeded → Invoice marked paid** ตามลำดับ; ผู้ทำขึ้น **System (Stripe webhook)** |
+| 3 | ดูการ์ด **Payment activity** ท้ายหน้า | timeline มี **Payment initiated → Payment succeeded → Invoice marked paid** ตามลำดับ; **Payment initiated** ผู้ทำเป็น **อีเมลสมาชิก** ที่เริ่มจ่าย ส่วน **Payment succeeded** และ **Invoice marked paid** ผู้ทำเป็น **System (Stripe webhook)** (ยืนยันว่า admin ไม่ได้กดบันทึกชำระเอง) |
 | 4 | ตรวจอีเมลใบเสร็จของสมาชิก | ได้ใบเสร็จ (PDF) ภายใน ~1 นาที |
 | 5 | ตรวจ audit log | มี `payment_initiated`, `payment_succeeded`, `invoice_paid` ครบ |
 
@@ -51,7 +51,7 @@
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
 | 1 | เปิดใบที่จ่ายออนไลน์แล้ว → การ์ด **Payment activity** | แสดง event ตามเวลา + ผู้ทำ + timestamp |
-| 2 | ดูชิป **Charge id** → กด **Copy charge id** | คัดลอกเลขลง clipboard + toast/ประกาศ "Copied" |
+| 2 | ดูชิป **Charge id** → กด **Copy charge id** | คัดลอกเลขลง clipboard; toast ที่มองเห็น = **"Charge id copied to clipboard"** (ประกาศ screen-reader/aria-live = **"Copied"**) |
 | 3 | กด **View in Stripe** | เปิด Stripe dashboard ในแท็บใหม่ (target=_blank) ไปที่ payment ตรงกัน; ถ้า test mode มีป้าย **Test mode** |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
@@ -87,7 +87,7 @@
 ## TC-PAY-06 — คืนเงินเต็มจำนวน (ต้องพิมพ์ยืนยัน)
 **อ้างอิง:** US4-AS1, FR-011, FR-012, FR-029(f) · **บทบาท:** admin
 
-> ⚠️ **หมายเหตุ spec:** SC-008 และ US4-AS1 ใน `spec.md` ระบุ event `invoice_credited` ในชุด audit trail ของการคืนเงิน แต่ token นี้ **ไม่มีในโค้ดที่ ship แล้ว** — การเปลี่ยนสถานะใบเป็น Credited ถูกบันทึกด้วย `credit_note_issued` แทน (ดู `F4AuditEventType` ใน `src/modules/invoicing/application/ports/audit-port.ts`) จึงตัด SC-008 ออกจากบรรทัดอ้างอิง และยืนยันตามโค้ดในขั้นตอนที่ 6 (ควรยก spec-fix ให้แก้ SC-008 + US4-AS1 เป็น `credit_note_issued`)
+> ⚠️ **หมายเหตุ spec:** US4-AS1 (`spec.md:177`) และ SC-008 (`spec.md:395`) ระบุ event `credit_note_issued` อยู่แล้ว (ไม่ใช่ `invoice_credited`) ในชุด audit trail ของการคืนเงิน จึง **ไม่ต้อง** ยก spec-fix สองส่วนนี้ — การเปลี่ยนสถานะใบเป็น Credited ถูกบันทึกด้วย `credit_note_issued` (ดู `F4AuditEventType` ใน `src/modules/invoicing/application/ports/audit-port.ts`) ส่วน token `invoice_credited` ปรากฏเฉพาะเป็น display label ใน F9 admin-audit-viewer (`en/th/sv.json:494`) ที่ **ไม่มี** use-case ปล่อย event (no emitter) เท่านั้น ยืนยันตามโค้ดในขั้นตอนที่ 6
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
@@ -193,7 +193,7 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | จ่ายสำเร็จ 1 ใบ → ใช้ `stripe trigger`/resend ส่ง event เดิม (event id เดิม) ซ้ำ | webhook ตอบ 200 แต่เป็น no-op |
+| 1 | จ่ายสำเร็จ 1 ใบ → ใช้ **Stripe Dashboard → Resend** หรือ `stripe events resend <evt_id>` ส่ง event เดิม (event id เดิม) ซ้ำ (อย่าใช้ `stripe trigger` — จะสร้าง event id ใหม่ทุกครั้ง ไม่ใช่การส่งซ้ำ event id เดิม) | webhook ตอบ 200 แต่เป็น no-op |
 | 2 | ตรวจ Payment activity + อีเมล + audit | **ไม่มี** payment_succeeded ซ้ำ, **ไม่มี** ใบเสร็จ/อีเมลซ้ำ, **ไม่มี** audit ซ้ำ |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
@@ -228,8 +228,8 @@
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|
-| 1 | ตั้ง `online_payment_enabled=false` (หรือ `FEATURE_F5_ONLINE_PAYMENT=false`) | มีผลภายใน 1 รอบ request (ไม่แคชเกิน ~60 วิ); audit `online_payment_toggled` |
-| 2 | member เปิดใบ Issued | **ไม่มี** ปุ่ม Pay now; เห็นการ์ด **"Online payment unavailable"** + ปุ่ม **Contact administrator** (mailto admin พร้อม subject อ้างเลขใบ) |
+| 1 | ตั้ง `FEATURE_F5_ONLINE_PAYMENT=false` (env var — **มีผลทันที**) | ไม่มี Pay now ทันที. **หมายเหตุ MVP:** (ก) การ flip DB-column `online_payment_enabled=false` มี cache ~1h — ใช้ **env var** เพื่อผลทันทีตาม SC-013; (ข) event `online_payment_toggled` **ยังไม่ถูก emit** สำหรับการ flip แบบ config/env (รอ admin payment-settings toggle use-case — per-tenant, future) → ตอนนี้ track ผ่าน deploy/git history |
+| 2 | member เปิดใบ Issued | **ไม่มี** ปุ่ม Pay now; เห็นการ์ด **"Online payment unavailable"** + ปุ่ม **Contact administrator** (mailto admin, subject อ้างเลขใบ). **หมายเหตุ MVP:** ปุ่มจะ active เมื่อมี admin email — ปัจจุบันใช้ `BOOTSTRAP_ADMIN_EMAIL` (operator ต้องตั้งใน Vercel runtime env); ถ้าไม่ตั้ง แสดง disabled + "No administrator email is configured yet". per-tenant `contact_email` = future |
 | 3 | เปิดกลับ (`true`) → member เปิดใบใหม่ | ปุ่ม Pay now กลับมา |
 
 **ผล:** ☐ ผ่าน ☐ ไม่ผ่าน — **หมายเหตุ:** ____________________
@@ -282,7 +282,7 @@
 ---
 
 ## TC-PAY-22 — เปิดกล่องคืนเงินจาก command palette (?refund=1)
-**อ้างอิง:** FR-029 (UX) · **บทบาท:** admin
+**อ้างอิง:** FR-029 (UX — ครอบคลุมเฉพาะ UX ภายในกล่องคืนเงิน; การเปิดจาก command palette ผ่าน `?refund=1` deep-link + auto-open + clear เป็น affordance ระดับโค้ด ไม่ได้ระบุใน spec.md) · **บทบาท:** admin
 
 | # | ขั้นตอน | ผลที่คาดหวัง |
 |---|---|---|

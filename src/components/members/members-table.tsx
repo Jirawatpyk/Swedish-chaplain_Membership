@@ -120,6 +120,9 @@ export type MembersTableRow = {
     readonly first_name: string;
     readonly last_name: string;
     readonly email: string;
+    // Optional so existing fixtures that omit it still type-check; page.tsx
+    // supplies it from Contact.inviteBouncedAt for the directory bounce badge.
+    readonly invite_bounced?: boolean;
   } | null;
 };
 
@@ -372,6 +375,7 @@ export function MembersTable({
   onInlineEdit,
 }: Props) {
   const t = useTranslations('admin.members.directory');
+  const tContact = useTranslations('admin.members.detail');
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
@@ -526,7 +530,26 @@ export function MembersTable({
       cell: (info) => {
         const c = info.getValue();
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
-        return <span>{`${c.first_name} ${c.last_name}`.trim()}</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <span>{`${c.first_name} ${c.last_name}`.trim()}</span>
+            {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
+                row-level bounce signal in the directory, not only on the detail
+                page. Copy lives under admin.members.detail.inviteBounced. */}
+            {c.invite_bounced ? (
+              <Badge
+                variant="outline"
+                className="gap-1 border-destructive/40 text-destructive"
+              >
+                <TriangleAlert aria-hidden="true" className="size-3" />
+                <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
+                <span className="sr-only">
+                  {tContact('inviteBounced.badgeAria')}
+                </span>
+              </Badge>
+            ) : null}
+          </span>
+        );
       },
     }),
     columnHelper.accessor('status', {
