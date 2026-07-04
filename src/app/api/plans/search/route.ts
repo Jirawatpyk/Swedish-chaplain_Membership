@@ -216,8 +216,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 ?.legal_name ?? '';
             items.push({
               invoice_id: String(inv.invoiceId),
-              // 088 FR-030 — these rows are PAID → receipt-first via the shared
-              // helper (documentNumber?.raw ?? receiptDocumentNumberRaw). Also
+              // 088 FR-030 — these rows are PAID → documentNumber-first via the
+              // shared helper (documentNumber?.raw ?? receiptDocumentNumberRaw). Also
               // fixes the latent `String(valueObject)`→"[object Object]" bug: the
               // DocumentNumber VO has no toString, so read `.raw` via the helper.
               invoice_number: displayDocumentNumber(inv) ?? '',

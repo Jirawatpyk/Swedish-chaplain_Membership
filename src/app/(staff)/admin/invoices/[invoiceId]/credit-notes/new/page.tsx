@@ -80,7 +80,7 @@ export default async function NewCreditNotePage({
   // §86/4 RC receipt number lives in `receiptDocumentNumberRaw`. Resolve via
   // the shared, unit-tested `displayDocumentNumber` (documentNumber-first, RC
   // fallback, null only when both absent) so a paid 088 invoice is creditable
-  // (SC-006), not 404'd. Equivalent to the prior
+  // (SC-006), not 404'd. `!displayDocumentNumber(invoice)` is equivalent to
   // `!invoice.documentNumber && !invoice.receiptDocumentNumberRaw` — a validated
   // DocumentNumber's `.raw` is never empty, so `!displayDocumentNumber(invoice)`
   // is true iff both fields are absent.

@@ -31,8 +31,8 @@ export function resolveMemberInvoiceDisplayNumber(
   inv: Pick<Invoice, 'billDocumentNumberRaw' | 'documentNumber' | 'receiptDocumentNumberRaw'>,
 ): string | null {
   // Bill-first shared core (`billFirstDocumentNumber` = billDocumentNumberRaw ??
-  // documentNumber?.raw), then the member-detail-specific §105/RC tail so a
-  // no-TIN paid receipt still surfaces its printed number. Identical result to
-  // the former inline 3-way coalesce — see the docblock above.
+  // documentNumber?.raw), then the member-detail-specific §105/RC tail (the
+  // FR-030 fix) so a no-TIN paid §105/RC receipt surfaces its printed number
+  // instead of the "(draft)" placeholder — see the docblock above.
   return billFirstDocumentNumber(inv) ?? inv.receiptDocumentNumberRaw ?? null;
 }

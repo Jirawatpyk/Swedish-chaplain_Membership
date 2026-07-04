@@ -467,7 +467,8 @@ export function assertSnapshotsSet(inv: Invoice): Result<void, InvoiceTransition
 
 /**
  * Transition-guard table. Returns ok on legal, err on illegal.
- * Matches data-model.md § 3.1 state machine diagram.
+ * Base transitions follow 007 data-model.md § 3.1; the `paid → void` edge
+ * follows 088 data-model.md § E ("any non-terminal state → void by admin").
  */
 export function canTransition(
   from: InvoiceStatus,
@@ -482,8 +483,8 @@ export function canTransition(
   const legal: Record<InvoiceStatus, readonly InvoiceStatus[]> = {
     draft: subject === 'event' ? ['issued', 'paid'] : ['issued'],
     issued: ['paid', 'void'],
-    // 088 (data-model.md § 3.1 — `paid --void--> void`; "any non-terminal →
-    // void by admin"): voiding a PAID invoice is legal (the void use-case's
+    // 088 (data-model.md § E — "any non-terminal state → void by admin"):
+    // voiding a PAID invoice is legal (the void use-case's
     // own guard already accepts `paid`, e.g. a wrongly-recorded offline
     // payment on a membership). Previously omitted here, so routing a
     // paid→void through this table wrongly returned `invalid_transition`.

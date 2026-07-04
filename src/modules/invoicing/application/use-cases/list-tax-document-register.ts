@@ -26,6 +26,7 @@
  * liability; ignoring credit notes would overstate it.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import type { Invoice } from '../../domain/invoice';
 import type { TaxRegisterRepo } from '../ports/tax-register-repo';
@@ -125,7 +126,23 @@ export async function listTaxDocumentRegister(
         to: input.to,
       }),
     ]);
-  } catch {
+  } catch (e) {
+    // Error-audit (whole-feature review) — this catch now guards TWO DB queries
+    // (the register rows + the §86/10 credit-note VAT aggregate); a failure on
+    // the legally-significant ภ.พ.30 surface MUST be diagnosable (RLS/tenant-GUC
+    // misconfig, column/type drift after a migration, Neon transient). Log
+    // before degrading to the typed error, matching the sibling use-cases
+    // (export-paid-invoices-csv, the signed-url readers).
+    logger.error(
+      {
+        err: e,
+        tenantId: input.tenantId,
+        kind: input.kind,
+        from: input.from,
+        to: input.to,
+      },
+      'listTaxDocumentRegister: period register query failed',
+    );
     return err({ code: 'list_failed' });
   }
 
