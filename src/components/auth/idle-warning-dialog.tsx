@@ -139,7 +139,6 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     // in but got kicked out" defect (TC-AUTH-05 step 2). Bonus: the modal
     // dismisses instantly instead of after the network round-trip.
     keepAliveRef.current = true;
-    lastActivityRef.current = Date.now();
     setRemaining(WARNING_WINDOW_MS / 1000);
     setOpen(false);
     try {
@@ -151,16 +150,25 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       // — escalate to involuntary sign-out. A 429 (heartbeat rate limit,
       // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT
       // mean the session died; the row is still valid server-side, so keep
-      // the user signed in. The next protected request surfaces any real
-      // auth failure (same contract as the ≤1-min-to-absolute-cap edge
-      // documented above). Signing out on ANY non-OK response was part of
+      // the user signed in. Signing out on ANY non-OK response was part of
       // the same BUG-018 fragility.
       if (response.status === 401) {
         await forceSignOut();
+        return;
+      }
+      if (response.ok) {
+        // Reset the client idle clock ONLY on a successful heartbeat — that is
+        // the only response that actually extended sessions.last_seen_at. On
+        // 429/5xx the session was NOT extended, so leaving lastActivityRef
+        // untouched lets the idle poll re-open the warning within ~5 s instead
+        // of falsely suppressing it for ~29 min and letting the session lapse
+        // into an abrupt no-session error (the class BUG-018 targeted).
+        lastActivityRef.current = Date.now();
       }
     } catch {
-      // Network blip — already closed optimistically; the next real
-      // request will surface any real auth failure.
+      // Network blip — session not extended; leave the idle clock so the
+      // warning re-appears promptly. The next protected request surfaces any
+      // real auth failure.
     } finally {
       keepAliveRef.current = false;
     }
@@ -252,6 +260,16 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       window.removeEventListener('swecham:open-idle-warning', onOpen);
     };
   }, []);
+
+  // Reset the keep-alive guard whenever the warning (re)opens: a fresh idle
+  // cycle must be able to sign the user out even if a PRIOR stayAction's
+  // heartbeat never settled (its `finally` would not have run, leaving the
+  // guard stuck true — no AbortController on the fetch). Resets only on
+  // open→true, so it never disturbs the BUG-018 race window (the guard stays
+  // true during the optimistic close, which is an open→false transition).
+  useEffect(() => {
+    if (open) keepAliveRef.current = false;
+  }, [open]);
 
   // Countdown — while the modal is open, tick once per second. Reaching
   // zero triggers the involuntary sign-out path.

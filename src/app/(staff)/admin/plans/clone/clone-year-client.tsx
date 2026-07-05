@@ -50,7 +50,14 @@ export function CloneYearClient({
   // is a free-typed number input) so every count-bearing surface stays
   // truthful. The actual clone always used the real Source year server-side;
   // only this pre-flight display was wrong.
-  const [sourcePlanCount, setSourcePlanCount] = useState(defaultSourcePlanCount);
+  // `null` = the count for the CURRENT Source year is not known yet (loading or
+  // a failed fetch). The count-bearing surfaces show a neutral "…" and the
+  // Clone button is disabled while null, so we never quote a stale count (from
+  // the previous year, during the debounce) or a falsely-zero count (on a
+  // transient fetch error) — code-review follow-up to BUG-010.
+  const [sourcePlanCount, setSourcePlanCount] = useState<number | null>(
+    defaultSourcePlanCount,
+  );
 
   useEffect(() => {
     if (sourceYear === defaultSourceYear) {
@@ -61,6 +68,9 @@ export function CloneYearClient({
       setSourcePlanCount(0);
       return;
     }
+    // Blank the count for the newly-picked year immediately, so no prior-year
+    // number is shown during the 350ms debounce + fetch.
+    setSourcePlanCount(null);
     let cancelled = false;
     const handle = setTimeout(() => {
       void (async () => {
@@ -74,9 +84,9 @@ export function CloneYearClient({
             setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
           }
         } catch {
-          // Fall back to 0 ("no plans found for that year") rather than keep
-          // showing a wrong number for the newly-picked source year.
-          if (!cancelled) setSourcePlanCount(0);
+          // Leave the count UNKNOWN (null) on a transient failure — do NOT
+          // coerce to 0, which would falsely read "no plans for that year".
+          if (!cancelled) setSourcePlanCount(null);
         }
       })();
     }, 350);
@@ -141,7 +151,7 @@ export function CloneYearClient({
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         {tClone('description', {
-          count: sourcePlanCount,
+          count: sourcePlanCount ?? '…',
           sourceYear,
           targetYear,
         })}
@@ -190,9 +200,14 @@ export function CloneYearClient({
         </Button>
         <Button
           onClick={() => setOpen(true)}
-          disabled={sourceYear === targetYear || submitting}
+          // Disabled while the count for the current Source year is unknown
+          // (loading / failed): the confirm dialog must never open quoting a
+          // stale or falsely-zero count (code-review follow-up to BUG-010).
+          disabled={
+            sourceYear === targetYear || submitting || sourcePlanCount === null
+          }
         >
-          {tClone('submit', { count: sourcePlanCount })}
+          {tClone('submit', { count: sourcePlanCount ?? '…' })}
         </Button>
       </div>
 
@@ -201,7 +216,7 @@ export function CloneYearClient({
         onOpenChange={setOpen}
         sourceYear={sourceYear}
         targetYear={targetYear}
-        sourcePlanCount={sourcePlanCount}
+        sourcePlanCount={sourcePlanCount ?? 0}
         submitting={submitting}
         onConfirm={handleConfirm}
       />

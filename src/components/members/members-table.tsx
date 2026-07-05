@@ -678,8 +678,13 @@ export function MembersTable({
     (k) => rowSelection[k],
   ).length;
 
+  // BUG-013 follow-up: derive "whole page selected" from the table's own
+  // all-selected state, which respects enableRowSelection (archived rows are
+  // non-selectable). `selectedCount === rows.length` would never hold once an
+  // archived row is on the page, hiding the "Select all N matching" banner and
+  // contradicting the header select-all checkbox (which also uses this).
   const allPageSelected =
-    enableSelection && rows.length > 0 && selectedCount === rows.length;
+    enableSelection && rows.length > 0 && table.getIsAllPageRowsSelected();
   const hasMorePages = enableSelection && nextCursor !== null;
 
   // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable

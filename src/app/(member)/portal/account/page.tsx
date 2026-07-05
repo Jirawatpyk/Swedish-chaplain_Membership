@@ -286,7 +286,8 @@ export default async function MemberAccountPage() {
         linked member (e.g. a pending invitation) has memberId === null — the
         toggle's POST and the export request would 404. Mirror the legacy
         per-route notFound() at the section level: hide these when unlinked,
-        but keep Account + Appearance (which work without a member).
+        but keep Account (with Sign out) + Preferred language, which work
+        without a member.
       */}
       {memberId ? (
         <HubCard id="renewal-prefs" title={tPage('sections.renewalPrefs')}>

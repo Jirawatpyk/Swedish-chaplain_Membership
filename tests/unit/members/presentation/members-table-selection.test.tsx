@@ -42,6 +42,8 @@ const messages = {
         selectAll: 'Select all',
         selectRow: 'Select {company}',
         selectedCount: '{count} selected',
+        selectAllMatchingHint: 'All {count} selected. <loadMore>Load next</loadMore>',
+        tableCaption: 'Members',
         columns: {
           company: 'Company',
           plan: 'Plan',
@@ -176,6 +178,41 @@ describe('MembersTable selection (T108 regression)', () => {
     expect(selectedIds).toContain('aaaa-1111-bbbb-2222');
     expect(selectedIds).toContain('cccc-3333-dddd-4444');
     expect(selectedIds).toHaveLength(2);
+  });
+
+  // BUG-013 follow-up (code-review): once archived rows became non-selectable,
+  // the "Select all N matching" banner must key off the table's own
+  // all-page-selected state, NOT `selectedCount === rows.length` (which can
+  // never hold on a page mixing archived + active rows). Regression guard.
+  it('shows the cross-page "select all matching" banner on a mixed archived page when every selectable row is chosen', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+
+    // 1 active (selectable) + 1 archived (non-selectable); a next cursor makes
+    // the cross-page banner eligible.
+    const mixedRows: MembersTableRow[] = [
+      testRows[0]!,
+      { ...testRows[1]!, member_id: 'eeee-5555-ffff-6666', status: 'archived' },
+    ];
+
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={mixedRows}
+          nextCursor="cursor-xyz"
+          enableSelection={true}
+          onSelectionChange={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // No banner before any selection.
+    expect(screen.queryByRole('button', { name: 'Load next' })).toBeNull();
+
+    // Select-all on the page: only the active row is selectable, so
+    // selectedCount (1) < rows.length (2). The banner must STILL appear.
+    fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+
+    expect(screen.getByRole('button', { name: 'Load next' })).toBeTruthy();
   });
 
   it('no checkboxes when enableSelection is false', async () => {
