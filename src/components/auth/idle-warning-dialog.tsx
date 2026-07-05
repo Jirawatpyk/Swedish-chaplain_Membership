@@ -320,6 +320,11 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // override the user's explicit choice (BUG-018). forceSignOut flips `open`
   // false, so this fires exactly once per countdown.
   useEffect(() => {
+    // Honour the PaySheet pause too (FR-028c): a final decrement tick can land
+    // in the same frame a pause is applied, leaving remaining===0 while paused —
+    // the sign-out must NOT fire mid-payment. (Consistent with the decrement,
+    // poll, and reWarn, which all bail while paused.)
+    if (pausedAtRef.current !== null) return;
     if (open && remaining === 0 && !stayPendingRef.current) {
       void forceSignOut();
     }

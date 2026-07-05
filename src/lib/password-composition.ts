@@ -12,10 +12,10 @@
  */
 
 /** Minimum character classes (of lower/upper/digit/symbol) for a short 'strong'. */
-export const MIN_STRONG_CHARACTER_CLASSES = 3;
+const MIN_STRONG_CHARACTER_CLASSES = 3;
 
 /** How many of the 4 character classes (lower/upper/digit/symbol) appear. */
-export function characterClassCount(password: string): number {
+function characterClassCount(password: string): number {
   let n = 0;
   if (/[a-z]/.test(password)) n += 1;
   if (/[A-Z]/.test(password)) n += 1;
