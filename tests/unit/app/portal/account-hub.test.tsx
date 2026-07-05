@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -121,7 +121,6 @@ describe('Account hub — sectioned IA (G2)', () => {
       /Notification language/,
       /Renewal preferences/,
       /Data & privacy/,
-      /Appearance/,
     ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
@@ -189,10 +188,12 @@ describe('Account hub — unlinked user (no member row)', () => {
     findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
   });
 
-  it('still renders #account and #appearance when memberId is null', async () => {
+  it('still renders #account + the sign-out button when memberId is null', async () => {
     const { container } = await renderHub();
     expect(container.querySelector('#account')).not.toBeNull();
-    expect(container.querySelector('#appearance')).not.toBeNull();
+    expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
   });
 
   it('hides #renewal-prefs when the user has no linked member', async () => {
@@ -231,12 +232,14 @@ describe('Account hub — f9Dashboard gated OFF', () => {
     // The three remaining sections must still render.
     expect(container.querySelector('#account')).not.toBeNull();
     expect(container.querySelector('#renewal-prefs')).not.toBeNull();
-    expect(container.querySelector('#appearance')).not.toBeNull();
+    expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// I3: never-500 contract — the hub MUST keep rendering Account + Appearance
+// I3: never-500 contract — the hub MUST keep rendering Account + Sign out
 // (the account-management / sign-out surface) even when a member-data seed
 // read fails transiently. Each test drives one seed path into a throw/genuine-
 // error and asserts: (a) the page still returns markup (NOT a thrown error —
@@ -265,12 +268,14 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
     });
 
-    it('still renders #account + #appearance, logs error, drops member sections', async () => {
+    it('still renders #account + the sign-out button, logs error, drops member sections', async () => {
       // If the seed try/catch were removed this `await` would reject and the
       // assertions below would never run — the test would error, not pass.
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
-      expect(container.querySelector('#appearance')).not.toBeNull();
+      expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
       // memberId stays null → member-specific sections absent.
       expect(container.querySelector('#renewal-prefs')).toBeNull();
       expect(container.querySelector('#data-privacy')).toBeNull();
@@ -290,10 +295,12 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
     });
 
-    it('still renders #account + #appearance and logs the outer hub-seed error', async () => {
+    it('still renders #account + the sign-out button and logs the outer hub-seed error', async () => {
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
-      expect(container.querySelector('#appearance')).not.toBeNull();
+      expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
       expect(container.querySelector('#renewal-prefs')).toBeNull();
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ errKind: expect.any(String) }),
@@ -316,7 +323,9 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       // safe-default initialOptedOut=false) — the read failure must not drop it.
       expect(container.querySelector('#account')).not.toBeNull();
       expect(container.querySelector('#renewal-prefs')).not.toBeNull();
-      expect(container.querySelector('#appearance')).not.toBeNull();
+      expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
       // S-renewal-breadcrumb: independently observable on its own key.
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ errKind: expect.any(String) }),
@@ -336,7 +345,9 @@ describe('Account hub — never-500 throw paths (I3)', () => {
     it('still renders the hub + the data-privacy section (degraded, no crash)', async () => {
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
-      expect(container.querySelector('#appearance')).not.toBeNull();
+      expect(
+      within(container).getByRole('button', { name: /^sign out$/i }),
+    ).toBeInTheDocument();
       // f9 ON + linked member → section renders; the export list degrades to []
       // inside the panel rather than 500-ing the page.
       expect(container.querySelector('#data-privacy')).not.toBeNull();

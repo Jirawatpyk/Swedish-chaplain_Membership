@@ -4494,8 +4494,7 @@
       "sections": {
         "account": "Konto",
         "renewalPrefs": "Förnyelseinställningar",
-        "dataPrivacy": "Data och integritet",
-        "appearance": "Utseende"
+        "dataPrivacy": "Data och integritet"
       },
       "menu": {
         "renewalPrefs": "Förnyelsepåminnelser",

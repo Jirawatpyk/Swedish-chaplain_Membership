@@ -1,9 +1,11 @@
 'use client';
 
 /**
- * PortalSignOutButton — Sign-out affordance for the Account-hub Appearance
- * section. On mobile the Account tab opens /portal/account directly (no avatar
- * dropdown per spec §2), so the hub needs its own sign-out. Same POST +
+ * PortalSignOutButton — Sign-out affordance folded into the Account-hub
+ * "Account" card (023 option B: the standalone theme/sign-out card was removed
+ * — its theme toggle duplicated the header ThemeToggle + UserMenu theme
+ * items). The mobile Account tab opens /portal/account directly, so keeping a
+ * sign-out here backs up the header UserMenu on small screens. Same POST +
  * router-push + toast pattern as <UserMenu>.
  */
 import { LogOutIcon } from 'lucide-react';

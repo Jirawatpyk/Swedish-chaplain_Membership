@@ -4494,8 +4494,7 @@
       "sections": {
         "account": "Account",
         "renewalPrefs": "Renewal preferences",
-        "dataPrivacy": "Data & privacy",
-        "appearance": "Appearance"
+        "dataPrivacy": "Data & privacy"
       },
       "menu": {
         "renewalPrefs": "Renewal reminders",

@@ -4494,8 +4494,7 @@
       "sections": {
         "account": "บัญชีผู้ใช้",
         "renewalPrefs": "การตั้งค่าการต่ออายุ",
-        "dataPrivacy": "ข้อมูลและความเป็นส่วนตัว",
-        "appearance": "การแสดงผล"
+        "dataPrivacy": "ข้อมูลและความเป็นส่วนตัว"
       },
       "menu": {
         "renewalPrefs": "การแจ้งเตือนต่ออายุ",
