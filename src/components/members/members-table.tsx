@@ -449,6 +449,9 @@ export function MembersTable({
             cell: ({ row }) => (
               <Checkbox
                 checked={row.getIsSelected()}
+                // BUG-013: disabled for archived rows (enableRowSelection
+                // returns false → getCanSelect() is false).
+                disabled={!row.getCanSelect()}
                 onCheckedChange={(checked) => row.toggleSelected(!!checked)}
                 onClick={(e: React.MouseEvent) => {
                   // Shift+Click range selection (FR-040)
@@ -457,9 +460,14 @@ export function MembersTable({
                     const end = Math.max(lastSelectedRef.current, row.index);
                     const next = { ...rowSelection };
                     for (let i = start; i <= end; i++) {
-                      // getRowId uses member_id, so key by member_id
-                      const memberId = rows[i]?.member_id;
-                      if (memberId) next[memberId] = true;
+                      // getRowId uses member_id, so key by member_id. Skip
+                      // archived rows to match enableRowSelection (BUG-013):
+                      // shift-range writes rowSelection directly, so without
+                      // this guard it could select a non-selectable row.
+                      const rangeRow = rows[i];
+                      if (rangeRow && rangeRow.status !== 'archived') {
+                        next[rangeRow.member_id] = true;
+                      }
                     }
                     handleRowSelectionChange(next);
                     e.preventDefault();
@@ -644,7 +652,14 @@ export function MembersTable({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    enableRowSelection: enableSelection,
+    // BUG-013: archived (soft-deleted) rows are not a valid target for either
+    // bulk action (archive rejects already-archived; send-portal-invite makes
+    // no sense for a removed member), so make them non-selectable. TanStack
+    // then disables their checkbox, excludes them from select-all, and blocks
+    // programmatic selection. Managers keep no selection at all.
+    enableRowSelection: enableSelection
+      ? (row) => row.original.status !== 'archived'
+      : false,
     onRowSelectionChange: handleRowSelectionChange,
     state: {
       rowSelection,

@@ -48,7 +48,19 @@ export async function generateMetadata(): Promise<Metadata> {
  * so ~80% of the types that actually appear in the log (member/invoice/broadcast/
  * renewal/plan/event) were unfilterable.
  */
-const EVENT_TYPE_OPTIONS: readonly string[] = ALL_AUDIT_EVENT_TYPES;
+// BUG-006: `session_forcibly_ended` is a spec-parity enum value that NO code
+// path ever emits — forced session-ends are recorded as the batched
+// `concurrent_sessions_revoked` event (Q3-B design / auth-api.md §459-460).
+// Offering it as a filter surfaced a "type that returns nothing", which a
+// tester read as a missing-audit bug. Drop never-emitted types from the
+// selectable options (the pg enum keeps them for spec parity; this only
+// trims the viewer dropdown).
+const NEVER_EMITTED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'session_forcibly_ended',
+]);
+const EVENT_TYPE_OPTIONS: readonly string[] = ALL_AUDIT_EVENT_TYPES.filter(
+  (t) => !NEVER_EMITTED_EVENT_TYPES.has(t),
+);
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

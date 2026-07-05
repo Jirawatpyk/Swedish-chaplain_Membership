@@ -80,6 +80,9 @@ import type {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// BUG-028: full function budget for the per-contact audience sync (Resend
+// 2 req/s + reactive 429 backoff). See dispatch-scheduled for the rationale.
+export const maxDuration = 300;
 
 const MAX_BROADCASTS_PER_TICK = 20;
 const SWEEP_GRACE_SECONDS = 30;
