@@ -45,6 +45,10 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
+  // FR-024 says "admin-only", but `action:'read'` intentionally admits MANAGER
+  // (read-only staff) too — ratified to match the invoice-PDF read gate: a
+  // manager who can already view the tax invoice/receipt can view its supporting
+  // §80/1(5) cert scan. No write/delete path is exposed to manager.
   const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
   if ('response' in ctx) return ctx.response;
 

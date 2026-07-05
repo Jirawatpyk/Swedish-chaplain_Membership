@@ -24,17 +24,21 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
+import { issueCreditNote } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import {
   makeCreateInvoiceDraftDeps,
   makeIssueInvoiceDeps,
   makeRecordPaymentDeps,
+  makeIssueCreditNoteDeps,
 } from '@/modules/invoicing/application/invoicing-deps';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
+import type { IssueCreditNoteDeps } from '@/modules/invoicing/application/use-cases/issue-credit-note';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -102,6 +106,21 @@ function recordDepsFlagOn(slug: string, captured?: PdfRenderInput[]): RecordPaym
     // `tax_receipt_issued` fire in-tx on BOTH paths — only the render timing
     // differs; the async worker path is covered by render-receipt-pdf (T020).
     asyncReceiptPdf: false,
+  };
+}
+
+/**
+ * V2 (US6) — issueCreditNote deps against the paid membership bill. issueCreditNote
+ * derives the entire flow from the loaded row (no `taxAtPayment` dep), so the only
+ * overrides are the deterministic PDF/Blob/clock seams + a stub outbox (the tenant
+ * has a primary contact email; we never touch the real Resend outbox in tests).
+ */
+function creditNoteDepsFlagOn(slug: string, captured?: PdfRenderInput[]): IssueCreditNoteDeps {
+  return {
+    ...makeIssueCreditNoteDeps(slug),
+    ...mockPdfBlob(captured),
+    clock: { nowIso: () => FIXED_NOW },
+    outbox: { enqueue: vi.fn(async () => {}) },
   };
 }
 
@@ -262,5 +281,57 @@ describe('088 US1 — bill (ใบแจ้งหนี้) → §86/4 RC receip
     // No stray §86/4 tax number was consumed at issue (SC-001): the ONLY
     // §87-register number for the whole sale is the RC receipt number.
     expect(taxReceiptRows[0]!.eventType).toBe('tax_receipt_issued');
-  }, 90_000);
+
+    // 4. V2 (US6 regression, live Neon) — issue a §86/10 ใบลดหนี้ against this
+    //    documentNumber-NULL membership bill. The use-case DELIBERATELY dropped
+    //    the `!documentNumber` completeness guard so this legitimate 088 row
+    //    credits; re-adding it would break EVERY production membership credit
+    //    note. Prove end-to-end that (a) crediting a documentNumber-NULL row
+    //    SUCCEEDS, and (b) the CN document cites the §86/4 RC receipt number +
+    //    the receipt (payment) date — NOT the SC bill number / issue date.
+    const cnCaptured: PdfRenderInput[] = [];
+    const cn = await issueCreditNote(creditNoteDepsFlagOn(tenant.ctx.slug, cnCaptured), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `b2r-cn-${invoiceId}`,
+      invoiceId,
+      // Full credit → parent flips to `credited` (no fractional-VAT guesswork).
+      creditTotalSatang: paidRow!.totalSatang!,
+      reason: 'V2 membership credit-note regression (documentNumber NULL)',
+    });
+    expect(cn.ok, cn.ok ? 'ok' : `cn err: ${JSON.stringify(cn)}`).toBe(true);
+    if (!cn.ok) throw new Error('membership credit note failed');
+
+    // (a) The rendered CN cites the §86/4 RC receipt number (documentNumber is
+    //     NULL → the `receiptDocumentNumberRaw ?? documentNumber` resolution
+    //     lands on the RC), NOT the non-§87 SC bill number.
+    const cnRender = cnCaptured.find((c) => c.kind === 'credit_note');
+    expect(cnRender, 'expected a credit_note render call').toBeDefined();
+    expect(cnRender!.creditNote?.originalDocumentNumber).toBe(paidRow!.receiptDocumentNumberRaw);
+    expect(cnRender!.creditNote?.originalDocumentNumber).not.toBe(paidRow!.billDocumentNumberRaw);
+    // (b) New-flow (documentNumber NULL) → the §86/4 receipt is dated at the
+    //     PAYMENT date (D7 tax point), so the §86/10 CN cites the payment date.
+    expect(cnRender!.creditNote?.originalIssueDate).toBe(PAYMENT_DATE);
+
+    // A credit_notes row was persisted for this invoice, with its OWN §87 CN
+    // number + issue date (the referenced RC is cited in the rendered PDF, not a
+    // CN column). Proves the documentNumber-NULL row credited end-to-end.
+    const cnRows = await db
+      .select()
+      .from(creditNotes)
+      .where(
+        and(
+          eq(creditNotes.tenantId, tenant.ctx.slug),
+          eq(creditNotes.originalInvoiceId, invoiceId),
+        ),
+      );
+    expect(cnRows).toHaveLength(1);
+    expect(cnRows[0]!.documentNumber).toMatch(/^CN-2026-\d{6}$/);
+    expect(cnRows[0]!.issueDate).toBeTruthy();
+
+    // Parent flips to `credited` on a full credit; documentNumber stays NULL.
+    const creditedRow = await readRow(invoiceId);
+    expect(creditedRow!.status).toBe('credited');
+    expect(creditedRow!.documentNumber).toBeNull();
+  }, 120_000);
 });
