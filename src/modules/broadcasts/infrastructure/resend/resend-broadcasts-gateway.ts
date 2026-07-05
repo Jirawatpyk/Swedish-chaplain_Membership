@@ -35,7 +35,6 @@ import { renderBroadcastHtml } from './email-template';
 import { extractBareEmail, stripAngleBrackets } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
-const CONTACTS_CHUNK_SIZE = 100;
 
 interface ResendErrorShape {
   readonly statusCode?: number;
@@ -129,6 +128,18 @@ function classifyResendError(
       reason,
     });
   }
+  if (status === 429) {
+    // Resend's default 2 req/s account rate limit. The request is fine —
+    // it was merely too fast — so back off and retry rather than treating
+    // it as a permanent failure that kills the whole broadcast (BUG-028).
+    // Without this branch a 429 fell through to `permanent` below and
+    // withRetry rethrew immediately with no backoff.
+    return new GatewayThrowable({
+      kind: 'retryable',
+      subKind: 'api',
+      reason,
+    });
+  }
   if (status === 409) {
     return new GatewayThrowable({
       kind: 'idempotency_conflict',
@@ -215,28 +226,40 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   ): Promise<void> {
     if (contacts.length === 0) return;
 
-    // Paginate at the Resend per-call limit (100).
-    for (let i = 0; i < contacts.length; i += CONTACTS_CHUNK_SIZE) {
-      const chunk = contacts.slice(i, i + CONTACTS_CHUNK_SIZE);
+    // The Resend Contacts API is one-at-a-time (no bulk endpoint) and the
+    // account is capped at 2 req/s. Wrap EACH single create in its own
+    // withRetry so that when Resend answers 429 (now classified retryable —
+    // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
+    // that ONE contact and retries it, WITHOUT re-creating the contacts that
+    // already succeeded. Previously the retry wrapped a whole 100-contact
+    // batch, so a mid-batch 429 re-ran the entire batch (duplicate creates)
+    // AND — before 429 was retryable — killed the broadcast outright
+    // (BUG-028).
+    //
+    // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
+    // across an unbounded (up to AUDIENCE_HARD_CAP) list would burn the whole
+    // dispatch-function time budget on sleeping and time the invocation out
+    // before it finishes. Reactive backoff only pays the cost when the limit
+    // is actually hit. Reliable delivery of very large audiences within a
+    // single invocation is a separate architectural concern (batched
+    // multi-tick dispatch), tracked outside this fix.
+    for (const c of contacts) {
       await withRetry(
         async () => {
           const sdk = client();
-          // Resend Contacts API is one-at-a-time; loop inside chunk.
-          for (const c of chunk) {
-            const result = (await sdk.contacts.create({
-              email: c.emailLower,
+          const result = (await sdk.contacts.create({
+            email: c.emailLower,
+            audienceId,
+            ...(c.firstName !== undefined && { firstName: c.firstName }),
+            ...(c.lastName !== undefined && { lastName: c.lastName }),
+            unsubscribed: false,
+          })) as ResendSdkResponse<{ id: string }>;
+          if (result.error) {
+            throw classifyResendError(
+              result.error ?? undefined,
+              'audience',
               audienceId,
-              ...(c.firstName !== undefined && { firstName: c.firstName }),
-              ...(c.lastName !== undefined && { lastName: c.lastName }),
-              unsubscribed: false,
-            })) as ResendSdkResponse<{ id: string }>;
-            if (result.error) {
-              throw classifyResendError(
-                result.error ?? undefined,
-                'audience',
-                audienceId,
-              );
-            }
+            );
           }
         },
         { method: 'addContactsToAudience' },
