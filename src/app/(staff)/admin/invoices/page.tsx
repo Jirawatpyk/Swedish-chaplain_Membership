@@ -240,9 +240,16 @@ export default async function AdminInvoicesPage({
     offset,
     pageSize: PAGE_SIZE,
     includeDrafts,
-    ...(statusFilter && statusFilter !== 'draft'
+    // BUG-015: forward the status for EVERY filter, including 'draft'. The
+    // repo needs BOTH includeDrafts:true AND status:'draft' to return
+    // drafts-only (it applies eq(status,'draft') AND skips the draft-exclusion
+    // guard). Previously 'draft' was excluded here, so the repo got
+    // includeDrafts:true with no positive status predicate and the query
+    // degenerated to "all invoices for the tenant".
+    ...(statusFilter
       ? {
           status: statusFilter as
+            | 'draft'
             | 'issued'
             | 'paid'
             | 'void'
