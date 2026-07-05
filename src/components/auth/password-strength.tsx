@@ -57,7 +57,8 @@ export interface PasswordStrengthProps {
  *     so flagging them keeps the bar from being falsely encouraging. It
  *     does not approximate the curated common-list, whose 10 entries are
  *     a disjoint set the client can't see.
- *   - ≥16 chars AND has a non-alphanumeric → strong
+ *   - ≥16 chars (length alone), OR ≥12 chars with ≥3 character classes
+ *     (lower/upper/digit/symbol) → strong
  *   - otherwise → acceptable
  *
  * **Known client/server drift** (accepted trade-off) — in BOTH
@@ -97,12 +98,36 @@ export function estimatePasswordStrength(
   // Flag it locally — no network round-trip — so the bar never reads
   // "acceptable" for it (see the client/server-drift note above).
   if (isLowEntropy(password)) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
+  // Strong = long enough on its own (>= 16 chars — e.g. a passphrase), OR a
+  // shorter-but-varied password (>= 12 chars, which is guaranteed here, WITH
+  // at least 3 of the 4 character classes: lower / upper / digit / symbol).
+  // BUG-004: the old rule required >= 16 chars AND a symbol, so a genuinely
+  // strong 12-14 char mixed-case+digit(+symbol) password only ever read
+  // "acceptable". Kept in lockstep with the server `scoreStrength`.
+  if (
+    password.length >= 16 ||
+    characterClassCount(password) >= MIN_STRONG_CHARACTER_CLASSES
+  ) {
+    return 'strong';
+  }
   return 'acceptable';
 }
 
 /** Distinct-character floor below which a password counts as trivially weak. */
 const MAX_LOW_ENTROPY_DISTINCT = 3;
+
+/** Minimum character classes (of lower/upper/digit/symbol) for a short 'strong'. */
+const MIN_STRONG_CHARACTER_CLASSES = 3;
+
+/** How many of the 4 character classes (lower/upper/digit/symbol) appear. */
+function characterClassCount(password: string): number {
+  let n = 0;
+  if (/[a-z]/.test(password)) n += 1;
+  if (/[A-Z]/.test(password)) n += 1;
+  if (/[0-9]/.test(password)) n += 1;
+  if (/[^a-zA-Z0-9]/.test(password)) n += 1;
+  return n;
+}
 
 /**
  * Trivially-weak patterns detectable locally, without the HIBP network call.

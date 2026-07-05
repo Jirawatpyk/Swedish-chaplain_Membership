@@ -46,10 +46,11 @@ describe('ChangePasswordForm strength-bar reset on server rejection', () => {
       </NextIntlClientProvider>,
     );
 
-    // A client-"acceptable" password (13 distinct chars) so the bar starts amber.
+    // A client-"acceptable" password (14 chars, only lower+upper = 2 character
+    // classes, so under the BUG-004 rule the bar starts amber, not green).
     setValue(container, 'current-password', 'current-secret');
-    setValue(container, 'new-password', 'aB3xK9mZ2pQ7w');
-    setValue(container, 'confirm-password', 'aB3xK9mZ2pQ7w');
+    setValue(container, 'new-password', 'aBcDeFgHiJkLmN');
+    setValue(container, 'confirm-password', 'aBcDeFgHiJkLmN');
     expect(screen.getByText('Acceptable strength.')).toBeTruthy();
 
     const form = container.querySelector('form');
@@ -65,7 +66,7 @@ describe('ChangePasswordForm strength-bar reset on server rejection', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     // Editing the value releases the pin → the live estimate returns.
-    setValue(container, 'new-password', 'aB3xK9mZ2pQ7wX');
+    setValue(container, 'new-password', 'aBcDeFgHiJkLmNo');
     await waitFor(() =>
       expect(screen.getByText('Acceptable strength.')).toBeTruthy(),
     );
