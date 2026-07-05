@@ -12,6 +12,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   Command,
+  CommandEmpty,
   CommandInput,
   CommandList,
 } from '@/components/ui/command';
@@ -108,5 +109,30 @@ describe('command-palette localized-label search (#4)', () => {
     const { container } = renderPalette();
     typeQuery(container, 'zzzznomatch');
     expect(screen.queryByText(THAI_NEW_PLAN)).toBeNull();
+  });
+
+  // #B empty-state mechanism: the palette relies on cmdk's <CommandEmpty> (which
+  // renders only when the client-filtered item count is 0) instead of a
+  // server-result-based hasAnyResult gate — which broke once the server started
+  // returning the full registry on every query. This pins the mechanism.
+  it('shows CommandEmpty only when the query matches no rendered item', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="th" messages={messages}>
+        <Command>
+          <CommandInput placeholder="ค้นหา" />
+          <CommandList>
+            <CommandEmpty>No results</CommandEmpty>
+            <PaletteGroups results={results} onAfterNavigate={() => {}} />
+          </CommandList>
+        </Command>
+      </NextIntlClientProvider>,
+    );
+    // Query matches the action → CommandEmpty hidden.
+    typeQuery(container, 'สร้าง');
+    expect(screen.queryByText('No results')).toBeNull();
+    // Query matches nothing → cmdk surfaces CommandEmpty (would have been
+    // suppressed by the old always-true hasAnyResult gate).
+    typeQuery(container, 'zzzznomatch');
+    expect(screen.getByText('No results')).toBeTruthy();
   });
 });

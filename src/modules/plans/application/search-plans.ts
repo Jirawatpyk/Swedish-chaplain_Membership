@@ -433,14 +433,16 @@ export async function searchPlans(
   const navigatePool = filterByRole(NAVIGATE_REGISTRY, input.role);
 
   // Actions + navigate are a tiny static registry. Return the ENTIRE
-  // role-filtered set (NOT query-filtered) and let the client command palette
-  // (cmdk, shouldFilter on) match the query against each entry's cmdk `value`,
-  // which includes the RESOLVED, locale-specific label + English synonyms. The
-  // backend only has the i18n KEY, not the visible localized label, so
-  // client-side filtering is what lets a TH/SV admin find an action by the text
-  // they actually see. `q` still filters the DB-backed plan hits above.
-  const actions = actionPool.slice(0, limit);
-  const navigate = navigatePool.slice(0, limit);
+  // role-filtered set — NOT query-filtered, and deliberately NOT capped to
+  // `limit`: slicing would silently drop tail entries the client still needs to
+  // match (e.g. the 21st admin entry `nav.directory`). The client command
+  // palette (cmdk, shouldFilter on) matches the query against each entry's cmdk
+  // `value`, which includes the RESOLVED, locale-specific label + English
+  // synonyms — the backend only has the i18n KEY, so client-side filtering is
+  // what lets a TH/SV admin find an entry by the text they see. `q` still caps
+  // + filters the DB-backed plan hits above.
+  const actions = actionPool;
+  const navigate = navigatePool;
 
   return ok({
     results: {

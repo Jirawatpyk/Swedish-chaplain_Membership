@@ -235,6 +235,17 @@ describe('searchPlans — navigate registry filter', () => {
     const ids = result.value.results.navigate.map((n) => n.id);
     expect(ids).toContain('nav.dashboard');
   });
+
+  it('returns the ENTIRE navigate registry incl. the LAST entry (nav.directory) — not capped to `limit`', async () => {
+    // Regression guard: returning the whole registry then slice(0, limit=20)
+    // dropped the 21st admin entry (nav.directory), making the F9 Member
+    // Directory unreachable via the palette. The full set must survive.
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'x', role: 'admin' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const ids = result.value.results.navigate.map((n) => n.id);
+    expect(ids).toContain('nav.directory');
+  });
 });
 
 describe('searchPlans — server_error', () => {

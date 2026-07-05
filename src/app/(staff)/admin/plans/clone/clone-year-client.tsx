@@ -74,10 +74,13 @@ export function CloneYearClient({
       return;
     }
     if (sourceYear < 2000 || sourceYear > 2100) {
-      setSourcePlanCount(0);
+      // Out-of-range — including transient digits ("2"/"20"/"202") while the
+      // admin is still typing a year — is UNKNOWN, not "0 plans". Show "…".
+      setSourcePlanCount(null);
       return;
     }
-    // Blank immediately so no stale prior-year number shows during the debounce.
+    // onChange already blanked to null synchronously; keep it null here too
+    // (defensive, and covers a programmatic sourceYear change).
     setSourcePlanCount(null);
     let cancelled = false;
     const handle = setTimeout(() => {
@@ -155,11 +158,15 @@ export function CloneYearClient({
     }
   }
 
+  // Single source of truth for the "…" loading/unknown placeholder shown when
+  // the pre-flight count is not yet known.
+  const countLabel = sourcePlanCount ?? '…';
+
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         {tClone('description', {
-          count: sourcePlanCount ?? '…',
+          count: countLabel,
           sourceYear,
           targetYear,
         })}
@@ -173,11 +180,16 @@ export function CloneYearClient({
             min={2000}
             max={2100}
             value={sourceYear}
-            onChange={(e) =>
+            onChange={(e) => {
               setSourceYear(
                 Number.parseInt(e.target.value, 10) || defaultSourceYear,
-              )
-            }
+              );
+              // Blank the count SYNCHRONOUSLY (batched with setSourceYear) so a
+              // frame never paints the NEW year beside the OLD year's count.
+              // Safe with the hand-rolled effect keyed on the immediate
+              // sourceYear — a net-zero edit still re-runs it and restores.
+              setSourcePlanCount(null);
+            }}
           />
         </div>
         <div className="space-y-1">
@@ -215,7 +227,7 @@ export function CloneYearClient({
           // must never block an otherwise-valid clone.
           disabled={sourceYear === targetYear || submitting}
         >
-          {tClone('submit', { count: sourcePlanCount ?? '…' })}
+          {tClone('submit', { count: countLabel })}
         </Button>
       </div>
 

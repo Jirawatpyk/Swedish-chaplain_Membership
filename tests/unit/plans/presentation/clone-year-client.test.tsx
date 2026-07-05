@@ -87,6 +87,18 @@ describe('CloneYearClient pre-flight count', () => {
     ).toBeTruthy();
   });
 
+  it('#G: a transient out-of-range year while typing shows "…", never "Clone 0 plans"', () => {
+    renderClient();
+    const input = document.getElementById('source_year') as HTMLInputElement;
+    // "202" (mid-typing "2028") is < 2000 → out of range. It must read "…"
+    // (unknown), NOT a misleading "0 plans".
+    act(() => {
+      fireEvent.change(input, { target: { value: '202' } });
+    });
+    expect(screen.queryByText(/Clone 0 plans/)).toBeNull();
+    expect(screen.getByText('Clone … plans from 202 to 2027')).toBeTruthy();
+  });
+
   it('#1: editing the source year up then back to the default restores the count (not stranded at null)', () => {
     renderClient();
     const input = document.getElementById('source_year') as HTMLInputElement;

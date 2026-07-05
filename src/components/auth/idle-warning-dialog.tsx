@@ -66,6 +66,14 @@ const WARNING_WINDOW_MS = 60 * 1000;
 /** Warning fires at IDLE_TIMEOUT_MS - WARNING_WINDOW_MS = 29 minutes. */
 const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
 
+/**
+ * Abort a "Stay signed in" heartbeat that hasn't answered in 10 s — longer than
+ * a serverless cold start, far shorter than the 29-min warning window. Bounds
+ * how long the optimistic idle-clock reset can mask a hung request: on timeout
+ * the fetch aborts → rollback → the idle poll re-warns within ~5 s.
+ */
+const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
+
 const ACTIVITY_EVENTS = [
   'mousemove',
   'keydown',
@@ -97,6 +105,11 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // countdown's zero-handler know the user already chose to stay, so a tick
   // landing mid-round-trip cannot override that choice (BUG-018).
   const keepAliveRef = useRef<boolean>(false);
+
+  // Guards against overlapping "Stay signed in" clicks: a second invocation
+  // while one is in flight would share keepAliveRef/lastActivityRef and race
+  // the rollback.
+  const heartbeatInFlightRef = useRef<boolean>(false);
 
   const signInPath = portalSignInPath(portal);
 
@@ -138,22 +151,43 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     // optimistic close ends it — this is the BUG-018 "clicked Stay signed
     // in but got kicked out" defect (TC-AUTH-05 step 2). Bonus: the modal
     // dismisses instantly instead of after the network round-trip.
-    // Capture the pre-click idle timestamp so we can roll back if the
-    // heartbeat turns out NOT to have extended the session.
+    // Ignore overlapping clicks: a second "Stay" while one is in flight would
+    // share keepAliveRef/lastActivityRef and race the rollback.
+    if (heartbeatInFlightRef.current) return;
+    heartbeatInFlightRef.current = true;
+
+    // Capture the pre-click idle timestamp so we can roll back if the heartbeat
+    // turns out NOT to have extended the session.
     const previousActivity = lastActivityRef.current;
     keepAliveRef.current = true;
     // Optimistically reset the idle clock BEFORE awaiting: a cold-start
     // heartbeat can take longer than the 5 s idle poll, and without this reset
-    // the poll would re-open the warning mid-flight and its fresh 60 s
-    // countdown could involuntarily sign out a user whose session is about to
-    // be (or was just) extended.
-    lastActivityRef.current = Date.now();
+    // the poll would re-open the warning mid-flight and its fresh 60 s countdown
+    // could involuntarily sign out a user whose session is about to be (or was
+    // just) extended. Remember the EXACT value so we only roll it back if
+    // nothing advanced the clock since — real activity during the round-trip
+    // (the tracker re-arms once `open` flips false) must be preserved.
+    const optimisticReset = Date.now();
+    lastActivityRef.current = optimisticReset;
     setRemaining(WARNING_WINDOW_MS / 1000);
     setOpen(false);
+    // Roll the optimistic reset back to `previousActivity`, but ONLY if the
+    // clock still holds the optimistic value — if the user kept working during
+    // the round-trip, keep their fresh timestamp rather than spuriously
+    // re-warning an active user.
+    const rollbackIdleClock = () => {
+      if (lastActivityRef.current === optimisticReset) {
+        lastActivityRef.current = previousActivity;
+      }
+    };
     try {
       const response = await fetch('/api/auth/heartbeat', {
         method: 'POST',
         credentials: 'same-origin',
+        // Bound the optimistic-reset window: a hung request must not suppress
+        // the warning for ~29 min. On timeout the fetch aborts → catch →
+        // rollback → the poll re-warns within ~5 s.
+        signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS),
       });
       // Only a definitive 401 (no-session) means the session is truly gone —
       // escalate to involuntary sign-out. A 429 (heartbeat rate limit,
@@ -165,21 +199,21 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
         return;
       }
       if (!response.ok) {
-        // 429/5xx: the heartbeat did NOT extend the session. Roll the idle
-        // clock BACK to its pre-click value so the poll re-warns promptly (the
-        // session will idle-expire server-side soon) instead of the optimistic
-        // reset falsely suppressing the warning for ~29 min — the abrupt-logout
-        // class BUG-018 targeted.
-        lastActivityRef.current = previousActivity;
+        // 429/5xx: the heartbeat did NOT extend the session. Roll the idle clock
+        // back so the poll re-warns promptly (the session will idle-expire soon)
+        // instead of the optimistic reset falsely suppressing it for ~29 min —
+        // the abrupt-logout class BUG-018 targeted.
+        rollbackIdleClock();
       }
       // 2xx: keep the optimistic reset — the session was extended.
     } catch {
-      // Network blip — session not extended; roll back so the warning
-      // re-appears promptly. The next protected request surfaces any real
-      // auth failure.
-      lastActivityRef.current = previousActivity;
+      // Network blip / timeout — session not extended; roll back so the warning
+      // re-appears promptly. The next protected request surfaces any real auth
+      // failure.
+      rollbackIdleClock();
     } finally {
       keepAliveRef.current = false;
+      heartbeatInFlightRef.current = false;
     }
   }, [forceSignOut]);
 
