@@ -173,27 +173,17 @@ describe('searchPlans — role-based filter', () => {
     expect(ids).toContain('plan.clone');
   });
 
-  it('BUG-024: admin typing "create" surfaces every "Create new …" action via keyword synonyms', async () => {
+  it('returns the FULL role-filtered action set regardless of query — the client cmdk does the query matching (#4)', async () => {
     const deps = makeDeps({ plans: [] });
-    const result = await searchPlans({ ...baseInput, q: 'create', role: 'admin' }, deps);
-    if (!result.ok) throw new Error('unreachable');
-    const ids = result.value.results.actions.map((a) => a.id);
-    // Before the fix these matched only their i18n key/id (e.g. "newPlan" /
-    // "plan.new"), so "create" — present only in the resolved label — found
-    // nothing. The ["create","add"] keywords now make them discoverable.
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        'plan.new',
-        'member.new',
-        'invoice.new',
-        'broadcast.newTemplate',
-      ]),
+    // A query that matches no action i18n key / id. The server no longer
+    // query-filters actions: it returns the whole role-filtered registry so the
+    // client command palette can match on the RESOLVED (locale-specific) label
+    // + English synonyms — the backend only has the i18n key, so a TH/SV admin
+    // searching the visible label must be served by client-side cmdk filtering.
+    const result = await searchPlans(
+      { ...baseInput, q: 'zzz-no-server-side-match', role: 'admin' },
+      deps,
     );
-  });
-
-  it('BUG-024: "add" also matches the create actions', async () => {
-    const deps = makeDeps({ plans: [] });
-    const result = await searchPlans({ ...baseInput, q: 'add', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.actions.map((a) => a.id);
     expect(ids).toEqual(
@@ -233,9 +223,14 @@ describe('searchPlans — role-based filter', () => {
 describe('searchPlans — navigate registry filter', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('navigate entries surface for matching query', async () => {
+  it('returns all role-filtered navigate entries regardless of query (client cmdk filters on the localized label)', async () => {
     const deps = makeDeps({ plans: [] });
-    const result = await searchPlans({ ...baseInput, q: 'dashboard' }, deps);
+    // Same as actions: navigate is a static registry returned whole; the
+    // client matches the query against the resolved localized label (#4).
+    const result = await searchPlans(
+      { ...baseInput, q: 'zzz-no-server-side-match' },
+      deps,
+    );
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.navigate.map((n) => n.id);
     expect(ids).toContain('nav.dashboard');

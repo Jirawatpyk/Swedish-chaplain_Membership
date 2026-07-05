@@ -113,37 +113,41 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
 
       {results.actions.length > 0 && (
         <CommandGroup heading={t('groups.actions')}>
-          {results.actions.map((action) => (
-            <CommandItem
-              key={action.id}
-              // Include search synonyms in the cmdk value so the client-side
-              // fuzzy filter matches the visible verb ("create") too — the
-              // label here is still the raw i18n key, so without this cmdk
-              // would re-hide an action the server correctly returned (BUG-024).
-              value={`action ${action.id} ${action.label} ${(action.keywords ?? []).join(' ')}`}
-              onSelect={() => handleNavigate(action.url)}
-            >
-              {/* label is an i18n key like `palette.actions.newPlan` —
-                  resolve its last segment via the `palette.actions` namespace */}
-              <span>{resolveLabel(t, action.label, 'actions')}</span>
-            </CommandItem>
-          ))}
+          {results.actions.map((action) => {
+            // Resolve the i18n key to the visible, locale-specific label ONCE
+            // and use it both for display AND in the cmdk match value, so a
+            // TH/SV admin can search an action by the text they actually see
+            // (#4). English synonyms cover verbs not in the label (BUG-024).
+            const label = resolveLabel(t, action.label, 'actions');
+            return (
+              <CommandItem
+                key={action.id}
+                value={`action ${action.id} ${label} ${(action.keywords ?? []).join(' ')}`}
+                onSelect={() => handleNavigate(action.url)}
+              >
+                <span>{label}</span>
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
       )}
 
       {results.navigate.length > 0 && (
         <CommandGroup heading={t('groups.navigate')}>
-          {results.navigate.map((nav) => (
-            <CommandItem
-              key={nav.id}
-              // Navigate entries carry no search synonyms (unlike actions), so
-              // the cmdk value is just id + i18n key — cmdk fuzzy-matches both.
-              value={`navigate ${nav.id} ${nav.label}`}
-              onSelect={() => handleNavigate(nav.url)}
-            >
-              <span>{resolveLabel(t, nav.label, 'navigate')}</span>
-            </CommandItem>
-          ))}
+          {results.navigate.map((nav) => {
+            // Resolve to the visible localized label + use it in the cmdk match
+            // value so navigate items are searchable by the text shown (#4).
+            const label = resolveLabel(t, nav.label, 'navigate');
+            return (
+              <CommandItem
+                key={nav.id}
+                value={`navigate ${nav.id} ${label}`}
+                onSelect={() => handleNavigate(nav.url)}
+              >
+                <span>{label}</span>
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
       )}
     </>
