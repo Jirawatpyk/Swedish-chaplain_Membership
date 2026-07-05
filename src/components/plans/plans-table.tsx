@@ -239,6 +239,24 @@ export function PlansTable({
 
   const isAdmin = currentUserRole === 'admin';
 
+  // Year filter options — a small window around the viewed year (always
+  // included), newest first. Before BUG-009 there was NO visible year
+  // control at all (the list defaulted to the current year and the only way
+  // to change it was hand-editing the ?year= URL); that param still reaches
+  // any year outside this window.
+  const yearOptions = useMemo(() => {
+    // Clamp the window to the same [2000, 2100] range page.tsx validates, so
+    // the dropdown can never offer a year the server will reject and silently
+    // drop (which would fall back to the current year).
+    const years: number[] = [];
+    const top = Math.min(year + 1, 2100);
+    const bottom = Math.max(year - 3, 2000);
+    for (let y = top; y >= bottom; y -= 1) years.push(y);
+    // Always keep the currently-viewed year selectable, even at a boundary.
+    if (!years.includes(year)) years.unshift(year);
+    return years;
+  }, [year]);
+
   function updateFilter(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(next)) {
@@ -269,6 +287,17 @@ export function PlansTable({
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onBlur={() => updateFilter({ q: q || null })}
+            // Commit the search on Enter too — the FilterBar is a
+            // role="search" div (no <form>), so there is no implicit submit
+            // and, without this, the term only applied on blur (BUG-007).
+            // Ignore Enter during an IME composition (it confirms the
+            // candidate, not the search).
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                updateFilter({ q: q || null });
+              }
+            }}
             disabled={isPending}
             className="pl-9"
           />
@@ -307,6 +336,25 @@ export function PlansTable({
             <SelectItem value="all">{t('filters.all')}</SelectItem>
             <SelectItem value="corporate">{t('filters.category.corporate')}</SelectItem>
             <SelectItem value="partnership">{t('filters.category.partnership')}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Label htmlFor="plans-year" className="sr-only">
+          {t('filters.year')}
+        </Label>
+        <Select value={String(year)} onValueChange={(v) => updateFilter({ year: v })}>
+          <SelectTrigger id="plans-year" className="sm:w-[120px]">
+            <TranslatedSelectValue
+              placeholder={t('filters.year')}
+              translate={(v) => v}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {yearOptions.map((y) => (
+              <SelectItem key={y} value={String(y)}>
+                {y}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

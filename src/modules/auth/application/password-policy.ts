@@ -19,6 +19,7 @@
  */
 import { createHash } from 'node:crypto';
 import { logger } from '@/lib/logger';
+import { hasStrongComposition } from '@/lib/password-composition';
 
 export type PasswordPolicyError =
   | { readonly code: 'too-short'; readonly minLength: number }
@@ -81,7 +82,13 @@ function scoreStrength(
   errors: readonly PasswordPolicyError[],
 ): 'weak' | 'acceptable' | 'strong' {
   if (errors.length > 0) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
+  // The shared `hasStrongComposition` rule — the single source of truth for
+  // strong-vs-acceptable, imported by the client meter too so the two cannot
+  // drift (BUG-004 / BUG-001). Strong = >= 16 chars (length alone) OR >= 3 of
+  // the 4 character classes; passwords shorter than 12 already errored above.
+  if (hasStrongComposition(password)) {
+    return 'strong';
+  }
   return 'acceptable';
 }
 

@@ -12,9 +12,11 @@ import {
 /**
  * Portal account-hub loading skeleton (058 D2).
  *
- * Mirrors the account hub in `page.tsx` (Account → Preferred language →
- * Renewal preferences → Data & privacy → Appearance) so the shimmer→content
- * swap doesn't pop extra sections into existence (CLS = 0, ux-standards § 2.1).
+ * Mirrors the account hub in `page.tsx` (Account [+ folded-in Sign out] →
+ * Preferred language → Renewal preferences → Data & privacy) so the
+ * shimmer→content swap doesn't pop extra sections into existence (CLS = 0,
+ * ux-standards § 2.1). BUG-023 removed the standalone Appearance card (theme
+ * toggle) and folded Sign out into the Account card — this skeleton matches.
  * Each card is self-titled: a title-height SkeletonBlock INSIDE the CardHeader
  * (mirroring the real `HubCard`'s h2-in-CardHeader, so the title doesn't shift
  * when content arrives) + body SkeletonBlocks in CardContent. FormContainer
@@ -63,11 +65,17 @@ export default async function Loading() {
           badge={<SkeletonBlock className="h-6 w-20" />}
         />
 
-        {/* Account: email line + change-password form + forgot-password link. */}
+        {/* Account: email + change-password form + forgot-password link +
+            the folded-in Sign out button (BUG-023). */}
         <HubCardSkeleton>
           <SkeletonBlock className="h-4 w-48" />
           <ChangePasswordFormSkeleton />
           <SkeletonBlock className="h-4 w-40" />
+          {/* Sign out row — separated by a rule in the real card; 44px tap
+              target (ux-standards § 9.1) so the swap doesn't reflow. */}
+          <div className="border-t pt-4">
+            <SkeletonBlock className="h-11 w-28" />
+          </div>
         </HubCardSkeleton>
 
         {/* Preferred language: description line + locale form. */}
@@ -91,13 +99,6 @@ export default async function Loading() {
             <SkeletonBlock className="h-4 w-1/2" />
           </HubCardSkeleton>
         ) : null}
-
-        {/* Appearance: 44px row (theme toggle 44×44 + sign-out 44) — match
-            the real buttons' tap target so the swap doesn't reflow
-            (ux-standards § 9.1). */}
-        <HubCardSkeleton>
-          <SkeletonBlock className="h-11 w-full" />
-        </HubCardSkeleton>
       </FormContainer>
     </PageSkeletonShell>
   );

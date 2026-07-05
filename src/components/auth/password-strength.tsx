@@ -20,6 +20,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { hasStrongComposition } from '@/lib/password-composition';
 
 export type PasswordStrengthLevel = 'weak' | 'acceptable' | 'strong' | 'empty';
 
@@ -57,7 +58,8 @@ export interface PasswordStrengthProps {
  *     so flagging them keeps the bar from being falsely encouraging. It
  *     does not approximate the curated common-list, whose 10 entries are
  *     a disjoint set the client can't see.
- *   - ≥16 chars AND has a non-alphanumeric → strong
+ *   - ≥16 chars (length alone), OR ≥12 chars with ≥3 character classes
+ *     (lower/upper/digit/symbol) → strong
  *   - otherwise → acceptable
  *
  * **Known client/server drift** (accepted trade-off) — in BOTH
@@ -97,7 +99,13 @@ export function estimatePasswordStrength(
   // Flag it locally — no network round-trip — so the bar never reads
   // "acceptable" for it (see the client/server-drift note above).
   if (isLowEntropy(password)) return 'weak';
-  if (password.length >= 16 && /[^a-zA-Z0-9]/.test(password)) return 'strong';
+  // Strong = long enough on its own (>= 16 chars) OR shorter-but-varied (>= 3
+  // character classes) — the shared `hasStrongComposition` rule, kept in ONE
+  // place so the client bar and the server `scoreStrength` cannot drift
+  // (BUG-004 / BUG-001).
+  if (hasStrongComposition(password)) {
+    return 'strong';
+  }
   return 'acceptable';
 }
 

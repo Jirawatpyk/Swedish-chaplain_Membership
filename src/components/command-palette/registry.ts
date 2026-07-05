@@ -104,6 +104,9 @@ export type PaletteSearchResponse = {
       readonly id: string;
       readonly label: string;
       readonly url: string;
+      // English search synonyms matched alongside the id + i18n key so the
+      // visible verb ("create") is findable (BUG-024). Server-supplied.
+      readonly keywords?: readonly string[];
     }>;
     readonly navigate: ReadonlyArray<{
       readonly id: string;

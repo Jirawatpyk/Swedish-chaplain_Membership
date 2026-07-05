@@ -154,6 +154,17 @@ type Props = {
   ) => Promise<InlineEditResult>) | undefined;
 };
 
+/**
+ * BUG-013: archived (soft-deleted) rows are not a valid target for either bulk
+ * action, so they are non-selectable. Single source of truth for BOTH the
+ * TanStack `enableRowSelection` predicate and the shift-range selection loop
+ * (which writes rowSelection directly, bypassing TanStack's gate) so the two
+ * paths cannot disagree about what is selectable.
+ */
+function isMemberRowSelectable(row: MembersTableRow): boolean {
+  return row.status !== 'archived';
+}
+
 const columnHelper = createColumnHelper<MembersTableRow>();
 
 /**
@@ -449,6 +460,9 @@ export function MembersTable({
             cell: ({ row }) => (
               <Checkbox
                 checked={row.getIsSelected()}
+                // BUG-013: disabled for archived rows (enableRowSelection
+                // returns false → getCanSelect() is false).
+                disabled={!row.getCanSelect()}
                 onCheckedChange={(checked) => row.toggleSelected(!!checked)}
                 onClick={(e: React.MouseEvent) => {
                   // Shift+Click range selection (FR-040)
@@ -457,9 +471,14 @@ export function MembersTable({
                     const end = Math.max(lastSelectedRef.current, row.index);
                     const next = { ...rowSelection };
                     for (let i = start; i <= end; i++) {
-                      // getRowId uses member_id, so key by member_id
-                      const memberId = rows[i]?.member_id;
-                      if (memberId) next[memberId] = true;
+                      // getRowId uses member_id, so key by member_id. Skip
+                      // archived rows to match enableRowSelection (BUG-013):
+                      // shift-range writes rowSelection directly, so without
+                      // this guard it could select a non-selectable row.
+                      const rangeRow = rows[i];
+                      if (rangeRow && isMemberRowSelectable(rangeRow)) {
+                        next[rangeRow.member_id] = true;
+                      }
                     }
                     handleRowSelectionChange(next);
                     e.preventDefault();
@@ -644,7 +663,14 @@ export function MembersTable({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    enableRowSelection: enableSelection,
+    // BUG-013: archived (soft-deleted) rows are not a valid target for either
+    // bulk action (archive rejects already-archived; send-portal-invite makes
+    // no sense for a removed member), so make them non-selectable. TanStack
+    // then disables their checkbox, excludes them from select-all, and blocks
+    // programmatic selection. Managers keep no selection at all.
+    enableRowSelection: enableSelection
+      ? (row) => isMemberRowSelectable(row.original)
+      : false,
     onRowSelectionChange: handleRowSelectionChange,
     state: {
       rowSelection,
@@ -663,8 +689,13 @@ export function MembersTable({
     (k) => rowSelection[k],
   ).length;
 
+  // BUG-013 follow-up: derive "whole page selected" from the table's own
+  // all-selected state, which respects enableRowSelection (archived rows are
+  // non-selectable). `selectedCount === rows.length` would never hold once an
+  // archived row is on the page, hiding the "Select all N matching" banner and
+  // contradicting the header select-all checkbox (which also uses this).
   const allPageSelected =
-    enableSelection && rows.length > 0 && selectedCount === rows.length;
+    enableSelection && rows.length > 0 && table.getIsAllPageRowsSelected();
   const hasMorePages = enableSelection && nextCursor !== null;
 
   // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable

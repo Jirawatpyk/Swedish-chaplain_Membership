@@ -4,7 +4,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -41,6 +41,71 @@ export function CloneYearClient({
   const [activateCloned, setActivateCloned] = useState(false);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // BUG-010: the server seeds the source-plan count for `defaultSourceYear`
+  // only, but the Source year is editable — so picking a different Source
+  // year left the description / button / confirm-dialog quoting the stale
+  // current-year count while the description text already read the NEW year.
+  // Refetch the count whenever the Source year changes (debounced, since it
+  // is a free-typed number input) so every count-bearing surface stays
+  // truthful. The actual clone always used the real Source year server-side;
+  // only this pre-flight display was wrong.
+  // `null` = the count for the CURRENT Source year is not known yet (loading or
+  // a failed fetch). The count-bearing surfaces show a neutral "…" and the
+  // Clone button is disabled while null, so we never quote a stale count (from
+  // the previous year, during the debounce) or a falsely-zero count (on a
+  // transient fetch error) — code-review follow-up to BUG-010.
+  const [sourcePlanCount, setSourcePlanCount] = useState<number | null>(
+    defaultSourcePlanCount,
+  );
+
+  // Refetch the pre-flight count whenever the Source year changes (free-typed
+  // number input). A hand-rolled debounce is deliberate here — NOT
+  // useDebouncedValue: the effect must key on the IMMEDIATE sourceYear so an
+  // up-then-back edit within the window still re-runs and restores the count.
+  // A value-collapsing trailing debounce would no-op that net-zero change and
+  // strand the count at null. `null` = not-yet-known (loading OR a failed
+  // fetch); the count surfaces render "…" for it. The count is display ONLY —
+  // the clone always uses the real Source year server-side — so a failed count
+  // fetch must NOT block the Clone button (it doesn't; see the button below).
+  useEffect(() => {
+    if (sourceYear === defaultSourceYear) {
+      setSourcePlanCount(defaultSourcePlanCount);
+      return;
+    }
+    if (sourceYear < 2000 || sourceYear > 2100) {
+      // Out-of-range — including transient digits ("2"/"20"/"202") while the
+      // admin is still typing a year — is UNKNOWN, not "0 plans". Show "…".
+      setSourcePlanCount(null);
+      return;
+    }
+    // onChange already blanked to null synchronously; keep it null here too
+    // (defensive, and covers a programmatic sourceYear change).
+    setSourcePlanCount(null);
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/plans?year=${sourceYear}`, {
+            credentials: 'same-origin',
+          });
+          if (!res.ok) throw new Error(`status ${res.status}`);
+          const body = (await res.json()) as { data?: unknown };
+          if (!cancelled) {
+            setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
+          }
+        } catch {
+          // Leave the count UNKNOWN (null → "…") on a transient failure — do
+          // NOT coerce to 0 (falsely "no plans"). Clone stays clickable.
+          if (!cancelled) setSourcePlanCount(null);
+        }
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [sourceYear, defaultSourceYear, defaultSourcePlanCount]);
 
   async function handleConfirm(): Promise<void> {
     setSubmitting(true);
@@ -93,11 +158,15 @@ export function CloneYearClient({
     }
   }
 
+  // Single source of truth for the "…" loading/unknown placeholder shown when
+  // the pre-flight count is not yet known.
+  const countLabel = sourcePlanCount ?? '…';
+
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         {tClone('description', {
-          count: defaultSourcePlanCount,
+          count: countLabel,
           sourceYear,
           targetYear,
         })}
@@ -111,9 +180,20 @@ export function CloneYearClient({
             min={2000}
             max={2100}
             value={sourceYear}
-            onChange={(e) =>
-              setSourceYear(Number.parseInt(e.target.value, 10) || defaultSourceYear)
-            }
+            onChange={(e) => {
+              const nextYear =
+                Number.parseInt(e.target.value, 10) || defaultSourceYear;
+              setSourceYear(nextYear);
+              // Blank the count synchronously ONLY when the year actually
+              // changes: batched with setSourceYear it avoids a frame painting
+              // the NEW year beside the OLD count, while skipping a same-value
+              // edit (e.g. clearing the field back to the current year) avoids
+              // stranding it at "…" — a no-op setSourceYear would not re-run the
+              // effect that restores the count.
+              if (nextYear !== sourceYear) {
+                setSourcePlanCount(null);
+              }
+            }}
           />
         </div>
         <div className="space-y-1">
@@ -146,9 +226,12 @@ export function CloneYearClient({
         </Button>
         <Button
           onClick={() => setOpen(true)}
+          // NOT gated on the count: it is a display-only preview, and the clone
+          // uses the real Source year server-side. A "…" (loading/failed) count
+          // must never block an otherwise-valid clone.
           disabled={sourceYear === targetYear || submitting}
         >
-          {tClone('submit', { count: defaultSourcePlanCount })}
+          {tClone('submit', { count: countLabel })}
         </Button>
       </div>
 
@@ -157,7 +240,7 @@ export function CloneYearClient({
         onOpenChange={setOpen}
         sourceYear={sourceYear}
         targetYear={targetYear}
-        sourcePlanCount={defaultSourcePlanCount}
+        sourcePlanCount={sourcePlanCount}
         submitting={submitting}
         onConfirm={handleConfirm}
       />

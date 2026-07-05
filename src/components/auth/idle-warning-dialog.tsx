@@ -66,6 +66,14 @@ const WARNING_WINDOW_MS = 60 * 1000;
 /** Warning fires at IDLE_TIMEOUT_MS - WARNING_WINDOW_MS = 29 minutes. */
 const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
 
+/**
+ * Abort a "Stay signed in" heartbeat that hasn't answered in 10 s — longer than
+ * a serverless cold start, far shorter than the 29-min warning window. Bounds
+ * how long the in-flight flag can suppress the warning on a hung request: on
+ * timeout the fetch aborts → the catch re-opens the warning directly (reWarn).
+ */
+const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
+
 const ACTIVITY_EVENTS = [
   'mousemove',
   'keydown',
@@ -90,6 +98,19 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   useEffect(() => {
     lastActivityRef.current = Date.now();
   }, []);
+
+  // True while a "Stay signed in" heartbeat is in flight. One ref serves three
+  // roles: (1) the countdown's zero-handler skips the involuntary sign-out while
+  // a Stay is pending — a tick landing during the round-trip must not override
+  // the user's choice (BUG-018); (2) the idle poll does not re-open the warning
+  // mid-flight; (3) an overlapping second click is ignored. Cleared in `finally`
+  // once the heartbeat settles.
+  const stayPendingRef = useRef<boolean>(false);
+
+  // FR-028c: the PaySheet drawer freezes the idle timer during a Stripe payment
+  // (pause/resume events wired below). Declared up here so `stayAction`'s reWarn
+  // and the countdown can both honour the freeze — not only the idle poll.
+  const pausedAtRef = useRef<number | null>(null);
 
   const signInPath = portalSignInPath(portal);
 
@@ -117,27 +138,76 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   }, [router, signInPath, t]);
 
   /**
-   * "Stay signed in" action — heartbeat the server, close the modal,
-   * reset the local idle clock.
+   * "Stay signed in" — heartbeat the server, close the modal optimistically,
+   * and extend the client idle clock ONLY if the heartbeat actually extended
+   * the server session. `stayPendingRef` (not an optimistic clock reset)
+   * suppresses the countdown + poll while the request is in flight.
    */
   const stayAction = useCallback(async () => {
+    // Ignore an overlapping click while a heartbeat is already in flight.
+    if (stayPendingRef.current) return;
+    stayPendingRef.current = true;
+
+    // Close the modal optimistically (BUG-018: never leave the countdown
+    // running through the network round-trip). `stayPendingRef` suppresses both
+    // the countdown's sign-out and the poll's re-open until the heartbeat
+    // settles, so NO optimistic idle-clock reset is needed.
+    setRemaining(WARNING_WINDOW_MS / 1000);
+    setOpen(false);
+
+    // Re-open the warning to prompt a retry when the heartbeat did NOT extend
+    // the session. Done DIRECTLY (setOpen) rather than by staling the idle
+    // clock: the activity tracker would reset a stale clock on the user's next
+    // mouse move, yet client activity does NOT keep the SERVER session alive —
+    // only a successful heartbeat does. No immediate sign-out (BUG-018): the
+    // fresh 60 s countdown gives the user another chance to click Stay.
+    const reWarn = () => {
+      // Do NOT re-open during a PaySheet payment (FR-028c): the idle timer is
+      // frozen, and re-warning + counting down here would sign the user out
+      // mid-3DS. The payment's own requests keep the server session alive.
+      if (pausedAtRef.current !== null) return;
+      setOpen(true);
+      setRemaining(WARNING_WINDOW_MS / 1000);
+    };
+
+    // Bound the request with an AbortController + timer; clearing it in
+    // `finally` gives deterministic teardown (and cooperates with the test
+    // suite's fake timers), which `AbortSignal.timeout` — whose internal timer
+    // runs to completion even after an early resolve — does not.
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      HEARTBEAT_TIMEOUT_MS,
+    );
     try {
       const response = await fetch('/api/auth/heartbeat', {
         method: 'POST',
         credentials: 'same-origin',
+        signal: controller.signal,
       });
-      if (!response.ok) {
-        // Session is already gone server-side — force sign-out.
+      // Only a definitive 401 (no-session) means the session is truly gone —
+      // escalate to involuntary sign-out. A 429 (heartbeat rate limit,
+      // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT mean
+      // the session died.
+      if (response.status === 401) {
         await forceSignOut();
         return;
       }
+      if (response.ok) {
+        // The session WAS extended — advance the client idle clock so the poll
+        // does not immediately re-warn.
+        lastActivityRef.current = Date.now();
+      } else {
+        // 429/5xx: session NOT extended — re-warn so the user can retry.
+        reWarn();
+      }
     } catch {
-      // Network blip — close modal optimistically; the next real
-      // request will surface any real auth failure.
+      // Network blip / timeout / abort — session not extended; re-warn.
+      reWarn();
+    } finally {
+      window.clearTimeout(timeoutId);
+      stayPendingRef.current = false;
     }
-    lastActivityRef.current = Date.now();
-    setRemaining(WARNING_WINDOW_MS / 1000);
-    setOpen(false);
   }, [forceSignOut]);
 
   // F5 / 009-online-payment amendment (FR-028c):
@@ -152,7 +222,6 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // time each poll tick would have accumulated. The simplest, accurate
   // implementation is to track a `pausedAt` timestamp and, on resume,
   // shift `lastActivityRef` forward by `(Date.now() - pausedAt)`.
-  const pausedAtRef = useRef<number | null>(null);
   useEffect(() => {
     const onPause = () => {
       if (pausedAtRef.current === null) {
@@ -200,6 +269,10 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     const interval = window.setInterval(() => {
       // Freeze while paused by the PaySheet drawer (FR-028c).
       if (pausedAtRef.current !== null) return;
+      // Don't re-open the warning while a "Stay signed in" heartbeat is still
+      // in flight — its outcome decides whether the clock is fresh (2xx) or the
+      // warning should re-appear (failure).
+      if (stayPendingRef.current) return;
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor >= WARNING_AFTER_MS) {
         setOpen(true);
@@ -227,24 +300,35 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     };
   }, []);
 
-  // Countdown — while the modal is open, tick once per second. Reaching
-  // zero triggers the involuntary sign-out path.
+  // Countdown — tick once per second while the modal is open, FROZEN during a
+  // PaySheet payment (FR-028c). The interval only decrements `remaining`; the
+  // sign-out fires from the effect below (never inside the setRemaining updater,
+  // which React StrictMode double-invokes in dev — firing the sign-out twice).
   useEffect(() => {
     if (!open) return;
     const interval = window.setInterval(() => {
-      setRemaining((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(interval);
-          void forceSignOut();
-          return 0;
-        }
-        return prev - 1;
-      });
+      if (pausedAtRef.current !== null) return; // freeze during payment (FR-028c)
+      setRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1_000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [open, forceSignOut]);
+  }, [open]);
+
+  // Fire the involuntary sign-out when the countdown reaches zero. Guarded by
+  // stayPendingRef so a "Stay signed in" heartbeat settling mid-tick does not
+  // override the user's explicit choice (BUG-018). forceSignOut flips `open`
+  // false, so this fires exactly once per countdown.
+  useEffect(() => {
+    // Honour the PaySheet pause too (FR-028c): a final decrement tick can land
+    // in the same frame a pause is applied, leaving remaining===0 while paused —
+    // the sign-out must NOT fire mid-payment. (Consistent with the decrement,
+    // poll, and reWarn, which all bail while paused.)
+    if (pausedAtRef.current !== null) return;
+    if (open && remaining === 0 && !stayPendingRef.current) {
+      void forceSignOut();
+    }
+  }, [open, remaining, forceSignOut]);
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>

@@ -71,6 +71,8 @@ function oneAdminRepo(): UserRepo {
       userRepo.setPasswordHashInTx(tx, id, hash, now),
     activate: (id, now) => userRepo.activate(id, now),
     activateInTx: (tx, id, now) => userRepo.activateInTx(tx, id, now),
+    setDisplayNameInTx: (tx, id, displayName) =>
+      userRepo.setDisplayNameInTx(tx, id, displayName),
     clearLockAndFailedCountInTx: (tx, id) =>
       userRepo.clearLockAndFailedCountInTx(tx, id),
     disable: (id) => userRepo.disable(id),

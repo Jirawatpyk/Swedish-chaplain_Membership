@@ -170,6 +170,9 @@ describe('integration: invitation flow (happy path + replay)', () => {
     expect(redeemResult.value.user.status).toBe('active');
     expect(redeemResult.value.session).toBeDefined();
     expect(redeemResult.value.redirectTo).toBe('/admin'); // staff portal for manager
+    // BUG-022: the display name typed on the activation form is persisted and
+    // reflected on the returned user (was previously accepted then dropped).
+    expect(redeemResult.value.user.displayName).toBe('Activated Manager');
 
     // 4. Invitation consumed
     const consumedInvites = await db
@@ -180,11 +183,17 @@ describe('integration: invitation flow (happy path + replay)', () => {
 
     // 5. User activated
     const activatedRows = await db
-      .select({ status: users.status, hash: users.passwordHash })
+      .select({
+        status: users.status,
+        hash: users.passwordHash,
+        displayName: users.displayName,
+      })
       .from(users)
       .where(eq(users.id, pendingUser.id));
     expect(activatedRows[0]?.status).toBe('active');
     expect(activatedRows[0]?.hash).toBeTruthy();
+    // BUG-022: the persisted display_name equals the redeem-time value.
+    expect(activatedRows[0]?.displayName).toBe('Activated Manager');
 
     // 6. sign_in_success audit for the auto sign-in
     const signInAudits = await db

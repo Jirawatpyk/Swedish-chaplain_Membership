@@ -24,7 +24,9 @@ export interface CloneYearDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly sourceYear: number;
   readonly targetYear: number;
-  readonly sourcePlanCount: number;
+  /** `null` while the pre-flight count is loading or its fetch failed — the
+   *  dialog then renders "…" (the count is display-only; the clone still runs). */
+  readonly sourcePlanCount: number | null;
   readonly submitting?: boolean;
   readonly onConfirm: () => void;
 }
@@ -39,6 +41,8 @@ export function CloneYearDialog({
   onConfirm,
 }: CloneYearDialogProps) {
   const t = useTranslations('admin.plans.clone');
+  // "…" placeholder while the pre-flight count is loading or its fetch failed.
+  const countLabel = sourcePlanCount ?? '…';
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -49,7 +53,7 @@ export function CloneYearDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {t('description', {
-              count: sourcePlanCount,
+              count: countLabel,
               sourceYear,
               targetYear,
             })}
@@ -64,7 +68,7 @@ export function CloneYearDialog({
             }}
             disabled={submitting}
           >
-            {submitting ? t('submitting') : t('submit', { count: sourcePlanCount })}
+            {submitting ? t('submitting') : t('submit', { count: countLabel })}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

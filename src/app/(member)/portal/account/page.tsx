@@ -8,7 +8,6 @@ import { runInTenant } from '@/lib/db';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
 import { PortalSignOutButton } from '@/components/portal/portal-sign-out-button';
-import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
 import {
   buildDataExportLabels,
@@ -33,16 +32,18 @@ import { RenewalRemindersToggle } from '../preferences/renewals/_components/rene
 /**
  * Member account hub (G2 / D2 redesign) at URL `/portal/account`.
  *
- * Sectioned IA: five anchored, self-titled cards that the account-menu
+ * Sectioned IA: four anchored, self-titled cards that the account-menu
  * deep-links into (`#account`, `#language`, `#renewal-prefs`,
- * `#data-privacy`, `#appearance`). Each card carries its own `<h2>`
+ * `#data-privacy`). Each card carries its own `<h2>`
  * title INSIDE its CardHeader (mirroring `benefit-usage-card.tsx`), so
  * there is no empty pt-6 top-space above the content. Consolidates what
  * were previously separate pages (`/portal/preferences/renewals`,
  * `/portal/account/data-export`) into one scroll-anchored hub:
  *
  *   - Account (`#account`): email + inline ChangePasswordForm (DECISION
- *     C: keep inline) + "Forgot your password?" → /forgot-password.
+ *     C: keep inline) + "Forgot your password?" → /forgot-password +
+ *     Sign out (023 option B: folded in here; the standalone theme/sign-out
+ *     card was removed as the theme toggle duplicated the header + UserMenu).
  *   - Preferred language (`#language`): PreferredLocaleForm with an
  *     SSR-seeded `initialValue` (the locale form's title moves into the
  *     card's CardHeader; its description stays in the body).
@@ -50,7 +51,6 @@ import { RenewalRemindersToggle } from '../preferences/renewals/_components/rene
  *     with an SSR-seeded `initialOptedOut`.
  *   - Data & privacy (`#data-privacy`, f9-gated): DataExportPanel
  *     seeded from `listMemberDataExports`.
- *   - Appearance (`#appearance`): ThemeToggle + PortalSignOutButton.
  *
  * memberId is ALWAYS resolved from the session via
  * `findByLinkedUserId(tenant, user.id)` — never a URL param (RLS).
@@ -253,6 +253,16 @@ export default async function MemberAccountPage() {
         >
           {tPage('forgotPassword')}
         </Link>
+        {/* 023 (option B): the standalone Appearance/Sign-out card was removed
+            — its theme toggle duplicated the header ThemeToggle + the UserMenu
+            Light/Dark/System items (both available at every width), leaving
+            only the sign-out, which folds into the Account actions here. Still
+            a findable in-hub sign-out (TC-MEM-26); on mobile the Account tab
+            opens this hub directly. Separated by a rule so the session action
+            reads as distinct from the account-settings above it. */}
+        <div className="border-t pt-4">
+          <PortalSignOutButton />
+        </div>
       </HubCard>
 
       {/*
@@ -276,7 +286,8 @@ export default async function MemberAccountPage() {
         linked member (e.g. a pending invitation) has memberId === null — the
         toggle's POST and the export request would 404. Mirror the legacy
         per-route notFound() at the section level: hide these when unlinked,
-        but keep Account + Appearance (which work without a member).
+        but keep Account (with Sign out) + Preferred language, which work
+        without a member.
       */}
       {memberId ? (
         <HubCard id="renewal-prefs" title={tPage('sections.renewalPrefs')}>
@@ -300,17 +311,6 @@ export default async function MemberAccountPage() {
         </HubCard>
       ) : null}
 
-      <HubCard
-        id="appearance"
-        title={tPage('sections.appearance')}
-        contentClassName="flex flex-wrap items-center justify-between gap-3"
-      >
-        {/* size-11 = 44×44 tap target — member-portal CTAs are ≥44px
-            (ux-standards § 9.1, WCAG 2.5.5 AAA on mobile); matches the
-            44px sign-out button beside it. */}
-        <ThemeToggle className="size-11" />
-        <PortalSignOutButton />
-      </HubCard>
     </FormContainer>
   );
 }

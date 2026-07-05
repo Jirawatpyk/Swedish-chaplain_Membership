@@ -74,6 +74,36 @@ describe('checkPasswordPolicy', () => {
     expect(result.strength).toBe('strong');
   });
 
+  // BUG-004: keep scoreStrength in lockstep with the client estimator. Strong =
+  // >= 16 chars (length alone) OR >= 12 chars with >= 3 character classes.
+  it('scores a 12-char password with ≥3 character classes as strong — BUG-004', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response('DEADBEEFDEADBEEFDEADBEEFDEADBEEF:1\n', { status: 200 }),
+    ) as typeof fetch;
+    // 12 chars, lower + upper + digit (3 classes) — used to score 'acceptable'.
+    const result = await checkPasswordPolicy('MyPassw0rd12');
+    expect(result.ok).toBe(true);
+    expect(result.strength).toBe('strong');
+  });
+
+  it('scores a 16-char password as strong on length alone, no symbol needed — BUG-004', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response('DEADBEEFDEADBEEFDEADBEEFDEADBEEF:1\n', { status: 200 }),
+    ) as typeof fetch;
+    const result = await checkPasswordPolicy('abcdefghijklmnop'); // 16, lower only
+    expect(result.ok).toBe(true);
+    expect(result.strength).toBe('strong');
+  });
+
+  it('scores a short password with < 3 character classes as acceptable', async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response('DEADBEEFDEADBEEFDEADBEEFDEADBEEF:1\n', { status: 200 }),
+    ) as typeof fetch;
+    const result = await checkPasswordPolicy('averylonglower'); // 14, lower only (1 class)
+    expect(result.ok).toBe(true);
+    expect(result.strength).toBe('acceptable');
+  });
+
   it('accepts password when HIBP is unreachable (fail-open per T-11)', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
 

@@ -54,6 +54,14 @@ const MAX_PER_TICK = 50;
 // would silently break dispatch.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// BUG-028: give the audience sync the full function budget. Resend's Contacts
+// API is one-at-a-time under a 2 req/s account limit, and the gateway relies
+// on reactive 429 backoff (no fixed pacing) — so a ~130-recipient broadcast
+// takes ~65-130s to sync, comfortably under 300s. (Genuinely huge audiences
+// still need the batched multi-tick model; this covers SweCham scale +
+// moderate growth without the fixed-pacing timeout that was rejected in
+// review.)
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check

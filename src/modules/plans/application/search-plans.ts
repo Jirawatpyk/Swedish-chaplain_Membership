@@ -47,6 +47,15 @@ export type PaletteActionItem = {
   readonly id: string;
   readonly label: string;
   readonly url: string;
+  /**
+   * Extra search synonyms matched (case-insensitively) alongside the id and
+   * i18n key. The visible label ("Create new plan") is only known after the
+   * Presentation layer resolves the i18n key, so the backend can't match on
+   * it — without synonyms, typing the leading verb "create" finds nothing
+   * (BUG-024). Keep these in English; localized label search is a separate
+   * follow-up.
+   */
+  readonly keywords?: readonly string[];
 };
 
 export type PaletteNavigateItem = {
@@ -82,7 +91,7 @@ type ActionEntry = PaletteActionItem & { readonly requires: 'admin' | 'read' };
 type NavigateEntry = PaletteNavigateItem & { readonly requires: 'admin' | 'read' };
 
 const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
-  { id: 'plan.new', label: 'palette.actions.newPlan', url: '/admin/plans/new', requires: 'admin' },
+  { id: 'plan.new', label: 'palette.actions.newPlan', url: '/admin/plans/new', requires: 'admin', keywords: ['create', 'add'] },
   {
     id: 'plan.clone',
     label: 'palette.actions.cloneYear',
@@ -105,6 +114,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     label: 'palette.actions.newMember',
     url: '/admin/members/new',
     requires: 'admin',
+    keywords: ['create', 'add'],
   },
   // F4 T059 — invoice surfaces reachable from the palette.
   {
@@ -112,6 +122,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     label: 'palette.actions.newInvoice',
     url: '/admin/invoices/new',
     requires: 'admin',
+    keywords: ['create', 'add'],
   },
   // 088 T021b / FR-035 — "Record payment for …" jump. Lands on the payable
   // (issued) invoice list carrying the `?pay=1` intent marker; the admin then
@@ -172,6 +183,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     label: 'palette.actions.newBroadcastTemplate',
     url: '/admin/broadcasts/templates/new',
     requires: 'admin',
+    keywords: ['create', 'add'],
   },
 ];
 
@@ -421,8 +433,15 @@ export async function searchPlans(
   const navigatePool = filterByRole(NAVIGATE_REGISTRY, input.role);
 
   const actions = actionPool
-    .filter((a) => matches(a.label, q) || matches(a.id, q))
+    .filter(
+      (a) =>
+        matches(a.label, q) ||
+        matches(a.id, q) ||
+        (a.keywords?.some((k) => matches(k, q)) ?? false),
+    )
     .slice(0, limit);
+  // Navigate entries carry no search synonyms (unlike actions), so a plain
+  // key + id match is sufficient.
   const navigate = navigatePool
     .filter((n) => matches(n.label, q) || matches(n.id, q))
     .slice(0, limit);
