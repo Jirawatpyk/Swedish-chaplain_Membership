@@ -66,9 +66,19 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
         // ./error-key (duplicate_plan → duplicateKey, idempotency_conflict →
         // idempotencyConflict).
         const messageKey = resolvePlanCreateErrorKey(errorCode);
-        const message = messageKey in (t.raw('errors') as Record<string, string>)
-          ? t(`errors.${messageKey}` as 'generic')
-          : t('errors.generic');
+        let message: string;
+        if (messageKey === 'duplicateKey') {
+          // duplicateKey = "A plan with this ID already exists for {year}."
+          // — it carries a {year} placeholder, so it must be given the year
+          // or the toast renders the literal "{year}" (BUG-008 / BUG-021).
+          // Passed as a number, matching the sibling clone flow; a bare ICU
+          // argument is substituted verbatim (no thousands grouping).
+          message = t('errors.duplicateKey', { year: draft.plan_year });
+        } else if (messageKey in (t.raw('errors') as Record<string, string>)) {
+          message = t(`errors.${messageKey}` as 'generic');
+        } else {
+          message = t('errors.generic');
+        }
         toast.error(message);
       }
     } catch (err) {

@@ -173,6 +173,39 @@ describe('searchPlans — role-based filter', () => {
     expect(ids).toContain('plan.clone');
   });
 
+  it('BUG-024: admin typing "create" surfaces every "Create new …" action via keyword synonyms', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'create', role: 'admin' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const ids = result.value.results.actions.map((a) => a.id);
+    // Before the fix these matched only their i18n key/id (e.g. "newPlan" /
+    // "plan.new"), so "create" — present only in the resolved label — found
+    // nothing. The ["create","add"] keywords now make them discoverable.
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'plan.new',
+        'member.new',
+        'invoice.new',
+        'broadcast.newTemplate',
+      ]),
+    );
+  });
+
+  it('BUG-024: "add" also matches the create actions', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'add', role: 'admin' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const ids = result.value.results.actions.map((a) => a.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        'plan.new',
+        'member.new',
+        'invoice.new',
+        'broadcast.newTemplate',
+      ]),
+    );
+  });
+
   it('manager sees only read-tier actions (no plan.new / plan.clone)', async () => {
     const deps = makeDeps({ plans: [] });
     const result = await searchPlans(

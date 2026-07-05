@@ -116,7 +116,11 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
           {results.actions.map((action) => (
             <CommandItem
               key={action.id}
-              value={`action ${action.id} ${action.label}`}
+              // Include search synonyms in the cmdk value so the client-side
+              // fuzzy filter matches the visible verb ("create") too — the
+              // label here is still the raw i18n key, so without this cmdk
+              // would re-hide an action the server correctly returned (BUG-024).
+              value={`action ${action.id} ${action.label} ${(action.keywords ?? []).join(' ')}`}
               onSelect={() => handleNavigate(action.url)}
             >
               {/* label is an i18n key like `palette.actions.newPlan` —
@@ -132,7 +136,11 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
           {results.navigate.map((nav) => (
             <CommandItem
               key={nav.id}
-              value={`navigate ${nav.id} ${nav.label}`}
+              // Symmetric with actions: include any synonyms in the cmdk value
+              // so a server-returned navigate keyword match isn't re-hidden by
+              // the client fuzzy filter (BUG-024). No navigate entry carries
+              // keywords today, but this keeps the two paths from diverging.
+              value={`navigate ${nav.id} ${nav.label} ${(nav.keywords ?? []).join(' ')}`}
               onSelect={() => handleNavigate(nav.url)}
             >
               <span>{resolveLabel(t, nav.label, 'navigate')}</span>

@@ -4,7 +4,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
@@ -41,6 +41,50 @@ export function CloneYearClient({
   const [activateCloned, setActivateCloned] = useState(false);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // BUG-010: the server seeds the source-plan count for `defaultSourceYear`
+  // only, but the Source year is editable — so picking a different Source
+  // year left the description / button / confirm-dialog quoting the stale
+  // current-year count while the description text already read the NEW year.
+  // Refetch the count whenever the Source year changes (debounced, since it
+  // is a free-typed number input) so every count-bearing surface stays
+  // truthful. The actual clone always used the real Source year server-side;
+  // only this pre-flight display was wrong.
+  const [sourcePlanCount, setSourcePlanCount] = useState(defaultSourcePlanCount);
+
+  useEffect(() => {
+    if (sourceYear === defaultSourceYear) {
+      setSourcePlanCount(defaultSourcePlanCount);
+      return;
+    }
+    if (sourceYear < 2000 || sourceYear > 2100) {
+      setSourcePlanCount(0);
+      return;
+    }
+    let cancelled = false;
+    const handle = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/plans?year=${sourceYear}`, {
+            credentials: 'same-origin',
+          });
+          if (!res.ok) throw new Error(`status ${res.status}`);
+          const body = (await res.json()) as { data?: unknown };
+          if (!cancelled) {
+            setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
+          }
+        } catch {
+          // Fall back to 0 ("no plans found for that year") rather than keep
+          // showing a wrong number for the newly-picked source year.
+          if (!cancelled) setSourcePlanCount(0);
+        }
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [sourceYear, defaultSourceYear, defaultSourcePlanCount]);
 
   async function handleConfirm(): Promise<void> {
     setSubmitting(true);
@@ -97,7 +141,7 @@ export function CloneYearClient({
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
         {tClone('description', {
-          count: defaultSourcePlanCount,
+          count: sourcePlanCount,
           sourceYear,
           targetYear,
         })}
@@ -148,7 +192,7 @@ export function CloneYearClient({
           onClick={() => setOpen(true)}
           disabled={sourceYear === targetYear || submitting}
         >
-          {tClone('submit', { count: defaultSourcePlanCount })}
+          {tClone('submit', { count: sourcePlanCount })}
         </Button>
       </div>
 
@@ -157,7 +201,7 @@ export function CloneYearClient({
         onOpenChange={setOpen}
         sourceYear={sourceYear}
         targetYear={targetYear}
-        sourcePlanCount={defaultSourcePlanCount}
+        sourcePlanCount={sourcePlanCount}
         submitting={submitting}
         onConfirm={handleConfirm}
       />
