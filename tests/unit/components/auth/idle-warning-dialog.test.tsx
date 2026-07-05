@@ -119,11 +119,11 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
-  it('BUG-018: "Stay signed in" does NOT sign the user out when the heartbeat POST fails transiently (5xx/429) — the session is still valid', async () => {
-    // Pre-fix, stayAction force-signed-out on ANY non-OK heartbeat, so a
-    // transient 500 (Neon/Upstash blip) or a 429 (heartbeat rate limit)
-    // ejected a user whose session was perfectly alive. Now only a 401
-    // (no-session) does. Heartbeat returns 500 here.
+  it('BUG-018: a transient 5xx/429 heartbeat re-warns (re-opens) but does NOT immediately sign the user out', async () => {
+    // Pre-fix, stayAction force-signed-out on ANY non-OK heartbeat. Now a
+    // transient 500 (Neon/Upstash blip) or 429 (heartbeat rate limit) does NOT
+    // sign the user out — it re-opens the warning so they can retry Stay; only
+    // an ignored 60 s countdown (or a definitive 401) signs them out.
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: false, status: 500 }),
@@ -136,9 +136,9 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Stay signed in'));
     });
-    // Dialog closed (the user stayed signed in) and NO involuntary-signout
-    // toast fired — the transient failure was swallowed, not escalated.
-    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // The heartbeat failed → the warning re-opened to prompt a retry, but NO
+    // involuntary-signout toast fired (that needs the countdown or a 401).
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
     expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
@@ -170,7 +170,7 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     // the warning, click Stay (heartbeat ok), then advance well past the old
     // 60 s countdown: the dialog must stay closed and NO involuntary-signout
     // toast may fire. This proves the OPTIMISTIC close + interval teardown
-    // prevent a delayed sign-out. (The synchronous keepAliveRef guard is
+    // prevent a delayed sign-out. (The synchronous stayPendingRef guard is
     // additional real-browser defense-in-depth for the effect-flush race that
     // JSDOM + act() cannot reproduce, so it is not directly asserted here.)
     vi.stubGlobal(
@@ -194,11 +194,11 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
   });
 
   it('#3: a slow but successful "Stay" heartbeat does NOT let the idle poll re-open + sign out', async () => {
-    // Regression for the code-review round-2 finding: resetting the idle clock
-    // only AFTER the heartbeat resolved let a >5 s cold-start heartbeat leave
-    // the clock stale, so the 5 s poll re-opened the warning mid-flight and its
-    // fresh countdown signed out a user whose session was being extended. The
-    // fix resets OPTIMISTICALLY before the await.
+    // Regression for the code-review round-2 finding: a >5 s cold-start
+    // heartbeat left the clock stale, so the 5 s poll re-opened the warning
+    // mid-flight and its fresh countdown signed out a user whose session was
+    // being extended. The fix: `stayPendingRef` suppresses the poll re-open
+    // while the heartbeat is in flight (no optimistic clock reset).
     let resolveHeartbeat: (v: unknown) => void = () => {};
     const heartbeat = new Promise((r) => {
       resolveHeartbeat = r;
@@ -216,8 +216,8 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
       fireEvent.click(screen.getByText('Stay signed in'));
     });
     expect(screen.queryByText('Are you still here?')).toBeNull();
-    // Advance past the 5 s poll while the heartbeat is STILL pending: the
-    // optimistic reset must keep the warning closed (no spurious re-open).
+    // Advance past the 5 s poll while the heartbeat is STILL pending:
+    // stayPendingRef must keep the poll from re-opening the warning.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6_000);
     });
@@ -234,30 +234,98 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
-  it('#5: a failed "Stay" heartbeat (5xx) rolls the idle clock back so the warning re-appears (no silent 29-min suppression)', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
-    );
+  it('#190: a failed "Stay" heartbeat re-warns even after the user moves the mouse (clock-independent re-open)', async () => {
+    // A failed heartbeat must re-open the warning DIRECTLY — not by staling the
+    // idle clock, which the activity tracker would immediately reset on the next
+    // mouse move (client activity does not extend the SERVER session).
+    let resolveHeartbeat: (v: unknown) => void = () => {};
+    const heartbeat = new Promise((r) => {
+      resolveHeartbeat = r;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(heartbeat));
     renderDialog();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(29 * 60 * 1000 + 5_000);
     });
     expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    // Click Stay → optimistic close; heartbeat pending.
     await act(async () => {
       fireEvent.click(screen.getByText('Stay signed in'));
     });
-    // Closed optimistically…
     expect(screen.queryByText('Are you still here?')).toBeNull();
-    // …but the 500 rolled the idle clock back to its stale pre-click value, so
-    // the next poll tick (≤5 s) re-opens the warning to prompt a retry — rather
-    // than falsely suppressing it for ~29 min while the session lapses.
+    // The user keeps working — a mousemove now (open===false, tracker armed)
+    // resets the idle clock fresh; a clock-driven re-warn would be suppressed.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
+      window.dispatchEvent(new Event('mousemove'));
+    });
+    // Heartbeat fails (500) → the warning re-opens DIRECTLY despite the fresh
+    // clock, and no involuntary sign-out fired.
+    await act(async () => {
+      resolveHeartbeat({ ok: false, status: 500 });
     });
     expect(screen.queryByText('Are you still here?')).not.toBeNull();
-    // The transient failure was NOT escalated to an involuntary sign-out.
     expect(toast.info).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('#194: a hung "Stay" heartbeat aborts at the timeout and re-warns (never suppresses forever)', async () => {
+    // A fetch that only ends via the AbortController timeout.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        (_url, opts) =>
+          new Promise((_resolve, reject) => {
+            (opts?.signal as AbortSignal | undefined)?.addEventListener(
+              'abort',
+              () => reject(new DOMException('aborted', 'AbortError')),
+            );
+          }),
+      ),
+    );
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    // Optimistically closed; heartbeat hung; poll suppressed by stayPendingRef.
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // Advance past HEARTBEAT_TIMEOUT_MS (10 s) → controller.abort() → catch →
+    // the warning re-opens (the flag does not suppress it indefinitely).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11_000);
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('#143: a second "Stay" click while a heartbeat is in flight is ignored (single fetch)', async () => {
+    let resolveHeartbeat: (v: unknown) => void = () => {};
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((r) => {
+          resolveHeartbeat = r;
+        }),
+      )
+      .mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    // Two clicks before the optimistic close unmounts the button: the in-flight
+    // guard must ignore the second so only ONE heartbeat fires.
+    await act(async () => {
+      const btn = screen.getByText('Stay signed in');
+      fireEvent.click(btn);
+      fireEvent.click(btn);
+    });
+    await act(async () => {
+      resolveHeartbeat({ ok: true, status: 200 });
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 

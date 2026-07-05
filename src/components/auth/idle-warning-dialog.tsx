@@ -143,12 +143,6 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     if (stayPendingRef.current) return;
     stayPendingRef.current = true;
 
-    // Remember the pre-click idle timestamp. On a FAILED heartbeat we force the
-    // clock back to it so the poll re-warns — client activity during the
-    // round-trip must NOT suppress that, because only a successful heartbeat
-    // (not a mouse move) extends the SERVER session.
-    const previousActivity = lastActivityRef.current;
-
     // Close the modal optimistically (BUG-018: never leave the countdown
     // running through the network round-trip). `stayPendingRef` suppresses both
     // the countdown's sign-out and the poll's re-open until the heartbeat
@@ -156,10 +150,21 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     setRemaining(WARNING_WINDOW_MS / 1000);
     setOpen(false);
 
-    // Bound the request with an AbortController + timer — `AbortSignal.timeout`
-    // is not available on all supported browsers. A hung heartbeat aborts after
-    // HEARTBEAT_TIMEOUT_MS → catch → the poll re-warns, instead of the pending
-    // flag suppressing the warning indefinitely.
+    // Re-open the warning to prompt a retry when the heartbeat did NOT extend
+    // the session. Done DIRECTLY (setOpen) rather than by staling the idle
+    // clock: the activity tracker would reset a stale clock on the user's next
+    // mouse move, yet client activity does NOT keep the SERVER session alive —
+    // only a successful heartbeat does. No immediate sign-out (BUG-018): the
+    // fresh 60 s countdown gives the user another chance to click Stay.
+    const reWarn = () => {
+      setOpen(true);
+      setRemaining(WARNING_WINDOW_MS / 1000);
+    };
+
+    // Bound the request with an AbortController + timer; clearing it in
+    // `finally` gives deterministic teardown (and cooperates with the test
+    // suite's fake timers), which `AbortSignal.timeout` — whose internal timer
+    // runs to completion even after an early resolve — does not.
     const controller = new AbortController();
     const timeoutId = window.setTimeout(
       () => controller.abort(),
@@ -184,14 +189,12 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
         // does not immediately re-warn.
         lastActivityRef.current = Date.now();
       } else {
-        // 429/5xx: session NOT extended. Force the clock stale so the next poll
-        // re-warns promptly (unconditionally — a mouse move during the
-        // round-trip does not keep the server session alive).
-        lastActivityRef.current = previousActivity;
+        // 429/5xx: session NOT extended — re-warn so the user can retry.
+        reWarn();
       }
     } catch {
-      // Network blip / timeout / abort — session not extended; force a re-warn.
-      lastActivityRef.current = previousActivity;
+      // Network blip / timeout / abort — session not extended; re-warn.
+      reWarn();
     } finally {
       window.clearTimeout(timeoutId);
       stayPendingRef.current = false;
