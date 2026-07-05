@@ -42,6 +42,24 @@ Verified 2026-06-23: a test push created `preview/chore/verify-preview-branch`, 
 
 `vercel-build` (`package.json`) = `node --import tsx scripts/run-migrations.ts && next build --turbopack`. It is safe to run on every deploy: Drizzle's migration journal skips already-applied migrations. `run-migrations.ts` reads `DATABASE_URL_UNPOOLED` from the **injected** Vercel env (no `.env.local`), so each environment migrates its own branch.
 
+### Gotcha — `ALTER TYPE … ADD VALUE` needs autocommit (enum-add migrations)
+
+The drizzle-orm postgres-js migrator wraps the **entire pending batch in ONE transaction**. PostgreSQL will not reliably persist — nor safely allow later use of — a value added by `ALTER TYPE … ADD VALUE` on a *pre-existing* enum type inside that same transaction. (Adding a value to an enum type *created in the same transaction* is fine — which is why fresh-DB / preview deploys never broke, only prod where the type pre-existed.)
+
+**Confirmed on prod 2026-07-04:** migration 0230's enum-adds (`document_type += 'bill','receipt_105'`, `audit_event_type += 'tax_receipt_issued'`) were recorded as applied in `drizzle.__drizzle_migrations` but never landed — the 088 new-flow issue path 500'd with `invalid input value for enum document_type: "bill"`.
+
+**Fix (in `run-migrations.ts`, live since branch `089-fix-enum-migration-autocommit`):**
+1. **Phase 1 — autocommit pre-pass:** every `ALTER TYPE … ADD VALUE` across `drizzle/migrations/*.sql` is applied in autocommit *before* the transactional `migrate()`, so each value commits in its own prior transaction (idempotent via `IF NOT EXISTS`; not-yet-created types are skipped for fresh DBs). The journal / `__drizzle_migrations` bookkeeping is left entirely to drizzle.
+2. **Phase 3 — post-migrate assertion:** verifies the code-required enum labels (`scripts/lib/enum-migration-guard.ts` → `REQUIRED_ENUM_VALUES`) actually exist and **exits non-zero** (fails the build before `next build`) if any are missing. Extend `REQUIRED_ENUM_VALUES` whenever a new code path depends on a freshly-added enum value.
+
+**Hand-fix if a deploy ever reports missing enum values** (idempotent, autocommit):
+```bash
+pnpm tsx scripts/repair-enum-drift.ts
+# or, against the unpooled prod connection, e.g.:
+#   ALTER TYPE "document_type" ADD VALUE IF NOT EXISTS 'bill';
+```
+Diagnose drift with `pnpm tsx scripts/dev-check-enum.ts` (lists the live `pg_enum` labels).
+
 **Manual prod escape hatch:** `pnpm db:migrate:prod` (reads `.env.production`, gitignored). Populate it only when you need an out-of-band prod migration:
 ```bash
 vercel env pull .env.production --environment=production
