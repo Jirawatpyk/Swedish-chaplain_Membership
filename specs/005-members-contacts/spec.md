@@ -670,6 +670,13 @@ and `member_undeleted`).
   MUST match the Thai 13-digit format including the official
   checksum; for non-Thai members the field accepts free-format
   strings up to 50 chars.
+  > **Amended (accepted decision — F3 UAT):** the "MUST require" clause above
+  > was relaxed to **optional-by-tier**. A §86/4 buyer-TIN is only required for
+  > VAT-registrant buyers, so a Corporate/Partnership member may be saved
+  > without a `tax_id`; the format + checksum rule still applies when a value
+  > IS provided. The validator + create/edit paths already implement this, and
+  > UAT **TC-MBR-04** is the authority. (QA re-flagged the stale "required"
+  > wording as BUG-027 — see docs/uat/qa-bug-triage-2026-07-05.md.)
 
 **Bundle-change (F2 D1 carry-over)**
 
