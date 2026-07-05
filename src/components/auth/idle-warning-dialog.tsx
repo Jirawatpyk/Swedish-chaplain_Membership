@@ -91,6 +91,13 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     lastActivityRef.current = Date.now();
   }, []);
 
+  // Set synchronously the instant the user clicks "Stay signed in" (before
+  // any await), and cleared once that handler settles. The 60→0 countdown
+  // keeps ticking during the heartbeat round-trip; this ref lets the
+  // countdown's zero-handler know the user already chose to stay, so a tick
+  // landing mid-round-trip cannot override that choice (BUG-018).
+  const keepAliveRef = useRef<boolean>(false);
+
   const signInPath = portalSignInPath(portal);
 
   /**
@@ -121,23 +128,42 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
    * reset the local idle clock.
    */
   const stayAction = useCallback(async () => {
+    // Mark "the user chose to stay" and close the dialog optimistically
+    // BEFORE awaiting the heartbeat. The 60→0 countdown interval keeps
+    // ticking until `open` flips false and the effect cleanup clears it;
+    // awaiting the heartbeat first (a 1–3 s serverless cold start is
+    // common) would leave a window where the countdown hits zero and
+    // involuntarily signs the user out despite their click. `keepAliveRef`
+    // (read synchronously in the countdown tick) closes that race and the
+    // optimistic close ends it — this is the BUG-018 "clicked Stay signed
+    // in but got kicked out" defect (TC-AUTH-05 step 2). Bonus: the modal
+    // dismisses instantly instead of after the network round-trip.
+    keepAliveRef.current = true;
+    lastActivityRef.current = Date.now();
+    setRemaining(WARNING_WINDOW_MS / 1000);
+    setOpen(false);
     try {
       const response = await fetch('/api/auth/heartbeat', {
         method: 'POST',
         credentials: 'same-origin',
       });
-      if (!response.ok) {
-        // Session is already gone server-side — force sign-out.
+      // Only a definitive 401 (no-session) means the session is truly gone
+      // — escalate to involuntary sign-out. A 429 (heartbeat rate limit,
+      // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT
+      // mean the session died; the row is still valid server-side, so keep
+      // the user signed in. The next protected request surfaces any real
+      // auth failure (same contract as the ≤1-min-to-absolute-cap edge
+      // documented above). Signing out on ANY non-OK response was part of
+      // the same BUG-018 fragility.
+      if (response.status === 401) {
         await forceSignOut();
-        return;
       }
     } catch {
-      // Network blip — close modal optimistically; the next real
+      // Network blip — already closed optimistically; the next real
       // request will surface any real auth failure.
+    } finally {
+      keepAliveRef.current = false;
     }
-    lastActivityRef.current = Date.now();
-    setRemaining(WARNING_WINDOW_MS / 1000);
-    setOpen(false);
   }, [forceSignOut]);
 
   // F5 / 009-online-payment amendment (FR-028c):
@@ -235,7 +261,13 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       setRemaining((prev) => {
         if (prev <= 1) {
           window.clearInterval(interval);
-          void forceSignOut();
+          // Skip the involuntary sign-out if the user just clicked "Stay
+          // signed in": that handler sets keepAliveRef synchronously before
+          // awaiting the heartbeat, so a tick landing during the round-trip
+          // must not override their explicit choice (BUG-018).
+          if (!keepAliveRef.current) {
+            void forceSignOut();
+          }
           return 0;
         }
         return prev - 1;

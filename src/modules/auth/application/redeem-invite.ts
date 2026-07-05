@@ -196,9 +196,17 @@ export async function redeemInvite(
         });
       }
 
-      // 5c. Set password + activate.
+      // 5c. Set password + activate. Also persist the display name the
+      //     invitee typed on the activation form: it arrives in the input
+      //     (and the API body) but was previously dropped on the floor, so
+      //     after activation the account rendered the raw email in the user
+      //     menu instead of the entered name (BUG-022).
       await deps.users.setPasswordHashInTx(tx, user.id, hashed, now);
       await deps.users.activateInTx(tx, user.id, now);
+      const trimmedDisplayName = input.displayName?.trim();
+      if (trimmedDisplayName) {
+        await deps.users.setDisplayNameInTx(tx, user.id, trimmedDisplayName);
+      }
 
       // 5d. Initial session (auto sign-in).
       const session = await deps.sessions.createInTx(tx, {
@@ -225,6 +233,7 @@ export async function redeemInvite(
         ...user,
         status: 'active',
         lastPasswordChangedAt: now,
+        ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
       };
       return { user: activated, session };
     });

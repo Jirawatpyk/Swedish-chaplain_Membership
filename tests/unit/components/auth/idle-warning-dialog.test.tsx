@@ -19,7 +19,7 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 vi.mock('next/navigation', () => ({
@@ -116,6 +116,80 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     // Exactly one toast with that message — catches an accidental extra/wrong
     // toast.info (e.g. someone re-routing the countdown copy through a toast).
     expect(toast.info).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('BUG-018: "Stay signed in" does NOT sign the user out when the heartbeat POST fails transiently (5xx/429) — the session is still valid', async () => {
+    // Pre-fix, stayAction force-signed-out on ANY non-OK heartbeat, so a
+    // transient 500 (Neon/Upstash blip) or a 429 (heartbeat rate limit)
+    // ejected a user whose session was perfectly alive. Now only a 401
+    // (no-session) does. Heartbeat returns 500 here.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+    );
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    // Dialog closed (the user stayed signed in) and NO involuntary-signout
+    // toast fired — the transient failure was swallowed, not escalated.
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    expect(toast.info).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('BUG-018: "Stay signed in" signs out only on a definitive 401 (session genuinely gone)', async () => {
+    // First fetch = heartbeat → 401; second = the forceSignOut sign-out POST.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 401 })
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    // A real no-session 401 DOES escalate to involuntary sign-out with the
+    // inactivity toast (not the countdown copy).
+    expect(toast.info).toHaveBeenCalledWith(
+      'You were signed out due to inactivity. Please sign in again.',
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it('BUG-018: after "Stay signed in" succeeds, a still-pending countdown can NOT later force sign-out', async () => {
+    // Regression guard for the stay-success path (previously uncovered). Open
+    // the warning, click Stay (heartbeat ok), then advance well past the old
+    // 60 s countdown: the dialog must stay closed and NO involuntary-signout
+    // toast may fire. This proves the OPTIMISTIC close + interval teardown
+    // prevent a delayed sign-out. (The synchronous keepAliveRef guard is
+    // additional real-browser defense-in-depth for the effect-flush race that
+    // JSDOM + act() cannot reproduce, so it is not directly asserted here.)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, status: 200 }),
+    );
+    renderDialog();
+    act(() => {
+      window.dispatchEvent(new Event('swecham:open-idle-warning'));
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120 * 1000);
+    });
+    expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 

@@ -156,6 +156,13 @@ export interface UserRepo {
   /** Tx-scoped variant of `activate` (Path C — A3). */
   activateInTx(tx: DbTx, id: UserId, now: Date): Promise<void>;
   /**
+   * Tx-scoped write of the account's display name — the name the invitee
+   * types on the activation form (BUG-022). Kept separate from
+   * `activateInTx` so activation stays a pure status flip and only the
+   * invite-redemption path opts into writing the name.
+   */
+  setDisplayNameInTx(tx: DbTx, id: UserId, displayName: string): Promise<void>;
+  /**
    * Tx-scoped clear of BOTH `failed_sign_in_count` and `locked_until`
    * in a single UPDATE (Path C — A4). G8 (Round 2): merged from the
    * formerly-separate `clearLockInTx` + `clearFailedCountInTx` which
@@ -420,6 +427,13 @@ export const userRepo: UserRepo = {
     await tx
       .update(users)
       .set({ status: 'active', lastPasswordChangedAt: now })
+      .where(eq(users.id, id));
+  },
+
+  async setDisplayNameInTx(tx, id, displayName) {
+    await tx
+      .update(users)
+      .set({ displayName })
       .where(eq(users.id, id));
   },
 
