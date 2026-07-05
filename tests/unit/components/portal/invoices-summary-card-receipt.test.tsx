@@ -14,8 +14,9 @@
  * shared `toInvoiceRowViewModel` single-source-of-truth (real, not mocked) so
  * this can never drift from the detail page / list.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { render, screen, cleanup } from '@testing-library/react';
 import type { ReactElement } from 'react';
 
 import { asInvoiceId, type Invoice } from '@/modules/invoicing';
@@ -69,13 +70,19 @@ vi.mock('@/modules/invoicing', async (importOriginal) => {
 vi.mock(
   '@/app/(member)/portal/invoices/_components/portal-pdf-download-button',
   () => ({
-    PortalInvoiceDownloadButton: (props: { documentNumber: string }) => (
-      <span data-testid="invoice-download">
+    PortalInvoiceDownloadButton: (props: {
+      documentNumber: string;
+      className?: string;
+    }) => (
+      <span data-testid="invoice-download" className={props.className}>
         INVOICE_DOWNLOAD:{props.documentNumber}
       </span>
     ),
-    PortalReceiptDownloadButton: (props: { documentNumber: string }) => (
-      <span data-testid="receipt-download">
+    PortalReceiptDownloadButton: (props: {
+      documentNumber: string;
+      className?: string;
+    }) => (
+      <span data-testid="receipt-download" className={props.className}>
         RECEIPT_DOWNLOAD:{props.documentNumber}
       </span>
     ),
@@ -184,6 +191,33 @@ async function renderCardWith(rows: Invoice[]): Promise<string> {
   return renderToStaticMarkup(tree as ReactElement);
 }
 
+/** RTL render (jsdom) so layout/variant tests can query the DOM tree. */
+async function renderCardDom(rows: Invoice[]): Promise<void> {
+  listInvoicesPagedMock.mockResolvedValue({ ok: true, value: { rows } });
+  const tree = await InvoicesSummaryCard({ user: { id: 'u1' as never } });
+  render(tree as ReactElement);
+}
+
+const paidSeparateRow = buildInvoice({
+  status: 'paid',
+  paidAt: '2026-04-05T00:00:00Z',
+  receiptPdfStatus: 'rendered',
+  receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+  receiptDocumentNumberRaw: 'RC-2026-000001',
+});
+
+// Combined-mode paid: receipt reuses the invoice number (receiptDocumentNumberRaw
+// NULL) + rendered blob + pdfDocKind 'invoice' → vm.isCombinedPaid true, so the
+// main invoice PDF is hidden and only the combined receipt button shows.
+const combinedPaidRow = buildInvoice({
+  status: 'paid',
+  paidAt: '2026-04-05T00:00:00Z',
+  receiptPdfStatus: 'rendered',
+  receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+  receiptDocumentNumberRaw: null,
+  pdfDocKind: 'invoice',
+});
+
 describe('<InvoicesSummaryCard> — receipt download (090 Bug 3)', () => {
   beforeEach(() => {
     listInvoicesPagedMock.mockReset();
@@ -220,5 +254,50 @@ describe('<InvoicesSummaryCard> — receipt download (090 Bug 3)', () => {
     });
     const html = await renderCardWith([pending]);
     expect(html).not.toContain('RECEIPT_DOWNLOAD');
+  });
+});
+
+describe('<InvoicesSummaryCard> — row layout + variant (090 UX findings #1/#3/#4)', () => {
+  beforeEach(() => {
+    listInvoicesPagedMock.mockReset();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('finding #1 — the download buttons sit in their OWN full-width flex-wrap row (a direct child of the flex-col <li>), NOT the shrink-0 total column', async () => {
+    await renderCardDom([paidSeparateRow]);
+    const receipt = screen.getByTestId('receipt-download');
+    const li = receipt.closest('li');
+    expect(li).not.toBeNull();
+    // The <li> is a vertical stack (header row above, button row below).
+    expect(li!.className).toContain('flex-col');
+    // The buttons live in a flex-wrap justify-end container...
+    const buttonRow = receipt.parentElement!;
+    expect(buttonRow.className).toContain('flex-wrap');
+    expect(buttonRow.className).toContain('justify-end');
+    // ...that is a DIRECT child of the <li> — i.e. its own full-width row,
+    // NOT nested two levels deep inside the trailing shrink-0 total column
+    // (the pre-fix layout that starved the doc#/date column at 320px).
+    expect(buttonRow.parentElement).toBe(li);
+  });
+
+  it('finding #4 — download buttons use the `outline` variant (bg-background), not `ghost`', async () => {
+    await renderCardDom([paidSeparateRow]);
+    // `outline` carries `bg-background` + a border; `ghost` carries neither.
+    expect(screen.getByTestId('invoice-download').className).toContain(
+      'bg-background',
+    );
+    expect(screen.getByTestId('receipt-download').className).toContain(
+      'bg-background',
+    );
+  });
+
+  it('finding #3 — a combined-mode paid receipt button gets the wrap treatment so the long TH dual-role label does not clip', async () => {
+    await renderCardDom([combinedPaidRow]);
+    const receipt = screen.getByTestId('receipt-download');
+    expect(receipt.className).toContain('whitespace-normal');
+    // Combined-mode hides the (stale) invoice PDF — only the receipt shows.
+    expect(screen.queryByTestId('invoice-download')).toBeNull();
   });
 });

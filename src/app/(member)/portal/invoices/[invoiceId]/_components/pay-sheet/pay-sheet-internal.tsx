@@ -766,6 +766,7 @@ export function PaySheetInternal({
             )}
             dateTime={formatPaymentDateTime(new Date(), locale)}
             receiptUrl={payState.receiptUrl}
+            invoiceId={invoice.id}
             onClose={handleClose}
           />
         );

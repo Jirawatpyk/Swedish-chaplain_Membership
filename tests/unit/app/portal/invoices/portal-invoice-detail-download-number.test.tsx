@@ -131,7 +131,9 @@ vi.mock('@/components/ui/card', () => ({
   CardHeader: ({ children }: { children?: unknown }) => children as ReactElement,
 }));
 vi.mock('@/components/ui/button', () => ({
-  buttonVariants: () => '',
+  // 090 finding #5 — echo the chosen `variant` so a test can assert the
+  // paid-invoice download hierarchy (receipt `default` primary, bill `outline`).
+  buttonVariants: (opts?: { variant?: string }) => opts?.variant ?? 'default',
 }));
 vi.mock('@/components/ui/table', () => ({
   Table: ({ children }: { children?: unknown }) => children as ReactElement,
@@ -159,11 +161,33 @@ vi.mock('@/app/(member)/portal/invoices/_components/resend-invoice-button', () =
   ResendInvoiceButton: () => null,
 }));
 vi.mock('@/app/(member)/portal/invoices/_components/portal-pdf-download-button', () => ({
-  PortalInvoiceDownloadButton: ({ documentNumber }: { documentNumber: string }) => (
-    <button type="button" data-testid="portal-download-invoice-marker" data-doc={documentNumber} />
+  PortalInvoiceDownloadButton: ({
+    documentNumber,
+    className,
+  }: {
+    documentNumber: string;
+    className?: string;
+  }) => (
+    <button
+      type="button"
+      data-testid="portal-download-invoice-marker"
+      data-doc={documentNumber}
+      data-cls={className}
+    />
   ),
-  PortalReceiptDownloadButton: ({ documentNumber }: { documentNumber: string }) => (
-    <button type="button" data-testid="portal-download-receipt-marker" data-doc={documentNumber} />
+  PortalReceiptDownloadButton: ({
+    documentNumber,
+    className,
+  }: {
+    documentNumber: string;
+    className?: string;
+  }) => (
+    <button
+      type="button"
+      data-testid="portal-download-receipt-marker"
+      data-doc={documentNumber}
+      data-cls={className}
+    />
   ),
 }));
 vi.mock('@/app/(member)/portal/invoices/_components/receipt-status-watcher', () => ({
@@ -210,6 +234,35 @@ function issuedUnpaid088Bill() {
   };
 }
 
+/** A PAID separate-mode invoice: §87 invoice number + rendered §86/4 RC. */
+function paidSeparateInvoice() {
+  return {
+    invoiceId: 'inv-1',
+    status: 'paid',
+    invoiceSubject: 'membership',
+    memberId: 'm1',
+    documentNumber: { raw: 'INV-2026-000010' },
+    billDocumentNumberRaw: null,
+    receiptDocumentNumberRaw: 'RC-2026-000010',
+    pdfDocKind: 'invoice',
+    receiptPdfStatus: 'rendered',
+    pdf: { blobKey: 'k' },
+    receiptPdf: { blobKey: 'rk' },
+    memberIdentitySnapshot: { tax_id: null },
+    issueDate: '2026-05-15',
+    dueDate: '2026-06-14',
+    paidAt: '2026-05-20',
+    voidedAt: null,
+    voidReason: null,
+    planYear: null,
+    subtotal: { satang: 100_000n },
+    vat: { satang: 7_000n },
+    total: { satang: 107_000n },
+    creditedTotal: { satang: 0n },
+    lines: [],
+  };
+}
+
 async function renderPage(): Promise<string> {
   const tree = await PortalInvoiceDetailPage({ params: Promise.resolve({ invoiceId: 'inv-1' }) });
   return renderToStaticMarkup(tree as ReactElement);
@@ -228,5 +281,23 @@ describe('PortalInvoiceDetailPage — main-download number for an unpaid 088 bil
     expect(html).toContain('data-doc="SC-2026-000045"');
     // Pre-fix the main download fell to displayDocumentNumber(...) ?? '—'.
     expect(html).not.toContain('data-doc="—"');
+  });
+});
+
+describe('PortalInvoiceDetailPage — paid-invoice download hierarchy (090 finding #5)', () => {
+  it('paid separate-mode → receipt button is the primary `default` CTA; the bill PDF is demoted to `outline`', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    // Both downloads render.
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
+    expect(html).toContain('data-testid="portal-download-receipt-marker"');
+    // The receipt is the filled/primary CTA; the bill is demoted to outline.
+    // (buttonVariants is mocked to echo the variant into the className.)
+    const receiptMarker = /data-testid="portal-download-receipt-marker"[^>]*data-cls="([^"]*)"/.exec(html);
+    const invoiceMarker = /data-testid="portal-download-invoice-marker"[^>]*data-cls="([^"]*)"/.exec(html);
+    expect(receiptMarker?.[1]).toContain('default');
+    expect(invoiceMarker?.[1]).toContain('outline');
+    // The demoted bill must NOT also be a filled `default` CTA.
+    expect(invoiceMarker?.[1]).not.toContain('default');
   });
 });

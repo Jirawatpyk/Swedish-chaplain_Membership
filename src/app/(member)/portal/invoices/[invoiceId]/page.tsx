@@ -387,7 +387,17 @@ export default async function PortalInvoiceDetailPage({
                               })
                         }`}
                         className={cn(
-                          buttonVariants({ variant: 'default', size: 'sm' }),
+                          // 090 finding #5 — on a PAID separate-mode invoice the
+                          // §86/4 receipt is the document the member needs, so it
+                          // ranks as the filled `default` CTA and the (secondary)
+                          // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
+                          // void keep the bill as the primary `default` CTA (no
+                          // receipt yet). `showReceiptPdf` is true only when the
+                          // receipt download actually renders alongside.
+                          buttonVariants({
+                            variant: showReceiptPdf ? 'outline' : 'default',
+                            size: 'sm',
+                          }),
                           'min-h-11 px-4',
                         )}
                         data-testid="portal-download-invoice"
@@ -406,10 +416,12 @@ export default async function PortalInvoiceDetailPage({
                           number: invoice.receiptDocumentNumberRaw ?? documentNumber,
                         })}
                         className={cn(
-                          buttonVariants({
-                            variant: isCombinedPaid ? 'default' : 'outline',
-                            size: 'sm',
-                          }),
+                          // 090 finding #5 — the receipt is the post-payment
+                          // PRIMARY document (this branch only renders for a PAID
+                          // invoice, combined OR separate), so it is always the
+                          // filled `default` CTA, ranking above the demoted bill
+                          // PDF above.
+                          buttonVariants({ variant: 'default', size: 'sm' }),
                           'min-h-11 px-4',
                         )}
                         data-testid="portal-download-receipt"
