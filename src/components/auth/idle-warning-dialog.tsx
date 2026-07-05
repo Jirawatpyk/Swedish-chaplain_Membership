@@ -138,7 +138,16 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     // optimistic close ends it — this is the BUG-018 "clicked Stay signed
     // in but got kicked out" defect (TC-AUTH-05 step 2). Bonus: the modal
     // dismisses instantly instead of after the network round-trip.
+    // Capture the pre-click idle timestamp so we can roll back if the
+    // heartbeat turns out NOT to have extended the session.
+    const previousActivity = lastActivityRef.current;
     keepAliveRef.current = true;
+    // Optimistically reset the idle clock BEFORE awaiting: a cold-start
+    // heartbeat can take longer than the 5 s idle poll, and without this reset
+    // the poll would re-open the warning mid-flight and its fresh 60 s
+    // countdown could involuntarily sign out a user whose session is about to
+    // be (or was just) extended.
+    lastActivityRef.current = Date.now();
     setRemaining(WARNING_WINDOW_MS / 1000);
     setOpen(false);
     try {
@@ -146,29 +155,29 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
         method: 'POST',
         credentials: 'same-origin',
       });
-      // Only a definitive 401 (no-session) means the session is truly gone
-      // — escalate to involuntary sign-out. A 429 (heartbeat rate limit,
-      // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT
-      // mean the session died; the row is still valid server-side, so keep
-      // the user signed in. Signing out on ANY non-OK response was part of
-      // the same BUG-018 fragility.
+      // Only a definitive 401 (no-session) means the session is truly gone —
+      // escalate to involuntary sign-out. A 429 (heartbeat rate limit,
+      // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT mean
+      // the session died; keep the user signed in. Signing out on ANY non-OK
+      // response was part of the same BUG-018 fragility.
       if (response.status === 401) {
         await forceSignOut();
         return;
       }
-      if (response.ok) {
-        // Reset the client idle clock ONLY on a successful heartbeat — that is
-        // the only response that actually extended sessions.last_seen_at. On
-        // 429/5xx the session was NOT extended, so leaving lastActivityRef
-        // untouched lets the idle poll re-open the warning within ~5 s instead
-        // of falsely suppressing it for ~29 min and letting the session lapse
-        // into an abrupt no-session error (the class BUG-018 targeted).
-        lastActivityRef.current = Date.now();
+      if (!response.ok) {
+        // 429/5xx: the heartbeat did NOT extend the session. Roll the idle
+        // clock BACK to its pre-click value so the poll re-warns promptly (the
+        // session will idle-expire server-side soon) instead of the optimistic
+        // reset falsely suppressing the warning for ~29 min — the abrupt-logout
+        // class BUG-018 targeted.
+        lastActivityRef.current = previousActivity;
       }
+      // 2xx: keep the optimistic reset — the session was extended.
     } catch {
-      // Network blip — session not extended; leave the idle clock so the
-      // warning re-appears promptly. The next protected request surfaces any
-      // real auth failure.
+      // Network blip — session not extended; roll back so the warning
+      // re-appears promptly. The next protected request surfaces any real
+      // auth failure.
+      lastActivityRef.current = previousActivity;
     } finally {
       keepAliveRef.current = false;
     }

@@ -193,6 +193,74 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
+  it('#3: a slow but successful "Stay" heartbeat does NOT let the idle poll re-open + sign out', async () => {
+    // Regression for the code-review round-2 finding: resetting the idle clock
+    // only AFTER the heartbeat resolved let a >5 s cold-start heartbeat leave
+    // the clock stale, so the 5 s poll re-opened the warning mid-flight and its
+    // fresh countdown signed out a user whose session was being extended. The
+    // fix resets OPTIMISTICALLY before the await.
+    let resolveHeartbeat: (v: unknown) => void = () => {};
+    const heartbeat = new Promise((r) => {
+      resolveHeartbeat = r;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(heartbeat));
+    renderDialog();
+    // Idle past the 29-min threshold so the warning opens naturally (the idle
+    // clock is genuinely stale at click time).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29 * 60 * 1000 + 5_000);
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    // Click Stay — the heartbeat is still pending (slow cold start).
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // Advance past the 5 s poll while the heartbeat is STILL pending: the
+    // optimistic reset must keep the warning closed (no spurious re-open).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // Heartbeat finally returns 200 → still closed, and no involuntary signout.
+    await act(async () => {
+      resolveHeartbeat({ ok: true, status: 200 });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 1000);
+    });
+    expect(toast.info).not.toHaveBeenCalled();
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('#5: a failed "Stay" heartbeat (5xx) rolls the idle clock back so the warning re-appears (no silent 29-min suppression)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+    );
+    renderDialog();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29 * 60 * 1000 + 5_000);
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    // Closed optimistically…
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // …but the 500 rolled the idle clock back to its stale pre-click value, so
+    // the next poll tick (≤5 s) re-opens the warning to prompt a retry — rather
+    // than falsely suppressing it for ~29 min while the session lapses.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    // The transient failure was NOT escalated to an involuntary sign-out.
+    expect(toast.info).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('resumeIdleTimer event thaws the clock — subsequent 29 min of activity re-shows the warning', async () => {
     renderDialog();
     act(() => {

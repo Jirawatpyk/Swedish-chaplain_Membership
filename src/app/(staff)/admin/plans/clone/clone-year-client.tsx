@@ -13,7 +13,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { CloneYearDialog } from '@/components/plans/clone-year-dialog';
-import { useDebouncedValue } from '@/hooks/use-debounced-value';
 
 export interface CloneYearClientProps {
   readonly defaultSourceYear: number;
@@ -60,42 +59,50 @@ export function CloneYearClient({
     defaultSourcePlanCount,
   );
 
-  // Debounce the free-typed Source year so a rapid edit fires ONE refetch
-  // (shared trailing-edge hook). The count is blanked SYNCHRONOUSLY in the
-  // year input's onChange, so the display shows "…" (never a stale prior-year
-  // number) while this settles.
-  const debouncedSourceYear = useDebouncedValue(sourceYear, 350);
-
+  // Refetch the pre-flight count whenever the Source year changes (free-typed
+  // number input). A hand-rolled debounce is deliberate here — NOT
+  // useDebouncedValue: the effect must key on the IMMEDIATE sourceYear so an
+  // up-then-back edit within the window still re-runs and restores the count.
+  // A value-collapsing trailing debounce would no-op that net-zero change and
+  // strand the count at null. `null` = not-yet-known (loading OR a failed
+  // fetch); the count surfaces render "…" for it. The count is display ONLY —
+  // the clone always uses the real Source year server-side — so a failed count
+  // fetch must NOT block the Clone button (it doesn't; see the button below).
   useEffect(() => {
-    if (debouncedSourceYear === defaultSourceYear) {
+    if (sourceYear === defaultSourceYear) {
       setSourcePlanCount(defaultSourcePlanCount);
       return;
     }
-    if (debouncedSourceYear < 2000 || debouncedSourceYear > 2100) {
+    if (sourceYear < 2000 || sourceYear > 2100) {
       setSourcePlanCount(0);
       return;
     }
+    // Blank immediately so no stale prior-year number shows during the debounce.
+    setSourcePlanCount(null);
     let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/plans?year=${debouncedSourceYear}`, {
-          credentials: 'same-origin',
-        });
-        if (!res.ok) throw new Error(`status ${res.status}`);
-        const body = (await res.json()) as { data?: unknown };
-        if (!cancelled) {
-          setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
+    const handle = setTimeout(() => {
+      void (async () => {
+        try {
+          const res = await fetch(`/api/plans?year=${sourceYear}`, {
+            credentials: 'same-origin',
+          });
+          if (!res.ok) throw new Error(`status ${res.status}`);
+          const body = (await res.json()) as { data?: unknown };
+          if (!cancelled) {
+            setSourcePlanCount(Array.isArray(body.data) ? body.data.length : 0);
+          }
+        } catch {
+          // Leave the count UNKNOWN (null → "…") on a transient failure — do
+          // NOT coerce to 0 (falsely "no plans"). Clone stays clickable.
+          if (!cancelled) setSourcePlanCount(null);
         }
-      } catch {
-        // Leave the count UNKNOWN (null) on a transient failure — do NOT
-        // coerce to 0, which would falsely read "no plans for that year".
-        if (!cancelled) setSourcePlanCount(null);
-      }
-    })();
+      })();
+    }, 350);
     return () => {
       cancelled = true;
+      clearTimeout(handle);
     };
-  }, [debouncedSourceYear, defaultSourceYear, defaultSourcePlanCount]);
+  }, [sourceYear, defaultSourceYear, defaultSourcePlanCount]);
 
   async function handleConfirm(): Promise<void> {
     setSubmitting(true);
@@ -166,14 +173,11 @@ export function CloneYearClient({
             min={2000}
             max={2100}
             value={sourceYear}
-            onChange={(e) => {
+            onChange={(e) =>
               setSourceYear(
                 Number.parseInt(e.target.value, 10) || defaultSourceYear,
-              );
-              // Blank the count immediately so the display shows "…" (never a
-              // stale prior-year number) until the debounced refetch settles.
-              setSourcePlanCount(null);
-            }}
+              )
+            }
           />
         </div>
         <div className="space-y-1">
@@ -206,12 +210,10 @@ export function CloneYearClient({
         </Button>
         <Button
           onClick={() => setOpen(true)}
-          // Disabled while the count for the current Source year is unknown
-          // (loading / failed): the confirm dialog must never open quoting a
-          // stale or falsely-zero count (code-review follow-up to BUG-010).
-          disabled={
-            sourceYear === targetYear || submitting || sourcePlanCount === null
-          }
+          // NOT gated on the count: it is a display-only preview, and the clone
+          // uses the real Source year server-side. A "…" (loading/failed) count
+          // must never block an otherwise-valid clone.
+          disabled={sourceYear === targetYear || submitting}
         >
           {tClone('submit', { count: sourcePlanCount ?? '…' })}
         </Button>
@@ -222,7 +224,7 @@ export function CloneYearClient({
         onOpenChange={setOpen}
         sourceYear={sourceYear}
         targetYear={targetYear}
-        sourcePlanCount={sourcePlanCount ?? 0}
+        sourcePlanCount={sourcePlanCount}
         submitting={submitting}
         onConfirm={handleConfirm}
       />
