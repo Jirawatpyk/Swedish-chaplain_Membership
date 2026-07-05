@@ -70,7 +70,7 @@ const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
  * Abort a "Stay signed in" heartbeat that hasn't answered in 10 s — longer than
  * a serverless cold start, far shorter than the 29-min warning window. Bounds
  * how long the in-flight flag can suppress the warning on a hung request: on
- * timeout the fetch aborts → the idle poll re-warns within ~5 s.
+ * timeout the fetch aborts → the catch re-opens the warning directly (reWarn).
  */
 const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
 
@@ -106,6 +106,11 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // mid-flight; (3) an overlapping second click is ignored. Cleared in `finally`
   // once the heartbeat settles.
   const stayPendingRef = useRef<boolean>(false);
+
+  // FR-028c: the PaySheet drawer freezes the idle timer during a Stripe payment
+  // (pause/resume events wired below). Declared up here so `stayAction`'s reWarn
+  // and the countdown can both honour the freeze — not only the idle poll.
+  const pausedAtRef = useRef<number | null>(null);
 
   const signInPath = portalSignInPath(portal);
 
@@ -157,6 +162,10 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     // only a successful heartbeat does. No immediate sign-out (BUG-018): the
     // fresh 60 s countdown gives the user another chance to click Stay.
     const reWarn = () => {
+      // Do NOT re-open during a PaySheet payment (FR-028c): the idle timer is
+      // frozen, and re-warning + counting down here would sign the user out
+      // mid-3DS. The payment's own requests keep the server session alive.
+      if (pausedAtRef.current !== null) return;
       setOpen(true);
       setRemaining(WARNING_WINDOW_MS / 1000);
     };
@@ -213,7 +222,6 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // time each poll tick would have accumulated. The simplest, accurate
   // implementation is to track a `pausedAt` timestamp and, on resume,
   // shift `lastActivityRef` forward by `(Date.now() - pausedAt)`.
-  const pausedAtRef = useRef<number | null>(null);
   useEffect(() => {
     const onPause = () => {
       if (pausedAtRef.current === null) {
@@ -292,30 +300,30 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     };
   }, []);
 
-  // Countdown — while the modal is open, tick once per second. Reaching
-  // zero triggers the involuntary sign-out path.
+  // Countdown — tick once per second while the modal is open, FROZEN during a
+  // PaySheet payment (FR-028c). The interval only decrements `remaining`; the
+  // sign-out fires from the effect below (never inside the setRemaining updater,
+  // which React StrictMode double-invokes in dev — firing the sign-out twice).
   useEffect(() => {
     if (!open) return;
     const interval = window.setInterval(() => {
-      setRemaining((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(interval);
-          // Skip the involuntary sign-out if a "Stay signed in" heartbeat is
-          // in flight: stayAction sets stayPendingRef synchronously before the
-          // round-trip, so a tick landing mid-flight must not override the
-          // user's explicit choice (BUG-018).
-          if (!stayPendingRef.current) {
-            void forceSignOut();
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
+      if (pausedAtRef.current !== null) return; // freeze during payment (FR-028c)
+      setRemaining((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1_000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [open, forceSignOut]);
+  }, [open]);
+
+  // Fire the involuntary sign-out when the countdown reaches zero. Guarded by
+  // stayPendingRef so a "Stay signed in" heartbeat settling mid-tick does not
+  // override the user's explicit choice (BUG-018). forceSignOut flips `open`
+  // false, so this fires exactly once per countdown.
+  useEffect(() => {
+    if (open && remaining === 0 && !stayPendingRef.current) {
+      void forceSignOut();
+    }
+  }, [open, remaining, forceSignOut]);
 
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>

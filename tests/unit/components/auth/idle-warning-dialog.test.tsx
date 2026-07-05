@@ -329,6 +329,42 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     vi.unstubAllGlobals();
   });
 
+  it('#299: a failed "Stay" heartbeat while a PaySheet payment is paused does NOT re-warn or sign out (FR-028c)', async () => {
+    // Deferred heartbeat so the payment can pause mid-flight.
+    let resolveHeartbeat: (v: unknown) => void = () => {};
+    const heartbeat = new Promise((r) => {
+      resolveHeartbeat = r;
+    });
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(heartbeat));
+    renderDialog();
+    // Idle 29 min → warning opens.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29 * 60 * 1000 + 5_000);
+    });
+    expect(screen.queryByText('Are you still here?')).not.toBeNull();
+    // Click Stay → optimistic close; heartbeat pending.
+    await act(async () => {
+      fireEvent.click(screen.getByText('Stay signed in'));
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // User opens the Stripe PaySheet → the idle timer freezes (FR-028c).
+    act(() => {
+      window.dispatchEvent(new CustomEvent('swecham:pause-idle-timer'));
+    });
+    // Heartbeat then fails (5xx) → reWarn must NOT re-open the warning while
+    // the payment is paused (else the countdown would sign the user out mid-3DS).
+    await act(async () => {
+      resolveHeartbeat({ ok: false, status: 500 });
+    });
+    expect(screen.queryByText('Are you still here?')).toBeNull();
+    // Advance well past the countdown window — still frozen, no sign-out.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120 * 1000);
+    });
+    expect(toast.info).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('resumeIdleTimer event thaws the clock — subsequent 29 min of activity re-shows the warning', async () => {
     renderDialog();
     act(() => {
