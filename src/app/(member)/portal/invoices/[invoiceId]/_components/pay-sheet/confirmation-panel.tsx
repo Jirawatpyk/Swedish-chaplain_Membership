@@ -6,8 +6,17 @@
  * Responsibilities:
  *   - CheckCircle icon (motion-safe scale-in 200 ms; motion-reduce instant).
  *   - Bilingual title + per-method summary (card vs promptpay).
- *   - Primary CTA "Download receipt" → F4 receipt PDF via 60 s signed URL
- *     (passed in as `receiptUrl` prop; getter is a Group F / G4 concern).
+ *   - Primary CTA "Download receipt" → the §86/4 RC receipt-PDF byte-streaming
+ *     route `/api/portal/invoices/{id}/receipt/pdf` (passed in as the
+ *     `receiptUrl` prop; built by `buildReceiptDownloadUrl` in
+ *     pay-sheet-internal — 090 Bug 1 replaced the prior placeholder RSC path
+ *     that 404'd). 090 finding #2/#8 — the CTA is a `<button>` running the
+ *     shared fetch+blob `downloadPdf` helper (same as
+ *     `PortalReceiptDownloadButton`), NOT a raw `<a target="_blank">`. At the
+ *     just-paid moment the RC PDF is usually still rendering (webhook race), so
+ *     the route returns 425; the helper maps that to the friendly "receipt
+ *     still generating" toast instead of leaking the raw JSON error into a new
+ *     tab. When the RC has rendered it downloads directly.
  *   - Secondary "Close" button.
  *   - 5-second auto-close countdown using `autoCloseCountdown` key.
  *     Countdown interrupts the moment the user clicks either button.
@@ -18,10 +27,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { CheckCircle2Icon, DownloadIcon, PauseIcon, PlayIcon } from 'lucide-react';
+import {
+  CheckCircle2Icon,
+  DownloadIcon,
+  Loader2,
+  PauseIcon,
+  PlayIcon,
+} from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { downloadPdf } from '@/lib/download-pdf-client';
 import { useCountdownAutoDismiss } from '@/hooks/use-countdown-auto-dismiss';
 
 // Exported so tests can express timing assertions in terms of the
@@ -36,13 +52,15 @@ export interface ConfirmationPanelProps {
   readonly amount: string;
   /** Localized datetime string (caller formats with `intl` per locale). */
   readonly dateTime: string;
-  /** Short-lived signed URL to the F4 receipt PDF. */
+  /** Member receipt-PDF byte-streaming route (`/api/portal/.../receipt/pdf`). */
   readonly receiptUrl: string;
+  /** Invoice id — used for the fallback download filename (090 finding #2). */
+  readonly invoiceId: string;
   /** Fired on user-initiated close OR on countdown exhaustion. */
   readonly onClose: () => void;
   /**
    * Optional callback for when the user clicks "Download receipt" (in
-   * addition to the <a> navigating to `receiptUrl`). Parent may use this
+   * addition to running the fetch+blob `downloadPdf`). Parent may use this
    * to emit a telemetry event. Does NOT auto-close the drawer — the user
    * must explicitly click "Close" (or let the 5-second auto-close fire).
    */
@@ -54,10 +72,14 @@ export function ConfirmationPanel({
   amount,
   dateTime,
   receiptUrl,
+  invoiceId,
   onClose,
   onDownload,
 }: ConfirmationPanelProps) {
   const t = useTranslations('portal.payment.success');
+  // 090 finding #2 — receipt-download toast strings (shared namespace with
+  // <PortalReceiptDownloadButton>) for the fetch+blob 4xx/5xx → toast mapping.
+  const tToast = useTranslations('portal.invoices.toast');
 
   // WCAG 2.4.3 Focus Order: on payment success the previously-focused
   // element (card submit button) unmounts → focus reverts to <body>
@@ -66,10 +88,13 @@ export function ConfirmationPanel({
   // so SR users hear the success heading + summary BEFORE focus lands
   // on the Download CTA. Pressing Tab takes them to Download next.
   const sectionRef = useRef<HTMLElement>(null);
-  const downloadLinkRef = useRef<HTMLAnchorElement>(null);
   useEffect(() => {
     sectionRef.current?.focus();
   }, []);
+
+  // 090 finding #2 — in-flight state for the fetch+blob receipt download so the
+  // CTA shows a spinner + is disabled while the request is running.
+  const [downloading, setDownloading] = useState<boolean>(false);
 
   // One-shot toast on mount — guarded so StrictMode's double-invoke in
   // development doesn't produce two toasts.
@@ -107,6 +132,41 @@ export function ConfirmationPanel({
   const handleResume = () => {
     resumeAutoClose();
     setPaused(false);
+  };
+
+  // 090 finding #2 — fetch+blob receipt download (mirrors
+  // <PortalReceiptDownloadButton>). At the just-paid moment the RC PDF is
+  // usually still rendering → the route 425s → `downloadPdf` fires the friendly
+  // `receiptPending` toast instead of leaking raw JSON into a new tab.
+  // `interruptAutoClose` stops the 5s countdown so the drawer doesn't close
+  // mid-download; `onDownload` keeps its telemetry hook.
+  const handleDownloadReceipt = async () => {
+    interruptAutoClose();
+    onDownload?.();
+    setDownloading(true);
+    const loadingId = toast.loading(tToast('downloadInProgress'));
+    try {
+      await downloadPdf({
+        url: receiptUrl,
+        fallbackFilename: `${invoiceId}-receipt.pdf`,
+        toasts: {
+          pending: tToast('receiptPending'),
+          failed: (reason: string) =>
+            reason
+              ? tToast('receiptFailed', { reason })
+              : tToast('receiptUnavailable'),
+          forbidden: tToast('receiptForbidden'),
+          unavailable: tToast('receiptUnavailable'),
+          sessionExpired: tToast('receiptSessionExpired'),
+          rateLimited: tToast('receiptRateLimited'),
+        },
+        toastWarning: (msg) => toast.warning(msg),
+        toastError: (msg) => toast.error(msg),
+      });
+    } finally {
+      toast.dismiss(loadingId);
+      setDownloading(false);
+    }
   };
 
   // review-20260428-102639.md W15 closure — `last4` removed.
@@ -164,31 +224,36 @@ export function ConfirmationPanel({
        * Download receipt, and the hierarchy reads as Download (act)
        * → Close (dismiss) → countdown (passive info).
        */}
-      <a
-        ref={downloadLinkRef}
-        href={receiptUrl}
-        target="_blank"
-        rel="noopener noreferrer"
+      {/* 090 finding #2/#8 — a `<button>` running the fetch+blob `downloadPdf`
+          (NOT `<a target="_blank">`), so a 425 "receipt still generating" surfaces
+          as a toast instead of leaking raw JSON into a new tab. */}
+      <button
+        type="button"
+        disabled={downloading}
+        onClick={handleDownloadReceipt}
         className={cn(
           buttonVariants({ variant: 'default' }),
           // WCAG 2.5.5 / SC 2.5.8 — mobile tap target ≥ 44×44 px
           // (G-Review Finding #5).
           'min-h-[44px] w-full px-4',
           // T164 — accountant print convenience: hide download CTA when
-          // printing (link is non-functional on paper). The F4 receipt
+          // printing (button is non-functional on paper). The F4 receipt
           // PDF remains the authoritative Thai-tax-compliant document
           // (FR-004); the print view here is informal confirmation only.
           'print:hidden',
         )}
-        onClick={() => {
-          interruptAutoClose();
-          onDownload?.();
-        }}
         data-testid="pay-sheet-download-receipt"
       >
-        <DownloadIcon aria-hidden="true" className="size-4" />
+        {downloading ? (
+          <Loader2
+            aria-hidden="true"
+            className="size-4 motion-safe:animate-spin"
+          />
+        ) : (
+          <DownloadIcon aria-hidden="true" className="size-4" />
+        )}
         {t('downloadReceipt')}
-      </a>
+      </button>
       <button
         type="button"
         onClick={() => {

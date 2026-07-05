@@ -46,7 +46,14 @@ import {
   formatSatangThb,
 } from '@/app/(member)/portal/invoices/_utils/format';
 import { InvoiceStatusBadge } from '@/app/(member)/portal/invoices/_components/invoice-status-badge';
-import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import {
+  PortalInvoiceDownloadButton,
+  PortalReceiptDownloadButton,
+} from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import {
+  toInvoiceRowViewModel,
+  downloadLabelKeys,
+} from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 
 const SUMMARY_LIMIT = 3;
 
@@ -180,6 +187,11 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     );
   }
 
+  // 090 Bug 3 — one "now" for the whole card so each row's view-model derives a
+  // deterministic overdue status (the view-model's purity contract: the CALLER
+  // supplies now; the mapper never calls `new Date()`). Mirrors the list page.
+  const nowUtcIso = new Date().toISOString();
+
   return (
     <Card>
       {/* Heading + "view all" share one centred row (heading level with the
@@ -191,7 +203,9 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
           {rows.length > 0 ? (
             <Link
               href="/portal/invoices"
-              className={buttonVariants({ variant: 'outline' })}
+              // 090 finding #7 — min-h-11 (≥44px) to match the sibling
+              // action-button convention across the portal.
+              className={cn(buttonVariants({ variant: 'outline' }), 'min-h-11')}
             >
               {t('summary.viewAll')}
             </Link>
@@ -211,67 +225,128 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
               // this widget's "latest invoices" rows never render '—'/UUID.
               const displayNo =
                 billFirstDocumentNumber(r) ?? r.receiptDocumentNumberRaw;
+              // 090 Bug 3 — derive the download flags from the SHARED
+              // single-source-of-truth view-model (same one the detail page +
+              // full list consume) so this summary card can never drift on
+              // WHICH document(s) a row exposes. Passed 2-arg (tax-at-payment
+              // flag defaults false): the flags this card reads —
+              // `showInvoice` / `showReceipt` / `isCombinedPaid` / `mainPdfKind`
+              // — are all flag-INDEPENDENT (only `taxDocumentKind` /
+              // `primaryNumber` depend on the flag, and this card keeps its own
+              // bill-first `displayNo` for the visible number). Pre-fix the card
+              // only ever rendered the invoice/bill PDF, so a PAID member never
+              // saw the §86/4 RC receipt download.
+              const vm = toInvoiceRowViewModel(r, nowUtcIso);
+              const receiptRef =
+                r.receiptDocumentNumberRaw ?? displayNo ?? r.invoiceId;
               return (
               <li
                 key={r.invoiceId}
-                /* items-start aligns the two stacked columns at their tops
-                   instead of vertically centring the trailing total/button
-                   against the 2-line left block. Each column is a flex-col:
-                   the LEFT column is doc# (row 1) above the badge+date pair
-                   (row 2); the RIGHT column is the total (row 1) above the
-                   download button (row 2). No flex-wrap, so on a narrow phone
-                   the right column stacks under nothing — the two columns stay
-                   side-by-side down to 320px (the labels are short: doc# +
-                   "Invoice"/"Voided invoice"). */
-                className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0"
+                /* 090 finding #1 — a `flex-col` row: a header row (doc#/badge/
+                   date on the left, total on the right) ABOVE a separate
+                   full-width `flex-wrap justify-end` download-button row.
+                   The pre-fix layout put both download buttons in the trailing
+                   `shrink-0` column, which defeated `flex-wrap` and starved the
+                   `min-w-0` doc#/date column to ~27px at 320px (overflow/clip).
+                   Giving the buttons their OWN full-width row lets flex-wrap
+                   actually work — mirrors the full invoice-list card
+                   (`portal-invoice-card-list.tsx`). */
+                className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0"
               >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <Link
-                    href={`/portal/invoices/${r.invoiceId}`}
-                    className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
-                    aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
-                  >
-                    {displayNo ?? '—'}
-                  </Link>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <InvoiceStatusBadge status={r.status} label={tStatus(r.status)} />
-                    {/* whitespace-nowrap so the date wraps as a UNIT below the
-                        badge (not mid-date "Apr 27, / 2026") when the row is
-                        tight on a narrow phone; flex-wrap on the parent lets it
-                        drop to its own line. */}
-                    <span className="text-caption text-muted-foreground whitespace-nowrap">
-                      {formatDate(r.issueDate, userLocale)}
-                    </span>
+                {/* Header row — doc#/badge/date (left, min-w-0) + total (right). */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <Link
+                      href={`/portal/invoices/${r.invoiceId}`}
+                      className="font-mono text-caption text-muted-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 self-start"
+                      aria-label={`${t('actions.viewDetail')} ${displayNo ?? r.invoiceId}`}
+                    >
+                      {displayNo ?? '—'}
+                    </Link>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <InvoiceStatusBadge status={r.status} label={tStatus(r.status)} />
+                      {/* whitespace-nowrap so the date wraps as a UNIT below the
+                          badge (not mid-date "Apr 27, / 2026") when the row is
+                          tight on a narrow phone; flex-wrap on the parent lets it
+                          drop to its own line. */}
+                      <span className="text-caption text-muted-foreground whitespace-nowrap">
+                        {formatDate(r.issueDate, userLocale)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="tabular-nums text-body font-medium">
+                  <span className="shrink-0 tabular-nums text-body font-medium">
                     {formatSatangThb(r.total?.satang ?? null, userLocale)}
                   </span>
-                  {r.pdf ? (
-                    <PortalInvoiceDownloadButton
-                      invoiceId={r.invoiceId}
-                      documentNumber={displayNo ?? r.invoiceId}
-                      label={
-                        r.status === 'void'
-                          ? t('actions.downloadVoided')
-                          : t('actions.download')
-                      }
-                      ariaLabel={t(
-                        r.status === 'void'
-                          ? 'actions.downloadVoidedAria'
-                          : 'actions.downloadInvoiceAria',
-                        {
-                          number: displayNo ?? r.invoiceId,
-                        },
-                      )}
-                      className={cn(
-                        buttonVariants({ variant: 'ghost', size: 'sm' }),
-                        'min-h-11 px-3',
-                      )}
-                    />
-                  ) : null}
                 </div>
+                {/* Download row — its OWN full-width `flex-wrap` line (finding #1)
+                    so both PDFs (invoice/bill + §86/4 receipt) wrap at 320px
+                    without starving the header above. `gap-2` (finding #6);
+                    `outline` variant matches the full invoice-list card
+                    (finding #4 — ghost read as too low-discoverability). */}
+                {vm.showInvoice || vm.showReceipt ? (
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {/* Invoice/bill PDF — hidden in combined-mode paid (the
+                        stale pre-payment draft is not a legal doc; the combined
+                        receipt is), matching the detail page's `showInvoicePdf`.
+                        The mainPdfKind nuance flips the label for as-paid
+                        combined/§105 receipt rows. */}
+                    {vm.showInvoice ? (
+                      <PortalInvoiceDownloadButton
+                        invoiceId={r.invoiceId}
+                        documentNumber={displayNo ?? r.invoiceId}
+                        label={
+                          r.status === 'void'
+                            ? t('actions.downloadVoided')
+                            : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
+                        }
+                        ariaLabel={t(
+                          r.status === 'void'
+                            ? 'actions.downloadVoidedAria'
+                            : downloadLabelKeys(vm.mainPdfKind).ariaKey,
+                          {
+                            number: displayNo ?? r.invoiceId,
+                          },
+                        )}
+                        className={cn(
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'min-h-11 px-3',
+                        )}
+                      />
+                    ) : null}
+                    {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
+                        is paid + its receipt PDF has rendered (blob present).
+                        Combined-mode paid uses the dual-role label + the wrap
+                        treatment (finding #3 — the long TH "ใบกำกับภาษี /
+                        ใบเสร็จรับเงิน" would otherwise clip); separate-mode the
+                        plain "Receipt". Matches the detail page + full list. */}
+                    {vm.showReceipt ? (
+                      <PortalReceiptDownloadButton
+                        invoiceId={r.invoiceId}
+                        documentNumber={receiptRef}
+                        label={
+                          vm.isCombinedPaid
+                            ? t('actions.downloadCombined')
+                            : t('actions.downloadReceipt')
+                        }
+                        ariaLabel={t(
+                          vm.isCombinedPaid
+                            ? 'actions.downloadCombinedAria'
+                            : 'actions.downloadReceiptAria',
+                          { number: receiptRef },
+                        )}
+                        className={cn(
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'min-h-11 px-3',
+                          // finding #3 — let the long combined dual-role label
+                          // wrap to 2 lines instead of clipping (Button defaults
+                          // to whitespace-nowrap).
+                          vm.isCombinedPaid &&
+                            'h-auto min-h-11 whitespace-normal text-left',
+                        )}
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
               </li>
               );
             })}

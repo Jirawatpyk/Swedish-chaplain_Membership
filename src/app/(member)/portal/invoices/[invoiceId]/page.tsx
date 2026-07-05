@@ -93,7 +93,7 @@ import { isLegacyNoTinEventInvoice } from '../_utils/legacy-no-tin';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
-import { ReceiptStatusWatcher } from '../_components/receipt-status-watcher';
+import { ReceiptReveal } from './_components/receipt-reveal';
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -208,6 +208,15 @@ export default async function PortalInvoiceDetailPage({
     invoice.status === 'paid' && invoice.receiptPdfStatus === 'pending';
   const receiptAsyncFailed =
     invoice.status === 'paid' && invoice.receiptPdfStatus === 'failed';
+  // 090 Bug 2 — hoisted so BOTH the header-actions cell (receipt download
+  // button) AND the <ReceiptReveal> watcher gate below read ONE definition of
+  // "the receipt download is available". `receiptPdf !== null` matters: 064
+  // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
+  // the document); a receipt action on them would 502 (blob_missing).
+  const showReceiptPdf =
+    invoice.status === 'paid' &&
+    invoice.receiptPdfStatus === 'rendered' &&
+    invoice.receiptPdf !== null;
 
   // F5 G4 T081 — load tenant payment settings to drive the Pay-now
   // render-gate (FR-016 / FR-030). The repo is read-only + RLS-scoped;
@@ -338,10 +347,9 @@ export default async function PortalInvoiceDetailPage({
                   invoice.receiptDocumentNumberRaw === null &&
                   mainPdfKind !== 'combined';
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
-                const showReceiptPdf =
-                  invoice.status === 'paid' &&
-                  invoice.receiptPdfStatus === 'rendered' &&
-                  invoice.receiptPdf !== null;
+                // 090 Bug 2 — `showReceiptPdf` is hoisted to the outer scope
+                // (near receiptAsyncPending) so this cell + the <ReceiptReveal>
+                // gate share one definition.
                 // 088 T066a — the async receipt "generating" + graceful-fail
                 // states moved OUT of this cramped header-actions cell into
                 // prominent body sections below (room for the aria-live
@@ -379,7 +387,17 @@ export default async function PortalInvoiceDetailPage({
                               })
                         }`}
                         className={cn(
-                          buttonVariants({ variant: 'default', size: 'sm' }),
+                          // 090 finding #5 — on a PAID separate-mode invoice the
+                          // §86/4 receipt is the document the member needs, so it
+                          // ranks as the filled `default` CTA and the (secondary)
+                          // bill/tax-invoice PDF is demoted to `outline`. Unpaid /
+                          // void keep the bill as the primary `default` CTA (no
+                          // receipt yet). `showReceiptPdf` is true only when the
+                          // receipt download actually renders alongside.
+                          buttonVariants({
+                            variant: showReceiptPdf ? 'outline' : 'default',
+                            size: 'sm',
+                          }),
                           'min-h-11 px-4',
                         )}
                         data-testid="portal-download-invoice"
@@ -398,10 +416,12 @@ export default async function PortalInvoiceDetailPage({
                           number: invoice.receiptDocumentNumberRaw ?? documentNumber,
                         })}
                         className={cn(
-                          buttonVariants({
-                            variant: isCombinedPaid ? 'default' : 'outline',
-                            size: 'sm',
-                          }),
+                          // 090 finding #5 — the receipt is the post-payment
+                          // PRIMARY document (this branch only renders for a PAID
+                          // invoice, combined OR separate), so it is always the
+                          // filled `default` CTA, ranking above the demoted bill
+                          // PDF above.
+                          buttonVariants({ variant: 'default', size: 'sm' }),
                           'min-h-11 px-4',
                         )}
                         data-testid="portal-download-receipt"
@@ -484,14 +504,26 @@ export default async function PortalInvoiceDetailPage({
         </section>
       )}
 
-      {/* 088 T066a (FR-019) — async §86/4 RC receipt-PDF is still rendering.
+      {/* 088 T066a (FR-019) + 090 Bug 2 — async §86/4 RC receipt-PDF reveal.
           The block watcher announces "your tax receipt is being generated"
           (aria-live polite) + carries reassurance copy, AND polls the status
           endpoint to auto-reveal the receipt download the moment the worker
-          finishes — no manual refresh. */}
-      {receiptAsyncPending && (
-        <ReceiptStatusWatcher invoiceId={invoice.invoiceId} variant="block" />
-      )}
+          finishes — no manual refresh.
+
+          <ReceiptReveal> gates the watcher on `receiptAsyncPending`
+          (server-truth paid+pending) OR the client-side optimistic-paid signal
+          (the just-paid-ONLINE window, when the server still shows 'issued'
+          because the webhook has not landed). It reads the same
+          `showReceiptPdf` truth so it never double-mounts once the download is
+          available. Rendered UNCONDITIONALLY so its optimistic-paid
+          subscription is live when the pay-sheet's `dispatchInvoicePaid` fires;
+          it returns null when there is nothing to poll. */}
+      <ReceiptReveal
+        invoiceId={invoice.invoiceId}
+        receiptAvailable={showReceiptPdf}
+        receiptAsyncPending={receiptAsyncPending}
+        receiptAsyncFailed={receiptAsyncFailed}
+      />
 
       {/* 088 T066a — the receipt-PDF render TERMINALLY failed. A calm
           support-path state (payment recorded, receipt number reserved, team

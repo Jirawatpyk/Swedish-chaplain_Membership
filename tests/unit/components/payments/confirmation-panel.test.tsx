@@ -17,6 +17,9 @@ vi.mock('sonner', () => ({
     success: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(() => 'toast-id'),
+    dismiss: vi.fn(),
   },
 }));
 import { toast } from 'sonner';
@@ -46,6 +49,18 @@ const messages = {
         toast: 'Payment received. Receipt emailed to you.',
       },
     },
+    // 090 finding #2 — the fetch+blob receipt download reads these toast keys.
+    invoices: {
+      toast: {
+        downloadInProgress: 'Preparing your download…',
+        receiptPending: 'Receipt still generating. Try again shortly.',
+        receiptUnavailable: 'Receipt unavailable. Please try again.',
+        receiptFailed: 'Receipt failed: {reason}.',
+        receiptForbidden: 'No access to this receipt.',
+        receiptSessionExpired: 'Session expired. Sign in again.',
+        receiptRateLimited: 'Too many requests. Wait a moment.',
+      },
+    },
   },
 };
 
@@ -56,7 +71,8 @@ function renderPanel(
     method: 'card',
     amount: 'THB 12,000.00',
     dateTime: '2026-04-23 14:30',
-    receiptUrl: 'https://example.com/receipt.pdf',
+    receiptUrl: '/api/portal/invoices/inv-1/receipt/pdf',
+    invoiceId: 'inv-1',
     onClose: vi.fn(),
     onDownload: vi.fn(),
     ...overrides,
@@ -73,10 +89,22 @@ describe('<ConfirmationPanel>', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.warning).mockClear();
+    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.loading).mockClear();
+    vi.mocked(toast.dismiss).mockClear();
+    // 090 finding #2 — default receipt fetch = 425 "still generating" (the
+    // just-paid state); no 200/blob path so jsdom's missing URL.createObjectURL
+    // is never hit. Individual tests override for other statuses.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ status: 425 } as unknown as Response),
+    );
   });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('renders checkmark icon + title + card summary variant', () => {
@@ -163,18 +191,24 @@ describe('<ConfirmationPanel>', () => {
     expect(sr.textContent).toBe('');
   });
 
-  it('download receipt anchor has ≥44px tap target (G-Review #5)', () => {
+  it('download receipt button has ≥44px tap target (G-Review #5)', () => {
     renderPanel();
-    const link = screen.getByTestId('pay-sheet-download-receipt');
-    expect(link.className).toMatch(/min-h-\[44px\]/);
+    const btn = screen.getByTestId('pay-sheet-download-receipt');
+    expect(btn.className).toMatch(/min-h-\[44px\]/);
   });
 
   it('clicking "Download receipt" invokes onDownload and does NOT auto-close', async () => {
     const onClose = vi.fn();
     const onDownload = vi.fn();
     renderPanel({ onClose, onDownload });
-    const link = screen.getByTestId('pay-sheet-download-receipt');
-    fireEvent.click(link);
+    const btn = screen.getByTestId('pay-sheet-download-receipt');
+    // The click handler is async (fetch+blob) — wrap in act so the state
+    // updates + microtasks flush; onDownload fires synchronously before the
+    // await, so it is called by the time act settles.
+    await act(async () => {
+      fireEvent.click(btn);
+      await Promise.resolve();
+    });
     expect(onDownload).toHaveBeenCalledOnce();
     // Advance past the would-be auto-close deadline.
     for (let i = 0; i < 6; i++) {
@@ -226,12 +260,38 @@ describe('<ConfirmationPanel>', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('download link has target=_blank + rel=noopener noreferrer', () => {
+  it('renders the CTA as a <button> (fetch+blob), NOT an <a target="_blank"> (090 #2/#8)', () => {
     renderPanel();
-    const link = screen.getByTestId('pay-sheet-download-receipt');
-    expect(link.getAttribute('target')).toBe('_blank');
-    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(link.getAttribute('href')).toBe('https://example.com/receipt.pdf');
+    const cta = screen.getByTestId('pay-sheet-download-receipt');
+    expect(cta.tagName.toLowerCase()).toBe('button');
+    expect(cta.getAttribute('type')).toBe('button');
+    // The JSON-leaking anchor navigation (target=_blank + href) is gone.
+    expect(cta.getAttribute('target')).toBeNull();
+    expect(cta.getAttribute('href')).toBeNull();
+  });
+
+  it('clicking "Download receipt" runs fetch+blob; a 425 (still generating) fires the pending toast, not a raw-JSON nav (090 #2)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ status: 425 } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    renderPanel();
+    const cta = screen.getByTestId('pay-sheet-download-receipt');
+    await act(async () => {
+      fireEvent.click(cta);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Hit the receipt-PDF STREAMING route (not a page nav / new tab).
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/portal/invoices/inv-1/receipt/pdf',
+    );
+    // 425 → friendly "still generating" warning toast (the pending copy),
+    // NOT raw JSON opened in a new tab.
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Receipt still generating. Try again shortly.',
+    );
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   // -- last4 mask polish (commit 675abe7) — REMOVED 2026-04-28 -------------

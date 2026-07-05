@@ -157,6 +157,28 @@ export function derivePayStateAnnouncement(
   }
 }
 
+/**
+ * 090 Bug 1 — the member receipt-PDF STREAMING route.
+ *
+ * Single source of truth threaded into EVERY PaySheetInternal success
+ * transition (card submit, 3DS poll, PromptPay poll) so the confirmation
+ * panel's "Download receipt" CTA resolves to the real byte-streaming API route
+ * — the SAME route the working detail-page `<PortalReceiptDownloadButton>`
+ * uses (`streamPdfFromBlob` serves the §86/4 RC PDF with a download
+ * disposition, so a plain `<a target="_blank">` opens/downloads it).
+ *
+ * Pre-fix the three sites hard-coded `/portal/invoices/{id}/receipt`, an RSC
+ * path with NO `route.ts` (only `[invoiceId]/page.tsx` exists) → every click
+ * 404'd. Note: on the just-paid path the RC PDF may still be rendering (the
+ * webhook lands after the drawer's confirmation panel appears), so the route
+ * can 425 briefly; the detail-page `<ReceiptStatusWatcher>` is the reliable
+ * "receipt ready" surface (see 090 Bug 2). The CTA still correctly targets the
+ * receipt once it renders.
+ */
+export function buildReceiptDownloadUrl(invoiceId: string): string {
+  return `/api/portal/invoices/${invoiceId}/receipt/pdf`;
+}
+
 // `InitiateResponse` moved to `./use-initiate-payment.ts` (audit
 // 2026-04-26 round-2 #1 refactor — extracted with the fetch hook).
 
@@ -478,7 +500,7 @@ export function PaySheetInternal({
         kind: 'success',
         paymentIntentId,
         method: 'promptpay',
-        receiptUrl: `/portal/invoices/${invoice.id}/receipt`,
+        receiptUrl: buildReceiptDownloadUrl(invoice.id),
       });
     },
     [invoice.id],
@@ -515,7 +537,7 @@ export function PaySheetInternal({
         kind: 'success',
         paymentIntentId,
         method: 'card',
-        receiptUrl: `/portal/invoices/${invoice.id}/receipt`,
+        receiptUrl: buildReceiptDownloadUrl(invoice.id),
       });
     },
     [invoice.id],
@@ -551,9 +573,10 @@ export function PaySheetInternal({
         kind: 'success',
         paymentIntentId: payload.paymentIntentId,
         method: 'card',
-        // G4 will wire the real F4 signed-URL getter. For G3 we leave
-        // a placeholder path that the invoice page can resolve.
-        receiptUrl: `/portal/invoices/${invoice.id}/receipt`,
+        // 090 Bug 1 — the §86/4 RC receipt-PDF byte-streaming route (see
+        // `buildReceiptDownloadUrl`). Was a placeholder `/portal/invoices/
+        // {id}/receipt` RSC path that had no route.ts and 404'd.
+        receiptUrl: buildReceiptDownloadUrl(invoice.id),
       });
     },
     [invoice.id],
@@ -743,6 +766,7 @@ export function PaySheetInternal({
             )}
             dateTime={formatPaymentDateTime(new Date(), locale)}
             receiptUrl={payState.receiptUrl}
+            invoiceId={invoice.id}
             onClose={handleClose}
           />
         );
