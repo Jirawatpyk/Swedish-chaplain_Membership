@@ -847,6 +847,64 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     expect(cnRender!.lines[0]!.descriptionTh).toContain('RC-2026-000045');
   });
 
+  it('V2 REGRESSION — MEMBERSHIP 088 new-flow parent (documentNumber NULL, SC bill + RC receipt) → SUCCEEDS + CN targets the RC number, never no_snapshot_on_invoice', async () => {
+    // The 088 PRIMARY production path: a membership bill in the tax-at-payment
+    // flow carries `documentNumber = NULL` — its non-§87 number lives in
+    // `billDocumentNumberRaw` and its §86/4 tax number in
+    // `receiptDocumentNumberRaw`. issueCreditNote DELIBERATELY dropped the
+    // `!loaded.documentNumber` completeness guard so this legitimate row credits.
+    // Re-adding that guard would return `no_snapshot_on_invoice` for EVERY
+    // production membership credit note while all other tests stayed green — this
+    // test is the tripwire. (The sibling T047 test above pins the same for the
+    // EVENT shape; this one pins the membership shape + its TIMELINE audit branch.)
+    const invoice = makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-088',
+      planId: 'plan-2026-corporate',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false, // membership is VAT-exclusive
+      documentNumber: null, // 088 new-flow bill: §87 doc + seq NULL
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000012', // non-§87 ใบแจ้งหนี้ number
+      receiptDocumentNumberRaw: 'RC-2026-000034', // §86/4 RC minted at payment
+      // factory default: receiptPdf non-null (Shape 1) + receiptPdfStatus 'rendered'.
+    });
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, { ...baseInput, requestId: 'req-us6-membership-nulldoc' });
+
+    // Succeeds — a documentNumber-NULL membership row is NOT a missing-snapshot row.
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) {
+      expect(r.error.code).not.toBe('no_snapshot_on_invoice');
+      throw new Error('membership documentNumber-NULL credit note must succeed');
+    }
+
+    // The §86/10 CN references the §86/4 RC receipt number. documentNumber is
+    // NULL, so the `receiptDocumentNumberRaw ?? documentNumber` resolution MUST
+    // land on the RC — never the SC bill number.
+    const cnRender = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as PdfRenderInput)
+      .find((c) => c.kind === 'credit_note');
+    expect(cnRender, 'expected a credit_note render call').toBeDefined();
+    expect(cnRender!.creditNote?.originalDocumentNumber).toBe('RC-2026-000034');
+    expect(cnRender!.creditNote?.originalDocumentNumber).not.toBe('SC-2026-000012');
+    // New-flow (documentNumber NULL) → the receipt is dated at the PAYMENT date (D7).
+    expect(cnRender!.creditNote?.originalIssueDate).toBe('2026-04-19');
+    // The single synthetic line cites the RC number in both languages.
+    expect(cnRender!.lines[0]!.descriptionEn).toContain('RC-2026-000034');
+    expect(cnRender!.lines[0]!.descriptionTh).toContain('RC-2026-000034');
+
+    // Membership (memberId non-null) → TIMELINE audit branch carries member_id.
+    const cnEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, ev]) => ev.eventType === 'credit_note_issued',
+    );
+    expect(cnEmit, 'credit_note_issued emit fired').toBeDefined();
+    expect((cnEmit![1].payload as Record<string, unknown>).member_id).toBe('member-088');
+  });
+
   it('receipt_not_rendered — a paid parent whose receipt PDF is still pending is BLOCKED before any §87 number is burned', async () => {
     const invoice = makeIssuedEventInvoice({
       receiptPdf: null,
