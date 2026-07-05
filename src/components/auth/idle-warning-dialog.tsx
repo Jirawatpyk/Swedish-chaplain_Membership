@@ -69,8 +69,8 @@ const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
 /**
  * Abort a "Stay signed in" heartbeat that hasn't answered in 10 s — longer than
  * a serverless cold start, far shorter than the 29-min warning window. Bounds
- * how long the optimistic idle-clock reset can mask a hung request: on timeout
- * the fetch aborts → rollback → the idle poll re-warns within ~5 s.
+ * how long the in-flight flag can suppress the warning on a hung request: on
+ * timeout the fetch aborts → the idle poll re-warns within ~5 s.
  */
 const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
 
@@ -99,17 +99,13 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     lastActivityRef.current = Date.now();
   }, []);
 
-  // Set synchronously the instant the user clicks "Stay signed in" (before
-  // any await), and cleared once that handler settles. The 60→0 countdown
-  // keeps ticking during the heartbeat round-trip; this ref lets the
-  // countdown's zero-handler know the user already chose to stay, so a tick
-  // landing mid-round-trip cannot override that choice (BUG-018).
-  const keepAliveRef = useRef<boolean>(false);
-
-  // Guards against overlapping "Stay signed in" clicks: a second invocation
-  // while one is in flight would share keepAliveRef/lastActivityRef and race
-  // the rollback.
-  const heartbeatInFlightRef = useRef<boolean>(false);
+  // True while a "Stay signed in" heartbeat is in flight. One ref serves three
+  // roles: (1) the countdown's zero-handler skips the involuntary sign-out while
+  // a Stay is pending — a tick landing during the round-trip must not override
+  // the user's choice (BUG-018); (2) the idle poll does not re-open the warning
+  // mid-flight; (3) an overlapping second click is ignored. Cleared in `finally`
+  // once the heartbeat settles.
+  const stayPendingRef = useRef<boolean>(false);
 
   const signInPath = portalSignInPath(portal);
 
@@ -137,83 +133,68 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   }, [router, signInPath, t]);
 
   /**
-   * "Stay signed in" action — heartbeat the server, close the modal,
-   * reset the local idle clock.
+   * "Stay signed in" — heartbeat the server, close the modal optimistically,
+   * and extend the client idle clock ONLY if the heartbeat actually extended
+   * the server session. `stayPendingRef` (not an optimistic clock reset)
+   * suppresses the countdown + poll while the request is in flight.
    */
   const stayAction = useCallback(async () => {
-    // Mark "the user chose to stay" and close the dialog optimistically
-    // BEFORE awaiting the heartbeat. The 60→0 countdown interval keeps
-    // ticking until `open` flips false and the effect cleanup clears it;
-    // awaiting the heartbeat first (a 1–3 s serverless cold start is
-    // common) would leave a window where the countdown hits zero and
-    // involuntarily signs the user out despite their click. `keepAliveRef`
-    // (read synchronously in the countdown tick) closes that race and the
-    // optimistic close ends it — this is the BUG-018 "clicked Stay signed
-    // in but got kicked out" defect (TC-AUTH-05 step 2). Bonus: the modal
-    // dismisses instantly instead of after the network round-trip.
-    // Ignore overlapping clicks: a second "Stay" while one is in flight would
-    // share keepAliveRef/lastActivityRef and race the rollback.
-    if (heartbeatInFlightRef.current) return;
-    heartbeatInFlightRef.current = true;
+    // Ignore an overlapping click while a heartbeat is already in flight.
+    if (stayPendingRef.current) return;
+    stayPendingRef.current = true;
 
-    // Capture the pre-click idle timestamp so we can roll back if the heartbeat
-    // turns out NOT to have extended the session.
+    // Remember the pre-click idle timestamp. On a FAILED heartbeat we force the
+    // clock back to it so the poll re-warns — client activity during the
+    // round-trip must NOT suppress that, because only a successful heartbeat
+    // (not a mouse move) extends the SERVER session.
     const previousActivity = lastActivityRef.current;
-    keepAliveRef.current = true;
-    // Optimistically reset the idle clock BEFORE awaiting: a cold-start
-    // heartbeat can take longer than the 5 s idle poll, and without this reset
-    // the poll would re-open the warning mid-flight and its fresh 60 s countdown
-    // could involuntarily sign out a user whose session is about to be (or was
-    // just) extended. Remember the EXACT value so we only roll it back if
-    // nothing advanced the clock since — real activity during the round-trip
-    // (the tracker re-arms once `open` flips false) must be preserved.
-    const optimisticReset = Date.now();
-    lastActivityRef.current = optimisticReset;
+
+    // Close the modal optimistically (BUG-018: never leave the countdown
+    // running through the network round-trip). `stayPendingRef` suppresses both
+    // the countdown's sign-out and the poll's re-open until the heartbeat
+    // settles, so NO optimistic idle-clock reset is needed.
     setRemaining(WARNING_WINDOW_MS / 1000);
     setOpen(false);
-    // Roll the optimistic reset back to `previousActivity`, but ONLY if the
-    // clock still holds the optimistic value — if the user kept working during
-    // the round-trip, keep their fresh timestamp rather than spuriously
-    // re-warning an active user.
-    const rollbackIdleClock = () => {
-      if (lastActivityRef.current === optimisticReset) {
-        lastActivityRef.current = previousActivity;
-      }
-    };
+
+    // Bound the request with an AbortController + timer — `AbortSignal.timeout`
+    // is not available on all supported browsers. A hung heartbeat aborts after
+    // HEARTBEAT_TIMEOUT_MS → catch → the poll re-warns, instead of the pending
+    // flag suppressing the warning indefinitely.
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      HEARTBEAT_TIMEOUT_MS,
+    );
     try {
       const response = await fetch('/api/auth/heartbeat', {
         method: 'POST',
         credentials: 'same-origin',
-        // Bound the optimistic-reset window: a hung request must not suppress
-        // the warning for ~29 min. On timeout the fetch aborts → catch →
-        // rollback → the poll re-warns within ~5 s.
-        signal: AbortSignal.timeout(HEARTBEAT_TIMEOUT_MS),
+        signal: controller.signal,
       });
       // Only a definitive 401 (no-session) means the session is truly gone —
       // escalate to involuntary sign-out. A 429 (heartbeat rate limit,
       // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT mean
-      // the session died; keep the user signed in. Signing out on ANY non-OK
-      // response was part of the same BUG-018 fragility.
+      // the session died.
       if (response.status === 401) {
         await forceSignOut();
         return;
       }
-      if (!response.ok) {
-        // 429/5xx: the heartbeat did NOT extend the session. Roll the idle clock
-        // back so the poll re-warns promptly (the session will idle-expire soon)
-        // instead of the optimistic reset falsely suppressing it for ~29 min —
-        // the abrupt-logout class BUG-018 targeted.
-        rollbackIdleClock();
+      if (response.ok) {
+        // The session WAS extended — advance the client idle clock so the poll
+        // does not immediately re-warn.
+        lastActivityRef.current = Date.now();
+      } else {
+        // 429/5xx: session NOT extended. Force the clock stale so the next poll
+        // re-warns promptly (unconditionally — a mouse move during the
+        // round-trip does not keep the server session alive).
+        lastActivityRef.current = previousActivity;
       }
-      // 2xx: keep the optimistic reset — the session was extended.
     } catch {
-      // Network blip / timeout — session not extended; roll back so the warning
-      // re-appears promptly. The next protected request surfaces any real auth
-      // failure.
-      rollbackIdleClock();
+      // Network blip / timeout / abort — session not extended; force a re-warn.
+      lastActivityRef.current = previousActivity;
     } finally {
-      keepAliveRef.current = false;
-      heartbeatInFlightRef.current = false;
+      window.clearTimeout(timeoutId);
+      stayPendingRef.current = false;
     }
   }, [forceSignOut]);
 
@@ -277,6 +258,10 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     const interval = window.setInterval(() => {
       // Freeze while paused by the PaySheet drawer (FR-028c).
       if (pausedAtRef.current !== null) return;
+      // Don't re-open the warning while a "Stay signed in" heartbeat is still
+      // in flight — its outcome decides whether the clock is fresh (2xx) or the
+      // warning should re-appear (failure).
+      if (stayPendingRef.current) return;
       const idleFor = Date.now() - lastActivityRef.current;
       if (idleFor >= WARNING_AFTER_MS) {
         setOpen(true);
@@ -304,16 +289,6 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     };
   }, []);
 
-  // Reset the keep-alive guard whenever the warning (re)opens: a fresh idle
-  // cycle must be able to sign the user out even if a PRIOR stayAction's
-  // heartbeat never settled (its `finally` would not have run, leaving the
-  // guard stuck true — no AbortController on the fetch). Resets only on
-  // open→true, so it never disturbs the BUG-018 race window (the guard stays
-  // true during the optimistic close, which is an open→false transition).
-  useEffect(() => {
-    if (open) keepAliveRef.current = false;
-  }, [open]);
-
   // Countdown — while the modal is open, tick once per second. Reaching
   // zero triggers the involuntary sign-out path.
   useEffect(() => {
@@ -322,11 +297,11 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       setRemaining((prev) => {
         if (prev <= 1) {
           window.clearInterval(interval);
-          // Skip the involuntary sign-out if the user just clicked "Stay
-          // signed in": that handler sets keepAliveRef synchronously before
-          // awaiting the heartbeat, so a tick landing during the round-trip
-          // must not override their explicit choice (BUG-018).
-          if (!keepAliveRef.current) {
+          // Skip the involuntary sign-out if a "Stay signed in" heartbeat is
+          // in flight: stayAction sets stayPendingRef synchronously before the
+          // round-trip, so a tick landing mid-flight must not override the
+          // user's explicit choice (BUG-018).
+          if (!stayPendingRef.current) {
             void forceSignOut();
           }
           return 0;

@@ -99,7 +99,20 @@ describe('CloneYearClient pre-flight count', () => {
     expect(screen.getByText('Clone … plans from 202 to 2027')).toBeTruthy();
   });
 
-  it('#1: editing the source year up then back to the default restores the count (not stranded at null)', () => {
+  it('#191: clearing the field on the default year keeps the count (same-value edit does not strand it at "…")', () => {
+    renderClient();
+    const input = document.getElementById('source_year') as HTMLInputElement;
+    // On the default year (count 5), select-all-delete → parseInt('') || default
+    // = the SAME year → setSourceYear is a no-op. The count must NOT blank: the
+    // onChange only clears it when the year actually changes.
+    act(() => {
+      fireEvent.change(input, { target: { value: '' } });
+    });
+    expect(screen.getByText('Clone 5 plans from 2026 to 2027')).toBeTruthy();
+    expect(cloneButton()).not.toBeDisabled();
+  });
+
+  it('editing the source year up then back to the default restores the count (up-then-back recovery)', () => {
     renderClient();
     const input = document.getElementById('source_year') as HTMLInputElement;
     act(() => {

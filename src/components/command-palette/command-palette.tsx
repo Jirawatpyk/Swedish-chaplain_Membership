@@ -192,6 +192,14 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
           navigate: currentUserRole === 'member' ? [] : sourceResults.navigate,
         };
 
+  const hasAnyResult =
+    filteredResults.plans.length +
+      filteredResults.members.length +
+      filteredResults.refundableInvoices.length +
+      filteredResults.actions.length +
+      filteredResults.navigate.length >
+    0;
+
   return (
     <CommandDialog
       title={t('title')}
@@ -214,13 +222,9 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
           aria-busy={isPending}
         />
         <CommandList>
-          {/* cmdk's <CommandEmpty> renders only when its OWN client-filtered
-              item count is 0, so let it decide — gate only on a non-empty query
-              so it never shows on the initial (empty) palette. The old
-              `!hasAnyResult` gate broke once the server began returning the full
-              action/navigate registry on every query (hasAnyResult was then
-              always true), silently swallowing the "no results" state. */}
-          {query.trim().length > 0 && <CommandEmpty>{t('empty')}</CommandEmpty>}
+          {!hasAnyResult && query.trim().length > 0 && (
+            <CommandEmpty>{t('empty')}</CommandEmpty>
+          )}
           <PaletteGroups
             results={filteredResults}
             onAfterNavigate={handleAfterNavigate}

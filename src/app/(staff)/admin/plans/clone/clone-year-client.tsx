@@ -181,14 +181,18 @@ export function CloneYearClient({
             max={2100}
             value={sourceYear}
             onChange={(e) => {
-              setSourceYear(
-                Number.parseInt(e.target.value, 10) || defaultSourceYear,
-              );
-              // Blank the count SYNCHRONOUSLY (batched with setSourceYear) so a
-              // frame never paints the NEW year beside the OLD year's count.
-              // Safe with the hand-rolled effect keyed on the immediate
-              // sourceYear — a net-zero edit still re-runs it and restores.
-              setSourcePlanCount(null);
+              const nextYear =
+                Number.parseInt(e.target.value, 10) || defaultSourceYear;
+              setSourceYear(nextYear);
+              // Blank the count synchronously ONLY when the year actually
+              // changes: batched with setSourceYear it avoids a frame painting
+              // the NEW year beside the OLD count, while skipping a same-value
+              // edit (e.g. clearing the field back to the current year) avoids
+              // stranding it at "…" — a no-op setSourceYear would not re-run the
+              // effect that restores the count.
+              if (nextYear !== sourceYear) {
+                setSourcePlanCount(null);
+              }
             }}
           />
         </div>
