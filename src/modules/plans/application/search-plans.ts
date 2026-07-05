@@ -62,8 +62,6 @@ export type PaletteNavigateItem = {
   readonly id: string;
   readonly label: string;
   readonly url: string;
-  /** Extra search synonyms — see PaletteActionItem.keywords (BUG-024). */
-  readonly keywords?: readonly string[];
 };
 
 export type SearchPlansSuccess = {
@@ -442,13 +440,10 @@ export async function searchPlans(
         (a.keywords?.some((k) => matches(k, q)) ?? false),
     )
     .slice(0, limit);
+  // Navigate entries carry no search synonyms (unlike actions), so a plain
+  // key + id match is sufficient.
   const navigate = navigatePool
-    .filter(
-      (n) =>
-        matches(n.label, q) ||
-        matches(n.id, q) ||
-        (n.keywords?.some((k) => matches(k, q)) ?? false),
-    )
+    .filter((n) => matches(n.label, q) || matches(n.id, q))
     .slice(0, limit);
 
   return ok({

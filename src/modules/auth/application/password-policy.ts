@@ -19,6 +19,7 @@
  */
 import { createHash } from 'node:crypto';
 import { logger } from '@/lib/logger';
+import { hasStrongComposition } from '@/lib/password-composition';
 
 export type PasswordPolicyError =
   | { readonly code: 'too-short'; readonly minLength: number }
@@ -81,32 +82,14 @@ function scoreStrength(
   errors: readonly PasswordPolicyError[],
 ): 'weak' | 'acceptable' | 'strong' {
   if (errors.length > 0) return 'weak';
-  // Keep in lockstep with the client `estimatePasswordStrength`
-  // (src/components/auth/password-strength.tsx). Strong = >= 16 chars (length
-  // alone) OR >= 12 chars (guaranteed here — shorter passwords already errored
-  // as too-short above) with >= 3 of the 4 character classes. BUG-004: the old
-  // rule required >= 16 chars AND a symbol, so a strong mixed 12-14 char
-  // password only ever scored 'acceptable'.
-  if (
-    password.length >= 16 ||
-    characterClassCount(password) >= MIN_STRONG_CHARACTER_CLASSES
-  ) {
+  // The shared `hasStrongComposition` rule — the single source of truth for
+  // strong-vs-acceptable, imported by the client meter too so the two cannot
+  // drift (BUG-004 / BUG-001). Strong = >= 16 chars (length alone) OR >= 3 of
+  // the 4 character classes; passwords shorter than 12 already errored above.
+  if (hasStrongComposition(password)) {
     return 'strong';
   }
   return 'acceptable';
-}
-
-/** Minimum character classes (of lower/upper/digit/symbol) for a short 'strong'. */
-const MIN_STRONG_CHARACTER_CLASSES = 3;
-
-/** How many of the 4 character classes (lower/upper/digit/symbol) appear. */
-function characterClassCount(password: string): number {
-  let n = 0;
-  if (/[a-z]/.test(password)) n += 1;
-  if (/[A-Z]/.test(password)) n += 1;
-  if (/[0-9]/.test(password)) n += 1;
-  if (/[^a-zA-Z0-9]/.test(password)) n += 1;
-  return n;
 }
 
 /**

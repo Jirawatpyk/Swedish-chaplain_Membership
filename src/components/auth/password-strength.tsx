@@ -20,6 +20,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { hasStrongComposition } from '@/lib/password-composition';
 
 export type PasswordStrengthLevel = 'weak' | 'acceptable' | 'strong' | 'empty';
 
@@ -98,16 +99,11 @@ export function estimatePasswordStrength(
   // Flag it locally — no network round-trip — so the bar never reads
   // "acceptable" for it (see the client/server-drift note above).
   if (isLowEntropy(password)) return 'weak';
-  // Strong = long enough on its own (>= 16 chars — e.g. a passphrase), OR a
-  // shorter-but-varied password (>= 12 chars, which is guaranteed here, WITH
-  // at least 3 of the 4 character classes: lower / upper / digit / symbol).
-  // BUG-004: the old rule required >= 16 chars AND a symbol, so a genuinely
-  // strong 12-14 char mixed-case+digit(+symbol) password only ever read
-  // "acceptable". Kept in lockstep with the server `scoreStrength`.
-  if (
-    password.length >= 16 ||
-    characterClassCount(password) >= MIN_STRONG_CHARACTER_CLASSES
-  ) {
+  // Strong = long enough on its own (>= 16 chars) OR shorter-but-varied (>= 3
+  // character classes) — the shared `hasStrongComposition` rule, kept in ONE
+  // place so the client bar and the server `scoreStrength` cannot drift
+  // (BUG-004 / BUG-001).
+  if (hasStrongComposition(password)) {
     return 'strong';
   }
   return 'acceptable';
@@ -115,19 +111,6 @@ export function estimatePasswordStrength(
 
 /** Distinct-character floor below which a password counts as trivially weak. */
 const MAX_LOW_ENTROPY_DISTINCT = 3;
-
-/** Minimum character classes (of lower/upper/digit/symbol) for a short 'strong'. */
-const MIN_STRONG_CHARACTER_CLASSES = 3;
-
-/** How many of the 4 character classes (lower/upper/digit/symbol) appear. */
-function characterClassCount(password: string): number {
-  let n = 0;
-  if (/[a-z]/.test(password)) n += 1;
-  if (/[A-Z]/.test(password)) n += 1;
-  if (/[0-9]/.test(password)) n += 1;
-  if (/[^a-zA-Z0-9]/.test(password)) n += 1;
-  return n;
-}
 
 /**
  * Trivially-weak patterns detectable locally, without the HIBP network call.

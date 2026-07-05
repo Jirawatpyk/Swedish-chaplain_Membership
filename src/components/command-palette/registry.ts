@@ -112,7 +112,6 @@ export type PaletteSearchResponse = {
       readonly id: string;
       readonly label: string;
       readonly url: string;
-      readonly keywords?: readonly string[];
     }>;
   };
 };

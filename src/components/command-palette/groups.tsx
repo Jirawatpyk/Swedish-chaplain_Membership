@@ -136,11 +136,9 @@ export function PaletteGroups({ results, onAfterNavigate }: GroupsProps) {
           {results.navigate.map((nav) => (
             <CommandItem
               key={nav.id}
-              // Symmetric with actions: include any synonyms in the cmdk value
-              // so a server-returned navigate keyword match isn't re-hidden by
-              // the client fuzzy filter (BUG-024). No navigate entry carries
-              // keywords today, but this keeps the two paths from diverging.
-              value={`navigate ${nav.id} ${nav.label} ${(nav.keywords ?? []).join(' ')}`}
+              // Navigate entries carry no search synonyms (unlike actions), so
+              // the cmdk value is just id + i18n key — cmdk fuzzy-matches both.
+              value={`navigate ${nav.id} ${nav.label}`}
               onSelect={() => handleNavigate(nav.url)}
             >
               <span>{resolveLabel(t, nav.label, 'navigate')}</span>

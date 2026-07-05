@@ -154,6 +154,17 @@ type Props = {
   ) => Promise<InlineEditResult>) | undefined;
 };
 
+/**
+ * BUG-013: archived (soft-deleted) rows are not a valid target for either bulk
+ * action, so they are non-selectable. Single source of truth for BOTH the
+ * TanStack `enableRowSelection` predicate and the shift-range selection loop
+ * (which writes rowSelection directly, bypassing TanStack's gate) so the two
+ * paths cannot disagree about what is selectable.
+ */
+function isMemberRowSelectable(row: MembersTableRow): boolean {
+  return row.status !== 'archived';
+}
+
 const columnHelper = createColumnHelper<MembersTableRow>();
 
 /**
@@ -465,7 +476,7 @@ export function MembersTable({
                       // shift-range writes rowSelection directly, so without
                       // this guard it could select a non-selectable row.
                       const rangeRow = rows[i];
-                      if (rangeRow && rangeRow.status !== 'archived') {
+                      if (rangeRow && isMemberRowSelectable(rangeRow)) {
                         next[rangeRow.member_id] = true;
                       }
                     }
@@ -658,7 +669,7 @@ export function MembersTable({
     // then disables their checkbox, excludes them from select-all, and blocks
     // programmatic selection. Managers keep no selection at all.
     enableRowSelection: enableSelection
-      ? (row) => row.original.status !== 'archived'
+      ? (row) => isMemberRowSelectable(row.original)
       : false,
     onRowSelectionChange: handleRowSelectionChange,
     state: {
