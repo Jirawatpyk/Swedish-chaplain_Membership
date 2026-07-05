@@ -6,8 +6,12 @@
  * Responsibilities:
  *   - CheckCircle icon (motion-safe scale-in 200 ms; motion-reduce instant).
  *   - Bilingual title + per-method summary (card vs promptpay).
- *   - Primary CTA "Download receipt" → F4 receipt PDF via 60 s signed URL
- *     (passed in as `receiptUrl` prop; getter is a Group F / G4 concern).
+ *   - Primary CTA "Download receipt" → the §86/4 RC receipt-PDF byte-streaming
+ *     route `/api/portal/invoices/{id}/receipt/pdf` (passed in as the
+ *     `receiptUrl` prop; built by `buildReceiptDownloadUrl` in
+ *     pay-sheet-internal — 090 Bug 1 replaced the prior placeholder RSC path
+ *     that 404'd). The route serves the PDF with a download disposition, so
+ *     the plain `<a target="_blank">` below opens/downloads it directly.
  *   - Secondary "Close" button.
  *   - 5-second auto-close countdown using `autoCloseCountdown` key.
  *     Countdown interrupts the moment the user clicks either button.
@@ -36,7 +40,7 @@ export interface ConfirmationPanelProps {
   readonly amount: string;
   /** Localized datetime string (caller formats with `intl` per locale). */
   readonly dateTime: string;
-  /** Short-lived signed URL to the F4 receipt PDF. */
+  /** Member receipt-PDF byte-streaming route (`/api/portal/.../receipt/pdf`). */
   readonly receiptUrl: string;
   /** Fired on user-initiated close OR on countdown exhaustion. */
   readonly onClose: () => void;

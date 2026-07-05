@@ -636,7 +636,7 @@ export function MembersTable({
     }),
     // 056-members-table-compact — the Notes column was removed; notes are
     // edited on the member detail page.
-  ], [enableSelection, onInlineEdit, t, locale, rows, rowSelection, handleRowSelectionChange]);
+  ], [enableSelection, onInlineEdit, t, tContact, locale, rows, rowSelection, handleRowSelectionChange]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({

@@ -51,7 +51,15 @@ vi.mock('@/lib/request-id', () => ({
   requestIdFromHeaders: () => null,
 }));
 vi.mock('@/lib/env', () => ({
-  env: { features: { f088TaxAtPayment: true, f5OnlinePayment: false } },
+  // `bootstrap.adminEmail` is read by the issued-invoice OnlinePaymentDisabledCard
+  // branch (env-proxy mailto, #145). The mock predated that read (mock drift),
+  // so the issued-bill case threw `Cannot read properties of undefined
+  // (reading 'adminEmail')` before its assertions ran. Completing the shape
+  // (null → the "no email configured" degrade) is unrelated to the 090 fixes.
+  env: {
+    features: { f088TaxAtPayment: true, f5OnlinePayment: false },
+    bootstrap: { adminEmail: null },
+  },
 }));
 
 const getInvoiceMock = vi.fn();

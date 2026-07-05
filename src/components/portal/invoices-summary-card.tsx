@@ -46,7 +46,14 @@ import {
   formatSatangThb,
 } from '@/app/(member)/portal/invoices/_utils/format';
 import { InvoiceStatusBadge } from '@/app/(member)/portal/invoices/_components/invoice-status-badge';
-import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import {
+  PortalInvoiceDownloadButton,
+  PortalReceiptDownloadButton,
+} from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
+import {
+  toInvoiceRowViewModel,
+  downloadLabelKeys,
+} from '@/app/(member)/portal/invoices/_utils/invoice-row-view-model';
 
 const SUMMARY_LIMIT = 3;
 
@@ -180,6 +187,11 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     );
   }
 
+  // 090 Bug 3 — one "now" for the whole card so each row's view-model derives a
+  // deterministic overdue status (the view-model's purity contract: the CALLER
+  // supplies now; the mapper never calls `new Date()`). Mirrors the list page.
+  const nowUtcIso = new Date().toISOString();
+
   return (
     <Card>
       {/* Heading + "view all" share one centred row (heading level with the
@@ -211,6 +223,20 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
               // this widget's "latest invoices" rows never render '—'/UUID.
               const displayNo =
                 billFirstDocumentNumber(r) ?? r.receiptDocumentNumberRaw;
+              // 090 Bug 3 — derive the download flags from the SHARED
+              // single-source-of-truth view-model (same one the detail page +
+              // full list consume) so this summary card can never drift on
+              // WHICH document(s) a row exposes. Passed 2-arg (tax-at-payment
+              // flag defaults false): the flags this card reads —
+              // `showInvoice` / `showReceipt` / `isCombinedPaid` / `mainPdfKind`
+              // — are all flag-INDEPENDENT (only `taxDocumentKind` /
+              // `primaryNumber` depend on the flag, and this card keeps its own
+              // bill-first `displayNo` for the visible number). Pre-fix the card
+              // only ever rendered the invoice/bill PDF, so a PAID member never
+              // saw the §86/4 RC receipt download.
+              const vm = toInvoiceRowViewModel(r, nowUtcIso);
+              const receiptRef =
+                r.receiptDocumentNumberRaw ?? displayNo ?? r.invoiceId;
               return (
               <li
                 key={r.invoiceId}
@@ -248,22 +274,52 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                   <span className="tabular-nums text-body font-medium">
                     {formatSatangThb(r.total?.satang ?? null, userLocale)}
                   </span>
-                  {r.pdf ? (
+                  {/* Invoice/bill PDF — hidden in combined-mode paid (the
+                      stale pre-payment draft is not a legal doc; the combined
+                      receipt below is), matching the detail page's
+                      `showInvoicePdf`. The mainPdfKind nuance flips the label
+                      for as-paid combined/§105 receipt rows. */}
+                  {vm.showInvoice ? (
                     <PortalInvoiceDownloadButton
                       invoiceId={r.invoiceId}
                       documentNumber={displayNo ?? r.invoiceId}
                       label={
                         r.status === 'void'
                           ? t('actions.downloadVoided')
-                          : t('actions.download')
+                          : t(downloadLabelKeys(vm.mainPdfKind).labelKey)
                       }
                       ariaLabel={t(
                         r.status === 'void'
                           ? 'actions.downloadVoidedAria'
-                          : 'actions.downloadInvoiceAria',
+                          : downloadLabelKeys(vm.mainPdfKind).ariaKey,
                         {
                           number: displayNo ?? r.invoiceId,
                         },
+                      )}
+                      className={cn(
+                        buttonVariants({ variant: 'ghost', size: 'sm' }),
+                        'min-h-11 px-3',
+                      )}
+                    />
+                  ) : null}
+                  {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
+                      is paid + its receipt PDF has rendered (blob present).
+                      Combined-mode paid uses the dual-role label; separate-mode
+                      the plain "Receipt". Matches the detail page + full list. */}
+                  {vm.showReceipt ? (
+                    <PortalReceiptDownloadButton
+                      invoiceId={r.invoiceId}
+                      documentNumber={receiptRef}
+                      label={
+                        vm.isCombinedPaid
+                          ? t('actions.downloadCombined')
+                          : t('actions.downloadReceipt')
+                      }
+                      ariaLabel={t(
+                        vm.isCombinedPaid
+                          ? 'actions.downloadCombinedAria'
+                          : 'actions.downloadReceiptAria',
+                        { number: receiptRef },
                       )}
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'sm' }),
