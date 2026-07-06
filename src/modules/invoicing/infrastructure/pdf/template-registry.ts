@@ -135,11 +135,34 @@
  *     note) renders byte-identical at v9 as at v8, and every non-membership kind
  *     is untouched. Measured: fontkit 2.0.4 / Sarabun-Regular note width 224.79pt
  *     ≪ 523.28pt (worst-case single-line capacity 78 chars).
+ *   - **v10** (2026-07-06, 094-status-watermark-opacity) — the diagonal VOID /
+ *     CREDITED status stamp now renders as a LARGE FAINT (~10% opacity)
+ *     behind-content watermark (`rgba(200,0,0,0.10)` VOID · `rgba(180,80,0,0.10)`
+ *     CREDITED / PARTIALLY CREDITED) instead of the pre-v10 prominent 50% / 32%
+ *     opacity that over-printed the opaque grey table-header row + line-item text
+ *     on a voided / credited tax document (prod UAT defect — a credited/voided
+ *     document must stay clearly readable with only a faint status stamp behind
+ *     it). ONLY the stamp COLOUR/opacity changes: the large fontSize (80 / 64),
+ *     diagonal angle (-45° / -20°) and position are preserved (a large faint
+ *     diagonal is the correct look). The DRAFT preview watermark (#eee, already
+ *     faint) is untouched. Gated on `templateVersion >=
+ *     STATUS_STAMP_FAINT_MIN_VERSION` (=10, see templates/invoice-template.tsx),
+ *     so a pinned pre-v10 document (resend / void-overlay / credited-annotation
+ *     re-render at its stored `pdf_template_version`) reproduces its ORIGINAL
+ *     prominent stamp — the SC-003 reproduce-the-original guarantee, exactly like
+ *     the v3–v9 gates. Both re-render paths (void-invoice.ts /
+ *     issue-credit-note.ts) thread the blob's PINNED version, so already-issued
+ *     ≤v9 voided/credited documents keep the prominent stamp; only v10+ issuances
+ *     get the faint stamp. Because the two stamp styles apply ONLY to a rendered
+ *     VOID / CREDITED overlay, every document WITHOUT a status stamp (plain
+ *     invoice / bill / receipt / credit-note document) renders byte-identical at
+ *     v10 as at v9 (proven: standard receipt v9↔v10 byte-length equal —
+ *     zero-rate-pdf-golden §C + status-stamp-opacity.integration.test.ts).
  */
 
-export const CURRENT_TEMPLATE_VERSION = 9 as const;
+export const CURRENT_TEMPLATE_VERSION = 10 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

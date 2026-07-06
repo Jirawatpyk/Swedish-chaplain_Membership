@@ -116,15 +116,33 @@ const styles = StyleSheet.create({
     fontWeight: 700,
   },
   // FR-008 — diagonal VOID overlay, bilingual (TH+EN), on EVERY page,
-  // 45° rotation, 50% opacity (within the 40-60% band). `position:
-  // absolute` + the `fixed` prop on the Text element makes the stamp
-  // repeat on every page without interleaving with flow content.
+  // 45° rotation. `position: absolute` + the `fixed` prop on the Text element
+  // makes the stamp repeat on every page without interleaving with flow content.
+  //
+  // 094 (status-watermark-opacity) — this is the PRE-v10 (legacy) prominent
+  // variant at 50% opacity. It over-printed the opaque grey table-header row +
+  // line-item text on a voided tax document (prod UAT defect), so v10+ renders
+  // `voidStampFaint` instead. Retained UNCHANGED so a pinned pre-v10 void
+  // re-render (resend / void-overlay at its stored `pdf_template_version`)
+  // reproduces its ORIGINAL bytes (SC-003). Gate: STATUS_STAMP_FAINT_MIN_VERSION.
   voidStamp: {
     position: 'absolute',
     top: 300,
     left: 90,
     fontSize: 80,
     color: 'rgba(200,0,0,0.5)',
+    fontWeight: 700,
+    transform: 'rotate(-45deg)',
+  },
+  // 094 — v10+ FAINT VOID stamp. Geometry (position / size / angle) is IDENTICAL
+  // to `voidStamp`; ONLY the opacity drops to ~10% so the large diagonal stamp
+  // sits BEHIND the document content instead of clashing with it. Hue preserved.
+  voidStampFaint: {
+    position: 'absolute',
+    top: 300,
+    left: 90,
+    fontSize: 80,
+    color: 'rgba(200,0,0,0.10)',
     fontWeight: 700,
     transform: 'rotate(-45deg)',
   },
@@ -185,17 +203,31 @@ const styles = StyleSheet.create({
   cnRefLine: { fontSize: 10, marginBottom: 2 },
   cnRefLabel: { fontSize: 9, color: '#555', marginBottom: 2 },
   // US6 AS4 — credited-invoice diagonal overlay. Colour matches the
-  // VOID stamp pattern (warm red at 35% opacity) so the visual
-  // vocabulary is consistent: "this document carries a status-change
-  // annotation". Angle, size, and position are IDENTICAL to the VOID
-  // stamp so both can never overlap (an invoice cannot be both VOID
-  // and CREDITED — state machine makes them mutually exclusive).
+  // VOID stamp pattern (warm amber) so the visual vocabulary is consistent:
+  // "this document carries a status-change annotation".
+  //
+  // 094 (status-watermark-opacity) — this is the PRE-v10 (legacy) prominent
+  // variant at 32% opacity, retained UNCHANGED so a pinned pre-v10 credited
+  // annotation re-render reproduces its ORIGINAL bytes (SC-003). v10+ renders
+  // `creditedStampFaint` instead. Gate: STATUS_STAMP_FAINT_MIN_VERSION.
   creditedStamp: {
     position: 'absolute',
     top: 260,
     left: 100,
     fontSize: 64,
     color: 'rgba(180,80,0,0.32)',
+    fontWeight: 700,
+    transform: 'rotate(-20deg)',
+  },
+  // 094 — v10+ FAINT credited stamp. Geometry (position / size / angle)
+  // IDENTICAL to `creditedStamp`; ONLY the opacity drops to ~10% so the large
+  // diagonal stamp sits BEHIND the document content. Hue preserved.
+  creditedStampFaint: {
+    position: 'absolute',
+    top: 260,
+    left: 100,
+    fontSize: 64,
+    color: 'rgba(180,80,0,0.10)',
     fontWeight: 700,
     transform: 'rotate(-20deg)',
   },
@@ -321,6 +353,27 @@ export const WHT_NOTE_WRAP_THRESHOLD_CHARS = 72;
 const WHT_NOTE_WRAP_FIX_MIN_VERSION = 9;
 
 /**
+ * 094 (status-watermark-opacity) — first template version that renders the
+ * diagonal VOID / CREDITED status stamp as a LARGE FAINT (~10% opacity)
+ * behind-content watermark instead of the pre-v10 prominent 32-50% opacity that
+ * over-printed the opaque table-header row + line-item text on a credited /
+ * voided tax document (prod UAT defect). ONLY the stamp COLOUR/opacity changes
+ * (hue, size, angle, position preserved); the DRAFT preview watermark (#eee,
+ * already faint) is untouched.
+ *
+ * Gated so a pinned pre-v10 document (resend / void-overlay / credited-annotation
+ * re-render at its stored `pdf_template_version`) reproduces its ORIGINAL
+ * prominent stamp — the SC-003 reproduce-the-original guarantee, exactly like
+ * the v3–v9 gates. Both re-render paths thread the blob's PINNED version
+ * (void-invoice.ts / issue-credit-note.ts), so already-issued ≤v9 documents keep
+ * the prominent stamp; only v10+ issuances get the faint stamp. Because the two
+ * stamp styles only apply to a rendered VOID / CREDITED overlay, every document
+ * WITHOUT a status stamp renders byte-identical at v10 as at v9. Registry log:
+ * template-registry.ts v10.
+ */
+export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
+
+/**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
  * the template's shaped-Thai + English-gloss convention — the PDF carries no
  * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
@@ -384,6 +437,15 @@ interface PageBodyProps {
    * BOTH pages of the two-page combined receipt render consistently.
    */
   readonly polish: boolean;
+  /**
+   * 094 (status-watermark-opacity) — true when `templateVersion >=
+   * STATUS_STAMP_FAINT_MIN_VERSION` (=10): the VOID / CREDITED diagonal status
+   * stamp renders at the faint ~10% opacity (behind-content watermark) instead
+   * of the pre-v10 prominent 32-50%. False (pre-v10) keeps the original bytes
+   * (SC-003). Computed ONCE in `InvoiceTemplate` and threaded here so BOTH pages
+   * of a two-page combined receipt's VOID re-render stamp consistently.
+   */
+  readonly faintStatusStamp: boolean;
 }
 
 /**
@@ -407,6 +469,7 @@ function renderPageBody({
   totalThb,
   copyMarker,
   polish,
+  faintStatusStamp,
 }: PageBodyProps) {
   // 088 US4 (T035 / FR-010 / FR-034) — the §86/4 buyer particulars, extracted
   // so the block can render in the polished order (v6) OR the legacy order
@@ -474,12 +537,12 @@ function renderPageBody({
         </Text>
       )}
       {isVoid && (
-        <Text fixed style={styles.voidStamp}>
+        <Text fixed style={faintStatusStamp ? styles.voidStampFaint : styles.voidStamp}>
           VOID / {shapeThai('ยกเลิก')}
         </Text>
       )}
       {isCreditAnnotatable && input.creditedAnnotation && (
-        <Text style={styles.creditedStamp}>
+        <Text style={faintStatusStamp ? styles.creditedStampFaint : styles.creditedStamp}>
           {input.creditedAnnotation.fullyCredited
             ? shapeThai('ลดหนี้แล้ว') + ' / CREDITED'
             : shapeThai('ลดหนี้บางส่วน') + ' / PARTIALLY CREDITED'}
@@ -959,6 +1022,13 @@ export function InvoiceTemplate(input: PdfRenderInput) {
   // output (SC-003), exactly like the citation / two-page / branch-line gates.
   const polish = input.templateVersion >= PRESENTATION_POLISH_MIN_VERSION;
 
+  // 094 (status-watermark-opacity) — faint VOID / CREDITED stamp gate. Computed
+  // ONCE and threaded into both pages of a two-page combined receipt's VOID
+  // re-render so the stamp is consistent. Pre-v10 → false → byte-stable original
+  // prominent stamp (SC-003), exactly like the `polish` / citation / gate above.
+  const faintStatusStamp =
+    input.templateVersion >= STATUS_STAMP_FAINT_MIN_VERSION;
+
   const bodyProps = {
     input,
     isPreview,
@@ -970,6 +1040,7 @@ export function InvoiceTemplate(input: PdfRenderInput) {
     footerCitation,
     totalThb,
     polish,
+    faintStatusStamp,
   } satisfies Omit<PageBodyProps, 'copyMarker'>;
 
   // 088 US2 (T025 / FR-004 / SC-004 / §105ทวิ คู่ฉบับ) — the combined §86/4 tax
