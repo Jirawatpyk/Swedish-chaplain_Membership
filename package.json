@@ -49,6 +49,8 @@
     "db:verify:prod": "node --env-file=.env.production --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",
     "seed:f5-e2e": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-payment-settings.ts",
+    "seed:system-actors": "node --env-file=.env.local --import tsx scripts/seed-system-actors.ts",
+    "seed:system-actors:prod": "node --env-file=.env.production --import tsx scripts/seed-system-actors.ts",
     "seed:f5-e2e:reconciliation": "node --env-file=.env.local --import tsx scripts/seed-f5-e2e-reconciliation.ts",
     "db:clear-ratelimit": "node --env-file=.env.local --import tsx scripts/clear-rate-limit.ts",
     "db:studio": "drizzle-kit studio",
