@@ -136,13 +136,20 @@ function getThaiSegmenter(): Intl.Segmenter | null {
  *
  * Non-Thai spans are left untouched so existing spaces + Latin
  * hyphens continue to act as break points.
+ *
+ * The threshold is a per-CALL-SITE character budget, not a global constant: the
+ * default (`WRAP_THRESHOLD_CHARS` = 55) is calibrated for the NARROWEST Thai
+ * container in the invoice PDF (the ~half-width seller header block). A caller
+ * rendering into a WIDER container (e.g. the full-width, fontSize-8 WHT-note
+ * block) passes a higher `maxCharsPerLine` so its text is not force-wrapped far
+ * below the container's real capacity. See `shapeThai`'s `maxCharsPerLine` param.
  */
 const WRAP_THRESHOLD_CHARS = 55;
 
-function injectThaiBreakPoints(s: string): string {
+function injectThaiBreakPoints(s: string, threshold: number = WRAP_THRESHOLD_CHARS): string {
   if (!THAI_CODEPOINT.test(s)) return s;
   // Short runs don't need break points.
-  if (s.length <= WRAP_THRESHOLD_CHARS) return s;
+  if (s.length <= threshold) return s;
   const segmenter = getThaiSegmenter();
   if (segmenter === null) return s;
   const segments = [...segmenter.segment(s)].map((seg) => seg.segment);
@@ -170,7 +177,7 @@ function injectThaiBreakPoints(s: string): string {
     // exceed the threshold. Breaking at a whitespace segment is
     // cleanest: consume the space as the line terminator.
     if (
-      lineLen + cur.length > WRAP_THRESHOLD_CHARS &&
+      lineLen + cur.length > threshold &&
       out.length > 0 &&
       !out.endsWith('\n')
     ) {
@@ -190,14 +197,19 @@ function injectThaiBreakPoints(s: string): string {
   return out;
 }
 
-export function shapeThai(input: string | null | undefined): string {
+export function shapeThai(
+  input: string | null | undefined,
+  maxCharsPerLine: number = WRAP_THRESHOLD_CHARS,
+): string {
   if (input === null || input === undefined) return '';
   if (input.length === 0) return '';
   // 1. NFC so any upstream NFD variant collapses to canonical ำ.
   const nfc = input.normalize('NFC');
-  // 2. Inject Thai word-boundary break points (ZWSP) so long strings
-  //    wrap properly instead of overflowing the container.
-  const broken = injectThaiBreakPoints(nfc);
+  // 2. Inject Thai word-boundary break points (\n) so long strings
+  //    wrap properly instead of overflowing the container. `maxCharsPerLine`
+  //    defaults to the narrow-container budget (55); wide-container call sites
+  //    (e.g. the full-width WHT-note block) pass a higher value.
+  const broken = injectThaiBreakPoints(nfc, maxCharsPerLine);
   // 3. Decompose sara-am so advance-width counts match rendered glyph
   //    count (prevents end-of-string clipping).
   const decomposed = broken.replace(SARA_AM, NIKHAHIT_AA);
