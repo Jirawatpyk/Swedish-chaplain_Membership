@@ -68,6 +68,11 @@ vi.mock('@/modules/invoicing', () => ({
   makeGetInvoiceDeps: () => ({}),
   computeIsOverdue: () => false,
   asInvoiceId: (id: string) => id,
+  // 092 — faithful reimpl (the real barrel pulls in Drizzle infra). Matches
+  // domain/invoice.ts `invoiceStatusHasReceipt`: a §86/4 receipt exists + stays
+  // downloadable for paid + partially_credited + credited (NOT void/issued/draft).
+  invoiceStatusHasReceipt: (status: string) =>
+    status === 'paid' || status === 'partially_credited' || status === 'credited',
   // Faithful reimplementation (barrel pulls in Drizzle infra); real helper is
   // unit-tested in its own suite. Matches domain/invoice.ts displayDocumentNumber.
   displayDocumentNumber: (inv: {
@@ -263,6 +268,16 @@ function paidSeparateInvoice() {
   };
 }
 
+/** A separate-mode invoice credited by a §86/10 credit note (full → 'credited'). */
+function creditedSeparateInvoice() {
+  return { ...paidSeparateInvoice(), status: 'credited', creditedTotal: { satang: 107_000n } };
+}
+
+/** A separate-mode invoice partially credited (→ 'partially_credited'). */
+function partiallyCreditedSeparateInvoice() {
+  return { ...paidSeparateInvoice(), status: 'partially_credited', creditedTotal: { satang: 30_000n } };
+}
+
 async function renderPage(): Promise<string> {
   const tree = await PortalInvoiceDetailPage({ params: Promise.resolve({ invoiceId: 'inv-1' }) });
   return renderToStaticMarkup(tree as ReactElement);
@@ -299,5 +314,39 @@ describe('PortalInvoiceDetailPage — paid-invoice download hierarchy (090 findi
     expect(invoiceMarker?.[1]).toContain('outline');
     // The demoted bill must NOT also be a filled `default` CTA.
     expect(invoiceMarker?.[1]).not.toContain('default');
+  });
+});
+
+describe('PortalInvoiceDetailPage — §86/4 receipt stays downloadable after a credit note (092)', () => {
+  // Prod UAT bug: after a §86/10 credit note the receipt download disappeared
+  // because `showReceiptPdf` gated on `status === 'paid'`. The §86/4 receipt is
+  // not cancelled by a credit note (Thai VAT §86/10) and the member must keep
+  // downloading it. `showReceiptPdf` now gates on the receipt-bearing status set
+  // {paid, partially_credited, credited}.
+  it('credited separate-mode → the §86/4 receipt download control still renders (+ the bill PDF stays too)', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: creditedSeparateInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="portal-download-receipt-marker"');
+    // Separate-mode → the bill / tax-invoice PDF is a distinct legal doc and
+    // stays downloadable alongside the receipt.
+    expect(html).toContain('data-testid="portal-download-invoice-marker"');
+  });
+
+  it('partially_credited separate-mode → the §86/4 receipt download control still renders', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: partiallyCreditedSeparateInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('data-testid="portal-download-receipt-marker"');
+  });
+
+  it('credited separate-mode → the Receipt No. field still renders (092 finding #4 — gate centralised on invoiceStatusHasReceipt)', async () => {
+    // The receipt-NUMBER display gate was hand-inlining the {paid,
+    // partially_credited, credited} set; it now calls `invoiceStatusHasReceipt`.
+    // Behaviour is identical — a credited row keeps showing its permanent §87
+    // receipt number. The label key `fields.receiptNumber` renders only in this
+    // one block (mocked `t` echoes the key).
+    getInvoiceMock.mockResolvedValue({ ok: true, value: creditedSeparateInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('fields.receiptNumber');
+    expect(html).toContain('RC-2026-000010');
   });
 });

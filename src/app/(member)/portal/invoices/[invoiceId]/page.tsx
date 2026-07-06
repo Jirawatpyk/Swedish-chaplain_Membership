@@ -37,6 +37,7 @@ import {
   makeGetInvoiceDeps,
   computeIsOverdue,
   displayDocumentNumber,
+  invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 // Portal CN list — same escape-hatch pattern already used for the
@@ -213,8 +214,12 @@ export default async function PortalInvoiceDetailPage({
   // "the receipt download is available". `receiptPdf !== null` matters: 064
   // as-paid rows land 'rendered' with a NULL receipt blob (their MAIN pdf IS
   // the document); a receipt action on them would 502 (blob_missing).
+  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
+  // §86/10 credit note, so the status gate is the receipt-bearing set {paid,
+  // partially_credited, credited}, not `paid` alone (prod UAT bug: the receipt
+  // download disappeared once a credit note was issued). `void` is excluded.
   const showReceiptPdf =
-    invoice.status === 'paid' &&
+    invoiceStatusHasReceipt(invoice.status) &&
     invoice.receiptPdfStatus === 'rendered' &&
     invoice.receiptPdf !== null;
 
@@ -342,8 +347,12 @@ export default async function PortalInvoiceDetailPage({
                     : invoice.pdfDocKind === 'receipt_separate'
                       ? 'receipt'
                       : 'invoice';
+                // 092 — receipt-bearing status set (not `paid` alone) so a
+                // §86/10 credit note does NOT un-hide the stale pre-payment
+                // bill PDF; the combined receipt stays the sole legal document.
+                // Lockstep with the view-model's `isCombinedPaid`.
                 const isCombinedPaid =
-                  invoice.status === 'paid' &&
+                  invoiceStatusHasReceipt(invoice.status) &&
                   invoice.receiptDocumentNumberRaw === null &&
                   mainPdfKind !== 'combined';
                 const showInvoicePdf = invoice.pdf !== null && !isCombinedPaid;
@@ -585,9 +594,7 @@ export default async function PortalInvoiceDetailPage({
               after a credit note corrects the invoice (the credit-note
               section below carries the correction). thai-tax review 2026-06-07. */}
           {invoice.receiptDocumentNumberRaw &&
-            (invoice.status === 'paid' ||
-              invoice.status === 'partially_credited' ||
-              invoice.status === 'credited') && (
+            invoiceStatusHasReceipt(invoice.status) && (
             <div>
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.receiptNumber')}

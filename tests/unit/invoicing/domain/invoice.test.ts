@@ -17,6 +17,7 @@ import {
   parseInvoiceId,
   asInvoiceId,
   isTerminal,
+  invoiceStatusHasReceipt,
   enforceOneSubjectLine,
   assertSnapshotsSet,
   canTransition,
@@ -302,6 +303,32 @@ describe('isTerminal — void + credited are terminal; others are not', () => {
     ['credited', true],
   ] as const)('isTerminal(%s) === %s', (status, expected) => {
     expect(isTerminal(status)).toBe(expected);
+  });
+});
+
+describe('invoiceStatusHasReceipt — the §86/4 receipt-availability gate (092)', () => {
+  // Single source of truth for "the receipt exists + stays a downloadable tax
+  // document", shared by the receipt-PDF use-case + the member portal
+  // (detail/list/card/summary) + the admin (list serialiser + detail + table).
+  // A §86/10 credit note REDUCES a sale but does NOT cancel the §86/4 receipt,
+  // so the paid → partially_credited → credited chain all keep the receipt.
+  // `void` is EXCLUDED — it has its own VOID-stamped-blob download path (FR-015).
+  // `draft` / `issued` are excluded — no receipt has been minted yet.
+  it.each([
+    ['draft', false],
+    ['issued', false],
+    ['paid', true],
+    ['partially_credited', true],
+    ['credited', true],
+    ['void', false],
+  ] as const)('invoiceStatusHasReceipt(%s) === %s', (status, expected) => {
+    expect(invoiceStatusHasReceipt(status)).toBe(expected);
+  });
+
+  it('covers every INVOICE_STATUSES value (no status left unclassified)', () => {
+    for (const status of INVOICE_STATUSES) {
+      expect(typeof invoiceStatusHasReceipt(status)).toBe('boolean');
+    }
   });
 });
 

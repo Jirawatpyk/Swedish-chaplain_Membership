@@ -127,6 +127,53 @@ function paid088BillInvoice(): Invoice {
   } as Invoice;
 }
 
+function asPaidCombinedInvoice(): Invoice {
+  // As-paid combined (issueEventInvoiceAsPaid, TIN buyer) — there is exactly
+  // ONE document: the §86/4+§105ทวิ combined receipt IS the main `pdf` blob
+  // (`pdfDocKind === 'receipt_combined'`), so `receiptPdf` is NULL BY DESIGN
+  // (NOT corruption). Legacy-numbering variant reuses the invoice document
+  // number (`receiptDocumentNumberRaw` null → combined-mode filename).
+  return {
+    ...makeBaseInvoice(),
+    receiptPdfStatus: 'rendered',
+    receiptPdf: null,
+    receiptDocumentNumberRaw: null,
+    pdfDocKind: 'receipt_combined',
+  } as unknown as Invoice;
+}
+
+function asPaidSeparate105Invoice(): Invoice {
+  // As-paid §105 ใบเสร็จรับเงิน (no-TIN buyer) — the §105 official receipt IS
+  // the main `pdf` blob (`pdfDocKind === 'receipt_separate'`); `receiptPdf` is
+  // NULL BY DESIGN. Numbered from the separate `receipt_105`/`RE` register, so
+  // the invoice-stream `documentNumber` is NULL and the printed number lives in
+  // `receiptDocumentNumberRaw` (separate-mode filename).
+  return {
+    ...makeBaseInvoice(),
+    documentNumber: null,
+    receiptPdfStatus: 'rendered',
+    receiptPdf: null,
+    receiptDocumentNumberRaw: 'RE-2026-000005',
+    pdfDocKind: 'receipt_separate',
+  } as unknown as Invoice;
+}
+
+function corruptTwoStepRenderedInvoice(): Invoice {
+  // GENUINE corruption — a two-step (record-payment) row whose main `pdf` is the
+  // ใบแจ้งหนี้ bill (`pdfDocKind === 'invoice'`) and whose SEPARATE receipt blob
+  // key is missing even though `receiptPdfStatus === 'rendered'`. This is NOT an
+  // as-paid row (the main pdf is not a receipt), so it MUST still surface
+  // `blob_missing`/502 + the operator alert path — never masked by the as-paid
+  // branch.
+  return {
+    ...makeBaseInvoice(),
+    receiptPdfStatus: 'rendered',
+    receiptPdf: null,
+    receiptDocumentNumberRaw: 'RC-2026-000001',
+    pdfDocKind: 'invoice',
+  } as unknown as Invoice;
+}
+
 function separatePendingInvoice(): Invoice {
   return {
     ...makeBaseInvoice(),
@@ -413,6 +460,201 @@ describe('getReceiptPdfSignedUrl — denials', () => {
     expect(audit).toHaveBeenCalledTimes(1);
     const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(auditCall.eventType).toBe('invoice_cross_tenant_probe');
+  });
+});
+
+describe('getReceiptPdfSignedUrl — credited invoices retain §86/4 receipt access (092)', () => {
+  // Thai VAT law: a §86/10 credit note (ใบลดหนี้) REDUCES a prior sale (§82/10
+  // grounds) but does NOT cancel the original §86/4 tax receipt — it stays a
+  // valid tax document both parties keep for VAT reporting, and the credit note
+  // must reference it. A partial credit flips the invoice `paid →
+  // partially_credited`; a full credit → `credited`. In BOTH the receipt PDF
+  // (minted at payment) is still present + rendered, so the member/admin MUST
+  // keep downloading it. Pre-092 the `status !== 'paid'` gate returned
+  // `forbidden`, so the receipt vanished the moment a credit note was issued.
+  // `void` is EXCLUDED (its own VOID-stamped-PDF path, FR-015) — pinned by the
+  // existing `void status → forbidden` denial test above.
+
+  it('partially_credited + separate-mode rendered → returns the RC receipt URL (not forbidden) + download audit', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'partially_credited' } as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('RC-2026-000001.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.eventType).toBe('receipt_pdf_downloaded');
+  });
+
+  it('credited + separate-mode rendered → returns the RC receipt URL (not forbidden)', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('RC-2026-000001.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('credited + combined-mode rendered → returns the combined receipt URL + {invoiceDocNum}-receipt.pdf', async () => {
+    const invoice = { ...combinedModeInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('INV-2026-000001-receipt.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('member can download the receipt of their OWN partially_credited invoice', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'partially_credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId as string,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('draft still forbidden — widening opened only the receipt-bearing statuses, not every non-paid one', async () => {
+    const draft = { ...makeBaseInvoice(), status: 'draft' } as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(draft);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+    expect(callsKeys).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
+describe('getReceiptPdfSignedUrl — as-paid rows serve the main pdf, not a 502 (092 follow-up)', () => {
+  // For an as-paid invoice (issueEventInvoiceAsPaid) the §86/4 combined receipt
+  // (or §105 official receipt) IS the main `pdf` blob and `receiptPdf` is NULL
+  // BY DESIGN — NOT corruption. A direct hit on /receipt/pdf for such a row
+  // previously fell into the `blob_missing` branch and returned a misleading
+  // 502. It must now serve the main pdf blob. A GENUINE two-step corruption
+  // (pdfDocKind='invoice' + receiptPdf null) still returns blob_missing/502.
+
+  it('as-paid combined (paid) → serves the MAIN pdf blob + audit (not blob_missing)', async () => {
+    const invoice = asPaidCombinedInvoice();
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Combined-mode filename (receiptDocumentNumberRaw null → reuses the
+      // invoice document number with a `-receipt.pdf` suffix).
+      expect(result.value.filename).toBe('INV-2026-000001-receipt.pdf');
+    }
+    // The receipt IS the main pdf — served from invoice.pdf.blobKey.
+    expect(callsKeys).toEqual([INVOICE_BLOB_KEY]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.eventType).toBe('receipt_pdf_downloaded');
+    const payload = auditCall.payload as Record<string, unknown>;
+    // template version reads the served blob (the main pdf) — never NPEs on the
+    // null receiptPdf.
+    expect(payload.receipt_pdf_template_version).toBe(1);
+  });
+
+  it('as-paid combined + CREDITED → still serves the MAIN pdf blob (the finding scenario)', async () => {
+    // Exact reported case: after a §86/10 credit note flips an as-paid row to
+    // `credited`, the receipt endpoint must serve the (re-annotated) main pdf,
+    // NOT a 502.
+    const invoice = { ...asPaidCombinedInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callsKeys).toEqual([INVOICE_BLOB_KEY]);
+  });
+
+  it('as-paid §105 separate (paid) → serves the MAIN pdf blob + RE filename', async () => {
+    const invoice = asPaidSeparate105Invoice();
+    const { deps, callsKeys } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('RE-2026-000005.pdf');
+    expect(callsKeys).toEqual([INVOICE_BLOB_KEY]);
+  });
+
+  it('member can download their OWN as-paid credited receipt (served from main pdf)', async () => {
+    const invoice = { ...asPaidCombinedInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId as string,
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(callsKeys).toEqual([INVOICE_BLOB_KEY]);
+  });
+
+  it('GENUINE two-step corruption (pdfDocKind=invoice + receiptPdf null) → STILL blob_missing/502', async () => {
+    // The as-paid branch must NOT mask real corruption: a two-step row whose
+    // main pdf is the bill (not a receipt) and whose separate receipt blob is
+    // missing stays blob_missing so the operator alert path fires.
+    const invoice = corruptTwoStepRenderedInvoice();
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+    // No blob URL signed, no download audit for a corrupt row.
+    expect(callsKeys).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
   });
 });
 

@@ -26,6 +26,7 @@ import {
   isTenantInvoiceSetupComplete,
   computeIsOverdue,
   displayDocumentNumber,
+  invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 import {
@@ -478,8 +479,11 @@ export default async function AdminInvoicesPage({
         // Paid-separate-mode rows carry the §87 RC sequence number.
         receiptDocumentNumberRaw: r.receiptDocumentNumberRaw ?? null,
         // Receipt PDF availability for the Actions cell download link
-        // — paid + worker has rendered the receipt-stamped bytes.
-        hasReceiptPdf: r.status === 'paid' && r.receiptPdf !== null,
+        // — receipt minted at payment + worker has rendered the bytes. 092 —
+        // the §86/4 receipt stays downloadable after a §86/10 credit note, so
+        // the status gate is the receipt-bearing set {paid, partially_credited,
+        // credited}, not `paid` alone. `void` excluded (its own path, FR-015).
+        hasReceiptPdf: invoiceStatusHasReceipt(r.status) && r.receiptPdf !== null,
         // R8-H2-UX — receipt PDF render status so the table can show
         // a "preparing…" affordance for paid + pending/null/failed
         // (mirrors portal list page receipt-pending pattern).

@@ -38,6 +38,7 @@ import {
   computeIsOverdue,
   displayDocumentNumber,
   billFirstDocumentNumber,
+  invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
@@ -255,12 +256,17 @@ export default async function InvoiceDetailPage({
   // and rendered with NO downloadable document at all. Download + resend of
   // the main pdf on these rows ships the real final document.
   const mainPdfIsFinalCombined = invoice.pdfDocKind === 'receipt_combined';
+  // 092 — the receipt-availability + bill-hiding gates use the receipt-bearing
+  // status set {paid, partially_credited, credited}, not `paid` alone: a §86/10
+  // credit note does NOT cancel the §86/4 receipt (it stays downloadable +
+  // re-sendable) NOR un-hide the stale combined-mode bill. `void` excluded (its
+  // own VOID-stamped path, FR-015). Lockstep with the portal fix.
   const isPaidCombined =
-    invoice.status === 'paid' &&
+    invoiceStatusHasReceipt(invoice.status) &&
     invoice.receiptDocumentNumberRaw === null &&
     !mainPdfIsFinalCombined;
   const hasReceiptPdf =
-    invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+    invoiceStatusHasReceipt(invoice.status) && Boolean(invoice.receiptPdf);
 
   // FR-026 — surface permanently-failed auto-email deliveries to admins.
   // Drafts never auto-email, so skip the read for them.
@@ -666,9 +672,7 @@ export default async function InvoiceDetailPage({
                 (receiptDocumentNumberRaw null) and render nothing here.
                 thai-tax review 2026-06-07. */}
             {invoice.receiptDocumentNumberRaw &&
-              (invoice.status === 'paid' ||
-                invoice.status === 'partially_credited' ||
-                invoice.status === 'credited') && (
+              invoiceStatusHasReceipt(invoice.status) && (
               <div>
                 <dt className="text-muted-foreground">{t('fields.receiptNumber')}</dt>
                 <dd
@@ -701,11 +705,15 @@ export default async function InvoiceDetailPage({
             </div>
           </dl>
 
-          {/* Payment details — visible once the invoice is paid. Shows
-              who recorded the payment, when, and the supporting
-              reference/notes so finance + audit both have the story
-              on one screen. */}
-          {invoice.status === 'paid' && (
+          {/* Payment details — visible once a payment has been recorded. Shows
+              who recorded the payment, when, and the supporting reference/notes
+              so finance + audit both have the story on one screen. Gated on the
+              receipt-bearing set {paid, partially_credited, credited} (092): a
+              recorded payment does NOT disappear when a §86/10 credit note later
+              reduces the invoice — the panel would otherwise vanish on the first
+              credit note, hiding who/when the payment was recorded. `void` is
+              excluded (its own path). */}
+          {invoiceStatusHasReceipt(invoice.status) && (
             <section
               id="payment"
               className="mt-2 scroll-mt-20 rounded-md border bg-muted/30 p-4"

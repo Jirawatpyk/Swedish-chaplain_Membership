@@ -13,6 +13,7 @@ export {
   asInvoiceId,
   parseInvoiceId,
   isTerminal,
+  invoiceStatusHasReceipt,
   canTransition,
   enforceOneSubjectLine,
   displayDocumentNumber,

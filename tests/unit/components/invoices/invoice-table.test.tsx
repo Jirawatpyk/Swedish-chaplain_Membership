@@ -257,19 +257,20 @@ describe('<InvoicesTable> buyer column', () => {
  * The receipt-number cell has three branches:
  *   1. `receiptDocumentNumberRaw` set       → render the raw §87 RC number
  *      (separate-mode).
- *   2. else `hasReceiptPdf && status==='paid'` → render the combined-mode
- *      hint (plain em-dash + InfoIcon, `aria-label=receiptNumberCombinedAria`)
- *      — the receipt reuses the invoice number per Thai RD §86/4 + §105ทวิ,
- *      and the receipt PDF has actually rendered (`hasReceiptPdf` is
- *      `paid && receiptPdf !== null`, page.tsx:396).
+ *   2. else `hasReceiptPdf` → render the combined-mode hint (plain em-dash +
+ *      InfoIcon, `aria-label=receiptNumberCombinedAria`) — the receipt reuses
+ *      the invoice number per Thai RD §86/4 + §105ทวิ, and the receipt PDF has
+ *      actually rendered. 092 — `hasReceiptPdf` is
+ *      `invoiceStatusHasReceipt(status) && receiptPdf !== null` (page.tsx), so
+ *      the hint also fires for a credited combined-mode receipt.
  *   3. else                                 → render a PLAIN em-dash.
  *
- * The gate at invoice-table.tsx:361 was hardened from a bare
- * `r.status === 'paid'` to `r.hasReceiptPdf && r.status === 'paid'` so a
- * paid combined-mode invoice whose receipt PDF is STILL RENDERING
- * (`hasReceiptPdf: false`, `receiptPdfStatus: 'pending'`) no longer shows
- * the "receipt = invoice number" hint prematurely. These cases pin that
- * gate; case 1 flips RED if anyone reverts to the bare status check.
+ * The gate now reads `r.hasReceiptPdf` alone (092 dropped the redundant
+ * `&& r.status === 'paid'` — `hasReceiptPdf` already carries the receipt-
+ * bearing status set). A paid combined-mode invoice whose receipt PDF is
+ * STILL RENDERING (`hasReceiptPdf: false`, `receiptPdfStatus: 'pending'`)
+ * still shows NO hint. These cases pin that gate; case 1 flips RED if anyone
+ * reverts to a bare status check.
  */
 describe('<InvoicesTable> receipt-number combined-hint gate', () => {
   // The accessible name of the combined-mode hint span — the discriminator
@@ -331,6 +332,78 @@ describe('<InvoicesTable> receipt-number combined-hint gate', () => {
     // …and the combined-mode hint is NOT shown (separate mode owns a
     // distinct receipt document number, so there is nothing to disambiguate).
     expect(screen.queryByLabelText(COMBINED_HINT_LABEL)).toBeNull();
+  });
+});
+
+/**
+ * 092 — §86/4 receipt stays available after a §86/10 credit note (admin table).
+ *
+ * The serialiser (page.tsx) now computes `hasReceiptPdf` as
+ * `invoiceStatusHasReceipt(status) && receiptPdf !== null`, so a credited /
+ * partially_credited invoice with a rendered receipt blob arrives with
+ * `hasReceiptPdf: true`. The client trusts that flag: the receipt download +
+ * the combined-mode hint + `isCombinedPaid` (stale-bill-hiding) all key off
+ * `hasReceiptPdf`, NOT a raw `status === 'paid'` re-check (dropped in 092).
+ * Thai VAT §86/10: a credit note reduces the sale but does not cancel the
+ * receipt, so admin staff must keep downloading it (e.g. to re-send).
+ */
+describe('<InvoicesTable> — receipt stays downloadable after a credit note (092)', () => {
+  it('credited separate-mode (hasReceiptPdf=true, RC set) → receipt download shown AND bill download shown', () => {
+    renderTable([
+      baseRow({
+        status: 'credited',
+        hasReceiptPdf: true,
+        receiptDocumentNumberRaw: 'RC-2026-0009',
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    // Separate-mode → the bill/tax-invoice PDF is a distinct doc, still shown.
+    expect(screen.getByTestId('row-download-invoice')).toBeInTheDocument();
+  });
+
+  it('partially_credited separate-mode → receipt download shown', () => {
+    renderTable([
+      baseRow({
+        status: 'partially_credited',
+        hasReceiptPdf: true,
+        receiptDocumentNumberRaw: 'RC-2026-0010',
+        receiptPdfStatus: 'rendered',
+      }),
+    ]);
+    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+  });
+
+  it('credited COMBINED-mode (RC null, hasReceiptPdf=true) → combined hint + receipt download; stale bill HIDDEN', () => {
+    // RED→GREEN for the 092 client change: pre-092 the combined hint (line 442)
+    // and isCombinedPaid (line 611) were gated on `hasReceiptPdf && status ===
+    // 'paid'`, so a credited combined-mode row lost its hint AND resurrected the
+    // stale pre-payment bill download. Dropping the redundant `&& status ===
+    // 'paid'` fixes both (hasReceiptPdf already carries the receipt-bearing status).
+    renderTable([
+      baseRow({
+        status: 'credited',
+        hasReceiptPdf: true,
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        hasPdf: true,
+      }),
+    ]);
+    // Combined-mode hint present (the receipt reuses the invoice number).
+    expect(screen.getByLabelText('Combined mode')).toBeInTheDocument();
+    // Receipt download present…
+    expect(screen.getByTestId('row-download-receipt')).toBeInTheDocument();
+    // …and the stale pre-payment bill download is HIDDEN (isCombinedPaid true).
+    expect(screen.queryByTestId('row-download-invoice')).toBeNull();
+  });
+
+  it('void row (hasReceiptPdf=false from serialiser) → NO receipt download (void keeps its own path)', () => {
+    // The serialiser excludes void from `invoiceStatusHasReceipt`, so a void row
+    // arrives with hasReceiptPdf=false; the client shows no receipt affordance.
+    renderTable([
+      baseRow({ status: 'void', hasReceiptPdf: false, receiptDocumentNumberRaw: null }),
+    ]);
+    expect(screen.queryByTestId('row-download-receipt')).toBeNull();
   });
 });
 
