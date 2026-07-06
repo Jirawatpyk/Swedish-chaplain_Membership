@@ -195,10 +195,13 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
       </AlertDialogTrigger>
       {/* max-h + scroll so the tall erasure form never overflows a short
           (mobile) viewport — the header/footer scroll with it; without this the
-          top + confirm button were clipped off-screen on phones. */}
+          top + confirm button were clipped off-screen on phones.
+          `w-[calc(100%-2rem)]` overrides the base `w-full` so the dialog keeps a
+          1rem side gutter at ≤320px instead of touching the screen edge (its
+          ring/shadow was being clipped). */}
       <AlertDialogContent
         initialFocus={cancelRef}
-        className="max-h-[85dvh] overflow-y-auto"
+        className="w-[calc(100%-2rem)] max-h-[85dvh] overflow-y-auto overflow-x-hidden"
       >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('dialogTitle')}</AlertDialogTitle>
@@ -314,14 +317,16 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={loading}>
+          {/* min-h-11 (44px) tap targets — this is a destructive GDPR/PDPA
+              action; give both footer buttons a comfortable mobile hit-height. */}
+          <AlertDialogCancel ref={cancelRef} disabled={loading} className="min-h-11">
             {t('cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
             aria-disabled={!canConfirm || undefined}
             aria-describedby={!canConfirm ? 'erase-gate-checklist' : undefined}
             aria-busy={loading}
-            className={buttonVariants({ variant: 'destructive' })}
+            className={`${buttonVariants({ variant: 'destructive' })} min-h-11`}
             onClick={(e) => {
               e.preventDefault();
               if (!canConfirm) return;
