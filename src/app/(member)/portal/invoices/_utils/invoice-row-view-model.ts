@@ -40,6 +40,7 @@ import type { Invoice } from '@/modules/invoicing';
 import {
   computeIsOverdue,
   displayDocumentNumber,
+  invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
 } from '@/modules/invoicing';
 import type { Money } from '@/modules/invoicing';
@@ -115,7 +116,10 @@ export interface InvoiceRowViewModel {
    * a stale pre-payment draft and the SEPARATE receipt blob (rendered at
    * record-payment, reusing the invoice number) is the combined legal
    * document. When true the table/card hides the (stale) invoice anchor and
-   * shows only the combined Receipt download. 064 — excludes as-paid rows
+   * shows only the combined Receipt download. 092 — the status gate is the
+   * receipt-bearing set (paid / partially_credited / credited), not `paid`
+   * alone, so a §86/10 credit note does not un-hide the stale bill. 064 —
+   * excludes as-paid rows
    * (`mainPdfKind 'combined'`): their MAIN pdf already IS the final combined
    * doc, so hiding it would remove the row's only download.
    */
@@ -138,7 +142,8 @@ export interface InvoiceRowViewModel {
   /** Show the invoice-PDF download (PDF exists and it is not combined-paid). */
   readonly showInvoice: boolean;
   /**
-   * Show the receipt-PDF download (paid + receipt PDF rendered + the
+   * Show the receipt-PDF download (receipt-bearing status — paid /
+   * partially_credited / credited (092) — + receipt PDF rendered + the
    * receipt BLOB actually present). 064 — `receiptPdf !== null` matters:
    * as-paid rows land `receiptPdfStatus 'rendered'` with NULL receipt blob
    * columns (their main pdf is the document); a receipt action on them
@@ -302,8 +307,12 @@ export function toInvoiceRowViewModel(
   // separate receipt number) AND the receipt PDF has finished rendering.
   // Applies ONLY when the main pdf is an issue-time stale draft — never to
   // as-paid rows whose main pdf is itself the combined document.
+  // 092 — the status gate is the receipt-bearing set {paid, partially_credited,
+  // credited}, not `paid` alone: a §86/10 credit note must NOT un-hide the stale
+  // pre-payment bill PDF (it stays hidden; the combined receipt is still the
+  // legal document). Widened in lockstep with `showReceipt` below.
   const isCombinedPaid =
-    row.status === 'paid' &&
+    invoiceStatusHasReceipt(row.status) &&
     row.receiptDocumentNumberRaw === null &&
     row.receiptPdfStatus === 'rendered' &&
     mainPdfKind !== 'combined';
@@ -312,8 +321,12 @@ export function toInvoiceRowViewModel(
 
   // Gate the receipt action on the artifact it serves: the receipt BLOB.
   // (064 — 'rendered' alone is not enough; see the mainPdfKind note above.)
+  // 092 — the §86/4 receipt stays a valid, downloadable tax document after a
+  // §86/10 credit note (`partially_credited` / `credited`), so the status gate is
+  // the receipt-bearing set, not `paid` alone (prod UAT bug: the receipt download
+  // vanished the moment a credit note was issued). `void` is excluded by the set.
   const showReceipt =
-    row.status === 'paid' &&
+    invoiceStatusHasReceipt(row.status) &&
     row.receiptPdfStatus === 'rendered' &&
     row.receiptPdf !== null;
 

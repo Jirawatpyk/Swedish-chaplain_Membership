@@ -259,58 +259,116 @@ describe('toInvoiceRowViewModel — combined vs separate receipt mode', () => {
   });
 });
 
-describe('toInvoiceRowViewModel — credited receipt-number visibility (D3 invariant)', () => {
-  // D3 receipt-visibility invariant: `showReceipt` is gated on
-  // `status === 'paid'`, so a CREDITED / PARTIALLY_CREDITED invoice that
-  // happens to carry a separate-mode receipt number must NOT offer a
-  // receipt download — but its raw receipt number STILL passes through to
-  // `vm.receiptNumber` (the column displays it; only the download is
-  // withheld). These pin that pair against a future broadening of
-  // `showReceipt` that would leak a receipt action on a credited row.
-  it('credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
+describe('toInvoiceRowViewModel — §86/4 receipt stays downloadable after a credit note (092)', () => {
+  // 092 fix (Thai VAT §86/10): a credit note (ใบลดหนี้) REDUCES a prior sale but
+  // does NOT cancel the original §86/4 tax receipt — it stays a valid,
+  // downloadable tax document both parties keep for VAT reporting, and the CN
+  // must reference it. So `showReceipt` (and the combined-mode `isCombinedPaid`
+  // stale-bill-hiding) must hold through `partially_credited` (partial credit)
+  // and `credited` (full credit), exactly as for `paid`. Pre-092 these were
+  // gated on `status === 'paid'`, so the receipt download vanished the moment a
+  // credit note was issued (the prod UAT bug). `void` is NOT included (its own
+  // VOID-stamped-PDF path, FR-015 — see the void tests below). The raw receipt
+  // number keeps passing through to `vm.receiptNumber` regardless.
+  //
+  // Fixtures carry the `receiptPdf` blob because `showReceipt` gates on it:
+  // bill-first / record-payment rows always write the blob together with
+  // `receiptPdfStatus 'rendered'`. A US6 credit note re-renders that same
+  // separate receipt blob (kind 'receipt_combined') in place, so it is still
+  // present on a credited row.
+  it('credited + separate-mode receipt (rendered + blob) → showReceipt TRUE, bill still shown, receiptNumber preserved', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'credited',
         receiptDocumentNumberRaw: 'RCP-2026-0001',
         receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
       }),
       NOW_PAST_DUE,
     );
-    expect(vm.showReceipt).toBe(false);
+    expect(vm.showReceipt).toBe(true);
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
-    // Credited is not combined-paid either (needs status 'paid').
+    // Separate-mode → the §86/4 receipt AND the bill/tax-invoice PDF are
+    // distinct legal docs; both stay downloadable (NOT combined-paid).
     expect(vm.isCombinedPaid).toBe(false);
-    // R6 mutation guard: a credited invoice with its (issue-time) PDF STILL
-    // offers the invoice download + resend, and therefore is NOT an
-    // empty-action row. `showInvoice` is gated on `pdf !== null && !combinedPaid`
-    // and `resendable` on `status !== 'void' && pdf !== null` — neither is
-    // gated on `status === 'issued'`. A future change narrowing `showInvoice`
-    // to issued-only would silently drop the credited row's invoice button
-    // (and, via the OR, could flip `rowHasAnyAction` to false → '—' sentinel)
-    // with no test catching it. These pin the correct credited+PDF values.
     expect(vm.showInvoice).toBe(true);
     expect(vm.resendable).toBe(true);
     expect(rowHasAnyAction(vm)).toBe(true);
   });
 
-  it('partially_credited + receiptNumber + rendered → showReceipt false, receiptNumber preserved', () => {
+  it('partially_credited + separate-mode receipt (rendered + blob) → showReceipt TRUE, bill still shown', () => {
     const vm = toInvoiceRowViewModel(
       buildInvoice({
         status: 'partially_credited',
         receiptDocumentNumberRaw: 'RCP-2026-0001',
         receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
       }),
       NOW_PAST_DUE,
     );
-    expect(vm.showReceipt).toBe(false);
+    expect(vm.showReceipt).toBe(true);
     expect(vm.receiptNumber).toBe('RCP-2026-0001');
     expect(vm.isCombinedPaid).toBe(false);
-    // R6 mutation guard (see the credited case above) — identical reasoning:
-    // partially_credited + its PDF keeps invoice download + resend live, so the
-    // row is never an empty-action '—' sentinel.
     expect(vm.showInvoice).toBe(true);
-    expect(vm.resendable).toBe(true);
-    expect(rowHasAnyAction(vm)).toBe(true);
+  });
+
+  it('credited COMBINED-mode (null receiptNumber + rendered + blob) → isCombinedPaid TRUE, stale bill stays HIDDEN, combined receipt shown', () => {
+    // Regression guard the 092 fix must NOT introduce: a combined-mode
+    // (bill-first) paid invoice hides its stale pre-payment bill PDF and shows
+    // only the combined receipt. That must SURVIVE a credit note — so
+    // `isCombinedPaid` widened alongside `showReceipt`; had only `showReceipt`
+    // widened, `isCombinedPaid` would go false on credit and the stale bill PDF
+    // would reappear.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'credited',
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+        pdfDocKind: 'invoice',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.isCombinedPaid).toBe(true);
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(true);
+  });
+
+  it('partially_credited COMBINED-mode → isCombinedPaid TRUE, stale bill hidden, combined receipt shown', () => {
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'partially_credited',
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: { blobKey: 'rk', sha256: sha(), templateVersion: 1 },
+        pdfDocKind: 'invoice',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.isCombinedPaid).toBe(true);
+    expect(vm.showInvoice).toBe(false);
+    expect(vm.showReceipt).toBe(true);
+  });
+
+  it('credited AS-PAID row (receipt_combined main pdf, NULL receipt blob) → showReceipt FALSE (no blob to serve), main download stays', () => {
+    // Widening the STATUS set must not resurrect the 064 as-paid 502: an as-paid
+    // row's receipt IS its main pdf (`receiptPdf` null), so the receipt
+    // affordance stays hidden (blob-gated) and the main download remains the
+    // row's document — identical to how a PAID as-paid row already behaves.
+    const vm = toInvoiceRowViewModel(
+      buildInvoice({
+        status: 'credited',
+        receiptDocumentNumberRaw: null,
+        receiptPdfStatus: 'rendered',
+        receiptPdf: null,
+        pdfDocKind: 'receipt_combined',
+      }),
+      NOW_PAST_DUE,
+    );
+    expect(vm.mainPdfKind).toBe('combined');
+    expect(vm.showReceipt).toBe(false);
+    expect(vm.isCombinedPaid).toBe(false);
+    expect(vm.showInvoice).toBe(true);
   });
 });
 

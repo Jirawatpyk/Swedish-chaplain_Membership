@@ -133,8 +133,11 @@ export type InvoicesTableRow = {
   readonly receiptDocumentNumberRaw: string | null;
   /**
    * Whether the row has a receipt PDF available for download. Computed in
-   * page.tsx as `status === 'paid' && receiptPdf !== null` — i.e. the
-   * invoice is paid AND the receipt-stamped bytes have been persisted. A
+   * page.tsx as `invoiceStatusHasReceipt(status) && receiptPdf !== null` —
+   * i.e. the invoice is in a receipt-bearing state (paid / partially_credited
+   * / credited — 092: a §86/10 credit note does NOT cancel the §86/4 receipt,
+   * so it stays downloadable + re-sendable) AND the receipt-stamped bytes have
+   * been persisted. A
    * non-null `receiptPdf` IS the admin's "receipt has rendered" signal
    * (the async worker only writes the blob once the PDF exists), so this
    * flag doubles as the rendered-receipt gate. The Actions cell uses it
@@ -439,14 +442,16 @@ export function InvoicesTable({
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
-                ) : r.hasReceiptPdf && r.status === 'paid' ? (
+                ) : r.hasReceiptPdf ? (
                   // Combined-mode (receipt reuses the invoice number per
                   // Thai RD §86/4 + §105ทวิ). Gate on the SAME condition as
                   // the action cell's `isCombinedPaid` (= `hasReceiptPdf &&
-                  // status === 'paid' && !receiptDocumentNumberRaw`;
-                  // `hasReceiptPdf` is `paid && receiptPdf !== null`, i.e.
-                  // the receipt PDF has actually rendered). The
-                  // `receiptDocumentNumberRaw` falsy branch above already
+                  // !receiptDocumentNumberRaw`). 092 — `hasReceiptPdf` is now
+                  // `invoiceStatusHasReceipt(status) && receiptPdf !== null`
+                  // (paid / partially_credited / credited + rendered), so the
+                  // redundant `&& r.status === 'paid'` re-check was dropped:
+                  // `hasReceiptPdf` already carries the receipt-bearing status.
+                  // The `receiptDocumentNumberRaw` falsy branch above already
                   // supplies the `&& !receiptDocumentNumberRaw` clause.
                   // Previously this gated on the raw `r.status === 'paid'`,
                   // so a paid combined-mode invoice whose receipt PDF was
@@ -607,8 +612,13 @@ export function InvoicesTable({
                   // — that flag describes the tenant's CURRENT mode;
                   // an invoice paid before a mode flip keeps its own
                   // immutable snapshot. Read the row, not the setting.
+                  // 092 — `hasReceiptPdf` now carries the receipt-bearing status
+                  // set (paid / partially_credited / credited); the redundant
+                  // `&& r.status === 'paid'` was dropped so a credited combined-
+                  // mode row keeps its stale bill hidden (lockstep with the
+                  // portal view-model + admin detail `isPaidCombined`).
                   const isCombinedPaid =
-                    r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
+                    r.hasReceiptPdf && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
                   // 088 T066b (FR-019) — async receipt-PDF resilience. The
                   // former single "preparing…" affordance conflated pending +

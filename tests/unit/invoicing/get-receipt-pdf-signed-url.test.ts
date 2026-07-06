@@ -416,6 +416,93 @@ describe('getReceiptPdfSignedUrl — denials', () => {
   });
 });
 
+describe('getReceiptPdfSignedUrl — credited invoices retain §86/4 receipt access (092)', () => {
+  // Thai VAT law: a §86/10 credit note (ใบลดหนี้) REDUCES a prior sale (§82/10
+  // grounds) but does NOT cancel the original §86/4 tax receipt — it stays a
+  // valid tax document both parties keep for VAT reporting, and the credit note
+  // must reference it. A partial credit flips the invoice `paid →
+  // partially_credited`; a full credit → `credited`. In BOTH the receipt PDF
+  // (minted at payment) is still present + rendered, so the member/admin MUST
+  // keep downloading it. Pre-092 the `status !== 'paid'` gate returned
+  // `forbidden`, so the receipt vanished the moment a credit note was issued.
+  // `void` is EXCLUDED (its own VOID-stamped-PDF path, FR-015) — pinned by the
+  // existing `void status → forbidden` denial test above.
+
+  it('partially_credited + separate-mode rendered → returns the RC receipt URL (not forbidden) + download audit', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'partially_credited' } as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('RC-2026-000001.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.eventType).toBe('receipt_pdf_downloaded');
+  });
+
+  it('credited + separate-mode rendered → returns the RC receipt URL (not forbidden)', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('RC-2026-000001.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('credited + combined-mode rendered → returns the combined receipt URL + {invoiceDocNum}-receipt.pdf', async () => {
+    const invoice = { ...combinedModeInvoice(), status: 'credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('INV-2026-000001-receipt.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('member can download the receipt of their OWN partially_credited invoice', async () => {
+    const invoice = { ...separateRenderedInvoice(), status: 'partially_credited' } as Invoice;
+    const { deps, callsKeys } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId as string,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+  });
+
+  it('draft still forbidden — widening opened only the receipt-bearing statuses, not every non-paid one', async () => {
+    const draft = { ...makeBaseInvoice(), status: 'draft' } as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(draft);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+    expect(callsKeys).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
 describe('getReceiptPdfSignedUrl — async + failed states', () => {
   it('separate-mode pending + member → receipt_pdf_pending with 30s retry, no blob URL, no audit', async () => {
     const invoice = separatePendingInvoice();

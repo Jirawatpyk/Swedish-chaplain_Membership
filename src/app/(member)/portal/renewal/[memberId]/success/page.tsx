@@ -26,6 +26,7 @@ import { makeRenewalsDeps } from '@/modules/renewals';
 import {
   billFirstDocumentNumber,
   getInvoice,
+  invoiceStatusHasReceipt,
   makeGetInvoiceDeps,
 } from '@/modules/invoicing';
 import {
@@ -225,10 +226,21 @@ export default async function RenewalSuccessPage({
               </Link>
             );
           }
-          if (invoice && invoice.status === 'paid' && invoice.receiptPdfStatus === 'rendered') {
-            // Paid + receipt rendered — the legal §86/4 + §105ทวิ doc
-            // is what the member should grab. Combined-mode reuses the
-            // invoice number; separate-mode has its own RC-… number.
+          if (
+            invoice &&
+            invoiceStatusHasReceipt(invoice.status) &&
+            invoice.receiptPdfStatus === 'rendered'
+          ) {
+            // Receipt rendered on a receipt-bearing invoice — the legal §86/4 +
+            // §105ทวิ doc is what the member should grab. 092 — the status gate is
+            // the receipt-bearing set {paid, partially_credited, credited}, not
+            // `paid` alone: a §86/10 credit note does NOT cancel the §86/4 receipt,
+            // so AFTER a credit note this branch (not the fall-through bill
+            // download at ~L287) still serves the receipt. A credited invoice
+            // always has `receiptPdfStatus === 'rendered'` (the issue-credit-note
+            // precondition), so it matches here first and never reaches the
+            // paid-only branches below. Combined-mode reuses the invoice number;
+            // separate-mode has its own RC-… number.
             const documentNumber =
               invoice.receiptDocumentNumberRaw ?? invoice.documentNumber?.raw ?? invoiceId;
             return (

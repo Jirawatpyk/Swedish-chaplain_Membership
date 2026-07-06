@@ -338,6 +338,35 @@ export function isTerminal(status: InvoiceStatus): boolean {
 }
 
 /**
+ * 092 — whether an invoice's status means its §86/4 tax receipt (ใบเสร็จรับเงิน /
+ * ใบกำกับภาษี, minted at payment) EXISTS and remains a downloadable tax document.
+ *
+ * A receipt is minted when the invoice is paid (`paid`). A subsequent §86/10
+ * credit note (ใบลดหนี้) REDUCES the sale (§82/10 grounds) but does NOT cancel
+ * the original §86/4 receipt — it stays a valid tax document that BOTH seller
+ * and buyer keep for their VAT reporting (output/input tax), and the credit note
+ * must reference it. A partial credit flips the invoice to `partially_credited`,
+ * a full credit to `credited`; in both the receipt is still valid + downloadable.
+ * (Spec US6 AS2: the credited annotation is applied to the tax receipt document,
+ * which therefore remains live.)
+ *
+ * `void` is DELIBERATELY EXCLUDED — a voided invoice/receipt is downloadable via
+ * its own VOID-stamped-blob path (FR-015), not this "paid receipt" path. `draft`
+ * / `issued` are excluded — no receipt has been minted yet.
+ *
+ * Single source of truth for the receipt-download availability gate shared by
+ * the receipt-PDF use-case (`get-receipt-pdf-signed-url`) and the member-portal
+ * detail page + list row view-model, so the three surfaces can never drift.
+ */
+export function invoiceStatusHasReceipt(status: InvoiceStatus): boolean {
+  return (
+    status === 'paid' ||
+    status === 'partially_credited' ||
+    status === 'credited'
+  );
+}
+
+/**
  * 064 remediation (A1) — the printed §87/§105 number an invoice row should
  * be DISPLAYED under, shared by the admin detail/list, the portal list/card/
  * detail, and the more-menu so every surface resolves the same number.

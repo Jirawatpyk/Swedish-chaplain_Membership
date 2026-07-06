@@ -28,7 +28,10 @@
  *   paid + failed                      → 'receipt_pdf_failed' with
  *                                        `receiptPdfLastError` in payload
  *                                        (admin only — strip for member)
- *   non-paid / draft / void / credited → 'forbidden'
+ *   credited / partially_credited      → served (092 — a §86/10 credit note
+ *                                        does NOT cancel the §86/4 receipt)
+ *   draft / issued / void              → 'forbidden' (no receipt, or void's
+ *                                        own VOID-stamped path FR-015)
  *
  * Ownership matches `getInvoicePdfSignedUrl` — admin/manager see any
  * invoice in their tenant; member sees only invoices on their own
@@ -45,6 +48,7 @@ import type { AuditPort } from '../ports/audit-port';
 import {
   asInvoiceId,
   billFirstDocumentNumber,
+  invoiceStatusHasReceipt,
   type InvoiceId,
 } from '@/modules/invoicing/domain/invoice';
 
@@ -121,9 +125,12 @@ export async function getReceiptPdfSignedUrl(
     }
   }
 
-  // Only paid invoices have a receipt. Drafts / issued / void / credited
-  // / partially_credited → forbidden (no receipt to download).
-  if (invoice.status !== 'paid') return err({ code: 'forbidden' });
+  // A receipt exists (and stays a valid, downloadable §86/4 tax document)
+  // once the invoice is paid — INCLUDING after a §86/10 credit note reduces
+  // it (`partially_credited` / `credited`): the credit note does not cancel
+  // the original receipt (092). Drafts / issued (no receipt yet) and void
+  // (its own VOID-stamped-blob path, FR-015) → forbidden.
+  if (!invoiceStatusHasReceipt(invoice.status)) return err({ code: 'forbidden' });
 
   // Member 425 gate — identical to `getInvoicePdfSignedUrl`. The receipt
   // worker is mid-flight; ask the client to back off and re-poll.

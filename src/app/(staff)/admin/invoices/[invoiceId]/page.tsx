@@ -38,6 +38,7 @@ import {
   computeIsOverdue,
   displayDocumentNumber,
   billFirstDocumentNumber,
+  invoiceStatusHasReceipt,
   resolveTaxDocumentKind,
   maybeEmitOverdueDetected,
   makeOverdueAuditPort,
@@ -255,12 +256,17 @@ export default async function InvoiceDetailPage({
   // and rendered with NO downloadable document at all. Download + resend of
   // the main pdf on these rows ships the real final document.
   const mainPdfIsFinalCombined = invoice.pdfDocKind === 'receipt_combined';
+  // 092 — the receipt-availability + bill-hiding gates use the receipt-bearing
+  // status set {paid, partially_credited, credited}, not `paid` alone: a §86/10
+  // credit note does NOT cancel the §86/4 receipt (it stays downloadable +
+  // re-sendable) NOR un-hide the stale combined-mode bill. `void` excluded (its
+  // own VOID-stamped path, FR-015). Lockstep with the portal fix.
   const isPaidCombined =
-    invoice.status === 'paid' &&
+    invoiceStatusHasReceipt(invoice.status) &&
     invoice.receiptDocumentNumberRaw === null &&
     !mainPdfIsFinalCombined;
   const hasReceiptPdf =
-    invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+    invoiceStatusHasReceipt(invoice.status) && Boolean(invoice.receiptPdf);
 
   // FR-026 — surface permanently-failed auto-email deliveries to admins.
   // Drafts never auto-email, so skip the read for them.
