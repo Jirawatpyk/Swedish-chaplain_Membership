@@ -289,6 +289,38 @@ const WHT_AND_BANK_BLOCK_MIN_VERSION = 7;
 const ZERO_RATE_NOTE_MIN_VERSION = 8;
 
 /**
+ * 093 (WHT-note premature-wrap fix) — per-call-site Thai wrap budget for the
+ * full-width WHT-note block.
+ *
+ * The global `shapeThai` default (55 chars/line) is calibrated for the NARROWEST
+ * Thai container (the ~half-width seller header block). The WHT note renders in
+ * `whtNoteBlock` (width 100%, `whtNoteLine` fontSize 8) whose content width is
+ * 523.28pt (A4 595.28 − 2×36 page padding). At fontSize 8 the ~68-char TSCC
+ * accountant note renders at only 224.79pt (43% of the block — measured with
+ * fontkit 2.0.4 / Sarabun-Regular, the engine @react-pdf/renderer lays glyphs
+ * with), yet the 55 budget force-wraps it onto TWO lines even though the LONGER
+ * 85-char English gloss (298.30pt) fits on one.
+ *
+ * 72 keeps the real 68-char note on ONE line with headroom while still wrapping a
+ * genuinely-too-long (73+ char) note. It sits safely below the measured
+ * worst-case single-line capacity of 78 chars (widest Thai consonant ฒ = 6.648pt
+ * @8pt → 523.28 / 6.648 ≈ 78), so every wrapped line (≤72 chars, ≤478.7pt
+ * worst-case) stays clear of the 523.28pt edge — no overflow / silent clip.
+ */
+export const WHT_NOTE_WRAP_THRESHOLD_CHARS = 72;
+
+/**
+ * 093 — first template version that renders the WHT note at the wider
+ * `WHT_NOTE_WRAP_THRESHOLD_CHARS` budget. Gated so a pinned pre-v9 document
+ * (resend / void-overlay / async worker / any re-render at its stored
+ * `pdf_template_version`) reproduces its ORIGINAL bytes — the note wraps at the
+ * legacy 55 budget — preserving the SC-003 reproduce-the-original guarantee,
+ * exactly like the v3 citation + v4 two-page + v5 branch-line + v6 polish + v7
+ * WHT/bank + v8 zero-rate gates. Registry log: template-registry.ts v9.
+ */
+const WHT_NOTE_WRAP_FIX_MIN_VERSION = 9;
+
+/**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
  * the template's shaped-Thai + English-gloss convention — the PDF carries no
  * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
@@ -673,7 +705,18 @@ function renderPageBody({
         (input.tenant.wht_note_th != null || input.tenant.wht_note_en != null) && (
           <View style={styles.whtNoteBlock}>
             {input.tenant.wht_note_th != null && (
-              <Text style={styles.whtNoteLine}>{shapeThai(input.tenant.wht_note_th)}</Text>
+              <Text style={styles.whtNoteLine}>
+                {/* 093 — the full-width WHT-note block gets a wider Thai wrap
+                    budget so the ~68-char note is not force-wrapped onto two
+                    lines. Version-gated: a pinned pre-v9 document re-renders at
+                    the legacy 55 budget (SC-003 byte-reproduce). */}
+                {shapeThai(
+                  input.tenant.wht_note_th,
+                  input.templateVersion >= WHT_NOTE_WRAP_FIX_MIN_VERSION
+                    ? WHT_NOTE_WRAP_THRESHOLD_CHARS
+                    : undefined,
+                )}
+              </Text>
             )}
             {input.tenant.wht_note_en != null && (
               <Text style={styles.whtNoteLine}>{input.tenant.wht_note_en}</Text>

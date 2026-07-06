@@ -23,7 +23,10 @@
 import { describe, it, expect } from 'vitest';
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { Document, Page } from '@react-pdf/renderer';
-import { InvoiceTemplate } from '@/modules/invoicing/infrastructure/pdf/templates/invoice-template';
+import {
+  InvoiceTemplate,
+  WHT_NOTE_WRAP_THRESHOLD_CHARS,
+} from '@/modules/invoicing/infrastructure/pdf/templates/invoice-template';
 import { shapeThai } from '@/modules/invoicing/infrastructure/pdf/fonts/register-sarabun';
 import type {
   PdfDocKind,
@@ -327,6 +330,50 @@ describe('088 US5 — WHT note scope (FR-012 / SC-007)', () => {
     expect(text).not.toContain(WHT_NOTE_EN);
     // Pre-v7 keeps the historical footer.
     expect(text).toContain(LEGACY_FOOTER);
+  });
+
+  // 093-wht-note-pdf-wrap — the full-width WHT-note block gets a wider Thai wrap
+  // budget (WHT_NOTE_WRAP_THRESHOLD_CHARS = 72) so the ~68-char accountant note
+  // renders on ONE line instead of being force-wrapped onto two by the global
+  // shapeThai default (55). Gated at templateVersion >= 9 for SC-003.
+  it('093: at v9 the membership tax receipt renders the WHT note on ONE line (both Original + Copy)', () => {
+    const oneLine = shapeThai(WHT_NOTE_TH, WHT_NOTE_WRAP_THRESHOLD_CHARS);
+    // Sanity: the wider budget really keeps this note single-line.
+    expect(oneLine).not.toContain('\n');
+    const pages = pagesOf(
+      InvoiceTemplate(
+        makeInput({
+          templateVersion: 9,
+          kind: 'receipt_combined',
+          invoiceSubject: 'membership',
+        }),
+      ),
+    );
+    expect(pages).toHaveLength(2);
+    for (const p of pages) {
+      const text = pageText(p);
+      expect(text).toContain(oneLine);
+      expect(text).toContain(WHT_NOTE_EN);
+    }
+  });
+
+  it('093 SC-003: a pinned pre-v9 (@v7 + @v8) membership document STILL wraps the WHT note (byte-reproduce)', () => {
+    const wrapped = shapeThai(WHT_NOTE_TH); // legacy default-55 budget → two lines
+    // Sanity: the legacy budget wraps this note (so the assertion below has teeth).
+    expect(wrapped).toContain('\n');
+    for (const v of [7, 8]) {
+      const page = pagesOf(
+        InvoiceTemplate(
+          makeInput({
+            templateVersion: v,
+            kind: 'invoice',
+            billMode: true,
+            invoiceSubject: 'membership',
+          }),
+        ),
+      )[0]!;
+      expect(pageText(page)).toContain(wrapped);
+    }
   });
 });
 

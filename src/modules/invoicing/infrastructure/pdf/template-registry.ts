@@ -119,11 +119,27 @@
  *     two-page + v5 branch-line + v6 polish + v7 WHT/bank gates. Because the
  *     note + its `vatTreatment`/cert render inputs are threaded ONLY on a
  *     zero-rated document, every STANDARD render at v8 is byte-identical to v7.
+ *   - **v9** (2026-07-06, 093-wht-note-pdf-wrap) — the tenant WHT note (US5,
+ *     membership-only, added at v7) is shaped with a WIDER Thai wrap budget
+ *     (`WHT_NOTE_WRAP_THRESHOLD_CHARS` = 72) so the ~68-char TSCC accountant note
+ *     renders on ONE line in the full-width `whtNoteBlock` (523.28pt content
+ *     width) instead of being force-wrapped onto two by the global `shapeThai`
+ *     default (55, calibrated for the narrow seller header). The wider budget
+ *     gates on `templateVersion >= WHT_NOTE_WRAP_FIX_MIN_VERSION` (=9, see
+ *     templates/invoice-template.tsx), so a pinned pre-v9 document (resend /
+ *     void-overlay / async worker / any re-render at its stored
+ *     `pdf_template_version`) reproduces its ORIGINAL bytes — the note wraps at
+ *     the legacy 55 budget — preserving the SC-003 reproduce-the-original
+ *     guarantee, exactly like the v3–v8 gates. The wrap budget is the ONLY
+ *     change: a membership document without a WHT note (or with a ≤55 / >72-char
+ *     note) renders byte-identical at v9 as at v8, and every non-membership kind
+ *     is untouched. Measured: fontkit 2.0.4 / Sarabun-Regular note width 224.79pt
+ *     ≪ 523.28pt (worst-case single-line capacity 78 chars).
  */
 
-export const CURRENT_TEMPLATE_VERSION = 8 as const;
+export const CURRENT_TEMPLATE_VERSION = 9 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {
