@@ -23,7 +23,7 @@ vi.mock('next/navigation', () => ({
 
 const dict: Record<string, string> = {
   'receiptStatus.generating': 'Your tax receipt is being generated',
-  'receiptStatus.generatingShort': 'Generating…',
+  'receiptStatus.generatingShort': 'Receipt generating…',
   'receiptStatus.reassurance':
     'It is safe and will appear here automatically when it is ready.',
 };
@@ -69,7 +69,7 @@ describe('<ReceiptStatusWatcher> (088 T066a — member async receipt state)', ()
     ).toBeInTheDocument();
     // …while the VISIBLE chip is the SHORT, one-line label (compact in the
     // desktop invoice table + the 320px card — no long wrap).
-    expect(screen.getByText('Generating…')).toBeInTheDocument();
+    expect(screen.getByText('Receipt generating…')).toBeInTheDocument();
   });
 
   it('spinner uses a motion-safe animation (reduced-motion respected)', () => {

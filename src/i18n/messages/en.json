@@ -4545,7 +4545,7 @@
       },
       "receiptStatus": {
         "generating": "Your tax receipt is being generated",
-        "generatingShort": "Generating…",
+        "generatingShort": "Receipt generating…",
         "reassurance": "This usually takes just a moment. You can leave this page — your tax receipt is safe and will appear here automatically when it's ready."
       },
       "filters": {
