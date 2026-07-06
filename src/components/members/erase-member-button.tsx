@@ -17,7 +17,7 @@
  * neither focusable nor announced).
  */
 
-import { useState, useRef, useTransition, useCallback } from 'react';
+import { useState, useRef, useTransition, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -121,6 +121,26 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
     [resetState],
   );
 
+  // On open, Base UI focuses the Cancel button (in the footer) WITHOUT
+  // `preventScroll`, which — now that the content scrolls (max-h + overflow) —
+  // scrolls this destructive dialog past its red "permanent, cannot be undone"
+  // callout on a short / mobile viewport. Reset the scroll to the top AFTER
+  // Base UI's rAF-scheduled focus so the warning is the first thing shown.
+  // Double rAF: the focus scroll is itself queued in a rAF, so we must land the
+  // frame after it (before paint → no visible jump). Cancel stays focused for
+  // keyboard/SR; the callout is what the eye lands on.
+  useEffect(() => {
+    if (!open) return;
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>('[data-slot="alert-dialog-content"]')
+          ?.scrollTo({ top: 0 });
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
   const reasonOk = reason !== null;
   const methodOk = method !== null;
   const typedOk = typedConfirm === memberNumberDisplay;
@@ -173,7 +193,16 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         <ShieldXIcon className="size-4" aria-hidden="true" />
         {t('eraseCta')}
       </AlertDialogTrigger>
-      <AlertDialogContent initialFocus={cancelRef}>
+      {/* max-h + scroll so the tall erasure form never overflows a short
+          (mobile) viewport — the header/footer scroll with it; without this the
+          top + confirm button were clipped off-screen on phones.
+          `w-[calc(100%-2rem)]` overrides the base `w-full` so the dialog keeps a
+          1rem side gutter at ≤320px instead of touching the screen edge (its
+          ring/shadow was being clipped). */}
+      <AlertDialogContent
+        initialFocus={cancelRef}
+        className="w-[calc(100%-2rem)] max-h-[85dvh] overflow-y-auto overflow-x-hidden"
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('dialogTitle')}</AlertDialogTitle>
           {/* Prominent permanence callout (UX M3) — destructive treatment, not
@@ -183,30 +212,41 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
           </p>
         </AlertDialogHeader>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {/* Reason — legal basis */}
           <fieldset className="flex flex-col gap-2">
             <legend className="text-sm font-medium">{t('reasonLegend')}</legend>
-            <RadioGroup value={reason ?? ''} onValueChange={(v) => setReason(v as Reason)}>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="gdpr_erasure_request" id="erase-reason-gdpr" />
-                <Label htmlFor="erase-reason-gdpr" className="font-normal">{t('reasonGdpr')}</Label>
+            <RadioGroup value={reason ?? ''} onValueChange={(v) => setReason(v as Reason)} className="gap-1">
+              {/* items-start + a line-height-matched (h-5) radio wrapper so the O
+                  stays centered on the FIRST line even when a long / localized
+                  legal-basis label wraps on a narrow (mobile) dialog. */}
+              <div className="flex items-start gap-2">
+                <span className="flex h-5 items-center">
+                  <RadioGroupItem value="gdpr_erasure_request" id="erase-reason-gdpr" />
+                </span>
+                <Label htmlFor="erase-reason-gdpr" className="font-normal leading-5">{t('reasonGdpr')}</Label>
               </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="pdpa_deletion_request" id="erase-reason-pdpa" />
-                <Label htmlFor="erase-reason-pdpa" className="font-normal">{t('reasonPdpa')}</Label>
+              <div className="flex items-start gap-2">
+                <span className="flex h-5 items-center">
+                  <RadioGroupItem value="pdpa_deletion_request" id="erase-reason-pdpa" />
+                </span>
+                <Label htmlFor="erase-reason-pdpa" className="font-normal leading-5">{t('reasonPdpa')}</Label>
               </div>
             </RadioGroup>
           </fieldset>
 
-          {/* Art.12 attestation */}
+          {/* Art.12 attestation — same first-line-centered box treatment as the
+              legal-basis radios (h-5 wrapper + leading-5 label) so the checkbox
+              stays aligned with "I confirm…" even as the sentence wraps. */}
           <div className="flex items-start gap-2">
-            <Checkbox
-              id="erase-attestation"
-              checked={identityVerified}
-              onCheckedChange={(c) => setIdentityVerified(c === true)}
-            />
-            <Label htmlFor="erase-attestation" className="font-normal leading-snug">
+            <span className="flex h-5 items-center">
+              <Checkbox
+                id="erase-attestation"
+                checked={identityVerified}
+                onCheckedChange={(c) => setIdentityVerified(c === true)}
+              />
+            </span>
+            <Label htmlFor="erase-attestation" className="font-normal leading-5">
               {t('attestationLabel')}
             </Label>
           </div>
@@ -215,7 +255,7 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
           <div className="flex flex-col gap-2">
             <Label htmlFor="erase-method">{t('methodLabel')}</Label>
             <Select value={method ?? ''} onValueChange={(v) => setMethod(v as VerificationMethod)}>
-              <SelectTrigger id="erase-method" aria-label={t('methodLabel')}>
+              <SelectTrigger id="erase-method" aria-label={t('methodLabel')} className="w-full">
                 <SelectValue placeholder={t('methodPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
@@ -277,14 +317,16 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={loading}>
+          {/* min-h-11 (44px) tap targets — this is a destructive GDPR/PDPA
+              action; give both footer buttons a comfortable mobile hit-height. */}
+          <AlertDialogCancel ref={cancelRef} disabled={loading} className="min-h-11">
             {t('cancel')}
           </AlertDialogCancel>
           <AlertDialogAction
             aria-disabled={!canConfirm || undefined}
             aria-describedby={!canConfirm ? 'erase-gate-checklist' : undefined}
             aria-busy={loading}
-            className={buttonVariants({ variant: 'destructive' })}
+            className={`${buttonVariants({ variant: 'destructive' })} min-h-11`}
             onClick={(e) => {
               e.preventDefault();
               if (!canConfirm) return;
