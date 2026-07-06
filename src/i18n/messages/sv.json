@@ -4545,6 +4545,7 @@
       },
       "receiptStatus": {
         "generating": "Ditt skattekvitto genereras",
+        "generatingShort": "Genererar…",
         "reassurance": "Det tar oftast bara en stund. Du kan lämna sidan — ditt skattekvitto är säkert och visas här automatiskt när det är klart."
       },
       "filters": {
