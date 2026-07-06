@@ -18,10 +18,15 @@
  * size.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
-import { eventRegistrations } from '@/modules/events/infrastructure/schema';
-import { importCsv, makeImportCsvDeps } from '@/modules/events';
+import { runInTenant, db } from '@/lib/db';
+import {
+  eventRegistrations,
+  events,
+  type NewEventRow,
+} from '@/modules/events/infrastructure/schema';
+import { importCsv, makeImportCsvDeps, asEventId } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -41,9 +46,27 @@ function buildBudgetCsv(rows: number): Uint8Array {
 
 describe('H-10 — time-budget short-circuit semantics', () => {
   let tenant: TestTenant;
+  // 095 dup-event fix — attendees now bind to the admin-selected event,
+  // resolved via `eventsRepo.findById`. A null lookup makes
+  // `resolveSelectedEvent` throw and fail every row, so the selected
+  // event MUST exist. (This test passed on `main` WITHOUT a seed: the
+  // pre-095 code self-created an `eventcreate` event and the placeholder
+  // `csv_import_records` INSERT FK-failed non-fatally.) Seed one so the
+  // partial-commit rows have a valid target.
+  let seededEventId: string;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-chamber');
+    seededEventId = randomUUID();
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId: seededEventId,
+      source: 'eventcreate',
+      externalId: f6CsvTestSelectedEventStub.externalId,
+      name: f6CsvTestSelectedEventStub.name,
+      startDate: f6CsvTestSelectedEventStub.startDate,
+      category: null,
+    } satisfies NewEventRow);
   });
 
   afterAll(async () => {
@@ -80,7 +103,10 @@ describe('H-10 — time-budget short-circuit semantics', () => {
           tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000077'),
           bytes: csvBytes,
-          selectedEvent: f6CsvTestSelectedEventStub,
+          selectedEvent: {
+            ...f6CsvTestSelectedEventStub,
+            eventId: asEventId(seededEventId),
+          },
           batchSize: BATCH_SIZE,
           batchConcurrency: 1,
           timeBudgetMs: 400,

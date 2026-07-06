@@ -41,6 +41,8 @@ import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type { EventId } from '../../domain/branded-types';
+import type { EventAggregate } from '../../domain/event';
+import type { EventsRepository } from '../ports/events-repository';
 import {
   asCsvImportRecordId,
   type CsvImportRecordId,
@@ -420,6 +422,14 @@ type RowOutcome =
       readonly rowNumber: number;
       readonly matchType: MatchType;
       readonly eventCreated: boolean;
+      /**
+       * 095 — TRUE when the row attached to the pre-existing
+       * admin-selected event (always true on the CSV import path). Drives
+       * the summary to report the truth: a bound import touches ZERO
+       * event rows, so it counts toward neither `eventsCreated` nor
+       * `eventsUpdated`.
+       */
+      readonly eventBound: boolean;
     }
   | {
       readonly kind: 'row_failed';
@@ -1019,11 +1029,71 @@ function resolveAttendeeExternalId(
 // helper, so `parsed.ok` is guaranteed true on entry.
 type ParsedOkRow = Extract<ParsedRow, { ok: true }>;
 
+/**
+ * 095 dup-event fix — resolve the admin-selected event as the
+ * AUTHORITATIVE binding for every attendee in this import.
+ *
+ * The picker selection (`input.selectedEvent`) is the event the admin
+ * created + chose on `/admin/events/import`. Attendees MUST attach to
+ * THIS event; the shared `processAttendeeInTx` helper must NOT upsert a
+ * fresh `source:'eventcreate'` event from the CSV columns, because the
+ * events unique key `(tenant_id, source, external_id)` means an
+ * `admin_manual` selected event can never be reached by that upsert →
+ * the import would spawn a duplicate `eventcreate` event and strand the
+ * selected one with zero registrations.
+ *
+ * Reads the full `EventAggregate` (with the quota flags + `startDate`
+ * the downstream quota accounting needs) via `EventsRepository.findById`
+ * — the SAME single source of truth the FR-018 refund + state-change
+ * quota gates already use. The read runs inside the row's savepoint
+ * (RLS-scoped), which also RE-verifies tenant ownership: a cross-tenant
+ * or deleted event resolves to `null` and fails the row rather than
+ * falling back to a duplicate-spawning upsert.
+ *
+ * The route (`lookupEventByIdTimingSafe`) already verified existence +
+ * ownership before dispatch, so `null`/error here is an extreme edge
+ * (event deleted mid-import, or a transient DB fault) — surfaced as a
+ * `TxStageError('event_upsert', …)` so the savepoint rolls that row back
+ * and the admin sees it in the error report.
+ */
+async function resolveSelectedEvent(
+  eventsRepo: EventsRepository,
+  input: ImportCsvInput,
+): Promise<EventAggregate> {
+  const found = await eventsRepo.findById(
+    input.tenantId,
+    input.selectedEvent.eventId,
+  );
+  if (!found.ok) {
+    const detail =
+      found.error.kind === 'db_error' ? found.error.message : found.error.kind;
+    throw new TxStageError(
+      'event_upsert',
+      `selected-event lookup failed for import binding: ${detail}`,
+    );
+  }
+  if (found.value === null) {
+    throw new TxStageError(
+      'event_upsert',
+      `selected event ${input.selectedEvent.eventId} not found for import binding (deleted mid-import or hidden by RLS)`,
+    );
+  }
+  return found.value;
+}
+
 async function processOneRowInSavepoint(
   parsed: ParsedOkRow,
   input: ImportCsvInput,
   batchPorts: ImportCsvTxScopedPorts,
   deps: ImportCsvDeps,
+  /**
+   * 095 — batch-scoped, memoised resolver for the admin-selected target
+   * event. Invoked (lazily) only on the genuine fresh-insert /
+   * orphan-recovery path just before `processAttendeeInTx`, using the
+   * savepoint-scoped `eventsRepo`. Rows that idempotency-skip or
+   * state-change never call it, so pure re-uploads pay zero event reads.
+   */
+  getTargetEvent: (eventsRepo: EventsRepository) => Promise<EventAggregate>,
 ): Promise<RowOutcome> {
   try {
     return await batchPorts.runRowInSavepoint(async (ports) => {
@@ -1139,6 +1209,11 @@ async function processOneRowInSavepoint(
       const registeredAt = csvRow.registered_at
         ? new Date(csvRow.registered_at)
         : eventStart;
+      // 095 — bind to the admin-selected event (authoritative). Resolved
+      // once per batch (memoised) via the savepoint-scoped eventsRepo;
+      // passed as `targetEvent` so the shared helper attaches attendees
+      // to THIS event instead of upserting a duplicate `eventcreate` row.
+      const targetEvent = await getTargetEvent(ports.eventsRepo);
       const result = await processAttendeeInTx(
         {
           tenantId: input.tenantId,
@@ -1146,6 +1221,7 @@ async function processOneRowInSavepoint(
             actorType: 'csv_import',
             actorUserId: input.actorUserId,
           },
+          targetEvent,
           event: {
             externalId: csvRow.event_external_id,
             name: csvRow.event_name,
@@ -1283,6 +1359,7 @@ async function processOneRowInSavepoint(
         rowNumber: parsed.rowNumber,
         matchType: result.matchType,
         eventCreated: result.eventCreated,
+        eventBound: result.eventBound,
       };
     });
   } catch (e) {
@@ -1335,6 +1412,15 @@ async function processBatch(
   batch: ReadonlyArray<ParsedRow>,
   input: ImportCsvInput,
   deps: ImportCsvDeps,
+  /**
+   * 095 — import-scoped, memoised resolver for the admin-selected target
+   * event (created once in `importCsv`). Passed down to each row's
+   * savepoint; resolves lazily on the first genuine fresh-insert row and
+   * caches the value for the whole import, so the bind read happens ONCE
+   * regardless of `batchSize` (and never at all for pure-duplicate
+   * re-uploads).
+   */
+  getTargetEvent: (eventsRepo: EventsRepository) => Promise<EventAggregate>,
 ): Promise<ReadonlyArray<RowOutcome>> {
   // Pre-emit failures for parser-rejected rows BEFORE opening the tx
   // (these don't need DB work). This also reduces tx wall-clock by
@@ -1423,6 +1509,7 @@ async function processBatch(
           input,
           batchPorts,
           deps,
+          getTargetEvent,
         );
       }
     });
@@ -1987,6 +2074,33 @@ export async function importCsv(
   let nextBatchIdx = 0;
   let timeBudgetExceeded = false;
 
+  // 095 dup-event fix — import-scoped, memoised resolver for the
+  // admin-selected target event. The picker selection is the
+  // authoritative binding for EVERY row in this import, so it is
+  // resolved AT MOST ONCE (lazily, inside the first fresh row's
+  // savepoint tx) and reused across all batches. This keeps the bind a
+  // single `findById` per import regardless of `batchSize`, and pure
+  // re-uploads (all rows idempotency-skip) never read the event at all.
+  // A rare first-moment race across concurrent batch workers can issue a
+  // couple of redundant reads, but they return the same immutable event
+  // — no correctness impact.
+  //
+  // Assumption (accepted): because the event snapshot is read once and
+  // reused, a concurrent EXTERNAL flip of the event's quota flags
+  // (is_partner_benefit / is_cultural_event) mid-import is NOT observed by
+  // later rows. Acceptable under the single-admin operating model — same
+  // class as the documented refund/relink audit-vs-state race in
+  // process-attendee-in-tx.ts.
+  let resolvedTargetEvent: EventAggregate | undefined;
+  const getTargetEvent = async (
+    eventsRepo: EventsRepository,
+  ): Promise<EventAggregate> => {
+    if (resolvedTargetEvent === undefined) {
+      resolvedTargetEvent = await resolveSelectedEvent(eventsRepo, input);
+    }
+    return resolvedTargetEvent;
+  };
+
   async function worker(): Promise<void> {
     while (true) {
       if (timeBudgetExceeded) return;
@@ -1997,7 +2111,7 @@ export async function importCsv(
       const idx = nextBatchIdx++;
       if (idx >= batches.length) return;
       const batch = batches[idx] as ReadonlyArray<ParsedRow>;
-      const outcomes = await processBatch(batch, input, deps);
+      const outcomes = await processBatch(batch, input, deps, getTargetEvent);
       for (const outcome of outcomes) {
         switch (outcome.kind) {
           case 'parse_failed':
@@ -2025,10 +2139,19 @@ export async function importCsv(
           case 'inserted':
             summary.rowsProcessed += 1;
             summary.matchCounts[outcome.matchType] += 1;
-            if (outcome.eventCreated) {
-              summary.eventsCreated += 1;
-            } else {
-              summary.eventsUpdated += 1;
+            // 095 — a bound import attaches registrations to a
+            // pre-existing admin-selected event; it neither creates nor
+            // updates an event row, so it counts toward NEITHER counter.
+            // (Pre-095 this branch fell into `eventsUpdated`, reporting
+            // eventsUpdated === rowsProcessed even though zero event rows
+            // were written.) The created-vs-updated split only applies to
+            // the webhook upsert path (`eventBound === false`).
+            if (!outcome.eventBound) {
+              if (outcome.eventCreated) {
+                summary.eventsCreated += 1;
+              } else {
+                summary.eventsUpdated += 1;
+              }
             }
             break;
           case 'row_failed':

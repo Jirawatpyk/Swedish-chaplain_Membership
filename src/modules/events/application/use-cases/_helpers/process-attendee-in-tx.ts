@@ -53,6 +53,7 @@ import {
   type MatchResolutionView,
   type QuotaEffect,
 } from '../../../domain/event-registration';
+import type { EventAggregate } from '../../../domain/event';
 import type { MatchType } from '../../../domain/value-objects/match-type';
 import type { PaymentStatus } from '../../../domain/value-objects/payment-status';
 import {
@@ -298,10 +299,33 @@ export interface ProcessAttendeeInTxInput {
    */
   readonly onStageChange?: (stage: FailureStage) => void;
   /**
+   * Pre-resolved target event — the AUTHORITATIVE binding for this
+   * attendee (F6 095 dup-event fix).
+   *
+   * When PRESENT (CSV admin-import path): attendees attach to THIS
+   * event and NO event upsert runs. The caller has already resolved the
+   * admin-selected event (via `EventsRepository.findById` inside the
+   * tenant-scoped tx) and verified it exists + belongs to the tenant.
+   * The events unique key is `(tenant_id, source, external_id)`, so an
+   * `admin_manual` selected event can never be reached by an
+   * `source:'eventcreate'` upsert — upserting from the CSV columns would
+   * therefore spawn a DUPLICATE `eventcreate` event and strand the
+   * admin's selected event with zero registrations. Binding to the
+   * pre-resolved event closes that hole. `input.event` becomes
+   * metadata-only in this mode (the picker selection is authoritative;
+   * the CSV's `event_*` columns are the FR-019b mismatch guard's job,
+   * not a silent second event).
+   *
+   * When ABSENT (webhook path): the helper upserts the event from
+   * `input.event` with `source:'eventcreate'` (FR-010 last-write-wins),
+   * exactly as before — the webhook has no pre-selected event.
+   */
+  readonly targetEvent?: EventAggregate;
+  /**
    * Event sub-object — pre-validated by the caller (the webhook caller
    * applies `EventCreatePayloadV1.event`; the CSV caller maps a
    * `CsvRow` into this shape per the column-mapping decisions made
-   * upstream).
+   * upstream). Ignored for the event binding when `targetEvent` is set.
    */
   readonly event: {
     readonly externalId: string;
@@ -346,7 +370,23 @@ export interface ProcessAttendeeInTxInput {
 
 export interface ProcessAttendeeInTxOutput {
   readonly registrationId: RegistrationId;
+  /**
+   * TRUE only on the webhook UPSERT path when a NEW event row was
+   * inserted. On the bound-event path (`targetEvent` supplied) this is
+   * always FALSE — see `eventBound` to distinguish "webhook updated an
+   * existing event" from "attached to a pre-existing bound event".
+   */
   readonly eventCreated: boolean;
+  /**
+   * TRUE when this call attached to a pre-resolved `targetEvent` (the
+   * CSV admin-import bound path) — the event row was neither created nor
+   * updated, only read. Callers use this to keep the "events created /
+   * updated" summary counters honest: a bound import touches ZERO event
+   * rows, so it must report eventsCreated=0 AND eventsUpdated=0.
+   * FALSE on the webhook upsert path (where eventCreated then legitimately
+   * discriminates created-vs-updated).
+   */
+  readonly eventBound: boolean;
   readonly matchType: MatchType;
   readonly matchedMemberId: MemberId | null;
   readonly quotaEffect: QuotaEffect;
@@ -515,55 +555,75 @@ export async function processAttendeeInTx(
   const { eventsRepo, registrationsRepo, attendeeMatcher, audit } = ports;
   const reportStage = input.onStageChange ?? (() => {});
 
-  // 2. Event upsert (FR-010 last-write-wins)
-  reportStage('event_upsert');
-  const eventUpsert = await eventsRepo.upsert({
-    tenantId: input.tenantId,
-    source: 'eventcreate',
-    externalId: asExternalEventId(input.event.externalId),
-    name: input.event.name,
-    description: input.event.description,
-    startDate: input.event.startDate,
-    endDate: input.event.endDate,
-    location: input.event.location,
-    category: input.event.category,
-    eventcreateUrl: input.event.eventcreateUrl,
-    metadata: input.event.metadata,
-  });
-  if (!eventUpsert.ok) {
-    const e = eventUpsert.error;
-    let msg: string;
-    if (e.kind === 'db_error') {
-      msg = e.message;
-    } else if (e.kind === 'invariant_violation') {
-      msg = `events.upsert invariant violated: ${e.invariant}`;
-      logger.fatal(
-        {
-          event: 'f6_events_repo_invariant_violation',
-          tenantId: input.tenantId,
-          invariant: e.invariant,
-        },
-        '[F6] events.upsert returned no row — likely RLS / schema drift',
-      );
-    } else {
-      msg = `event upsert rejected: ${e.kind}`;
-      logger.fatal(
-        {
-          event: 'f6_use_case_called_unimplemented_port',
-          tenantId: input.tenantId,
-          method: e.method,
-          futureTask: e.futureTask,
-        },
-        '[F6] events.upsert called an unimplemented port stub',
-      );
-    }
-    // R3.3.1 / R5.8 — thread synthetic cause carrying the error kind
-    // so SRE forensics distinguish db_error / invariant_violation /
-    // unimplemented via cause.name + cause.message on the audit
-    // fallback log.
-    throw new TxStageError('event_upsert', msg, {
-      cause: makeSyntheticCause('EventsRepoError', `${e.kind}: ${msg}`),
+  // 2. Resolve the event this attendee attaches to.
+  //
+  //   - Bound-event path (CSV admin-import — 095 dup-event fix): a
+  //     pre-resolved `targetEvent` IS the authoritative binding. No
+  //     upsert runs, so the import can never spawn a duplicate
+  //     `eventcreate` event alongside the admin's selected event. The
+  //     event was NOT created by this call (the admin created + selected
+  //     it earlier), so `eventCreated=false`.
+  //
+  //   - Upsert path (webhook — FR-010 last-write-wins): no pre-selected
+  //     event; upsert from the payload with `source:'eventcreate'`,
+  //     exactly as before.
+  let event: EventAggregate;
+  let eventCreated: boolean;
+  if (input.targetEvent !== undefined) {
+    event = input.targetEvent;
+    eventCreated = false;
+  } else {
+    reportStage('event_upsert');
+    const eventUpsert = await eventsRepo.upsert({
+      tenantId: input.tenantId,
+      source: 'eventcreate',
+      externalId: asExternalEventId(input.event.externalId),
+      name: input.event.name,
+      description: input.event.description,
+      startDate: input.event.startDate,
+      endDate: input.event.endDate,
+      location: input.event.location,
+      category: input.event.category,
+      eventcreateUrl: input.event.eventcreateUrl,
+      metadata: input.event.metadata,
     });
+    if (!eventUpsert.ok) {
+      const e = eventUpsert.error;
+      let msg: string;
+      if (e.kind === 'db_error') {
+        msg = e.message;
+      } else if (e.kind === 'invariant_violation') {
+        msg = `events.upsert invariant violated: ${e.invariant}`;
+        logger.fatal(
+          {
+            event: 'f6_events_repo_invariant_violation',
+            tenantId: input.tenantId,
+            invariant: e.invariant,
+          },
+          '[F6] events.upsert returned no row — likely RLS / schema drift',
+        );
+      } else {
+        msg = `event upsert rejected: ${e.kind}`;
+        logger.fatal(
+          {
+            event: 'f6_use_case_called_unimplemented_port',
+            tenantId: input.tenantId,
+            method: e.method,
+            futureTask: e.futureTask,
+          },
+          '[F6] events.upsert called an unimplemented port stub',
+        );
+      }
+      // R3.3.1 / R5.8 — thread synthetic cause carrying the error kind
+      // so SRE forensics distinguish db_error / invariant_violation /
+      // unimplemented via cause.name + cause.message on the audit
+      // fallback log.
+      throw new TxStageError('event_upsert', msg, {
+        cause: makeSyntheticCause('EventsRepoError', `${e.kind}: ${msg}`),
+      });
+    }
+    event = eventUpsert.value.event;
+    eventCreated = eventUpsert.value.eventCreated;
   }
 
   // 3. Attendee match (read-only against F3 — runs inside tx for
@@ -597,7 +657,7 @@ export async function processAttendeeInTx(
   reportStage('registration_insert');
   const regInsert = await registrationsRepo.insertOnConflictDoNothing({
     tenantId: input.tenantId,
-    eventId: eventUpsert.value.event.eventId,
+    eventId: event.eventId,
     externalId: asExternalAttendeeId(input.attendee.externalId),
     attendee: {
       email: asAttendeeEmail(input.attendee.email),
@@ -675,7 +735,6 @@ export async function processAttendeeInTx(
   // `pending → paid` UPDATES the registration in maybeApplyStateChange
   // and the next `applyQuotaEffect` call (driven by the same use-case
   // re-running for the row) credits the seat at that point.
-  const event = eventUpsert.value.event;
   const matchedMemberId = matchResult.value.resolution.matchedMemberId;
   const shouldApplyQuota =
     regInsert.value.isNewRegistration &&
@@ -1004,7 +1063,8 @@ export async function processAttendeeInTx(
 
   return {
     registrationId: regInsert.value.registration.registrationId,
-    eventCreated: eventUpsert.value.eventCreated,
+    eventCreated,
+    eventBound: input.targetEvent !== undefined,
     matchType: matchResult.value.resolution.type,
     matchedMemberId,
     quotaEffect,

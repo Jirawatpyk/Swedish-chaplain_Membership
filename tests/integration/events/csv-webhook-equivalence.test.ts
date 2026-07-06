@@ -372,9 +372,19 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
         // Match the webhook-created event shape so the cross-path
         // snapshot comparison succeeds. Webhook ingest sets these
         // fields from the payload's event sub-object.
+        //
+        // 095 dup-event fix: the CSV import now binds attendees to this
+        // pre-seeded (admin-selected) event and NO LONGER upserts the
+        // event's own columns from the CSV. So the seeded row must
+        // already carry the same `category` the webhook derives from its
+        // payload (`att.isCulturalEvent ? 'cultural' : 'networking'`) —
+        // it models the admin creating the event with that category
+        // before importing. Registration-level equivalence (the real
+        // FR-027 guarantee) is unaffected and still asserted below.
         externalId: FIXTURE_EVENT.externalId,
         name: FIXTURE_EVENT.name,
         startDate: new Date(FIXTURE_EVENT.start),
+        category: FIXTURE_EVENT.isCultural ? 'cultural' : 'networking',
         isPartnerBenefit: FIXTURE_EVENT.isPartner,
         isCulturalEvent: FIXTURE_EVENT.isCultural,
       });
@@ -423,6 +433,18 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
         .from(eventRegistrations)
         .where(eq(eventRegistrations.tenantId, tenantB.ctx.slug)),
     );
+
+    // 095 — the CSV path now writes NO event row (it binds to the seeded
+    // event), so the events-half of this equivalence is controlled by
+    // this test's own seed on BOTH sides (FIXTURE_EVENT). Guard against a
+    // residual CSV-side upsert regression: assert the import spawned no
+    // SECOND event. (Because the seeded event is `eventcreate` +
+    // FIXTURE_EVENT.externalId, a same-key upsert would MERGE rather than
+    // add a row — the cross-source no-duplicate proof for an
+    // `admin_manual` selected event lives in
+    // csv-import-selected-event-binding.test.ts. The registration-half
+    // below carries the FR-027 attendee equivalence.)
+    expect(eventsB).toHaveLength(1);
 
     // Equivalence assertion — modulo bookkeeping timestamps + UUIDs.
     expect(summariseEvents(eventsA)).toEqual(summariseEvents(eventsB));
