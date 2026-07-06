@@ -158,17 +158,22 @@ export function ReceiptStatusWatcher({
       data-testid="receipt-status-watcher"
       className={cn(
         buttonVariants({ variant: 'outline', size: 'sm' }),
-        // 088 B3 review fix — the "generating" label is a full sentence;
-        // buttonVariants carries whitespace-nowrap, so on a 320px portal card
-        // (overflow-hidden Card) the nowrap chip is hard-clipped (WCAG 1.4.10
-        // Reflow / content loss). Let it wrap + grow, mirroring the sibling
-        // combined-download button treatment in portal-invoice-card-list.
-        'min-h-11 h-auto gap-1 px-3 cursor-progress whitespace-normal text-left',
+        // 088 B3 (revised) — the VISIBLE label is now the SHORT "Generating…"
+        // chip, so it stays one compact line in BOTH the desktop invoice-table
+        // actions cell (the full sentence + whitespace-normal previously wrapped
+        // to a tall multi-line chip — "ขึ้นยาว", unlike the admin table's compact
+        // "Generating…") AND the 320px portal card (short label doesn't clip, so
+        // the whitespace-normal wrap workaround is no longer needed). The full
+        // sentence + reassurance ride in the sr-only span → SR parity unchanged.
+        'min-h-11 gap-1 px-3 cursor-progress',
         className,
       )}
     >
       {spinner}
-      <span>{t('receiptStatus.generating')}</span>
+      {/* Visible chip = SHORT label; aria-hidden so the SR hears the full
+          sentence (sr-only below) once, not "Generating…" + the full sentence. */}
+      <span aria-hidden="true">{t('receiptStatus.generatingShort')}</span>
+      <span className="sr-only">{t('receiptStatus.generating')}</span>
       <span className="sr-only">{t('receiptStatus.reassurance')}</span>
     </span>
   );

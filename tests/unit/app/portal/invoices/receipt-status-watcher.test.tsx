@@ -23,6 +23,7 @@ vi.mock('next/navigation', () => ({
 
 const dict: Record<string, string> = {
   'receiptStatus.generating': 'Your tax receipt is being generated',
+  'receiptStatus.generatingShort': 'Generating…',
   'receiptStatus.reassurance':
     'It is safe and will appear here automatically when it is ready.',
 };
@@ -62,9 +63,13 @@ describe('<ReceiptStatusWatcher> (088 T066a — member async receipt state)', ()
     expect(region).toHaveAttribute('aria-live', 'polite');
     expect(region).toHaveAttribute('aria-busy', 'true');
     expect(region).toHaveAttribute('role', 'status');
+    // Full sentence rides in the sr-only span (SR parity)…
     expect(
       screen.getByText('Your tax receipt is being generated'),
     ).toBeInTheDocument();
+    // …while the VISIBLE chip is the SHORT, one-line label (compact in the
+    // desktop invoice table + the 320px card — no long wrap).
+    expect(screen.getByText('Generating…')).toBeInTheDocument();
   });
 
   it('spinner uses a motion-safe animation (reduced-motion respected)', () => {
