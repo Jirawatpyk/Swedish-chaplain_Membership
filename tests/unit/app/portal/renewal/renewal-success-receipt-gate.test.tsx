@@ -112,6 +112,10 @@ function invoiceWith(status: string) {
     receiptDocumentNumberRaw: 'RC-2026-000010',
     documentNumber: { raw: 'INV-2026-000010' },
     billDocumentNumberRaw: null,
+    // 092 follow-up — the receipt gate is blob-gated on `receiptPdf !== null`
+    // (parity with the three sibling receipt gates). A real paid membership
+    // renewal always carries a separate receiptPdf blob.
+    receiptPdf: { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
   };
 }
 
@@ -148,6 +152,21 @@ describe('RenewalSuccessPage — §86/4 receipt stays downloadable after a credi
     getInvoiceMock.mockResolvedValue({ ok: true, value: invoiceWith('paid') });
     const html = await renderPage();
     expect(html).toContain('data-testid="receipt-download-link"');
+  });
+
+  it('credited + rendered but receiptPdf NULL (as-paid / corrupt) → does NOT render the receipt button', async () => {
+    // 092 follow-up — the gate now also requires `receiptPdf !== null` so it
+    // never renders a receipt download whose /receipt/pdf endpoint has no
+    // separate blob to serve (an as-paid row's receipt IS the main pdf, or a
+    // corrupt two-step row). It falls through to the invoice/bill download.
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: { ...invoiceWith('credited'), receiptPdf: null },
+    });
+    const html = await renderPage();
+    expect(html).not.toContain('data-testid="receipt-download-link"');
+    expect(html).not.toContain('data-kind="receipt"');
+    expect(html).toContain('data-kind="invoice"');
   });
 
   it('issued (not receipt-bearing) → renders the INVOICE/bill download (unchanged)', async () => {

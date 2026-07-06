@@ -672,9 +672,7 @@ export default async function InvoiceDetailPage({
                 (receiptDocumentNumberRaw null) and render nothing here.
                 thai-tax review 2026-06-07. */}
             {invoice.receiptDocumentNumberRaw &&
-              (invoice.status === 'paid' ||
-                invoice.status === 'partially_credited' ||
-                invoice.status === 'credited') && (
+              invoiceStatusHasReceipt(invoice.status) && (
               <div>
                 <dt className="text-muted-foreground">{t('fields.receiptNumber')}</dt>
                 <dd
@@ -707,11 +705,15 @@ export default async function InvoiceDetailPage({
             </div>
           </dl>
 
-          {/* Payment details — visible once the invoice is paid. Shows
-              who recorded the payment, when, and the supporting
-              reference/notes so finance + audit both have the story
-              on one screen. */}
-          {invoice.status === 'paid' && (
+          {/* Payment details — visible once a payment has been recorded. Shows
+              who recorded the payment, when, and the supporting reference/notes
+              so finance + audit both have the story on one screen. Gated on the
+              receipt-bearing set {paid, partially_credited, credited} (092): a
+              recorded payment does NOT disappear when a §86/10 credit note later
+              reduces the invoice — the panel would otherwise vanish on the first
+              credit note, hiding who/when the payment was recorded. `void` is
+              excluded (its own path). */}
+          {invoiceStatusHasReceipt(invoice.status) && (
             <section
               id="payment"
               className="mt-2 scroll-mt-20 rounded-md border bg-muted/30 p-4"

@@ -22,6 +22,11 @@
  *   reuse (RC NULL) + paid + rendered  → invoice.receiptPdf.blobKey
  *                                        filename = {invoiceDocNum}-receipt.pdf
  *                                        (distinguishes from the sibling PDF)
+ *   as-paid (pdfDocKind receipt_*)     → invoice.pdf.blobKey — the §86/4
+ *                                        combined receipt (or §105 official
+ *                                        receipt) IS the main PDF; receiptPdf
+ *                                        is NULL BY DESIGN (issueEventInvoiceAsPaid),
+ *                                        NOT corruption. Served, not 502.
  *   paid + pending                     → 'receipt_pdf_pending' (425 to
  *                                        member; admin gets fallback to
  *                                        invoice.pdf — see admin route)
@@ -164,16 +169,38 @@ export async function getReceiptPdfSignedUrl(
   //     does not collide with the sibling invoice PDF download
   //   - separate-mode: `{receiptDocNum}.pdf` (e.g. RC-2026-0001.pdf)
   const combinedMode = invoice.receiptDocumentNumberRaw === null;
-  if (!invoice.receiptPdf) {
-    // Paid + receiptPdfStatus !== 'failed' (we passed the gate above)
-    // but no blob key on the row — corrupt-state path. Route layer
-    // maps blob_missing to 502.
+
+  // Resolve which PHYSICAL blob holds the §86/4 receipt bytes.
+  //
+  //   - Two-step flow (record-payment / bill-first / TIN-combined): the §86/4
+  //     receipt is a SEPARATE `receiptPdf` blob rendered at payment; the main
+  //     `pdf` is the (now non-tax) ใบแจ้งหนี้ bill / invoice, so
+  //     `pdfDocKind === 'invoice'`.
+  //   - As-paid flow (issueEventInvoiceAsPaid): there is exactly ONE document
+  //     and the §86/4 combined receipt (`pdfDocKind === 'receipt_combined'`) or
+  //     §105 ใบเสร็จรับเงิน (`'receipt_separate'`) IS the main `pdf` blob —
+  //     `receiptPdf` is NULL BY DESIGN. Serve the main pdf: the receipt
+  //     genuinely exists, this is NOT corruption. (092 follow-up — before this,
+  //     a direct hit on /receipt/pdf for such a row, paid OR credited, fell into
+  //     the blob_missing 502 below and misled the caller into seeing a corrupt
+  //     state that was actually by-design.)
+  const mainPdfIsReceipt =
+    invoice.pdf !== null &&
+    (invoice.pdfDocKind === 'receipt_combined' ||
+      invoice.pdfDocKind === 'receipt_separate');
+  const receiptBlob =
+    invoice.receiptPdf ?? (mainPdfIsReceipt ? invoice.pdf : null);
+  if (!receiptBlob) {
+    // receiptPdf null AND the main pdf is NOT a receipt (a two-step row whose
+    // separate receipt blob key is genuinely missing) — corrupt-state path.
+    // Route layer maps blob_missing to 502 + the operator alert. Do NOT fold
+    // real corruption into the as-paid branch above.
     return err({
       code: 'blob_missing',
       key: `invoicing/${input.tenantId}/${invoice.fiscalYear}/${invoice.invoiceId}_receipt_v*.pdf`,
     });
   }
-  const blobKey = invoice.receiptPdf.blobKey;
+  const blobKey = receiptBlob.blobKey;
   const filename = combinedMode
     ? `${invoice.documentNumber?.raw ?? 'receipt'}-receipt.pdf`
     : `${invoice.receiptDocumentNumberRaw}.pdf`;
@@ -220,7 +247,7 @@ export async function getReceiptPdfSignedUrl(
       // one. Pulled from the persisted snapshot on the row (not
       // CURRENT_TEMPLATE_VERSION) so historical downloads of an old
       // template stay attributable.
-      receipt_pdf_template_version: invoice.receiptPdf.templateVersion,
+      receipt_pdf_template_version: receiptBlob.templateVersion,
       actor_role: input.actorRole,
       route: 'get-receipt-pdf-signed-url',
     },

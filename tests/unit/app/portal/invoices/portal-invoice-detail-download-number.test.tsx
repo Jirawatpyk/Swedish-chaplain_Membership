@@ -337,4 +337,16 @@ describe('PortalInvoiceDetailPage — §86/4 receipt stays downloadable after a 
     const html = await renderPage();
     expect(html).toContain('data-testid="portal-download-receipt-marker"');
   });
+
+  it('credited separate-mode → the Receipt No. field still renders (092 finding #4 — gate centralised on invoiceStatusHasReceipt)', async () => {
+    // The receipt-NUMBER display gate was hand-inlining the {paid,
+    // partially_credited, credited} set; it now calls `invoiceStatusHasReceipt`.
+    // Behaviour is identical — a credited row keeps showing its permanent §87
+    // receipt number. The label key `fields.receiptNumber` renders only in this
+    // one block (mocked `t` echoes the key).
+    getInvoiceMock.mockResolvedValue({ ok: true, value: creditedSeparateInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('fields.receiptNumber');
+    expect(html).toContain('RC-2026-000010');
+  });
 });

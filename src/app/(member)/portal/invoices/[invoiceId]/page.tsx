@@ -594,9 +594,7 @@ export default async function PortalInvoiceDetailPage({
               after a credit note corrects the invoice (the credit-note
               section below carries the correction). thai-tax review 2026-06-07. */}
           {invoice.receiptDocumentNumberRaw &&
-            (invoice.status === 'paid' ||
-              invoice.status === 'partially_credited' ||
-              invoice.status === 'credited') && (
+            invoiceStatusHasReceipt(invoice.status) && (
             <div>
               <p className="text-caption uppercase tracking-wide text-muted-foreground">
                 {t('fields.receiptNumber')}

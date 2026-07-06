@@ -229,7 +229,14 @@ export default async function RenewalSuccessPage({
           if (
             invoice &&
             invoiceStatusHasReceipt(invoice.status) &&
-            invoice.receiptPdfStatus === 'rendered'
+            invoice.receiptPdfStatus === 'rendered' &&
+            // 092 follow-up — match the three sibling receipt gates (portal
+            // detail `showReceiptPdf`, list-row view-model `showReceipt`, admin
+            // `hasReceiptPdf`), which are ALL blob-gated on `receiptPdf !== null`.
+            // Without it an as-paid row (receiptPdf null BY DESIGN — the main pdf
+            // IS the receipt) or a corrupt two-step row would render a receipt
+            // button whose /receipt/pdf endpoint has no separate blob to serve.
+            invoice.receiptPdf !== null
           ) {
             // Receipt rendered on a receipt-bearing invoice — the legal §86/4 +
             // §105ทวิ doc is what the member should grab. 092 — the status gate is
