@@ -21,9 +21,14 @@
  * `event_registrations` is exactly 4.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
-import { eventRegistrations } from '@/modules/events/infrastructure/schema';
+import { runInTenant, db } from '@/lib/db';
+import {
+  eventRegistrations,
+  events,
+  type NewEventRow,
+} from '@/modules/events/infrastructure/schema';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { asUserId } from '@/modules/auth';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -41,9 +46,29 @@ const CSV_WITH_BAD_ROW = [
 
 describe('H-8 — savepoint isolation (1 bad row of 5 must not poison 4 good rows)', () => {
   let tenant: TestTenant;
+  // 095 dup-event fix — the CSV import now binds attendees to the
+  // admin-selected event, which it resolves via
+  // `eventsRepo.findById(selectedEvent.eventId)`. If that lookup returns
+  // null, `resolveSelectedEvent` throws a `TxStageError` that fails
+  // EVERY registration row, so the selected event MUST pre-exist. (This
+  // test passed on `main` WITHOUT a seed: the pre-095 code self-created
+  // an `eventcreate` event from the CSV columns, and the placeholder
+  // `csv_import_records` INSERT just FK-failed non-fatally.) Seed a real
+  // event and bind to it.
+  let seededEventId: string;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-chamber');
+    seededEventId = randomUUID();
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId: seededEventId,
+      source: 'eventcreate',
+      externalId: f6CsvTestSelectedEventStub.externalId,
+      name: f6CsvTestSelectedEventStub.name,
+      startDate: f6CsvTestSelectedEventStub.startDate,
+      category: null,
+    } satisfies NewEventRow);
   });
 
   afterAll(async () => {
@@ -59,7 +84,7 @@ describe('H-8 — savepoint isolation (1 bad row of 5 must not poison 4 good row
       tenantSlug: tenant.ctx.slug,
       actorUserId: asUserId('00000000-0000-0000-0000-000000000088'),
       bytes: new TextEncoder().encode(CSV_WITH_BAD_ROW),
-      selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: f6CsvTestSelectedEventStub.eventId as string },
+      selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: seededEventId },
     });
 
     expect(result.kind).toBe('completed');
