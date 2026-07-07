@@ -899,9 +899,17 @@ export async function processAttendeeInTx(
       (existingReg.quotaEffect.countedAgainstPartnership ||
         existingReg.quotaEffect.countedAgainstCulturalQuota);
     if (hasMatchedQuotaScope) {
+      // #8 — year-scoped quota lock (was per-event). Derive the calendar
+      // year of the event's start_date in Asia/Bangkok so the refund
+      // credit-back serialises against concurrent same-year deliveries
+      // on the SAME (member, year) key the fresh-insert path uses.
+      const refundFiscalYear = deriveFiscalYear(
+        event.startDate.toISOString(),
+        F6_FISCAL_YEAR_START_MONTH,
+      );
       try {
         await ports.advisoryLockAcquirer.acquire(
-          buildQuotaLockKey(input.tenantId, matchedMemberId!, event.eventId),
+          buildQuotaLockKey(input.tenantId, matchedMemberId!, refundFiscalYear),
         );
       } catch (e) {
         // R3.3.1 / R5.3.1 / Round 4 I-4 — thread raw Error as cause so

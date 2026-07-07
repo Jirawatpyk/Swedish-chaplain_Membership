@@ -67,8 +67,11 @@ import type {
 } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import {
   registrationsRepoErrorMessage,
+  eventsRepoErrorMessage,
 } from './_helpers/repo-error-message';
 import {
   wrapAuditEmitFailure,
@@ -106,6 +109,7 @@ export type EraseAttendeePiiError =
       readonly message: string;
       readonly cause: EventsRepositoryError;
     }
+  | { readonly kind: 'event_not_found'; readonly eventId: EventId }
   | {
       readonly kind: 'registrations_repo_error';
       readonly message: string;
@@ -220,24 +224,88 @@ export async function eraseAttendeePii(
     return err(wrapAuditEmitFailure(requestedEmit.error));
   }
 
-  // (4) If counted, acquire advisory lock + emit per-scope credit-back
-  // audits (reuse `quota_credit_back_archive` event type for the
-  // "scope flag retracted" semantic — same as event-wide archive).
+  // (4) Acquire the advisory lock + emit per-scope credit-back audits
+  // (reuse `quota_credit_back_archive` event type for the "scope flag
+  // retracted" semantic — same as event-wide archive).
+  //
+  // #16 — the credit-back is decided from a re-read of the registration
+  // taken UNDER the lock, not from the pre-lock step-1 snapshot. A
+  // concurrent toggle/refund can flip `counted_against_*` between the
+  // snapshot and the lock acquisition; without the re-read the erasure
+  // would emit a stale credit-back audit / `quotaReversals` count
+  // (audit-fidelity bug — the row is still hard-deleted and live consumed
+  // self-heals on read). To make the re-read meaningful, the lock gate is
+  // widened to `memberId !== null` (acquire whenever a member is matched,
+  // even if the stale snapshot said not-counted) so the flip is serialised.
   let partnershipReversals = 0;
   let culturalReversals = 0;
 
-  const wasPartnership = registration.quotaEffect.countedAgainstPartnership;
-  const wasCultural = registration.quotaEffect.countedAgainstCulturalQuota;
   const memberId = registration.match.matchedMemberId;
 
-  if ((wasPartnership || wasCultural) && memberId !== null) {
+  if (memberId !== null) {
+    // #8 — year-scoped quota lock. The registration aggregate does not
+    // carry the event's start_date, so load the event to derive the
+    // calendar year of its start_date (the same key the ingest / refund /
+    // toggle / archive / relink paths acquire).
+    const eventLookup = await deps.eventsRepo.findById(
+      input.tenantId,
+      registration.eventId,
+    );
+    if (!eventLookup.ok) {
+      return err({
+        kind: 'events_repo_error',
+        message: eventsRepoErrorMessage(eventLookup.error),
+        cause: eventLookup.error,
+      });
+    }
+    if (eventLookup.value === null) {
+      return err({ kind: 'event_not_found', eventId: registration.eventId });
+    }
+    const fiscalYear = deriveFiscalYear(
+      eventLookup.value.startDate.toISOString(),
+      F6_FISCAL_YEAR_START_MONTH,
+    );
     try {
       await deps.advisoryLockAcquirer.acquire(
-        buildQuotaLockKey(input.tenantId, memberId, registration.eventId),
+        buildQuotaLockKey(input.tenantId, memberId, fiscalYear),
       );
     } catch (e) {
       return err(wrapLockFailure(e));
     }
+
+    // #16 — re-read the registration UNDER the lock and recompute the
+    // counted flags from the FRESH row. This is the correctness boundary:
+    // any concurrent toggle/refund committed before we acquired is now
+    // visible here.
+    const freshLookup = await deps.registrationsRepo.findById(
+      input.tenantId,
+      input.registrationId,
+    );
+    if (!freshLookup.ok) {
+      return err({
+        kind: 'registrations_repo_error',
+        message: registrationsRepoErrorMessage(freshLookup.error),
+        cause: freshLookup.error,
+      });
+    }
+    const fresh = freshLookup.value;
+    if (fresh === null) {
+      // The row vanished under the lock (a concurrent hard-delete — e.g. a
+      // member-wide erasure sweep). Treat as already-handled: emit no
+      // credit-back and skip the hardDelete below (which would return
+      // `invariant_violation` on a missing row). The concurrent erasure
+      // owns the `pii_erasure_completed` receipt.
+      return ok({
+        alreadyErased: true,
+        quotaReversals: { partnership: 0, cultural: 0 },
+      });
+    }
+    const wasPartnership = fresh.quotaEffect.countedAgainstPartnership;
+    const wasCultural = fresh.quotaEffect.countedAgainstCulturalQuota;
+    // A counted row always has a matched member (DB CHECK), so the fresh
+    // member is non-null whenever a credit-back fires; fall back to the
+    // locked member for the null-typed case.
+    const creditBackMemberId = fresh.match.matchedMemberId ?? memberId;
 
     if (wasPartnership) {
       const r = await safeAuditEmit(deps.audit, {
@@ -250,7 +318,7 @@ export async function eraseAttendeePii(
         payload: {
           severity: 'info',
           registrationId: input.registrationId,
-          memberId,
+          memberId: creditBackMemberId,
           scope: 'partnership',
           allotmentAfter: 0, // see archive-event.ts SUGG-2; for erasure path the cache-lookup is overkill at SweCham scale (1 row at a time)
         },
@@ -272,7 +340,7 @@ export async function eraseAttendeePii(
         payload: {
           severity: 'info',
           registrationId: input.registrationId,
-          memberId,
+          memberId: creditBackMemberId,
           scope: 'cultural',
           allotmentAfter: 0,
         },

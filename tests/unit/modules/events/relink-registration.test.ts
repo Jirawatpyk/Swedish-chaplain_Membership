@@ -583,4 +583,181 @@ describe('relinkRegistration — F6 Phase 9 / US6 (Round-1 code-H1)', () => {
       expect(updateMatchAndQuotaMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  /**
+   * #13 — relink gates the NEW-member decrement on a `paid|free` ticket.
+   *
+   * Bug: step 6 set `counted_against_*` from event flags + allotment only,
+   * never reading `registration.ticket.paymentStatus` — so relinking a
+   * refunded/pending/waitlisted/no_show seat consumed a benefit ticket for
+   * a non-confirmed seat (SC-004 / FR-018). Ingest uses a strict
+   * `paid|free` allowlist (`isQuotaCountedStatus`); relink now matches it.
+   *
+   * Invariants pinned:
+   *   - non-counted status → NEW decrement is quota-NEUTRAL (flags stay
+   *     false, NO quota audit emitted for the new side — NOT over-quota).
+   *   - `paid` still decrements (guard against over-gating).
+   *   - OLD-member credit-back (step 5) is UNAFFECTED — it credits back on
+   *     the row's PRIOR counted flags regardless of the new payment status.
+   */
+  describe('#13 — decrement gated on paid|free ticket status', () => {
+    // OLD side = non_member (not counted) isolates the NEW decrement gate.
+    function unmatchedPartnerReg(paymentStatus: 'paid' | 'pending' | 'refunded') {
+      return makeRegistration({
+        match: {
+          type: 'non_member',
+          matchedMemberId: null,
+          matchedContactId: null,
+        },
+        quotaEffect: {
+          countedAgainstPartnership: false,
+          countedAgainstCulturalQuota: false,
+        },
+        ticket: { type: null, priceThb: null, paymentStatus },
+      });
+    }
+
+    function nextQuotaEffectArg(mock: ReturnType<typeof vi.fn>) {
+      return mock.mock.calls[0]?.[3] as {
+        countedAgainstPartnership: boolean;
+        countedAgainstCulturalQuota: boolean;
+      };
+    }
+
+    it('pending partner-benefit relink onto a member with room → quota-neutral (no decrement, no audit)', async () => {
+      const { deps, emitMock, updateMatchAndQuotaMock } = makeDeps({
+        findRegistrationById: async () => ok(unmatchedPartnerReg('pending')),
+      });
+      const r = await relinkRegistration(baseInput(), deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      if (r.value.noop) throw new Error('expected non-noop relink');
+      expect(r.value.quotaImpact.decrementedFor).toBeNull();
+      expect(r.value.quotaImpact.scopes).toEqual([]);
+      expect(r.value.quotaImpact.creditedBackFor).toBeNull();
+      // NEW quota-effect written to the row is fully false (quota-neutral).
+      expect(nextQuotaEffectArg(updateMatchAndQuotaMock)).toEqual({
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      });
+      const eventTypes = emitMock.mock.calls.map(
+        (call) => (call[0] as { eventType: string }).eventType,
+      );
+      // Quota-neutral, NOT over-quota: no partnership decrement AND no
+      // over-quota warning for the new side.
+      expect(eventTypes).not.toContain('quota_partnership_decremented');
+      expect(eventTypes).not.toContain('quota_over_quota_warning');
+      expect(eventTypes).toContain('registration_relinked');
+      // The match change still persists.
+      expect(updateMatchAndQuotaMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('refunded partner-benefit relink → quota-neutral (mirror of pending)', async () => {
+      const { deps, emitMock, updateMatchAndQuotaMock } = makeDeps({
+        findRegistrationById: async () => ok(unmatchedPartnerReg('refunded')),
+      });
+      const r = await relinkRegistration(baseInput(), deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      if (r.value.noop) throw new Error('expected non-noop relink');
+      expect(r.value.quotaImpact.decrementedFor).toBeNull();
+      expect(nextQuotaEffectArg(updateMatchAndQuotaMock)).toEqual({
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      });
+      const eventTypes = emitMock.mock.calls.map(
+        (call) => (call[0] as { eventType: string }).eventType,
+      );
+      expect(eventTypes).not.toContain('quota_partnership_decremented');
+      expect(eventTypes).not.toContain('quota_over_quota_warning');
+    });
+
+    it('REGRESSION — paid partner-benefit relink still decrements (no over-gating)', async () => {
+      const { deps, emitMock, updateMatchAndQuotaMock } = makeDeps({
+        findRegistrationById: async () => ok(unmatchedPartnerReg('paid')),
+      });
+      const r = await relinkRegistration(baseInput(), deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      if (r.value.noop) throw new Error('expected non-noop relink');
+      expect(r.value.quotaImpact.decrementedFor).toBe(MEMBER_B);
+      expect(r.value.quotaImpact.scopes).toEqual(['partnership']);
+      expect(nextQuotaEffectArg(updateMatchAndQuotaMock)).toEqual({
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: false,
+      });
+      const eventTypes = emitMock.mock.calls.map(
+        (call) => (call[0] as { eventType: string }).eventType,
+      );
+      expect(eventTypes).toContain('quota_partnership_decremented');
+    });
+
+    it('MIXED — pending relink whose OLD member was counted → OLD credit-back STILL fires, NEW decrement does NOT', async () => {
+      // OLD = MEMBER_A counted on partnership; ticket is pending.
+      const { deps, emitMock, updateMatchAndQuotaMock } = makeDeps({
+        findRegistrationById: async () =>
+          ok(
+            makeRegistration({
+              match: {
+                type: 'member_contact',
+                matchedMemberId: MEMBER_A,
+                matchedContactId: CONTACT_A,
+              },
+              quotaEffect: {
+                countedAgainstPartnership: true,
+                countedAgainstCulturalQuota: false,
+              },
+              ticket: { type: null, priceThb: null, paymentStatus: 'pending' },
+            }),
+          ),
+      });
+      const r = await relinkRegistration(baseInput(), deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      if (r.value.noop) throw new Error('expected non-noop relink');
+      // Step 5 (OLD credit-back) is unaffected by the payment-status gate.
+      expect(r.value.quotaImpact.creditedBackFor).toBe(MEMBER_A);
+      // NEW decrement is suppressed (pending seat).
+      expect(r.value.quotaImpact.decrementedFor).toBeNull();
+      expect(nextQuotaEffectArg(updateMatchAndQuotaMock)).toEqual({
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      });
+      const eventTypes = emitMock.mock.calls.map(
+        (call) => (call[0] as { eventType: string }).eventType,
+      );
+      expect(eventTypes).toContain('quota_credit_back_archive');
+      expect(eventTypes).not.toContain('quota_partnership_decremented');
+    });
+
+    it('CULTURAL mirror — pending cultural relink onto a member with room → quota-neutral', async () => {
+      const { deps, emitMock, updateMatchAndQuotaMock } = makeDeps({
+        findEventById: async () =>
+          ok(makeEvent({ isPartnerBenefit: false, isCulturalEvent: true })),
+        findRegistrationById: async () => ok(unmatchedPartnerReg('pending')),
+        queryAllotments: async () =>
+          ok({
+            allotments: { partnershipPerEvent: 0, culturalPerYear: 2 },
+            consumed: {
+              partnershipConsumedForEvent: 0,
+              culturalConsumedForYear: 0,
+            },
+          }),
+      });
+      const r = await relinkRegistration(baseInput(), deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      if (r.value.noop) throw new Error('expected non-noop relink');
+      expect(r.value.quotaImpact.decrementedFor).toBeNull();
+      expect(nextQuotaEffectArg(updateMatchAndQuotaMock)).toEqual({
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      });
+      const eventTypes = emitMock.mock.calls.map(
+        (call) => (call[0] as { eventType: string }).eventType,
+      );
+      expect(eventTypes).not.toContain('quota_cultural_decremented');
+      expect(eventTypes).not.toContain('quota_over_quota_warning');
+    });
+  });
 });
