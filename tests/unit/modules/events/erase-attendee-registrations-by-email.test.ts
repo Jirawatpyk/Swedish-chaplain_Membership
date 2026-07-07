@@ -138,13 +138,26 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
   it('threads reasonText + occurredAt from input to each eraseOne', async () => {
     const deps = buildDeps();
     deps.list = vi.fn(async () => [{ registrationId: 'r1', eventId: 'e1' }]);
-    const eraseOne = vi.fn(async () => ok({ alreadyErased: false }));
+    const eraseOne = vi.fn(
+      async (
+        _registrationId: string,
+        _eventId: string,
+        _input: {
+          tenantId: string;
+          actorUserId: string;
+          reasonText: string;
+          occurredAt: Date;
+        },
+      ) => ok({ alreadyErased: false }),
+    );
     deps.eraseOne = eraseOne;
 
     await eraseAttendeeRegistrationsByEmail(INPUT, deps);
 
     expect(eraseOne).toHaveBeenCalledTimes(1);
-    const [regId, eventId, callInput] = eraseOne.mock.calls[0] ?? [];
+    const call = eraseOne.mock.calls[0];
+    expect(call).toBeDefined();
+    const [regId, eventId, callInput] = call!;
     expect(regId).toBe('r1');
     expect(eventId).toBe('e1');
     expect(callInput).toMatchObject({

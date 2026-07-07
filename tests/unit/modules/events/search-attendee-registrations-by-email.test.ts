@@ -96,13 +96,17 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
       attendee: { email: 'guest@x.com', name: 'Guest B', company: null } as EventRegistrationAggregate['attendee'],
     });
 
-    const findByIds = vi.fn(async () =>
-      ok(
-        new Map([
-          ['e-a', makeEvent('Cultural Night', '2026-05-01T12:00:00Z')],
-          ['e-b', makeEvent('Trade Mixer', '2026-06-15T09:00:00Z')],
-        ] as unknown as [EventAggregate['eventId'], EventAggregate][]),
-      ),
+    const findByIds = vi.fn(
+      async (
+        _tenantId: TenantId,
+        _eventIds: ReadonlyArray<EventAggregate['eventId']>,
+      ) =>
+        ok(
+          new Map([
+            ['e-a', makeEvent('Cultural Night', '2026-05-01T12:00:00Z')],
+            ['e-b', makeEvent('Trade Mixer', '2026-06-15T09:00:00Z')],
+          ] as unknown as [EventAggregate['eventId'], EventAggregate][]),
+        ),
     );
     const deps: SearchAttendeeRegistrationsByEmailDeps = {
       registrationsRepo: {
@@ -122,10 +126,8 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
 
     // Exactly ONE batched lookup (no N+1), with both unique event ids.
     expect(findByIds).toHaveBeenCalledTimes(1);
-    const [, eventIdsArg] = findByIds.mock.calls[0] ?? [];
-    expect(new Set((eventIdsArg as string[]).map(String))).toEqual(
-      new Set(['e-a', 'e-b']),
-    );
+    const eventIdsArg = findByIds.mock.calls[0]?.[1] ?? [];
+    expect(new Set(eventIdsArg.map(String))).toEqual(new Set(['e-a', 'e-b']));
 
     const [m0, m1] = res.value.matches;
     expect(m0).toMatchObject({
