@@ -6,10 +6,25 @@
  * — malformed IDs must surface as `{ kind: 'not_found' }` BEFORE
  * the repo is invoked (avoids Postgres parse-error noise in alerts).
  *
- * M5 round-3 (2026-05-12): `isOverQuota` derived flag — the contract
- * tests pin the `false` branch; here we cover the `true` branch (event
- * is partner-benefit OR cultural AND registration is non-quota match
- * type) + the cross-cell boundaries.
+ * PR 1.2 (F6 remediation #7, 2026-07-07) — `isOverQuota` was derived
+ * from `isNonQuotaMatchType(r.match.type)`, which is true ONLY for
+ * `non_member`/`unmatched`. That inverted the signal:
+ *   - the REAL over-quota case (a matched member whose seat couldn't
+ *     be counted because the allotment was exhausted →
+ *     `counted_against_*=false`) never showed the badge (US4 AS2 /
+ *     FR-017 violated), and
+ *   - every `non_member`/`unmatched` attendee on a partner/cultural
+ *     event showed a SPURIOUS "over quota" badge (FR-013 — these rows
+ *     never had quota to exhaust).
+ *
+ * The fixed derivation mirrors the NEGATION of `apply-quota-effect.ts`'s
+ * `quota_over_quota_warning` emission condition (also gated the same
+ * way `processAttendeeInTx`'s `shouldApplyQuota` gates the call):
+ * active (non-archived) benefit event + matched member + confirmed
+ * seat (`paid`/`free`) + the scope's `counted_against_*` flag is
+ * false. `makeReg` below independently parameterises `matchedMemberId`,
+ * `paymentStatus`, and BOTH `countedAgainst*` flags so each cell of
+ * that truth table can be exercised on its own.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { ok } from '@/lib/result';
@@ -17,8 +32,9 @@ import { loadEventDetail } from '@/modules/events/application/use-cases/load-eve
 import type {
   EventsRepository,
   RegistrationsRepository,
+  PaymentStatus,
 } from '@/modules/events';
-import { asTenantId, asMemberId, asContactId } from '@/modules/members';
+import { asTenantId, asMemberId, asContactId, type MemberId } from '@/modules/members';
 import { asEventId, asExternalEventId, asRegistrationId, asExternalAttendeeId, asAttendeeEmail } from '@/modules/events';
 
 const VALID_UUID = 'a1b2c3d4-1234-4abc-89de-fedcba987654';
@@ -122,8 +138,12 @@ describe('loadEventDetail — UUID v4 guard (M4 round-3)', () => {
   });
 });
 
-describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
-  function makeEvent(opts: { isPartnerBenefit: boolean; isCulturalEvent: boolean }) {
+describe('loadEventDetail — isOverQuota truth table (PR 1.2 F6 remediation #7)', () => {
+  function makeEvent(opts: {
+    isPartnerBenefit: boolean;
+    isCulturalEvent: boolean;
+    archived?: boolean;
+  }) {
     return {
       tenantId: TENANT_ID,
       eventId: asEventId(VALID_UUID),
@@ -138,21 +158,27 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
       eventcreateUrl: null,
       isPartnerBenefit: opts.isPartnerBenefit,
       isCulturalEvent: opts.isCulturalEvent,
-      archivedAt: null,
+      archivedAt: opts.archived === true ? new Date('2026-06-15T00:00:00Z') : null,
       metadata: {},
       importedAt: new Date('2026-06-01T10:00:00Z'),
       lastUpdatedAt: new Date('2026-06-01T10:00:00Z'),
     };
   }
 
-  function makeReg(
-    matchType:
-      | 'member_contact'
-      | 'member_domain'
-      | 'member_fuzzy'
-      | 'non_member'
-      | 'unmatched',
-  ) {
+  /**
+   * Independently parameterises the four axes the fixed `isOverQuota`
+   * derivation reads: whether the row is matched to a member, the
+   * ticket's payment status, and the two `countedAgainst*` scope
+   * flags. `matchedMemberId: null` maps to `match.type: 'non_member'`
+   * (both `non_member` and `unmatched` are quota-neutral per FR-013 —
+   * `non_member` is enough to exercise that branch here).
+   */
+  function makeReg(opts: {
+    matchedMemberId: MemberId | null;
+    paymentStatus: PaymentStatus;
+    countedAgainstPartnership: boolean;
+    countedAgainstCulturalQuota: boolean;
+  }) {
     return {
       tenantId: TENANT_ID,
       registrationId: asRegistrationId(VALID_UUID),
@@ -163,38 +189,26 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
         name: 'Test',
         company: null,
       },
-      // H3.2 — narrowed per-variant invariant. The test parameter
-      // `matchType` is the only varying field; the per-variant ID
-      // pairs are uniform here because the test uses
-      // `quotaEffect.countedAgainst* = false` for ALL matchTypes (the
-      // member-match types in this fixture don't carry a member id;
-      // the over-quota predicate cares about the match-type label).
       match:
-        matchType === 'member_contact'
+        opts.matchedMemberId !== null
           ? {
               type: 'member_contact' as const,
-              matchedMemberId: asMemberId(VALID_UUID),
+              matchedMemberId: opts.matchedMemberId,
               matchedContactId: asContactId(VALID_UUID),
             }
-          : matchType === 'member_domain' || matchType === 'member_fuzzy'
-            ? {
-                type: matchType,
-                matchedMemberId: asMemberId(VALID_UUID),
-                matchedContactId: null,
-              }
-            : {
-                type: matchType,
-                matchedMemberId: null,
-                matchedContactId: null,
-              },
+          : {
+              type: 'non_member' as const,
+              matchedMemberId: null,
+              matchedContactId: null,
+            },
       ticket: {
         type: null,
         priceThb: null,
-        paymentStatus: 'paid' as const,
+        paymentStatus: opts.paymentStatus,
       },
       quotaEffect: {
-        countedAgainstPartnership: false,
-        countedAgainstCulturalQuota: false,
+        countedAgainstPartnership: opts.countedAgainstPartnership,
+        countedAgainstCulturalQuota: opts.countedAgainstCulturalQuota,
       },
       metadata: {},
       registeredAt: new Date('2026-06-01T10:00:00Z'),
@@ -203,63 +217,203 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
     };
   }
 
-  it.each([
-    // [isPartnerBenefit, isCulturalEvent, matchType, expectedIsOverQuota, label]
-    [true, false, 'non_member', true, 'partner-benefit + non_member → over quota'],
-    [false, true, 'unmatched', true, 'cultural + unmatched → over quota'],
-    [true, true, 'non_member', true, 'both flags + non_member → over quota'],
-    [false, false, 'non_member', false, 'neither flag + non_member → NOT over quota'],
-    [true, false, 'member_contact', false, 'partner-benefit + member_contact → NOT over quota'],
-    [false, true, 'member_contact', false, 'cultural + member_contact → NOT over quota'],
-    [false, false, 'member_contact', false, 'neither + member_contact → NOT over quota'],
-    // T-MED-1 round-4 — exercise the quota-eligible boundary on the
-    // two member-match types that the prior table missed.
-    [true, false, 'member_domain', false, 'partner-benefit + member_domain → NOT over quota (quota-eligible)'],
-    [false, true, 'member_fuzzy', false, 'cultural + member_fuzzy → NOT over quota (quota-eligible)'],
-  ])(
-    'isPartnerBenefit=%s isCulturalEvent=%s matchType=%s → isOverQuota=%s (%s)',
-    async (isPartner, isCultural, matchType, expected) => {
-      const eventsRepo = makeMockEventsRepo();
-      const registrationsRepo = makeMockRegistrationsRepo();
-      const event = makeEvent({ isPartnerBenefit: isPartner, isCulturalEvent: isCultural });
-      const reg = makeReg(
-        matchType as
-          | 'member_contact'
-          | 'member_domain'
-          | 'member_fuzzy'
-          | 'non_member'
-          | 'unmatched',
-      );
-      vi.mocked(eventsRepo.findById).mockResolvedValueOnce(ok(event));
-      vi.mocked(registrationsRepo.findByEventId).mockResolvedValueOnce(
-        ok({
-          items: [reg],
-          totalCount: 1,
-          matchCounts: {
-            memberContact: matchType === 'member_contact' ? 1 : 0,
-            memberDomain: matchType === 'member_domain' ? 1 : 0,
-            memberFuzzy: matchType === 'member_fuzzy' ? 1 : 0,
-            nonMember: matchType === 'non_member' ? 1 : 0,
-            unmatched: matchType === 'unmatched' ? 1 : 0,
-          },
-        }),
-      );
-      const result = await loadEventDetail(
-        { eventsRepo, registrationsRepo },
-        {
-          tenantId: TENANT_ID,
-          eventId: VALID_UUID,
-          page: 1,
-          pageSize: 50,
-          unmatchedOnly: false,
-          matchTypeFilter: null,
-          q: null,
-          paymentStatusFilter: null,
+  const MEMBER_ID = asMemberId(VALID_UUID);
+
+  it.each<
+    [
+      label: string,
+      eventOpts: { isPartnerBenefit: boolean; isCulturalEvent: boolean; archived?: boolean },
+      regOpts: {
+        matchedMemberId: MemberId | null;
+        paymentStatus: PaymentStatus;
+        countedAgainstPartnership: boolean;
+        countedAgainstCulturalQuota: boolean;
+      },
+      expected: boolean,
+    ]
+  >([
+    // ---- 1-5: partnership scope --------------------------------------
+    [
+      '1. partner + member_contact + paid + partnership counted=false → TRUE (the real over-quota case)',
+      { isPartnerBenefit: true, isCulturalEvent: false },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      true,
+    ],
+    [
+      '2. partner + member_contact + paid + partnership counted=true → FALSE',
+      { isPartnerBenefit: true, isCulturalEvent: false },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    [
+      '3. partner + non_member + paid → FALSE (never had quota to exhaust)',
+      { isPartnerBenefit: true, isCulturalEvent: false },
+      {
+        matchedMemberId: null,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    [
+      '4. partner + member_contact + pending + counted=false → FALSE (unconfirmed seat)',
+      { isPartnerBenefit: true, isCulturalEvent: false },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'pending',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    [
+      '5. partner + member_contact + refunded + counted=false → FALSE',
+      { isPartnerBenefit: true, isCulturalEvent: false },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'refunded',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    // ---- 6a-6e: cultural mirrors of 1-5 -------------------------------
+    [
+      '6a. cultural + member_contact + paid + cultural counted=false → TRUE',
+      { isPartnerBenefit: false, isCulturalEvent: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      true,
+    ],
+    [
+      '6b. cultural + member_contact + paid + cultural counted=true → FALSE',
+      { isPartnerBenefit: false, isCulturalEvent: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: true,
+      },
+      false,
+    ],
+    [
+      '6c. cultural + non_member + paid → FALSE',
+      { isPartnerBenefit: false, isCulturalEvent: true },
+      {
+        matchedMemberId: null,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    [
+      '6d. cultural + member_contact + pending + counted=false → FALSE',
+      { isPartnerBenefit: false, isCulturalEvent: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'pending',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    [
+      '6e. cultural + member_contact + refunded + counted=false → FALSE',
+      { isPartnerBenefit: false, isCulturalEvent: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'refunded',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    // ---- 7: independent scopes on a dual-flag event -------------------
+    [
+      '7. BOTH flags + member_contact + paid + partnership counted=true + cultural counted=false → TRUE',
+      { isPartnerBenefit: true, isCulturalEvent: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: false,
+      },
+      true,
+    ],
+    // ---- 8: archived event gate ----------------------------------------
+    [
+      '8. archived partner event + member_contact + paid + counted=false → FALSE (eventActiveBenefit gate)',
+      { isPartnerBenefit: true, isCulturalEvent: false, archived: true },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+    // ---- bonus: neither flag on the event never shows the badge --------
+    [
+      '9. neither flag + member_contact + paid + counted=false (both scopes) → FALSE',
+      { isPartnerBenefit: false, isCulturalEvent: false },
+      {
+        matchedMemberId: MEMBER_ID,
+        paymentStatus: 'paid',
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      false,
+    ],
+  ])('%s', async (_label, eventOpts, regOpts, expected) => {
+    const eventsRepo = makeMockEventsRepo();
+    const registrationsRepo = makeMockRegistrationsRepo();
+    const event = makeEvent(eventOpts);
+    const reg = makeReg(regOpts);
+    vi.mocked(eventsRepo.findById).mockResolvedValueOnce(ok(event));
+    vi.mocked(registrationsRepo.findByEventId).mockResolvedValueOnce(
+      ok({
+        items: [reg],
+        totalCount: 1,
+        matchCounts: {
+          memberContact: regOpts.matchedMemberId !== null ? 1 : 0,
+          memberDomain: 0,
+          memberFuzzy: 0,
+          nonMember: regOpts.matchedMemberId === null ? 1 : 0,
+          unmatched: 0,
         },
-      );
-      expect(result.ok).toBe(true);
-      if (!result.ok) throw new Error('unreachable');
-      expect(result.value.registrations[0]!.isOverQuota).toBe(expected);
-    },
-  );
+      }),
+    );
+    const result = await loadEventDetail(
+      { eventsRepo, registrationsRepo },
+      {
+        tenantId: TENANT_ID,
+        eventId: VALID_UUID,
+        page: 1,
+        pageSize: 50,
+        unmatchedOnly: false,
+        matchTypeFilter: null,
+        q: null,
+        paymentStatusFilter: null,
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.registrations[0]!.isOverQuota).toBe(expected);
+  });
 });
