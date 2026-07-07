@@ -4118,6 +4118,46 @@
           "autoRefreshing": "Auto-refreshing every 5s while imports are running",
           "backToImport": "Back to import"
         }
+      },
+      "erasure": {
+        "metaTitle": "Erase attendee data by email",
+        "pageTitle": "Erase attendee data by email",
+        "pageHint": "Find every event registration that shares a data subject's email across all events, then erase them for a GDPR Article 17 / PDPA Section 30 request. This destructive action is logged and cannot be undone.",
+        "backLink": "Back to events",
+        "searchLabel": "Data subject email",
+        "searchPlaceholder": "attendee@example.com",
+        "searchSubmit": "Search",
+        "emptyPrompt": "Enter a data subject's email above to find every event registration that shares it.",
+        "noMatches": "No event registrations share this email. Nothing to erase.",
+        "resultsCount": "{count, plural, =0 {No registrations found} one {1 registration found} other {# registrations found}}",
+        "columns": {
+          "event": "Event",
+          "date": "Date",
+          "match": "Match",
+          "quota": "Quota",
+          "actions": "Actions"
+        },
+        "unknownEvent": "Unknown event",
+        "pseudonymisedBadge": "Already erased",
+        "truncatedBanner": "More than {cap} registrations match this email, so this list is a PARTIAL set. Re-run the search and erase again until 0 remain to complete the request.",
+        "errorState": "Something went wrong loading the registrations for this email. Please try again.",
+        "eraseAllCta": "Erase all {count} matches",
+        "eraseAllConfirmTitle": "Erase all {count} registrations?",
+        "eraseAllConfirmBody": "This permanently removes the attendee's name, email, and company from all {count} matching registrations across every event. Counted quota is credited back. The audit trail (admin, timestamp, reason) is retained for compliance. This cannot be undone.",
+        "reasonLabel": "Reason for erasure",
+        "reasonPlaceholder": "e.g., GDPR Article 17 request, PDPA Section 30 request",
+        "reasonHint": "{remaining, plural, =0 {0 characters remaining} one {1 character remaining} other {# characters remaining}}",
+        "cancel": "Cancel",
+        "confirm": "Erase all",
+        "loading": "Erasing personal data...",
+        "successTitle": "Personal data erased",
+        "successSummary": "{erased} erased, {alreadyErased} already erased, {failed} failed.",
+        "partialTitle": "Erasure incomplete - re-run to finish",
+        "truncatedToast": "More records match than were erased this pass. Re-run the search and erase again until 0 remain.",
+        "failedToast": "{failed, plural, one {# registration} other {# registrations}} could not be erased. Re-run to retry.",
+        "errorTitle": "Could not complete the erasure",
+        "errorDescription": "Please try again. If the issue persists, contact support.",
+        "discoverabilityCta": "Erase by email"
       }
     },
     "integrations": {

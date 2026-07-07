@@ -4118,6 +4118,46 @@
           "autoRefreshing": "Uppdateras automatiskt var 5:e sekund medan importer pågår",
           "backToImport": "Tillbaka till import"
         }
+      },
+      "erasure": {
+        "metaTitle": "Radera deltagardata via e-post",
+        "pageTitle": "Radera deltagardata via e-post",
+        "pageHint": "Hitta varje evenemangsregistrering som delar en registrerads e-postadress i alla evenemang och radera dem för en begäran enligt GDPR artikel 17 / PDPA paragraf 30. Denna destruktiva åtgärd loggas och kan inte ångras.",
+        "backLink": "Tillbaka till evenemang",
+        "searchLabel": "Den registrerades e-postadress",
+        "searchPlaceholder": "attendee@example.com",
+        "searchSubmit": "Sök",
+        "emptyPrompt": "Ange en registrerads e-postadress ovan för att hitta varje evenemangsregistrering som delar den.",
+        "noMatches": "Inga evenemangsregistreringar delar denna e-postadress. Inget att radera.",
+        "resultsCount": "{count, plural, =0 {Inga registreringar hittades} one {1 registrering hittades} other {# registreringar hittades}}",
+        "columns": {
+          "event": "Evenemang",
+          "date": "Datum",
+          "match": "Matchning",
+          "quota": "Kvot",
+          "actions": "Åtgärder"
+        },
+        "unknownEvent": "Okänt evenemang",
+        "pseudonymisedBadge": "Redan raderad",
+        "truncatedBanner": "Fler än {cap} registreringar matchar denna e-postadress, så denna lista är ofullständig. Sök och radera igen tills 0 återstår för att slutföra begäran.",
+        "errorState": "Något gick fel när registreringarna för denna e-postadress laddades. Försök igen.",
+        "eraseAllCta": "Radera alla {count} matchningar",
+        "eraseAllConfirmTitle": "Radera alla {count} registreringar?",
+        "eraseAllConfirmBody": "Detta tar permanent bort deltagarens namn, e-post och företag från alla {count} matchande registreringar i alla evenemang. Räknad kvot återförs. Verifieringskedjan (administratör, tidsstämpel, orsak) behålls för efterlevnad. Detta kan inte ångras.",
+        "reasonLabel": "Orsak till radering",
+        "reasonPlaceholder": "t.ex. begäran enligt GDPR artikel 17, begäran enligt PDPA paragraf 30",
+        "reasonHint": "{remaining, plural, =0 {0 tecken kvar} one {1 tecken kvar} other {# tecken kvar}}",
+        "cancel": "Avbryt",
+        "confirm": "Radera alla",
+        "loading": "Raderar personuppgifter...",
+        "successTitle": "Personuppgifter raderade",
+        "successSummary": "{erased} raderade, {alreadyErased} redan raderade, {failed} misslyckades.",
+        "partialTitle": "Raderingen är ofullständig - kör igen för att slutföra",
+        "truncatedToast": "Fler poster matchar än vad som raderades denna gång. Sök och radera igen tills 0 återstår.",
+        "failedToast": "{failed, plural, one {# registrering} other {# registreringar}} kunde inte raderas. Kör igen för att försöka igen.",
+        "errorTitle": "Kunde inte slutföra raderingen",
+        "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+        "discoverabilityCta": "Radera via e-post"
       }
     },
     "integrations": {
