@@ -3959,7 +3959,13 @@
           "totalRowsHint": "{columns} kolumner × visar {sampled} av {total, plural, one {# rad} other {# rader}}",
           "tableHelpText": "Håll muspekaren över en cell för att se hela innehållet. Kanoniska kolumner är markerade; resten skickas vidare oförändrat vid import.",
           "emptyCell": "(tom)",
-          "confirmCtaWithCount": "Bekräfta och importera {count, plural, one {# rad} other {# rader}}"
+          "confirmCtaWithCount": "Bekräfta och importera {count, plural, one {# rad} other {# rader}}",
+          "remapSectionTitle": "Koppla dina kolumner",
+          "remapIntro": "Matcha varje fält till en kolumn från din fil. Evenemangsuppgifterna hämtas från evenemanget som valts ovan, så endast deltagarkolumnerna krävs.",
+          "remapPlaceholder": "Välj kolumn…",
+          "remapFieldLabelRequired": "{field} (obligatorisk)",
+          "remapFieldLabelOptional": "{field} (valfri)",
+          "remapGatedHint": "Koppla de obligatoriska deltagarkolumnerna ovan för att fortsätta."
         },
         "result": {
           "regionLabel": "Resultat av CSV-import",
@@ -3995,7 +4001,9 @@
           "unexpectedTitle": "Något gick fel",
           "unexpectedDetail": "Oväntat fel. Försök igen; kvarstår problemet, kontakta support.",
           "eventNotSelectedTitle": "Inget evenemang valt",
-          "eventNotSelectedDetail": "Välj ett evenemang från rullgardinsmenyn innan du laddar upp."
+          "eventNotSelectedDetail": "Välj ett evenemang från rullgardinsmenyn innan du laddar upp.",
+          "columnMappingInvalidTitle": "Kolumnkopplingen är ogiltig",
+          "columnMappingInvalidDetail": "Ett eller flera kolumnval kunde inte behandlas. Kontrollera dina kopplingar och försök igen."
         },
         "eventPicker": {
           "fieldLabel": "Evenemang",

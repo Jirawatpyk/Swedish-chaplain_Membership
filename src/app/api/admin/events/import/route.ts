@@ -44,7 +44,7 @@ import {
 } from '@/lib/events-csv-import-deps';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { makeStandaloneAuditDeps } from '@/modules/events';
+import { makeStandaloneAuditDeps, parseColumnMappingObject } from '@/modules/events';
 // FR-035 — CSV import is a write action on /admin/events/** so it
 // uses the events-family writer guard (manager 403, member 404), NOT
 // the integrations-family `adminOnlyGuard` (404-for-all surface-
@@ -209,6 +209,41 @@ export async function POST(request: NextRequest): Promise<Response> {
       `Event '${eventIdField.slice(0, 80)}' was not found in your chamber. Was it deleted?`,
       { extras: { eventId: eventIdField, requestId } },
     );
+  }
+
+  // 6c. FR-026 (#10a) — optional admin column remap. This is a NEW
+  //     external input boundary, so it fails CLOSED: malformed JSON,
+  //     non-object, non-canonical target, or an oversized map returns a
+  //     400 BEFORE any bytes are read or the use-case is dispatched. The
+  //     client already inverts its canonical→header selections into the
+  //     parser's expected header→canonical direction, so the route threads
+  //     the validated Map through verbatim (NO re-inversion).
+  let columnMapping: ReadonlyMap<string, string> | undefined;
+  const columnMappingField = formData.get('column_mapping');
+  if (typeof columnMappingField === 'string' && columnMappingField.length > 0) {
+    let parsedMapping: unknown;
+    try {
+      parsedMapping = JSON.parse(columnMappingField);
+    } catch {
+      return problemResponse(
+        400,
+        'csv-column-mapping-invalid',
+        'Column mapping is invalid',
+        'The column_mapping field is not valid JSON.',
+        { extras: { requestId } },
+      );
+    }
+    const validated = parseColumnMappingObject(parsedMapping);
+    if (!validated.ok) {
+      return problemResponse(
+        400,
+        'csv-column-mapping-invalid',
+        'Column mapping is invalid',
+        validated.reason,
+        { extras: { requestId } },
+      );
+    }
+    if (validated.mapping.size > 0) columnMapping = validated.mapping;
   }
 
   // 7. Pull `file` field + bytes. Duck-type check on `arrayBuffer`
@@ -398,6 +433,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       bytes,
       selectedEvent: eventLookup.event,
       forceProceed,
+      ...(columnMapping !== undefined && { columnMapping }),
       ...(typeof file.name === 'string' && file.name.length > 0 && {
         originalFilename: file.name,
       }),

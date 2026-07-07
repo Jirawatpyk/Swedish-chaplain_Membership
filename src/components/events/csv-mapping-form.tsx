@@ -84,6 +84,28 @@ const OPTIONAL_PREVIEW_COLUMNS = [
   'ticket_type',
 ] as const;
 
+// FR-026 (#10a/#10b) — columns the admin can REMAP when the CSV uses
+// non-canonical headers (Eventbrite/Meetup exports). On the picker-bound
+// generic path the selected event supplies event_* server-side (#10b), so
+// only the attendee identity columns are truly required; event_* +
+// ticket_type are optional metadata. `REMAP_REQUIRED_COLUMNS` MUST stay in
+// sync with `CSV_GENERIC_REQUIRED_COLUMNS` in
+// `src/modules/events/domain/csv-column-mapping.ts` — duplicated here (not
+// imported) because a client component cannot import the events barrel
+// without pulling server-only code into the browser bundle.
+const REMAP_REQUIRED_COLUMNS = ['attendee_email', 'attendee_name'] as const;
+const REMAP_OPTIONAL_COLUMNS = [
+  'event_external_id',
+  'event_name',
+  'event_start',
+  'event_category',
+  'ticket_type',
+] as const;
+const REMAP_COLUMNS = [
+  ...REMAP_REQUIRED_COLUMNS,
+  ...REMAP_OPTIONAL_COLUMNS,
+] as const;
+
 type Phase =
   | { kind: 'idle' }
   | { kind: 'preview'; file: File; preview: PreviewData }
@@ -102,6 +124,12 @@ interface PreviewData {
    * scope of the upcoming import before clicking Confirm.
    */
   readonly totalRowCount: number;
+  /**
+   * FR-026 (#10a) — true when the upload is an EventCreate-native export
+   * (server adapter translates it). EventCreate uploads do NOT get remap
+   * selects — the adapter maps their 29-col format automatically.
+   */
+  readonly isEventCreateFormat: boolean;
 }
 
 /**
@@ -204,7 +232,13 @@ function sniffPreview(text: string): PreviewData {
   const missingRequired = isEventCreateFormat
     ? []
     : REQUIRED_COLUMNS.filter((c) => !headerSet.has(c));
-  return { detectedColumns: header, rows, missingRequired, totalRowCount };
+  return {
+    detectedColumns: header,
+    rows,
+    missingRequired,
+    totalRowCount,
+    isEventCreateFormat,
+  };
 }
 
 export function CsvMappingForm() {
@@ -218,6 +252,13 @@ export function CsvMappingForm() {
   const [selectedEventLabel, setSelectedEventLabel] = useState<string | null>(
     null,
   );
+  // FR-026 (#10a) — canonical→CSV-header remap selections. Hoisted OUTSIDE
+  // the phase machine (like `selectedEventId`) so they survive the
+  // submitting→preview restore on an event-mismatch warning. Re-seeded on
+  // every fresh upload in `handleFile`.
+  const [columnSelections, setColumnSelections] = useState<
+    Record<string, string>
+  >({});
   const [createModalOpen, setCreateModalOpen] = useState(false);
   // Hold a callback the EventPicker registers so we can imperatively
   // push a freshly-created event into its dropdown state on `onCreated`
@@ -258,6 +299,17 @@ export function CsvMappingForm() {
       }
       const text = await file.text();
       const preview = sniffPreview(text);
+      // FR-026 (#10a) — seed remap selections with identity defaults: a
+      // canonical column that appears verbatim in the header maps to
+      // itself; anything else starts unassigned ('' = "Choose column…").
+      // EventCreate uploads skip remap (adapter handles their columns).
+      const seeded: Record<string, string> = {};
+      if (!preview.isEventCreateFormat) {
+        for (const col of REMAP_COLUMNS) {
+          seeded[col] = preview.detectedColumns.includes(col) ? col : '';
+        }
+      }
+      setColumnSelections(seeded);
       setPhase({ kind: 'preview', file, preview });
     },
     [tErrors],
@@ -293,6 +345,20 @@ export function CsvMappingForm() {
       fd.append('file', file);
       fd.append('event_id', selectedEventId);
       if (forceProceed) fd.append('force_proceed', 'true');
+
+      // FR-026 (#10a) — INVERT the UI's canonical→header selections into the
+      // parser's expected header→canonical direction; drop identity
+      // (header === canonical) and unassigned ('') entries. Only append when
+      // a genuine remap exists (a canonical CSV sends nothing — unchanged).
+      const mappingObj: Record<string, string> = {};
+      for (const canonical of REMAP_COLUMNS) {
+        const header = columnSelections[canonical];
+        if (!header || header === canonical) continue;
+        mappingObj[header] = canonical;
+      }
+      if (Object.keys(mappingObj).length > 0) {
+        fd.append('column_mapping', JSON.stringify(mappingObj));
+      }
 
       let res: Response;
       try {
@@ -378,6 +444,19 @@ export function CsvMappingForm() {
           return;
         }
         case 400: {
+          // FR-026 (#10a) — surface the column-mapping-invalid boundary
+          // rejection with localized copy (defensive: the client builds a
+          // valid map, so this only fires on tampering / a client bug).
+          if (String(body['type'] ?? '').includes('csv-column-mapping-invalid')) {
+            setPhase({
+              kind: 'error',
+              title: tErrors('columnMappingInvalidTitle'),
+              detail: String(
+                body['detail'] ?? tErrors('columnMappingInvalidDetail'),
+              ),
+            });
+            return;
+          }
           const missingColumns = Array.isArray(body['missingColumns'])
             ? (body['missingColumns'] as string[])
             : undefined;
@@ -472,7 +551,14 @@ export function CsvMappingForm() {
         }
       }
     },
-    [selectedEventId, t, tErrors],
+    [selectedEventId, columnSelections, t, tErrors],
+  );
+
+  const onColumnSelectionChange = useCallback(
+    (canonical: string, header: string) => {
+      setColumnSelections((prev) => ({ ...prev, [canonical]: header }));
+    },
+    [],
   );
 
   // Mismatch override — re-submit current preview with force_proceed=true.
@@ -489,6 +575,28 @@ export function CsvMappingForm() {
   }, [phase, submitImport]);
 
   const resetToUpload = useCallback(() => setPhase({ kind: 'idle' }), []);
+
+  // FR-026 (#10a/#10b) — remap gate. A generic CSV with non-canonical /
+  // missing headers surfaces remap selects; Confirm stays gated until the
+  // reduced required set (attendee_email + attendee_name) is mapped. The
+  // selected event supplies event_* server-side, so a picker-bound generic
+  // export never needs event_* columns. Canonical + EventCreate uploads are
+  // unaffected (needsRemap=false → gate depends only on event selection).
+  const previewNeedsRemap =
+    phase.kind === 'preview' &&
+    !phase.preview.isEventCreateFormat &&
+    phase.preview.missingRequired.length > 0;
+  const remapRequiredMapped = REMAP_REQUIRED_COLUMNS.every(
+    (c) => (columnSelections[c] ?? '') !== '',
+  );
+  const remapGateBlocks = previewNeedsRemap && !remapRequiredMapped;
+  const previewSubmitDisabled = selectedEventId === null || remapGateBlocks;
+  const previewSubmitReason =
+    selectedEventId === null
+      ? t('eventPicker.submitGatedHint')
+      : remapGateBlocks
+        ? t('preview.remapGatedHint')
+        : null;
 
   // Top-level aria-live region announces phase transitions across all
   // render branches. NVDA/JAWS register the observer at DOM-insertion
@@ -636,12 +744,10 @@ export function CsvMappingForm() {
                   count: phase.preview.totalRowCount,
                 })}
                 cancelLabel={t('cancelCta')}
-                submitDisabled={selectedEventId === null}
-                submitDisabledReason={
-                  selectedEventId === null
-                    ? t('eventPicker.submitGatedHint')
-                    : null
-                }
+                submitDisabled={previewSubmitDisabled}
+                submitDisabledReason={previewSubmitReason}
+                columnSelections={columnSelections}
+                onColumnSelectionChange={onColumnSelectionChange}
               />
             )}
 
@@ -726,9 +832,12 @@ interface PreviewPanelProps {
   readonly onCancel: () => void;
   readonly submitLabel: string;
   readonly cancelLabel: string;
-  /** F6.1 — gate submit when no event picked. */
+  /** F6.1 — gate submit when no event picked (parent also folds the remap gate in). */
   readonly submitDisabled?: boolean;
   readonly submitDisabledReason?: string | null;
+  /** FR-026 (#10a) — canonical→CSV-header remap selections + change handler. */
+  readonly columnSelections: Record<string, string>;
+  readonly onColumnSelectionChange: (canonical: string, header: string) => void;
 }
 
 function PreviewPanel({
@@ -740,9 +849,16 @@ function PreviewPanel({
   cancelLabel,
   submitDisabled = false,
   submitDisabledReason = null,
+  columnSelections,
+  onColumnSelectionChange,
 }: PreviewPanelProps) {
   const t = useTranslations('admin.events.import.preview');
   const hasMissing = preview.missingRequired.length > 0;
+  // FR-026 (#10a) — the remap selects appear for a generic CSV whose header
+  // does not already carry the canonical columns. EventCreate uploads are
+  // adapter-mapped, so they never show remap selects.
+  const showRemap = !preview.isEventCreateFormat && hasMissing;
+  const remapSelectIdBase = useId();
   // simplify #9 fix: `preview.rows` is already capped to 10 rows by
   // `sniffPreview` (slice(0,11) over header + 10 body rows). No
   // additional slice needed; useMemo was a no-op churn.
@@ -827,6 +943,59 @@ function PreviewPanel({
           {t('columnMappingLegend')}
         </p>
       </section>
+
+      {/* FR-026 (#10a) — interactive remap for non-canonical headers. Each
+          canonical field maps to a column detected in the uploaded file.
+          Event fields are optional here (the picker supplies them, #10b);
+          only the attendee columns are required to enable Confirm. */}
+      {showRemap ? (
+        <section aria-labelledby="csv-remap-title" className="flex flex-col gap-3">
+          <div>
+            <h3
+              id="csv-remap-title"
+              className="text-body mb-1 font-medium"
+            >
+              {t('remapSectionTitle')}
+            </h3>
+            <p className="text-caption text-muted-foreground">
+              {t('remapIntro')}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {REMAP_COLUMNS.map((canonical) => {
+              const isRequired = (
+                REMAP_REQUIRED_COLUMNS as ReadonlyArray<string>
+              ).includes(canonical);
+              const selectId = `${remapSelectIdBase}-${canonical}`;
+              return (
+                <div key={canonical} className="flex flex-col gap-1">
+                  <Label htmlFor={selectId} className="font-mono">
+                    {isRequired
+                      ? t('remapFieldLabelRequired', { field: canonical })
+                      : t('remapFieldLabelOptional', { field: canonical })}
+                  </Label>
+                  <select
+                    id={selectId}
+                    data-testid={`remap-select-${canonical}`}
+                    value={columnSelections[canonical] ?? ''}
+                    onChange={(e) =>
+                      onColumnSelectionChange(canonical, e.target.value)
+                    }
+                    className="text-body min-h-11 rounded-md border border-input bg-background px-2 py-1"
+                  >
+                    <option value="">{t('remapPlaceholder')}</option>
+                    {preview.detectedColumns.map((header, idx) => (
+                      <option key={`${header}-${idx}`} value={header}>
+                        {header}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <section aria-labelledby="csv-preview-rows">
         <div className="mb-2 flex items-baseline justify-between">
@@ -1028,7 +1197,12 @@ function PreviewPanel({
           <Button
             type="button"
             onClick={onSubmit}
-            disabled={hasMissing || submitDisabled}
+            // FR-026 (#10a) — the parent folds BOTH the event-selection gate
+            // AND the remap-required gate into `submitDisabled`, so a generic
+            // CSV with missing headers enables once the required attendee
+            // columns are remapped (rather than being permanently blocked by
+            // `hasMissing`). Canonical + EventCreate uploads are unaffected.
+            disabled={submitDisabled}
             className="min-h-11"
           >
             <UploadCloud aria-hidden="true" className="mr-2 size-4" />

@@ -70,42 +70,26 @@ import {
   translateEventCreateRow,
   collectUnknownEventCreateColumns,
 } from './eventcreate-csv-adapter';
+import {
+  CSV_REQUIRED_COLUMNS,
+  CSV_OPTIONAL_COLUMNS,
+  CSV_CANONICAL_COLUMN_SET,
+  CSV_GENERIC_REQUIRED_COLUMNS,
+  type CsvCanonicalColumn,
+} from '../domain/csv-column-mapping';
 
 // ---------------------------------------------------------------------------
-// Canonical column-set constants
+// Canonical column-set constants — single-sourced from the Domain module
+// (`domain/csv-column-mapping.ts`) so the parser's recognised-canonical set
+// stays byte-identical to the import route's `column_mapping` validator.
+// Aliased to the historical local names to keep the rest of this file (and
+// the `_internals` test surface) unchanged.
 // ---------------------------------------------------------------------------
 
-const REQUIRED_COLUMNS = [
-  'event_external_id',
-  'event_name',
-  'event_start',
-  'attendee_email',
-  'attendee_name',
-] as const;
-
-const OPTIONAL_COLUMNS = [
-  'event_category',
-  'event_end',
-  'event_location',
-  'event_url',
-  'is_partner_benefit',
-  'is_cultural_event',
-  'attendee_company',
-  'attendee_external_id',
-  'ticket_type',
-  'ticket_price_thb',
-  'payment_status',
-  'registered_at',
-] as const;
-
-const ALL_COLUMNS = [
-  ...REQUIRED_COLUMNS,
-  ...OPTIONAL_COLUMNS,
-] as const;
-
-type CanonicalKey = (typeof ALL_COLUMNS)[number];
-
-const CANONICAL_COL_SET: ReadonlySet<string> = new Set<string>(ALL_COLUMNS);
+const REQUIRED_COLUMNS = CSV_REQUIRED_COLUMNS;
+const OPTIONAL_COLUMNS = CSV_OPTIONAL_COLUMNS;
+type CanonicalKey = CsvCanonicalColumn;
+const CANONICAL_COL_SET: ReadonlySet<string> = CSV_CANONICAL_COLUMN_SET;
 
 // ---------------------------------------------------------------------------
 // UTF-8 decode + BOM strip
@@ -325,6 +309,12 @@ interface ParsedHeader {
 function parseHeader(
   headerLine: string,
   columnMapping?: ReadonlyMap<string, string>,
+  // #10b (FR-026) — the set of columns the header MUST carry. Defaults to
+  // the full `REQUIRED_COLUMNS` to preserve legacy strictness; the
+  // picker-bound generic path passes the reduced
+  // `CSV_GENERIC_REQUIRED_COLUMNS` (attendee_* only) because the selected
+  // event supplies event_* post-validation.
+  requiredColumns: ReadonlyArray<string> = REQUIRED_COLUMNS,
 ): Result<ParsedHeader, CsvImporterError> {
   // Pre-flight: detect semicolon separator (the export common-case for
   // EU spreadsheet locales). Error early with a clear message rather
@@ -355,8 +345,8 @@ function parseHeader(
     }
   }
   const missingRequired: string[] = [];
-  for (const col of REQUIRED_COLUMNS) {
-    if (!map.has(col)) missingRequired.push(col);
+  for (const col of requiredColumns) {
+    if (!map.has(col as CanonicalKey)) missingRequired.push(col);
   }
   if (missingRequired.length > 0) {
     return err({
@@ -419,16 +409,36 @@ function cellAt(
   return v;
 }
 
+/**
+ * #10b (FR-026) — picker-supplied fallbacks for the three required
+ * `event_*` fields. Injected ONLY when the corresponding column is ABSENT
+ * from the CSV so a picker-bound generic export (no event columns) passes
+ * `CsvRowSchema`; when the column IS present its value is used and
+ * validated exactly as before (legacy full-column behaviour unchanged).
+ * The `iterateGenericRowsWithEventContext` post-merge then re-applies the
+ * eventContext, so these fallbacks are idempotent with it.
+ */
+interface EventFieldDefaults {
+  readonly event_external_id: string;
+  readonly event_name: string;
+  readonly event_start: string;
+}
+
 function mapCellsToRow(
   cells: ReadonlyArray<string>,
   columnIndex: ReadonlyMap<CanonicalKey, number>,
+  eventDefaults?: EventFieldDefaults,
 ):
   | { readonly ok: true; readonly row: CsvRow }
   | { readonly ok: false; readonly reason: string } {
   const raw: Record<string, unknown> = {
-    event_external_id: cellAt(cells, columnIndex, 'event_external_id'),
-    event_name: cellAt(cells, columnIndex, 'event_name'),
-    event_start: cellAt(cells, columnIndex, 'event_start'),
+    event_external_id:
+      cellAt(cells, columnIndex, 'event_external_id') ??
+      eventDefaults?.event_external_id,
+    event_name:
+      cellAt(cells, columnIndex, 'event_name') ?? eventDefaults?.event_name,
+    event_start:
+      cellAt(cells, columnIndex, 'event_start') ?? eventDefaults?.event_start,
     event_category: cellAt(cells, columnIndex, 'event_category'),
     attendee_email: cellAt(cells, columnIndex, 'attendee_email'),
     attendee_name: cellAt(cells, columnIndex, 'attendee_name'),
@@ -466,6 +476,9 @@ async function* iterateRows(
   columnIndex: ReadonlyMap<CanonicalKey, number>,
   expectedCellCount: number,
   startLineNumber: number,
+  // #10b — picker-supplied event_* fallbacks for absent columns; undefined
+  // on the legacy `parseStream` path (strict CSV-value validation).
+  eventDefaults?: EventFieldDefaults,
 ): AsyncIterable<ParsedRow> {
   for (let i = 0; i < bodyLines.length; i++) {
     const lineNumber = startLineNumber + i;
@@ -509,7 +522,7 @@ async function* iterateRows(
       };
       continue;
     }
-    const mapped = mapCellsToRow(tok.cells, columnIndex);
+    const mapped = mapCellsToRow(tok.cells, columnIndex, eventDefaults);
     if (!mapped.ok) {
       yield {
         ok: false,
@@ -700,11 +713,20 @@ async function* iterateGenericRowsWithEventContext(
   eventContext: SelectedEventContext,
 ): AsyncIterable<ParsedRow> {
   const eventStartIso = eventContext.startDate.toISOString();
+  // #10b — supply the required event_* to `mapCellsToRow` so rows whose CSV
+  // lacks event columns still pass schema validation; the post-merge below
+  // re-applies the eventContext (idempotent) and rehashes.
+  const eventDefaults: EventFieldDefaults = {
+    event_external_id: eventContext.externalId,
+    event_name: eventContext.name,
+    event_start: eventStartIso,
+  };
   for await (const row of iterateRows(
     bodyLines,
     columnIndex,
     expectedCellCount,
     startLineNumber,
+    eventDefaults,
   )) {
     if (!row.ok) {
       yield row;
@@ -852,10 +874,17 @@ export const streamingCsvImporter: CsvImporter = {
       });
     }
 
-    // Generic Phase 7 path — header must satisfy `parseHeader` strict
-    // validation. The eventContext is then merged into each row AFTER
-    // schema validation so the dropdown selection wins.
-    const headerResult = parseHeader(headerLine, input.columnMapping);
+    // Generic Phase 7 path — header must satisfy `parseHeader`. Because
+    // this path always carries a picker `eventContext` (which overrides
+    // event_* post-validation, #10b / FR-026), the header only needs the
+    // reduced required set (attendee_email + attendee_name); event_* are
+    // supplied by the selected event. The eventContext is then merged into
+    // each row AFTER schema validation so the dropdown selection wins.
+    const headerResult = parseHeader(
+      headerLine,
+      input.columnMapping,
+      CSV_GENERIC_REQUIRED_COLUMNS,
+    );
     if (!headerResult.ok) return headerResult;
     const expectedCellCount = headerCells.length;
     const bodyLines = rawLines.slice(1);
