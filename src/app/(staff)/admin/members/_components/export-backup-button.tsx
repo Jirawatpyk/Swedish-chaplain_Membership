@@ -40,7 +40,10 @@ export function ExportBackupButton() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // R3-UX1 — defer revoke so iOS Safari + Android Chrome don't
+      // cancel the download from synchronous revocation (mirrors
+      // src/lib/download-pdf-client.ts).
+      setTimeout(() => URL.revokeObjectURL(url), 100);
       toast.success(
         t('exportBackupSuccess', {
           members: res.headers.get('X-Members-Count') ?? '0',
@@ -63,7 +66,7 @@ export function ExportBackupButton() {
       className={buttonVariants({ variant: 'outline' })}
     >
       {busy ? (
-        <Loader2Icon className="h-3.5 w-3.5 animate-spin" aria-hidden />
+        <Loader2Icon className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden />
       ) : (
         <DownloadIcon className="h-3.5 w-3.5" aria-hidden />
       )}
