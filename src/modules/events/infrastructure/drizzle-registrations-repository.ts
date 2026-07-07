@@ -30,6 +30,19 @@ import { eventcreateMetrics } from '@/lib/metrics';
  * inspectable in tests.
  */
 export const LIST_FOR_REQUOTA_CAP = 2000;
+
+/**
+ * F6 remediation PR 2.1 / P1 (FR-032a by-email erasure) — row cap for
+ * `findByEmailLower`. A single attendee email is realistically shared by
+ * only a handful of registrations at SweCham scale (one person, N events),
+ * but the by-email enumeration feeds a DESTRUCTIVE bulk-erase fan-out, so a
+ * defensive ceiling keeps a single DSR from loading an unbounded result set
+ * into memory. `.limit(FIND_BY_EMAIL_CAP + 1)` + slice distinguishes
+ * "exactly at cap, nothing dropped" from "over cap, follow-up sweep needed";
+ * the module const keeps the SELECT and the post-fetch check in lockstep and
+ * inspectable in tests. Dormant at current scale.
+ */
+export const FIND_BY_EMAIL_CAP = 500;
 import { eventRegistrations, events, type EventRegistrationRow } from './schema';
 import type {
   RegistrationsRepository,
@@ -456,8 +469,69 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         return err(wrapRepoError('registrations', e));
       }
     },
-    async findByEmailLower() {
-      return err({ kind: 'not_implemented', method: 'findByEmailLower', futureTask: 'Phase 10 T110' });
+    async findByEmailLower(
+      tenantId: TenantId,
+      emailLower: string,
+    ): Promise<
+      Result<
+        {
+          readonly rows: ReadonlyArray<EventRegistrationAggregate>;
+          readonly truncated: boolean;
+        },
+        RegistrationsRepositoryError
+      >
+    > {
+      // F6 remediation PR 2.1 / P1 (FR-032a by-email erasure BACKEND) —
+      // enumerate every registration whose `attendee_email_lower` EXACTLY
+      // equals the (lowercased) caller email, across all of a tenant's events.
+      // Threads the caller's tenant-scoped `executor` (tx from runInTenant) so
+      // RLS + the explicit `tenant_id` predicate scope the read to this tenant
+      // (two-layer isolation). Rides `event_regs_tenant_email_lower_idx
+      // (tenant_id, attendee_email_lower)` (migration 0131) — NO new index.
+      //
+      // EXACT equality (not ILIKE substring): a DSR erases the person whose
+      // email IS X, not everyone whose email CONTAINS X. Pseudonymised rows
+      // carry a salted hash in `attendee_email_lower`, so they never collide
+      // with a real address — excluded implicitly, no extra filter (P1 brief).
+      try {
+        const rows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.attendeeEmailLower, emailLower.toLowerCase()),
+            ),
+          )
+          .orderBy(
+            desc(eventRegistrations.registeredAt),
+            asc(eventRegistrations.registrationId),
+          )
+          .limit(FIND_BY_EMAIL_CAP + 1);
+        // Derive `truncated` from the RAW row count (BEFORE slicing to CAP) so
+        // the completeness signal is accurate: `.limit(CAP+1)` returns one extra
+        // row iff there are more than CAP matches (I-1 review finding).
+        const truncated = rows.length > FIND_BY_EMAIL_CAP;
+        const safeRows = truncated ? rows.slice(0, FIND_BY_EMAIL_CAP) : rows;
+        if (truncated) {
+          // NEVER log the attendee email / name / company — that PII is
+          // exactly what a downstream erasure removes. `tenantId` + `cap`
+          // only. A truncation means a single DSR has >500 registrations
+          // sharing one email → the by-email sweep must be re-run to
+          // completeness (idempotent: erased rows drop out on re-enumeration).
+          logger.warn(
+            {
+              event: 'f6_find_by_email_cap_hit',
+              tenantId,
+              cap: FIND_BY_EMAIL_CAP,
+            },
+            `[F6] findByEmailLower truncated at ${FIND_BY_EMAIL_CAP} — data subject has more registrations than the cap; a follow-up by-email sweep is required for completeness`,
+          );
+        }
+        return ok({ rows: safeRows.map(toAggregate), truncated });
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
     async countConsumedByMember(
       input: CountConsumedByMemberInput,

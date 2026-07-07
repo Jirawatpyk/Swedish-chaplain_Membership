@@ -54,6 +54,8 @@ import { toggleEventCategory } from '@/modules/events/application/use-cases/togg
 import { archiveEvent } from '@/modules/events/application/use-cases/archive-event';
 import { relinkRegistration } from '@/modules/events/application/use-cases/relink-registration';
 import { eraseAttendeePii } from '@/modules/events/application/use-cases/erase-attendee-pii';
+import { searchAttendeeRegistrationsByEmail } from '@/modules/events/application/use-cases/search-attendee-registrations-by-email';
+import { eraseAttendeeRegistrationsByEmail } from '@/modules/events/application/use-cases/erase-attendee-registrations-by-email';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -84,10 +86,21 @@ import type {
   EraseAttendeePiiOutput,
   EraseAttendeePiiError,
 } from '@/modules/events/application/use-cases/erase-attendee-pii';
+import type {
+  SearchAttendeeRegistrationsByEmailOutput,
+  SearchAttendeeRegistrationsByEmailError,
+} from '@/modules/events/application/use-cases/search-attendee-registrations-by-email';
+import type {
+  EraseAttendeeRegistrationsByEmailInput,
+  EraseAttendeeRegistrationsByEmailOutput,
+  EraseAttendeeRegistrationsByEmailDeps,
+} from '@/modules/events/application/use-cases/erase-attendee-registrations-by-email';
 import {
   makeEventRegistrationLookupForTenant,
   makeEventDetailsBatchLookupForTenant,
   asRegistrationId,
+  asEventId,
+  asUserId,
   tryEventId,
   type EventId,
 } from '@/modules/events';
@@ -556,4 +569,124 @@ export async function runEraseAttendeePii(
     const deps = makeEraseAttendeePiiDeps(tx);
     return eraseAttendeePii({ ...input, tenantId }, deps);
   });
+}
+
+/**
+ * F6 remediation PR 2.1 / P2 (FR-032a by-email erasure BACKEND) — route-facing
+ * wrapper for `searchAttendeeRegistrationsByEmail`. This is the PREVIEW read
+ * that lists every registration sharing a data subject's email across the
+ * tenant's events before the destructive bulk erase (P3).
+ *
+ * READ path → plain `runInTenant` (NO rollback wrapper — nothing mutates).
+ * Composes the P1 registrations repo (`findByEmailLower`) + the batched
+ * event-details lookup, both bound to the SAME tenant-scoped tx so RLS
+ * (`SET LOCAL app.current_tenant`) + the explicit tenant predicate scope both
+ * reads (Principle I two-layer isolation). A batch-lookup error DEGRADES inside
+ * the use-case to a null event name (mirrors `runListEventNamesByIds`), so the
+ * preview never 500s because the enrichment blipped.
+ */
+export async function runSearchAttendeesByEmail(
+  tenantSlug: string,
+  input: { readonly emailLower: string },
+): Promise<
+  Result<
+    SearchAttendeeRegistrationsByEmailOutput,
+    SearchAttendeeRegistrationsByEmailError
+  >
+> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const deps = {
+      registrationsRepo: makeDrizzleRegistrationsRepository(tx),
+      eventDetailsBatchLookup: makeEventDetailsBatchLookupForTenant(tx),
+    };
+    return searchAttendeeRegistrationsByEmail(
+      { tenantId, emailLower: input.emailLower },
+      deps,
+    );
+  });
+}
+
+/**
+ * F6 remediation PR 2.1 / P3 (FR-032a by-email erasure BACKEND) — composition
+ * factory for the DESTRUCTIVE `eraseAttendeeRegistrationsByEmail` bulk fan-out.
+ * Mirrors `makeEraseAllRegistrationsForMemberDeps` (COMP-1 US2c) exactly:
+ *
+ *   - `list` → `findByEmailLower` under ONE enumerate-tx (RLS `SET LOCAL
+ *     app.current_tenant` + explicit tenant predicate — Principle I). A repo
+ *     error FAILS LOUD (throws) rather than degrading into "0 registrations":
+ *     a silent empty enumeration would mark a DSR complete while leaving PII
+ *     live (SC-012 / Art. 17 breach). The use-case calls `list` unguarded, so
+ *     the throw propagates to the caller (route) — matching the member-cascade
+ *     precedent where a `list` throw is caught at the route boundary. The
+ *     thrown message carries only `result.error.kind` (a discriminant enum
+ *     value), NEVER the searched email or attendee PII.
+ *   - `eraseOne` → the existing `runEraseAttendeePii(tenantSlug, ...)`, which
+ *     opens its OWN tenant-scoped tx PER CALL (via `runInTenantWithRollbackOnErr`)
+ *     so one registration's rollback never poisons the siblings — the
+ *     own-tx-per-row guarantee the best-effort fan-out depends on. A shared tx
+ *     would let one DB-poisoned row abort the whole DSR. `eraseOne` MUST NOT
+ *     pass `tenantId` in the input: `runEraseAttendeePii` derives it from
+ *     `tenantSlug` and opens its own scope.
+ *
+ * Scale caveat (by design, mirrors the member fan-out): O(N) tenant
+ * transactions per DSR (1 enumerate + 1 per registration) — negligible at
+ * SweCham scale (a handful of registrations per email).
+ *
+ * Return-type widening→narrowing: `runEraseAttendeePii` resolves to
+ * `Result<{ alreadyErased; quotaReversals }, EraseAttendeePiiError>`; the
+ * `eraseOne` dep declares the narrower `Result<{ alreadyErased }, unknown>`.
+ * The wider ok-value is a structural subtype and the error widens to `unknown`,
+ * so the Result is assignable directly — the fan-out ignores `quotaReversals`.
+ */
+export function makeEraseAttendeesByEmailDeps(
+  tenantSlug: string,
+): EraseAttendeeRegistrationsByEmailDeps {
+  const ctx = asTenantContext(tenantSlug);
+  return {
+    list: (tenantId, emailLower) =>
+      runInTenant(ctx, async (tx) => {
+        const result = await makeDrizzleRegistrationsRepository(
+          tx,
+        ).findByEmailLower(asTenantId(tenantId), emailLower);
+        if (!result.ok) {
+          throw new Error(`findByEmailLower failed: ${result.error.kind}`);
+        }
+        // Thread the cap-truncation completeness signal straight through so the
+        // fan-out output reports a capped, incomplete sweep (I-1 review finding).
+        return {
+          registrations: result.value.rows.map((r) => ({
+            registrationId: String(r.registrationId),
+            eventId: String(r.eventId),
+          })),
+          truncated: result.value.truncated,
+        };
+      }),
+    eraseOne: (registrationId, eventId, eraseInput) =>
+      runEraseAttendeePii(tenantSlug, {
+        eventId: asEventId(eventId),
+        registrationId: asRegistrationId(registrationId),
+        actorUserId: asUserId(eraseInput.actorUserId),
+        reasonText: eraseInput.reasonText,
+        occurredAt: eraseInput.occurredAt,
+      }),
+  };
+}
+
+/**
+ * Convenience: composes the P3 deps + runs the fan-out so the (future P4)
+ * route reduces to a single call. Derives `tenantId` from the slug. NO
+ * `runInTenant` / rollback wrapper HERE — the fan-out is NOT one tx: each
+ * `eraseOne` owns its tx (own-tx-per-row) and `list` owns its enumerate-tx.
+ * NEVER returns `err` (the use-case error channel is `never`); `failedCount > 0`
+ * is a best-effort signal, not an error.
+ */
+export async function runEraseAttendeesByEmail(
+  tenantSlug: string,
+  input: Omit<EraseAttendeeRegistrationsByEmailInput, 'tenantId'>,
+): Promise<Result<EraseAttendeeRegistrationsByEmailOutput, never>> {
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  const deps = makeEraseAttendeesByEmailDeps(tenantSlug);
+  return eraseAttendeeRegistrationsByEmail({ ...input, tenantId }, deps);
 }

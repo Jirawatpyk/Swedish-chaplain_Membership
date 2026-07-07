@@ -1,8 +1,14 @@
 # F6 Manual Erasure Runbook
 
-**Status**: INTERIM — applies until Phase 10 T110 (admin erasure UI) ships
+**Status**: PARTIALLY SUPERSEDED — Phase 10 T110 shipped the **per-registration**
+admin erase (`/admin/events/{eventId}/registrations/{registrationId}/erase`)
+ONLY. The FR-032a by-email **cross-event** sweep was NOT built, so § 2's raw-SQL
+enumeration below remains the ONLY cross-event erasure path. This runbook stays
+LIVE for cross-event DSRs until the by-email admin surface ships.
 **Owner**: Maintainer + DPO
-**Last reviewed**: 2026-05-12 (Issue H-PDPA-2 from full-scope review)
+**Last reviewed**: 2026-07-07 (scoped the interim/superseded claims to the
+per-registration surface after T110 shipped only the single-row erase — the
+cross-event by-email sweep is still unbuilt)
 
 ## Purpose
 
@@ -49,6 +55,17 @@ Erasure MAY be refused under GDPR Art. 17(3) / PDPA §28 grounds:
   if the requester is also a chamber member.
 
 ### 2. Locate records (Day 1–3)
+
+> **⚠️ This cross-event enumeration is STILL manual and mandatory.** Phase 10
+> T110 shipped only the SINGLE per-registration admin erase
+> (`/admin/events/{eventId}/registrations/{registrationId}/erase`), which
+> erases one registration an admin already has open in the attendee table.
+> There is NO admin surface that enumerates every registration sharing an
+> attendee email ACROSS events — the FR-032a by-email cross-event sweep was
+> never built. Until it ships, the raw-SQL query below is the ONLY way to find
+> a data subject's full registration set, and it MUST be run to completeness:
+> a partial enumeration leaves residual PII and breaches GDPR Art. 17 / PDPA
+> §33 / SC-012 (the 30-day response window).
 
 Run as `neondb_owner` role from Neon SQL editor (BYPASS RLS — super-admin
 scope for cross-tenant DSR processing):
@@ -341,10 +358,18 @@ WHERE tenant_id = '<TENANT_SLUG>'
 
 ## Deprecation
 
-This runbook is **superseded** when Phase 10 T110 ships the admin erasure
-UI. The UI runs the same logic with audit-log emission and quota
-credit-back automation. Until then, this manual procedure is the only
-GDPR/PDPA-compliant path.
+Phase 10 T110 shipped the **per-registration** admin erase
+(`/admin/events/{eventId}/registrations/{registrationId}/erase`). It
+supersedes the manual SINGLE-ROW steps (§ 3 quota credit-back, § 4–6 audit +
+delete) **for a registration an admin already has open** — running the same
+logic with audit-log emission + quota credit-back automation.
+
+It does **NOT** supersede § 2's cross-event enumeration. There is still no
+admin surface that finds every registration sharing an attendee email across
+events (the FR-032a by-email cross-event sweep is unbuilt). Until that
+by-email surface ships, § 2's raw-SQL enumeration remains the only
+GDPR/PDPA-compliant way to locate a data subject's full registration set, and
+this runbook stays LIVE for that step.
 
 ## Audit
 

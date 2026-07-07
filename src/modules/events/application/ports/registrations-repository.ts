@@ -196,10 +196,29 @@ export interface RegistrationsRepository {
     input: ListRegistrationsByEventInput,
   ): Promise<Result<ListRegistrationsByEventResult, RegistrationsRepositoryError>>;
 
+  /**
+   * FR-032a by-email erasure enumeration. Returns EVERY registration whose
+   * `attendee_email_lower` exactly equals the (lowered) email, RLS-scoped +
+   * capped at `FIND_BY_EMAIL_CAP` rows.
+   *
+   * `truncated` is a COMPLETENESS signal (I-1 review finding): `true` when the
+   * subject has MORE registrations than the cap, so the returned `rows` are a
+   * partial set and residual PII survives beyond them. Callers (the erasure
+   * preview + bulk fan-out) MUST surface `truncated` so an admin never reads a
+   * capped, incomplete sweep as a COMPLETE Art. 17 DSR.
+   */
   findByEmailLower(
     tenantId: TenantId,
     emailLower: string,
-  ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>>;
+  ): Promise<
+    Result<
+      {
+        readonly rows: ReadonlyArray<EventRegistrationAggregate>;
+        readonly truncated: boolean;
+      },
+      RegistrationsRepositoryError
+    >
+  >;
 
   /**
    * F6.1 Phase 4 US2 (T031) — lookup an existing registration by
