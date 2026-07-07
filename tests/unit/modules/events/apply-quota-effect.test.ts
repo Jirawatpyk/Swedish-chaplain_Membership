@@ -452,15 +452,17 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
   });
 
   describe('lock key derivation', () => {
-    it('buildQuotaLockKey uses the research.md R5 canonical namespace prefix', () => {
-      const key = buildQuotaLockKey(TENANT_ID, MEMBER_ID, EVENT_ID);
-      expect(key).toBe(
-        `eventcreate-quota:${TENANT_ID}:${MEMBER_ID}:${EVENT_ID}`,
-      );
+    it('buildQuotaLockKey uses the research.md R5 canonical namespace prefix + calendar-year scope (#8)', () => {
+      // #8 — the quota lock is keyed on (tenant, member, calendar-YEAR),
+      // NOT (tenant, member, event). A per-event key let two concurrent
+      // cultural-event deliveries in the same year both read
+      // culturalConsumed=0 and double-decrement a 1/year allotment.
+      const key = buildQuotaLockKey(TENANT_ID, MEMBER_ID, FY);
+      expect(key).toBe(`eventcreate-quota:${TENANT_ID}:${MEMBER_ID}:${FY}`);
       expect(key.startsWith('eventcreate-quota:')).toBe(true);
     });
 
-    it('lock key fed into AdvisoryLockAcquirer.acquire matches buildQuotaLockKey', async () => {
+    it('lock key fed into AdvisoryLockAcquirer.acquire matches buildQuotaLockKey (year-scoped, #8)', async () => {
       const { deps, acquireMock } = makeDeps({
         queryAllotments: async () =>
           ok({
@@ -474,7 +476,7 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
       await applyQuotaEffect(baseInput(), deps);
       expect(acquireMock).toHaveBeenCalledTimes(1);
       expect(acquireMock).toHaveBeenCalledWith(
-        buildQuotaLockKey(TENANT_ID, MEMBER_ID, EVENT_ID),
+        buildQuotaLockKey(TENANT_ID, MEMBER_ID, FY),
       );
     });
   });

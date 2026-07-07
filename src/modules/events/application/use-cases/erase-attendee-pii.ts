@@ -67,8 +67,11 @@ import type {
 } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import {
   registrationsRepoErrorMessage,
+  eventsRepoErrorMessage,
 } from './_helpers/repo-error-message';
 import {
   wrapAuditEmitFailure,
@@ -106,6 +109,7 @@ export type EraseAttendeePiiError =
       readonly message: string;
       readonly cause: EventsRepositoryError;
     }
+  | { readonly kind: 'event_not_found'; readonly eventId: EventId }
   | {
       readonly kind: 'registrations_repo_error';
       readonly message: string;
@@ -231,9 +235,32 @@ export async function eraseAttendeePii(
   const memberId = registration.match.matchedMemberId;
 
   if ((wasPartnership || wasCultural) && memberId !== null) {
+    // #8 — year-scoped quota lock. The registration aggregate does not
+    // carry the event's start_date, so load the event to derive the
+    // calendar year of its start_date (the same key the ingest / refund /
+    // toggle / archive / relink paths acquire). The loaded event is
+    // reused by #16's under-lock re-read.
+    const eventLookup = await deps.eventsRepo.findById(
+      input.tenantId,
+      registration.eventId,
+    );
+    if (!eventLookup.ok) {
+      return err({
+        kind: 'events_repo_error',
+        message: eventsRepoErrorMessage(eventLookup.error),
+        cause: eventLookup.error,
+      });
+    }
+    if (eventLookup.value === null) {
+      return err({ kind: 'event_not_found', eventId: registration.eventId });
+    }
+    const fiscalYear = deriveFiscalYear(
+      eventLookup.value.startDate.toISOString(),
+      F6_FISCAL_YEAR_START_MONTH,
+    );
     try {
       await deps.advisoryLockAcquirer.acquire(
-        buildQuotaLockKey(input.tenantId, memberId, registration.eventId),
+        buildQuotaLockKey(input.tenantId, memberId, fiscalYear),
       );
     } catch (e) {
       return err(wrapLockFailure(e));

@@ -810,11 +810,9 @@ async function maybeApplyStateChange(
             // `process-attendee-in-tx.ts` (search for `buildQuotaLockKey`).
             try {
               await ports.advisoryLockAcquirer.acquire(
-                buildQuotaLockKey(
-                  input.tenantId,
-                  matchedMemberId,
-                  event.eventId,
-                ),
+                // #8 — year-scoped quota lock (was per-event); `fiscalYear`
+                // is derived from `event.startDate` above.
+                buildQuotaLockKey(input.tenantId, matchedMemberId, fiscalYear),
               );
             } catch (e) {
               const causeErr =

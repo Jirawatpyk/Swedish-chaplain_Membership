@@ -16,8 +16,10 @@
  *      acquiring the lock or hitting the plan repo (perf optimisation
  *      + avoids spurious advisory locks on irrelevant ingests).
  *
- *   2. Acquire the per-(tenant, member, event) Postgres advisory lock
- *      (auto-released at tx-end). Disjoint namespace `eventcreate-quota:`
+ *   2. Acquire the per-(tenant, member, calendar-year) Postgres advisory
+ *      lock (auto-released at tx-end; #8 — coarsened from per-event so
+ *      concurrent same-year cultural deliveries can't double-decrement a
+ *      1/year allotment). Disjoint namespace `eventcreate-quota:`
  *      from F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:` /
  *      F8 `renewals:` — zero cross-feature contention. Order: RLS
  *      tenant-binding MUST be set by the caller BEFORE this use-case
@@ -176,13 +178,34 @@ export interface ApplyQuotaEffectDeps {
  * `AdvisoryLockAcquirer.acquire`. Validation runs through `asLockKey`
  * which rejects typos like `eventcreate_quota:` (underscore) vs the
  * canonical `eventcreate-quota:` (hyphen).
+ *
+ * **#8 — year-scoped (was per-event).** The key is now
+ * `eventcreate-quota:{tenant}:{member}:{calendar-year}`, deliberately
+ * coarsened from the former per-`(tenant, member, event)` shape. Rationale:
+ *   - Cultural quota is per-`(member, YEAR)` — `applyQuotaEffect` reads
+ *     `culturalConsumedForYear` (a `SUM ... EXTRACT(YEAR FROM start_date)`
+ *     across ALL of the member's events in the year, FR-016). Under READ
+ *     COMMITTED, a per-event lock let two concurrent deliveries for two
+ *     DIFFERENT cultural events in the same year both read
+ *     `culturalConsumed=0` and both set the counted flag → double-decrement
+ *     of a 1/year allotment (SC-004). A single per-year lock serialises
+ *     both, so the second reader observes the first's committed row.
+ *   - Partnership quota stays correct: `partnershipConsumedForEvent` is
+ *     queried per-event, so the coarser per-year lock only reduces
+ *     cross-event concurrency for the SAME member (negligible at STD
+ *     scale) without changing per-event partnership accounting.
+ *
+ * The year passed in is the calendar year of the event's `start_date` in
+ * Asia/Bangkok wall time — derive via
+ * `deriveFiscalYear(event.startDate.toISOString(), F6_FISCAL_YEAR_START_MONTH)`
+ * (F6 anchors to calendar year, NOT the tenant-configurable F4 fiscal year).
  */
 export function buildQuotaLockKey(
   tenantId: TenantId,
   memberId: MemberId,
-  eventId: EventId,
+  fiscalYear: number,
 ): LockKey {
-  return asLockKey(`eventcreate-quota:${tenantId}:${memberId}:${eventId}`);
+  return asLockKey(`eventcreate-quota:${tenantId}:${memberId}:${fiscalYear}`);
 }
 
 /**
@@ -216,10 +239,12 @@ export async function applyQuotaEffect(
     });
   }
 
-  // (2) Advisory lock — auto-released at tx-end.
+  // (2) Advisory lock — auto-released at tx-end. Keyed per-(tenant,
+  // member, calendar-year) so concurrent cultural deliveries across
+  // different same-year events serialise (see buildQuotaLockKey #8).
   try {
     await deps.advisoryLockAcquirer.acquire(
-      buildQuotaLockKey(input.tenantId, input.matchedMemberId, input.eventId),
+      buildQuotaLockKey(input.tenantId, input.matchedMemberId, input.fiscalYear),
     );
   } catch (e) {
     return err(wrapLockFailure(e));

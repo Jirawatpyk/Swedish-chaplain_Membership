@@ -14,8 +14,13 @@
  *
  * Namespace convention (mirrors F4 `invoicing:` / F5 `payments:` /
  * F7 `broadcasts:` / F8 `renewals:` precedents):
- *   `eventcreate-quota:${tenantId}:${memberId}:${eventId}` —
- *   per-(tenant, member, event) coordination key.
+ *   `eventcreate-quota:${tenantId}:${memberId}:${calendarYear}` —
+ *   per-(tenant, member, calendar-year) coordination key. #8 coarsened
+ *   this from the former per-(tenant, member, event) shape so concurrent
+ *   cultural deliveries across two same-year events serialise on one key
+ *   (cultural quota is counted per-YEAR; a per-event key double-counted a
+ *   1/year allotment). Partnership quota is per-event and stays correct
+ *   because its `consumed` is queried per-event.
  *
  * **I-6 wave-5 batch-3** — `LockKey` brand:
  *   The branded type prevents a typo-class bug where a caller could

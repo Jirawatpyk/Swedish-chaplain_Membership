@@ -439,32 +439,31 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     // TOCTOU window with concurrent ingest workers that ALSO try to
     // touch this (member, event) registration.
     expect(ports.advisoryLockAcquirer.acquire).toHaveBeenCalledTimes(1);
-    // R6.S / Round 5 staff-review R025 closure — pin the lock-key
-    // shape `eventcreate-quota:{tenant}:{member}:{event}`. A regression
-    // swapping the member/event order would acquire a DIFFERENT key
-    // for concurrent workers + break TOCTOU protection silently.
+    // #8 — pin the year-scoped lock-key shape
+    // `eventcreate-quota:{tenant}:{member}:{calendar-year}`. The lock was
+    // coarsened from per-event to per-(tenant, member, calendar-year) so
+    // two concurrent cultural-event deliveries in the same year can no
+    // longer both read culturalConsumed=0 and double-decrement a 1/year
+    // allotment. A regression swapping member/year order would acquire a
+    // DIFFERENT key for concurrent workers + break TOCTOU protection.
     const acquireCalls = (
       ports.advisoryLockAcquirer.acquire as ReturnType<typeof vi.fn>
     ).mock.calls;
-    // R7.W / Staff R2 R032 — pin both shape AND positional field
-    // order so a regression swapping member/event order in
-    // `buildQuotaLockKey()` is caught. Member position is UUID-shaped
-    // (36 chars hex+hyphen); event position is the seed's `evt-1`
-    // sentinel — distinct character classes guarantee positional
-    // assertion (UUID cannot match `evt-1` and vice versa).
+    // Pin both shape AND positional field order so a regression swapping
+    // member/year order in `buildQuotaLockKey()` is caught. Member
+    // position is UUID-shaped (36 chars hex+hyphen); year position is a
+    // 4-digit calendar year derived from `event.startDate` in
+    // Asia/Bangkok — distinct character classes guarantee positional
+    // assertion (a UUID cannot match `\d{4}` and vice versa).
     expect(acquireCalls[0]?.[0]).toMatch(
-      /^eventcreate-quota:test-chamber:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:evt-[a-z0-9-]+$/i,
+      /^eventcreate-quota:test-chamber:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:\d{4}$/i,
     );
-    // R8.S / Staff R3 R062 — identity-equality on lock-key positional
-    // parts. The regex above relies on the fact that `eventId` fixture
-    // is the literal string `evt-1` (NOT a UUID). A future fixture
-    // normalisation that branded eventIds to UUIDs would erase the
-    // positional anchor — both positions would match the UUID slot.
-    // Pin identity here so a fixture refactor breaks the assertion
-    // visibly (FAIL with a clear "got X, expected memberId Y" message).
+    // Identity-equality on lock-key positional parts. The event fixture's
+    // `startDate` is 2026-06-15T18:00:00+07:00 → Asia/Bangkok calendar
+    // year 2026, so the year segment MUST be the literal string `2026`.
     const lockKeyPair = acquireCalls[0]?.[0]?.split(':') ?? [];
     expect(lockKeyPair[2]).toBe(memberIdLiteral);
-    expect(lockKeyPair[3]).toBe(existingRegPaidPartnership.eventId);
+    expect(lockKeyPair[3]).toBe('2026');
     // The audit port should have received a quota_credit_back_refund
     // emit for partnership scope.
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;

@@ -395,9 +395,11 @@ export async function relinkRegistration(
   // Same _principle_ as archive-event's `ORDER BY matched_member_id
   // ASC` SELECT — but a different mechanism: archive sorts at the SQL
   // layer over N rows × ONE lock per row; relink sorts TWO branded
-  // `LockKey` strings in-process via `Array.sort`. The keys include
-  // tenant + event + member so the sort works on the composite, not
-  // just the member-id substring.
+  // `LockKey` strings in-process via `Array.sort`. Post-#8 the keys are
+  // `eventcreate-quota:{tenant}:{member}:{year}` — both keys share the
+  // same tenant + year, so they differ (and sort) on the member-id
+  // segment, which is exactly the deadlock-order guarantee we need
+  // (OLD vs NEW member on the same event/year).
   //
   // The OLD lock is only required when credit-back work is going to
   // happen (counted=true on OLD); skip it otherwise so non_member /
@@ -416,19 +418,12 @@ export async function relinkRegistration(
   const lockKeys: LockKey[] = [];
   if (oldMemberToCreditBack !== null) {
     lockKeys.push(
-      buildQuotaLockKey(
-        input.tenantId,
-        oldMemberToCreditBack,
-        registration.eventId,
-      ),
+      // #8 — year-scoped quota lock (was per-event).
+      buildQuotaLockKey(input.tenantId, oldMemberToCreditBack, fiscalYear),
     );
   }
   lockKeys.push(
-    buildQuotaLockKey(
-      input.tenantId,
-      input.newMatchedMemberId,
-      registration.eventId,
-    ),
+    buildQuotaLockKey(input.tenantId, input.newMatchedMemberId, fiscalYear),
   );
   // String-compare sort on the branded LockKey; `Array.prototype.sort`
   // preserves the element brand at the type level because the array

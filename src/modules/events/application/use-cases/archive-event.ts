@@ -326,7 +326,7 @@ export async function archiveEvent(
 
     try {
       await deps.advisoryLockAcquirer.acquire(
-        buildQuotaLockKey(input.tenantId, memberId, input.eventId),
+        buildQuotaLockKey(input.tenantId, memberId, fiscalYear),
       );
     } catch (e) {
       return err(wrapLockFailure(e));
