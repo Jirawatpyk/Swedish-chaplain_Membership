@@ -167,6 +167,12 @@ interface BuildRequestOpts {
   readonly omitFileField?: boolean;
   /** When true, replace the entire body with non-multipart garbage. */
   readonly malformedBody?: boolean;
+  /**
+   * PR 4.2 (#10a) — verbatim value for a `column_mapping` multipart field.
+   * The raw string is appended as-is (so malformed-JSON / oversized /
+   * non-canonical negative cases can be exercised). Omit to send no field.
+   */
+  readonly columnMappingField?: string;
 }
 
 function buildRequest(opts: BuildRequestOpts = {}): NextRequest {
@@ -244,6 +250,20 @@ function buildRequest(opts: BuildRequestOpts = {}): NextRequest {
       ].join('\r\n'),
     ),
   );
+  // PR 4.2 (#10a) — optional `column_mapping` form field (verbatim).
+  if (opts.columnMappingField !== undefined) {
+    parts.push(
+      enc.encode(
+        [
+          `--${boundary}`,
+          'Content-Disposition: form-data; name="column_mapping"',
+          '',
+          opts.columnMappingField,
+          '',
+        ].join('\r\n'),
+      ),
+    );
+  }
   parts.push(enc.encode(`--${boundary}--\r\n`));
   const totalLength = parts.reduce((n, p) => n + p.byteLength, 0);
   const body = new Uint8Array(totalLength);
@@ -789,6 +809,114 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       // for RBAC-rejection paths (role_violation_blocked), not happy
       // path. So emitStandalone MUST stay un-called here.
       expect(emitStandaloneMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // PR 4.2 (#10a) — FR-026 admin column remap. The client inverts its
+  // canonical→header selections into the parser's expected header→canonical
+  // direction BEFORE POSTing; the route must thread that Map through
+  // verbatim (NO re-inversion) and fail closed on any malformed / oversized
+  // / non-canonical map (a NEW external input boundary).
+  describe('FR-026 column_mapping (#10a) — inversion pinned + fail-closed validation', () => {
+    const COMPLETED = {
+      kind: 'completed' as const,
+      summary: {
+        rowsProcessed: 1,
+        rowsAlreadyImported: 0,
+        eventsCreated: 0,
+        eventsUpdated: 1,
+        matchCounts: {
+          member_contact: 0,
+          member_domain: 0,
+          member_fuzzy: 0,
+          non_member: 1,
+          unmatched: 0,
+        },
+        errorRows: [],
+        durationMs: 42,
+      },
+    };
+
+    it('passes a header→canonical Map to runImportCsv (PINS the inversion direction)', async () => {
+      runImportCsvMock.mockResolvedValue(COMPLETED);
+      const { POST } = await loadImportRoute();
+      const mapping = {
+        'Email Address': 'attendee_email',
+        'Full Name': 'attendee_name',
+      };
+      const res = await POST(
+        buildRequest({ columnMappingField: JSON.stringify(mapping) }),
+      );
+
+      expect(res.status).toBe(200);
+      expect(runImportCsvMock).toHaveBeenCalledTimes(1);
+      const arg = runImportCsvMock.mock.calls[0]![0] as {
+        columnMapping?: ReadonlyMap<string, string>;
+      };
+      expect(arg.columnMapping).toBeInstanceOf(Map);
+      // Keyed by CSV header, valued by canonical column — the direction
+      // the parser's `columnMapping.get(rawHeader)` expects.
+      expect(arg.columnMapping!.get('Email Address')).toBe('attendee_email');
+      expect(arg.columnMapping!.get('Full Name')).toBe('attendee_name');
+      // Route MUST NOT have re-inverted the map.
+      expect(arg.columnMapping!.get('attendee_email')).toBeUndefined();
+    });
+
+    it('400 csv-column-mapping-invalid — malformed JSON (runImportCsv NOT called)', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(
+        buildRequest({ columnMappingField: '{not valid json' }),
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/csv-column-mapping-invalid/);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('400 — a mapping VALUE that is not a canonical column (runImportCsv NOT called)', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(
+        buildRequest({
+          columnMappingField: JSON.stringify({
+            'Email Address': 'totally_not_a_column',
+          }),
+        }),
+      );
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/csv-column-mapping-invalid/);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('400 — column_mapping is a JSON array (non-object) (runImportCsv NOT called)', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(
+        buildRequest({ columnMappingField: JSON.stringify(['attendee_email']) }),
+      );
+      expect(res.status).toBe(400);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('400 — too many entries (runImportCsv NOT called)', async () => {
+      const big: Record<string, string> = {};
+      for (let i = 0; i < 200; i++) big[`h${i}`] = 'attendee_email';
+      const { POST } = await loadImportRoute();
+      const res = await POST(
+        buildRequest({ columnMappingField: JSON.stringify(big) }),
+      );
+      expect(res.status).toBe(400);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('no column_mapping field → runImportCsv called without columnMapping (unchanged happy path)', async () => {
+      runImportCsvMock.mockResolvedValue(COMPLETED);
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(200);
+      const arg = runImportCsvMock.mock.calls[0]![0] as {
+        columnMapping?: ReadonlyMap<string, string>;
+      };
+      expect(arg.columnMapping).toBeUndefined();
     });
   });
 });
