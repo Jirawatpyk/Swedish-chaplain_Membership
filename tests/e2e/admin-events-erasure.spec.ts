@@ -153,7 +153,7 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
 
   // --- 3. RBAC (FR-035, carry-forward #1) -----------------------------------
 
-  test('manager is redirected off the erasure page (to /admin/events)', async ({
+  test('manager is redirected off the erasure page + never sees the search form', async ({
     page,
   }) => {
     test.skip(
@@ -161,14 +161,29 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
       'Set E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD',
     );
     await signInAsManager(page);
-    const res = await page.context().request.get(ROUTE, {
+
+    // STRONGEST security proof — the raw response body served to a MANAGER must
+    // NOT contain the erasure search form. The page's role-check `redirect()`
+    // fires BEFORE the JSX renders, so the form HTML is never streamed to a
+    // non-admin. This holds whether Next emits an HTTP 3xx OR a 200+RSC
+    // client-side redirect — the latter is exactly why the prior raw-3xx status
+    // assertion was the WRONG mechanism: a page-level `redirect()` behind the
+    // `loading.tsx` Suspense boundary streams a 200 carrying a client redirect
+    // directive, not a 3xx status. Body-content absence is invariant to that.
+    const raw = await page.context().request.get(ROUTE, {
       failOnStatusCode: false,
-      maxRedirects: 0,
     });
-    expect(res.status()).toBeLessThan(500);
-    expect(res.status()).toBeGreaterThanOrEqual(300);
-    expect(res.status()).toBeLessThan(400);
-    expect(res.headers()['location'] ?? '').toContain('/admin/events');
+    expect(await raw.text()).not.toContain('erase-by-email-input');
+
+    // Behavioural proof — a real browser navigation follows the client redirect
+    // and lands on /admin/events (NOT the erasure page), with the search form +
+    // the localised page heading both ABSENT from the DOM.
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(/\/admin\/events\/?(?:\?.*)?$/);
+    await expect(page.locator('#erase-by-email-input')).toHaveCount(0);
+    await expect(
+      page.getByRole('heading', { name: TITLE_RE.en, level: 1 }),
+    ).toHaveCount(0);
   });
 
   test('member is bounced to /portal by the (staff) layout guard', async ({
