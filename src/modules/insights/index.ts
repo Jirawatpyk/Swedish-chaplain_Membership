@@ -201,6 +201,14 @@ export {
   processExportJob,
   type ProcessExportJobError,
 } from './application/use-cases/process-export-job';
+// Members Backup Export (design 2026-07-07) — admin full-tenant PII backup ZIP.
+export {
+  exportMembersBackup,
+  type ExportMembersBackupDeps,
+  type ExportMembersBackupError,
+  type ExportMembersBackupMeta,
+  type ExportMembersBackupOutput,
+} from './application/use-cases/export-members-backup';
 export {
   prepareExportDownload,
   downloadExport,
@@ -267,5 +275,6 @@ export {
   makeRequestDataExportDeps,
   makeGetErasureEvidenceLogDeps,
   listMemberDataExports,
+  makeExportMembersBackupDeps,
   systemClock,
 } from './infrastructure/insights-deps';
