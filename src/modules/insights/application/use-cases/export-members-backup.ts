@@ -24,6 +24,7 @@
  */
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -98,7 +99,7 @@ export async function exportMembersBackup(
     });
   } catch (e) {
     logger.error(
-      { tenantSlug: ctx.slug, requestId: meta.requestId, err: e instanceof Error ? e.message : String(e) },
+      { tenantSlug: ctx.slug, requestId: meta.requestId, errKind: errKind(e) },
       'exportMembersBackup: gather failed',
     );
     return err('gather_failed');

@@ -2,11 +2,14 @@
  * Members Backup Export — pure CSV rendering (design 2026-07-07).
  *
  * All three files: UTF-8 BOM prefix (Excel-TH opens without the import
- * wizard), CRLF line endings, EVERY cell through `toCsvField` (RFC-4180
- * always-quote + spreadsheet formula-injection defang — company names and
- * notes are user-controlled). Null/undefined → empty cell. Timestamps are
- * ISO 8601 UTC strings produced by the source adapter (BE is display-only,
- * never in data files).
+ * wizard), CRLF line endings. User-controlled string cells (company names,
+ * notes, contact names, etc.) go through `toCsvField` (RFC-4180 always-quote
+ * + spreadsheet formula-injection defang); machine-generated satang→baht
+ * money cells (invoices.csv subtotal/vat/total) go through `quoteNumeric`
+ * instead — RFC-4180 quoting only, no defang, because the output shape is
+ * always `-?\d+\.\d{2}` (no injection surface). Null/undefined → empty cell.
+ * Timestamps are ISO 8601 UTC strings produced by the source adapter (BE is
+ * display-only, never in data files).
  *
  * Application layer: pure string transforms, zero framework imports.
  */

@@ -1,9 +1,11 @@
 /**
  * Members Backup Export — Drizzle/raw-SQL source adapter (design 2026-07-07).
  *
- * Three reads, ONE caller-supplied `runInTenant` tx (RLS-scoped; a repo
- * method reaching for the pool-global `db` here would silently bypass RLS —
- * F7.1a US2 incident class):
+ * Four reads (tenant_member_settings prefix + members + contacts + invoices),
+ * ONE caller-supplied `runInTenant` tx (RLS-scoped; a repo method reaching
+ * for the pool-global `db` here would silently bypass RLS — F7.1a US2
+ * incident class):
+ *   - tenant_member_settings: `member_number_prefix` (COALESCE to the default).
  *   - members: EVERY status (active/inactive/archived); GDPR-erased rows
  *     come out as stored (already-redacted tombstone, `erased_at` set).
  *   - contacts: live only (`removed_at IS NULL`).

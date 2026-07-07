@@ -1,7 +1,7 @@
 /**
  * F9 `InsightsAuditPort` Application port (T013).
  *
- * 15 audit event types (data-model.md § 7) as a const tuple + a discriminated
+ * 16 audit event types (data-model.md § 7) as a const tuple + a discriminated
  * union so callers cannot emit an unknown `event_type`. Mirrors the F5/F7
  * audit-port pattern but ALL F9 events default to **5-year retention** — F9 is
  * a read-/oversight layer with no tax-document or financial-settlement records
@@ -9,8 +9,8 @@
  * tax records).
  *
  * F9 events are written to F1's shared `audit_log` table (the Postgres
- * `audit_event_type` enum was extended with these 15 values: migration 0191 (14)
- * + migration 0193 (`member_timeline_viewed`)).
+ * `audit_event_type` enum was extended with these 16 values: migrations 0191 (14)
+ * + 0193 (`member_timeline_viewed`) + 0237 (`members_backup_exported`)).
  * The Infrastructure adapter (`insights-audit-adapter.ts`) inserts the row with
  * the `retention_years` column, mirroring the F5 raw-SQL adapter.
  *

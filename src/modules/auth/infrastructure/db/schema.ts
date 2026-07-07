@@ -284,7 +284,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'password_change_failed',
   'password_reset_email_failed',
   'password_malformed_hash_detected',
-  // --- F9 Admin Dashboard (migration 0191 + 0193) — 15 event types ---
+  // --- F9 Admin Dashboard (migrations 0191 + 0193 + 0237) — 16 event types ---
   //     written to this shared audit_log via the insights audit adapter with
   //     5y retention (no tax-document overlap). Keep in lockstep with
   //     `F9_AUDIT_EVENT_TYPES` (insights audit port) — `check:audit-events`

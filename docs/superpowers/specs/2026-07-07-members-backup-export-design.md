@@ -21,7 +21,7 @@ The existing export surfaces do not cover this:
 | Row scope | **ALL members, every status** (`active`, `inactive`, `archived`); ignores any UI filter |
 | Contacts | Separate `contacts.csv` in the same ZIP, linked by `member_number` |
 | Payment data | Separate `invoices.csv` in the same ZIP — every invoice, every status, with `paid_at` + `payment_method` (this IS the member payment history; both offline bank-transfer and Stripe/PromptPay payments end up on the invoice) |
-| Access | **Admin only** — manager / member / anonymous → 404 (endpoint cloaking, same as invoices CSV) |
+| Access | **Admin only** — manager / member / anonymous rejected by `requireAdminContext` (401 anonymous / 403 wrong-role — same behaviour as the invoices CSV route); the use-case's own `forbidden` → 404 cloak remains as defence-in-depth |
 | Delivery | **Synchronous** GET route streaming an in-memory ZIP (Approach A). Async F9 export-job (Approach B) rejected as overkill at SweCham scale (~131 members / ~164 contacts / a few hundred invoices); 3-separate-downloads (Approach C) rejected — user wants one backup artifact |
 
 ## Architecture
@@ -91,15 +91,21 @@ out, it is a one-line column removal.
 ### invoices.csv — every invoice, every status
 
 ```
-member_number, document_number, document_type, status, currency,
-subtotal, vat_amount, total, issued_at, due_date, paid_at, payment_method
+member_number, document_number, receipt_number, invoice_subject, status,
+currency, subtotal, vat, total, issue_date, due_date, paid_at, payment_method
 ```
+
+`document_number` is `COALESCE(bill_document_number_raw, document_number)` —
+the 088 bill-first numbering stream's tax-invoice/receipt number when one has
+been issued, falling back to the legacy `document_number` otherwise. 13 columns.
 
 Invoice lines, credit notes, and PDF artifacts are **out of scope** (see below).
 
 ## Security & compliance
 
-- **RBAC**: `requireAdminContext` — admin only; manager/member/anonymous → 404.
+- **RBAC**: `requireAdminContext` — admin only; manager/member/anonymous rejected
+  with 401 (anonymous) / 403 (wrong role) — same behaviour as the invoices CSV
+  route. The use-case's own `forbidden` → 404 cloak remains as defence-in-depth.
 - **Audit**: new event type `members_backup_exported` (5-year retention), emitted by
   the use-case on success with per-file row counts in metadata. Bulk PII egress must
   be attributable (Constitution Principle I audit sub-clause).
@@ -124,14 +130,14 @@ Invoice lines, credit notes, and PDF artifacts are **out of scope** (see below).
 
 - Empty tenant → valid ZIP with header-only CSVs (HTTP 200, zero rows) — not an error.
 - Use-case failure → 500 `{ error: { code: 'server_error' } }` + pino error log; button shows destructive toast.
-- Malformed/unauthenticated requests → 404 (cloak).
+- Non-admin requests → 401 (anonymous) / 403 (wrong role) from `requireAdminContext`; the use-case's `forbidden` → 404 cloak is defence-in-depth only.
 
 ## Testing (TDD)
 
 1. **Unit** — CSV builders: RFC-4180 escaping, BOM present, formula-injection
    neutralised, erased-member row shape, empty-input → header-only.
-2. **Contract** — route: 404 for manager/member/anonymous; 200 ZIP for admin with
-   exactly 3 entries; headers (content-type, disposition, no-store).
+2. **Contract** — route: guard rejection forwarded (401/403) for manager/member/anonymous;
+   200 ZIP for admin with exactly 3 entries; headers (content-type, disposition, no-store).
 3. **Integration (live Neon dev branch)** — seeded tenant: all 3 files contain the
    seeded rows; `members_backup_exported` audit row written; cross-tenant probe
    (tenant B's data never appears in tenant A's export).
