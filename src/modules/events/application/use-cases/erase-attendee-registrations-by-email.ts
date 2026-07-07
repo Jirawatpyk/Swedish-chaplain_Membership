@@ -87,12 +87,20 @@ export interface EraseAttendeeRegistrationsByEmailOutput {
   readonly alreadyErasedCount: number;
   readonly failedCount: number;
   /**
-   * `true` when the enumeration was CAPPED (`FIND_BY_EMAIL_CAP`) — i.e. the
-   * subject had MORE registrations than were erased in THIS pass, so PII
-   * survives beyond the cap. The caller MUST NOT read a truncated
-   * `{erasedCount:CAP, failedCount:0}` as a COMPLETE Art. 17 DSR — it must
-   * re-drive the sweep to completeness (idempotent: erased rows drop out on
-   * re-enumeration). I-1 review finding; propagated from `list`.
+   * `true` when the sweep did NOT genuinely drain, so residual PII may survive
+   * and the caller MUST re-drive the DSR (idempotent — erased rows drop out on
+   * re-enumeration). Since PR 4.1 the fan-out AUTO-LOOPS the enumeration
+   * (follow-up #1), so a merely cap-truncated enumeration no longer surfaces
+   * here — the loop re-drives it internally. `truncated:true` now means the
+   * loop stopped INCOMPLETE for one of:
+   *   - a batch had a FAILURE (`failedCount > 0`) — the failed row stays in the
+   *     table, so the loop broke rather than spin on it; OR
+   *   - the `MAX_SWEEP_ITERATIONS` safety guard tripped (pathological
+   *     non-draining state).
+   * `truncated:false` is emitted ONLY when the fan-out looped to completion
+   * with zero failures and the guard never tripped — i.e. a genuinely COMPLETE
+   * Art. 17 / PDPA §33 erasure across every registration sharing the email.
+   * (Was: a straight passthrough of the `list` cap — I-1 review finding.)
    */
   readonly truncated: boolean;
 }
@@ -101,8 +109,10 @@ export interface EraseAttendeeRegistrationsByEmailDeps {
   /**
    * Enumerate every registration sharing the (lowered) attendee email (one
    * read), capped at `FIND_BY_EMAIL_CAP`. `truncated` reports whether the cap
-   * hid additional rows — threaded straight to the use-case output so a capped
-   * pass is never mistaken for a complete erasure.
+   * hid additional rows; the fan-out uses it to decide whether to RE-enumerate
+   * for the next batch (PR 4.1 auto-loop) — a truncated batch means more rows
+   * remain, so the loop re-`list`s after erasing this batch. Each call re-reads
+   * the LIVE table, so hard-deleted rows from prior batches drop out.
    */
   list(
     tenantId: string,
@@ -135,49 +145,119 @@ export async function eraseAttendeeRegistrationsByEmail(
   input: EraseAttendeeRegistrationsByEmailInput,
   deps: EraseAttendeeRegistrationsByEmailDeps,
 ): Promise<Result<EraseAttendeeRegistrationsByEmailOutput, never>> {
-  const { registrations, truncated } = await deps.list(
-    input.tenantId,
-    input.emailLower,
-  );
-
   let erasedCount = 0;
   let alreadyErasedCount = 0;
   let failedCount = 0;
+  let iterations = 0;
+  // `complete` = did the sweep GENUINELY drain? Only then is `truncated:false`.
+  let complete = false;
 
-  for (const { registrationId, eventId } of registrations) {
-    try {
-      const r = await deps.eraseOne(registrationId, eventId, {
-        tenantId: input.tenantId,
-        actorUserId: input.actorUserId,
-        reasonText: input.reasonText,
-        occurredAt: input.occurredAt,
-      });
-      if (!r.ok) {
+  // PR 4.1 follow-up #1 — SERVER-SIDE AUTO-LOOP. A data subject with more than
+  // `FIND_BY_EMAIL_CAP` registrations used to get one capped batch erased +
+  // `truncated:true`, leaving completeness to a manual admin re-drive. Now the
+  // fan-out loops: erased rows are HARD-DELETED, so each re-`list` re-reads the
+  // live table and returns the NEXT ≤CAP rows — repeat until the sweep drains.
+  //
+  // TERMINATION INVARIANTS (all three are guarded — a DESTRUCTIVE PII path must
+  // never spin unbounded). Order matters; the checks below fire in this order:
+  //   (0) EMPTY batch (top of loop) → nothing (more) to erase → COMPLETE.
+  //   (1) ANY failure in a batch → STOP IMMEDIATELY, do NOT re-`list`. A row
+  //       that failed to erase STAYS in `event_registrations`, so the next
+  //       enumeration would return it AGAIN — an infinite loop on the failing
+  //       row. Break with `complete=false` (→ `truncated:true`) so the admin
+  //       re-drives after fixing the failure. Checked BEFORE the not-truncated
+  //       check so a failure ALWAYS forces incompleteness, even for a
+  //       non-cap-truncated batch (the failed row is itself residual PII).
+  //   (2) batch NOT truncated (< CAP+1 rows) + no failures → every remaining
+  //       row was erased → the sweep genuinely DRAINED. COMPLETE without a
+  //       wasteful confirming re-`list` (so the realistic sub-cap case still
+  //       calls `list` exactly once — unchanged behaviour).
+  //   (3) iteration guard `MAX_SWEEP_ITERATIONS` → STOP. A pathological
+  //       non-draining state (e.g. a row that neither erases nor drops out)
+  //       can never spin unbounded. Break with `complete=false`.
+  // `alreadyErased` rows never cause a loop: an ok+alreadyErased result means
+  // the row is already gone from the live table (hard-deleted / hash-mismatched
+  // pseudonym), so it does not re-enumerate.
+  //
+  // The error channel stays `never`: row-level failures are TALLIED (best-
+  // effort), never thrown. Only a `list` enumerate-throw propagates (unguarded,
+  // as before) to the route boundary.
+  while (true) {
+    const { registrations, truncated } = await deps.list(
+      input.tenantId,
+      input.emailLower,
+    );
+
+    if (registrations.length === 0) {
+      // Drained (or nothing matched at all).
+      complete = true;
+      break;
+    }
+
+    iterations += 1;
+
+    // Per-batch failure tally — drives the STOP-on-failure invariant. Distinct
+    // from the aggregate `failedCount` which accumulates across all batches.
+    let batchFailed = 0;
+
+    for (const { registrationId, eventId } of registrations) {
+      try {
+        const r = await deps.eraseOne(registrationId, eventId, {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          reasonText: input.reasonText,
+          occurredAt: input.occurredAt,
+        });
+        if (!r.ok) {
+          failedCount += 1;
+          batchFailed += 1;
+          // registrationId only — NEVER the searched email or attendee PII.
+          logger.error(
+            { registrationId },
+            'erase-attendees-by-email: eraseOne not ok',
+          );
+        } else if (r.value.alreadyErased) {
+          alreadyErasedCount += 1;
+        } else {
+          erasedCount += 1;
+        }
+      } catch (e) {
         failedCount += 1;
-        // registrationId only — NEVER the searched email or attendee PII.
+        batchFailed += 1;
         logger.error(
-          { registrationId },
-          'erase-attendees-by-email: eraseOne not ok',
+          {
+            registrationId,
+            // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name
+            // only, never the raw message (it can embed SQL param VALUES =
+            // attendee PII) and never the searched email.
+            errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          },
+          'erase-attendees-by-email: eraseOne threw',
         );
-      } else if (r.value.alreadyErased) {
-        alreadyErasedCount += 1;
-      } else {
-        erasedCount += 1;
       }
-    } catch (e) {
-      failedCount += 1;
-      logger.error(
-        {
-          registrationId,
-          // Forbidden-log hygiene (COMP-1 PR-review FIX D): error CLASS name
-          // only, never the raw message (it can embed SQL param VALUES =
-          // attendee PII) and never the searched email.
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
-        },
-        'erase-attendees-by-email: eraseOne threw',
-      );
+    }
+
+    // (1) STOP-on-failure — the CRITICAL loop-termination invariant. Checked
+    // before the not-truncated / guard checks so a failed row (which stays in
+    // the table and would re-enumerate forever) never lets the loop spin, and
+    // always marks the sweep incomplete.
+    if (batchFailed > 0) {
+      complete = false;
+      break;
+    }
+
+    // (2) A non-truncated batch erased with zero failures → drained.
+    if (!truncated) {
+      complete = true;
+      break;
+    }
+
+    // (3) Bounded-safety guard — bail before re-enumerating past the cap.
+    if (iterations >= MAX_SWEEP_ITERATIONS) {
+      complete = false;
+      break;
     }
   }
 
-  return ok({ erasedCount, alreadyErasedCount, failedCount, truncated });
+  return ok({ erasedCount, alreadyErasedCount, failedCount, truncated: !complete });
 }

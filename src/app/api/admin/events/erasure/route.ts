@@ -44,7 +44,21 @@ import { runEraseAttendeesByEmail } from '@/lib/events-admin-deps';
 import { adminOnlyWriterGuard } from '../_lib/role-violation-audit';
 
 export const runtime = 'nodejs';
-export const maxDuration = 30;
+/**
+ * PR 4.1 follow-up #2 — raised 30 → 120s for headroom. The backend now
+ * AUTO-LOOPS the fan-out (up to `MAX_SWEEP_ITERATIONS` batches of sequential
+ * own-txs, each taking a per-registration advisory lock), which for a large-N
+ * data subject can exceed 30s. 120s is a safe headroom well under Vercel's
+ * 300s ceiling given the realistic N is tiny (dormant at SweCham scale).
+ *
+ * The fan-out's `MAX_SWEEP_ITERATIONS` guard — NOT this timeout — is the
+ * PRIMARY bound on the loop: the guard makes an infinite loop impossible. This
+ * timeout is only a wall-clock backstop; if it ever trips, every per-row
+ * erasure that already committed stays committed (own-tx-per-row) and the
+ * sweep is idempotently re-drivable (erased rows drop out on re-enumeration),
+ * so a timeout never corrupts state or double-erases.
+ */
+export const maxDuration = 120;
 
 const ATTEMPTED_ROUTE = '/api/admin/events/erasure';
 
