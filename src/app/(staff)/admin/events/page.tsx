@@ -26,6 +26,7 @@ import {
   InboxIcon,
   SendIcon,
   UploadCloudIcon,
+  EraserIcon,
 } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -107,6 +108,7 @@ export default async function AdminEventsListPage({
 
   const query = await searchParams;
   const t = await getTranslations('admin.events.list');
+  const tErasure = await getTranslations('admin.events.erasure');
   const tShared = await getTranslations('shared');
 
   const page = clampPage(query.page);
@@ -193,12 +195,34 @@ export default async function AdminEventsListPage({
       </Link>
     ) : null;
 
+  // PR 2.2 — admin-only discoverability link to the by-email erasure surface
+  // (FR-032a). Secondary (outline) next to the primary import CTA. Manager
+  // never sees it — the erasure page + route are admin-only (FR-035).
+  const eraseByEmailCta =
+    currentUser.role === 'admin' && env.features.f6EventCreate ? (
+      <Link
+        href="/admin/events/erasure"
+        className={buttonVariants({ variant: 'outline' })}
+      >
+        <EraserIcon className="size-4" aria-hidden="true" />
+        {tErasure('discoverabilityCta')}
+      </Link>
+    ) : null;
+
+  const headerActions =
+    importCsvCta || eraseByEmailCta ? (
+      <div className="flex flex-wrap items-center gap-2">
+        {eraseByEmailCta}
+        {importCsvCta}
+      </div>
+    ) : null;
+
   return (
     <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
-        actions={importCsvCta}
+        actions={headerActions}
       />
       {/* P4 (round-10) — 120ms fade-in when the loaded content
           replaces the loading.tsx skeleton. `motion-reduce:animate-none`
