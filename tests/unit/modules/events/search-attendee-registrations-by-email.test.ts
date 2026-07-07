@@ -110,7 +110,9 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
     );
     const deps: SearchAttendeeRegistrationsByEmailDeps = {
       registrationsRepo: {
-        findByEmailLower: vi.fn(async () => ok([partnershipReg, culturalReg])),
+        findByEmailLower: vi.fn(async () =>
+          ok({ rows: [partnershipReg, culturalReg], truncated: false }),
+        ),
       },
       eventDetailsBatchLookup: { findByIds },
     };
@@ -123,6 +125,7 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
     expect(res.ok, JSON.stringify(res)).toBe(true);
     if (!res.ok) return;
     expect(res.value.matches).toHaveLength(2);
+    expect(res.value.truncated).toBe(false);
 
     // Exactly ONE batched lookup (no N+1), with both unique event ids.
     expect(findByIds).toHaveBeenCalledTimes(1);
@@ -159,7 +162,9 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
   it('empty passthrough — no rows returns { matches: [] } WITHOUT calling findByIds', async () => {
     const findByIds = vi.fn(async () => ok(new Map()));
     const deps: SearchAttendeeRegistrationsByEmailDeps = {
-      registrationsRepo: { findByEmailLower: vi.fn(async () => ok([])) },
+      registrationsRepo: {
+        findByEmailLower: vi.fn(async () => ok({ rows: [], truncated: false })),
+      },
       eventDetailsBatchLookup: { findByIds },
     };
 
@@ -171,6 +176,7 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.matches).toEqual([]);
+    expect(res.value.truncated).toBe(false);
     expect(findByIds).not.toHaveBeenCalled();
   });
 
@@ -198,7 +204,9 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
   it('batch-lookup error DEGRADES to null event name/date, not a use-case error', async () => {
     const reg = makeAggregate();
     const deps: SearchAttendeeRegistrationsByEmailDeps = {
-      registrationsRepo: { findByEmailLower: vi.fn(async () => ok([reg])) },
+      registrationsRepo: {
+        findByEmailLower: vi.fn(async () => ok({ rows: [reg], truncated: false })),
+      },
       eventDetailsBatchLookup: {
         findByIds: vi.fn(async () =>
           err({ kind: 'db_error' as const, message: 'events read blip' }),
@@ -219,5 +227,28 @@ describe('searchAttendeeRegistrationsByEmail (F6 P2 read-only)', () => {
       eventStartDateIso: null,
       registrationId: 'r-1',
     });
+  });
+
+  it('propagates truncated:true from the repo to the output (completeness signal)', async () => {
+    // >CAP rows sharing the email → the repo caps the returned set and reports
+    // truncated:true. The preview MUST surface this so an admin knows the list
+    // is incomplete (residual PII survives beyond the cap) — I-1 review finding.
+    const reg = makeAggregate();
+    const deps: SearchAttendeeRegistrationsByEmailDeps = {
+      registrationsRepo: {
+        findByEmailLower: vi.fn(async () => ok({ rows: [reg], truncated: true })),
+      },
+      eventDetailsBatchLookup: { findByIds: vi.fn(async () => ok(new Map())) },
+    };
+
+    const res = await searchAttendeeRegistrationsByEmail(
+      { tenantId: TENANT, emailLower: 'guest@x.com' },
+      deps,
+    );
+
+    expect(res.ok, JSON.stringify(res)).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.truncated).toBe(true);
+    expect(res.value.matches).toHaveLength(1);
   });
 });

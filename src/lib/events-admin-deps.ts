@@ -653,10 +653,15 @@ export function makeEraseAttendeesByEmailDeps(
         if (!result.ok) {
           throw new Error(`findByEmailLower failed: ${result.error.kind}`);
         }
-        return result.value.map((r) => ({
-          registrationId: String(r.registrationId),
-          eventId: String(r.eventId),
-        }));
+        // Thread the cap-truncation completeness signal straight through so the
+        // fan-out output reports a capped, incomplete sweep (I-1 review finding).
+        return {
+          registrations: result.value.rows.map((r) => ({
+            registrationId: String(r.registrationId),
+            eventId: String(r.eventId),
+          })),
+          truncated: result.value.truncated,
+        };
       }),
     eraseOne: (registrationId, eventId, eraseInput) =>
       runEraseAttendeePii(tenantSlug, {

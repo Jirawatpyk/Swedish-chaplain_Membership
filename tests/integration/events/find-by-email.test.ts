@@ -163,7 +163,9 @@ describe('F6 P1 — RegistrationsRepository.findByEmailLower (live Neon)', () =>
 
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
-    const rows = result.value;
+    const rows = result.value.rows;
+    // Well under FIND_BY_EMAIL_CAP → not truncated (completeness signal).
+    expect(result.value.truncated).toBe(false);
 
     // Exactly the 3 same-email rows — regOther + regPseudo excluded.
     expect(rows).toHaveLength(3);
@@ -190,7 +192,7 @@ describe('F6 P1 — RegistrationsRepository.findByEmailLower (live Neon)', () =>
     );
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toHaveLength(3);
+    expect(result.value.rows).toHaveLength(3);
   }, 120_000);
 
   it('cross-tenant probe — tenant B searching tenant A\'s email sees nothing (Principle I)', async () => {
@@ -202,6 +204,7 @@ describe('F6 P1 — RegistrationsRepository.findByEmailLower (live Neon)', () =>
     );
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toEqual([]);
+    expect(result.value.rows).toEqual([]);
+    expect(result.value.truncated).toBe(false);
   }, 120_000);
 });

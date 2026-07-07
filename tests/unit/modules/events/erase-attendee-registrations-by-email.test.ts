@@ -40,7 +40,7 @@ const INPUT = {
 
 function buildDeps(): EraseAttendeeRegistrationsByEmailDeps {
   return {
-    list: vi.fn(async () => []),
+    list: vi.fn(async () => ({ registrations: [], truncated: false })),
     eraseOne: vi.fn(async () => ok({ alreadyErased: false })),
   };
 }
@@ -48,11 +48,14 @@ function buildDeps(): EraseAttendeeRegistrationsByEmailDeps {
 describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', () => {
   it('continues past a throwing registration (best-effort, not silent abort)', async () => {
     const deps = buildDeps();
-    deps.list = vi.fn(async () => [
-      { registrationId: 'r1', eventId: 'e1' },
-      { registrationId: 'r2', eventId: 'e1' },
-      { registrationId: 'r3', eventId: 'e2' },
-    ]);
+    deps.list = vi.fn(async () => ({
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e1' },
+        { registrationId: 'r3', eventId: 'e2' },
+      ],
+      truncated: false,
+    }));
     deps.eraseOne = vi.fn(async (registrationId: string) => {
       if (registrationId === 'r2') throw new Error('boom');
       return ok({ alreadyErased: false });
@@ -74,10 +77,13 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
 
   it('idempotent — alreadyErased registrations count separately, not as failures', async () => {
     const deps = buildDeps();
-    deps.list = vi.fn(async () => [
-      { registrationId: 'r1', eventId: 'e1' },
-      { registrationId: 'r2', eventId: 'e2' },
-    ]);
+    deps.list = vi.fn(async () => ({
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e2' },
+      ],
+      truncated: false,
+    }));
     deps.eraseOne = vi.fn(async () => ok({ alreadyErased: true }));
 
     const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
@@ -94,11 +100,14 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
 
   it('err-result (not throw) counts as failedCount and is logged', async () => {
     const deps = buildDeps();
-    deps.list = vi.fn(async () => [
-      { registrationId: 'r1', eventId: 'e1' },
-      { registrationId: 'r2', eventId: 'e1' },
-      { registrationId: 'r3', eventId: 'e2' },
-    ]);
+    deps.list = vi.fn(async () => ({
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e1' },
+        { registrationId: 'r3', eventId: 'e2' },
+      ],
+      truncated: false,
+    }));
     deps.eraseOne = vi.fn(async (registrationId: string) => {
       if (registrationId === 'r2') {
         return { ok: false as const, error: { kind: 'registrations_repo_error' as const } };
@@ -130,6 +139,7 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
         erasedCount: 0,
         alreadyErasedCount: 0,
         failedCount: 0,
+        truncated: false,
       });
     }
     expect(deps.eraseOne).not.toHaveBeenCalled();
@@ -137,7 +147,10 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
 
   it('threads reasonText + occurredAt from input to each eraseOne', async () => {
     const deps = buildDeps();
-    deps.list = vi.fn(async () => [{ registrationId: 'r1', eventId: 'e1' }]);
+    deps.list = vi.fn(async () => ({
+      registrations: [{ registrationId: 'r1', eventId: 'e1' }],
+      truncated: false,
+    }));
     const eraseOne = vi.fn(
       async (
         _registrationId: string,
@@ -172,7 +185,10 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
     try {
       const deps = buildDeps();
-      deps.list = vi.fn(async () => [{ registrationId: 'r1', eventId: 'e1' }]);
+      deps.list = vi.fn(async () => ({
+        registrations: [{ registrationId: 'r1', eventId: 'e1' }],
+        truncated: false,
+      }));
       deps.eraseOne = vi.fn(async () => {
         throw new Error('boom-with-secret');
       });
@@ -195,6 +211,31 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
       expect(serialised).not.toContain('secret-guest@example.com');
     } finally {
       errorSpy.mockRestore();
+    }
+  });
+
+  it('propagates truncated:true from the enumeration to the output (completeness signal)', async () => {
+    // The enumeration capped at CAP and reported there are more rows than were
+    // returned this pass. The fan-out MUST surface truncated:true so the caller
+    // does not read `{erasedCount:CAP, failedCount:0}` as a COMPLETE Art.17 DSR
+    // while residual PII survives beyond the cap — I-1 review finding.
+    const deps = buildDeps();
+    deps.list = vi.fn(async () => ({
+      registrations: [{ registrationId: 'r1', eventId: 'e1' }],
+      truncated: true,
+    }));
+    deps.eraseOne = vi.fn(async () => ok({ alreadyErased: false }));
+
+    const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value).toEqual({
+        erasedCount: 1,
+        alreadyErasedCount: 0,
+        failedCount: 0,
+        truncated: true,
+      });
     }
   });
 });

@@ -187,6 +187,7 @@ describe('F6 P3 — runEraseAttendeesByEmail (live Neon, real per-row erasure)',
       erasedCount: 0,
       alreadyErasedCount: 0,
       failedCount: 0,
+      truncated: false,
     });
     // Tenant A's rows are untouched by tenant B's probe.
     expect(await rawSelectRegsByEmail(tenantA.ctx.slug)).toHaveLength(2);
@@ -206,6 +207,7 @@ describe('F6 P3 — runEraseAttendeesByEmail (live Neon, real per-row erasure)',
       erasedCount: 2,
       alreadyErasedCount: 0,
       failedCount: 0,
+      truncated: false,
     });
 
     // Both rows HARD-DELETED — no residual PII under the email.
@@ -260,6 +262,7 @@ describe('F6 P3 — runEraseAttendeesByEmail (live Neon, real per-row erasure)',
       erasedCount: 0,
       alreadyErasedCount: 0,
       failedCount: 0,
+      truncated: false,
     });
     // No NEW pii_erasure_completed audits — still exactly 2.
     const completedAfterRerun = await rawSelectF6Audits(

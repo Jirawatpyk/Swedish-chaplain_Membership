@@ -68,14 +68,34 @@ export interface EraseAttendeeRegistrationsByEmailOutput {
   readonly erasedCount: number;
   readonly alreadyErasedCount: number;
   readonly failedCount: number;
+  /**
+   * `true` when the enumeration was CAPPED (`FIND_BY_EMAIL_CAP`) — i.e. the
+   * subject had MORE registrations than were erased in THIS pass, so PII
+   * survives beyond the cap. The caller MUST NOT read a truncated
+   * `{erasedCount:CAP, failedCount:0}` as a COMPLETE Art. 17 DSR — it must
+   * re-drive the sweep to completeness (idempotent: erased rows drop out on
+   * re-enumeration). I-1 review finding; propagated from `list`.
+   */
+  readonly truncated: boolean;
 }
 
 export interface EraseAttendeeRegistrationsByEmailDeps {
-  /** Enumerate every registration sharing the (lowered) attendee email (one read). */
+  /**
+   * Enumerate every registration sharing the (lowered) attendee email (one
+   * read), capped at `FIND_BY_EMAIL_CAP`. `truncated` reports whether the cap
+   * hid additional rows — threaded straight to the use-case output so a capped
+   * pass is never mistaken for a complete erasure.
+   */
   list(
     tenantId: string,
     emailLower: string,
-  ): Promise<ReadonlyArray<{ readonly registrationId: string; readonly eventId: string }>>;
+  ): Promise<{
+    readonly registrations: ReadonlyArray<{
+      readonly registrationId: string;
+      readonly eventId: string;
+    }>;
+    readonly truncated: boolean;
+  }>;
   /**
    * Erase a single registration (own tx). Resolves to an `ok` Result carrying
    * `{ alreadyErased }`, or an `err` Result, or THROWS — the fan-out tolerates
@@ -97,13 +117,16 @@ export async function eraseAttendeeRegistrationsByEmail(
   input: EraseAttendeeRegistrationsByEmailInput,
   deps: EraseAttendeeRegistrationsByEmailDeps,
 ): Promise<Result<EraseAttendeeRegistrationsByEmailOutput, never>> {
-  const regs = await deps.list(input.tenantId, input.emailLower);
+  const { registrations, truncated } = await deps.list(
+    input.tenantId,
+    input.emailLower,
+  );
 
   let erasedCount = 0;
   let alreadyErasedCount = 0;
   let failedCount = 0;
 
-  for (const { registrationId, eventId } of regs) {
+  for (const { registrationId, eventId } of registrations) {
     try {
       const r = await deps.eraseOne(registrationId, eventId, {
         tenantId: input.tenantId,
@@ -138,5 +161,5 @@ export async function eraseAttendeeRegistrationsByEmail(
     }
   }
 
-  return ok({ erasedCount, alreadyErasedCount, failedCount });
+  return ok({ erasedCount, alreadyErasedCount, failedCount, truncated });
 }

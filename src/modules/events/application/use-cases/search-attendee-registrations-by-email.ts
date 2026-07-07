@@ -60,6 +60,13 @@ export interface AttendeeRegistrationMatch {
 
 export interface SearchAttendeeRegistrationsByEmailOutput {
   readonly matches: ReadonlyArray<AttendeeRegistrationMatch>;
+  /**
+   * `true` when the subject has MORE registrations than the repo cap
+   * (`FIND_BY_EMAIL_CAP`), so `matches` is a PARTIAL set — the preview UI must
+   * warn that the list is incomplete and a follow-up sweep is required (I-1
+   * review finding; propagated straight from `findByEmailLower`).
+   */
+  readonly truncated: boolean;
 }
 
 export type SearchAttendeeRegistrationsByEmailError = {
@@ -93,10 +100,11 @@ export async function searchAttendeeRegistrationsByEmail(
       cause: found.error,
     });
   }
-  const rows = found.value;
+  const { rows, truncated } = found.value;
   if (rows.length === 0) {
     // No registrations → skip the event lookup entirely (zero extra DB cost).
-    return ok({ matches: [] });
+    // `truncated` is false here (an empty set is never capped), threaded for shape.
+    return ok({ matches: [], truncated });
   }
 
   // ONE batched event lookup for all unique event ids (no N+1). Mirrors
@@ -129,5 +137,5 @@ export async function searchAttendeeRegistrationsByEmail(
     };
   });
 
-  return ok({ matches });
+  return ok({ matches, truncated });
 }

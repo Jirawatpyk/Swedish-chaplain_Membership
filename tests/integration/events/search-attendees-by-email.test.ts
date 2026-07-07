@@ -130,6 +130,8 @@ describe('F6 P2 — runSearchAttendeesByEmail (live Neon)', () => {
       if (!result.ok) return;
       const { matches } = result.value;
       expect(matches).toHaveLength(3);
+      // 3 rows are well under FIND_BY_EMAIL_CAP → complete result set.
+      expect(result.value.truncated).toBe(false);
 
       const byId = new Map(matches.map((m) => [m.registrationId, m]));
 

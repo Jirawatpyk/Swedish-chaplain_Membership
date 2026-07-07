@@ -472,7 +472,15 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async findByEmailLower(
       tenantId: TenantId,
       emailLower: string,
-    ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>> {
+    ): Promise<
+      Result<
+        {
+          readonly rows: ReadonlyArray<EventRegistrationAggregate>;
+          readonly truncated: boolean;
+        },
+        RegistrationsRepositoryError
+      >
+    > {
       // F6 remediation PR 2.1 / P1 (FR-032a by-email erasure BACKEND) —
       // enumerate every registration whose `attendee_email_lower` EXACTLY
       // equals the (lowercased) caller email, across all of a tenant's events.
@@ -500,6 +508,9 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             asc(eventRegistrations.registrationId),
           )
           .limit(FIND_BY_EMAIL_CAP + 1);
+        // Derive `truncated` from the RAW row count (BEFORE slicing to CAP) so
+        // the completeness signal is accurate: `.limit(CAP+1)` returns one extra
+        // row iff there are more than CAP matches (I-1 review finding).
         const truncated = rows.length > FIND_BY_EMAIL_CAP;
         const safeRows = truncated ? rows.slice(0, FIND_BY_EMAIL_CAP) : rows;
         if (truncated) {
@@ -517,7 +528,7 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             `[F6] findByEmailLower truncated at ${FIND_BY_EMAIL_CAP} — data subject has more registrations than the cap; a follow-up by-email sweep is required for completeness`,
           );
         }
-        return ok(safeRows.map(toAggregate));
+        return ok({ rows: safeRows.map(toAggregate), truncated });
       } catch (e) {
         return err(wrapRepoError('registrations', e));
       }
