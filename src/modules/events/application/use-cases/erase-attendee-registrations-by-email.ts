@@ -55,6 +55,24 @@
 import { ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 
+/**
+ * PR 4.1 follow-up #1 — bounded-safety guard for the server-side auto-loop.
+ *
+ * The fan-out RE-enumerates (`list`) after each erased batch until the sweep
+ * drains. `MAX_SWEEP_ITERATIONS` caps the number of enumerate-then-erase
+ * batches so a pathological non-draining state (a row that neither erases nor
+ * drops out of the live table) can NEVER spin unbounded. 50 batches × the
+ * `FIND_BY_EMAIL_CAP` (500) row ceiling ≈ 25,000 registrations for a single
+ * data subject — a generous pathological bound far above realistic SweCham
+ * scale (one attendee shares a handful of registrations). If the guard trips,
+ * the fan-out returns `truncated:true` (incomplete) so the admin re-drives.
+ *
+ * This is the LOGICAL bound on the loop; the route's `maxDuration` is only a
+ * wall-clock backstop (a timeout still leaves every committed per-row erasure
+ * intact + the sweep idempotently re-drivable).
+ */
+export const MAX_SWEEP_ITERATIONS = 50;
+
 export interface EraseAttendeeRegistrationsByEmailInput {
   readonly tenantId: string;
   readonly emailLower: string;
