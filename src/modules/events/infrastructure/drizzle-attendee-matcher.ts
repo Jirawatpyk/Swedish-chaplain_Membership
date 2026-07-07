@@ -16,13 +16,13 @@
  * tenant's members (~<2k at design envelope), apply
  * `normaliseCompanyName` to attendee.company + each
  * `members.companyName`, compute Levenshtein, pick the unique winner
- * with distance ≤ threshold (default 2 per research.md R4).
+ * with distance ≤ threshold (default 3 per research.md R4 / FR-012).
  *
  * Read-only adapter — never mutates F3 tables. RLS+FORCE on members +
  * contacts means the caller MUST run this inside `runInTenant(ctx, fn)`
  * for the SELECTs to return any rows.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import { type TenantTx } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -40,7 +40,7 @@ import { wrapRepoError } from './sanitize-db-error';
 import { logger } from '@/lib/logger';
 import type { MemberId, ContactId } from '@/modules/members';
 
-const DEFAULT_FUZZY_THRESHOLD = 2;
+const DEFAULT_FUZZY_THRESHOLD = 3;
 
 /**
  * B10 — explicit upper bound on the in-memory fuzzy-match candidate set.
@@ -86,8 +86,18 @@ export function makeDrizzleAttendeeMatcher(
             and(
               eq(contacts.tenantId, input.tenantId),
               sql`lower(${contacts.email}) = ${emailLower}`,
+              // M5 — exclude soft-removed contacts. The partial
+              // `contacts_tenant_email_uniq` index (WHERE removed_at IS NULL)
+              // lets a removed contact coexist with an active one sharing the
+              // same lower(email); without this filter a removed contact could
+              // win and mis-link the attendee (+ mis-decrement quota).
+              isNull(contacts.removedAt),
             ),
           )
+          // M5 — deterministic winner. `.limit(2)`→`[0]` had no ORDER BY, so
+          // the row picked among email-duplicates was engine-arbitrary. Order
+          // by (created_at, contact_id) so Rule 1 is stable + reproducible.
+          .orderBy(asc(contacts.createdAt), asc(contacts.contactId))
           .limit(2);
 
         if (contactRows.length >= 1) {
@@ -123,6 +133,11 @@ export function makeDrizzleAttendeeMatcher(
               and(
                 eq(contacts.tenantId, input.tenantId),
                 sql`lower(${contacts.email}) LIKE ${domainSuffix} ESCAPE '\\'`,
+                // M5 — exclude soft-removed contacts. A removed contact at the
+                // domain would otherwise either mis-link the attendee (sole
+                // match) or inflate the distinct-member count and suppress a
+                // legitimate single-member domain match (false negative).
+                isNull(contacts.removedAt),
               ),
             )
             .limit(2);
@@ -150,7 +165,22 @@ export function makeDrizzleAttendeeMatcher(
                 companyName: members.companyName,
               })
               .from(members)
-              .where(eq(members.tenantId, input.tenantId))
+              // M6 — exclude archived + erased members from the fuzzy pool.
+              // An archived member could otherwise win a fuzzy match (and
+              // decrement quota) or tie with an active member and force a
+              // false `unmatched`, depressing the match rate (SC-002). This
+              // is IDENTITY resolution, not quota-eligibility, so INACTIVE
+              // (non-archived) members are deliberately KEPT — excluding them
+              // would wrongly flag real members as non_member. `erased_at`
+              // exclusion aligns with every other member read (COMP-1) and is
+              // cheap defence-in-depth (the `[erased]` sentinel is fuzzy-distant).
+              .where(
+                and(
+                  eq(members.tenantId, input.tenantId),
+                  isNull(members.archivedAt),
+                  isNull(members.erasedAt),
+                ),
+              )
               .limit(FUZZY_MEMBER_SCAN_CAP + 1);
 
             const fuzzyScanTruncated =
