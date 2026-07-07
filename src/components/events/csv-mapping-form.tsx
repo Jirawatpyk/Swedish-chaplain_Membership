@@ -268,7 +268,18 @@ export function CsvMappingForm() {
   // smell (`_fakePhase = phase` to "satisfy closure" + eslint-disable
   // react-hooks/exhaustive-deps). Merged + truthful deps array.
   const submitImport = useCallback(
-    async (file: File, forceProceed: boolean): Promise<void> => {
+    // `preview` is threaded in (not read from `phase`) because the first
+    // thing this callback does is `setPhase({kind:'submitting'})`, which
+    // discards the preview from state. The FR-019b event_mismatch_warning
+    // branch below needs the REAL preview to restore the `preview` phase
+    // so dismissing the warning dialog doesn't strand the admin on a
+    // blank "import 0 rows" loop (#11). Callers pass the `phase.preview`
+    // they already hold under their `phase.kind==='preview'` guard.
+    async (
+      file: File,
+      forceProceed: boolean,
+      preview: PreviewData,
+    ): Promise<void> => {
       if (selectedEventId === null) {
         setPhase({
           kind: 'error',
@@ -318,16 +329,14 @@ export function CsvMappingForm() {
               ? (body['priorImports'] as PriorImportEntry[])
               : [];
             setMismatchDialog({ open: true, priorImports });
-            setPhase({
-              kind: 'preview',
-              file,
-              preview: {
-                detectedColumns: [],
-                rows: [],
-                missingRequired: [],
-                totalRowCount: 0,
-              },
-            });
+            // Restore the REAL preview (not an empty literal) so that
+            // dismissing the warning — Escape / autoFocus Cancel / click-
+            // away, every path except "Continue anyway" — lands the admin
+            // back on the intact N-row preview instead of a blank
+            // "import 0 rows" CTA that re-submits and re-loops (#11).
+            // Re-clicking Confirm still re-arms this warning (the safety
+            // net is unchanged); only "Continue anyway" bypasses it.
+            setPhase({ kind: 'preview', file, preview });
             return;
           }
           // F6.1 `completed` envelope wraps summary at top-level.
@@ -470,13 +479,13 @@ export function CsvMappingForm() {
   const onContinueDespiteMismatch = useCallback(() => {
     setMismatchDialog({ open: false, priorImports: [] });
     if (phase.kind === 'preview') {
-      void submitImport(phase.file, true);
+      void submitImport(phase.file, true, phase.preview);
     }
   }, [phase, submitImport]);
 
   const onSubmit = useCallback(async () => {
     if (phase.kind !== 'preview') return;
-    await submitImport(phase.file, false);
+    await submitImport(phase.file, false, phase.preview);
   }, [phase, submitImport]);
 
   const resetToUpload = useCallback(() => setPhase({ kind: 'idle' }), []);

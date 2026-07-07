@@ -204,7 +204,12 @@ describe('CsvMappingForm — FR-019b mismatch preview preservation', () => {
   });
 
   it('forwards force_proceed on "Continue anyway" (safety-net bypass unaffected)', async () => {
-    const fetchMock = vi.fn(async () => mismatchResponse());
+    // Typed params so `.mock.calls[n]` is a 2-tuple (input, init) — a
+    // zero-arg `vi.fn` infers an empty-tuple call signature (TS2493).
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        mismatchResponse(),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderForm();
