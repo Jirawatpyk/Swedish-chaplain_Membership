@@ -8,7 +8,7 @@
  *                          `members.email_domain` IF the attendee's
  *                          email domain is NOT on the personal-email
  *                          deny list (research.md R4 / data-model.md § 5)
- *   3. `member_fuzzy`   — Levenshtein-distance match (≤2 by default)
+ *   3. `member_fuzzy`   — Levenshtein-distance match (≤3 by default)
  *                          on `normaliseCompanyName(attendee.company)`
  *                          vs. each member's
  *                          `members.normalised_company_name`. Returns
@@ -36,8 +36,8 @@ export interface MatchAttendeeInput {
   readonly attendeeCompany: string | null;
   /**
    * Optional Levenshtein-distance threshold for step 3 fuzzy match.
-   * Default 2 per research.md R4. Passed explicitly so test fixtures
-   * can dial the threshold.
+   * Default 3 per research.md R4 / FR-012. Passed explicitly so test
+   * fixtures can dial the threshold.
    */
   readonly fuzzyDistanceThreshold?: number;
 }

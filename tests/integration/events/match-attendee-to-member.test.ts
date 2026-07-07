@@ -9,7 +9,7 @@
  *
  * Spec authority:
  *   - FR-012 (4-rule match cascade)
- *   - research.md R4 (personal-email deny list + Levenshtein threshold ≤2)
+ *   - research.md R4 / FR-012 (personal-email deny list + Levenshtein threshold ≤3)
  *
  * Match rules:
  *   1. `member_contact` — exact LOWER(contacts.email) match
@@ -241,7 +241,7 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
       expect(result.value.resolution.type).toBe('member_fuzzy');
       expect(result.value.resolution.matchedMemberId).toBe(memberBId);
       expect(result.value.fuzzyDetail).not.toBeNull();
-      expect(result.value.fuzzyDetail?.levenshteinDistance).toBeLessThanOrEqual(2);
+      expect(result.value.fuzzyDetail?.levenshteinDistance).toBeLessThanOrEqual(3);
     }
   });
 
