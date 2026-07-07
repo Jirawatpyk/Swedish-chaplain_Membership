@@ -22,7 +22,7 @@
  * by tests/integration/events/pii-erasure.test.ts.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { ok } from '@/lib/result';
+import { ok, err } from '@/lib/result';
 import {
   eraseAttendeePii,
   type EraseAttendeePiiDeps,
@@ -383,5 +383,121 @@ describe('eraseAttendeePii — #16 re-read quota flags under the lock', () => {
     // Only the step-1 load ran; no lock, no re-read.
     expect(acquireMock).not.toHaveBeenCalled();
     expect(findRegistrationByIdMock).toHaveBeenCalledTimes(1);
+  });
+
+  // #16 introduced the event-load (for the year key) + the under-lock
+  // re-read; both are on the GDPR Art.17 erasure surface, so their error
+  // branches must fail CLOSED — surface the error, mutate nothing, and be
+  // safe to re-drive.
+  describe('#16 error branches fail closed (GDPR Art.17 surface)', () => {
+    function countedReg() {
+      return makeRegistration({
+        quotaEffect: {
+          countedAgainstPartnership: true,
+          countedAgainstCulturalQuota: false,
+        },
+      });
+    }
+
+    it('events_repo_error (year-derivation event load) → surfaces error, no hardDelete, no credit-back', async () => {
+      const { deps, hardDeleteMock, emitMock, acquireMock } = makeDeps({
+        findRegistrationById: async () => ok(countedReg()),
+        findEventById: async () =>
+          err({ kind: 'db_error', message: 'event load blip' }),
+      });
+      const r = await eraseAttendeePii(baseInput(), deps);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.kind).toBe('events_repo_error');
+        if (r.error.kind === 'events_repo_error') {
+          expect(r.error.message).toContain('event load blip');
+        }
+      }
+      // Fail closed: no lock, no delete, no credit-back, no completed audit.
+      expect(acquireMock).not.toHaveBeenCalled();
+      expect(hardDeleteMock).not.toHaveBeenCalled();
+      const types = emittedTypes(emitMock);
+      expect(types).not.toContain('quota_credit_back_archive');
+      expect(types).not.toContain('pii_erasure_completed');
+    });
+
+    it('event_not_found (event load returns null) → surfaces event_not_found, no hardDelete', async () => {
+      const { deps, hardDeleteMock, emitMock, acquireMock } = makeDeps({
+        findRegistrationById: async () => ok(countedReg()),
+        findEventById: async () => ok(null),
+      });
+      const r = await eraseAttendeePii(baseInput(), deps);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.kind).toBe('event_not_found');
+        if (r.error.kind === 'event_not_found') {
+          expect(r.error.eventId).toBe(EVENT_ID);
+        }
+      }
+      expect(acquireMock).not.toHaveBeenCalled();
+      expect(hardDeleteMock).not.toHaveBeenCalled();
+      expect(emittedTypes(emitMock)).not.toContain('quota_credit_back_archive');
+      expect(emittedTypes(emitMock)).not.toContain('pii_erasure_completed');
+    });
+
+    it('registrations_repo_error on the under-lock re-read → surfaces error, no hardDelete, no credit-back', async () => {
+      const { deps, findRegistrationByIdMock, hardDeleteMock, emitMock, acquireMock } =
+        makeDeps();
+      // Step 1 load ok (counted); the post-lock re-read errs.
+      findRegistrationByIdMock
+        .mockResolvedValueOnce(ok(countedReg()))
+        .mockResolvedValueOnce(
+          err({ kind: 'db_error', message: 're-read blip' }),
+        );
+      const r = await eraseAttendeePii(baseInput(), deps);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.kind).toBe('registrations_repo_error');
+        if (r.error.kind === 'registrations_repo_error') {
+          expect(r.error.message).toContain('re-read blip');
+        }
+      }
+      // The lock WAS acquired (re-read happens under it), but nothing is
+      // mutated when the re-read fails.
+      expect(acquireMock).toHaveBeenCalledTimes(1);
+      expect(hardDeleteMock).not.toHaveBeenCalled();
+      expect(emittedTypes(emitMock)).not.toContain('quota_credit_back_archive');
+      expect(emittedTypes(emitMock)).not.toContain('pii_erasure_completed');
+    });
+
+    it('idempotent re-drive: a transient re-read error on the first attempt, then a clean retry completes the erase', async () => {
+      const { deps, findRegistrationByIdMock, hardDeleteMock, emitMock } =
+        makeDeps();
+      findRegistrationByIdMock
+        // Attempt 1: step-1 ok, re-read errs (transient) → rolled back.
+        .mockResolvedValueOnce(ok(countedReg()))
+        .mockResolvedValueOnce(
+          err({ kind: 'db_error', message: 'transient re-read blip' }),
+        )
+        // Attempt 2 (retry): step-1 ok, re-read ok → completes.
+        .mockResolvedValueOnce(ok(countedReg()))
+        .mockResolvedValueOnce(ok(countedReg()));
+
+      const first = await eraseAttendeePii(baseInput(), deps);
+      expect(first.ok).toBe(false);
+      if (!first.ok) expect(first.error.kind).toBe('registrations_repo_error');
+      // Nothing mutated on the failed attempt.
+      expect(hardDeleteMock).not.toHaveBeenCalled();
+
+      const retry = await eraseAttendeePii(baseInput(), deps);
+      expect(retry.ok).toBe(true);
+      if (retry.ok) {
+        expect(retry.value.alreadyErased).toBe(false);
+        expect(retry.value.quotaReversals).toEqual({
+          partnership: 1,
+          cultural: 0,
+        });
+      }
+      // The retry drove the erase to completion.
+      expect(hardDeleteMock).toHaveBeenCalledTimes(1);
+      const types = emittedTypes(emitMock);
+      expect(types).toContain('quota_credit_back_archive');
+      expect(types).toContain('pii_erasure_completed');
+    });
   });
 });
