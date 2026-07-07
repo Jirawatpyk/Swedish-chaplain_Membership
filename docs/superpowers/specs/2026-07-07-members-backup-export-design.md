@@ -31,7 +31,7 @@ The existing export surfaces do not cover this:
         │ GET /api/admin/members/export.zip
         ▼
 route handler (src/app/api/admin/members/export.zip/route.ts, runtime nodejs)
-        │ requireAdminContext → non-admin 404
+        │ requireAdminContext → non-admin rejected (401/403)
         ▼
 use-case: exportMembersBackup (src/modules/insights/application/use-cases/)
         │ single runInTenant(ctx, tx) — all reads through tx (RLS enforced)
@@ -41,7 +41,8 @@ infrastructure: drizzle-members-backup-source.ts — SQL over
   members ⋈ membership_plans ⋈ contacts ⋈ invoices
         ▼
 CSV builders (pure, unit-testable) → 3 files, each UTF-8 with BOM,
-every cell through src/lib/csv.ts toCsvField (RFC-4180 + formula-injection defang)
+user-controlled cells through src/lib/csv.ts toCsvField (RFC-4180 +
+formula-injection defang); machine-generated money cells quote-only
         ▼
 zip via fflate zipSync (existing dependency, used by F9 GDPR archive)
         ▼
