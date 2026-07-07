@@ -118,6 +118,7 @@ import type {
   QuotaEffect,
 } from '../../domain/event-registration';
 import { isPseudonymised } from '../../domain/event-registration';
+import { isQuotaCountedStatus } from '../../domain/value-objects/payment-status';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type {
   EventsRepository,
@@ -547,7 +548,20 @@ export async function relinkRegistration(
   let nextPartnership = false;
   let nextCultural = false;
 
-  if (event.isPartnerBenefit) {
+  // #13 — gate the NEW-member decrement on a `paid|free` ticket, matching
+  // the ingest allowlist (`QUOTA_COUNTED_STATUSES` in
+  // process-attendee-in-tx). Relinking a refunded/pending/waitlisted/
+  // no_show seat must NOT consume a benefit ticket for a non-confirmed
+  // seat (SC-004 / FR-018). When the seat does not count, both scope flags
+  // stay false and NO quota audit is emitted for the new side — the relink
+  // is quota-NEUTRAL, not over-quota. Step 5 (OLD-member credit-back) is
+  // deliberately left ungated: it credits back on the row's PRIOR counted
+  // flags regardless of the current payment status.
+  const seatCountsTowardQuota = isQuotaCountedStatus(
+    registration.ticket.paymentStatus,
+  );
+
+  if (event.isPartnerBenefit && seatCountsTowardQuota) {
     if (newConsumed.partnershipConsumedForEvent < newAllotments.partnershipPerEvent) {
       nextPartnership = true;
       // R8.W / Staff R3 R053 — replaced silent Math.max(0, ...) with an
@@ -598,7 +612,7 @@ export async function relinkRegistration(
     }
   }
 
-  if (event.isCulturalEvent) {
+  if (event.isCulturalEvent && seatCountsTowardQuota) {
     if (newConsumed.culturalConsumedForYear < newAllotments.culturalPerYear) {
       nextCultural = true;
       // R8.W / Staff R3 R053 — same observable invariant pattern as the
