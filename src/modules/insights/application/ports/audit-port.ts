@@ -60,6 +60,9 @@ export const F9_AUDIT_EVENT_TYPES = [
   'data_export_expired',
   // High-severity cross-tenant access attempt (Principle I § 4).
   'insights_cross_tenant_probe',
+  // Admin full-tenant backup ZIP (members+contacts+invoices CSVs) — bulk PII
+  // egress, always audited (2026-07-07 members-backup-export design).
+  'members_backup_exported',
 ] as const;
 
 export type F9AuditEventType = (typeof F9_AUDIT_EVENT_TYPES)[number];
@@ -143,6 +146,11 @@ export interface F9AuditPayloadByType {
     readonly target_entity: string;
     readonly target_id?: string;
   };
+  members_backup_exported: {
+    readonly member_count: number;
+    readonly contact_count: number;
+    readonly invoice_count: number;
+  };
 }
 
 /**
@@ -199,6 +207,7 @@ export const F9_AUDIT_RETENTION_YEARS: Record<F9AuditEventType, 5> = {
   data_export_failed: 5,
   data_export_expired: 5,
   insights_cross_tenant_probe: 5,
+  members_backup_exported: 5,
 };
 
 /** Returns the canonical retention. Use at every emit site (no hardcoded `5`). */

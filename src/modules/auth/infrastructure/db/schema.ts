@@ -294,6 +294,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'audit_log_exported',
   'member_benefit_viewed',
   'member_timeline_viewed',
+  'members_backup_exported',
   'smart_insight_dismissed',
   'directory_listing_updated',
   'directory_ebook_generated',

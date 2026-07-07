@@ -64,6 +64,7 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
     eventType === 'dashboard_viewed' ||
     eventType === 'member_benefit_viewed' ||
     eventType === 'member_timeline_viewed' ||
+    eventType === 'members_backup_exported' ||
     eventType.startsWith('audit_log_') ||
     eventType.startsWith('smart_insight_') ||
     eventType.startsWith('directory_') ||

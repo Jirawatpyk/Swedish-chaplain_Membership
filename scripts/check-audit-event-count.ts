@@ -67,6 +67,7 @@ const POINT_IN_TIME_SUBDIRS: ReadonlySet<string> = new Set(['reviews', 'qa']);
 const F9_MIGRATIONS = [
   resolve(ROOT, 'drizzle/migrations/0191_f9_audit_event_types.sql'),
   resolve(ROOT, 'drizzle/migrations/0193_f9_member_timeline_viewed_event.sql'),
+  resolve(ROOT, 'drizzle/migrations/0237_members_backup_exported_event.sql'),
 ];
 const F9_PORT = resolve(
   ROOT,
