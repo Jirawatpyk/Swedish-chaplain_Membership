@@ -27,6 +27,7 @@ import { ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import {
   eraseAttendeeRegistrationsByEmail,
+  MAX_SWEEP_ITERATIONS,
   type EraseAttendeeRegistrationsByEmailDeps,
 } from '@/modules/events/application/use-cases/erase-attendee-registrations-by-email';
 
@@ -214,15 +215,24 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
     }
   });
 
-  it('propagates truncated:true from the enumeration to the output (completeness signal)', async () => {
-    // The enumeration capped at CAP and reported there are more rows than were
-    // returned this pass. The fan-out MUST surface truncated:true so the caller
-    // does not read `{erasedCount:CAP, failedCount:0}` as a COMPLETE Art.17 DSR
-    // while residual PII survives beyond the cap — I-1 review finding.
+  // -------------------------------------------------------------------------
+  // PR 4.1 follow-up #1 — server-side auto-loop until the sweep is COMPLETE.
+  //
+  // Erased rows are hard-deleted, so each re-`list` returns the NEXT batch;
+  // the fan-out loops until the sweep genuinely drains. The completeness
+  // signal `truncated` is NO LONGER a straight passthrough of the enumeration
+  // cap — it now reports whether the loop drained: `false` only when every
+  // batch erased with zero failures and the guard never tripped.
+  // -------------------------------------------------------------------------
+
+  it('single sub-cap batch (not truncated) — one enumeration, no re-list, truncated:false', async () => {
     const deps = buildDeps();
     deps.list = vi.fn(async () => ({
-      registrations: [{ registrationId: 'r1', eventId: 'e1' }],
-      truncated: true,
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e2' },
+      ],
+      truncated: false,
     }));
     deps.eraseOne = vi.fn(async () => ok({ alreadyErased: false }));
 
@@ -231,11 +241,152 @@ describe('eraseAttendeeRegistrationsByEmail (F6 P3 best-effort bulk fan-out)', (
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.value).toEqual({
-        erasedCount: 1,
+        erasedCount: 2,
         alreadyErasedCount: 0,
         failedCount: 0,
+        truncated: false,
+      });
+    }
+    // Not truncated ⇒ the sweep drained in ONE pass — exactly one enumeration,
+    // no wasteful confirming re-list (unchanged behaviour for the realistic
+    // sub-cap case).
+    expect(deps.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('auto-loops across batches until the sweep drains — aggregates the tally, final truncated:false', async () => {
+    const deps = buildDeps();
+    // The loop keys on the `truncated` flag, NOT the row count — so small
+    // batches faithfully simulate "a capped batch with more rows beyond".
+    const batch1 = [
+      { registrationId: 'a1', eventId: 'e1' },
+      { registrationId: 'a2', eventId: 'e1' },
+      { registrationId: 'a3', eventId: 'e2' },
+    ];
+    const batch2 = [
+      { registrationId: 'b1', eventId: 'e3' },
+      { registrationId: 'b2', eventId: 'e3' },
+    ];
+    let call = 0;
+    deps.list = vi.fn(async () => {
+      call += 1;
+      if (call === 1) return { registrations: batch1, truncated: true };
+      if (call === 2) return { registrations: batch2, truncated: false };
+      return { registrations: [], truncated: false }; // defensive; not reached
+    });
+    deps.eraseOne = vi.fn(async () => ok({ alreadyErased: false }));
+
+    const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value).toEqual({
+        erasedCount: 5,
+        alreadyErasedCount: 0,
+        failedCount: 0,
+        truncated: false,
+      });
+    }
+    // Every row across BOTH batches was erased.
+    expect(deps.eraseOne).toHaveBeenCalledTimes(5);
+    // batch1 truncated → re-list; batch2 NOT truncated → drained. Exactly two
+    // enumerations (no third confirming list).
+    expect(deps.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('STOPS the loop the moment a batch throws — does NOT re-list (guards the infinite-loop-on-failing-row bug)', async () => {
+    const deps = buildDeps();
+    // The batch claims MORE rows remain (truncated:true) so a NAIVE
+    // re-list-until-empty loop WOULD re-enumerate. But a row that failed to
+    // erase STAYS in the live table, so re-listing would return it forever —
+    // the loop MUST break on the failure instead. This is the whole point.
+    deps.list = vi.fn(async () => ({
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e1' },
+        { registrationId: 'r3', eventId: 'e2' },
+      ],
+      truncated: true,
+    }));
+    deps.eraseOne = vi.fn(async (registrationId: string) => {
+      if (registrationId === 'r2') throw new Error('boom');
+      return ok({ alreadyErased: false });
+    });
+
+    const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value).toEqual({
+        erasedCount: 2,
+        alreadyErasedCount: 0,
+        failedCount: 1,
+        // A failed row remains in the table → the sweep is INCOMPLETE even
+        // though the enumeration was not itself cap-truncated.
         truncated: true,
       });
     }
+    // THE POINT: after a failing batch the loop MUST NOT re-enumerate. (A naive
+    // loop would call `list` up to MAX_SWEEP_ITERATIONS times and spin on the
+    // failing row.)
+    expect(deps.list).toHaveBeenCalledTimes(1);
+    // The rest of the failing batch still ran (best-effort WITHIN the batch).
+    expect(deps.eraseOne).toHaveBeenCalledTimes(3);
+  });
+
+  it('an err-Result batch (not a throw) also STOPS the loop — failedCount surfaced, no re-list', async () => {
+    const deps = buildDeps();
+    deps.list = vi.fn(async () => ({
+      registrations: [
+        { registrationId: 'r1', eventId: 'e1' },
+        { registrationId: 'r2', eventId: 'e1' },
+      ],
+      truncated: true,
+    }));
+    deps.eraseOne = vi.fn(async (registrationId: string) => {
+      if (registrationId === 'r2') {
+        return {
+          ok: false as const,
+          error: { kind: 'registrations_repo_error' as const },
+        };
+      }
+      return ok({ alreadyErased: false });
+    });
+
+    const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value).toMatchObject({
+        erasedCount: 1,
+        failedCount: 1,
+        truncated: true,
+      });
+    }
+    expect(deps.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('bails at the MAX_SWEEP_ITERATIONS guard when batches never drain — truncated:true, no infinite loop', async () => {
+    const deps = buildDeps();
+    // Pathological: `list` ALWAYS reports a truncated batch and `eraseOne`
+    // always succeeds, so the sweep would never drain (a contract-violating
+    // state where an "erased" row keeps re-enumerating). The bounded guard
+    // MUST stop it after exactly MAX_SWEEP_ITERATIONS enumerations.
+    deps.list = vi.fn(async () => ({
+      registrations: [{ registrationId: 'x', eventId: 'e1' }],
+      truncated: true,
+    }));
+    deps.eraseOne = vi.fn(async () => ok({ alreadyErased: false }));
+
+    const res = await eraseAttendeeRegistrationsByEmail(INPUT, deps);
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.truncated).toBe(true);
+      expect(res.value.failedCount).toBe(0);
+      expect(res.value.erasedCount).toBe(MAX_SWEEP_ITERATIONS);
+    }
+    // The guard capped the enumerations — no unbounded spin.
+    expect(deps.list).toHaveBeenCalledTimes(MAX_SWEEP_ITERATIONS);
+    expect(deps.eraseOne).toHaveBeenCalledTimes(MAX_SWEEP_ITERATIONS);
   });
 });
