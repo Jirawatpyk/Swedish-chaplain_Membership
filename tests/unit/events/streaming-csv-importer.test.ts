@@ -426,3 +426,102 @@ describe('streamingCsvImporter — adapterEnabled (T053 sub-flag)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PR 4.2 (#10b) — reduced required-column gate on the picker-bound generic
+// path. Post-095 the admin-selected event is authoritative and the generic
+// path OVERRIDES event_* from `eventContext`, so a picker-bound generic CSV
+// (Eventbrite / Meetup export) only needs to supply the attendee identity
+// columns. The relaxation MUST be scoped to `parseStreamWithFormat` (which
+// carries an `eventContext`); the legacy `parseStream` path keeps the full
+// 5-column requirement.
+// ---------------------------------------------------------------------------
+describe('streamingCsvImporter — #10b reduced required gate (picker-bound generic path)', () => {
+  const REMAP_EVENT_CONTEXT = {
+    externalId: 'evt-remap',
+    name: 'Remap Workshop',
+    startDate: new Date('2026-05-01T09:00:00Z'),
+    category: 'cultural',
+  };
+
+  it('parseStreamWithFormat accepts a 2-column CSV (attendee_email + attendee_name via columnMapping) and fills event_* from eventContext', async () => {
+    // A real Eventbrite/Meetup export: only attendee identity columns,
+    // NO event_external_id / event_name / event_start columns at all.
+    const csv = ['Email Address,Full Name', 'lars@example.test,Lars Larsson'].join(
+      '\n',
+    );
+    const columnMapping = new Map<string, string>([
+      ['Email Address', 'attendee_email'],
+      ['Full Name', 'attendee_name'],
+    ]);
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: new TextEncoder().encode(csv),
+      eventContext: REMAP_EVENT_CONTEXT,
+      columnMapping,
+    });
+
+    // Header MUST NOT be rejected as invalid_header (the reduced gate
+    // only requires attendee_email + attendee_name).
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.format).toBe('generic_csv');
+
+    // Rows MUST parse (NOT fail row-level CsvRowSchema validation) — the
+    // event_* fields are supplied by the picker eventContext.
+    const rows: ParsedRow[] = [];
+    for await (const r of result.value.rows) rows.push(r);
+    expect(rows).toHaveLength(1);
+    const first = rows[0]!;
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.row.attendee_email).toBe('lars@example.test');
+    expect(first.row.attendee_name).toBe('Lars Larsson');
+    // event_* filled from the picker eventContext (the CSV has none).
+    expect(first.row.event_external_id).toBe('evt-remap');
+    expect(first.row.event_name).toBe('Remap Workshop');
+    expect(first.row.event_start).toBe('2026-05-01T09:00:00.000Z');
+  });
+
+  it('REGRESSION: legacy parseStream (no eventContext) STILL rejects the same 2-column CSV as invalid_header (relaxation is scoped)', async () => {
+    const csv = ['Email Address,Full Name', 'lars@example.test,Lars Larsson'].join(
+      '\n',
+    );
+    const columnMapping = new Map<string, string>([
+      ['Email Address', 'attendee_email'],
+      ['Full Name', 'attendee_name'],
+    ]);
+    const result = await streamingCsvImporter.parseStream({
+      bytes: new TextEncoder().encode(csv),
+      columnMapping,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid_header');
+    if (result.error.kind === 'invalid_header') {
+      // The legacy path still hard-requires the full 5 columns.
+      expect(result.error.missingColumns).toContain('event_name');
+      expect(result.error.missingColumns).toContain('event_external_id');
+      expect(result.error.missingColumns).toContain('event_start');
+    }
+  });
+
+  it('parseStreamWithFormat STILL rejects when a reduced-required attendee column is missing (attendee_name absent)', async () => {
+    // Proves the relaxation is bounded — attendee_email + attendee_name
+    // remain required even on the picker-bound path.
+    const csv = ['Email Address', 'lars@example.test'].join('\n');
+    const columnMapping = new Map<string, string>([
+      ['Email Address', 'attendee_email'],
+    ]);
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: new TextEncoder().encode(csv),
+      eventContext: REMAP_EVENT_CONTEXT,
+      columnMapping,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid_header');
+    if (result.error.kind === 'invalid_header') {
+      expect(result.error.missingColumns).toContain('attendee_name');
+    }
+  });
+});
+

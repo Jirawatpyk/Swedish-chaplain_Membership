@@ -150,6 +150,20 @@ export {
   type CsvRow,
 } from './domain/eventcreate-payload';
 
+// FR-026 CSV column-mapping canonical set + fail-closed route validator.
+export {
+  CSV_REQUIRED_COLUMNS,
+  CSV_OPTIONAL_COLUMNS,
+  CSV_CANONICAL_COLUMNS,
+  CSV_CANONICAL_COLUMN_SET,
+  CSV_GENERIC_REQUIRED_COLUMNS,
+  MAX_COLUMN_MAPPING_ENTRIES,
+  MAX_COLUMN_MAPPING_KEY_LENGTH,
+  parseColumnMappingObject,
+  type CsvCanonicalColumn,
+  type ParsedColumnMapping,
+} from './domain/csv-column-mapping';
+
 export { normaliseCompanyName } from './domain/normalise-company-name';
 
 export { levenshtein } from './domain/levenshtein';

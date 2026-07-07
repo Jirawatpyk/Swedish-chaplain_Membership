@@ -235,3 +235,119 @@ describe('CsvMappingForm — FR-019b mismatch preview preservation', () => {
     expect(body?.get('event_id')).toBe('ev-fixed-1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// PR 4.2 (#10a) — FR-026 column remap. A non-EventCreate tenant uploads a
+// CSV whose attendee columns are under NON-canonical headers (and which
+// lacks event columns entirely — the picker supplies them per #10b). The
+// admin maps each required attendee column via a native <select>; Confirm
+// stays disabled until the required columns are mapped; on submit the form
+// sends the mapping INVERTED to the parser's header→canonical direction.
+// ---------------------------------------------------------------------------
+const CSV_REMAP = [
+  'Email Address,Full Name,Company Name',
+  'lars@example.com,Lars Larsson,Volvo AB',
+  'ingrid@example.com,Ingrid Nilsson,Saab',
+].join('\n');
+
+function completedResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      kind: 'completed',
+      summary: {
+        rowsProcessed: 2,
+        rowsAlreadyImported: 0,
+        eventsCreated: 0,
+        eventsUpdated: 1,
+        matchCounts: {
+          member_contact: 0,
+          member_domain: 0,
+          member_fuzzy: 0,
+          non_member: 2,
+          unmatched: 0,
+        },
+        errorRows: [],
+        durationMs: 10,
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+async function uploadRemapCsv(
+  user: ReturnType<typeof userEvent.setup>,
+): Promise<void> {
+  const file = new File([CSV_REMAP], 'eventbrite.csv', { type: 'text/csv' });
+  Object.defineProperty(file, 'text', {
+    value: () => Promise.resolve(CSV_REMAP),
+    configurable: true,
+  });
+  const input = screen.getByLabelText(/Choose a \.csv file/i);
+  await user.upload(input, file);
+}
+
+describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useFakeTimers();
+  });
+
+  it('renders remap selects, gates Confirm until required attendee columns are mapped, and posts an inverted header→canonical column_mapping', async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        completedResponse(),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderForm();
+
+    await uploadRemapCsv(user);
+
+    // A <select> renders per required attendee column, labelled by the
+    // canonical field name.
+    const emailSelect = (await screen.findByLabelText(
+      /attendee_email/i,
+    )) as HTMLSelectElement;
+    const nameSelect = (await screen.findByLabelText(
+      /attendee_name/i,
+    )) as HTMLSelectElement;
+    expect(emailSelect.tagName).toBe('SELECT');
+    expect(nameSelect.tagName).toBe('SELECT');
+    // The detected (non-canonical) headers are the options.
+    expect(
+      within(emailSelect).getByRole('option', { name: 'Email Address' }),
+    ).toBeInTheDocument();
+
+    // Confirm is disabled until the required columns are mapped.
+    const confirm = await screen.findByRole('button', {
+      name: /Confirm and import/i,
+    });
+    expect(confirm).toBeDisabled();
+
+    // Map only one required column → still gated.
+    await user.selectOptions(emailSelect, 'Email Address');
+    expect(confirm).toBeDisabled();
+
+    // Map the second required column → gate opens.
+    await user.selectOptions(nameSelect, 'Full Name');
+    await waitFor(() => expect(confirm).toBeEnabled());
+
+    // Submit → assert the FormData carries the INVERTED map.
+    await user.click(confirm);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const body = init?.body as FormData | undefined;
+    const raw = body?.get('column_mapping');
+    expect(typeof raw).toBe('string');
+    const parsed = JSON.parse(raw as string) as Record<string, string>;
+    // INVERTED — header → canonical (the parser's expected direction).
+    expect(parsed).toEqual({
+      'Email Address': 'attendee_email',
+      'Full Name': 'attendee_name',
+    });
+    expect(body?.get('event_id')).toBe('ev-fixed-1');
+  });
+});

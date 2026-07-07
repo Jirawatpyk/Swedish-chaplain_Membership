@@ -3959,7 +3959,13 @@
           "totalRowsHint": "{columns} คอลัมน์ × แสดง {sampled} จากทั้งหมด {total, plural, other {# แถว}}",
           "tableHelpText": "วางเมาส์บนเซลล์เพื่อดูข้อความเต็ม คอลัมน์ที่มีเครื่องหมาย ✓ คือคอลัมน์หลักที่ใช้ในการนำเข้า ส่วนคอลัมน์อื่นจะถูกส่งต่อโดยไม่แก้ไข",
           "emptyCell": "(ว่าง)",
-          "confirmCtaWithCount": "ยืนยันและนำเข้า {count, plural, other {# แถว}}"
+          "confirmCtaWithCount": "ยืนยันและนำเข้า {count, plural, other {# แถว}}",
+          "remapSectionTitle": "จับคู่คอลัมน์ของคุณ",
+          "remapIntro": "จับคู่แต่ละฟิลด์กับคอลัมน์ในไฟล์ของคุณ ข้อมูลกิจกรรมจะมาจากกิจกรรมที่เลือกไว้ด้านบน จึงต้องระบุเฉพาะคอลัมน์ผู้เข้าร่วมเท่านั้น",
+          "remapPlaceholder": "เลือกคอลัมน์…",
+          "remapFieldLabelRequired": "{field} (จำเป็น)",
+          "remapFieldLabelOptional": "{field} (ไม่บังคับ)",
+          "remapGatedHint": "จับคู่คอลัมน์ผู้เข้าร่วมที่จำเป็นด้านบนเพื่อดำเนินการต่อ"
         },
         "result": {
           "regionLabel": "ผลการนำเข้า CSV",
@@ -3995,7 +4001,9 @@
           "unexpectedTitle": "เกิดข้อผิดพลาดบางอย่าง",
           "unexpectedDetail": "เกิดข้อผิดพลาดที่ไม่คาดคิด ลองอีกครั้ง หากปัญหายังคงอยู่กรุณาติดต่อทีมสนับสนุน",
           "eventNotSelectedTitle": "ยังไม่ได้เลือกกิจกรรม",
-          "eventNotSelectedDetail": "กรุณาเลือกกิจกรรมจากเมนูดรอปดาวน์ก่อนอัปโหลด"
+          "eventNotSelectedDetail": "กรุณาเลือกกิจกรรมจากเมนูดรอปดาวน์ก่อนอัปโหลด",
+          "columnMappingInvalidTitle": "การจับคู่คอลัมน์ไม่ถูกต้อง",
+          "columnMappingInvalidDetail": "ไม่สามารถประมวลผลการเลือกคอลัมน์บางรายการได้ กรุณาตรวจสอบการจับคู่แล้วลองอีกครั้ง"
         },
         "eventPicker": {
           "fieldLabel": "กิจกรรม",

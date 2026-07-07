@@ -3959,7 +3959,13 @@
           "totalRowsHint": "{columns} columns × showing {sampled} of {total, plural, one {# row} other {# rows}}",
           "tableHelpText": "Hover a cell to see full content. Canonical columns are highlighted; the rest are passed through unchanged on import.",
           "emptyCell": "(empty)",
-          "confirmCtaWithCount": "Confirm and import {count, plural, one {# row} other {# rows}}"
+          "confirmCtaWithCount": "Confirm and import {count, plural, one {# row} other {# rows}}",
+          "remapSectionTitle": "Map your columns",
+          "remapIntro": "Match each field to a column from your file. Event details come from the event selected above, so only the attendee columns are required.",
+          "remapPlaceholder": "Choose column…",
+          "remapFieldLabelRequired": "{field} (required)",
+          "remapFieldLabelOptional": "{field} (optional)",
+          "remapGatedHint": "Map the required attendee columns above to continue."
         },
         "result": {
           "regionLabel": "CSV import result",
@@ -3995,7 +4001,9 @@
           "unexpectedTitle": "Something went wrong",
           "unexpectedDetail": "Unexpected error. Retry; if it persists, contact support.",
           "eventNotSelectedTitle": "Event not selected",
-          "eventNotSelectedDetail": "Select an event from the dropdown before uploading."
+          "eventNotSelectedDetail": "Select an event from the dropdown before uploading.",
+          "columnMappingInvalidTitle": "Column mapping is invalid",
+          "columnMappingInvalidDetail": "One or more column selections could not be processed. Re-check your mappings and try again."
         },
         "eventPicker": {
           "fieldLabel": "Event",
