@@ -54,6 +54,7 @@ import { toggleEventCategory } from '@/modules/events/application/use-cases/togg
 import { archiveEvent } from '@/modules/events/application/use-cases/archive-event';
 import { relinkRegistration } from '@/modules/events/application/use-cases/relink-registration';
 import { eraseAttendeePii } from '@/modules/events/application/use-cases/erase-attendee-pii';
+import { searchAttendeeRegistrationsByEmail } from '@/modules/events/application/use-cases/search-attendee-registrations-by-email';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -84,6 +85,10 @@ import type {
   EraseAttendeePiiOutput,
   EraseAttendeePiiError,
 } from '@/modules/events/application/use-cases/erase-attendee-pii';
+import type {
+  SearchAttendeeRegistrationsByEmailOutput,
+  SearchAttendeeRegistrationsByEmailError,
+} from '@/modules/events/application/use-cases/search-attendee-registrations-by-email';
 import {
   makeEventRegistrationLookupForTenant,
   makeEventDetailsBatchLookupForTenant,
@@ -555,5 +560,42 @@ export async function runEraseAttendeePii(
   return runInTenantWithRollbackOnErr(ctx, async (tx) => {
     const deps = makeEraseAttendeePiiDeps(tx);
     return eraseAttendeePii({ ...input, tenantId }, deps);
+  });
+}
+
+/**
+ * F6 remediation PR 2.1 / P2 (FR-032a by-email erasure BACKEND) — route-facing
+ * wrapper for `searchAttendeeRegistrationsByEmail`. This is the PREVIEW read
+ * that lists every registration sharing a data subject's email across the
+ * tenant's events before the destructive bulk erase (P3).
+ *
+ * READ path → plain `runInTenant` (NO rollback wrapper — nothing mutates).
+ * Composes the P1 registrations repo (`findByEmailLower`) + the batched
+ * event-details lookup, both bound to the SAME tenant-scoped tx so RLS
+ * (`SET LOCAL app.current_tenant`) + the explicit tenant predicate scope both
+ * reads (Principle I two-layer isolation). A batch-lookup error DEGRADES inside
+ * the use-case to a null event name (mirrors `runListEventNamesByIds`), so the
+ * preview never 500s because the enrichment blipped.
+ */
+export async function runSearchAttendeesByEmail(
+  tenantSlug: string,
+  input: { readonly emailLower: string },
+): Promise<
+  Result<
+    SearchAttendeeRegistrationsByEmailOutput,
+    SearchAttendeeRegistrationsByEmailError
+  >
+> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const deps = {
+      registrationsRepo: makeDrizzleRegistrationsRepository(tx),
+      eventDetailsBatchLookup: makeEventDetailsBatchLookupForTenant(tx),
+    };
+    return searchAttendeeRegistrationsByEmail(
+      { tenantId, emailLower: input.emailLower },
+      deps,
+    );
   });
 }
