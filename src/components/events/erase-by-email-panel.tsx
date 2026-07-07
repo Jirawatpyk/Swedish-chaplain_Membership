@@ -22,7 +22,7 @@
  */
 'use client';
 
-import { useState, useTransition, type FormEvent } from 'react';
+import { useRef, useState, useTransition, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Eraser, Loader2, Search } from 'lucide-react';
@@ -85,6 +85,12 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [reasonText, setReasonText] = useState('');
+  // WCAG 2.4.3 — after a successful "Erase all", router.refresh() drops
+  // matchCount to 0 → the whole AlertDialog (trigger included) unmounts, so Base
+  // UI cannot restore focus to the trigger and focus would fall to <body>.
+  // finalFocus targets the ALWAYS-MOUNTED search input instead so focus lands on
+  // a predictable, still-present element (F7-A11Y-1 finalFocus pattern).
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const reasonValid = reasonText.trim().length > 0 && reasonText.length <= 500;
   const canEraseAll = email.length > 0 && matchCount > 0;
@@ -153,6 +159,7 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
           <Label htmlFor="erase-by-email-input">{t('searchLabel')}</Label>
           <Input
             id="erase-by-email-input"
+            ref={searchInputRef}
             type="email"
             inputMode="email"
             autoComplete="off"
@@ -204,7 +211,7 @@ export function EraseByEmailPanel({ email, matchCount }: EraseByEmailPanelProps)
                 />
               )}
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent finalFocus={searchInputRef}>
               <AlertDialogHeader>
                 <AlertDialogTitle>
                   {t('eraseAllConfirmTitle', { count: matchCount })}

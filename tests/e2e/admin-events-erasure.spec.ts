@@ -215,6 +215,13 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
     );
     await expect(eraseRow).toBeVisible();
 
+    // axe scan #1 — the POPULATED results table (the highest-risk element the
+    // empty-page scan above cannot reach): headers, badges, per-row actions.
+    const tableScan = await new AxeBuilder({ page })
+      .withTags([...AXE_TAGS])
+      .analyze();
+    expect(tableScan.violations).toEqual([]);
+
     // Open the bulk "Erase all N" dialog.
     const eraseAll = page.getByTestId('erase-all-by-email-button');
     await expect(eraseAll).toBeVisible();
@@ -222,6 +229,13 @@ test.describe('PR 2.2 — by-email attendee erasure surface @a11y @i18n', () => 
 
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
+
+    // axe scan #2 — the OPEN AlertDialog (focus trap, labelling, reason
+    // textarea + destructive action button).
+    const dialogScan = await new AxeBuilder({ page })
+      .withTags([...AXE_TAGS])
+      .analyze();
+    expect(dialogScan.violations).toEqual([]);
 
     // Confirm is gated on a reason (FR-032a mandatory-reason gate).
     const confirm = dialog.getByRole('button', {

@@ -170,7 +170,11 @@ export default async function EraseByEmailPage({
             aria-atomic="true"
             className="sr-only"
           >
-            {searchedEmail ? t('resultsCount', { count: matches.length }) : ''}
+            {/* Announce the count only on a SUCCESSFUL search — on the error
+                branch the polite count must not collide with the role=alert. */}
+            {searchedEmail && !hasError
+              ? t('resultsCount', { count: matches.length })
+              : ''}
           </output>
 
           {searchedEmail && truncated ? (
