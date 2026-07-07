@@ -38,7 +38,7 @@ import type { EventId, RegistrationId } from '../../domain/branded-types';
 import { asEventId } from '../../domain/branded-types';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type { PaymentStatus } from '../../domain/value-objects/payment-status';
-import { isNonQuotaMatchType } from '../../domain/value-objects/match-type';
+import { isQuotaCountedStatus } from '../../domain/value-objects/payment-status';
 import { computeMatchRatePct } from '../../domain/match-rate';
 
 /**
@@ -242,15 +242,37 @@ export async function loadEventDetail(
       paymentStatus: r.ticket.paymentStatus,
       countedAgainstPartnership: r.quotaEffect.countedAgainstPartnership,
       countedAgainstCulturalQuota: r.quotaEffect.countedAgainstCulturalQuota,
-      // isOverQuota — a registration is "over quota" when it is a
-      // non-quota match (cannot count) AND the originating event is
-      // flagged as partner-benefit/cultural. The Phase 6 apply-quota-
-      // effect use-case writes the canonical flags; this derived
-      // view surfaces the over-quota signal at the API layer without
-      // storing a separate column.
-      isOverQuota:
-        (event.isPartnerBenefit || event.isCulturalEvent) &&
-        isNonQuotaMatchType(r.match.type),
+      // isOverQuota — PR 1.2 F6 remediation (#7): mirrors the NEGATION
+      // of apply-quota-effect.ts's `quota_over_quota_warning` emission
+      // condition (same gate `processAttendeeInTx`'s `shouldApplyQuota`
+      // uses before calling it). A registration is over quota in a
+      // scope when the event actively runs that benefit, the row is
+      // matched to a member, the seat is confirmed (paid/free), and
+      // that scope's counted_against_* flag came back false because
+      // the allotment was already exhausted. The two scopes are
+      // independent — a dual-flag event can be over on one and under
+      // on the other. Previously this derived off
+      // `isNonQuotaMatchType(match.type)`, which is true ONLY for
+      // non_member/unmatched — the exact inverse of the real signal
+      // (see FR-013 / FR-017 / US4 AS2).
+      isOverQuota: (() => {
+        const eventActiveBenefit = event.archivedAt === null;
+        const isMatchedMember = r.match.matchedMemberId !== null;
+        const isConfirmedSeat = isQuotaCountedStatus(r.ticket.paymentStatus);
+        const partnershipOver =
+          eventActiveBenefit &&
+          event.isPartnerBenefit &&
+          isMatchedMember &&
+          isConfirmedSeat &&
+          !r.quotaEffect.countedAgainstPartnership;
+        const culturalOver =
+          eventActiveBenefit &&
+          event.isCulturalEvent &&
+          isMatchedMember &&
+          isConfirmedSeat &&
+          !r.quotaEffect.countedAgainstCulturalQuota;
+        return partnershipOver || culturalOver;
+      })(),
       registeredAt: r.registeredAt.toISOString(),
       // F6 Phase 9 / US6 — surface the pseudonymisation marker so the
       // relink dialog can render the FR-014 disallowed branch without
