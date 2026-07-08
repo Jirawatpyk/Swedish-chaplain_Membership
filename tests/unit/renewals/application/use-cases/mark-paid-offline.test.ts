@@ -102,6 +102,7 @@ interface FakeDepsResult {
 function fakeDeps(
   cycle: RenewalCycle | null,
   bridgeImpl?: (input: {
+    paymentDate: string;
     onPaid?: (evt: {
       tenantId: string;
       invoiceId: string;
@@ -112,6 +113,8 @@ function fakeDeps(
       currency: 'THB';
       paymentMethod: 'bank_transfer' | 'cash' | 'cheque';
       triggeredBy: 'admin_offline_mark';
+      readonly invoiceSubject: 'membership' | 'event';
+      readonly paymentDate: string | null;
     }) => Promise<void>;
   }) => Promise<unknown>,
 ): FakeDepsResult {
@@ -119,6 +122,7 @@ function fakeDeps(
   const emitInTxMock = vi.fn(async () => {});
   const transitionMock = vi.fn(async () => ({ ...cycle!, status: 'completed' }));
   const defaultBridge = async (input: {
+    paymentDate: string;
     onPaid?: (evt: {
       tenantId: string;
       invoiceId: string;
@@ -129,6 +133,8 @@ function fakeDeps(
       currency: 'THB';
       paymentMethod: 'bank_transfer' | 'cash' | 'cheque';
       triggeredBy: 'admin_offline_mark';
+      readonly invoiceSubject: 'membership' | 'event';
+      readonly paymentDate: string | null;
     }) => Promise<void>;
   }) => {
     const evt = {
@@ -141,6 +147,8 @@ function fakeDeps(
       currency: 'THB' as const,
       paymentMethod: 'bank_transfer' as const,
       triggeredBy: 'admin_offline_mark' as const,
+      invoiceSubject: 'membership' as const,
+      paymentDate: input.paymentDate,
     };
     if (input.onPaid) await input.onPaid(evt);
     return { ok: true, value: { invoiceId: 'inv-1', paidAt: evt.paidAt } };
