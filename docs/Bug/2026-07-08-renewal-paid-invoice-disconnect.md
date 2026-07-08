@@ -252,7 +252,20 @@ Smaller than feared — F8 was already built rolling. Work items:
 Remaining open items:
 1. **Official TSCC confirmation of the 30-day lapse rule (R7)** — current source is the
    public website (maintainer: "ไม่ชัวร์").
-2. R4 data: per-member 2025/2026 payment dates for the backfill (after testing).
+2. ~~R4 data~~ **RECEIVED 2026-07-08**: `docs/Membership Database_Since 2025.xlsx`
+   (PII — git-ignored, never commit). Analysis: 112 current members (Total Update
+   sheet); **103/112 have a payment date** (master sheet `Payment Date` col +
+   Renewal Form sheet); the 9 missing = 2 unpaid (Toyota MH, Scania — must NOT be
+   anchored) + ~7 paid-but-undated early-2025 rows (ask TSCC or INV-date fallback).
+   The workbook's own formulas CONFIRM rolling: `End of Membership =
+   EDATE(Payment Date, 11)` (month-granular). Anomalies: 1 future-dated payment
+   (2026-12-18, duplicated row); records key on company NAME (no member numbers).
+3. **NEW Q for TSCC (from the workbook)**: the master sheet has a "Rolling Starts"
+   section marker + 6 members explicitly labelled "full year" (+ "yellow highlight
+   = full year" note on the Unpaid sheet) — do legacy full-year members convert to
+   rolling at their next renewal, or stay on fixed-year terms? And is expiry
+   month-end (sheet shows "Jun-26" for a 4-Jul-2025 payment) or exact date
+   (payment + 12 months, our current design)?
 
 ---
 
