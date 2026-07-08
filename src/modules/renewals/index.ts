@@ -175,6 +175,12 @@ export {
   type SchedulePolicyError,
 } from './domain/tenant-renewal-schedule-policy';
 
+export {
+  classifyMembershipPayment,
+  type MembershipPaymentClassificationInput,
+  type MembershipPaymentClassification,
+} from './domain/classify-membership-payment';
+
 // --- Application ports (Wave E T041-T051) -----------------------------------
 // Pure interfaces — no adapter implementations until Wave G+.
 export {
