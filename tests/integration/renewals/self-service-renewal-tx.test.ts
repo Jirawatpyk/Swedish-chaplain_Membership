@@ -172,6 +172,34 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
         status: 'draft',
         currency: 'THB',
       });
+      // Rolling-anchor refactor (Task 6, migration 0238) — a TERMINAL
+      // predecessor cycle so this member has TWO cycles ever, not the
+      // shared classifier's `first_payment` shape ("exactly one cycle
+      // ever, unanchored"). This suite drives markCycleCompleteFromInvoicePaid
+      // and asserts plain completion/hold branches (FR-023/FR-005b), which
+      // are orthogonal to Task 6's first-payment re-anchor branch — without
+      // this predecessor, paying the seeded cycle below would re-anchor
+      // instead of completing, breaking every assertion in this file that
+      // checks the SPECIFIC seeded cycleId's row (status stays unaffected
+      // by this extra row). 'cancelled' avoids needing a second invoice FK
+      // target — mirrors e8da485b's pattern.
+      await tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2024-06-01T00:00:00Z'),
+        periodTo: new Date('2025-06-01T00:00:00Z'),
+        expiresAt: new Date('2025-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: randomUUID(),
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date('2025-06-01T00:00:00Z'),
+        closedReason: 'cancelled',
+      });
       await tx.insert(renewalCycles).values({
         tenantId: tenantA.ctx.slug,
         cycleId,

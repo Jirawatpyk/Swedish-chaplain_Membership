@@ -195,6 +195,36 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
   it('FIRST delivery: prior cycle →completed AND a NEW upcoming cycle is created (gapless, in-tx idempotency sees the uncommitted completion)', async () => {
     const memberId = await seedMember();
     const invoiceId = await seedIssuedInvoice(memberId);
+
+    // Rolling-anchor refactor (Task 6, migration 0238) — a TERMINAL
+    // predecessor cycle so this member has cycle history (TWO cycles ever),
+    // not the shared classifier's `first_payment` shape ("exactly one cycle
+    // ever, unanchored"). This test's whole point is the STEADY-STATE
+    // renewal rollover (prior completes + next created) — without a
+    // predecessor, paying the seeded "prior" cycle below would re-anchor it
+    // instead of completing it (Task 6's first-payment branch), which would
+    // break the load-bearing assertion this test exists to prove. Mirrors
+    // e8da485b's pattern.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2024-01-01T00:00:00.000Z'),
+        periodTo: new Date('2025-01-01T00:00:00.000Z'),
+        expiresAt: new Date('2025-01-01T00:00:00.000Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date('2025-01-01T00:00:00.000Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+
     const priorPeriodTo = new Date('2026-01-01T00:00:00.000Z');
     const priorCycleId = await seedAwaitingCycleLinkedToInvoice({
       memberId,
@@ -218,11 +248,14 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
         .where(eq(renewalCycles.memberId, memberId)),
     );
 
-    // Exactly 2 cycles: the prior (completed) + the new (upcoming).
-    expect(rows).toHaveLength(2);
+    // Exactly 3 cycles: the terminal predecessor (cancelled, seeded above) +
+    // the prior (now completed) + the new (upcoming).
+    expect(rows).toHaveLength(3);
 
     const prior = rows.find((r) => r.cycleId === priorCycleId);
-    const next = rows.find((r) => r.cycleId !== priorCycleId);
+    const next = rows.find(
+      (r) => r.cycleId !== priorCycleId && r.status === 'upcoming',
+    );
 
     expect(prior?.status).toBe('completed');
 
@@ -289,6 +322,35 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
 
   it('concurrent dual-writer: two tx racing to create the SAME member next cycle — exactly one wins, the loser fails gracefully (active-member uniq index; no orphan, no double)', async () => {
     const memberId = await seedMember();
+
+    // Rolling-anchor refactor (Task 6, migration 0238) — a TERMINAL
+    // predecessor cycle so this member has cycle history (TWO cycles ever),
+    // not the shared classifier's `first_payment` shape. This test races
+    // the NEXT-CYCLE active-member-uniq guard, not the first-payment
+    // re-anchor branch — without a predecessor, BOTH concurrent chains
+    // would try to re-anchor the single un-anchored cycleA (a DIFFERENT
+    // race than the one this test documents), and cycleA would never reach
+    // `completed`. Mirrors e8da485b's pattern.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2024-01-01T00:00:00.000Z'),
+        periodTo: new Date('2025-01-01T00:00:00.000Z'),
+        expiresAt: new Date('2025-01-01T00:00:00.000Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date('2025-01-01T00:00:00.000Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+
     // Seed a COMPLETED prior cycle directly (no awaiting flip needed —
     // we test the createCycleInTx idempotency/uniqueness layer directly
     // by racing two next-cycle creations). Two issued invoices, two
