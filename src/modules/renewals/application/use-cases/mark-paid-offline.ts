@@ -82,19 +82,25 @@ export const markPaidOfflineInputSchema = z.object({
 
 export type MarkPaidOfflineInput = z.infer<typeof markPaidOfflineInputSchema>;
 
-export interface MarkPaidOfflineOutput {
-  /**
-   * Task 7 (spec §1 consuming-site 3) — discriminates which of the two
-   * shared-classifier branches this settlement took. `'completed'` is
-   * the pre-existing behaviour (byte-identical); `'reanchored'` is the
-   * new first-payment branch — the cycle stays `upcoming`, never
-   * `completed`.
-   */
-  readonly outcome: 'completed' | 'reanchored';
-  readonly cycleStatus: 'completed' | 'upcoming';
-  readonly invoiceId: string;
-  readonly newExpiresAt: string;
-}
+export type MarkPaidOfflineOutput =
+  | {
+      readonly outcome: 'completed';
+      readonly cycleStatus: 'completed';
+      readonly invoiceId: string;
+      readonly newExpiresAt: string;
+    }
+  | {
+      readonly outcome: 'reanchored';
+      readonly cycleStatus: 'upcoming';
+      readonly invoiceId: string;
+      readonly newExpiresAt: string;
+      /**
+       * Task 7 (RRA task 7 fix) — the true period start (first of month)
+       * after re-anchor, for the admin toast to display the correct
+       * renewal period boundary.
+       */
+      readonly newPeriodFrom: string;
+    };
 
 export type MarkPaidOfflineError =
   | { readonly kind: 'invalid_input'; readonly message: string }
@@ -537,6 +543,8 @@ export async function markPaidOffline(
           // pre-branch `newExpiresAt` local (which was derived from the
           // now-superseded pre-anchor period). Never recompute by hand.
           newExpiresAt: reanchored.cycle.periodTo,
+          // RRA task 7 fix — true period start (first of month) after re-anchor.
+          newPeriodFrom: reanchored.cycle.periodFrom,
         });
       }
       return ok({

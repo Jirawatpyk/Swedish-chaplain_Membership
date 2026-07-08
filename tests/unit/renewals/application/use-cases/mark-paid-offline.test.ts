@@ -630,7 +630,7 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
     expect(insertMock).not.toHaveBeenCalled();
   });
 
-  it('newExpiresAt on the reanchor branch is the re-anchored cycle’s OWN periodTo (never hand-recomputed)', async () => {
+  it("newExpiresAt on the reanchor branch is the re-anchored cycle’s OWN periodTo (never hand-recomputed)", async () => {
     const cycle = buildCycle({ anchoredAt: null });
     const { deps, countCyclesForMemberInTxMock, reanchorPeriodInTxMock } =
       fakeDeps(cycle);
@@ -641,9 +641,15 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
     expect(reanchorPeriodInTxMock).toHaveBeenCalledTimes(1);
     const writtenArgs = reanchorPeriodInTxMock.mock.calls[0]![3] as {
       periodTo: string;
+      periodFrom: string;
     };
     if (r.ok) {
       expect(r.value.newExpiresAt).toBe(writtenArgs.periodTo);
+      // RRA task 7 fix — newPeriodFrom must be present on reanchored branch
+      expect(r.value.outcome).toBe("reanchored");
+      if (r.value.outcome === "reanchored") {
+        expect(r.value.newPeriodFrom).toBe(writtenArgs.periodFrom);
+      }
     }
   });
 

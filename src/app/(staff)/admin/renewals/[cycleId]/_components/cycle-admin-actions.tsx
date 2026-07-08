@@ -238,15 +238,15 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           // month. Distinct copy so the admin understands the cycle
           // stayed `upcoming` instead of completing. The authoritative
           // new period dates render on the refreshed page below; the
-          // toast's `{date}` is the payment date the admin just entered
-          // (the anchor is that month's 1st, Bangkok — close enough for a
-          // confirmation toast).
-          const outcome = (data as { outcome?: string } | null)?.outcome;
-          if (outcome === 'reanchored') {
+          // toast's `{date}` is the TRUE period start (first of month)
+          // after re-anchor.
+          const data_obj = data as { outcome?: string; new_period_from?: string } | null;
+          const outcome = data_obj?.outcome;
+          if (outcome === 'reanchored' && data_obj?.new_period_from) {
             toast.success(
               t('markPaidOffline.successReanchored', {
                 date: format.dateTime(
-                  new Date(`${submittedPaymentDate}T00:00:00.000Z`),
+                  new Date(data_obj.new_period_from),
                   'dateMedium',
                 ),
               }),

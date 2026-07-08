@@ -307,7 +307,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
         markPaidOfflineMock.mockResolvedValueOnce(
           ok({
             outcome: 'completed' as const,
-        cycleStatus: 'completed' as const,
+            cycleStatus: 'completed' as const,
             invoiceId: 'inv-1',
             newExpiresAt: '2027-06-01T00:00:00Z',
           }),
