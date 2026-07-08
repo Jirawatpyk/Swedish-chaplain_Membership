@@ -752,6 +752,34 @@ describe('issueCreditNote — F-2 membership-effect intent capture', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  it('membership + FULL credit (on remainder after partial) + membershipEffect MISSING → membership_effect_required', async () => {
+    // Regression: if creditedTotal is already > 0 and a second credit note
+    // exactly completes the remainder, that is STILL a full-credit scenario
+    // that REQUIRES the membershipEffect intent, even though the _first_
+    // credit note might have been partial.
+    const partiallyCredited = makeMembershipInvoice({
+      creditedTotal: Money.fromSatangUnsafe(12_500n), // half already credited
+    });
+    const deps = makeDeps(partiallyCredited, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-remainder-no-effect',
+      creditTotalSatang: 12_500n, // exactly the remainder → full credit
+      reason: 'complete membership refund',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected membership_effect_required, got ok');
+    expect(r.error.code).toBe('membership_effect_required');
+    // Pre-allocation guard — no side effects.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyCreditNoteRollup).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('membership + FULL credit + membershipEffect="keep" → succeeds, membershipCancellationRequested=false', async () => {
     const invoice = makeMembershipInvoice();
     const deps = makeDeps(invoice, makeSettings());

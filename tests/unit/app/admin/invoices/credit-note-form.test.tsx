@@ -6,8 +6,8 @@
  *  - The membership-effect fieldset renders ONLY for a `'membership'`
  *    invoice whose entered amount fully credits it (event invoices and
  *    partial credits never show it).
- *  - Default selection is 'keep'; the group is marked `required`
- *    (aria-required) even though a default is always pre-selected.
+ *  - Default selection is 'keep'; the group is NOT marked required or
+ *    aria-required since a default is always pre-selected.
  *  - The POST body includes `membershipEffect` ONLY when the fieldset is
  *    shown — omitted entirely for a partial credit / event invoice, even
  *    though internal state still defaults to 'keep'.
