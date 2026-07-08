@@ -58,6 +58,7 @@ import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import {
   asCycleId,
   type RenewalCycle,
@@ -67,6 +68,7 @@ import {
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
 import { resolveUnlinkedMembershipPaymentInTx } from './resolve-unlinked-membership-payment';
+import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
 export type MarkCycleCompleteOutcome =
   | { readonly kind: 'no_cycle_for_invoice' }
@@ -80,7 +82,44 @@ export type MarkCycleCompleteOutcome =
       readonly kind: 'held_pending_admin';
       readonly cycleId: string;
       readonly memberId: string;
+    }
+  | {
+      /**
+       * Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+       * Task 6 — the LINKED-path counterpart to the unlinked hook's
+       * `'reanchored'` outcome. A first-ever payment on a cycle that
+       * confirm-renewal (or a dispatched F8 invoice) already linked to
+       * THIS invoice re-anchors instead of completing — see
+       * `markCycleCompleteInTx`'s classify-before-guard block below.
+       */
+      readonly kind: 'reanchored';
+      readonly cycleId: string;
+      readonly memberId: string;
     };
+
+/**
+ * Fold a resolved cycle into the shared classifier's `openCycle` input
+ * shape, or `null` when the cycle is not in an "open" status at all
+ * (`completed` / `lapsed` / `cancelled` / `pending_admin_reactivation`).
+ * `'reminded'` (vestigial, no writer in `src/`) folds to `'upcoming'` —
+ * mirrors `resolve-unlinked-membership-payment.ts`'s `toClassifierOpenCycle`,
+ * generalised to accept ANY cycle (that helper's input is guaranteed
+ * pre-filtered to open statuses by `findOpenCycleForMemberInTx`; this one
+ * is called on a cycle resolved by invoice-id, which can be in ANY
+ * status — e.g. an idempotent re-fire against an already-`completed`
+ * cycle must NOT be treated as open).
+ */
+function toOpenCycleClassifierInput(
+  cycle: RenewalCycle,
+): { readonly status: 'upcoming' | 'awaiting_payment'; readonly anchoredAt: string | null } | null {
+  if (cycle.status === 'awaiting_payment') {
+    return { status: 'awaiting_payment', anchoredAt: cycle.anchoredAt };
+  }
+  if (cycle.status === 'upcoming' || cycle.status === 'reminded') {
+    return { status: 'upcoming', anchoredAt: cycle.anchoredAt };
+  }
+  return null;
+}
 
 export type MarkCycleCompleteDeps = Pick<
   RenewalsDeps,
@@ -149,7 +188,7 @@ export async function markCycleCompleteInTx(
    */
   allowUnlinkedResolution = true,
 ): Promise<MarkCycleCompleteOutcome> {
-  const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
+  let cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
     tx,
     event.tenantId,
     event.invoiceId,
@@ -202,6 +241,75 @@ export async function markCycleCompleteInTx(
       '[mark-cycle-complete] no F8 cycle linked to invoice — resolved via unlinked-payment hook',
     );
     return { kind: 'no_cycle_for_invoice' as const };
+  }
+
+  // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+  // Task 6 (spec §1 consuming-site 2) — classify the payment for the
+  // LINKED cycle's member using the SAME shared classifier every
+  // settlement site consumes, BEFORE the awaiting_payment guard below. A
+  // `first_payment` result (the member's one-and-only cycle, never
+  // anchored to a real payment — exactly confirm-renewal's pre-linked-
+  // invoice shape) RE-ANCHORS instead of completing: confirm-renewal
+  // previously settled such a member at the cycle's provisional
+  // registration-date period rather than the actual payment month.
+  //
+  // `memberErased` is deliberately fixed `false` here — this classify
+  // call exists ONLY to detect the first-payment shape. The erased/
+  // blocked gate a few lines down (`readReactivationGuardsInTx` +
+  // `holdForAdminReview`) is UNCHANGED and still governs every
+  // NON-first_payment outcome. A blocked (or erased) member whose cycle
+  // IS first-payment-eligible still re-anchors here: re-anchor is not a
+  // reactivation — it only resets the cycle's period dates and leaves
+  // status at `upcoming` — so it does not bypass FR-005b / COMP-1 in any
+  // way that matters.
+  const openCycleInput = toOpenCycleClassifierInput(cycle);
+  if (openCycleInput) {
+    const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
+      tx,
+      event.tenantId,
+      cycle.memberId,
+    );
+    const classification = classifyMembershipPayment({
+      cycleCountForMember,
+      openCycle: openCycleInput,
+      memberErased: false,
+    });
+
+    if (classification.kind === 'first_payment') {
+      const reanchoredResult = await reanchorFirstPaymentCycleInTx(
+        {
+          cyclesRepo: deps.cyclesRepo,
+          planLookup: deps.planLookupForRenewal,
+          auditEmitter: deps.auditEmitter,
+        },
+        event,
+        tx,
+        cycle,
+      );
+      if (reanchoredResult) {
+        return {
+          kind: 'reanchored' as const,
+          cycleId: reanchoredResult.cycle.cycleId,
+          memberId: cycle.memberId,
+        };
+      }
+      // Lost the re-anchor race (a concurrent write moved the cycle out
+      // of the un-anchored-open state between our classify read and the
+      // guarded UPDATE) — re-read the SAME row by id once and fall
+      // through to the EXISTING guard+autoComplete/holdForAdminReview
+      // flow below with fresh data. Never loop (design rev 2 §2 race-
+      // recovery discipline — mirrors the unlinked hook's
+      // `reclassifyAfterRace`, but the linked path's fallback IS its own
+      // pre-existing flow, so no separate reclassify function is needed).
+      const refreshed = await deps.cyclesRepo.findByIdInTx(
+        tx,
+        event.tenantId,
+        cycle.cycleId,
+      );
+      if (refreshed) {
+        cycle = refreshed;
+      }
+    }
   }
 
   if (cycle.status !== 'awaiting_payment') {

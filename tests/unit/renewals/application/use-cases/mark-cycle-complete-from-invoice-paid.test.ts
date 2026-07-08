@@ -123,9 +123,25 @@ function fakeDeps(args: {
   countCyclesForMember?: number;
   openCycleForHook?: RenewalCycle | null;
   memberPlan?: { planId: string; isArchived: boolean } | null;
+  /**
+   * Rolling-anchor Task 6 — override the LINKED-path re-anchor result.
+   * Defaults to a successful re-anchor (echoes back the caller's args
+   * merged into a fresh cycle). Pass `async () => null` to simulate a
+   * lost re-anchor race (0 rows matched the guard).
+   */
+  reanchorImpl?: () => Promise<{ cycle: RenewalCycle; reminderEventsReset: number } | null>;
+  /**
+   * Rolling-anchor Task 6 — `findByIdInTx` return value, consulted ONLY
+   * by the linked-path race-recovery re-read (after `reanchorPeriodInTx`
+   * returns null). Defaults to re-returning the same `args.cycle` — the
+   * race-recovery test overrides this to a DIFFERENT cycle shape
+   * (simulating a concurrent write that moved the row).
+   */
+  findByIdCycle?: RenewalCycle | null;
 }): {
   deps: MarkCycleCompleteDeps;
   findByInvoiceMock: ReturnType<typeof vi.fn>;
+  findByIdMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   readGuardsMock: ReturnType<typeof vi.fn>;
@@ -138,6 +154,9 @@ function fakeDeps(args: {
   loadMemberPlanMock: ReturnType<typeof vi.fn>;
 } {
   const findByInvoiceMock = vi.fn(async () => args.cycle ?? null);
+  const findByIdMock = vi.fn(async () =>
+    args.findByIdCycle !== undefined ? args.findByIdCycle : (args.cycle ?? null),
+  );
   const transitionMock = vi.fn(
     args.transitionImpl ??
       (async () => ({ ...args.cycle!, status: 'completed' as const })),
@@ -156,10 +175,13 @@ function fakeDeps(args: {
   );
   const countCyclesMock = vi.fn(async () => args.countCyclesForMember ?? 0);
   const findOpenCycleMock = vi.fn(async () => args.openCycleForHook ?? null);
-  const reanchorMock = vi.fn(async (_tx: unknown, _tenantId: string, cycleId: string, reanchorArgs: Record<string, unknown>) => ({
-    cycle: { ...buildCycle({ cycleId: cycleId as never, ...reanchorArgs }) },
-    reminderEventsReset: 0,
-  }));
+  const reanchorMock = vi.fn(
+    args.reanchorImpl ??
+      (async (_tx: unknown, _tenantId: string, cycleId: string, reanchorArgs: Record<string, unknown>) => ({
+        cycle: { ...buildCycle({ cycleId: cycleId as never, ...reanchorArgs }) },
+        reminderEventsReset: 0,
+      })),
+  );
   const insertMock = vi.fn(async () =>
     buildCycle({
       cycleId: asCycleId('00000000-0000-0000-0000-0000000cffff'),
@@ -185,6 +207,7 @@ function fakeDeps(args: {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
     cyclesRepo: {
       findByInvoiceIdInTx: findByInvoiceMock,
+      findByIdInTx: findByIdMock,
       transitionStatus: transitionMock,
       countCyclesForMemberInTx: countCyclesMock,
       findOpenCycleForMemberInTx: findOpenCycleMock,
@@ -211,6 +234,7 @@ function fakeDeps(args: {
   return {
     deps,
     findByInvoiceMock,
+    findByIdMock,
     transitionMock,
     emitInTxMock,
     readGuardsMock,
@@ -520,5 +544,145 @@ describe('markCycleCompleteInTx (rolling-anchor Task 5) — unlinked-payment res
     expect(readGuardsMock).not.toHaveBeenCalled();
     expect(countCyclesMock).not.toHaveBeenCalled();
     expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
+  });
+});
+
+describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-payment re-anchor', () => {
+  it('linked invoice + only-cycle unanchored member → reanchored (NOT completed)', async () => {
+    // Default buildCycle(): status='awaiting_payment', linkedInvoiceId=
+    // INVOICE_UUID (this event's invoice), anchoredAt=null — exactly the
+    // confirm-renewal pre-linked-invoice shape spec §1 site 2 targets.
+    const cycle = buildCycle();
+    const {
+      deps,
+      reanchorMock,
+      transitionMock,
+      emitInTxMock,
+      countCyclesMock,
+      readGuardsMock,
+      insertMock,
+    } = fakeDeps({ cycle, countCyclesForMember: 1 });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('reanchored');
+    if (r.kind === 'reanchored') {
+      expect(r.cycleId).toBe(CYCLE_UUID);
+      expect(r.memberId).toBe(MEMBER_ID);
+    }
+
+    // Classification consulted countCyclesForMemberInTx for THIS member.
+    expect(countCyclesMock).toHaveBeenCalledWith(SENTINEL_TX, TENANT_ID, MEMBER_ID);
+
+    // reanchorPeriodInTx called once, anchoring to THIS invoice.
+    expect(reanchorMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).toHaveBeenCalledWith(
+      SENTINEL_TX,
+      TENANT_ID,
+      CYCLE_UUID,
+      expect.objectContaining({ anchorInvoiceId: INVOICE_UUID }),
+    );
+
+    // NOT completed: the awaiting_payment→completed transition never runs,
+    // no next cycle is created, and no heal-path insert runs either.
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
+
+    // Audit is renewal_cycle_reanchored (not renewal_completed).
+    expect(emitInTxMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+      type: 'renewal_cycle_reanchored',
+      payload: expect.objectContaining({
+        cycle_id: CYCLE_UUID,
+        member_id: MEMBER_ID,
+        invoice_id: INVOICE_UUID,
+      }),
+    });
+
+    // The reanchor branch returns BEFORE the erased/blocked guards read —
+    // classification does not bypass FR-005b/COMP-1, it simply never
+    // reaches that gate for a first-payment cycle (re-anchor ≠ reactivation).
+    expect(readGuardsMock).not.toHaveBeenCalled();
+  });
+
+  it('linked invoice + already-anchored cycle → existing completed behaviour is byte-identical', async () => {
+    const cycle = buildCycle({
+      anchoredAt: '2025-06-01T00:00:00Z',
+      anchorInvoiceId: '00000000-0000-0000-0000-0000000ap0st',
+    });
+    const { deps, transitionMock, emitInTxMock, reanchorMock, countCyclesMock } =
+      fakeDeps({ cycle, countCyclesForMember: 1 });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('completed');
+    // Classification ran (cycle is open) but resolved to 'renewal' since
+    // anchoredAt !== null — reanchor never fires.
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).not.toHaveBeenCalled();
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'awaiting_payment',
+      to: 'completed',
+      closedReason: 'paid',
+    });
+    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+      type: 'renewal_completed',
+    });
+  });
+
+  it('linked invoice + member has predecessor cycles → completed (existing renewal behaviour, not reanchor)', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, transitionMock, reanchorMock, countCyclesMock } = fakeDeps({
+      cycle,
+      // Member has a prior (predecessor) cycle in addition to this one —
+      // classifyMembershipPayment's "exactly one cycle ever" branch does
+      // not match, so this is 'renewal' even though anchoredAt is null.
+      countCyclesForMember: 2,
+    });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('completed');
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).not.toHaveBeenCalled();
+    expect(transitionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('lost the re-anchor race (0 rows) → re-reads by id + falls through to the existing flow, never loops', async () => {
+    const cycle = buildCycle(); // awaiting_payment, anchoredAt=null
+    // Simulate a concurrent write that moved the row out of the
+    // un-anchored-open state between our classify read and the guarded
+    // UPDATE (e.g. an admin manually cancelled the cycle mid-race).
+    const refreshedCycle = buildCycle({
+      status: 'cancelled',
+      anchoredAt: '2026-01-01T00:00:00Z',
+      closedAt: '2026-01-01T00:00:00Z',
+      closedReason: 'cancelled',
+    });
+    const { deps, reanchorMock, findByIdMock, transitionMock, countCyclesMock } =
+      fakeDeps({
+        cycle,
+        countCyclesForMember: 1,
+        reanchorImpl: async () => null,
+        findByIdCycle: refreshedCycle,
+      });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    // Reanchor was attempted exactly once (never retried/looped).
+    expect(reanchorMock).toHaveBeenCalledTimes(1);
+    // Re-read happened by cycle id (not by invoice id — the row's own PK).
+    expect(findByIdMock).toHaveBeenCalledWith(SENTINEL_TX, TENANT_ID, CYCLE_UUID);
+    // Refreshed cycle is 'cancelled' (not awaiting_payment) — falls
+    // through to the EXISTING status guard, which reports it as
+    // cycle_not_payable. autoComplete never attempted.
+    expect(r.kind).toBe('cycle_not_payable');
+    if (r.kind === 'cycle_not_payable') {
+      expect(r.currentStatus).toBe('cancelled');
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+    // countCyclesForMemberInTx consulted exactly once (the initial
+    // classify) — the race-recovery path does not reclassify/loop.
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
   });
 });

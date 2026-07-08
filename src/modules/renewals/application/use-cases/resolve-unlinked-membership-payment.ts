@@ -44,8 +44,6 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { deriveFiscalYear } from '@/lib/fiscal-year';
-import { addMonthsUtc } from '@/lib/dates';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
@@ -64,6 +62,7 @@ import {
   type CreateCycleOutcome,
 } from './create-cycle-in-tx';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
+import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
 export type UnlinkedResolutionOutcome =
   | { readonly kind: 'reanchored'; readonly cycleId: string }
@@ -371,10 +370,12 @@ async function healNoCycle(
 
 /**
  * Behaviour 4 — re-anchor the member's one-and-only, never-anchored
- * cycle to the ACTUAL payment month. Re-freezes the plan's frozen fields
- * when the re-anchor crosses a fiscal-year boundary; an unresolvable
- * plan (catalogue gap) keeps the old frozen fields + a loud log rather
- * than failing the payment.
+ * cycle to the ACTUAL payment month. Delegates the shared re-anchor core
+ * (month-start anchor date, FY-crossing frozen-field re-resolution, the
+ * guarded `reanchorPeriodInTx` UPDATE, audit + metric) to
+ * `reanchorFirstPaymentCycleInTx` — Task 6 extracted this so
+ * `markCycleCompleteInTx`'s linked-path first-payment branch shares the
+ * SAME implementation rather than duplicating it.
  */
 async function firstPayment(
   deps: ResolveUnlinkedMembershipPaymentDeps,
@@ -383,81 +384,12 @@ async function firstPayment(
   cycle: RenewalCycle,
   blocked: boolean,
 ): Promise<UnlinkedResolutionOutcome> {
-  const anchorDate = paymentAnchorMonthStartUtc(evt);
-
-  const oldFiscalYear = deriveFiscalYear(cycle.periodFrom);
-  const newFiscalYear = deriveFiscalYear(anchorDate);
-
-  let frozenPlanPriceThb = cycle.frozenPlanPriceThb;
-  let frozenPlanTermMonths = cycle.frozenPlanTermMonths;
-  let refrozePlanFields = false;
-
-  if (newFiscalYear !== oldFiscalYear) {
-    const resolved = await deps.planLookup.loadPlanFrozenFields({
-      tenantId: evt.tenantId,
-      planId: cycle.planIdAtCycleStart,
-      fiscalYear: newFiscalYear,
-      mode: 'freeze',
-    });
-    if (resolved.status === 'found') {
-      frozenPlanPriceThb = resolved.plan.priceTHB;
-      frozenPlanTermMonths = resolved.plan.termMonths;
-      refrozePlanFields = true;
-    } else {
-      logger.error(
-        {
-          cycleId: cycle.cycleId,
-          planId: cycle.planIdAtCycleStart,
-          newFiscalYear,
-          status: resolved.status,
-        },
-        '[resolve-unlinked-payment] first-payment re-anchor crossed a fiscal-year boundary but the plan is unresolvable for the new year — keeping old frozen fields',
-      );
-    }
-  }
-
-  const newPeriodTo = addMonthsUtc(anchorDate, frozenPlanTermMonths);
-
-  const reanchored = await deps.cyclesRepo.reanchorPeriodInTx(
-    tx,
-    evt.tenantId,
-    cycle.cycleId,
-    {
-      periodFrom: anchorDate,
-      periodTo: newPeriodTo,
-      anchoredAt: anchorDate,
-      anchorInvoiceId: evt.invoiceId,
-      frozenPlanPriceThb,
-      frozenPlanTermMonths,
-    },
-  );
-  if (!reanchored) {
+  const result = await reanchorFirstPaymentCycleInTx(deps, evt, tx, cycle);
+  if (!result) {
     // Lost the anchor race — re-read + reclassify once (design rev 2 §2).
     return reclassifyAfterRace(deps, evt, tx, blocked);
   }
-
-  await deps.auditEmitter.emitInTx(
-    tx,
-    {
-      type: 'renewal_cycle_reanchored',
-      payload: {
-        cycle_id: asCycleId(cycle.cycleId),
-        member_id: cycle.memberId as MemberId,
-        invoice_id: evt.invoiceId as InvoiceId,
-        old_period_from: cycle.periodFrom,
-        old_period_to: cycle.periodTo,
-        new_period_from: reanchored.cycle.periodFrom,
-        new_period_to: reanchored.cycle.periodTo,
-        old_status: cycle.status,
-        refroze_plan_fields: refrozePlanFields,
-        reminder_events_reset: reanchored.reminderEventsReset,
-      },
-    },
-    { tenantId: evt.tenantId, ...AUDIT_ACTOR, correlationId: correlationId(evt) },
-  );
-
-  renewalsMetrics.unlinkedPaymentResolved('reanchored');
-  return { kind: 'reanchored', cycleId: cycle.cycleId };
+  return { kind: 'reanchored', cycleId: result.cycle.cycleId };
 }
 
 /**

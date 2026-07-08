@@ -644,6 +644,12 @@ export function f8OnPaidCallbacks(
         case 'held_pending_admin':
         case 'no_cycle_for_invoice':
         case 'cycle_not_payable':
+        // Rolling-anchor refactor Task 6 — the linked-path first-payment
+        // re-anchor outcome. The use-case already wrote state + emitted
+        // `renewal_cycle_reanchored` + the metric; this dispatch site
+        // only needs to acknowledge the variant (same no-op contract as
+        // every other kind here).
+        case 'reanchored':
           break;
         default: {
           // Round 4 review-fix (R4-S1): defence-in-depth for the

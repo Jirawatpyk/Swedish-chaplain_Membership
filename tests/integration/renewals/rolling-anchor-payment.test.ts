@@ -36,6 +36,8 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { f8OnPaidCallbacks } from '@/modules/renewals';
+import { makeRenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
+import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
@@ -387,6 +389,97 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     expect(cycles).toHaveLength(2);
     expect(cycles.filter((c) => c.status === 'completed')).toHaveLength(1);
     expect(cycles.filter((c) => c.status === 'upcoming')).toHaveLength(1);
+  }, 120_000);
+
+  it('C1 regression (Task 6, LINKED path): confirm-renewal-style linked payment on a never-paid member RE-ANCHORS (not completes); a LATER linked renewal payment links + completes cleanly', async () => {
+    const memberId = await seedMember(tenantA, planIdA);
+    const cycleId = await seedProvisionalCycle(tenantA, memberId, planIdA); // upcoming, unanchored
+    const invoice1 = await seedIssuedInvoice(tenantA, memberId, planIdA);
+
+    // Mirror confirm-renewal's real pre-payment shape: the cycle
+    // self-transitions upcoming→awaiting_payment, THEN the F4 invoice is
+    // linked via `cyclesRepo.linkInvoice` (the T122 confirm-renewal call).
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ status: 'awaiting_payment' })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, (tx) =>
+      deps.cyclesRepo.linkInvoice(tx, tenantA.ctx.slug, asCycleId(cycleId), invoice1),
+    );
+
+    let cycles = await loadCycles(tenantA, memberId);
+    expect(cycles).toHaveLength(1);
+    expect(cycles[0]!.status).toBe('awaiting_payment');
+    expect(cycles[0]!.linkedInvoiceId).toBe(invoice1);
+    expect(cycles[0]!.anchoredAt).toBeNull();
+
+    const reanchoredBefore = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
+    const completedBefore = await countAuditRows(tenantA, 'renewal_completed');
+
+    // Pay invoice1 via the REAL onPaid callback chain. This IS the LINKED
+    // path — callback[0]'s `findByInvoiceIdInTx` finds the cycle directly
+    // (the unlinked hook never fires).
+    await fireOnPaidChainInTx(tenantA, invoice1, memberId, '2026-08-16');
+
+    cycles = await loadCycles(tenantA, memberId);
+    // Still exactly ONE cycle — re-anchored in place, NOT completed, and no
+    // next cycle created (callback[2]'s `findByInvoiceIdInTx(invoice1)`
+    // finds nothing once the reanchor clears `linked_invoice_id`).
+    expect(cycles).toHaveLength(1);
+    const reanchored = cycles[0]!;
+    expect(reanchored.cycleId).toBe(cycleId);
+    expect(reanchored.status).toBe('upcoming');
+    expect(reanchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.periodTo.toISOString()).toBe('2027-08-01T00:00:00.000Z');
+    expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.anchorInvoiceId).toBe(invoice1);
+    // linked_invoice_id CLEARED by the guarded UPDATE — frees the slot so
+    // the NEXT renewal invoice can link cleanly (spec §2 reanchorPeriodInTx).
+    expect(reanchored.linkedInvoiceId).toBeNull();
+
+    const reanchoredAfter = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
+    expect(reanchoredAfter).toBe(reanchoredBefore + 1);
+    const completedAfterFirst = await countAuditRows(tenantA, 'renewal_completed');
+    expect(completedAfterFirst).toBe(completedBefore);
+
+    // ---- SECOND linked renewal payment (a year later, renewal season):
+    // confirm-renewal links a NEW invoice to the SAME (now re-anchored,
+    // still-open) cycle, then it gets paid → completes cleanly + gapless
+    // next cycle. Proves the reanchor's cleared `linked_invoice_id` does
+    // not leave the cycle unable to link again.
+    const invoice2 = await seedIssuedInvoice(tenantA, memberId, planIdA);
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ status: 'awaiting_payment' })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+    await runInTenant(tenantA.ctx, (tx) =>
+      deps.cyclesRepo.linkInvoice(tx, tenantA.ctx.slug, asCycleId(cycleId), invoice2),
+    );
+
+    await fireOnPaidChainInTx(tenantA, invoice2, memberId, '2027-08-05');
+
+    cycles = await loadCycles(tenantA, memberId);
+    expect(cycles).toHaveLength(2);
+    const completed = cycles.find((c) => c.cycleId === cycleId)!;
+    const next = cycles.find((c) => c.cycleId !== cycleId)!;
+    expect(completed.status).toBe('completed');
+    expect(completed.closedReason).toBe('paid');
+    expect(completed.linkedInvoiceId).toBe(invoice2);
+    // Gapless from the RE-ANCHORED period's periodTo (2027-08-01) — NOT the
+    // second payment's own date.
+    expect(next.status).toBe('upcoming');
+    expect(next.periodFrom.toISOString()).toBe('2027-08-01T00:00:00.000Z');
+    expect(next.periodTo.toISOString()).toBe('2028-08-01T00:00:00.000Z');
+
+    const completedAfterSecond = await countAuditRows(tenantA, 'renewal_completed');
+    expect(completedAfterSecond).toBe(completedBefore + 1);
+    // No SECOND reanchor audit fired for the renewal payment.
+    expect(await countAuditRows(tenantA, 'renewal_cycle_reanchored')).toBe(reanchoredAfter);
   }, 120_000);
 
   it('paidAt fallback: no paymentDate (Stripe rail) → anchor derives from paidAt converted to Bangkok month', async () => {
