@@ -298,6 +298,9 @@ describe('088 US1 — bill (ใบแจ้งหนี้) → §86/4 RC receip
       // Full credit → parent flips to `credited` (no fractional-VAT guesswork).
       creditTotalSatang: paidRow!.totalSatang!,
       reason: 'V2 membership credit-note regression (documentNumber NULL)',
+      // F-2 (2026-07-08) — full credit on a membership invoice now requires
+      // an explicit intent declaration.
+      membershipEffect: 'keep',
     });
     expect(cn.ok, cn.ok ? 'ok' : `cn err: ${JSON.stringify(cn)}`).toBe(true);
     if (!cn.ok) throw new Error('membership credit note failed');

@@ -89,6 +89,15 @@ export async function issueCreditNoteFromRefund(
     // manual issue. The F4 repo persists `source_refund_id` verbatim
     // via the barrel-extended insertCreditNote port.
     sourceRefundId: input.refundId,
+    // F-2 (2026-07-08) — a Stripe-initiated refund has no UI surface to
+    // capture staff intent about the membership, so a FULL refund on a
+    // membership invoice never auto-cancels: F5 refunds always declare
+    // 'keep'. If the refunding admin also wants to end the membership, they
+    // cancel it explicitly via the renewals UI (F-2 scope is the F4-manual
+    // credit-note flow only — see design doc § F-2). This also satisfies
+    // F4's new `membership_effect_required` gate so a full-invoice Stripe
+    // refund on a membership invoice never regresses into a hard failure.
+    membershipEffect: 'keep',
   });
   // MEDIUM-5 — F4's success value is now `{ creditNote, emailDelivery }`. The
   // F5 refund bridge's public output stays `CreditNote` (the payments module

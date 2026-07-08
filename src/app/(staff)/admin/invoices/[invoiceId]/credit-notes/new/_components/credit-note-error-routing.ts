@@ -58,6 +58,11 @@ const DEDICATED_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // give the admin the actionable "still generating — retry / re-render"
   // guidance instead of a raw `errors.codeFallback` code dump.
   receipt_not_rendered: 'errors.receiptNotRendered',
+  // F-2 (2026-07-08) — defence-in-depth: the form's own full-membership-credit
+  // detection makes the radio group required-before-submit, so this should be
+  // unreachable in practice; kept as a dedicated actionable message (not a
+  // raw code dump) in case a stale render or a non-form API caller omits it.
+  membership_effect_required: 'errors.membershipEffectRequired',
 };
 
 export function routeCreditNoteError(

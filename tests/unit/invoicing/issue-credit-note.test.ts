@@ -676,12 +676,159 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
       requestId: 'req-cn-membership-notin',
       creditTotalSatang: 25_000n,
       reason: 'membership refund',
+      // F-2 (2026-07-08) — this is a FULL credit on a membership invoice, so
+      // `membershipEffect` is now REQUIRED (unrelated to the no-TIN gate this
+      // test targets). 'keep' preserves the original "flow proceeds" intent.
+      membershipEffect: 'keep',
     });
 
     // The membership invoice is NOT receipt_separate → guard skipped → flow
     // proceeds (succeeds end-to-end through the mocked happy path).
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalled();
+  });
+});
+
+// ---- F-2 (2026-07-08) — credit-note membership-effect intent capture -------
+//
+// A FULL credit on a `invoiceSubject==='membership'` invoice means the parent
+// invoice's `credited_total` reaches its `total` after this credit note. The
+// issuing staff member's intent ('keep' the membership vs 'cancel_membership')
+// is NOT inferable — TSCC has no established mid-term-refund practice — so the
+// use-case REQUIRES the caller to declare it via the new optional
+// `membershipEffect` field. Partial credits and event invoices never ask (the
+// field is silently ignored there — Result stays `ok`,
+// `membershipCancellationRequested` is always `false`). A missing field on a
+// full membership credit is the new typed error `membership_effect_required`,
+// returned BEFORE `allocateNext` — same pre-allocation discipline as every
+// other guard in this file (no §87 sequence number burned on a rejected
+// attempt). The use-case itself never touches F8 (Principle III — F4 never
+// imports F8); `membershipCancellationRequested` on the ok-value is how the
+// ROUTE (presentation) knows to orchestrate the F8 cascade after commit.
+describe('issueCreditNote — F-2 membership-effect intent capture', () => {
+  /** Membership invoice factory — mirrors the "no TIN" test's override shape. */
+  function makeMembershipInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
+    return makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-f2',
+      planId: 'plan-f2',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      ...overrides,
+    });
+  }
+
+  const baseInput = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    invoiceId: INVOICE_ID,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('membership + FULL credit + membershipEffect MISSING → membership_effect_required, no §87 number burned', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n, creditedTotal 0
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-missing',
+      creditTotalSatang: 25_000n, // full
+      reason: 'membership refund',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected membership_effect_required, got ok');
+    expect(r.error.code).toBe('membership_effect_required');
+    // Pre-allocation guard — no side effects whatsoever.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyCreditNoteRollup).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('membership + FULL credit + membershipEffect="keep" → succeeds, membershipCancellationRequested=false', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-keep',
+      creditTotalSatang: 25_000n,
+      reason: 'membership refund — paperwork correction',
+      membershipEffect: 'keep',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(r.value.membershipCancellationRequested).toBe(false);
+  });
+
+  it('membership + FULL credit + membershipEffect="cancel_membership" → succeeds, membershipCancellationRequested=true', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-cancel',
+      creditTotalSatang: 25_000n,
+      reason: 'membership refund + withdrawal',
+      membershipEffect: 'cancel_membership',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(r.value.membershipCancellationRequested).toBe(true);
+  });
+
+  it('membership + PARTIAL credit → membershipEffect is IGNORED (never required; a passed cancel_membership does NOT request cancellation)', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+
+    const rMissing = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-partial-missing',
+      creditTotalSatang: 12_500n, // partial — remainder stays > 0
+      reason: 'partial refund',
+    });
+    expect(rMissing.ok, rMissing.ok ? 'ok' : `err: ${JSON.stringify(rMissing)}`).toBe(true);
+    if (!rMissing.ok) throw new Error('unreachable');
+    expect(rMissing.value.membershipCancellationRequested).toBe(false);
+
+    vi.clearAllMocks();
+    const invoice2 = makeMembershipInvoice();
+    const deps2 = makeDeps(invoice2, makeSettings());
+    const rCancel = await issueCreditNote(deps2, {
+      ...baseInput,
+      requestId: 'req-f2-partial-cancel-ignored',
+      creditTotalSatang: 12_500n, // partial
+      reason: 'partial refund',
+      membershipEffect: 'cancel_membership',
+    });
+    expect(rCancel.ok, rCancel.ok ? 'ok' : `err: ${JSON.stringify(rCancel)}`).toBe(true);
+    if (!rCancel.ok) throw new Error('unreachable');
+    expect(rCancel.value.membershipCancellationRequested).toBe(false);
+  });
+
+  it('event invoice + FULL credit → membershipEffect never required, membershipCancellationRequested always false', async () => {
+    const invoice = makeIssuedEventInvoice(); // invoiceSubject 'event', total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-f2-event',
+      creditTotalSatang: 25_000n, // full
+      reason: 'event cancelled',
+      // deliberately omit membershipEffect — must NOT be required for events
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    expect(r.value.membershipCancellationRequested).toBe(false);
   });
 });
 

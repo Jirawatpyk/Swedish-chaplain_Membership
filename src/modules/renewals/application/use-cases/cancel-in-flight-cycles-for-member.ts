@@ -71,11 +71,24 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
  * Cascade discriminator. Mirrors F7's `SystemCancellationReason` for
  * consistency across cascade ports — chamber DPO compliance reports
  * filter on the same enum across F7 + F8.
+ *
+ * `'credit_note_refund'` — F-2 (2026-07-08, renewal-rolling-anchor design) —
+ * added for the F4 `/api/credit-notes` route, which calls this use-case
+ * DIRECTLY (not through the F3 `RenewalsCascadePort`) after a FULL credit on
+ * a `'membership'` invoice with `membershipEffect: 'cancel_membership'`.
+ * Deliberately distinct from `'originator_member_archived'`: the member
+ * record is NOT archived here (they remain an active member who was
+ * refunded), so reusing that value would be a forensically misleading audit
+ * trail. This is a plain TS union literal — no DB pgEnum / migration / new
+ * audit event type is involved (per the design doc's "no new audit enum
+ * values" constraint, which refers to `audit_log.event_type`, not this
+ * payload-level discriminator).
  */
 export type RenewalsCascadeReason =
   | 'originator_member_archived'
   | 'gdpr_erasure_request'
-  | 'pdpa_deletion_request';
+  | 'pdpa_deletion_request'
+  | 'credit_note_refund';
 
 export interface CancelInFlightCyclesForMemberInput {
   readonly tenant: TenantContext;
@@ -244,6 +257,8 @@ function reasonSummary(reason: RenewalsCascadeReason): string {
       return 'PDPA §33 deletion of originator member';
     case 'originator_member_archived':
       return 'originator member archived';
+    case 'credit_note_refund':
+      return 'full membership refund via credit note';
   }
 }
 
@@ -257,6 +272,16 @@ export async function cancelInFlightCyclesForMember(
   >
 > {
   const reason = input.cascadeReason ?? DEFAULT_REASON;
+  // Observability — dashboards group every log line in this function by
+  // `cascade:`. The literal predates F-2 (2026-07-08), when F3 archival was
+  // the ONLY caller; deriving it from `reason` stops a credit-note-triggered
+  // cascade from mis-reporting as an F3 member-archival event on dashboards
+  // (the durable `audit_log.payload.reason` was already accurate — this only
+  // fixes the pino log-line label).
+  const cascadeLabel =
+    reason === 'credit_note_refund'
+      ? 'f4_credit_note_refund'
+      : 'f3_member_archival_or_erasure';
 
   try {
     // Look up the at-most-one active cycle (status NOT IN terminal).
@@ -436,7 +461,7 @@ export async function cancelInFlightCyclesForMember(
             tenantId: input.tenant.slug,
             memberId: input.memberId as string,
             cycleId: activeCycle.cycleId,
-            cascade: 'f3_member_archival_or_erasure',
+            cascade: cascadeLabel,
           },
           'renewals.cascade.audit_emit_failed',
         );
@@ -456,7 +481,7 @@ export async function cancelInFlightCyclesForMember(
           tenantId: input.tenant.slug,
           memberId: input.memberId as string,
           cycleId: activeCycle.cycleId,
-          cascade: 'f3_member_archival_or_erasure',
+          cascade: cascadeLabel,
         },
         'renewals.cascade.tx_failed',
       );
@@ -473,7 +498,7 @@ export async function cancelInFlightCyclesForMember(
         memberId: input.memberId as string,
         cancelledCount,
         skippedConcurrentCount,
-        cascade: 'f3_member_archival_or_erasure',
+        cascade: cascadeLabel,
       },
       'renewals.cascade.completed',
     );
@@ -499,7 +524,7 @@ export async function cancelInFlightCyclesForMember(
           underlyingErrorCode: e.underlyingErrorCode,
           tenantId: input.tenant.slug,
           memberId: input.memberId as string,
-          cascade: 'f3_member_archival_or_erasure',
+          cascade: cascadeLabel,
         },
         'renewals.cascade.audit_emit_failed_outer_catch',
       );
@@ -523,7 +548,7 @@ export async function cancelInFlightCyclesForMember(
         errName: e instanceof Error ? e.name : 'UnknownError',
         tenantId: input.tenant.slug,
         memberId: input.memberId as string,
-        cascade: 'f3_member_archival_or_erasure',
+        cascade: cascadeLabel,
       },
       'renewals.cascade.lookup_failed',
     );

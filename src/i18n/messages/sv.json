@@ -1697,6 +1697,16 @@
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
+        "membershipCancellationFailedNotice": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas automatiskt — avsluta det manuellt från sidan Förnyelser.",
+        "membershipEffect": {
+          "legend": "Vad ska hända med medlemskapet?",
+          "keep": {
+            "label": "Dokumentkorrigering / dubbelbetalning — medlemskapet påverkas inte"
+          },
+          "cancelMembership": {
+            "label": "Återbetala och avsluta medlemskapet — aktiva förnyelsecykler avbryts"
+          }
+        },
         "errors": {
           "concurrent": "Denna faktura har redan krediterats eller makulerats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
@@ -1704,6 +1714,7 @@
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
+          "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota.",
           "codeFallback": "Felkod: {code}"
         }
       },

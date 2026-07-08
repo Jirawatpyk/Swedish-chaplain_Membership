@@ -25,13 +25,23 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { routeCreditNoteError } from './credit-note-error-routing';
+
+/** F-2 (2026-07-08) — membership-effect intent, mirrors the use-case's enum. */
+type MembershipEffect = 'keep' | 'cancel_membership';
 
 type Props = {
   readonly invoiceId: string;
   readonly documentNumber: string;
   readonly remainingSatang: string;
   readonly currencySymbol: string;
+  /**
+   * F-2 (2026-07-08) — the membership-effect radio only ever shows for a
+   * `'membership'` invoice whose credited amount fully credits it; an
+   * `'event'` invoice never asks.
+   */
+  readonly invoiceSubject: 'membership' | 'event';
 };
 
 function formatSatang(satang: string): string {
@@ -53,6 +63,7 @@ export function CreditNoteForm({
   documentNumber,
   remainingSatang,
   currencySymbol,
+  invoiceSubject,
 }: Props) {
   const t = useTranslations('admin.creditNotes.new');
   const locale = useLocale();
@@ -60,6 +71,9 @@ export function CreditNoteForm({
   const [amountThb, setAmountThb] = useState('');
   const [reason, setReason] = useState('');
   const [typed, setTyped] = useState('');
+  // F-2 (2026-07-08) — default 'keep' per the design doc; only read/sent when
+  // `showMembershipEffect` is true (see below).
+  const [membershipEffect, setMembershipEffect] = useState<MembershipEffect>('keep');
   const [pending, startTransition] = useTransition();
 
   // 088 T021a / FR-032 — issuing a credit note MINTS a §87 tax-document number
@@ -97,6 +111,11 @@ export function CreditNoteForm({
   const amountValid =
     proposedSatang !== null && proposedSatang > 0n && !exceedsRemainder;
   const reasonValid = reason.trim().length > 0 && reason.trim().length <= 500;
+  // F-2 (2026-07-08) — a FULL credit is exactly the remainder (the
+  // `exceedsRemainder` check above already blocks anything greater).
+  // Mirrors the use-case's own `isFullCredit` derivation server-side.
+  const isFullCredit = proposedSatang !== null && proposedSatang === remainingBi;
+  const showMembershipEffect = invoiceSubject === 'membership' && isFullCredit;
   const canSubmit = amountValid && reasonValid && matches && !pending;
 
   const submit = useCallback(() => {
@@ -110,6 +129,10 @@ export function CreditNoteForm({
           invoiceId,
           creditTotalSatang: proposedSatang.toString(),
           reason: reason.trim(),
+          // F-2 — only sent when the radio is actually shown; partial
+          // credits and event invoices never touch membership, so the
+          // field is omitted rather than sent-but-ignored.
+          ...(showMembershipEffect ? { membershipEffect } : {}),
         }),
       });
       if (!res.ok) {
@@ -139,18 +162,28 @@ export function CreditNoteForm({
       // MEDIUM-5 — the email-delivery signal rides alongside: a
       // `skipped_no_recipient` value means the CN is still fully issued but the
       // buyer has no email on file, so the auto-email was skipped (non-blocking
-      // description). Both fields come from ONE parse of the success body.
+      // description). F-2 — `membership_cancellation_failed` is the same kind
+      // of non-blocking signal for a requested-but-failed F8 cascade. All
+      // fields come from ONE parse of the success body.
       const successBody = (await res.json().catch(() => ({}))) as {
         document_number?: string | null;
         email_delivery?: string;
+        membership_cancellation_failed?: boolean;
       };
       const cnNumber =
         typeof successBody.document_number === 'string' && successBody.document_number
           ? successBody.document_number
           : null;
       const title = cnNumber ? t('successWithNumber', { number: cnNumber }) : t('success');
+      const noticeParts: string[] = [];
       if (successBody.email_delivery === 'skipped_no_recipient') {
-        toast.success(title, { description: t('emailSkippedNoRecipient') });
+        noticeParts.push(t('emailSkippedNoRecipient'));
+      }
+      if (successBody.membership_cancellation_failed === true) {
+        noticeParts.push(t('membershipCancellationFailedNotice'));
+      }
+      if (noticeParts.length > 0) {
+        toast.success(title, { description: noticeParts.join(' ') });
       } else {
         toast.success(title);
       }
@@ -159,7 +192,16 @@ export function CreditNoteForm({
       // invalidate the abandoned form route, not the target. Drop it.
       router.push(`/admin/invoices/${invoiceId}`);
     });
-  }, [canSubmit, proposedSatang, invoiceId, reason, t, router]);
+  }, [
+    canSubmit,
+    proposedSatang,
+    invoiceId,
+    reason,
+    t,
+    router,
+    showMembershipEffect,
+    membershipEffect,
+  ]);
 
   return (
     <form
@@ -245,6 +287,73 @@ export function CreditNoteForm({
           </p>
         )}
       </div>
+
+      {/* F-2 (2026-07-08) — mandatory intent capture, shown ONLY for a full
+          credit on a membership invoice (partial credits + event invoices
+          never touch membership). Defaults to 'keep', so the field is
+          NEVER actually "missing" a value — `required`/`aria-required` is
+          deliberately OMITTED: Base UI's hidden native radio inputs carry
+          no shared `name` attribute, so a `required` unchecked sibling
+          blocks native HTML5 form submission entirely (a real cross-
+          browser bug, not just a jsdom quirk — verified by an RTL
+          submit-never-fires regression during development). Fieldset +
+          legend alone give the group an accessible name (WCAG) — that is
+          sufficient since a valid selection always exists. */}
+      {showMembershipEffect && (
+        <fieldset
+          className="flex flex-col gap-2 rounded-md border p-3"
+          data-testid="cn-membership-effect-fieldset"
+        >
+          <legend className="mb-1 text-sm font-medium">
+            {t('membershipEffect.legend')}
+          </legend>
+          <RadioGroup
+            value={membershipEffect}
+            onValueChange={(v) =>
+              setMembershipEffect(v === 'cancel_membership' ? 'cancel_membership' : 'keep')
+            }
+            className="gap-3"
+          >
+            <div className="flex items-start gap-2 rounded-md border p-3">
+              <RadioGroupItem
+                id="cn-membership-effect-keep"
+                value="keep"
+                className="mt-0.5"
+                aria-labelledby="cn-membership-effect-keep-label"
+              />
+              <Label
+                htmlFor="cn-membership-effect-keep"
+                className="flex cursor-pointer flex-col gap-0.5"
+              >
+                <span id="cn-membership-effect-keep-label" className="font-medium">
+                  {t('membershipEffect.keep.label')}
+                </span>
+              </Label>
+            </div>
+            <div className="flex items-start gap-2 rounded-md border p-3">
+              <RadioGroupItem
+                id="cn-membership-effect-cancel"
+                value="cancel_membership"
+                className="mt-0.5"
+                aria-labelledby="cn-membership-effect-cancel-label"
+              />
+              <Label
+                htmlFor="cn-membership-effect-cancel"
+                className="flex cursor-pointer flex-col gap-0.5"
+              >
+                {/* Warning-styled — this option triggers an F8 cascade that
+                    cancels the member's in-flight renewal cycles. */}
+                <span
+                  id="cn-membership-effect-cancel-label"
+                  className="font-medium text-amber-900 dark:text-amber-200"
+                >
+                  {t('membershipEffect.cancelMembership.label')}
+                </span>
+              </Label>
+            </div>
+          </RadioGroup>
+        </fieldset>
+      )}
 
       <div className="grid gap-2">
         <Label htmlFor="cn-reason">{t('reasonLabel')}</Label>

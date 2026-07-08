@@ -1697,6 +1697,16 @@
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
+        "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
+        "membershipEffect": {
+          "legend": "What should happen to the membership?",
+          "keep": {
+            "label": "Document correction / duplicate refund — membership unaffected"
+          },
+          "cancelMembership": {
+            "label": "Refund and cancel membership — active renewal cycles will be cancelled"
+          }
+        },
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
@@ -1704,6 +1714,7 @@
           "refreshAction": "Refresh",
           "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
           "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
+          "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note.",
           "codeFallback": "Error code: {code}"
         }
       },
