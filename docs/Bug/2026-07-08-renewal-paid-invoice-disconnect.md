@@ -260,12 +260,22 @@ Remaining open items:
    The workbook's own formulas CONFIRM rolling: `End of Membership =
    EDATE(Payment Date, 11)` (month-granular). Anomalies: 1 future-dated payment
    (2026-12-18, duplicated row); records key on company NAME (no member numbers).
-3. **NEW Q for TSCC (from the workbook)**: the master sheet has a "Rolling Starts"
-   section marker + 6 members explicitly labelled "full year" (+ "yellow highlight
-   = full year" note on the Unpaid sheet) — do legacy full-year members convert to
-   rolling at their next renewal, or stay on fixed-year terms? And is expiry
-   month-end (sheet shows "Jun-26" for a 4-Jul-2025 payment) or exact date
-   (payment + 12 months, our current design)?
+3. ~~NEW Q for TSCC (from the workbook)~~ **BOTH ANSWERED FROM THE WORKBOOK
+   (2026-07-08 deep-dive):**
+   - **Expiry granularity = MONTH-BOUNDARY, answered definitively.** The master
+     sheet's `Renewal 2026`/`End 2027` columns hold 19 explicit date pairs — every
+     period runs 1st-of-month → end-of-month (paid 2026-03-16 → 2026-03-01 →
+     2027-02-28). New members anchor at the 1st of the payment month; late renewal
+     payments backdate to the gapless month start (Epidemic Sound paid 8 Jun →
+     period from 1 May). Spec updated to rev 3 (month-start anchor).
+   - **Full-year conversion: strong evidence = converts to rolling at renewal.**
+     The yellow-highlighted (=full year) Unpaid rows (Toyota MH, Scania, SEB, TAND,
+     Aritco, AXELENT, TPV) are the legacy calendar-2026 cohort invoiced Nov-2025 —
+     exactly the members missing payment dates. Legacy members who DID renew in
+     2026 (AFRY, Grant Thornton) now carry rolling periods (Apr-26→Mar-27,
+     Jun-26→May-27). Residual: one-line confirmation from TSCC is polite but no
+     longer blocking; backfill's explicit `period_from/period_to` CSV columns
+     cover any exception either way.
 
 ---
 

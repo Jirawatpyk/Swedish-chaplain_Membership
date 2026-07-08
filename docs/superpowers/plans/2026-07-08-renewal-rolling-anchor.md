@@ -374,24 +374,32 @@ export type UnlinkedResolutionOutcome =
 6. Anchor date helper (`payment-anchor-date.ts`):
 
 ```ts
-/** Bangkok business date for the rolling anchor: prefer the admin-entered
- *  paymentDate (already a Bangkok-local YYYY-MM-DD); fall back to paidAt
- *  converted to the Asia/Bangkok calendar date (UTC+7 fixed offset, no DST). */
-export function paymentAnchorDateUtcMidnight(evt: {
+/** Rolling anchor = FIRST DAY of the payment month, Bangkok time (spec rev 3 —
+ *  verified against TSCC's records: paid 2026-03-16 → period 2026-03-01;
+ *  TSCC operates month-boundary periods). Prefer the admin-entered paymentDate
+ *  (Bangkok-local YYYY-MM-DD); fall back to paidAt converted to the
+ *  Asia/Bangkok calendar date (UTC+7 fixed offset, no DST). */
+export function paymentAnchorMonthStartUtc(evt: {
   readonly paymentDate: string | null;
   readonly paidAt: string;
 }): string {
-  if (evt.paymentDate !== null) return `${evt.paymentDate}T00:00:00.000Z`;
-  const utcMs = Date.parse(evt.paidAt);
-  const bkk = new Date(utcMs + 7 * 3600_000);
-  const y = bkk.getUTCFullYear();
-  const m = String(bkk.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(bkk.getUTCDate()).padStart(2, '0');
-  return `${y}-${m}-${d}T00:00:00.000Z`;
+  let y: number;
+  let m: string;
+  if (evt.paymentDate !== null) {
+    y = Number(evt.paymentDate.slice(0, 4));
+    m = evt.paymentDate.slice(5, 7);
+  } else {
+    const bkk = new Date(Date.parse(evt.paidAt) + 7 * 3600_000);
+    y = bkk.getUTCFullYear();
+    m = String(bkk.getUTCMonth() + 1).padStart(2, '0');
+  }
+  return `${y}-${m}-01T00:00:00.000Z`;
 }
 ```
 
-Unit-test the 23:30-UTC-crosses-Bangkok-midnight case and the paymentDate precedence.
+Unit-test: paymentDate mid-month → 1st of same month; paidAt `2026-03-31T23:30:00Z`
+(= Bangkok 1 Apr 06:30) → `2026-04-01` — the UTC-vs-Bangkok month-boundary case;
+paymentDate precedence over paidAt.
 
 7. Wiring: in `markCycleCompleteInTx`'s `!cycle` branch, call the hook and map outcomes to the existing `MarkCycleCompleteOutcome` (`no_cycle_for_invoice` stays the return kind for skipped; add outcome pass-through fields to the log). Degraded (wrapper) path: the wrapper variant passes `allowUnlinkedResolution: false` → branch returns the old plain no-op + `logger.error` + `renewalsMetrics.unlinkedPaymentResolved('skipped')`.
 8. Callback interplay tests: after `first_payment`/`heal`, a subsequent `createNextCycleOnPaidInTx(evt)` in the same tx finds the ACTIVE cycle → no next cycle (assert count unchanged); after `renewal`, it finds the invoice→completed cycle and `createCycleInTx` idempotency no-ops (assert exactly one next cycle).
@@ -456,8 +464,8 @@ Wait — Task 4's guard is `isNull(anchoredAt)` + status filter; the confirm-ren
       coverage.kind === 'window'
         ? { th: `(ระยะเวลา ${coverage.fromIso.slice(0, 10)} ถึง ${coverage.toIso.slice(0, 10)})`,
             en: `(coverage ${coverage.fromIso.slice(0, 10)} to ${coverage.toIso.slice(0, 10)})` }
-        : { th: '(12 เดือน เริ่มตั้งแต่วันชำระค่าธรรมเนียม)',
-            en: '(12 months, effective from payment date)' };
+        : { th: '(12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+            en: '(12 months, effective from the month of payment)' };
     const membershipDescTh =
       `ค่าสมาชิก ${planLabelTh}${windowText.th}` +
       (proRateFactor === '1.0000' ? '' : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${proRateAnchor})`);
@@ -549,7 +557,7 @@ SELECT EXISTS (
 
 **Files:**
 - Modify: `docs/runbooks/cron-jobs.md` (or the renewals runbook if separate) — ship-day ops step: `UPDATE tenant_invoice_settings … grace`: exact SQL `UPDATE tenant_renewal_settings SET grace_period_days = 30 WHERE tenant_id = 'swecham';` + note "TSCC 30-day rule officially unconfirmed (source: public site)".
-- Create: `scripts/backfill-cycle-anchors.ts` — STUB IS FORBIDDEN; write the full script now, run later. **Input reality (verified 2026-07-08 against `docs/Membership Database_Since 2025.xlsx` — PII, git-ignored, NEVER commit):** TSCC's records key on COMPANY NAME, not member number. The script reads a CSV (`company_name,payment_date,period_from?,period_to?`), normalises names (lowercase, strip punctuation, collapse whitespace), matches against `members.company_name` per tenant, and for each match `runInTenant` → `findOpenCycleForMemberInTx` → `reanchorPeriodInTx` with `anchorInvoiceId: null`, `anchoredAt = now`. Period derivation: explicit `period_from/period_to` columns WIN when present (the ~6 legacy "full year" members get their fixed calendar-year window, e.g. 2026-01-01→2026-12-31); otherwise `payment_date → payment_date + 12 months`. NO member-level term-type column exists or is added — full-year vs rolling is entirely encoded in the cycle period, and gapless renewal continuation preserves each member's rhythm automatically (design decision 2026-07-08). `--dry-run` (default) prints matched/unmatched/would-change WITHOUT writing; writing requires explicit `--confirm-prod`. Skip + report: unmatched names, members with no open cycle, future-dated payment dates (>today — the workbook contains at least one), and duplicate rows (keep MAX(payment_date)). Unit-test the CSV parsing + name normalisation + dry-run plan builder (pure parts). Data coverage measured: 103/112 current members have a payment date; ~7 paid-but-undated early-2025 members need TSCC follow-up or INV-date fallback (staff decision at run time, NOT auto-fallback).
+- Create: `scripts/backfill-cycle-anchors.ts` — STUB IS FORBIDDEN; write the full script now, run later. **Input reality (verified 2026-07-08 against `docs/Membership Database_Since 2025.xlsx` — PII, git-ignored, NEVER commit):** TSCC's records key on COMPANY NAME, not member number. The script reads a CSV (`company_name,payment_date,period_from?,period_to?`), normalises names (lowercase, strip punctuation, collapse whitespace), matches against `members.company_name` per tenant, and for each match `runInTenant` → `findOpenCycleForMemberInTx` → `reanchorPeriodInTx` with `anchorInvoiceId: null`, `anchoredAt = now`. Period derivation: explicit `period_from/period_to` columns WIN when present (the ~6 legacy "full year" members get their fixed calendar-year window, e.g. 2026-01-01→2026-12-31); otherwise `payment_date → first day of its month → +12 months` (month-start anchor, spec rev 3 — TSCC's 19 recorded period pairs all run 1st→month-end). NO member-level term-type column exists or is added — full-year vs rolling is entirely encoded in the cycle period, and gapless renewal continuation preserves each member's rhythm automatically (design decision 2026-07-08). `--dry-run` (default) prints matched/unmatched/would-change WITHOUT writing; writing requires explicit `--confirm-prod`. Skip + report: unmatched names, members with no open cycle, future-dated payment dates (>today — the workbook contains at least one), and duplicate rows (keep MAX(payment_date)). Unit-test the CSV parsing + name normalisation + dry-run plan builder (pure parts). Data coverage measured: 103/112 current members have a payment date; ~7 paid-but-undated early-2025 members need TSCC follow-up or INV-date fallback (staff decision at run time, NOT auto-fallback).
 - Modify: `docs/Bug/2026-07-08-renewal-paid-invoice-disconnect.md` — flip the Follow-ups checkboxes implemented here.
 - [ ] **Run the full local pipeline** (`pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:template-seed && pnpm test:integration`) then the renewals+invoicing E2E specs (`pnpm test:e2e --workers=1 --grep "renewal|invoice"`); fix fallout.
 - [ ] **E2E addition**: `tests/e2e/renewals/rolling-anchor.spec.ts` — admin creates member → New invoice (assert first-payment context line visible) → record payment with backdated paymentDate → member detail Renewal card shows period anchored at that date → create second invoice → duplicate warning visible.

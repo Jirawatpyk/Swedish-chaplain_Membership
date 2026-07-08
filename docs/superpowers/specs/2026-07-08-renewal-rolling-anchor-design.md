@@ -34,7 +34,7 @@ Today three things disagree with that policy:
 | Scope | R1 (first-payment anchor) + R2 (coverage text) + R3 (payment↔cycle classification at every settlement site) + dispatcher skip-guard + grace-30 config + F-3 scorer filter + New-invoice form context/warning UI. **F-2 credit-note chip excluded** (no TSCC business rule yet). |
 | Payment→cycle mechanism | **Shared pure classifier applied at every settlement site** (rev 2 — was "one hook"): the same classification function runs in (1) a new unlinked-invoice hook, (2) `mark-paid-offline`, (3) `markCycleCompleteInTx` (covers confirm-renewal + any linked path), and (4) the New-invoice form preview. One source of truth; no site can drift. Rejected: B (link at invoice creation) and C (manual admin button) — see rev-1 rationale. |
 | First-payment marker | New nullable columns on `renewal_cycles`: **`anchored_at timestamptz`** (the discriminator — set by re-anchor AND by the R4 backfill) + **`anchor_invoice_id uuid`** (forensic reference; null for backfilled pre-system payments). `linked_invoice_id` is **never** occupied by the anchoring invoice (rev 2, fixes the `linkInvoice` I1-guard collision — the member's next renewal must be able to link cleanly). |
-| Anchor date source | **`paymentDate`** (the admin-entered actual payment date, already an input on record-payment / mark-paid-offline), added to `F4InvoicePaidEvent`; falls back to `paidAt` on rails where they coincide (Stripe webhooks). Anchoring at the server *recording* timestamp would mis-date bank transfers recorded days later (rev 2). |
+| Anchor date source | **`paymentDate`** (the admin-entered actual payment date, already an input on record-payment / mark-paid-offline), added to `F4InvoicePaidEvent`; falls back to `paidAt` on rails where they coincide (Stripe webhooks). Anchoring at the server *recording* timestamp would mis-date bank transfers recorded days later (rev 2). **Granularity (rev 3, 2026-07-08 — verified against TSCC's own records in `Membership Database_Since 2025.xlsx`, 19 explicit period pairs): the anchor is the FIRST DAY of the payment month (Bangkok)** — paid 16 Mar 2026 → period 1 Mar 2026 → 1 Mar 2027 (`periodTo` exclusive = TSCC's inclusive "28 Feb 2027"). TSCC operates month-boundary periods throughout; exact-date anchoring would drift days off their books. |
 | First bill coverage wording | **"12 months effective from payment date"** (generic) — the anchor doesn't exist when the bill is issued. The §86/4 receipt renders at payment and carries the payment date on its face, so stored line text is never mutated. |
 | Renewal-invoice coverage wording | Exact dates (`periodTo → periodTo + term`). The standalone `ปี {planYear}` token is **dropped from the `window` line text** (rev 2) — it contradicted the printed window on a tax document (e.g. "2025" label on 2026–2027 coverage). The plan display name (data) is printed as-is. |
 | Frozen-price re-resolution | Re-anchor that crosses a fiscal-year boundary **re-freezes** the plan fields for the new `periodFrom`'s year (same two-step invariant as `createCycleInTx:260-280`) — a 2025-frozen cycle re-anchored into 2026 must not bill 2025 prices at its 2027 renewal (rev 2). **`thai-tax-compliance-auditor` sign-off required** on both wording + re-freeze at review gate. |
@@ -165,11 +165,13 @@ RETURNING *
   against the provisional expiry must not suppress that step for the re-anchored
   (later) expiry. Row count goes in the audit payload.
 
-**Bangkok date derivation**: `paymentDate` is already a YYYY-MM-DD Bangkok-local
-business date → `periodFrom` = that date at UTC midnight (consistent with
-`registration_date` semantics); `periodTo` = `addMonthsUtc(periodFrom, termMonths)`.
-Stripe fallback: `paidAt` (ISO UTC) → Asia/Bangkok calendar date (UTC+7 fixed
-offset, no DST).
+**Bangkok anchor derivation (rev 3 — month-start granularity)**: resolve the
+payment's Bangkok calendar date (`paymentDate` verbatim when present; else `paidAt`
++7h), then truncate to the FIRST DAY of that month → `periodFrom` = `YYYY-MM-01`
+at UTC midnight; `periodTo` = `addMonthsUtc(periodFrom, termMonths)` (lands on the
+1st twelve months later = TSCC's inclusive end-of-month). Verified against 19
+explicit period pairs in TSCC's workbook (e.g. paid 2026-03-16 → 2026-03-01 →
+2027-02-28 inclusive; late renewal payments backdate to the gapless month start).
 
 **Frozen-field re-resolution**: when `deriveFiscalYear(newPeriodFrom) !==
 deriveFiscalYear(oldPeriodFrom)`, re-resolve `loadPlanFrozenFields` (`mode:
@@ -196,8 +198,9 @@ membershipCoverage?:
   FY-boundary text (`create-invoice-draft.ts:263-281`) is wrong under rolling policy
   wherever the caller doesn't know better.
 - Line text (stored once, forward-only — 088 T036 pattern; old documents untouched):
-  - `from_payment` — TH: `ค่าสมาชิก {แผน} (12 เดือน เริ่มตั้งแต่วันชำระค่าธรรมเนียม)`
-    EN: `Membership {plan} (12 months, effective from payment date)`
+  - `from_payment` — TH: `ค่าสมาชิก {แผน} (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)`
+    EN: `Membership {plan} (12 months, effective from the month of payment)` —
+    rev 3: month-of-payment wording matches the month-start anchor.
   - `window` — TH: `ค่าสมาชิก {แผน} (ระยะเวลา {from} ถึง {to})`
     EN: `Membership {plan} (coverage {from} to {to})`
   - Rev 2: **no standalone `ปี {planYear}` token in either kind** — it contradicted
