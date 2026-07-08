@@ -1,0 +1,11 @@
+-- Members Backup Export (docs/superpowers/specs/2026-07-07-members-backup-export-design.md)
+-- — add the `members_backup_exported` audit event type. An admin downloading
+-- the full-tenant backup ZIP (members.csv + contacts.csv + invoices.csv) is a
+-- bulk PII egress and MUST be attributable (Constitution Principle I audit
+-- sub-clause). 5-year retention (F9 default; no tax-document overlap — the
+-- ZIP bundles existing invoice rows, it does not create tax records).
+--
+-- Postgres requires ADD VALUE to commit before the value is used; the emit
+-- site (exportMembersBackup) ships in the same release but the enum value
+-- must exist first.
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'members_backup_exported';--> statement-breakpoint

@@ -67,6 +67,7 @@ const POINT_IN_TIME_SUBDIRS: ReadonlySet<string> = new Set(['reviews', 'qa']);
 const F9_MIGRATIONS = [
   resolve(ROOT, 'drizzle/migrations/0191_f9_audit_event_types.sql'),
   resolve(ROOT, 'drizzle/migrations/0193_f9_member_timeline_viewed_event.sql'),
+  resolve(ROOT, 'drizzle/migrations/0237_members_backup_exported_event.sql'),
 ];
 const F9_PORT = resolve(
   ROOT,
@@ -175,13 +176,13 @@ async function checkF9Parity(): Promise<boolean> {
 
   if (enumLabels.size === tupleLabels.size && onlyInEnum.length === 0 && onlyInTuple.length === 0) {
     console.log(
-      `[check:audit-events] OK — F9 enum ↔ taxonomy parity: ${enumLabels.size} event types match (migrations 0191+0193 ↔ F9_AUDIT_EVENT_TYPES).`,
+      `[check:audit-events] OK — F9 enum ↔ taxonomy parity: ${enumLabels.size} event types match (F9 migrations ↔ F9_AUDIT_EVENT_TYPES).`,
     );
     return true;
   }
 
   console.error(
-    `[check:audit-events] F9 DRIFT — migrations 0191+0193 have ${enumLabels.size} ADD VALUE labels, ` +
+    `[check:audit-events] F9 DRIFT — F9 migrations have ${enumLabels.size} ADD VALUE labels, ` +
       `F9_AUDIT_EVENT_TYPES has ${tupleLabels.size}.`,
   );
   if (onlyInEnum.length > 0) console.error(`  only in migration: ${onlyInEnum.join(', ')}`);

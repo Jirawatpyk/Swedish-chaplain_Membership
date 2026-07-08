@@ -79,10 +79,11 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *   - `document_type`   base 'invoice','receipt','credit_note' (0019)
  *                       + 'bill','receipt_105' (0230)
  *   - `audit_event_type` += 'tax_receipt_issued' (0230)
+ *                        += 'members_backup_exported' (0237)
  */
 export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
   document_type: ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'],
-  audit_event_type: ['tax_receipt_issued'],
+  audit_event_type: ['tax_receipt_issued', 'members_backup_exported'],
 };
 
 export interface MissingEnumValues {

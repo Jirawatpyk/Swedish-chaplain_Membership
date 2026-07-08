@@ -26,6 +26,7 @@ describe('auditEventCategory', () => {
     ['directory_ebook_generated', 'dashboard'],
     ['data_export_requested', 'dashboard'],
     ['insights_cross_tenant_probe', 'dashboard'],
+    ['members_backup_exported', 'dashboard'],
     // members (generic member_ prefix)
     ['member_created', 'members'],
     ['member_updated', 'members'],

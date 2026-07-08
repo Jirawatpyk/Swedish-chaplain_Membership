@@ -1404,6 +1404,9 @@
         "cancel": "ยกเลิก"
       },
       "addMember": "เพิ่มสมาชิก",
+      "exportBackup": "ส่งออกข้อมูลสำรอง",
+      "exportBackupSuccess": "ดาวน์โหลดข้อมูลสำรองแล้ว — สมาชิก {members} ราย ผู้ติดต่อ {contacts} คน ใบแจ้งหนี้ {invoices} ใบ",
+      "exportBackupError": "ส่งออกข้อมูลสำรองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
       "invitePortal": {
         "label": "เชิญเข้าพอร์ทัล",
         "submitting": "กำลังส่ง…",

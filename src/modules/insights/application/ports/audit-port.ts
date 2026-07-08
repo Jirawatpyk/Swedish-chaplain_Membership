@@ -1,7 +1,7 @@
 /**
  * F9 `InsightsAuditPort` Application port (T013).
  *
- * 15 audit event types (data-model.md § 7) as a const tuple + a discriminated
+ * 16 audit event types (data-model.md § 7) as a const tuple + a discriminated
  * union so callers cannot emit an unknown `event_type`. Mirrors the F5/F7
  * audit-port pattern but ALL F9 events default to **5-year retention** — F9 is
  * a read-/oversight layer with no tax-document or financial-settlement records
@@ -9,8 +9,8 @@
  * tax records).
  *
  * F9 events are written to F1's shared `audit_log` table (the Postgres
- * `audit_event_type` enum was extended with these 15 values: migration 0191 (14)
- * + migration 0193 (`member_timeline_viewed`)).
+ * `audit_event_type` enum was extended with these 16 values: migrations 0191 (14)
+ * + 0193 (`member_timeline_viewed`) + 0237 (`members_backup_exported`)).
  * The Infrastructure adapter (`insights-audit-adapter.ts`) inserts the row with
  * the `retention_years` column, mirroring the F5 raw-SQL adapter.
  *
@@ -60,6 +60,9 @@ export const F9_AUDIT_EVENT_TYPES = [
   'data_export_expired',
   // High-severity cross-tenant access attempt (Principle I § 4).
   'insights_cross_tenant_probe',
+  // Admin full-tenant backup ZIP (members+contacts+invoices CSVs) — bulk PII
+  // egress, always audited (2026-07-07 members-backup-export design).
+  'members_backup_exported',
 ] as const;
 
 export type F9AuditEventType = (typeof F9_AUDIT_EVENT_TYPES)[number];
@@ -143,6 +146,11 @@ export interface F9AuditPayloadByType {
     readonly target_entity: string;
     readonly target_id?: string;
   };
+  members_backup_exported: {
+    readonly member_count: number;
+    readonly contact_count: number;
+    readonly invoice_count: number;
+  };
 }
 
 /**
@@ -199,6 +207,7 @@ export const F9_AUDIT_RETENTION_YEARS: Record<F9AuditEventType, 5> = {
   data_export_failed: 5,
   data_export_expired: 5,
   insights_cross_tenant_probe: 5,
+  members_backup_exported: 5,
 };
 
 /** Returns the canonical retention. Use at every emit site (no hardcoded `5`). */

@@ -1404,6 +1404,9 @@
         "cancel": "Avbryt"
       },
       "addMember": "Lägg till medlem",
+      "exportBackup": "Exportera säkerhetskopia",
+      "exportBackupSuccess": "Säkerhetskopia hämtad — {members} medlemmar, {contacts} kontakter, {invoices} fakturor",
+      "exportBackupError": "Exporten misslyckades. Försök igen.",
       "invitePortal": {
         "label": "Bjud in till portalen",
         "submitting": "Skickar…",

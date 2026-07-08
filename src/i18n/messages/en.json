@@ -1404,6 +1404,9 @@
         "cancel": "Cancel"
       },
       "addMember": "Add member",
+      "exportBackup": "Export backup",
+      "exportBackupSuccess": "Backup downloaded — {members} members, {contacts} contacts, {invoices} invoices",
+      "exportBackupError": "Backup export failed. Please try again.",
       "invitePortal": {
         "label": "Invite to portal",
         "submitting": "Sending…",

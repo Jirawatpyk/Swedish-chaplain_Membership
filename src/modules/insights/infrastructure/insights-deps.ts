@@ -32,6 +32,8 @@ import { eventSourceAdapter } from './sources/event-source-adapter';
 import { activityFeedSourceAdapter } from './sources/activity-feed-adapter';
 import { auditEventSourceAdapter } from './sources/audit-source-adapter';
 import { actorDirectoryAdapter } from './sources/actor-directory-adapter';
+import { membersBackupSourceAdapter } from './sources/members-backup-source-adapter';
+import { zipCsvFiles } from './zip/csv-zip-adapter';
 import { computeDashboardSnapshot } from '../application/use-cases/compute-dashboard-snapshot';
 import type { DismissInsightDeps } from '../application/use-cases/dismiss-insight';
 import type { ComputeDashboardSnapshotDeps } from '../application/use-cases/compute-dashboard-snapshot';
@@ -50,6 +52,7 @@ import type {
 import type { RequestDataExportDeps } from '../application/use-cases/request-data-export';
 import type { ExportJobRecord } from '../application/ports/export-job-repo';
 import type { GetErasureEvidenceLogDeps } from '../application/erasure-evidence';
+import type { ExportMembersBackupDeps } from '../application/use-cases/export-members-backup';
 import {
   listErasedMembers,
   listMemberLinkedUserIds,
@@ -291,5 +294,22 @@ export function makeGetErasureEvidenceLogDeps(): GetErasureEvidenceLogDeps {
     listMemberLinkedUserIds: (ctx, memberId) =>
       listMemberLinkedUserIds(ctx, asMemberId(memberId)),
     evidenceReader: erasureEvidenceReadAdapter,
+  };
+}
+
+/**
+ * Members Backup Export (design 2026-07-07) — dependency bundle. Zero-arg:
+ * `membersBackupSourceAdapter` is a module-level singleton (RLS + explicit
+ * `current_setting('app.current_tenant')` predicates, not a
+ * constructor-bound `tenantId` factory) because the `MembersBackupSource`
+ * port only threads the caller's already-open `runInTenant` tx — see
+ * `members-backup-source-adapter.ts` header for the full rationale.
+ */
+export function makeExportMembersBackupDeps(): ExportMembersBackupDeps {
+  return {
+    source: membersBackupSourceAdapter,
+    audit: insightsAuditAdapter,
+    zip: zipCsvFiles,
+    clock: systemClock,
   };
 }

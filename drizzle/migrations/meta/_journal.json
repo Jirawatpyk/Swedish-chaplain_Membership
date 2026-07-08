@@ -1660,6 +1660,13 @@
 			"when": 1798536500000,
 			"tag": "0234_invoices_vat_treatment_zero_rate",
 			"breakpoints": true
+		},
+		{
+			"idx": 240,
+			"version": "7",
+			"when": 1798536600000,
+			"tag": "0237_members_backup_exported_event",
+			"breakpoints": true
 		}
 	]
 }

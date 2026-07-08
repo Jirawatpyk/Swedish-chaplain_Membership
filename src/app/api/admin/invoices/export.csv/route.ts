@@ -31,8 +31,9 @@ export const runtime = 'nodejs';
 const YMD_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function GET(request: NextRequest): Promise<Response> {
-  // 1. RBAC — admin only. Manager+member+anonymous → 404 (cloak
-  //    the endpoint; matches the rest of the F4 admin surface).
+  // 1. RBAC — admin only. Manager/member/anonymous rejections are
+  //    forwarded as-is from requireAdminContext (401 anonymous /
+  //    403 wrong-role).
   const ctx = await requireAdminContext(request, {
     resource: 'invoice',
     action: 'read',

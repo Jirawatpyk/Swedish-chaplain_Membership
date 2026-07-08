@@ -59,6 +59,7 @@ import {
   MembersErrorState,
 } from '@/components/members/empty-states';
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
+import { ExportBackupButton } from './_components/export-backup-button';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.members');
@@ -157,13 +158,16 @@ export default async function MembersListPage({
         subtitle={t('subtitle')}
         actions={
           currentUser.role === 'admin' ? (
-            <Link
-              href="/admin/members/new"
-              className={buttonVariants()}
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              {t('addMember')}
-            </Link>
+            <div className="flex items-center gap-2">
+              <ExportBackupButton />
+              <Link
+                href="/admin/members/new"
+                className={buttonVariants()}
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+                {t('addMember')}
+              </Link>
+            </div>
           ) : null
         }
       />
