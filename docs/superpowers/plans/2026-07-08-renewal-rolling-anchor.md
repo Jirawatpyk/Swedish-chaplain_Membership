@@ -565,6 +565,69 @@ SELECT EXISTS (
 
 ---
 
+### Task 13: F-2 — credit-note membership-effect intent capture (added 2026-07-08, maintainer-approved)
+
+**Why:** a credit note on a paid membership invoice can mean "refund/cancel the
+membership" OR "paperwork correction / duplicate refund — membership unaffected".
+The system cannot infer intent; the staff member issuing the credit always knows.
+Standard ERP pattern: capture intent at issue time. TSCC has no established
+practice (their Cancelled-2026 sheet = non-renewals only, zero mid-term refunds),
+so per-case capture IS the business rule.
+
+**Files:**
+- Modify: `src/modules/invoicing/application/use-cases/issue-credit-note.ts` —
+  input schema gains:
+
+```ts
+  /** F-2 (2026-07-08): what this credit means for the member's membership.
+   *  REQUIRED when the invoice is subject='membership' AND the credit is a FULL
+   *  credit (credited_total after this note >= invoice total); forbidden/ignored
+   *  otherwise (partial credits and event invoices never touch membership).
+   *  'keep' = paperwork correction / duplicate refund — no membership effect.
+   *  'cancel_membership' = refund with withdrawal — the ROUTE (presentation)
+   *  cancels the member's in-flight renewal cycles after this use-case commits. */
+  membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
+```
+
+  Validation: full-credit membership invoice + missing field → new typed error
+  `{ code: 'membership_effect_required' }`. The use-case itself does NOT touch F8
+  (Principle III — F4 never imports F8); it returns
+  `membershipCancellationRequested: boolean` in its ok-value so the route knows.
+- Modify: `src/app/api/credit-notes/route.ts` (or the invoice-scoped credit route
+  the form posts to — follow `credit-note-form.tsx`'s submit target): after a
+  successful issue with `membershipCancellationRequested`, call the F8 barrel's
+  `cancelInFlightCyclesForMember` (already exists —
+  `src/modules/renewals/application/use-cases/cancel-in-flight-cycles-for-member.ts`;
+  read its signature and thread actor context + `correlationId:
+  'credit-note:'+creditNoteId`). Sequencing decision (documented in code): credit
+  note commits FIRST (its §86/10 number must never depend on F8), cancellation
+  runs second; a cancellation failure returns HTTP 200 with a
+  `membership_cancellation_failed` warning field + `logger.error` — staff retry
+  via the renewals UI (cancel is idempotent). NEVER fail the credit note
+  retroactively.
+- Modify: `src/app/(staff)/admin/invoices/[invoiceId]/credit-notes/new/_components/credit-note-form.tsx` —
+  when the invoice is membership-subject AND the form's amounts add up to a full
+  credit: show a REQUIRED radio group (default `keep`):
+  - `keep` — TH: "แก้ไขเอกสาร/คืนใบซ้ำ — สมาชิกภาพคงเดิม" EN: "Document correction / duplicate refund — membership unaffected" SV: "Dokumentkorrigering / dubbelbetalning — medlemskapet påverkas inte"
+  - `cancel_membership` — TH: "คืนเงินและยกเลิกสมาชิกภาพ — ระบบจะยกเลิกรอบสมาชิกที่ดำเนินอยู่" EN: "Refund and cancel membership — active renewal cycles will be cancelled" SV: "Återbetala och avsluta medlemskapet — aktiva förnyelsecykler avbryts"
+  Keys under `admin.invoices.creditNote.membershipEffect.*`; radio is a fieldset
+  with legend (WCAG); warning-styled description on the cancel option.
+- Test: unit — validation matrix (membership+full → required; partial → optional
+  and ignored; event → ignored); contract — route threads the flag + returns the
+  warning shape on simulated F8 failure; integration (live Neon) — full credit
+  with `cancel_membership` on an invoice whose member has an open cycle → cycle
+  `cancelled` + F8 cancel audit row + credit note intact; with `keep` → cycle
+  untouched; component test — radio renders only for full membership credits,
+  required-before-submit.
+
+**Interfaces:**
+- Consumes: existing `cancelInFlightCyclesForMember` (F8 barrel), existing credit-note flow.
+- Produces: `issueCreditNote` ok-value gains `membershipCancellationRequested: boolean`; error union gains `membership_effect_required`.
+
+- [ ] Steps: failing tests (validation + component) → RED → implement use-case field + route orchestration + form UI + i18n → GREEN → `pnpm check:i18n` → typecheck → commit `feat(invoicing): credit-note membership-effect intent capture (F-2)`.
+
+---
+
 ## Self-review notes (already applied)
 
 - Spec coverage: R1→T4/5/6/7, R2→T8, R3→T2/5/6/7, skip-guard→T10, F-3→T11, grace-30+backfill→T12, UI→T9, event→T3, audit/enum→T1. No spec section unowned.

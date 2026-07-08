@@ -321,9 +321,26 @@ open-cycle read for R2's coverage text. Surface what it finds — closes the
 5. Audit-event parity tests (4 touch-points) + enum-guard fixture + SKIP_REASONS
    count assertion.
 
+## F-2 — credit-note membership effect (ADDED to scope 2026-07-08, rev 3.1)
+
+TSCC has no established mid-term-refund practice (verified: Cancelled-2026 sheet =
+non-renewals only), so the per-case intent of the issuing staff member IS the
+business rule. Standard ERP pattern — capture at issue time:
+
+- Full credit on a membership invoice → the credit-note form REQUIRES a choice:
+  `keep` (correction/duplicate — membership unaffected, default) vs
+  `cancel_membership` (refund + withdrawal — the route cancels the member's
+  in-flight cycles via the existing F8 `cancelInFlightCyclesForMember` after the
+  credit commits).
+- Partial credits and event invoices never ask (no membership effect possible).
+- Sequencing: credit note commits first (§86/10 numbering never depends on F8);
+  cancellation failure → success-with-warning + loud log; staff retry via the
+  renewals UI (idempotent). F4 never imports F8 — the route orchestrates barrels.
+- No new audit enum values: the F8 cancel path emits its existing events, with
+  `correlationId = 'credit-note:{creditNoteId}'` for the forensic chain.
+
 ## Out of scope (explicitly)
 
-- F-2 credit-note → membership reversal (no TSCC business rule yet).
 - Reminder suppression for members who never paid their first invoice (beyond what
   re-anchor + skip-guard already give).
 - Backfill script execution (ship-day task; blocked on TSCC per-member payment
