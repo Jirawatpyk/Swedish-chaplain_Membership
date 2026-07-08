@@ -388,6 +388,40 @@ export interface RenewalCycleRepo {
     tenantId: string,
     opts: ListMembersWithoutCycleOpts,
   ): Promise<MembersWithoutCyclePage>;
+
+  /** ALL cycle rows for the member, any status. In-tx (classification must see uncommitted writes). */
+  countCyclesForMemberInTx(tx: TenantTx, tenantId: string, memberId: string): Promise<number>;
+
+  /** The member's open cycle (status IN upcoming|reminded|awaiting_payment), or null. At most one by invariant; 'reminded' folded into the open set defensively (vestigial status). */
+  findOpenCycleForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * Rolling first-payment re-anchor (spec rev 2 §2). Guarded single UPDATE:
+   * only an un-anchored open cycle qualifies; status resets to 'upcoming'
+   * (sanctioned TRANSITIONS bypass — documented at the SQL); linked_invoice_id
+   * cleared so the future renewal links cleanly; frozen fields replaced when
+   * the caller re-resolved them (pass current values otherwise). Deletes the
+   * cycle's renewal_reminder_events rows in the same tx and returns their
+   * count. Returns null when the guard matched 0 rows (race — caller re-reads
+   * and reclassifies).
+   */
+  reanchorPeriodInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly periodFrom: string;
+      readonly periodTo: string;
+      readonly anchoredAt: string;
+      readonly anchorInvoiceId: string | null;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+    },
+  ): Promise<{ readonly cycle: RenewalCycle; readonly reminderEventsReset: number } | null>;
 }
 
 // ---------------------------------------------------------------------------
