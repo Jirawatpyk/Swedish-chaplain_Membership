@@ -196,6 +196,13 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     Phase-5 branch). Catalogue entry existed at Phase 1 setup but
   //     the pgEnum ADD VALUE was never shipped — K24 closes the gap. ---
   'renewal_lapsed',
+  // --- F8 Phase 5 Wave U3 (migration 0109) — `renewal_completed_post_lapse`
+  //     emitted by the shared `classifyMembershipPayment` settlement sites
+  //     when a member regains active status via payment after a lapse event
+  //     (T123 — auto-reactivate path FR-005b). 5y retention (no tax-document
+  //     overlap). Keep in lockstep with `F8_AUDIT_EVENT_TYPES` (renewals
+  //     audit port) — the F8 audit-count parity tests enforce it. ---
+  'renewal_completed_post_lapse',
   // --- F8 Phase 6 Wave F (migration 0111) — 6 at-risk events for
   //     User Story 4 (At-Risk Member Detection). Emit sites: T154
   //     compute-at-risk-score, T155 snooze-at-risk-member, T156
