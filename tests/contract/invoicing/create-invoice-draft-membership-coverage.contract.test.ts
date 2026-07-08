@@ -113,4 +113,38 @@ describe('createInvoiceDraftSchema — membershipCoverage contract', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // Task 8 review-fix (F2, defence-in-depth) — a reversed/equal window is a
+  // tax-document-printing bug (the §86/4 would show "from 2028 to 2027").
+  // No production caller can trigger this today (both bridges derive
+  // `toIso` via `addMonthsUtc(fromIso, n>0)`), but a future caller must
+  // fail loud at the schema boundary rather than silently print it.
+  it('rejects a "window" where fromIso is NOT before toIso (reversed)', () => {
+    const result = createInvoiceDraftSchema.safeParse({
+      ...baseInput,
+      membershipCoverage: {
+        kind: 'window',
+        fromIso: '2028-06-01',
+        toIso: '2027-06-01',
+      },
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        'membershipCoverage window: fromIso must be before toIso',
+      );
+    }
+  });
+
+  it('rejects a "window" where fromIso equals toIso', () => {
+    const result = createInvoiceDraftSchema.safeParse({
+      ...baseInput,
+      membershipCoverage: {
+        kind: 'window',
+        fromIso: '2027-06-01',
+        toIso: '2027-06-01',
+      },
+    });
+    expect(result.success).toBe(false);
+  });
 });

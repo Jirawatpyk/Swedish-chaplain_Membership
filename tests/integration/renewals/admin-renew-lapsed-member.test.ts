@@ -379,7 +379,10 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     // bridge call).
     const membershipLine = await runInTenant(tenant.ctx, (tx) =>
       tx
-        .select({ descriptionEn: invoiceLines.descriptionEn })
+        .select({
+          descriptionEn: invoiceLines.descriptionEn,
+          descriptionTh: invoiceLines.descriptionTh,
+        })
         .from(invoiceLines)
         .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
     );
@@ -388,6 +391,13 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     expect(
       membershipLine.some((l) =>
         l.descriptionEn.includes(`(coverage ${fromDate} to ${toDate})`),
+      ),
+    ).toBe(true);
+    // Task 8 F3 review-fix — the Thai counterpart must carry the same
+    // window (this test previously asserted EN only).
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionTh.includes(`(ระยะเวลา ${fromDate} ถึง ${toDate})`),
       ),
     ).toBe(true);
 

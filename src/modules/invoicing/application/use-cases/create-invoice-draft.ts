@@ -88,6 +88,23 @@ export const createInvoiceDraftSchema = z.object({
       }),
       z.object({ kind: z.literal('from_payment') }),
     ])
+    // Task 8 review-fix (F2, defence-in-depth) — the `fromIso`/`toIso`
+    // regexes above only check SHAPE (`YYYY-MM-DD` prefix), not ORDER.
+    // `.refine()` has to sit on the OUTER union (not on the `window`
+    // branch itself) — zod's `discriminatedUnion` requires every member
+    // to stay a plain `ZodObject` so it can introspect the discriminant;
+    // wrapping one branch in `.refine()` produces a `ZodEffects` that
+    // breaks that introspection at parse time. Every current caller
+    // derives `toIso` via `addMonthsUtc(fromIso, n>0)` so this can't fire
+    // from production code today, but this is a tax-document field
+    // (§86/4 printed coverage window) — a future caller passing a
+    // reversed/equal window must fail loud here rather than print a
+    // nonsensical "from 2028 to 2027" line. String comparison is safe
+    // because both fields are validated ISO `YYYY-MM-DD...` prefixes
+    // (lexicographic order == chronological order for that format).
+    .refine((v) => v.kind !== 'window' || v.fromIso < v.toIso, {
+      message: 'membershipCoverage window: fromIso must be before toIso',
+    })
     .optional(),
 });
 

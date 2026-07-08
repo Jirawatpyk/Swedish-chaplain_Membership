@@ -82,6 +82,16 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
         planYear: input.planYear,
         autoEmailOnIssue: input.autoEmailOnIssue,
         renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+        // Task 8 review-fix (F1) — this test bridge predates the
+        // `membershipCoverage` field and silently dropped it, unlike the
+        // REAL `f4-invoicing-for-renewal-bridge-drizzle.ts` adapter (which
+        // has forwarded it since Task 8). Mirror that adapter exactly so
+        // this test proves the actual confirm-renewal → §86/4 wiring
+        // instead of a stale double that always fell back to the generic
+        // "from_payment" text.
+        ...(input.membershipCoverage !== undefined
+          ? { membershipCoverage: input.membershipCoverage }
+          : {}),
       });
       if (!createResult.ok) {
         return {
@@ -292,7 +302,12 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
     // The issued §86/4 membership line bills the NEW plan's FROZEN value.
     const lineRows = await runInTenant(tenant.ctx, (tx) =>
       tx
-        .select({ kind: invoiceLines.kind, totalSatang: invoiceLines.totalSatang })
+        .select({
+          kind: invoiceLines.kind,
+          totalSatang: invoiceLines.totalSatang,
+          descriptionTh: invoiceLines.descriptionTh,
+          descriptionEn: invoiceLines.descriptionEn,
+        })
         .from(invoiceLines)
         .where(
           and(
@@ -307,5 +322,18 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
     // Not the old frozen 50,000 (5,000,000) nor any live price.
     expect(BigInt(membershipLine!.totalSatang)).not.toBe(5_000_000n);
     expect(lineRows.some((l) => l.kind === 'registration_fee')).toBe(false);
+
+    // Task 8 review-fix (F1) — end-to-end proof that `confirmRenewal`
+    // threads the EXACT next-period window (`periodTo` 2027-06-01 →
+    // `periodTo + frozenPlanTermMonths` (12) = 2028-06-01) into the §86/4
+    // membership line, in BOTH locales. Previously nothing asserted this
+    // wiring on the confirm-renewal path (only offline-frozen-price.test.ts
+    // covered mark-paid-offline's use of the same signal).
+    expect(membershipLine!.descriptionEn).toContain(
+      '(coverage 2027-06-01 to 2028-06-01)',
+    );
+    expect(membershipLine!.descriptionTh).toContain(
+      '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+    );
   }, 120_000);
 });
