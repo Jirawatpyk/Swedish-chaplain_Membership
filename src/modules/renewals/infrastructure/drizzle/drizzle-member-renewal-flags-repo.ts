@@ -855,6 +855,17 @@ export function makeDrizzleMemberRenewalFlagsRepo(
     ): Promise<boolean> {
       return runInTenant(tenant, async (tx) => {
         const txDb = tx as unknown as typeof db;
+        // The inner NOT EXISTS correlates on c.member_id = i.member_id in
+        // addition to c.tenant_id = i.tenant_id even though it is not
+        // strictly required for correctness: a cycle only ever references
+        // its own member's invoices via linked_invoice_id/anchor_invoice_id,
+        // so no cycle belonging to a different member could match anyway.
+        // Adding it lets the planner use the existing
+        // renewal_cycles_member_idx (tenant_id, member_id) to narrow the
+        // scan to this member's handful of cycles instead of a
+        // per-candidate scan of the tenant's entire renewal_cycles table
+        // (there is no index on linked_invoice_id/anchor_invoice_id alone).
+        // Semantically safe, purely a planner hint (Review Task 10).
         const rows = await txDb.execute<{ unreconciled: boolean }>(sql`
           SELECT EXISTS (
             SELECT 1 FROM invoices i
@@ -865,6 +876,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
               AND NOT EXISTS (
                 SELECT 1 FROM renewal_cycles c
                 WHERE c.tenant_id = i.tenant_id
+                  AND c.member_id = i.member_id
                   AND (
                     c.linked_invoice_id = i.invoice_id
                     OR c.anchor_invoice_id = i.invoice_id
