@@ -501,6 +501,8 @@
           "refund_succeeded": "Refund completed",
           "broadcast_approved": "Broadcast approved",
           "broadcast_sent": "Broadcast sent",
+          "broadcast_submitted": "Broadcast submitted for review",
+          "member_acknowledged_broadcasts_terms": "Accepted broadcast terms",
           "broadcast_rejected": "Broadcast rejected",
           "sign_in_success": "Signed in",
           "password_changed": "Password changed",

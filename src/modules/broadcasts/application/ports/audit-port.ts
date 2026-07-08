@@ -252,6 +252,10 @@ export interface F7AuditPayloadShapes {
   readonly broadcast_submitted: {
     readonly broadcastId: string;
     readonly actorRole: 'member_self_service' | 'admin_proxy';
+    // Snake `member_id` — present ONLY for a `member_self_service` submit so
+    // the F3 last_activity trigger bumps recency + the member timeline lists
+    // it; absent for `admin_proxy` (not the member's own activity).
+    readonly member_id?: string;
     readonly segmentType: string;
     readonly estimatedRecipientCount: number;
     // R1.1 M-code-2: FR-022 analytics field — null when draft began

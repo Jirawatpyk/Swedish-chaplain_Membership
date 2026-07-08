@@ -673,6 +673,15 @@ export async function submitBroadcast(
         payload: {
           broadcastId,
           memberId: input.memberId,
+          // Snake `member_id` ONLY on a genuine member self-service submit:
+          // it bumps members.last_activity_at (F3 trigger, migration 0009) +
+          // lists the submit in the member timeline. An admin_proxy submit is
+          // NOT the member's own activity, so it carries camelCase `memberId`
+          // (forensic) only — the trigger keys on snake `member_id` and
+          // ignores actorRole, so the gate MUST live here.
+          ...(input.actorRole === 'member_self_service'
+            ? { member_id: input.memberId }
+            : {}),
           actorRole: input.actorRole,
           segmentType: input.segment.kind,
           estimatedRecipientCount: resolved.value.estimatedCount,

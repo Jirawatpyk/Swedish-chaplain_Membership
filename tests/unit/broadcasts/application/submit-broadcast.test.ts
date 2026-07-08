@@ -767,6 +767,11 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     if (submitted !== undefined) {
       expect(submitted.payload['actorRole']).toBe('member_self_service');
       expect(submitted.payload['memberId']).toBe('m-1');
+      // Member self-service submit = genuine member engagement → snake
+      // `member_id` so the F3 audit trigger (migration 0009) bumps
+      // members.last_activity_at + lists it in the member timeline. The
+      // camelCase `memberId` stays for forensic. (F7 member-activity recency.)
+      expect(submitted.payload['member_id']).toBe('m-1');
       expect(submitted.payload['segmentType']).toBe('all_members');
       expect(submitted.payload['estimatedRecipientCount']).toBe(1);
       // R2.1 H-test-1 (FR-022): startedFromTemplateId is always present
@@ -775,6 +780,28 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       // for forensic timeline + downstream analytics filters.
       expect('startedFromTemplateId' in submitted.payload).toBe(true);
       expect(submitted.payload['startedFromTemplateId']).toBeNull();
+    }
+  });
+
+  it('admin_proxy submit carries NO snake member_id (a proxy action must not bump member recency)', async () => {
+    const { audit, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+    });
+    await submitBroadcast(deps, { ...baseInput, actorRole: 'admin_proxy' });
+    const submitted = audit.emits.find(
+      (e) => e.eventType === 'broadcast_submitted',
+    );
+    expect(submitted).toBeDefined();
+    if (submitted !== undefined) {
+      expect(submitted.payload['actorRole']).toBe('admin_proxy');
+      // Forensic camelCase memberId stays...
+      expect(submitted.payload['memberId']).toBe('m-1');
+      // ...but NO snake member_id → the F3 last_activity trigger must NOT
+      // fire (an admin proxy-submit is not the member's own activity).
+      expect('member_id' in submitted.payload).toBe(false);
     }
   });
 
