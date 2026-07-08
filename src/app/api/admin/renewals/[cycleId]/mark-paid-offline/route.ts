@@ -250,6 +250,10 @@ export async function POST(
     }
     return successResponse(
       {
+        // Task 7 (rolling-anchor refactor) — discriminates the
+        // 'completed' vs 'reanchored' shared-classifier branch so the
+        // admin UI can show branch-specific copy without re-deriving it.
+        outcome: result.value.outcome,
         cycle_status: result.value.cycleStatus,
         invoice_id: result.value.invoiceId,
         new_expires_at: result.value.newExpiresAt,

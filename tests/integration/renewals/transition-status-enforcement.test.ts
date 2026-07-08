@@ -100,6 +100,33 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
         planYear: 2026,
       }),
     );
+    // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+    // this member has TWO cycles ever, not the shared classifier's
+    // `first_payment` shape ("exactly one cycle ever, unanchored"). This
+    // file drives the real `markPaidOffline`/`cancelCycle`/etc. use-cases
+    // to pin the transitionStatus enforcement contract — a member with a
+    // single fresh cycle would otherwise now RE-ANCHOR on the markPaidOffline
+    // tests below instead of reaching `completed`, breaking their edge
+    // proof. 'cancelled' avoids needing a second invoice FK target.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date(expiresAt.getTime() - 2 * 365 * MS_PER_DAY),
+        periodTo: new Date(expiresAt.getTime() - 365 * MS_PER_DAY),
+        expiresAt: new Date(expiresAt.getTime() - 365 * MS_PER_DAY),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date(expiresAt.getTime() - 365 * MS_PER_DAY),
+        closedReason: 'cancelled',
+      }),
+    );
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,

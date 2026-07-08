@@ -163,6 +163,30 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         isPrimary: true,
         preferredLanguage: 'en',
       });
+      // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+      // this member has TWO cycles ever, not the shared classifier's
+      // `first_payment` shape. This file pins the 070 Item-D tier-upgrade-
+      // on-offline wiring (`prior?.status === 'completed'`) — without a
+      // predecessor, the payment below would now re-anchor instead of
+      // complete, breaking that assertion. 'cancelled' avoids needing a
+      // second invoice FK target.
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date(now - 2 * 365 * MS_PER_DAY),
+        periodTo: new Date(now - 365 * MS_PER_DAY),
+        expiresAt: new Date(now - 365 * MS_PER_DAY),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: 'regular',
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date(now - 365 * MS_PER_DAY),
+        closedReason: 'cancelled',
+      });
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,

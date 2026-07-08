@@ -3233,6 +3233,7 @@
           "cancel": "Avbryt",
           "submitting": "Registrerar…",
           "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
+          "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
           "viewOrphanInvoice": "Visa faktura",
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",

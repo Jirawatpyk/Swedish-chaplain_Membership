@@ -161,6 +161,34 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
       });
     });
 
+    // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+    // this member has TWO cycles ever, not the shared classifier's
+    // `first_payment` shape ("exactly one cycle ever, unanchored"). This
+    // test drives the real `markPaidOffline` and asserts `cycleStatus ===
+    // 'completed'` (FR-022 frozen-price billing is orthogonal to Task 7's
+    // re-anchor branch) — without this predecessor the payment below would
+    // now re-anchor instead of complete, breaking that assertion.
+    // 'cancelled' avoids needing a second invoice FK target.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2024-01-01T00:00:00Z'),
+        periodTo: new Date('2025-01-01T00:00:00Z'),
+        expiresAt: new Date('2025-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: FROZEN_PRICE_THB,
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date('2025-01-01T00:00:00Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+
     // Cycle frozen at 50,000.50 THB, payable. periodFrom in 2026 so the
     // §87 fiscal-year bucket is 2026 (matches the member plan_year above).
     await runInTenant(tenant.ctx, (tx) =>

@@ -11,6 +11,7 @@ import { markPaidOffline } from '@/modules/renewals/application/use-cases/mark-p
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
+import type { ThbDecimal } from '@/lib/money';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c4';
@@ -97,6 +98,10 @@ interface FakeDepsResult {
   f2TransitionStatusMock: ReturnType<typeof vi.fn>;
   f2RecordMock: ReturnType<typeof vi.fn>;
   tierUpgradeFindByIdMock: ReturnType<typeof vi.fn>;
+  // Task 7 (rolling-anchor) — shared-classifier + re-anchor seams.
+  countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
+  reanchorPeriodInTxMock: ReturnType<typeof vi.fn>;
 }
 
 function fakeDeps(
@@ -192,6 +197,48 @@ function fakeDeps(
     status: 'applied' as const,
   }));
   const f2RecordMock = vi.fn(async () => ({ ok: true as const, value: undefined }));
+  // Task 7 (rolling-anchor refactor) — shared-classifier seams. Default
+  // count=2 (has a predecessor cycle) + not erased/blocked, so EVERY
+  // pre-existing test (which never overrides these) stays on the
+  // 'completed' branch byte-identical to before Task 7. Individual Task 7
+  // tests override `countCyclesForMemberInTxMock` to 1 to drive the
+  // first_payment classification.
+  const countCyclesForMemberInTxMock = vi.fn(async () => 2);
+  const readReactivationGuardsInTxMock = vi.fn(async () => ({
+    blocked: false,
+    erased: false,
+  }));
+  // Echoes the guarded-UPDATE's args back as the "re-anchored" cycle row
+  // (status flips to upcoming, linkedInvoiceId cleared) — mirrors the real
+  // `reanchorPeriodInTx` contract closely enough for the use-case's own
+  // branch logic (it never inspects fields beyond what it wrote).
+  const reanchorPeriodInTxMock = vi.fn(
+    async (
+      _tx: unknown,
+      _tenantId: string,
+      _cycleId: unknown,
+      args: {
+        periodFrom: string;
+        periodTo: string;
+        anchoredAt: string;
+        anchorInvoiceId: string | null;
+        frozenPlanPriceThb: ThbDecimal;
+        frozenPlanTermMonths: number;
+      },
+    ) => ({
+      cycle: buildCycle({
+        status: 'upcoming' as const,
+        periodFrom: args.periodFrom,
+        periodTo: args.periodTo,
+        anchoredAt: args.anchoredAt,
+        anchorInvoiceId: args.anchorInvoiceId,
+        linkedInvoiceId: null,
+        frozenPlanPriceThb: args.frozenPlanPriceThb,
+        frozenPlanTermMonths: args.frozenPlanTermMonths,
+      }),
+      reminderEventsReset: 0,
+    }),
+  );
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     clock: { now: () => new Date('2026-05-15T10:00:00.000Z') },
@@ -203,6 +250,8 @@ function fakeDeps(
       findByInvoiceIdInTx: findByInvoiceIdInTxMock,
       findActiveForMemberInTx: findActiveForMemberInTxMock,
       insert: insertMock,
+      countCyclesForMemberInTx: countCyclesForMemberInTxMock,
+      reanchorPeriodInTx: reanchorPeriodInTxMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
     f4InvoiceBridge: {
       issueAndMarkPaid: bridgeMock,
@@ -211,6 +260,12 @@ function fakeDeps(
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenFieldsMock,
     } as unknown as RenewalsDeps['planLookupForRenewal'],
+    // Task 7 (rolling-anchor refactor) — GDPR-erased + admin-blocked guard
+    // read the classify step consumes. Default both false (see the mock
+    // definition above) so pre-existing tests are unaffected.
+    memberRenewalFlagsRepo: {
+      readReactivationGuardsInTx: readReactivationGuardsInTxMock,
+    } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
     // 070 Item D — tier-upgrade suggestion repo (apply-pending-tier-upgrade)
     // + F2 scheduled-plan-change repo + F2 audit emitter (post-commit
     // finalise). Defaults make both a no-op so untouched tests stay green.
@@ -247,6 +302,9 @@ function fakeDeps(
     f2TransitionStatusMock,
     f2RecordMock,
     tierUpgradeFindByIdMock,
+    countCyclesForMemberInTxMock,
+    readReactivationGuardsInTxMock,
+    reanchorPeriodInTxMock,
   };
 }
 
@@ -272,6 +330,9 @@ describe('markPaidOffline (T059) — happy path', () => {
     const r = await markPaidOffline(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) {
+      // Task 7 — the pre-existing (non-first-payment) path returns the
+      // 'completed' outcome discriminator, byte-identical to before.
+      expect(r.value.outcome).toBe('completed');
       expect(r.value.cycleStatus).toBe('completed');
       expect(r.value.invoiceId).toBe('inv-1');
       expect(r.value.newExpiresAt).toBe('2028-06-01T00:00:00.000Z');
@@ -505,6 +566,155 @@ describe('markPaidOffline (070 Item D) — pending tier-upgrade apply', () => {
       memberId: 'mem-1',
       tenantId: TENANT_ID,
     });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// Task 7 (rolling-anchor refactor, design 2026-07-08 rev 3, migration
+// 0238, spec §1 consuming-site 3) — the SAME shared `classifyMembershipPayment`
+// every settlement site consumes now classifies mark-paid-offline's target
+// cycle too. A `first_payment` result (member's one-and-only cycle,
+// `anchored_at IS NULL`) RE-ANCHORS instead of completing; every other
+// classification keeps the pre-existing `completed` behaviour
+// byte-identical.
+// ───────────────────────────────────────────────────────────────────────
+describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor branch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('re-anchors (not completes) the member’s only-ever, never-anchored cycle', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      reanchorPeriodInTxMock,
+      transitionMock,
+      emitInTxMock,
+    } = fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+
+    const r = await markPaidOffline(deps, baseInput);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.outcome).toBe('reanchored');
+      expect(r.value.cycleStatus).toBe('upcoming');
+    }
+    // Never transitions the cycle to completed on this branch.
+    expect(transitionMock).not.toHaveBeenCalled();
+    // The shared re-anchor guard fired exactly once.
+    expect(reanchorPeriodInTxMock).toHaveBeenCalledTimes(1);
+    // renewal_cycle_reanchored fired; renewal_cycle_completed_offline did NOT.
+    const emittedTypes = emitInTxMock.mock.calls.map(
+      (c) => (c[1] as { type?: string }).type,
+    );
+    expect(emittedTypes).toContain('renewal_cycle_reanchored');
+    expect(emittedTypes).not.toContain('renewal_cycle_completed_offline');
+  });
+
+  it('creates NO next cycle on the re-anchor branch (createNextCycleOnPaidInTx no-ops)', async () => {
+    // Mirrors the real `reanchorPeriodInTx` contract: the guarded UPDATE
+    // clears `linked_invoice_id`, so `createNextCycleOnPaidInTx`'s own
+    // `findByInvoiceIdInTx(evt.invoiceId)` lookup resolves to null —
+    // asserted here by overriding the SAME mock the completed-branch tests
+    // use to simulate "prior cycle resolved by invoice id".
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, countCyclesForMemberInTxMock, findByInvoiceIdInTxMock, insertMock } =
+      fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+    findByInvoiceIdInTxMock.mockResolvedValue(null);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it('newExpiresAt on the reanchor branch is the re-anchored cycle’s OWN periodTo (never hand-recomputed)', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, countCyclesForMemberInTxMock, reanchorPeriodInTxMock } =
+      fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(reanchorPeriodInTxMock).toHaveBeenCalledTimes(1);
+    const writtenArgs = reanchorPeriodInTxMock.mock.calls[0]![3] as {
+      periodTo: string;
+    };
+    if (r.ok) {
+      expect(r.value.newExpiresAt).toBe(writtenArgs.periodTo);
+    }
+  });
+
+  it('a member with a predecessor cycle (count!==1) stays on the completed branch — byte-identical', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, countCyclesForMemberInTxMock, transitionMock, emitInTxMock } =
+      fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(3); // has renewal history
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.outcome).toBe('completed');
+      expect(r.value.cycleStatus).toBe('completed');
+    }
+    expect(transitionMock).toHaveBeenCalledTimes(1);
+    const emittedTypes = emitInTxMock.mock.calls.map(
+      (c) => (c[1] as { type?: string }).type,
+    );
+    expect(emittedTypes).toContain('renewal_cycle_completed_offline');
+  });
+
+  it('an already-anchored cycle (anchored_at set) stays on the completed branch even with count===1', async () => {
+    const cycle = buildCycle({ anchoredAt: '2026-01-01T00:00:00Z' });
+    const { deps, countCyclesForMemberInTxMock, transitionMock } =
+      fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('completed');
+    expect(transitionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('a GDPR-erased member never re-anchors even when the cycle is otherwise first-payment-shaped', async () => {
+    // Design rev 2 §1: erased members never auto-anchor/renew. Falling
+    // through to the pre-existing `completed` behaviour (rather than a new
+    // error kind) matches every other settlement site's `not_applicable`
+    // handling — the classify call here exists ONLY to detect the
+    // first-payment shape, not to gate the whole use-case.
+    const cycle = buildCycle({ anchoredAt: null });
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      readReactivationGuardsInTxMock,
+      transitionMock,
+      reanchorPeriodInTxMock,
+    } = fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+    readReactivationGuardsInTxMock.mockResolvedValue({
+      blocked: false,
+      erased: true,
+    });
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('completed');
+    expect(reanchorPeriodInTxMock).not.toHaveBeenCalled();
+    expect(transitionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back to server_error when the re-anchor guard loses the race (0 rows — contract-regression alarm)', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, countCyclesForMemberInTxMock, reanchorPeriodInTxMock } =
+      fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+    reanchorPeriodInTxMock.mockResolvedValueOnce(null);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('server_error');
   });
 });
 

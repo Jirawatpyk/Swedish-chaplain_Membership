@@ -398,6 +398,17 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         }),
       );
 
+      // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+      // memberIdLoop has TWO cycles ever (not the classifier's
+      // `first_payment` shape: "exactly one cycle ever, unanchored"). This
+      // describe block tests the pre-existing renewal-loop / next-cycle-
+      // creation wiring, NOT the Task 7 re-anchor branch (that gets its
+      // own dedicated describe block below) — without this predecessor,
+      // `cycleLoopId` would classify as `first_payment` and re-anchor
+      // instead of completing, breaking every assertion below. 'cancelled'
+      // (not 'completed') avoids needing a second real invoice FK target.
+      await seedCycle(tenantA, randomUUID(), memberIdLoop, 'cancelled');
+
       // Prior renewal cycle in `awaiting_payment`, anchored to the REAL
       // plan so the next-cycle plan-lookup resolves a frozen price.
       await runInTenant(tenantA.ctx, (tx) =>
@@ -640,6 +651,200 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       ).filter((c) => c.status === 'upcoming');
       // No duplicate created — the active-cycle guard short-circuited.
       expect(upcoming.length).toBe(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 7 (rolling-anchor refactor, design 2026-07-08 rev 3, migration
+  // 0238, spec §1 consuming-site 3) — the member's ONLY-EVER cycle, never
+  // anchored to a real payment (`anchored_at IS NULL`), is EXACTLY the
+  // classifier's `first_payment` shape. mark-paid-offline must RE-ANCHOR
+  // it to the actual payment month instead of completing it: the cycle
+  // stays `upcoming`, `linked_invoice_id` stays NULL, `anchor_invoice_id`
+  // points at the newly-issued F4 invoice, and NO next cycle is created
+  // (the member's re-anchored cycle IS the active cycle).
+  // ---------------------------------------------------------------------
+  describe('Task 7 — first-payment re-anchor on the offline path', () => {
+    let memberIdFirstPay: string;
+    let cycleFirstPayId: string;
+    let seededInvoiceFirstPayId: string;
+
+    beforeAll(async () => {
+      memberIdFirstPay = randomUUID();
+      cycleFirstPayId = randomUUID();
+      seededInvoiceFirstPayId = randomUUID();
+
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(members).values({
+          tenantId: tenantA.ctx.slug,
+          memberId: memberIdFirstPay,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'First-Pay Co',
+          country: 'TH',
+          planId: planIdA,
+          planYear: 2026,
+        }),
+      );
+
+      // The member's ONLY-EVER cycle — a provisional pre-payment anchor
+      // (e.g. a registration-date placeholder), `anchored_at` left NULL
+      // (the column default). periodFrom is deliberately far from the
+      // eventual payment month so the re-anchor visibly moves the dates.
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(renewalCycles).values({
+          tenantId: tenantA.ctx.slug,
+          cycleId: cycleFirstPayId,
+          memberId: memberIdFirstPay,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2026-01-15T00:00:00Z'),
+          periodTo: new Date('2027-01-15T00:00:00Z'),
+          expiresAt: new Date('2027-01-15T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planIdA,
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        }),
+      );
+
+      // F4 invoice row (issued) — `anchor_invoice_id`'s FK target (a
+      // tenant-composite FK to `invoices`, per the migration 0238 schema).
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(invoices).values({
+          tenantId: tenantA.ctx.slug,
+          invoiceId: seededInvoiceFirstPayId,
+          memberId: memberIdFirstPay,
+          planYear: 2026,
+          planId: planIdA,
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          draftByUserId: user.userId,
+          fiscalYear: 2026,
+          sequenceNumber: 3,
+          documentNumber: 'INV-2026-000003',
+          issueDate: '2026-06-20',
+          dueDate: '2026-07-20',
+          currency: 'THB',
+          subtotalSatang: asSatang(5_000_000n),
+          vatRateSnapshot: '0.0700',
+          vatSatang: asSatang(350_000n),
+          totalSatang: asSatang(5_350_000n),
+          proRatePolicySnapshot: 'whole_year',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+          memberIdentitySnapshot: {
+            companyName: 'First-Pay Co',
+            country: 'TH',
+            legal_name: 'First-Pay Co Ltd',
+            address: '1 First Pay Road, Bangkok 10110',
+            primary_contact_name: 'First Pay Contact',
+            primary_contact_email: 'firstpay@example.com',
+          } as unknown,
+          pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${seededInvoiceFirstPayId}.pdf`,
+          pdfSha256: 'c'.repeat(64),
+          pdfTemplateVersion: 1,
+        }),
+      );
+    }, 120_000);
+
+    it('re-anchors the cycle to the payment month instead of completing it', async () => {
+      const deps = makeRenewalsDeps(tenantA.ctx.slug);
+      const paidAt = new Date().toISOString();
+      const bridgeSpy = vi
+        .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
+        .mockImplementation(async (input) => {
+          if (input.onPaid) {
+            await input.onPaid({
+              tenantId: input.tenantId,
+              invoiceId: seededInvoiceFirstPayId,
+              memberId: input.memberId,
+              paidAt,
+              amountSatang: asSatang(5_000_000n),
+              vatSatang: asSatang(350_000n),
+              currency: 'THB',
+              paymentMethod: input.paymentMethod,
+              triggeredBy: 'admin_offline_mark',
+              invoiceSubject: 'membership',
+              paymentDate: input.paymentDate,
+            });
+          }
+          return {
+            ok: true,
+            value: { invoiceId: seededInvoiceFirstPayId, paidAt },
+          };
+        });
+
+      const r = await markPaidOffline(deps, {
+        tenantId: tenantA.ctx.slug,
+        cycleId: cycleFirstPayId,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'BT-FIRSTPAY-0001',
+        // June 2026 — same fiscal year as the seeded periodFrom (Jan 2026)
+        // and the seeded plan (2026), so no FY-crossing re-freeze fires;
+        // the re-anchor keeps the frozen 50,000.00 THB / 12-month term.
+        paymentDate: '2026-06-20',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      bridgeSpy.mockRestore();
+
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.outcome).toBe('reanchored');
+      expect(r.value.cycleStatus).toBe('upcoming');
+      expect(r.value.invoiceId).toBe(seededInvoiceFirstPayId);
+      // Bangkok month-start anchor: 2026-06-20 → 2026-06-01, +12 months.
+      expect(r.value.newExpiresAt).toBe('2027-06-01T00:00:00.000Z');
+
+      const rows = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalCycles)
+          .where(eq(renewalCycles.cycleId, cycleFirstPayId)),
+      );
+      const row = rows[0]!;
+      // NEVER completed on this branch.
+      expect(row.status).toBe('upcoming');
+      expect(row.closedAt).toBeNull();
+      expect(row.closedReason).toBeNull();
+      // Reanchor clears linked_invoice_id (never sets it) — the anchoring
+      // invoice occupies anchor_invoice_id instead, so the member's
+      // future renewal can still link cleanly.
+      expect(row.linkedInvoiceId).toBeNull();
+      expect(row.anchorInvoiceId).toBe(seededInvoiceFirstPayId);
+      expect(row.anchoredAt?.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+      expect(row.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+      expect(row.periodTo.toISOString()).toBe('2027-06-01T00:00:00.000Z');
+      expect(row.frozenPlanPriceThb).toBe('50000.00');
+
+      // renewal_cycle_reanchored fired for this cycle.
+      const reanchored = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(auditLog.eventType, 'renewal_cycle_reanchored' as never),
+          ),
+        );
+      expect(reanchored.length).toBeGreaterThanOrEqual(1);
+
+      // No `renewal_cycle_completed_offline` cycle for this member — the
+      // completed-branch audit never fires on the re-anchor path.
+      const memberCycles = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalCycles)
+          .where(eq(renewalCycles.memberId, memberIdFirstPay)),
+      );
+      expect(
+        memberCycles.every((c) => c.closedReason !== 'completed_offline'),
+      ).toBe(true);
+      // createNextCycleOnPaidInTx no-ops: still exactly ONE cycle row ever
+      // for this member (the re-anchored cycle stays the sole active one).
+      expect(memberCycles.length).toBe(1);
     });
   });
 });

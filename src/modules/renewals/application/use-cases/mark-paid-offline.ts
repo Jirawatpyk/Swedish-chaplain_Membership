@@ -19,9 +19,20 @@
  * `awaiting_payment`, not a separate status — see PAYABLE_STATUSES
  * note below.) Other statuses yield `cycle_not_payable`.
  *
+ * Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+ * Task 7 (spec §1 consuming-site 3) — BEFORE the F4 chain runs, the
+ * locked cycle's payment is classified via the SAME shared
+ * `classifyMembershipPayment` every settlement site consumes. A
+ * `first_payment` result (the member's one-and-only cycle, never
+ * anchored to a real payment) RE-ANCHORS the cycle to the actual
+ * payment month instead of completing it — the cycle stays `upcoming`.
+ * Every other outcome keeps the original `completed` behaviour
+ * byte-identical. See `MarkPaidOfflineOutput`'s `outcome` discriminator.
+ *
  * Audit emits inside tx (atomic state+audit):
- *   - `renewal_cycle_completed_offline` (in pgEnum — H1 real adapter
- *     persists to audit_log).
+ *   - `renewal_cycle_completed_offline` (completed branch) OR
+ *     `renewal_cycle_reanchored` (re-anchor branch, emitted by the
+ *     shared `reanchorFirstPaymentCycleInTx` helper) — never both.
  *   - `renewal_invoice_created` + `renewal_completed` are NOT yet in
  *     pgEnum; the H1 emitter logs to pino via stub fallback in dev,
  *     loud-fails in production. Their pgEnum migration ships in
@@ -35,9 +46,14 @@ import { addMonthsUtc } from '@/lib/dates';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
 import { finaliseF2PlanChangeOnPaid } from './finalise-f2-plan-change-on-paid';
+import {
+  reanchorFirstPaymentCycleInTx,
+  type ReanchorFirstPaymentResult,
+} from './_lib/reanchor-first-payment';
 // `asInvoiceId` is the F4 brand constructor — a TYPE-CHECKED cast (takes a
 // `string`, returns the `InvoiceId` brand; no runtime validation). It's used
 // for the `applyPendingTierUpgradeInTx` invoiceId arg so that if
@@ -67,7 +83,15 @@ export const markPaidOfflineInputSchema = z.object({
 export type MarkPaidOfflineInput = z.infer<typeof markPaidOfflineInputSchema>;
 
 export interface MarkPaidOfflineOutput {
-  readonly cycleStatus: 'completed';
+  /**
+   * Task 7 (spec §1 consuming-site 3) — discriminates which of the two
+   * shared-classifier branches this settlement took. `'completed'` is
+   * the pre-existing behaviour (byte-identical); `'reanchored'` is the
+   * new first-payment branch — the cycle stays `upcoming`, never
+   * `completed`.
+   */
+  readonly outcome: 'completed' | 'reanchored';
+  readonly cycleStatus: 'completed' | 'upcoming';
   readonly invoiceId: string;
   readonly newExpiresAt: string;
 }
@@ -220,6 +244,47 @@ export async function markPaidOffline(
         });
       }
 
+      // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+      // Task 7 (spec §1 consuming-site 3) — classify the payment for the
+      // LOCKED cycle's member using the SAME shared classifier every
+      // settlement site consumes. `openCycle` is built directly from
+      // `lockedCycle` itself (never null — its status was just verified
+      // against PAYABLE_STATUSES, a subset of the classifier's open-cycle
+      // status union), so `cycleCountForMember` + the GDPR-erased guard are
+      // the only additional reads needed. Both reads + the branch decision
+      // happen INSIDE the tx that holds the per-(tenant,cycle) advisory
+      // lock acquired above, so no concurrent write sharing this codebase's
+      // lock convention can race the classification.
+      //
+      // A `first_payment` result re-anchors the cycle inside `onPaid`
+      // below instead of completing it (see `isFirstPayment`); every other
+      // result (`renewal`, or the erased/terminal `not_applicable`
+      // classifications, neither reachable here in a way that changes
+      // behaviour) falls through to the pre-existing `completed` path —
+      // this classify call exists ONLY to detect the first-payment shape,
+      // matching `markCycleCompleteInTx`'s linked-path rationale (Task 6).
+      const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
+        tx,
+        input.tenantId,
+        lockedCycle.memberId,
+      );
+      const reactivationGuards =
+        await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+          tx,
+          input.tenantId,
+          lockedCycle.memberId,
+        );
+      const classification = classifyMembershipPayment({
+        cycleCountForMember,
+        openCycle:
+          lockedCycle.status === 'awaiting_payment'
+            ? { status: 'awaiting_payment', anchoredAt: lockedCycle.anchoredAt }
+            : { status: 'upcoming', anchoredAt: lockedCycle.anchoredAt },
+        memberErased: reactivationGuards?.erased === true,
+      });
+      const isFirstPayment = classification.kind === 'first_payment';
+      let reanchorResult: ReanchorFirstPaymentResult | null = null;
+
       // Round 5 W-05 — re-derive `newExpiresAt` from the LOCKED cycle's
       // periodTo, not the pre-lock snapshot. If a concurrent path
       // mutated period anchors between preLoad and lock acquisition,
@@ -245,42 +310,83 @@ export async function markPaidOffline(
         // MUST happen outside the tx (its repo opens its own runInTenant) so
         // a finalise failure cannot roll back the now-durable payment.
         paidEventForFinalise = evt;
-        // Flip cycle inside same tx — closedReason='completed_offline'.
-        await deps.cyclesRepo.transitionStatus(
-          tx,
-          input.tenantId,
-          cycleId,
-          {
-            from: lockedCycle.status,
-            to: 'completed',
-            closedAt: evt.paidAt,
-            closedReason: 'completed_offline',
-            linkedInvoiceId: evt.invoiceId,
-          },
-        );
-        await deps.auditEmitter.emitInTx(
-          tx,
-          {
-            type: 'renewal_cycle_completed_offline',
-            payload: {
-              cycle_id: cycleId,
-              member_id: memberId as MemberId,
-              invoice_id: evt.invoiceId as InvoiceId,
-              payment_method: input.paymentMethod,
-              payment_reference: input.paymentReference,
-              payment_date: input.paymentDate,
-              new_expires_at: newExpiresAt,
+
+        if (isFirstPayment) {
+          // Task 7 (spec §1 consuming-site 3) — the member's one-and-only
+          // cycle has never been anchored to a real payment; THIS offline
+          // settlement IS that first payment. Re-anchor (shared Task 6
+          // core) moves the period dates to the actual payment month +
+          // re-freezes frozen fields across a fiscal-year boundary, and
+          // leaves `status='upcoming'` — it never flips to `completed`, so
+          // NO `renewal_cycle_completed_offline` audit fires on this
+          // branch. `reanchorFirstPaymentCycleInTx` emits
+          // `renewal_cycle_reanchored` itself (no duplicate emit here).
+          const reanchored = await reanchorFirstPaymentCycleInTx(
+            {
+              cyclesRepo: deps.cyclesRepo,
+              planLookup: deps.planLookupForRenewal,
+              auditEmitter: deps.auditEmitter,
             },
-          },
-          {
-            tenantId: input.tenantId,
-            actorUserId: input.actorUserId,
-            actorRole: input.actorRole,
-            correlationId: input.correlationId,
-            requestId: input.requestId ?? null,
-            summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
-          },
-        );
+            evt,
+            tx,
+            lockedCycle,
+          );
+          if (!reanchored) {
+            // Should be unreachable: this closure runs inside the SAME tx
+            // that has held the per-(tenant,cycle) advisory lock since
+            // before the classify read above, for the cycle's ENTIRE
+            // duration — every other cycle-mutating code path in this
+            // codebase takes the same lock before writing, so no
+            // concurrent writer can move this row out of the
+            // un-anchored-open state between the classify read and this
+            // guarded UPDATE. Throw loudly (rather than silently falling
+            // back to `completed`, which would mis-record a first payment
+            // as a renewal) so the outer runInTenant rolls back and the
+            // anomaly surfaces as a contract-regression alarm, not a
+            // silently wrong audit trail.
+            throw new Error(
+              `mark-paid-offline: first-payment re-anchor guard matched 0 rows for cycle ${cycleId} — unexpected race under held advisory lock`,
+            );
+          }
+          reanchorResult = reanchored;
+        } else {
+          // Flip cycle inside same tx — closedReason='completed_offline'.
+          await deps.cyclesRepo.transitionStatus(
+            tx,
+            input.tenantId,
+            cycleId,
+            {
+              from: lockedCycle.status,
+              to: 'completed',
+              closedAt: evt.paidAt,
+              closedReason: 'completed_offline',
+              linkedInvoiceId: evt.invoiceId,
+            },
+          );
+          await deps.auditEmitter.emitInTx(
+            tx,
+            {
+              type: 'renewal_cycle_completed_offline',
+              payload: {
+                cycle_id: cycleId,
+                member_id: memberId as MemberId,
+                invoice_id: evt.invoiceId as InvoiceId,
+                payment_method: input.paymentMethod,
+                payment_reference: input.paymentReference,
+                payment_date: input.paymentDate,
+                new_expires_at: newExpiresAt,
+              },
+            },
+            {
+              tenantId: input.tenantId,
+              actorUserId: input.actorUserId,
+              actorRole: input.actorRole,
+              correlationId: input.correlationId,
+              requestId: input.requestId ?? null,
+              summary: `Admin marked cycle ${cycleId} paid offline (${input.paymentMethod} ref=${input.paymentReference})`,
+            },
+          );
+        }
 
         // 070 Item D — apply any pending tier-upgrade on the OFFLINE path,
         // mirroring the online `f8OnPaidCallbacks[1]` IN-TX half (same
@@ -325,14 +431,22 @@ export async function markPaidOffline(
         // drops out of the renewal pipeline — broken renewal loop for the
         // bank-transfer-dominant SweCham/TSCC tenant.
         //
-        // SAME-TX ordering: this runs AFTER the completion flip above
-        // marked the prior cycle →completed in THIS tx. `createCycleInTx`'s
-        // in-tx idempotency guard (`findActiveForMemberInTx`) therefore
-        // sees the uncommitted completion and EXCLUDES the prior cycle, so
-        // the next cycle IS created on the first mark (identical correctness
-        // contract to the online callback[2]). `tx` is the outer
-        // `runInTenant` tx the F4 bridge reuses via `externalTx` — the same
-        // tx the completion flip rode.
+        // SAME-TX ordering: this runs AFTER the branch above either (a)
+        // marked the prior cycle →completed in THIS tx, or (b) re-anchored
+        // the member's first-ever cycle (Task 7). On (a),
+        // `createCycleInTx`'s in-tx idempotency guard
+        // (`findActiveForMemberInTx`) sees the uncommitted completion and
+        // EXCLUDES the prior cycle, so the next cycle IS created on the
+        // first mark (identical correctness contract to the online
+        // callback[2]). On (b), `createNextCycleOnPaidInTx`'s own
+        // `findByInvoiceIdInTx(evt.invoiceId)` lookup finds NO cycle — the
+        // re-anchor stamped `anchor_invoice_id`, not `linked_invoice_id`,
+        // and explicitly cleared `linked_invoice_id` in the same guarded
+        // UPDATE — so this call is a documented no-op (asserted by a
+        // dedicated integration test); the member's re-anchored cycle
+        // stays the sole active cycle. `tx` is the outer `runInTenant` tx
+        // the F4 bridge reuses via `externalTx` — the same tx either
+        // branch above rode.
         //
         // THROWS on failure (consistent with the online path + this path's
         // in-tx discipline): a throw rolls the whole offline-mark tx back,
@@ -406,7 +520,27 @@ export async function markPaidOffline(
             `cycle ${cycleId} not flipped. F4 contract regression?`,
         );
       }
+      if (isFirstPayment) {
+        // Invariant: `onPaid` (which just ran, since `onPaidFired` is
+        // true) throws BEFORE returning on the first-payment branch if
+        // the guarded re-anchor UPDATE matched 0 rows (see the throw a
+        // few lines inside `onPaid` above) — so reaching here with
+        // `isFirstPayment` true guarantees `reanchorResult` is set. The
+        // non-null assertion documents that invariant instead of adding
+        // an unreachable defensive branch.
+        const reanchored = reanchorResult!;
+        return ok({
+          outcome: 'reanchored' as const,
+          cycleStatus: 'upcoming' as const,
+          invoiceId: bridgeResult.value.invoiceId,
+          // Task 7 — the re-anchored cycle's OWN periodTo, not the
+          // pre-branch `newExpiresAt` local (which was derived from the
+          // now-superseded pre-anchor period). Never recompute by hand.
+          newExpiresAt: reanchored.cycle.periodTo,
+        });
+      }
       return ok({
+        outcome: 'completed' as const,
         cycleStatus: 'completed' as const,
         invoiceId: bridgeResult.value.invoiceId,
         newExpiresAt,
