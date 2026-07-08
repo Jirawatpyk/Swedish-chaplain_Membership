@@ -313,6 +313,30 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     opts: ListAtRiskWidgetOpts,
   ): Promise<ListAtRiskWidgetResult>;
+
+  /**
+   * Rolling-anchor refactor rev 2 (design 2026-07-08 §4) — TRUE when the
+   * member has a paid membership invoice from the last 12 months that is
+   * neither any cycle's `linked_invoice_id` nor any cycle's
+   * `anchor_invoice_id` — an unreconciled out-of-band payment. Belt-and-
+   * suspenders safety net for the deploy→backfill gap (the R4 backfill
+   * script deliberately runs after testing, leaving a window where a real
+   * payment could land without being anchored) and for any future
+   * onPaidCallback regression that silently misses a hook.
+   *
+   * Consumed by `dispatchOneCycle`'s skip-guard (reason
+   * `unreconciled_paid_membership_invoice`) — a hit means the member's
+   * cycle state may be stale, so dispatch is suppressed until staff
+   * reconciles manually.
+   *
+   * Unlike the rest of this port's methods, this one does NOT take a `tx`
+   * — the dispatcher's decision tree has no outer tx open at this point,
+   * so the adapter opens its own `runInTenant`.
+   */
+  hasUnreconciledPaidMembershipInvoice(
+    tenantId: string,
+    memberId: string,
+  ): Promise<boolean>;
 }
 
 export interface ListAtRiskWidgetOpts {

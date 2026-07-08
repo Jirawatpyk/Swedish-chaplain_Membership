@@ -109,16 +109,18 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
 });
 
 describe('SKIP_REASONS catalogue', () => {
-  it('K12-S (TST-K-5): contains 13 unique skip reasons (runtime complement to compile-time _AssertSkipReasonCount)', () => {
-    // The compile-time `_AssertSkipReasonCount extends 13` in
+  it('K12-S (TST-K-5): contains 14 unique skip reasons (runtime complement to compile-time _AssertSkipReasonCount)', () => {
+    // The compile-time `_AssertSkipReasonCount extends 14` in
     // dispatch-one-cycle.ts is the primary pin, but a single-commit
-    // change that flips both the literal `13` AND the tuple in lock-
+    // change that flips both the literal `14` AND the tuple in lock-
     // step would compile silently. This runtime check duplicates
     // the safeguard so each commit has a chance to surface drift.
     // Mirrors the dual-coverage already in place for
     // F8_AUDIT_EVENT_TYPES (compile-time _AssertF8AuditEventCount +
     // runtime `expect(F8_AUDIT_EVENT_TYPES.length).toBe(N)` above).
-    expect(SKIP_REASONS.length).toBe(13);
+    // Rolling-anchor rev 2 (2026-07-08 §4) added
+    // `unreconciled_paid_membership_invoice` (13 → 14).
+    expect(SKIP_REASONS.length).toBe(14);
     const set = new Set(SKIP_REASONS);
     expect(set.size).toBe(SKIP_REASONS.length);
   });

@@ -54,11 +54,13 @@ import type { RiskBand } from '../../domain/value-objects/risk-band';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
   // RLS does the tenant binding via runInTenant at the use-case layer;
-  // this adapter receives only the tx + memberId and writes via the
-  // members table directly. The tenant param is reserved for future
-  // safety assertions or per-tenant adapter caching (consumed by the
-  // companion `WithTenant` factory below).
-  _tenant: TenantContext,
+  // most methods below receive only the tx + memberId and write via the
+  // members table directly, so `tenant` goes unused for them. Rolling-
+  // anchor rev 2 added `hasUnreconciledPaidMembershipInvoice`, which has
+  // no caller-supplied tx (the dispatcher gate calls it standalone) — it
+  // opens its OWN `runInTenant(tenant, …)` using this closed-over context,
+  // mirroring `makeDrizzleTierUpgradeEvalCandidateRepo`'s `list()` method.
+  tenant: TenantContext,
 ): MemberRenewalFlagsRepo {
   return {
     async setEmailUnverified(
@@ -833,6 +835,45 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         previousValue: wasSnoozedActive,
         affectedRows: updated.length,
       };
+    },
+
+    /**
+     * Rolling-anchor refactor rev 2 (design 2026-07-08 §4) — belt-and-
+     * suspenders read for the dispatcher skip-guard. No caller tx is
+     * threaded (the dispatcher's decision tree has no outer tx open at
+     * this gate), so this method opens its OWN `runInTenant`, following
+     * the same standalone-method pattern as
+     * `makeDrizzleTierUpgradeEvalCandidateRepo.list()`.
+     *
+     * Tenant filters are explicit defence-in-depth on top of RLS
+     * (Constitution Principle I two-layer rule) even though `invoices`
+     * and `renewal_cycles` both carry strict isolating RLS policies.
+     */
+    async hasUnreconciledPaidMembershipInvoice(
+      tenantId: string,
+      memberId: string,
+    ): Promise<boolean> {
+      return runInTenant(tenant, async (tx) => {
+        const txDb = tx as unknown as typeof db;
+        const rows = await txDb.execute<{ unreconciled: boolean }>(sql`
+          SELECT EXISTS (
+            SELECT 1 FROM invoices i
+            WHERE i.tenant_id = ${tenantId} AND i.member_id = ${memberId}
+              AND i.invoice_subject = 'membership'
+              AND i.status IN ('paid', 'partially_credited')
+              AND i.paid_at > NOW() - INTERVAL '12 months'
+              AND NOT EXISTS (
+                SELECT 1 FROM renewal_cycles c
+                WHERE c.tenant_id = i.tenant_id
+                  AND (
+                    c.linked_invoice_id = i.invoice_id
+                    OR c.anchor_invoice_id = i.invoice_id
+                  )
+              )
+          ) AS unreconciled
+        `);
+        return rows[0]?.unreconciled ?? false;
+      });
     },
   };
 }
