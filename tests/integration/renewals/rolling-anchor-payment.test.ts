@@ -138,6 +138,68 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
   }
 
   /**
+   * R2 residual (Task 5) — an already-PAID unlinked invoice, seeded
+   * directly rather than driven through F4's real `recordPayment` (which
+   * would need a full tenant-invoice-settings + sequence-allocator fixture
+   * chain — the file-level docstring's precedent for this whole suite is
+   * to fire the REAL `f8OnPaidCallbacks` array against a pre-committed
+   * payment state, mirroring exactly what `recordPayment` leaves behind
+   * in the DB by the time it invokes those same callbacks in its own tx).
+   * Satisfies `invoices_paid_has_receipt_status` (paid ⇒ receipt_pdf_status
+   * NOT NULL) + the paid⇒paid_at/payment_method CHECK.
+   */
+  async function seedPaidInvoice(
+    t: TestTenant,
+    memberId: string,
+    planId: string,
+  ): Promise<string> {
+    const invoiceId = randomUUID();
+    await runInTenant(t.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: t.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        status: 'paid',
+        pdfDocKind: 'invoice',
+        receiptPdfStatus: 'rendered',
+        draftByUserId: user.userId,
+        fiscalYear: 2026,
+        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+        issueDate: '2026-08-01',
+        dueDate: '2026-08-31',
+        currency: 'THB',
+        subtotalSatang: asSatang(5_000_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(5_350_000n),
+        proRatePolicySnapshot: 'whole_year',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'RollAnchor Co',
+          country: 'TH',
+          legal_name: 'RollAnchor Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'rollanchor@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${t.ctx.slug}/2026/${invoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'R2-TEST-PAY',
+        paymentRecordedByUserId: user.userId,
+        paymentDate: '2026-08-16',
+        paidAt: new Date('2026-08-16T09:00:00.000Z'),
+      }),
+    );
+    return invoiceId;
+  }
+
+  /**
    * Provisional un-anchored cycle — the shape onboarding creates at the
    * member's registration date (linked to NO invoice, anchoredAt NULL).
    */
@@ -242,6 +304,30 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     return rows.length;
   }
 
+  /** R2 residual (Task 5) — locate a specific cycle's audit row payload by
+   * `cycle_id`, so a scenario can assert on payload FIELDS (e.g.
+   * `held_for_admin_review`) rather than just a row count. */
+  async function findAuditPayloadForCycle(
+    t: TestTenant,
+    eventType: string,
+    cycleId: string,
+  ): Promise<Record<string, unknown> | undefined> {
+    const rows = await runInTenant(t.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, t.ctx.slug),
+            eq(auditLog.eventType, eventType as never),
+          ),
+        ),
+    );
+    return rows
+      .map((r) => r.payload as Record<string, unknown>)
+      .find((p) => p.cycle_id === cycleId);
+  }
+
   it('full lifecycle: first unlinked payment RE-ANCHORS; second unlinked payment RENEWS (complete + gapless next); re-fire is a no-op', async () => {
     const memberId = await seedMember(tenantA, planIdA);
     const provisionalCycleId = await seedProvisionalCycle(tenantA, memberId, planIdA);
@@ -338,6 +424,153 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     // shared createCycleInTx emits its own `renewal_cycle_created`.
     const reanchoredAfter = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
     expect(reanchoredAfter).toBe(reanchoredBefore + 1);
+  }, 120_000);
+
+  it('R2(a) catalogue-gap heal skip: zero-cycle member on an inactive-only plan → PlanNotResolvableError caught, payment stands (paid), no cycle, no reanchor audit', async () => {
+    // A plan with exactly ONE row, is_active=false — a "soft-deleted"
+    // catalogue gap. `members_plan_tenant_year_fk` still requires the
+    // member's OWN (plan_id, plan_year) to reference a real row, so the
+    // member is seeded against this exact (inactive) row for plan_year
+    // 2026 — the FK is satisfied. The gap is exposed by PAYING in a
+    // DIFFERENT fiscal year: `loadPlanFrozenFields` (mode 'freeze') finds
+    // no exact-year row for 2027, and its fallback "most-recent ACTIVE
+    // row" query also comes up empty (the only row is is_active=false) →
+    // `status: 'plan_inactive'` → `PlanNotResolvableError`.
+    const gapPlanId = `f8-rollanchor-gap-${randomUUID().slice(0, 8)}`;
+    await runInTenant(tenantA.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenantA.ctx.slug,
+        planId: gapPlanId,
+        planName: { en: 'Catalogue Gap Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+        isActive: false,
+      }),
+    );
+    const memberId = await seedMember(tenantA, gapPlanId); // zero cycles
+    const invoiceId = await seedPaidInvoice(tenantA, memberId, gapPlanId);
+
+    const reanchoredBefore = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
+
+    // `healNoCycle` catches `PlanNotResolvableError` and returns
+    // skipped:plan_unresolvable — the chain must NOT throw (the payment
+    // already stands independent of any specific plan resolution).
+    await expect(
+      fireOnPaidChainInTx(tenantA, invoiceId, memberId, '2027-08-16'),
+    ).resolves.toBeUndefined();
+
+    const cycles = await loadCycles(tenantA, memberId);
+    expect(cycles).toHaveLength(0);
+
+    const reanchoredAfter = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
+    expect(reanchoredAfter).toBe(reanchoredBefore);
+
+    const invRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(invRows[0]?.status).toBe('paid');
+  }, 120_000);
+
+  it('R2(b) blocked-member hold: renewal-classified unlinked payment routes to pending_admin_reactivation, no auto-complete, no next cycle, payment stands', async () => {
+    const memberId = await seedMember(tenantA, planIdA);
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({
+          blockedFromAutoReactivation: true,
+          blockedFromAutoReactivationAt: new Date(),
+          blockedFromAutoReactivationSetByUserId: user.userId,
+          blockedFromAutoReactivationReason: 'integration-test-r2-blocked-hold',
+        })
+        .where(eq(members.memberId, memberId)),
+    );
+
+    // Completed predecessor cycle — cycleCountForMember=2, so the
+    // classifier resolves 'renewal' (never 'first_payment', regardless of
+    // the open cycle's anchoredAt — see classifyMembershipPayment).
+    // `renewal_cycles_completed_requires_invoice_check` (+ composite FK
+    // (tenant_id, linked_invoice_id) → invoices) means a completed cycle
+    // MUST link a real prior invoice — seed a throwaway one for it.
+    const predecessorInvoiceId = await seedPaidInvoice(tenantA, memberId, planIdA);
+    const predecessorId = randomUUID();
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: predecessorId,
+        memberId,
+        status: 'completed',
+        periodFrom: new Date('2025-06-01T00:00:00Z'),
+        periodTo: new Date('2026-06-01T00:00:00Z'),
+        expiresAt: new Date('2026-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planIdA,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2025-06-01T00:00:00Z'),
+        closedAt: new Date('2026-06-01T00:00:00Z'),
+        closedReason: 'paid',
+        linkedInvoiceId: predecessorInvoiceId,
+      }),
+    );
+    // The open cycle this payment resolves — anchored + awaiting_payment
+    // (the single-transition heldForAdminReview path).
+    const openCycleId = randomUUID();
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenantA.ctx.slug,
+        cycleId: openCycleId,
+        memberId,
+        status: 'awaiting_payment',
+        periodFrom: new Date('2026-06-01T00:00:00Z'),
+        periodTo: new Date('2027-06-01T00:00:00Z'),
+        expiresAt: new Date('2027-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planIdA,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2025-06-01T00:00:00Z'),
+      }),
+    );
+
+    const invoiceId = await seedPaidInvoice(tenantA, memberId, planIdA);
+    const heldBefore = await countAuditRows(tenantA, 'renewal_completed_post_lapse');
+
+    await expect(
+      fireOnPaidChainInTx(tenantA, invoiceId, memberId, '2026-08-16'),
+    ).resolves.toBeUndefined();
+
+    const cycles = await loadCycles(tenantA, memberId);
+    // Predecessor + the SAME open cycle — NO next cycle created (the
+    // admin, not the auto-pipeline, decides what happens next).
+    expect(cycles).toHaveLength(2);
+    const held = cycles.find((c) => c.cycleId === openCycleId)!;
+    expect(held.status).toBe('pending_admin_reactivation');
+    expect(held.linkedInvoiceId).toBe(invoiceId);
+
+    const heldAfter = await countAuditRows(tenantA, 'renewal_completed_post_lapse');
+    expect(heldAfter).toBe(heldBefore + 1);
+    const heldPayload = await findAuditPayloadForCycle(
+      tenantA,
+      'renewal_completed_post_lapse',
+      openCycleId,
+    );
+    expect(heldPayload?.held_for_admin_review).toBe(true);
+    expect(heldPayload?.invoice_id).toBe(invoiceId);
+
+    const invRows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(invRows[0]?.status).toBe('paid');
   }, 120_000);
 
   it('event-fee invoice: hook skips without touching renewal state', async () => {

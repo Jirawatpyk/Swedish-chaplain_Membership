@@ -212,7 +212,7 @@ export async function resolveUnlinkedMembershipPaymentInTx(
       return { kind: 'skipped', reason: classification.reason };
     }
     case 'heal_no_cycle':
-      return healNoCycle(deps, evt, tx);
+      return healNoCycle(deps, evt, tx, blocked);
     case 'first_payment':
       if (!openCycle) {
         // Invariant: classifyMembershipPayment only returns 'first_payment'
@@ -221,7 +221,7 @@ export async function resolveUnlinkedMembershipPaymentInTx(
           `resolveUnlinkedMembershipPaymentInTx: classifier returned first_payment with no open cycle (invoice ${evt.invoiceId})`,
         );
       }
-      return firstPayment(deps, evt, tx, openCycle);
+      return firstPayment(deps, evt, tx, openCycle, blocked);
     case 'renewal':
       if (!openCycle) {
         throw new Error(
@@ -252,6 +252,7 @@ async function healNoCycle(
   deps: ResolveUnlinkedMembershipPaymentDeps,
   evt: F4InvoicePaidEvent,
   tx: TenantTx,
+  blocked: boolean,
 ): Promise<UnlinkedResolutionOutcome> {
   const member = await deps.memberPlanLookup.loadMemberPlanInTx(
     tx,
@@ -319,7 +320,7 @@ async function healNoCycle(
     // for this member between our classification read and this insert
     // attempt (e.g. a different invoice paid for the same member in a
     // separate, concurrent tx). Re-read + reclassify once.
-    return reclassifyAfterRace(deps, evt, tx);
+    return reclassifyAfterRace(deps, evt, tx, blocked);
   }
 
   const stamped = await deps.cyclesRepo.reanchorPeriodInTx(
@@ -380,6 +381,7 @@ async function firstPayment(
   evt: F4InvoicePaidEvent,
   tx: TenantTx,
   cycle: RenewalCycle,
+  blocked: boolean,
 ): Promise<UnlinkedResolutionOutcome> {
   const anchorDate = paymentAnchorMonthStartUtc(evt);
 
@@ -431,7 +433,7 @@ async function firstPayment(
   );
   if (!reanchored) {
     // Lost the anchor race — re-read + reclassify once (design rev 2 §2).
-    return reclassifyAfterRace(deps, evt, tx);
+    return reclassifyAfterRace(deps, evt, tx, blocked);
   }
 
   await deps.auditEmitter.emitInTx(
@@ -648,15 +650,25 @@ async function heldForAdminReview(
  * Shared race-recovery for `heal_no_cycle` (lost the active-cycle-create
  * race) and `first_payment` (lost the anchor-guard race): re-read the
  * member's open cycle + reclassify EXACTLY ONCE. A `renewal`
- * reclassification falls through to `renewalComplete`; anything else
- * (including a repeat first_payment/heal_no_cycle result, which would
+ * reclassification falls through to `renewalComplete` (or, when the member
+ * is `blocked_from_auto_reactivation`, `heldForAdminReview` — FR-005b parity
+ * fix, Task 5 review F4 residual R1: the double-race fallback previously
+ * skipped this check and could auto-complete a blocked member); anything
+ * else (including a repeat first_payment/heal_no_cycle result, which would
  * indicate a genuinely pathological retry storm) is reported as
  * `skipped:race_lost` rather than looping.
+ *
+ * `blocked` is threaded from the ORIGINAL `readReactivationGuardsInTx` read
+ * at the top of `resolveUnlinkedMembershipPaymentInTx` — a member's
+ * admin-set flag cannot change mid-tx (no writer other than the dedicated
+ * block/unblock use-cases, which take their own tenant lock), so re-reading
+ * it here would be redundant.
  */
 async function reclassifyAfterRace(
   deps: ResolveUnlinkedMembershipPaymentDeps,
   evt: F4InvoicePaidEvent,
   tx: TenantTx,
+  blocked: boolean,
 ): Promise<UnlinkedResolutionOutcome> {
   const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
     tx,
@@ -675,14 +687,9 @@ async function reclassifyAfterRace(
   });
 
   if (reclassified.kind === 'renewal' && openCycle) {
-    // Known scope gap (Task 5 review F4 fixed only the primary switch's
-    // `renewal` case): this double-race fallback does not re-check
-    // `blocked_from_auto_reactivation`, so an extremely rare blocked-member
-    // double-race could still auto-complete here. Narrow enough (requires
-    // losing TWO concurrent races) that threading `guards` through
-    // `healNoCycle`/`firstPayment` to close it was judged not worth the
-    // extra surface for this fix wave; tracked as a follow-up if it ever
-    // fires in practice.
+    if (blocked) {
+      return heldForAdminReview(deps, evt, tx, openCycle);
+    }
     return renewalComplete(deps, evt, tx, openCycle);
   }
 

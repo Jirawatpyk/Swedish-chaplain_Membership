@@ -656,6 +656,59 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 5: renewal', () => 
       expect(mocks.insert).toHaveBeenCalledTimes(1); // next cycle created
       expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('renewed');
     });
+
+    // ---------------------------------------------------------------------
+    // R1 fix (Task 5 residual-closing wave) — `reclassifyAfterRace` (the
+    // shared double-race fallback for `heal_no_cycle` / `first_payment`)
+    // previously fell through to `renewalComplete` unconditionally on a
+    // `renewal` reclassification, bypassing the FR-005b admin-hold gate for
+    // a blocked member who loses a create/re-anchor race. `blocked` is now
+    // threaded all the way through to this fallback.
+    // ---------------------------------------------------------------------
+    it('R1: blocked member loses the first_payment reanchor-guard race, reclassifies to renewal → HELD, not completed', async () => {
+      const openCycle = buildCycle({ status: 'upcoming', anchoredAt: null });
+      const anchoredNow = buildCycle({ status: 'awaiting_payment', anchoredAt: '2026-01-01T00:00:00Z' });
+      const { deps, mocks } = fakeDeps({
+        cycleCountForMember: 1,
+        openCycle,
+        reanchorResult: null,
+        blocked: true,
+      });
+      mocks.countCycles.mockResolvedValue(1);
+      mocks.findOpenCycle.mockResolvedValueOnce(openCycle).mockResolvedValueOnce(anchoredNow);
+
+      const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+      expect(r).toEqual({ kind: 'held_pending_admin', cycleId: anchoredNow.cycleId });
+      expect(mocks.transitionStatus).toHaveBeenCalledTimes(1);
+      expect(mocks.transitionStatus).toHaveBeenCalledWith(
+        SENTINEL_TX,
+        TENANT_ID,
+        anchoredNow.cycleId,
+        expect.objectContaining({ from: 'awaiting_payment', to: 'pending_admin_reactivation' }),
+      );
+      expect(mocks.insert).not.toHaveBeenCalled(); // no next cycle — admin decides
+      expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('held');
+    });
+
+    it('R1: blocked member loses the heal_no_cycle active-create race, reclassifies to renewal → HELD, not completed', async () => {
+      const anchoredOpenCycle = buildCycle({ status: 'awaiting_payment', anchoredAt: '2026-01-01T00:00:00Z' });
+      const { deps, mocks } = fakeDeps({ cycleCountForMember: 0, openCycle: null, blocked: true });
+      mocks.findActiveForMember.mockResolvedValue(anchoredOpenCycle);
+      mocks.countCycles.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+      mocks.findOpenCycle.mockResolvedValueOnce(null).mockResolvedValueOnce(anchoredOpenCycle);
+
+      const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+      expect(r).toEqual({ kind: 'held_pending_admin', cycleId: anchoredOpenCycle.cycleId });
+      expect(mocks.insert).not.toHaveBeenCalled(); // skipped_active_exists — no insert
+      expect(mocks.transitionStatus).toHaveBeenCalledTimes(1);
+      expect(mocks.transitionStatus).toHaveBeenCalledWith(
+        SENTINEL_TX,
+        TENANT_ID,
+        anchoredOpenCycle.cycleId,
+        expect.objectContaining({ from: 'awaiting_payment', to: 'pending_admin_reactivation' }),
+      );
+      expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('held');
+    });
   });
 });
 
