@@ -180,12 +180,24 @@ export async function markCycleCompleteInTx(
       event,
       tx,
     );
+    // F2 fix (Task 5 review) — logging the raw `resolution` object here
+    // would nest a `reason` field (the `skipped` branch's discriminant)
+    // one level deep whenever the outcome is `skipped`. `src/lib/logger.ts`
+    // blacklists BOTH `reason`/`*.reason` AND `skipped_reason`/
+    // `skippedReason` for defence-in-depth against PCI/PII leakage via a
+    // gateway-error `reason` field — pino would silently redact it to
+    // `[REDACTED]`, losing the forensic signal this log line exists for.
+    // Flattened to neutral field names (`resolutionKind` / `resolutionCode`
+    // — neither is on the redact list) instead.
     logger.info(
       {
         invoiceId: event.invoiceId,
         tenantId: event.tenantId,
         memberId: event.memberId,
-        resolution,
+        resolutionKind: resolution.kind,
+        ...(resolution.kind === 'skipped'
+          ? { resolutionCode: resolution.reason }
+          : {}),
       },
       '[mark-cycle-complete] no F8 cycle linked to invoice — resolved via unlinked-payment hook',
     );
