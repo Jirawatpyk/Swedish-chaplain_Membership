@@ -277,12 +277,26 @@ export async function adminRenewLapsedMember(
   // VAT-exclusive price (server-sourced from the just-created cycle row),
   // NEVER a request body, because a renewal §86/4 is a price-tampering
   // surface on a tax document.
+  //
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — unlike
+  // confirm-renewal / mark-paid-offline (which bill the NEXT period after
+  // an already-open cycle completes), this fresh comeback cycle IS the
+  // period being billed — there is no predecessor open cycle to complete.
+  // Its period is already known (`periodFrom` = `clock.now()` set at
+  // Step-1 creation above), so the §86/4 prints the EXACT window
+  // (`periodFrom → periodTo`) instead of the generic "12 months from month
+  // of payment" fallback.
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycle.planIdAtCycleStart,
     planYear,
     frozenPlanPriceThb: cycle.frozenPlanPriceThb,
+    membershipCoverage: {
+      kind: 'window',
+      fromIso: cycle.periodFrom,
+      toIso: cycle.periodTo,
+    },
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,
