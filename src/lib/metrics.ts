@@ -2563,6 +2563,34 @@ export const renewalsMetrics = {
     },
   },
 
+  /**
+   * `renewals_unlinked_payment_resolved_total{outcome}` — Renewal
+   * rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238):
+   * outcome counter for `resolveUnlinkedMembershipPaymentInTx` (the
+   * unlinked-invoice on-paid hook fired from `markCycleCompleteInTx`'s
+   * `no_cycle_for_invoice` branch). `outcome` ∈ `reanchored` (first
+   * payment re-anchored a never-before-paid cycle) | `renewed` (open
+   * cycle completed + next cycle rolled forward) | `healed` (zero-cycle
+   * member self-healed a fresh anchored cycle) | `skipped` (event-fee
+   * invoice / GDPR-erased member / terminal-only member / lost a
+   * create-or-reanchor race / degraded non-atomic-tx mode refused to
+   * run). Mirrors the `remindersSkipped(reason)` shape (single bounded-
+   * enum label, no tenant dimension — cardinality stays small).
+   * Dashboard use: a sustained `skipped` share materially above baseline
+   * signals either a wave of ad-hoc admin invoices for erased/lapsed
+   * members, or (rarer) the degraded-mode F4-contract-drift path firing.
+   */
+  unlinkedPaymentResolved(
+    outcome: 'reanchored' | 'renewed' | 'healed' | 'skipped',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_unlinked_payment_resolved_total',
+        'F8 unlinked-invoice on-paid hook resolution outcome (rolling-anchor refactor)',
+      ).add(1, { outcome });
+    });
+  },
+
   // ==========================================================================
   // F8 Phase 9 / T231 — business-volume counters per spec FR-054 + § 23.1
   //
