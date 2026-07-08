@@ -573,7 +573,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
               WHERE status = 'issued'
                 AND created_at < NOW() - INTERVAL '30 days'
             ) AS overdue_count,
-            MAX(paid_at) AS last_paid_at
+            MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited')) AS last_paid_at
           FROM invoices
           -- Phase 6 review I7 — explicit tenant_id filter as
           -- defence-in-depth atop RLS. Constitution Principle I 2-layer

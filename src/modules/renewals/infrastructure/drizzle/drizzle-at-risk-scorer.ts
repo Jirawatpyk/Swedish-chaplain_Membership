@@ -149,7 +149,7 @@ export function makeDrizzleAtRiskScorer(
             WHERE status = 'issued'
               AND created_at < NOW() - INTERVAL '30 days'
           )::text AS overdue_count,
-          MAX(paid_at) AS last_paid_at
+          MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited')) AS last_paid_at
         FROM ${invoices}
         WHERE member_id = ${memberId}
           -- I7 defence-in-depth: invoices has a strict isolating RLS policy
