@@ -260,6 +260,8 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
           kind: invoiceLines.kind,
           totalSatang: invoiceLines.totalSatang,
           proRateFactor: invoiceLines.proRateFactor,
+          descriptionTh: invoiceLines.descriptionTh,
+          descriptionEn: invoiceLines.descriptionEn,
         })
         .from(invoiceLines)
         .where(
@@ -277,6 +279,23 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
     expect(BigInt(membershipLine!.totalSatang)).toBe(FROZEN_SUBTOTAL_SATANG);
     // Full cycle on the renewal path.
     expect(membershipLine!.proRateFactor).toBe('1.0000');
+
+    // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — this
+    // member has a TERMINAL predecessor cycle (seeded above), so the
+    // payment classifies as `renewal` (not `first_payment`). `mark-paid-
+    // offline` must thread the LOCKED cycle's exact NEXT-period window
+    // (`periodTo` 2027-06-01 → `periodTo + frozenPlanTermMonths` (12) =
+    // 2028-06-01) into `createInvoiceDraft`'s `membershipCoverage`, so the
+    // §86/4 line prints the EXACT window — not the generic "from payment"
+    // text (which would print if the coverage signal were dropped) and
+    // NOT the old FY-boundary "ปี {year}" text (dropped by this refactor).
+    expect(membershipLine!.descriptionTh).toContain(
+      '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+    );
+    expect(membershipLine!.descriptionEn).toContain(
+      '(coverage 2027-06-01 to 2028-06-01)',
+    );
+    expect(membershipLine!.descriptionTh).not.toContain('ปี ');
 
     // (2) NO registration_fee line on the renewal path (suppressed) even
     // though registrationFeePaid=false + the tenant has a non-zero reg fee.

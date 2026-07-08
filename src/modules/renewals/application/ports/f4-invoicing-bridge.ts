@@ -1,6 +1,7 @@
 import type { Satang, ThbDecimal } from '@/lib/money';
 import type {
   CreateInvoiceDraftError,
+  CreateInvoiceDraftInput,
   IssueInvoiceError,
 } from '@/modules/invoicing';
 
@@ -47,6 +48,18 @@ export interface IssueInvoiceForRenewalInput {
    * 068 speckit-review).
    */
   readonly frozenPlanPriceThb: ThbDecimal;
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — the
+   * exact coverage window for the renewal §86/4, threaded verbatim into
+   * `createInvoiceDraft`'s `membershipCoverage`. `confirm-renewal.ts`
+   * ALWAYS supplies `{ kind: 'window', fromIso, toIso }` — the cycle's
+   * known NEXT-period bounds (`periodTo → periodTo +
+   * frozenPlanTermMonths`) — because a confirm-renewal cycle already has
+   * a defined period. Optional (not every bridge caller has resolved a
+   * window yet) — omitted, `createInvoiceDraft` falls back to its own
+   * default (`{ kind: 'from_payment' }`).
+   */
+  readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;

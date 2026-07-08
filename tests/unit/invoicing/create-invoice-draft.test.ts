@@ -243,26 +243,43 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
   });
 
   // 088 T036 (FR-011) — the membership line description MUST include the plan
-  // name and the coverage period. Forward-only issue-time (draft-time) DATA
-  // change: the description string is composed here and stored on the invoice
-  // line; the PDF template renders the STORED text verbatim, so historical
-  // drafts keep their old description and only NEW drafts get plan + period.
+  // name. Forward-only issue-time (draft-time) DATA change: the description
+  // string is composed here and stored on the invoice line; the PDF template
+  // renders the STORED text verbatim, so historical drafts keep their old
+  // description and only NEW drafts get the plan + coverage wording.
+  //
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — the
+  // FY-boundary coverage text these three tests originally asserted is GONE
+  // (it contradicted TSCC's rolling-12-months policy). Default text is now
+  // `from_payment` (generic "12 months from month of payment"); a caller
+  // that HAS resolved an exact period (e.g. an F8 renewal bridge) opts in
+  // via `membershipCoverage: { kind: 'window', … }`, which these tests now
+  // pass explicitly to keep covering the plan-name + coverage-composition
+  // logic (see the `membershipCoverage` describe block below for the
+  // default-text + no-planYear-token assertions).
   describe('088 FR-011 — membership line description = plan name + coverage period', () => {
-    it('full-cycle draft → description carries the plan name + the fiscal-year coverage dates (both locales)', async () => {
+    it('full-cycle draft (window coverage) → description carries the plan name + the exact window dates (both locales)', async () => {
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
         makeMember({ registrationDate: '2024-06-01' }), // returning → factor 1.0000
         1_600_000n,
       );
-      const result = await createInvoiceDraft(deps, baseInput); // planYear 2026, clock 2026-01-15
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: {
+          kind: 'window',
+          fromIso: '2026-01-01',
+          toIso: '2026-12-31',
+        },
+      }); // planYear 2026, clock 2026-01-15
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         // Plan name (resolved via planLookup.getPlanName).
         expect(line.descriptionEn).toContain('Regular Member');
         expect(line.descriptionTh).toContain('สมาชิกสามัญ');
-        // Coverage period — the fiscal-year boundary dates (Gregorian ISO,
-        // storage-safe; BE is display-only). FY start month 1 → full 2026.
+        // Coverage period — the caller-supplied exact window (Gregorian ISO,
+        // storage-safe; BE is display-only).
         expect(line.descriptionEn).toContain('2026-01-01');
         expect(line.descriptionEn).toContain('2026-12-31');
         expect(line.descriptionTh).toContain('2026-01-01');
@@ -270,14 +287,21 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       }
     });
 
-    it('pro-rated draft → description keeps the pro-rate detail AND carries plan name + coverage period', async () => {
+    it('pro-rated draft (window coverage) → description keeps the pro-rate detail AND carries plan name + coverage period', async () => {
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
         makeMember({ registrationDate: '2026-07-15' }),
         1_600_000n,
         { clock: { nowIso: () => '2026-07-15T10:00:00Z' } },
       );
-      const result = await createInvoiceDraft(deps, baseInput);
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: {
+          kind: 'window',
+          fromIso: '2026-01-01',
+          toIso: '2026-12-31',
+        },
+      });
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
@@ -288,11 +312,12 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       }
     });
 
-    it('early renewal (issued in a prior FY for a FUTURE planYear) → coverage = planYear FY, NOT wall-clock now (US4 review HIGH)', async () => {
+    it('early renewal (window coverage for a FUTURE period) → coverage = caller-supplied window, NOT wall-clock now (US4 review HIGH)', async () => {
       // A member renews their FY2027 cycle in Dec 2026 (renewal reminders fire
-      // before expiry). The §86/4 coverage MUST read FY2027, not the FY that
-      // contains "now" — else the legal document is self-contradictory
-      // ("Membership 2027 (coverage 2026-01-01 to 2026-12-31)").
+      // before expiry). The §86/4 coverage MUST read the caller-resolved
+      // window, not the FY that contains "now" — else the legal document is
+      // self-contradictory ("Membership (coverage 2026-01-01 to 2026-12-31)"
+      // printed on a document billed in advance for 2027).
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'monthly', fiscalYearStartMonth: 1 }),
         makeMember({ registrationDate: '2024-06-01', registrationFeePaid: true }),
@@ -303,6 +328,11 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         ...baseInput,
         planYear: 2027,
         renewalSignal: { unitPriceSatang: 5_000_000n },
+        membershipCoverage: {
+          kind: 'window',
+          fromIso: '2027-01-01',
+          toIso: '2027-12-31',
+        },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -311,6 +341,90 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         expect(line.descriptionTh).toContain('2027-01-01 ถึง 2027-12-31');
         // The bug printed the FY containing "now" (2026) on a FY2027 document.
         expect(line.descriptionEn).not.toContain('coverage 2026-01-01');
+      }
+    });
+  });
+
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) —
+  // `membershipCoverage` text-builder unit coverage: both kinds, TH+EN,
+  // NO standalone "ปี {planYear}" token in either, stored verbatim on the
+  // line, and the `window` path formats BOTH dates (including truncating a
+  // full ISO timestamp to YYYY-MM-DD via `.slice(0, 10)`).
+  describe('membershipCoverage — rolling-anchor coverage text (Task 8)', () => {
+    it('default (no membershipCoverage input) → from_payment wording, both locales, NO planYear token', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        makeMember({ registrationDate: '2024-06-01' }),
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, baseInput); // no membershipCoverage
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก สมาชิกสามัญ (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+        );
+        expect(line.descriptionEn).toBe(
+          'Membership Regular Member (12 months, effective from the month of payment)',
+        );
+        expect(line.descriptionTh).not.toContain('ปี ');
+        expect(line.descriptionEn).not.toContain(String(baseInput.planYear));
+      }
+    });
+
+    it('explicit { kind: "from_payment" } → identical to the default wording', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        makeMember({ registrationDate: '2024-06-01' }),
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: { kind: 'from_payment' },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก สมาชิกสามัญ (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+        );
+        expect(line.descriptionEn).toBe(
+          'Membership Regular Member (12 months, effective from the month of payment)',
+        );
+      }
+    });
+
+    it('{ kind: "window" } → exact dates on both locales, stored verbatim, NO planYear token, formats a full ISO timestamp via slice(0,10)', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        makeMember({ registrationDate: '2024-06-01' }),
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: {
+          kind: 'window',
+          fromIso: '2027-06-01T00:00:00.000Z', // full ISO timestamp — must be sliced to date-only
+          toIso: '2028-06-01T00:00:00.000Z',
+        },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก สมาชิกสามัญ (ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+        );
+        expect(line.descriptionEn).toBe(
+          'Membership Regular Member (coverage 2027-06-01 to 2028-06-01)',
+        );
+        expect(line.descriptionTh).not.toContain('ปี ');
+        expect(line.descriptionEn).not.toContain(String(baseInput.planYear));
+        // Stored verbatim on the persisted invoice line (insertDraft args).
+        const stored = (deps as unknown as { _capturedLines: () => Invoice['lines'] })
+          ._capturedLines()
+          .find((l) => l.kind === 'membership_fee')!;
+        expect(stored.descriptionTh).toBe(line.descriptionTh);
+        expect(stored.descriptionEn).toBe(line.descriptionEn);
       }
     });
   });

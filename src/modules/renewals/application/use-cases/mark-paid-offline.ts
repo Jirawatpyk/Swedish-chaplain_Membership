@@ -303,6 +303,24 @@ export async function markPaidOffline(
         lockedCycle.frozenPlanTermMonths,
       );
 
+      // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — a
+      // RENEWAL-classified payment already knows the exact NEXT-period
+      // window (the locked cycle's `periodTo → periodTo +
+      // frozenPlanTermMonths`, i.e. `newExpiresAt` above) — thread it into
+      // the F4 bridge so the §86/4 prints exact dates instead of the
+      // generic "12 months from payment" wording. A first-payment
+      // classification omits it entirely — `createInvoiceDraft` defaults
+      // to `{ kind: 'from_payment' }` because the re-anchored period
+      // doesn't exist yet at invoice-creation time (the re-anchor itself
+      // only happens inside `onPaid` below, AFTER the bridge call).
+      const membershipCoverage = isFirstPayment
+        ? undefined
+        : ({
+            kind: 'window' as const,
+            fromIso: lockedCycle.periodTo,
+            toIso: newExpiresAt,
+          });
+
       // F4 chain — bridge composes createInvoiceDraft + issueInvoice +
       // recordPayment(externalTx=tx). The `onPaid` callback fires inside
       // F4's recordPayment tx (which IS our outer tx via externalTx),
@@ -487,6 +505,9 @@ export async function markPaidOffline(
         // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
         // path. (cluster A, 068 code-review fix.)
         frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
+        // exactOptionalPropertyTypes — omit the key entirely on the
+        // first-payment branch rather than assign an explicit `undefined`.
+        ...(membershipCoverage !== undefined ? { membershipCoverage } : {}),
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,

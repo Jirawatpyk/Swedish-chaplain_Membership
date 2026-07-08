@@ -67,6 +67,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { addMonthsUtc } from '@/lib/dates';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
@@ -425,12 +426,28 @@ export async function confirmRenewal(
   // AND off-by-one for cycles whose period crosses a calendar-year edge.)
   const planYear = deriveFiscalYear(cycleAfterPlanChange.periodFrom);
 
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — a
+  // confirm-renewal cycle always has a defined period, so the §86/4
+  // prints the EXACT NEXT-period window (`periodTo → periodTo +
+  // frozenPlanTermMonths`) instead of the generic "from payment" default.
+  // CAREFUL: this bills the period STARTING at the open cycle's
+  // `periodTo` (the current cycle completes on payment; the invoice
+  // covers the cycle that gets created next), NOT `periodFrom →
+  // periodTo` (the cycle's OWN, already-elapsing period).
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycleAfterPlanChange.planIdAtCycleStart,
     planYear,
     frozenPlanPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
+    membershipCoverage: {
+      kind: 'window',
+      fromIso: cycleAfterPlanChange.periodTo,
+      toIso: addMonthsUtc(
+        cycleAfterPlanChange.periodTo,
+        cycleAfterPlanChange.frozenPlanTermMonths,
+      ),
+    },
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,
