@@ -30,12 +30,14 @@ import {
   expect,
   it,
 } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { asSatang } from '@/lib/money';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import {
   broadcasts,
@@ -258,5 +260,292 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
     expect(
       result.contributions.some((c) => c.factor === 'e_blast_quota_under_30pct'),
     ).toBe(true);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------
+  // Review Task 11 — F-3 status filter: MAX(paid_at) FILTER (WHERE status
+  // IN ('paid','partially_credited')) in BOTH scorers (commit 2d1e348d).
+  // Closes the test-coverage gap the review flagged: the fix shipped with
+  // zero integration coverage. These 3 tests seed real invoices through
+  // the fully-credited / partially-credited transitions and assert the
+  // filtered MAX against both the batch CTE (`gatherAtRiskFactorsForTenant`
+  // → `lastPaidAtIso`) and the single-member scorer (`scoreMember` →
+  // `days_since_last_payment_gt_180` contribution).
+  // ---------------------------------------------------------------------
+
+  /**
+   * Seed an ACTIVE member with a non-lapsed renewal cycle so the batch
+   * CTE's `WHERE m.status='active' AND EXISTS(non-lapsed cycle)` admits
+   * it (mirrors `at-risk-scorer-convergence.test.ts`'s `seedActiveMember`).
+   * Backdated `created_at` clears the FR-035 min-tenure gate.
+   */
+  async function seedActiveMemberWithCycle(planId: string): Promise<string> {
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: `F-3 Co ${memberId.slice(0, 6)}`,
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        createdAt: new Date(NOW_MS - 365 * MS_PER_DAY),
+        lastActivityAt: new Date(NOW_MS - 30 * MS_PER_DAY),
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'F3',
+        lastName: 'Payer',
+        email: `f3-${memberId.slice(0, 6)}@acme.example`,
+        isPrimary: true,
+        preferredLanguage: 'en',
+      });
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'upcoming',
+        periodFrom: new Date(NOW_MS - 30 * MS_PER_DAY),
+        periodTo: new Date(NOW_MS + 335 * MS_PER_DAY),
+        expiresAt: new Date(NOW_MS + 335 * MS_PER_DAY),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+      });
+    });
+    return memberId;
+  }
+
+  /**
+   * Insert a paid invoice for `memberId`, then (optionally) transition it
+   * to `credited` (fully) or `partially_credited` via a follow-up UPDATE —
+   * mirroring how the real F4 credit-note flow leaves `paid_at` untouched
+   * (it is a forensic record of when the ORIGINAL payment landed, not of
+   * the credit event). Always inserts as `status='paid'` first to satisfy
+   * `invoices_paid_has_payment` (paid_at + payment_method) and
+   * `invoices_paid_has_receipt_status` (receipt_pdf_status NOT NULL); the
+   * follow-up UPDATE only needs to satisfy `invoices_credited_status_matches`
+   * (migration 0019): credited_total_satang must equal total_satang for
+   * `credited`, and be strictly between 0 and total_satang for
+   * `partially_credited`.
+   */
+  async function seedInvoiceWithPaymentStatus(
+    memberId: string,
+    planId: string,
+    opts: {
+      readonly finalStatus: 'paid' | 'credited' | 'partially_credited';
+      readonly paidAtMs: number;
+    },
+  ): Promise<string> {
+    const invoiceId = randomUUID();
+    const totalSatang = 5_350_000n;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        status: 'paid',
+        pdfDocKind: 'invoice',
+        receiptPdfStatus: 'rendered',
+        draftByUserId: user.userId,
+        fiscalYear: 2026,
+        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+        issueDate: '2026-08-01',
+        dueDate: '2026-08-31',
+        currency: 'THB',
+        subtotalSatang: asSatang(5_000_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(totalSatang),
+        proRatePolicySnapshot: 'whole_year',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'F-3 Payer Co',
+          country: 'TH',
+          legal_name: 'F-3 Payer Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'f3-payer@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'F3-STATUS-FILTER-TEST',
+        paymentRecordedByUserId: user.userId,
+        paymentDate: new Date(opts.paidAtMs).toISOString().slice(0, 10),
+        paidAt: new Date(opts.paidAtMs),
+      });
+
+      if (opts.finalStatus !== 'paid') {
+        // Fully credited ⇒ credited_total_satang === total_satang.
+        // Partially credited ⇒ strictly between 0 and total_satang.
+        const creditedTotal =
+          opts.finalStatus === 'credited' ? totalSatang : totalSatang / 2n;
+        await tx
+          .update(invoices)
+          .set({
+            status: opts.finalStatus,
+            creditedTotalSatang: asSatang(creditedTotal),
+          })
+          .where(
+            and(
+              eq(invoices.tenantId, tenant.ctx.slug),
+              eq(invoices.invoiceId, invoiceId),
+            ),
+          );
+      }
+    });
+    return invoiceId;
+  }
+
+  /** Batch-scorer row for `memberId`, via the same CTE the weekly recompute uses. */
+  async function batchRowFor(memberId: string) {
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      deps.memberRenewalFlagsRepo.gatherAtRiskFactorsForTenant(
+        tx,
+        tenant.ctx.slug,
+      ),
+    );
+    const row = rows.find((r) => r.memberId === memberId);
+    if (row === undefined) {
+      throw new Error(
+        `batch gather returned no row for member ${memberId} — is the member active with a non-lapsed renewal cycle?`,
+      );
+    }
+    return row;
+  }
+
+  it('F-3: a fully CREDITED invoice is excluded from lastPaidAtIso (batch scorer) and does not fire days_since_last_payment (single scorer)', async () => {
+    // Member's ONLY invoice was paid 200 days ago, then fully credited
+    // (refunded). Post-fix, the FILTER excludes 'credited' rows from
+    // MAX(paid_at) entirely — there is no live payment on record at all,
+    // so both the batch row's `lastPaidAtIso` AND the single scorer's
+    // `daysSinceLastPayment` input come back with no signal (undefined),
+    // and the Domain function skips the `days_since_last_payment_gt_180`
+    // contribution rather than treating "no live payment" as "very stale".
+    const planId = `f3-credited-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'F-3 Credited Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMemberWithCycle(planId);
+    await seedInvoiceWithPaymentStatus(memberId, planId, {
+      finalStatus: 'credited',
+      paidAtMs: NOW_MS - 200 * MS_PER_DAY,
+    });
+
+    const row = await batchRowFor(memberId);
+    expect(row.lastPaidAtIso).toBeNull();
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const single = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      single.contributions.some(
+        (c) => c.factor === 'days_since_last_payment_gt_180',
+      ),
+    ).toBe(false);
+  }, 60_000);
+
+  it('F-3: a stale live payment is NOT masked by a more-recent fully-credited invoice (single + batch convergence)', async () => {
+    // Invoice A: paid 200 days ago, remains `paid` (live, unrefunded).
+    // Invoice B: paid 5 days ago, then FULLY credited (refunded) — a more
+    // recent payment that was subsequently reversed. Pre-fix, an
+    // unfiltered MAX(paid_at) picks the literal largest timestamp
+    // regardless of status — invoice B's recent-but-reversed paid_at —
+    // which would WRONGLY mask the member's true (stale, >180d) last live
+    // payment and suppress the at-risk signal. Post-fix, the FILTER drops
+    // invoice B from the aggregate and the stale invoice A correctly wins.
+    const planId = `f3-mask-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'F-3 Masking Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMemberWithCycle(planId);
+    const staleLivePaidAtMs = NOW_MS - 200 * MS_PER_DAY;
+    await seedInvoiceWithPaymentStatus(memberId, planId, {
+      finalStatus: 'paid',
+      paidAtMs: staleLivePaidAtMs,
+    });
+    await seedInvoiceWithPaymentStatus(memberId, planId, {
+      finalStatus: 'credited',
+      paidAtMs: NOW_MS - 5 * MS_PER_DAY,
+    });
+
+    const row = await batchRowFor(memberId);
+    expect(row.lastPaidAtIso).toBe(new Date(staleLivePaidAtMs).toISOString());
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const single = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      single.contributions.some(
+        (c) => c.factor === 'days_since_last_payment_gt_180',
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it('F-3: a PARTIALLY credited invoice still counts as a live payment (single + batch)', async () => {
+    // Member's ONLY invoice was paid 5 days ago and later partially
+    // credited (a partial refund/adjustment, not a full reversal). The
+    // FILTER's `status IN ('paid','partially_credited')` keeps this row
+    // in the MAX aggregate — the member DID make a live payment, so both
+    // scorers must treat it as recent (healthy), not stale.
+    const planId = `f3-partial-${randomUUID().slice(0, 6)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'F-3 Partial Credit Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    const memberId = await seedActiveMemberWithCycle(planId);
+    const recentPaidAtMs = NOW_MS - 5 * MS_PER_DAY;
+    await seedInvoiceWithPaymentStatus(memberId, planId, {
+      finalStatus: 'partially_credited',
+      paidAtMs: recentPaidAtMs,
+    });
+
+    const row = await batchRowFor(memberId);
+    expect(row.lastPaidAtIso).toBe(new Date(recentPaidAtMs).toISOString());
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const single = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      single.contributions.some(
+        (c) => c.factor === 'days_since_last_payment_gt_180',
+      ),
+    ).toBe(false);
   }, 60_000);
 });
