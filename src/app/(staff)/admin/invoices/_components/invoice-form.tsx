@@ -21,13 +21,15 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition, useMemo } from 'react';
+import { useEffect, useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
+import { addMonthsUtc } from '@/lib/dates';
 import { SearchableCombobox } from './searchable-combobox';
 import type { ComboboxOption } from './searchable-combobox';
 
@@ -49,6 +51,161 @@ function formatSatang(satang: number): string {
   const rem = satang % 100;
   // N11 — explicit 'en-US' pins thousand-separator output. FR-005.
   return `${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Task 9 (renewal-rolling-anchor design 2026-07-08 §3b) — wire shape
+ * returned by `GET /api/invoices/member-renewal-context`. Deliberately a
+ * plain client-side mirror of `MemberRenewalContext` (the server module
+ * imports `runInTenant` + Drizzle-backed repos and cannot be imported into
+ * this `'use client'` file) — same decoupling convention as
+ * `AttendeeRow` in `event-attendee-picker.tsx`.
+ */
+export type RenewalContextDto = {
+  readonly classification:
+    | { readonly kind: 'first_payment' }
+    | { readonly kind: 'renewal' }
+    | { readonly kind: 'heal_no_cycle' }
+    | { readonly kind: 'not_applicable'; readonly reason: 'erased' | 'terminal_only' };
+  readonly periodTo: string | null;
+  readonly termMonths: number | null;
+  readonly hasUnpaidMembershipInvoice: boolean;
+};
+
+/** `YYYY-MM-DD` slice (dates are ISO instants or date-only strings); '—' when absent — same missing-value convention used across the admin app. */
+function formatPeriodDate(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : '—';
+}
+
+/** Maps the classifier's 4 kinds onto the 3 i18n copy variants (spec §3b groups `first_payment` + `heal_no_cycle` under one "not started yet" message). */
+function renewalContextMessageKey(
+  kind: RenewalContextDto['classification']['kind'],
+): 'renewal' | 'firstPayment' | 'notApplicable' {
+  if (kind === 'renewal') return 'renewal';
+  if (kind === 'first_payment' || kind === 'heal_no_cycle') return 'firstPayment';
+  return 'notApplicable';
+}
+
+/**
+ * Duplicate-billing warning condition (spec §3b): an existing unpaid
+ * membership invoice, OR (for a renewal-classified member) a current period
+ * end more than 6 months away — either way "another paid bill buys a
+ * further year", which is legitimate, so this warns but never blocks.
+ * `todayIso` is injected (not read via `new Date()` internally) so the
+ * threshold is unit-testable without faking the system clock — mirrors
+ * `isPastVatFilingDeadline` in `event-fee-form.tsx`.
+ */
+export function shouldShowRenewalDuplicateWarning(
+  context: Pick<RenewalContextDto, 'classification' | 'periodTo' | 'hasUnpaidMembershipInvoice'>,
+  todayIso: string,
+): boolean {
+  if (context.hasUnpaidMembershipInvoice) return true;
+  if (context.classification.kind !== 'renewal' || context.periodTo === null) return false;
+  // Lexicographic compare is chronological for YYYY-MM-DD-prefixed strings.
+  return context.periodTo.slice(0, 10) > addMonthsUtc(todayIso, 6).slice(0, 10);
+}
+
+/**
+ * Renewal-context informational line + duplicate-billing warning (spec
+ * §3b). Presentational-only — the parent owns the fetch; this component
+ * just renders a resolved `RenewalContextDto`. Exported so the component
+ * test can render each classification variant directly without mocking
+ * `fetch`.
+ */
+export function RenewalContextPanel({ context }: { readonly context: RenewalContextDto }) {
+  const t = useTranslations('admin.invoices.form.renewalContext');
+  const messageKey = renewalContextMessageKey(context.classification.kind);
+  const toIso =
+    context.periodTo !== null && context.termMonths !== null
+      ? addMonthsUtc(context.periodTo, context.termMonths)
+      : null;
+  const contextText =
+    messageKey === 'renewal'
+      ? t('renewal', {
+          periodTo: formatPeriodDate(context.periodTo),
+          from: formatPeriodDate(context.periodTo),
+          to: formatPeriodDate(toIso),
+        })
+      : t(messageKey);
+  // Computed at render, never during SSR — this panel only mounts once the
+  // client-side fetch resolves (see `CreateDraftForm`), so there is no
+  // hydration-mismatch risk from reading the wall clock here.
+  const todayIso = new Date().toISOString();
+  const showWarning = shouldShowRenewalDuplicateWarning(context, todayIso);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p
+        className="flex items-start gap-2 text-xs text-muted-foreground"
+        data-testid="renewal-context-line"
+      >
+        <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+        <span>{contextText}</span>
+      </p>
+      {showWarning && (
+        <Alert
+          role="status"
+          data-testid="renewal-duplicate-warning"
+          className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          <TriangleAlertIcon className="size-4" aria-hidden="true" />
+          <AlertDescription className="text-amber-900 dark:text-amber-200">
+            {t('duplicateWarning', { periodTo: formatPeriodDate(context.periodTo) })}
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Fetches the member's renewal context and drives `RenewalContextPanel`.
+ * Owns its own loading state (renders nothing until resolved — advisory
+ * only, non-blocking; see `RenewalContextPanel` docstring). The parent
+ * MUST key this component by `memberId` (`key={memberId}`) so a new
+ * selection REMOUNTS the loader — `context` resets to `null` via the
+ * initial state, avoiding a synchronous `setState` inside the effect body
+ * (mirrors `EventAttendeePickerLoader`'s established convention in
+ * `event-attendee-picker.tsx`).
+ */
+function RenewalContextLoader({ memberId }: { readonly memberId: string }) {
+  const [context, setContext] = useState<RenewalContextDto | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/invoices/member-renewal-context?memberId=${encodeURIComponent(memberId)}`,
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          classification: RenewalContextDto['classification'];
+          period_to: string | null;
+          term_months: number | null;
+          has_unpaid_membership_invoice: boolean;
+        };
+        if (!cancelled) {
+          setContext({
+            classification: body.classification,
+            periodTo: body.period_to,
+            termMonths: body.term_months,
+            hasUnpaidMembershipInvoice: body.has_unpaid_membership_invoice,
+          });
+        }
+      } catch {
+        // Silent — advisory panel just stays hidden (non-blocking; the
+        // server independently re-derives the SAME classification at
+        // draft-create time in route.ts).
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [memberId]);
+
+  if (context === null) return null;
+  return <RenewalContextPanel context={context} />;
 }
 
 export function CreateDraftForm({
@@ -173,6 +330,8 @@ export function CreateDraftForm({
           </div>
         </div>
       )}
+
+      {selectedMember && <RenewalContextLoader key={memberId} memberId={memberId} />}
 
       <div className="flex justify-end gap-3">
         <Button
