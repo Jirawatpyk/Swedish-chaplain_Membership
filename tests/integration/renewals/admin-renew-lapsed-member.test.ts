@@ -222,6 +222,8 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
   }
 

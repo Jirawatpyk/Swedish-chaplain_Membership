@@ -146,6 +146,8 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
   }
 

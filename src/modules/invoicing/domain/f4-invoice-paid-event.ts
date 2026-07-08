@@ -127,4 +127,13 @@ export interface F4InvoicePaidEvent {
    * (preserves backward-compat for existing F4 admin paths).
    */
   readonly triggeredBy: F4InvoicePaidTrigger;
+  /** Invoice subject partition — F8's hook acts ONLY on 'membership'. REQUIRED so the compiler forces every emit site. */
+  readonly invoiceSubject: 'membership' | 'event';
+  /**
+   * Admin-entered actual payment date (YYYY-MM-DD, Bangkok business date)
+   * when the rail carries one (record-payment / mark-paid-offline);
+   * null on rails where only paidAt exists (Stripe webhook). Rolling-anchor
+   * consumers prefer this over paidAt (recording lag on bank transfers).
+   */
+  readonly paymentDate: string | null;
 }

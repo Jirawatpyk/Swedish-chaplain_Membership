@@ -72,6 +72,8 @@ function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidE
     currency: 'THB',
     paymentMethod: 'stripe_card',
     triggeredBy: 'webhook',
+    invoiceSubject: 'membership',
+    paymentDate: null,
     ...overrides,
   };
 }

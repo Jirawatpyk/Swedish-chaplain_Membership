@@ -39,7 +39,14 @@ function nextMemberNumber(): number {
 
 const F4_PAID_DEFAULTS: Pick<
   F4InvoicePaidEvent,
-  'paidAt' | 'amountSatang' | 'vatSatang' | 'currency' | 'paymentMethod' | 'triggeredBy'
+  | 'paidAt'
+  | 'amountSatang'
+  | 'vatSatang'
+  | 'currency'
+  | 'paymentMethod'
+  | 'triggeredBy'
+  | 'invoiceSubject'
+  | 'paymentDate'
 > = {
   paidAt: '2026-05-07T08:00:00Z',
   amountSatang: asSatang(5_000_000n),
@@ -47,6 +54,8 @@ const F4_PAID_DEFAULTS: Pick<
   currency: 'THB',
   paymentMethod: 'stripe_card',
   triggeredBy: 'webhook',
+  invoiceSubject: 'membership',
+  paymentDate: null,
 };
 
 describe('F8 auto-reactivation excludes erased members (COMP-1 H4)', () => {

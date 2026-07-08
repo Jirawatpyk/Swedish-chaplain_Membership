@@ -1084,6 +1084,8 @@ export async function recordPayment(
         currency: loaded.currency,
         paymentMethod: eventPaymentMethod,
         triggeredBy: eventTrigger,
+        invoiceSubject: loaded.invoiceSubject,
+        paymentDate: input.paymentDate ?? null,
       };
       for (const cb of callbacks) {
         // I3 review-fix: thread the F4-internal tx so listeners can

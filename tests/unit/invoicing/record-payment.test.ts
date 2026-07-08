@@ -907,6 +907,13 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
     expect(onPaid).toHaveBeenCalledTimes(1);
+    // Rolling-anchor field (renewal-rolling-anchor task 3): an EVENT
+    // invoice's onPaid event always carries invoiceSubject='event' — the
+    // F8 hook skips it before ever reading paymentDate.
+    expect(onPaid).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceSubject: 'event' }),
+      expect.anything(),
+    );
 
     const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
       ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',

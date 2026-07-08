@@ -273,6 +273,8 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
               currency: 'THB',
               paymentMethod: input.paymentMethod,
               triggeredBy: 'admin_offline_mark',
+              invoiceSubject: 'membership',
+              paymentDate: input.paymentDate,
             });
           }
           return { ok: true, value: { invoiceId, paidAt } };

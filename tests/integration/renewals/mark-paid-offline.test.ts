@@ -306,6 +306,8 @@ describe('F8 markPaidOffline — integration (T077)', () => {
             currency: 'THB',
             paymentMethod: input.paymentMethod,
             triggeredBy: 'admin_offline_mark',
+            invoiceSubject: 'membership',
+            paymentDate: input.paymentDate,
           });
         }
         return {
@@ -477,6 +479,8 @@ describe('F8 markPaidOffline — integration (T077)', () => {
               currency: 'THB',
               paymentMethod: input.paymentMethod,
               triggeredBy: 'admin_offline_mark',
+              invoiceSubject: 'membership',
+              paymentDate: input.paymentDate,
             });
           }
           return {
@@ -619,6 +623,8 @@ describe('F8 markPaidOffline — integration (T077)', () => {
             currency: 'THB',
             paymentMethod: 'bank_transfer',
             triggeredBy: 'admin_offline_mark',
+            invoiceSubject: 'membership',
+            paymentDate: '2026-05-15',
           },
           tx,
         );

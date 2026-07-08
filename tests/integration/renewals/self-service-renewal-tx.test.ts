@@ -76,11 +76,15 @@ const F4_PAID_DEFAULTS: Pick<
   | 'currency'
   | 'paymentMethod'
   | 'triggeredBy'
+  | 'invoiceSubject'
+  | 'paymentDate'
 > = {
   paidAt: '2026-05-07T08:00:00Z',
   amountSatang: asSatang(5_000_000n),
   vatSatang: asSatang(350_000n),
   currency: 'THB',
+  invoiceSubject: 'membership',
+  paymentDate: null,
   paymentMethod: 'stripe_card',
   triggeredBy: 'webhook',
 };

@@ -34,12 +34,16 @@ describe('F4InvoicePaidEvent — type contract', () => {
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
     expect(ev.tenantId).toBe('test-swecham');
     expect(ev.currency).toBe('THB');
     expect(ev.triggeredBy).toBe('webhook');
     expect(typeof ev.amountSatang).toBe('bigint');
     expect(typeof ev.vatSatang).toBe('bigint');
+    expect(ev.invoiceSubject).toBe('membership');
+    expect(ev.paymentDate).toBeNull();
   });
 
   it('compiles + roundtrips a valid admin_manual-origin event', () => {
@@ -53,9 +57,30 @@ describe('F4InvoicePaidEvent — type contract', () => {
       currency: 'THB',
       paymentMethod: 'bank_transfer',
       triggeredBy: 'admin_manual',
+      invoiceSubject: 'membership',
+      paymentDate: '2026-05-17',
     };
     expect(ev.paymentMethod).toBe('bank_transfer');
     expect(ev.triggeredBy).toBe('admin_manual');
+    expect(ev.paymentDate).toBe('2026-05-17');
+  });
+
+  it('accepts invoiceSubject "event" with paymentDate null (event-fee as-paid rail — F8 hook never reads this field for events)', () => {
+    const ev: F4InvoicePaidEvent = {
+      tenantId: 'test-swecham',
+      invoiceId: '550e8400-e29b-41d4-a716-446655440004',
+      memberId: '550e8400-e29b-41d4-a716-446655440005',
+      paidAt: '2026-05-17T14:00:00.000Z',
+      amountSatang: asSatang(214_000n),
+      vatSatang: asSatang(14_000n),
+      currency: 'THB',
+      paymentMethod: 'bank_transfer',
+      triggeredBy: 'admin_manual',
+      invoiceSubject: 'event',
+      paymentDate: null,
+    };
+    expect(ev.invoiceSubject).toBe('event');
+    expect(ev.paymentDate).toBeNull();
   });
 
   it('accepts all 6 F4InvoicePaidPaymentMethod variants', () => {

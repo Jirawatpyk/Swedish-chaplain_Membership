@@ -188,6 +188,8 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
             currency: 'THB',
             paymentMethod: input.paymentMethod,
             triggeredBy: 'admin_offline_mark',
+            invoiceSubject: 'membership',
+            paymentDate: input.paymentDate,
           });
         }
         return { ok: true, value: { invoiceId, paidAt } };

@@ -1480,6 +1480,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       currency: 'THB',
       paymentMethod: 'bank_transfer',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
     // Invoke via the no-tx fallback path: the apply opens its OWN
     // runInTenant + commits before the post-tx F2 finaliser runs (the
@@ -1563,6 +1565,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       currency: 'THB',
       paymentMethod: 'bank_transfer',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
@@ -1704,6 +1708,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       currency: 'THB',
       paymentMethod: 'bank_transfer',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
@@ -1892,6 +1898,8 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
       currency: 'THB',
       paymentMethod: 'bank_transfer',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);

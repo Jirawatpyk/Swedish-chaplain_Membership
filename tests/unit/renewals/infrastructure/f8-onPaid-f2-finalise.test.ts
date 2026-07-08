@@ -75,6 +75,8 @@ const baseEvent: F4InvoicePaidEvent = {
   currency: 'THB',
   paymentMethod: 'bank_transfer',
   triggeredBy: 'webhook',
+  invoiceSubject: 'membership',
+  paymentDate: null,
 };
 
 // R3 Batch 4e (R3-S6) — discriminated-union narrow at fixture boundary.

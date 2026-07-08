@@ -124,7 +124,7 @@ describe('F8 cross-module enum parity — Phase 10 / CHK040 close', () => {
     expect(new Set(F4_PAID_TRIGGERS).size).toBe(3);
   });
 
-  it('F4InvoicePaidEvent shape pins all 9 required fields', () => {
+  it('F4InvoicePaidEvent shape pins all 11 required fields', () => {
     // Compile-time check: any missing field on F4InvoicePaidEvent makes
     // this object literal fail to satisfy the type. Documents the
     // canonical shape for cross-module callers.
@@ -138,8 +138,10 @@ describe('F8 cross-module enum parity — Phase 10 / CHK040 close', () => {
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
-    expect(Object.keys(sample)).toHaveLength(9);
+    expect(Object.keys(sample)).toHaveLength(11);
     expect(sample.currency).toBe('THB'); // F4 is THB-only today
   });
 

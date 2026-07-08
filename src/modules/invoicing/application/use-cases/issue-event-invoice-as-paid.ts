@@ -767,6 +767,10 @@ export async function issueEventInvoiceAsPaid(
           currency: draft.currency,
           paymentMethod: input.paymentMethod,
           triggeredBy: 'admin_manual',
+          invoiceSubject: 'event' as const,
+          // Event fees never drive membership anchoring; the hook skips
+          // subject='event' before ever reading this field.
+          paymentDate: null,
         };
         for (const cb of callbacks) {
           await cb(evt, tx);

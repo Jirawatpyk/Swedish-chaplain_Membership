@@ -77,6 +77,8 @@ function buildEvent(): F4InvoicePaidEvent {
     currency: 'THB',
     paymentMethod: 'bank_transfer',
     triggeredBy: 'admin_offline_mark',
+    invoiceSubject: 'membership',
+    paymentDate: '2026-05-15',
   };
 }
 
