@@ -226,6 +226,12 @@ const F8_ENUM_SHIPPED_TUPLE = [
   // remaining 2 enum values graduate from `_F8_ENUM_DEFERRED` here.
   'escalation_task_skipped',
   'escalation_task_reassigned',
+  // --- Renewal rolling-anchor refactor (migration 0238) -----------------
+  // GRADUATED from `_F8_ENUM_DEFERRED` when the first emit sites shipped
+  // (Task 5): `resolveUnlinkedMembershipPaymentInTx`'s heal_no_cycle +
+  // first_payment branches. WHITELIST MOVE only — the pgEnum value shipped
+  // in migration 0238 alongside the anchor columns.
+  'renewal_cycle_reanchored',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
@@ -267,14 +273,11 @@ const _F8_ENUM_DEFERRED = [
   // (Phase 5 Wave B follow-up; current path emits at the F4 layer).
   // `renewal_schedule_rescheduled` graduated to F8_ENUM_SHIPPED_TUPLE
   // at Phase 7 verify-fix (migration 0118).
+  // `renewal_cycle_reanchored` GRADUATED to F8_ENUM_SHIPPED_TUPLE when
+  // its first emit sites shipped (rolling-anchor Task 5 —
+  // `resolveUnlinkedMembershipPaymentInTx`); pgEnum value from
+  // migration 0238.
   'renewal_payment_failed',
-  // Renewal rolling-anchor refactor (migration 0238) — pgEnum value +
-  // catalogue entry ship in this migration so the DB is ready, but the
-  // `classifyMembershipPayment` classifier + its settlement-site emit
-  // sites (unlinked-invoice hook, `markCycleCompleteInTx`,
-  // `mark-paid-offline`) land in a follow-up task. Graduate to
-  // `F8_ENUM_SHIPPED_TUPLE` when the first emit site ships.
-  'renewal_cycle_reanchored',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 // Compile-time exhaustiveness: every catalogue entry must be in EITHER

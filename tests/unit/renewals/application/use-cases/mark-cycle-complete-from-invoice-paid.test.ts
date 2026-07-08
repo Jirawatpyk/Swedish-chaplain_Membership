@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { renewalsMetrics } from '@/lib/metrics';
 import {
   markCycleCompleteFromInvoicePaid,
   markCycleCompleteInTx,
@@ -57,8 +58,20 @@ vi.mock('@/lib/db', () => ({
   runInTenant: runInTenantSpy,
 }));
 
+// Rolling-anchor Task 5 — spy (not mock) on the real metrics module so the
+// wiring tests can assert `unlinkedPaymentResolved` call args while the
+// underlying OTel no-op meter still runs for real (matches the rest of
+// this file's convention of exercising the real logger/metrics stack).
+const unlinkedPaymentResolvedSpy = vi.spyOn(
+  renewalsMetrics,
+  'unlinkedPaymentResolved',
+);
+
+const SENTINEL_TX = { sentinel: 'tx' } as never;
+
 beforeEach(() => {
   runInTenantSpy.mockClear();
+  unlinkedPaymentResolvedSpy.mockClear();
 });
 
 function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidEvent {
@@ -102,12 +115,27 @@ function fakeDeps(args: {
   erased?: boolean | null;
   transitionImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
+  // Rolling-anchor Task 5 — the unlinked-payment resolution hook's extra
+  // repo surface. Defaults model "no F8 history at all" (heal_no_cycle
+  // shape) so `!cycle` + allowUnlinkedResolution=true tests can exercise a
+  // real end-to-end resolution without every test needing to configure
+  // each mock individually.
+  countCyclesForMember?: number;
+  openCycleForHook?: RenewalCycle | null;
+  memberPlan?: { planId: string; isArchived: boolean } | null;
 }): {
   deps: MarkCycleCompleteDeps;
   findByInvoiceMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   readGuardsMock: ReturnType<typeof vi.fn>;
+  countCyclesMock: ReturnType<typeof vi.fn>;
+  findOpenCycleMock: ReturnType<typeof vi.fn>;
+  reanchorMock: ReturnType<typeof vi.fn>;
+  insertMock: ReturnType<typeof vi.fn>;
+  findActiveForMemberMock: ReturnType<typeof vi.fn>;
+  loadPlanFrozenFieldsMock: ReturnType<typeof vi.fn>;
+  loadMemberPlanMock: ReturnType<typeof vi.fn>;
 } {
   const findByInvoiceMock = vi.fn(async () => args.cycle ?? null);
   const transitionMock = vi.fn(
@@ -126,11 +154,43 @@ function fakeDeps(args: {
           erased: args.erased === undefined ? false : (args.erased ?? false),
         },
   );
+  const countCyclesMock = vi.fn(async () => args.countCyclesForMember ?? 0);
+  const findOpenCycleMock = vi.fn(async () => args.openCycleForHook ?? null);
+  const reanchorMock = vi.fn(async (_tx: unknown, _tenantId: string, cycleId: string, reanchorArgs: Record<string, unknown>) => ({
+    cycle: { ...buildCycle({ cycleId: cycleId as never, ...reanchorArgs }) },
+    reminderEventsReset: 0,
+  }));
+  const insertMock = vi.fn(async () =>
+    buildCycle({
+      cycleId: asCycleId('00000000-0000-0000-0000-0000000cffff'),
+      status: 'upcoming',
+      anchoredAt: null,
+      anchorInvoiceId: null,
+    }),
+  );
+  const findActiveForMemberMock = vi.fn(async () => null);
+  const loadPlanFrozenFieldsMock = vi.fn(async () => ({
+    status: 'found' as const,
+    plan: {
+      tierBucket: 'regular' as const,
+      priceTHB: '50000.00' as never,
+      termMonths: 12,
+      currency: 'THB' as const,
+    },
+  }));
+  const loadMemberPlanMock = vi.fn(async () =>
+    args.memberPlan === undefined ? { planId: 'p1', isArchived: false } : args.memberPlan,
+  );
   const deps: MarkCycleCompleteDeps = {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
     cyclesRepo: {
       findByInvoiceIdInTx: findByInvoiceMock,
       transitionStatus: transitionMock,
+      countCyclesForMemberInTx: countCyclesMock,
+      findOpenCycleForMemberInTx: findOpenCycleMock,
+      reanchorPeriodInTx: reanchorMock,
+      insert: insertMock,
+      findActiveForMemberInTx: findActiveForMemberMock,
     } as unknown as MarkCycleCompleteDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),
@@ -139,6 +199,14 @@ function fakeDeps(args: {
     memberRenewalFlagsRepo: {
       readReactivationGuardsInTx: readGuardsMock,
     } as unknown as MarkCycleCompleteDeps['memberRenewalFlagsRepo'],
+    planLookupForRenewal: {
+      loadPlanFrozenFields: loadPlanFrozenFieldsMock,
+    } as unknown as MarkCycleCompleteDeps['planLookupForRenewal'],
+    cycleIdFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000cffff') },
+    clock: { now: () => new Date('2026-05-07T10:00:00Z') },
+    memberPlanLookup: {
+      loadMemberPlanInTx: loadMemberPlanMock,
+    } as unknown as MarkCycleCompleteDeps['memberPlanLookup'],
   };
   return {
     deps,
@@ -146,6 +214,13 @@ function fakeDeps(args: {
     transitionMock,
     emitInTxMock,
     readGuardsMock,
+    countCyclesMock,
+    findOpenCycleMock,
+    reanchorMock,
+    insertMock,
+    findActiveForMemberMock,
+    loadPlanFrozenFieldsMock,
+    loadMemberPlanMock,
   };
 }
 
@@ -400,5 +475,50 @@ describe('markCycleCompleteFromInvoicePaid (T123) — race + atomicity', () => {
     await expect(
       markCycleCompleteFromInvoicePaid(deps, buildEvent()),
     ).rejects.toThrow(/hold-for-admin connection reset/);
+  });
+});
+
+describe('markCycleCompleteInTx (rolling-anchor Task 5) — unlinked-payment resolution wiring', () => {
+  it('allowUnlinkedResolution defaults true — no linked cycle delegates to the hook (event-fee fast skip)', async () => {
+    const { deps, readGuardsMock, countCyclesMock } = fakeDeps({ cycle: null });
+    const r = await markCycleCompleteInTx(
+      deps,
+      buildEvent({ invoiceSubject: 'event' }),
+      SENTINEL_TX,
+    );
+    expect(r.kind).toBe('no_cycle_for_invoice');
+    // The hook's event_invoice fast path does zero reads — proves the
+    // wiring genuinely delegates to the REAL hook rather than short-
+    // circuiting itself.
+    expect(readGuardsMock).not.toHaveBeenCalled();
+    expect(countCyclesMock).not.toHaveBeenCalled();
+  });
+
+  it('allowUnlinkedResolution=true (default) — heal_no_cycle resolution actually runs + outcome maps to no_cycle_for_invoice', async () => {
+    const { deps, insertMock, readGuardsMock } = fakeDeps({
+      cycle: null,
+      countCyclesForMember: 0,
+      openCycleForHook: null,
+    });
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+    expect(r.kind).toBe('no_cycle_for_invoice');
+    // Real end-to-end resolution work happened (not just a fast skip):
+    // the erased-guard read ran, and a fresh cycle was created + stamped.
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
+    expect(insertMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('markCycleCompleteFromInvoicePaid (wrapper) forces allowUnlinkedResolution=false — hook NEVER runs, even for a membership invoice', async () => {
+    const { deps, readGuardsMock, countCyclesMock } = fakeDeps({
+      cycle: null,
+      countCyclesForMember: 0,
+      openCycleForHook: null,
+    });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('no_cycle_for_invoice');
+    // Degraded-mode refusal: zero unlinked-resolution reads at all.
+    expect(readGuardsMock).not.toHaveBeenCalled();
+    expect(countCyclesMock).not.toHaveBeenCalled();
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
   });
 });

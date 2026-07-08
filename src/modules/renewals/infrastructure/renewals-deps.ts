@@ -615,6 +615,15 @@ export function f8OnPaidCallbacks(
       // (no Result wrapper — domain failures are non-throws so callers
       // never need to discriminate ok vs err). Infra throws still
       // propagate up so F4's tx rolls back on real DB failures.
+      //
+      // Rolling-anchor refactor (2026-07-08, migration 0238): the InTx
+      // path (atomic — F4's own tx) additionally resolves UNLINKED
+      // membership payments (re-anchor / renew / heal) via the hook
+      // inside `markCycleCompleteInTx`. The degraded wrapper path below
+      // REFUSES that resolution — `markCycleCompleteFromInvoicePaid`
+      // forces `allowUnlinkedResolution=false`, so a separately-committed
+      // re-anchor followed by an F4 payment rollback is impossible. The
+      // dispatcher skip-guard + reconciliation cover the resulting miss.
       const outcome =
         txForInTx !== undefined
           ? await markCycleCompleteInTx(deps, evt, txForInTx)

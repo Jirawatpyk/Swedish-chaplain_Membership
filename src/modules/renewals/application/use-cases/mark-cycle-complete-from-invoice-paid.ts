@@ -55,6 +55,7 @@
  */
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
@@ -65,6 +66,7 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
+import { resolveUnlinkedMembershipPaymentInTx } from './resolve-unlinked-membership-payment';
 
 export type MarkCycleCompleteOutcome =
   | { readonly kind: 'no_cycle_for_invoice' }
@@ -82,7 +84,21 @@ export type MarkCycleCompleteOutcome =
 
 export type MarkCycleCompleteDeps = Pick<
   RenewalsDeps,
-  'tenant' | 'cyclesRepo' | 'auditEmitter' | 'memberRenewalFlagsRepo'
+  | 'tenant'
+  | 'cyclesRepo'
+  | 'auditEmitter'
+  | 'memberRenewalFlagsRepo'
+  // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238) —
+  // widened for the unlinked-payment resolution hook
+  // (`resolveUnlinkedMembershipPaymentInTx`) the `!cycle` branch below
+  // delegates to. `memberPlanLookup` is required by the hook's
+  // `heal_no_cycle` branch (resolves the member's current plan — see that
+  // file's docstring) even though the original task brief only named the
+  // other three.
+  | 'planLookupForRenewal'
+  | 'cycleIdFactory'
+  | 'clock'
+  | 'memberPlanLookup'
 >;
 
 /**
@@ -119,6 +135,19 @@ export async function markCycleCompleteInTx(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
   tx: TenantTx,
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238) —
+   * gates whether the `!cycle` branch may delegate to
+   * `resolveUnlinkedMembershipPaymentInTx`. Defaults `true`: the atomic
+   * in-tx path (F4 threads a real `TenantTx`) always resolves unlinked
+   * membership payments. `markCycleCompleteFromInvoicePaid` (the
+   * degraded/legacy wrapper — see its own docstring for the three
+   * sanctioned uses) forces `false`: a separately-committed re-anchor or
+   * renewal-completion followed by an unrelated payment-tx rollback must
+   * be impossible, so the wrapper's non-atomic tx NEVER runs the hook.
+   * The dispatcher skip-guard + reconciliation cover the resulting miss.
+   */
+  allowUnlinkedResolution = true,
 ): Promise<MarkCycleCompleteOutcome> {
   const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
     tx,
@@ -126,9 +155,39 @@ export async function markCycleCompleteInTx(
     event.invoiceId,
   );
   if (!cycle) {
+    if (!allowUnlinkedResolution) {
+      logger.error(
+        {
+          invoiceId: event.invoiceId,
+          tenantId: event.tenantId,
+          memberId: event.memberId,
+        },
+        '[mark-cycle-complete] degraded mode (non-atomic tx) — refusing unlinked-payment resolution; dispatcher skip-guard + reconciliation cover the miss',
+      );
+      renewalsMetrics.unlinkedPaymentResolved('skipped');
+      return { kind: 'no_cycle_for_invoice' as const };
+    }
+
+    const resolution = await resolveUnlinkedMembershipPaymentInTx(
+      {
+        cyclesRepo: deps.cyclesRepo,
+        planLookup: deps.planLookupForRenewal,
+        memberPlanLookup: deps.memberPlanLookup,
+        auditEmitter: deps.auditEmitter,
+        idFactory: deps.cycleIdFactory,
+        memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,
+      },
+      event,
+      tx,
+    );
     logger.info(
-      { invoiceId: event.invoiceId, tenantId: event.tenantId },
-      '[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment',
+      {
+        invoiceId: event.invoiceId,
+        tenantId: event.tenantId,
+        memberId: event.memberId,
+        resolution,
+      },
+      '[mark-cycle-complete] no F8 cycle linked to invoice — resolved via unlinked-payment hook',
     );
     return { kind: 'no_cycle_for_invoice' as const };
   }
@@ -214,7 +273,13 @@ export async function markCycleCompleteFromInvoicePaid(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
 ): Promise<MarkCycleCompleteOutcome> {
-  return runInTenant(deps.tenant, (tx) => markCycleCompleteInTx(deps, event, tx));
+  // Rolling-anchor refactor — `allowUnlinkedResolution=false`: this
+  // wrapper's tx commits SEPARATELY from F4's payment tx, so it must never
+  // run the unlinked-payment resolution hook (see `markCycleCompleteInTx`'s
+  // parameter docstring).
+  return runInTenant(deps.tenant, (tx) =>
+    markCycleCompleteInTx(deps, event, tx, false),
+  );
 }
 
 async function autoComplete(
