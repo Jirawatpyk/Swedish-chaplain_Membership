@@ -70,6 +70,17 @@ export const renewalCycles = pgTable(
 
     // F4 lifecycle FKs.
     linkedInvoiceId: uuid('linked_invoice_id'),
+    // Rolling-anchor refactor (design 2026-07-08, migration 0238).
+    // `anchoredAt` is the discriminator: "this cycle has been anchored to
+    // a real payment" (set by the re-anchor use-case AND by the R4
+    // backfill script). NULL = still the provisional `registration_date`
+    // anchor from onboarding. `anchorInvoiceId` is a forensic reference to
+    // the anchoring invoice — NULL for backfilled pre-system payments.
+    // Deliberately a SEPARATE column from `linkedInvoiceId`: the anchoring
+    // invoice never occupies `linkedInvoiceId`, so the member's next
+    // renewal can still link cleanly through the `linkInvoice` I1 guard.
+    anchoredAt: timestamp('anchored_at', { withTimezone: true }),
+    anchorInvoiceId: uuid('anchor_invoice_id'),
     linkedCreditNoteId: uuid('linked_credit_note_id'),
 
     closedAt: timestamp('closed_at', { withTimezone: true }),
@@ -99,6 +110,15 @@ export const renewalCycles = pgTable(
       columns: [table.tenantId, table.linkedInvoiceId],
       foreignColumns: [invoices.tenantId, invoices.invoiceId],
     }),
+    // Rolling-anchor refactor (migration 0238) — ON DELETE SET NULL: the
+    // anchor is a forensic reference, not a lifecycle-critical link, so an
+    // invoice hard-delete (e.g. GDPR erasure retention sweep) should clear
+    // the pointer rather than block or cascade.
+    anchorInvoiceFk: foreignKey({
+      name: 'renewal_cycles_anchor_invoice_fk',
+      columns: [table.tenantId, table.anchorInvoiceId],
+      foreignColumns: [invoices.tenantId, invoices.invoiceId],
+    }).onDelete('set null'),
     linkedCreditNoteFk: foreignKey({
       name: 'renewal_cycles_linked_credit_note_fk',
       columns: [table.tenantId, table.linkedCreditNoteId],

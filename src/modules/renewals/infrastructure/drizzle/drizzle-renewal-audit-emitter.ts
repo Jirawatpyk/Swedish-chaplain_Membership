@@ -268,6 +268,13 @@ const _F8_ENUM_DEFERRED = [
   // `renewal_schedule_rescheduled` graduated to F8_ENUM_SHIPPED_TUPLE
   // at Phase 7 verify-fix (migration 0118).
   'renewal_payment_failed',
+  // Renewal rolling-anchor refactor (migration 0238) — pgEnum value +
+  // catalogue entry ship in this migration so the DB is ready, but the
+  // `classifyMembershipPayment` classifier + its settlement-site emit
+  // sites (unlinked-invoice hook, `markCycleCompleteInTx`,
+  // `mark-paid-offline`) land in a follow-up task. Graduate to
+  // `F8_ENUM_SHIPPED_TUPLE` when the first emit site ships.
+  'renewal_cycle_reanchored',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 // Compile-time exhaustiveness: every catalogue entry must be in EITHER

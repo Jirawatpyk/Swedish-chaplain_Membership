@@ -117,6 +117,8 @@ const dispatchCandidateProjection = {
   cycleStatus: renewalCycles.status,
   cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
   cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
+  cycleAnchoredAt: renewalCycles.anchoredAt,
+  cycleAnchorInvoiceId: renewalCycles.anchorInvoiceId,
   cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
   cycleClosedAt: renewalCycles.closedAt,
   cycleClosedReason: renewalCycles.closedReason,
@@ -158,6 +160,8 @@ type DispatchCandidateRow = {
   cycleStatus: string;
   cycleEnteredPendingAt: Date | null;
   cycleLinkedInvoiceId: string | null;
+  cycleAnchoredAt: Date | null;
+  cycleAnchorInvoiceId: string | null;
   cycleLinkedCreditNoteId: string | null;
   cycleClosedAt: Date | null;
   cycleClosedReason: string | null;
@@ -196,6 +200,8 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     status: r.cycleStatus,
     enteredPendingAt: r.cycleEnteredPendingAt,
     linkedInvoiceId: r.cycleLinkedInvoiceId,
+    anchoredAt: r.cycleAnchoredAt,
+    anchorInvoiceId: r.cycleAnchorInvoiceId,
     linkedCreditNoteId: r.cycleLinkedCreditNoteId,
     closedAt: r.cycleClosedAt,
     closedReason: r.cycleClosedReason,

@@ -247,6 +247,14 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     SUG-6 apply-post-paid-failed (F4 committed; F8 apply threw)
   'tier_upgrade_catalogue_row_dropped',
   'tier_upgrade_apply_post_invoice_paid_failed',
+  // --- Renewal rolling-anchor refactor (migration 0238, 2026-07-08) —
+  //     F8 event emitted by the shared `classifyMembershipPayment`
+  //     settlement sites when a first-payment cycle is re-anchored to the
+  //     actual payment date (or a zero-cycle member is healed) instead of
+  //     completed. 5y retention (no tax-document overlap). Keep in
+  //     lockstep with `F8_AUDIT_EVENT_TYPES` (renewals audit port) — the
+  //     F8 audit-count parity tests enforce it. ---
+  'renewal_cycle_reanchored',
   // --- F4 receipt-PDF download surface (migration 0143, 2026-05-15) —
   //     emitted by `getReceiptPdfSignedUrl` after successful ownership
   //     check + signed-URL issuance. 10y retention (tax-doc touch). ---

@@ -91,6 +91,12 @@ export const F8_AUDIT_EVENT_TYPES = [
   'renewal_payment_failed',
   'renewal_completed',
   'renewal_completed_post_lapse',
+  // --- Renewal rolling-anchor refactor (design 2026-07-08, migration
+  // 0238) — emitted by the shared payment classifier's settlement sites
+  // when a first-payment (or zero-cycle "heal") cycle is re-anchored to
+  // the actual payment date instead of completed. See docs/superpowers/
+  // specs/2026-07-08-renewal-rolling-anchor-design.md § 5.
+  'renewal_cycle_reanchored',
   'renewal_token_invalid',
   'renewal_kill_switch_blocked',
   'renewal_cross_tenant_probe',
@@ -194,9 +200,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 65
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 66
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 65';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 66';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -339,6 +345,47 @@ export interface F8AuditPayloadShapes {
     readonly payment_reference: string;
     readonly payment_date: string;
     readonly new_expires_at: string;
+  };
+  /**
+   * Renewal rolling-anchor refactor (design 2026-07-08, migration 0238) —
+   * emitted by the shared `classifyMembershipPayment` settlement sites
+   * (unlinked-invoice hook, `markCycleCompleteInTx`, `mark-paid-offline`)
+   * whenever a first-payment cycle re-anchors to the actual payment date
+   * instead of completing, OR a zero-cycle member is healed (new cycle
+   * created + immediately anchored).
+   *
+   * `invoice_id: InvoiceId | null` — null only for the ship-day backfill
+   * script path (pre-system payments with no forensic invoice reference).
+   *
+   * `old_period_from` / `old_period_to: string | null` — both null for
+   * the `heal_no_cycle` branch (no prior period existed at all); non-null
+   * for a genuine re-anchor of an existing provisional cycle.
+   *
+   * `old_status` carries the pre-write status (`upcoming` |
+   * `awaiting_payment`, or the `heal_no_cycle` sentinel case has no prior
+   * row) so the forensic trail records which branch fired without a
+   * separate discriminator field.
+   *
+   * `refroze_plan_fields` is true when the re-anchor crossed a fiscal-year
+   * boundary and `loadPlanFrozenFields` re-resolved the frozen
+   * price/term for the new period (rev 2 FY-crossing rule).
+   *
+   * `reminder_events_reset` is the count of `renewal_reminder_events` rows
+   * deleted for this cycle in the same tx (a step fired against the
+   * provisional expiry must not suppress that step for the later,
+   * re-anchored expiry).
+   */
+  readonly renewal_cycle_reanchored: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_id: InvoiceId | null;
+    readonly old_period_from: string | null;
+    readonly old_period_to: string | null;
+    readonly new_period_from: string;
+    readonly new_period_to: string;
+    readonly old_status: string;
+    readonly refroze_plan_fields: boolean;
+    readonly reminder_events_reset: number;
   };
   readonly renewal_cross_tenant_probe: {
     readonly attempted_cycle_id: CycleId;
