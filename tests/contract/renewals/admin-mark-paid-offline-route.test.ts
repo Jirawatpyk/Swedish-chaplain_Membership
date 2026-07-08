@@ -133,6 +133,8 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.cycle_status).toBe('completed');
     expect(body.invoice_id).toBe('inv-1');
     expect(body.new_expires_at).toBe('2028-06-01T00:00:00.000Z');
+    // RRA task 7 fix — new_period_from is reanchored-only, never on completed.
+    expect(body).not.toHaveProperty('new_period_from');
   });
 
   // Task 7 (rolling-anchor refactor) — the first-payment re-anchor branch's
@@ -146,6 +148,9 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
         cycleStatus: 'upcoming',
         invoiceId: 'inv-1',
         newExpiresAt: '2027-06-01T00:00:00.000Z',
+        // RRA task 7 fix — the reanchored outcome carries the TRUE period
+        // start (first of month) so the admin toast can display it.
+        newPeriodFrom: '2026-05-01T00:00:00.000Z',
       }),
     );
     const POST = await loadHandler();
@@ -156,6 +161,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.cycle_status).toBe('upcoming');
     expect(body.invoice_id).toBe('inv-1');
     expect(body.new_expires_at).toBe('2027-06-01T00:00:00.000Z');
+    expect(body.new_period_from).toBe('2026-05-01T00:00:00.000Z');
   });
 
   it('400 invalid_body on malformed JSON', async () => {

@@ -219,10 +219,6 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
 
   const onMarkPaid = () => {
     if (markPaidIncomplete) return;
-    // Captured BEFORE the request fires — `resetMarkPaidFields()` inside
-    // `onSuccess` clears `paymentDate` back to '', and the re-anchored
-    // branch's toast needs the value the admin just submitted.
-    const submittedPaymentDate = paymentDate;
     startMarkPaid(() =>
       runAction(
         `/api/admin/renewals/${encodeURIComponent(cycleId)}/mark-paid-offline`,
@@ -240,13 +236,14 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           // new period dates render on the refreshed page below; the
           // toast's `{date}` is the TRUE period start (first of month)
           // after re-anchor.
-          const data_obj = data as { outcome?: string; new_period_from?: string } | null;
-          const outcome = data_obj?.outcome;
-          if (outcome === 'reanchored' && data_obj?.new_period_from) {
+          const dataObj = data as
+            | { outcome?: string; new_period_from?: string }
+            | null;
+          if (dataObj?.outcome === 'reanchored' && dataObj.new_period_from) {
             toast.success(
               t('markPaidOffline.successReanchored', {
                 date: format.dateTime(
-                  new Date(data_obj.new_period_from),
+                  new Date(dataObj.new_period_from),
                   'dateMedium',
                 ),
               }),
