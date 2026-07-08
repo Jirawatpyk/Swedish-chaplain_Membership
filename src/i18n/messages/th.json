@@ -5310,8 +5310,8 @@
       "member_email_unverified_threshold_crossed": "อีเมลที่ไม่ยืนยันเกินเกณฑ์",
       "renewal_completed": "ต่ออายุสมาชิกเสร็จสิ้น",
       "renewal_completed_post_lapse": "ต่ออายุเสร็จหลังหมดอายุ",
-      "renewal_cross_member_probe": "ตรวจพบการสำรวจข้ามสมาชิก",
-      "renewal_cross_tenant_probe": "ตรวจพบการสำรวจข้ามหอการค้า (ต่ออายุ)",
+      "renewal_cross_member_probe": "ตรวจพบการเข้าถึงข้ามสมาชิก",
+      "renewal_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (การต่ออายุ)",
       "renewal_cycle_cancelled": "ยกเลิกรอบการต่ออายุ",
       "renewal_cycle_completed_offline": "ต่ออายุเสร็จแบบออฟไลน์",
       "renewal_cycle_price_frozen": "ตรึงราคาการต่ออายุ",
@@ -5412,7 +5412,7 @@
       "payment_canceled": "ยกเลิกการชำระเงิน",
       "payment_cancel_attempt_failed": "ยกเลิกการชำระเงินไม่สำเร็จ",
       "payment_method_switched": "เปลี่ยนวิธีชำระเงิน",
-      "payment_auto_refunded_stale_invoice": "คืนเงินอัตโนมัติ — ใบแจ้งหนี้หมดอายุ",
+      "payment_auto_refunded_stale_invoice": "คืนเงินอัตโนมัติ — ใบแจ้งหนี้ไม่อยู่ในสถานะรับชำระ",
       "payment_auto_refunded_concurrent_manual_mark": "คืนเงินอัตโนมัติ — ใบแจ้งหนี้ถูกบันทึกว่าชำระแล้ว",
       "payment_environment_mismatch": "สภาพแวดล้อมการชำระเงินไม่ตรงกัน",
       "payment_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (การชำระเงิน)",
@@ -5423,9 +5423,9 @@
       "webhook_api_version_mismatch": "เวอร์ชัน API ของ webhook ไม่ตรงกัน",
       "tenant_payment_settings_updated": "อัปเดตการตั้งค่าการชำระเงิน",
       "online_payment_toggled": "เปิด/ปิดการชำระเงินออนไลน์",
-      "payment_initiate_rate_limited": "การเริ่มชำระเงินถูกจำกัดอัตรา",
-      "payment_cancel_rate_limited": "การยกเลิกชำระเงินถูกจำกัดอัตรา",
-      "refund_initiate_rate_limited": "การเริ่มคืนเงินถูกจำกัดอัตรา",
+      "payment_initiate_rate_limited": "เกินขีดจำกัดการเริ่มชำระเงิน",
+      "payment_cancel_rate_limited": "เกินขีดจำกัดการยกเลิกชำระเงิน",
+      "refund_initiate_rate_limited": "เกินขีดจำกัดการเริ่มคืนเงิน",
       "webhook_unknown_intent": "Webhook — ไม่รู้จักรายการชำระเงิน",
       "webhook_payment_already_canceled": "Webhook — การชำระเงินถูกยกเลิกไปแล้ว",
       "payment_processor_retrieve_failed": "ดึงข้อมูลจากผู้ให้บริการชำระเงินไม่สำเร็จ",
@@ -5453,7 +5453,7 @@
       "member_erased": "ลบข้อมูลสมาชิกแล้ว",
       "subprocessor_erasure_propagated": "ส่งต่อการลบข้อมูลไปยังผู้ประมวลผลช่วง",
       "user_erased": "ลบบัญชีผู้ใช้แล้ว",
-      "broadcast_content_redacted": "ปกปิดเนื้อหาอีเมล"
+      "broadcast_content_redacted": "ปกปิดเนื้อหาอีเมล E-Blast"
     },
     "eventcreate": {
       "_bootstrap": "เหตุการณ์ตรวจสอบ EventCreate"
