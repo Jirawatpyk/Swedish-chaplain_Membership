@@ -20,6 +20,7 @@ import {
   type ResolveUnlinkedMembershipPaymentDeps,
 } from '@/modules/renewals/application/use-cases/resolve-unlinked-membership-payment';
 import { createNextCycleOnPaidInTx } from '@/modules/renewals/application/use-cases/create-next-cycle-on-paid';
+import { PlanNotResolvableError } from '@/modules/renewals/application/use-cases/create-cycle-in-tx';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -68,6 +69,7 @@ const SENTINEL_TX = { sentinel: 'tx' } as never;
 // ---------------------------------------------------------------------------
 function fakeDeps(args: {
   erased?: boolean | null;
+  blocked?: boolean;
   cycleCountForMember?: number;
   openCycle?: RenewalCycle | null;
   memberPlan?: { planId: string; isArchived: boolean } | null;
@@ -93,9 +95,10 @@ function fakeDeps(args: {
     emitInTx: ReturnType<typeof vi.fn>;
   };
 } {
-  const readGuards = vi.fn(async () =>
-    args.erased === undefined ? { blocked: false, erased: false } : { blocked: false, erased: args.erased },
-  );
+  const readGuards = vi.fn(async () => ({
+    blocked: args.blocked ?? false,
+    erased: args.erased ?? false,
+  }));
   const countCycles = vi.fn(async () => args.cycleCountForMember ?? 0);
   const findOpenCycle = vi.fn(async () => args.openCycle ?? null);
   const reanchor = vi.fn(
@@ -270,6 +273,26 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 3: heal_no_cycle', 
 
     const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
     expect(r).toEqual({ kind: 'skipped', reason: 'race_lost' });
+  });
+
+  // ---------------------------------------------------------------------
+  // F1 fix (Task 5 review, Critical) — a catalogue gap while healing must
+  // NOT block the payment.
+  // ---------------------------------------------------------------------
+  it('F1: createCycleInTx throws PlanNotResolvableError (catalogue gap) → skipped:plan_unresolvable, payment path does not throw, metric=skipped', async () => {
+    const { deps, mocks } = fakeDeps({
+      cycleCountForMember: 0,
+      openCycle: null,
+      planLookupImpl: async () => ({ status: 'not_found' as const }),
+    });
+    const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+    expect(r).toEqual({ kind: 'skipped', reason: 'plan_unresolvable' });
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ planId: 'p1', planStatus: 'not_found' }),
+      expect.stringContaining('plan unresolvable'),
+    );
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
   });
 });
 
@@ -516,6 +539,123 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 5: renewal', () => 
     await expect(
       resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX),
     ).rejects.toThrow(/connection reset/);
+  });
+
+  // ---------------------------------------------------------------------
+  // F1 fix (Task 5 review, Critical) — deliberate ASYMMETRY pin: unlike
+  // healNoCycle's guard, a PlanNotResolvableError surfacing from the
+  // renewal branch's own next-cycle creation must PROPAGATE, exactly
+  // mirroring create-next-cycle-on-paid.ts's documented NEVER-swallow
+  // rationale ("a swallow would commit the payment while the member
+  // silently drops out of the renewal pipeline with no retry trigger").
+  // Here the payment is COMPLETING a renewal (not healing a zero-cycle
+  // member), so a catalogue gap is a real ops incident that must roll
+  // back the whole tx.
+  // ---------------------------------------------------------------------
+  it('F1 asymmetry: PlanNotResolvableError from the renewal branch\'s next-cycle creation PROPAGATES (does not swallow)', async () => {
+    const openCycle = buildCycle({
+      status: 'awaiting_payment',
+      anchoredAt: '2025-06-01T00:00:00Z',
+      periodFrom: '2026-06-01T00:00:00Z',
+      periodTo: '2027-06-01T00:00:00Z',
+      linkedInvoiceId: null,
+    });
+    const { deps } = fakeDeps({
+      cycleCountForMember: 2,
+      openCycle,
+      planLookupImpl: async () => ({ status: 'not_found' as const }),
+    });
+    await expect(
+      resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX),
+    ).rejects.toBeInstanceOf(PlanNotResolvableError);
+  });
+
+  // ---------------------------------------------------------------------
+  // F4 fix (Task 5 review, FR-005b parity) — a blocked member must not
+  // auto-complete via this unlinked renewal branch, mirroring
+  // markCycleCompleteInTx's holdForAdminReview gate on the linked path.
+  // ---------------------------------------------------------------------
+  describe('F4: blocked_from_auto_reactivation parity (held-for-admin)', () => {
+    it('blocked member + awaiting_payment open cycle → held via a single transition; no completion, no next cycle', async () => {
+      const openCycle = buildCycle({
+        status: 'awaiting_payment',
+        anchoredAt: '2025-06-01T00:00:00Z',
+        periodFrom: '2026-06-01T00:00:00Z',
+        periodTo: '2027-06-01T00:00:00Z',
+        linkedInvoiceId: null,
+      });
+      const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle, blocked: true });
+      const evt = buildEvent();
+      const r = await resolveUnlinkedMembershipPaymentInTx(deps, evt, SENTINEL_TX);
+      expect(r).toEqual({ kind: 'held_pending_admin', cycleId: openCycle.cycleId });
+      expect(mocks.transitionStatus).toHaveBeenCalledTimes(1);
+      expect(mocks.transitionStatus).toHaveBeenCalledWith(
+        SENTINEL_TX,
+        TENANT_ID,
+        openCycle.cycleId,
+        expect.objectContaining({
+          from: 'awaiting_payment',
+          to: 'pending_admin_reactivation',
+          enteredPendingAt: evt.paidAt,
+          linkedInvoiceId: INVOICE_UUID,
+        }),
+      );
+      expect(mocks.insert).not.toHaveBeenCalled(); // no next cycle created
+      expect(mocks.emitInTx).toHaveBeenCalledWith(
+        SENTINEL_TX,
+        expect.objectContaining({
+          type: 'renewal_completed_post_lapse',
+          payload: expect.objectContaining({ held_for_admin_review: true }),
+        }),
+        expect.anything(),
+      );
+      expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('held');
+    });
+
+    it('blocked member + upcoming (anchored) open cycle → held via two-step transition (upcoming→awaiting_payment→pending_admin_reactivation); no next cycle', async () => {
+      const openCycle = buildCycle({
+        status: 'upcoming',
+        anchoredAt: '2025-06-01T00:00:00Z', // anchored so renewal classification fires
+        periodFrom: '2026-06-01T00:00:00Z',
+        periodTo: '2027-06-01T00:00:00Z',
+        linkedInvoiceId: null,
+      });
+      const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle, blocked: true });
+      const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+      expect(r).toEqual({ kind: 'held_pending_admin', cycleId: openCycle.cycleId });
+      expect(mocks.transitionStatus).toHaveBeenCalledTimes(2);
+      expect(mocks.transitionStatus).toHaveBeenNthCalledWith(
+        1,
+        SENTINEL_TX,
+        TENANT_ID,
+        openCycle.cycleId,
+        expect.objectContaining({ from: 'upcoming', to: 'awaiting_payment' }),
+      );
+      expect(mocks.transitionStatus).toHaveBeenNthCalledWith(
+        2,
+        SENTINEL_TX,
+        TENANT_ID,
+        openCycle.cycleId,
+        expect.objectContaining({ from: 'awaiting_payment', to: 'pending_admin_reactivation' }),
+      );
+      expect(mocks.insert).not.toHaveBeenCalled();
+      expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('held');
+    });
+
+    it('non-blocked member is unaffected — existing renewal-completion behaviour stays green', async () => {
+      const openCycle = buildCycle({
+        status: 'awaiting_payment',
+        anchoredAt: '2025-06-01T00:00:00Z',
+        periodFrom: '2026-06-01T00:00:00Z',
+        periodTo: '2027-06-01T00:00:00Z',
+        linkedInvoiceId: null,
+      });
+      const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle, blocked: false });
+      const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+      expect(r).toEqual({ kind: 'renewed', cycleId: openCycle.cycleId });
+      expect(mocks.insert).toHaveBeenCalledTimes(1); // next cycle created
+      expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('renewed');
+    });
   });
 });
 

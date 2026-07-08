@@ -57,16 +57,42 @@ import {
 } from '../ports/renewal-cycle-repo';
 import type { MemberRenewalFlagsRepo } from '../ports/member-renewal-flags-repo';
 import type { MemberPlanLookupPort } from '../ports/member-plan-lookup-port';
-import { createCycleInTx, type CreateCycleInTxDeps } from './create-cycle-in-tx';
+import {
+  createCycleInTx,
+  PlanNotResolvableError,
+  type CreateCycleInTxDeps,
+  type CreateCycleOutcome,
+} from './create-cycle-in-tx';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 
 export type UnlinkedResolutionOutcome =
   | { readonly kind: 'reanchored'; readonly cycleId: string }
   | { readonly kind: 'renewed'; readonly cycleId: string }
   | { readonly kind: 'healed'; readonly cycleId: string }
+  /**
+   * FR-005b parity fix (Task 5 review F4) — the blocked-member counterpart
+   * to `'renewed'`. Emitted by `heldForAdminReview` when the renewal
+   * branch's member has `blocked_from_auto_reactivation = true`; the open
+   * cycle is routed to `pending_admin_reactivation` instead of completed.
+   */
+  | { readonly kind: 'held_pending_admin'; readonly cycleId: string }
   | {
       readonly kind: 'skipped';
-      readonly reason: 'event_invoice' | 'erased' | 'terminal_only' | 'race_lost';
+      readonly reason:
+        | 'event_invoice'
+        | 'erased'
+        | 'terminal_only'
+        | 'race_lost'
+        /**
+         * F1 fix (Task 5 review) — `healNoCycle`'s `createCycleInTx` call
+         * hit a catalogue gap (`PlanNotResolvableError`: the member's plan
+         * is not_found/plan_inactive). The payment stands (it already
+         * succeeded independent of any specific plan resolution); the
+         * dispatcher skip-guard + reconciliation surface the member for
+         * admin follow-up rather than rolling back a real payment over a
+         * catalogue data problem.
+         */
+        | 'plan_unresolvable';
     };
 
 /**
@@ -145,6 +171,11 @@ export async function resolveUnlinkedMembershipPaymentInTx(
     renewalsMetrics.unlinkedPaymentResolved('skipped');
     return { kind: 'skipped', reason: 'erased' };
   }
+  // FR-005b parity (Task 5 review F4) — read alongside `erased` above (same
+  // round-trip, COMP-1 L3 fold). Used below to gate the `renewal` branch
+  // the same way `markCycleCompleteInTx`'s `holdForAdminReview` gates the
+  // LINKED path.
+  const blocked = guards?.blocked === true;
 
   const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
     tx,
@@ -197,6 +228,12 @@ export async function resolveUnlinkedMembershipPaymentInTx(
           `resolveUnlinkedMembershipPaymentInTx: classifier returned renewal with no open cycle (invoice ${evt.invoiceId})`,
         );
       }
+      // FR-005b parity (Task 5 review F4) — a blocked member must NOT
+      // auto-complete via this unlinked branch; route to admin review the
+      // same way the linked path's `holdForAdminReview` does.
+      if (blocked) {
+        return heldForAdminReview(deps, evt, tx, openCycle);
+      }
       return renewalComplete(deps, evt, tx, openCycle);
   }
 }
@@ -237,16 +274,45 @@ async function healNoCycle(
     auditEmitter: deps.auditEmitter,
     idFactory: deps.idFactory,
   };
-  const created = await createCycleInTx(createDeps, tx, {
-    tenantId: evt.tenantId,
-    memberId: evt.memberId,
-    periodFrom: anchorDate,
-    planId: member.planId,
-    startStatus: 'upcoming',
-    actorUserId: AUDIT_ACTOR.actorUserId,
-    actorRole: AUDIT_ACTOR.actorRole,
-    correlationId: correlationId(evt),
-  });
+  // F1 fix (Task 5 review, Critical) — a catalogue gap (the member's plan
+  // is not_found/plan_inactive) must NOT block the payment. Unlike
+  // `renewalComplete`'s next-cycle creation (see that function's docstring
+  // for the deliberately asymmetric NEVER-swallow rationale), the heal
+  // branch's payment already succeeded independent of any specific plan
+  // resolution — there is no "renewal" being paid for yet, just a
+  // zero-cycle member who needs *a* cycle. Rolling back a real payment
+  // over a catalogue data problem would be worse than skipping the heal
+  // and letting the dispatcher skip-guard + reconciliation surface the
+  // member for admin follow-up.
+  let created: CreateCycleOutcome;
+  try {
+    created = await createCycleInTx(createDeps, tx, {
+      tenantId: evt.tenantId,
+      memberId: evt.memberId,
+      periodFrom: anchorDate,
+      planId: member.planId,
+      startStatus: 'upcoming',
+      actorUserId: AUDIT_ACTOR.actorUserId,
+      actorRole: AUDIT_ACTOR.actorRole,
+      correlationId: correlationId(evt),
+    });
+  } catch (e) {
+    if (e instanceof PlanNotResolvableError) {
+      logger.error(
+        {
+          tenantId: evt.tenantId,
+          memberId: evt.memberId,
+          invoiceId: evt.invoiceId,
+          planId: e.planId,
+          planStatus: e.planStatus,
+        },
+        '[resolve-unlinked-payment] heal: plan unresolvable — skipping (payment stands; dispatcher skip-guard will surface the member)',
+      );
+      renewalsMetrics.unlinkedPaymentResolved('skipped');
+      return { kind: 'skipped', reason: 'plan_unresolvable' };
+    }
+    throw e;
+  }
 
   if (created.kind === 'skipped_active_exists') {
     // Lost a race against a concurrent path that created an active cycle
@@ -474,6 +540,18 @@ async function renewalComplete(
   // in-tx idempotency guard (`findActiveForMemberInTx`) sees the
   // uncommitted completion flip above and correctly excludes it, so the
   // next cycle IS created on first delivery.
+  //
+  // Deliberately NOT wrapped in a try/catch for `PlanNotResolvableError`
+  // (asymmetric to `healNoCycle`'s guard above — see F1 fix comment
+  // there). `create-next-cycle-on-paid.ts`'s docstring is explicit: "THROWS
+  // on any failure ... NEVER swallow — a swallow would commit the payment
+  // while the member silently drops out of the renewal pipeline with no
+  // retry trigger." A catalogue gap discovered while COMPLETING a renewal
+  // is a real ops incident (the plan the member just paid to renew no
+  // longer resolves) and must roll back the whole tx so the at-least-once
+  // retry / webhook redelivery surfaces it loudly — unlike the heal
+  // branch, where the payment already succeeded independent of any
+  // specific plan and there is no renewal state to roll back.
   await createCycleInTx(createDeps, tx, {
     tenantId: evt.tenantId,
     memberId: cycle.memberId,
@@ -486,6 +564,84 @@ async function renewalComplete(
 
   renewalsMetrics.unlinkedPaymentResolved('renewed');
   return { kind: 'renewed', cycleId: cycle.cycleId };
+}
+
+/**
+ * FR-005b parity fix (Task 5 review F4) — the blocked-member counterpart
+ * to `renewalComplete`. Mirrors `markCycleCompleteInTx`'s
+ * `holdForAdminReview` gate on the LINKED path: a member with
+ * `blocked_from_auto_reactivation = true` must not silently auto-complete
+ * via this UNLINKED hook either. The open cycle is routed to
+ * `pending_admin_reactivation` instead of `completed`, and — unlike
+ * `renewalComplete` — NO next cycle is created; the admin decides what
+ * happens next via the existing T136/T137/T138 admin-review actions.
+ *
+ * `awaiting_payment` cycles transition directly (the same single legal
+ * edge `holdForAdminReview` uses). `upcoming`/`reminded` cycles have no
+ * direct edge into `pending_admin_reactivation` (see `TRANSITIONS` in
+ * `cycle-status.ts` — only `awaiting_payment` and `lapsed` do), so they
+ * take the two legal steps in the SAME tx:
+ * `upcoming|reminded → awaiting_payment → pending_admin_reactivation`.
+ * (`classifyMembershipPayment` only ever hands this branch `upcoming` or
+ * `awaiting_payment` — `reminded` is declared-but-never-written per that
+ * module's docstring — but the two-step guard is written generically over
+ * "not already awaiting_payment" so it stays correct if that changes.)
+ *
+ * A lost race on either transition step is treated as an idempotent skip,
+ * NOT an infra failure, mirroring `renewalComplete`'s own
+ * `CycleTransitionConflictError` / `CycleNotFoundError` handling — the
+ * paying invoice's OWN payment already succeeded independent of the
+ * cycle-side bookkeeping race.
+ */
+async function heldForAdminReview(
+  deps: ResolveUnlinkedMembershipPaymentDeps,
+  evt: F4InvoicePaidEvent,
+  tx: TenantTx,
+  cycle: RenewalCycle,
+): Promise<UnlinkedResolutionOutcome> {
+  try {
+    if (cycle.status !== 'awaiting_payment') {
+      await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+        from: cycle.status,
+        to: 'awaiting_payment',
+      });
+    }
+    await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+      from: 'awaiting_payment',
+      to: 'pending_admin_reactivation',
+      enteredPendingAt: evt.paidAt,
+      linkedInvoiceId: evt.invoiceId,
+    });
+  } catch (e) {
+    if (e instanceof CycleTransitionConflictError || e instanceof CycleNotFoundError) {
+      logger.warn(
+        { cycleId: cycle.cycleId, err: e.message },
+        '[resolve-unlinked-payment] held-for-admin lost race — idempotent skip',
+      );
+      renewalsMetrics.unlinkedPaymentResolved('skipped');
+      return { kind: 'skipped', reason: 'race_lost' };
+    }
+    throw e;
+  }
+
+  // Payload shape copied verbatim from `holdForAdminReview` in
+  // mark-cycle-complete-from-invoice-paid.ts (the LINKED path's twin).
+  await deps.auditEmitter.emitInTx(
+    tx,
+    {
+      type: 'renewal_completed_post_lapse' as const,
+      payload: {
+        cycle_id: cycle.cycleId,
+        member_id: cycle.memberId,
+        invoice_id: evt.invoiceId,
+        held_for_admin_review: true,
+      },
+    },
+    { tenantId: evt.tenantId, ...AUDIT_ACTOR, correlationId: correlationId(evt) },
+  );
+
+  renewalsMetrics.unlinkedPaymentResolved('held');
+  return { kind: 'held_pending_admin', cycleId: cycle.cycleId };
 }
 
 /**
@@ -519,6 +675,14 @@ async function reclassifyAfterRace(
   });
 
   if (reclassified.kind === 'renewal' && openCycle) {
+    // Known scope gap (Task 5 review F4 fixed only the primary switch's
+    // `renewal` case): this double-race fallback does not re-check
+    // `blocked_from_auto_reactivation`, so an extremely rare blocked-member
+    // double-race could still auto-complete here. Narrow enough (requires
+    // losing TWO concurrent races) that threading `guards` through
+    // `healNoCycle`/`firstPayment` to close it was judged not worth the
+    // extra surface for this fix wave; tracked as a follow-up if it ever
+    // fires in practice.
     return renewalComplete(deps, evt, tx, openCycle);
   }
 

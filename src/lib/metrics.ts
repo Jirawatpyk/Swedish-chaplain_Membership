@@ -2571,17 +2571,29 @@ export const renewalsMetrics = {
    * `no_cycle_for_invoice` branch). `outcome` ∈ `reanchored` (first
    * payment re-anchored a never-before-paid cycle) | `renewed` (open
    * cycle completed + next cycle rolled forward) | `healed` (zero-cycle
-   * member self-healed a fresh anchored cycle) | `skipped` (event-fee
-   * invoice / GDPR-erased member / terminal-only member / lost a
-   * create-or-reanchor race / degraded non-atomic-tx mode refused to
-   * run). Mirrors the `remindersSkipped(reason)` shape (single bounded-
-   * enum label, no tenant dimension — cardinality stays small).
+   * member self-healed a fresh anchored cycle) | `held` (FR-005b parity,
+   * Task 5 review F4: a blocked member's renewal-branch completion was
+   * redirected to `pending_admin_reactivation` instead of auto-completing
+   * — mirrors the linked path's `holdForAdminReview`) | `skipped`
+   * (GDPR-erased member / terminal-only member / a catalogue-gap plan
+   * unresolvable during heal (Task 5 review F1) / lost a create-or-
+   * reanchor race / degraded non-atomic-tx mode refused to run). Mirrors
+   * the `remindersSkipped(reason)` shape (single bounded-enum label, no
+   * tenant dimension — cardinality stays small).
+   *
+   * Event-fee invoices are EXCLUDED from this metric entirely — behaviour
+   * 1's early return (`invoiceSubject !== 'membership'`) fires before any
+   * metric call, so an event-fee invoice contributes to NO bucket,
+   * including `skipped` (corrected Task 5 review F3 — a prior revision of
+   * this doc incorrectly listed event-fee invoices as a `skipped`
+   * contributor).
+   *
    * Dashboard use: a sustained `skipped` share materially above baseline
    * signals either a wave of ad-hoc admin invoices for erased/lapsed
    * members, or (rarer) the degraded-mode F4-contract-drift path firing.
    */
   unlinkedPaymentResolved(
-    outcome: 'reanchored' | 'renewed' | 'healed' | 'skipped',
+    outcome: 'reanchored' | 'renewed' | 'healed' | 'held' | 'skipped',
   ): void {
     safeMetric(() => {
       counter(
