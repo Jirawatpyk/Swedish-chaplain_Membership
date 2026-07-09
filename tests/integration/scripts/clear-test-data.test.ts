@@ -591,6 +591,141 @@ describe('clearTestData script', () => {
     }
   }, 45_000);
 
+  // Rolling-anchor branch — the F8 on-paid hook now creates a `renewal_cycles`
+  // row (directly `member_id`-linked, `renewal_cycles_member_fk` RESTRICT)
+  // whenever ANY member pays an invoice, including E2E fixtures matched by
+  // the step-1 `company_name LIKE 'E2E Co %'` pass. That pass previously
+  // deleted the member with no cycle cleanup at all, so an E2E member that
+  // had ever paid (even in a NON-`test-%` tenant — e.g. the primary tenant,
+  // mirroring the real accumulated-pollution incident this test guards
+  // against) blocked the `DELETE FROM members` in step 1 with an FK
+  // violation and aborted the whole script (cluster F).
+  it('purges a renewal_cycle linking an E2E member with no linked invoice (cluster F)', async () => {
+    const plannerEmail = `e2ecycle-planner-${Date.now()}@swecham.example`;
+    createdEmails.push(plannerEmail);
+    const plannerHash = await argon2Hasher.hash('Planner-Password-2026!');
+    const plannerRows = await db
+      .insert(users)
+      .values({
+        email: plannerEmail,
+        role: 'admin',
+        status: 'active',
+        passwordHash: plannerHash,
+        lastPasswordChangedAt: new Date(),
+      })
+      .returning();
+    const plannerId = plannerRows[0]!.id;
+
+    // NON-`test-%` tenant slug — models the real incident (an E2E member
+    // seeded straight into a non-test-prefixed tenant), so only the step-1
+    // E2E-member pass (not the tenant-scoped 'test-%' pass) can purge it.
+    const slug = `e2ecycle-${randomUUID().slice(0, 8)}`;
+    const ctx = asTenantContext(slug);
+    const memberId = randomUUID();
+    const cycleId = randomUUID();
+
+    try {
+      await runInTenant(ctx, async (tx) => {
+        await tx.insert(tenantInvoiceSettings).values({
+          tenantId: slug,
+          currencyCode: 'THB',
+          vatRate: '0.0700',
+          registrationFeeSatang: 100000n,
+          legalNameTh: 'E2ECycle TH',
+          legalNameEn: 'E2ECycle EN',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Addr TH',
+          registeredAddressEn: 'Addr EN',
+          invoiceNumberPrefix: 'INV',
+          creditNoteNumberPrefix: 'CN',
+        });
+        await tx.insert(membershipPlans).values({
+          tenantId: slug,
+          planId: 'e2ecycle-plan',
+          planYear: 2026,
+          planName: { en: 'E2ECycle Plan' },
+          description: { en: 'desc' },
+          sortOrder: 10,
+          planCategory: 'corporate',
+          memberTypeScope: 'company',
+          annualFeeMinorUnits: 5_000_000,
+          includesCorporatePlanId: null,
+          minTurnoverMinorUnits: null,
+          maxTurnoverMinorUnits: null,
+          maxDurationYears: null,
+          maxMemberAge: null,
+          benefitMatrix: MATRIX,
+          isActive: true,
+          createdBy: plannerId,
+          updatedBy: plannerId,
+        });
+        // The E2E fixture member — matched by step 1's `company_name LIKE
+        // 'E2E Co %'` pass.
+        await tx.insert(members).values({
+          tenantId: slug,
+          memberId,
+          memberNumber: 1,
+          companyName: `E2E Co cycle-${Date.now()}`,
+          country: 'TH',
+          planId: 'e2ecycle-plan',
+          planYear: 2026,
+          registrationDate: new Date().toISOString().slice(0, 10),
+          registrationFeePaid: true,
+          status: 'active',
+          archivedAt: null,
+        });
+        // A cycle directly linking the E2E member — no linked_invoice_id
+        // (mirrors a rolling-anchor cycle closed without a system-tracked
+        // invoice, e.g. lapsed). `renewal_cycles_member_fk` is the FK step 1
+        // must clear before it can delete the member row.
+        await tx.insert(renewalCycles).values({
+          tenantId: slug,
+          cycleId,
+          memberId,
+          status: 'lapsed',
+          periodFrom: new Date('2025-06-01T00:00:00Z'),
+          periodTo: new Date('2026-06-01T00:00:00Z'),
+          expiresAt: new Date('2026-06-01T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: 'e2ecycle-plan',
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          closedAt: new Date(),
+          closedReason: 'lapsed',
+        });
+      });
+
+      // Must NOT throw (without the cluster-F fix, step 1's `DELETE FROM
+      // members` aborts on `renewal_cycles_member_fk`) AND must remove the
+      // cycle + the E2E member.
+      const report = await clearTestData();
+      expect(report.e2eMembers).toBeGreaterThanOrEqual(1);
+
+      const count = (r: unknown) =>
+        Array.isArray(r) ? r.length : (r as { rows?: unknown[] }).rows?.length ?? 0;
+      const cycleLeft = await db.execute(
+        sql`SELECT cycle_id FROM renewal_cycles WHERE cycle_id = ${cycleId}::uuid`,
+      );
+      const memberLeft = await db.execute(
+        sql`SELECT member_id FROM members WHERE member_id = ${memberId}::uuid`,
+      );
+      expect(count(cycleLeft)).toBe(0);
+      expect(count(memberLeft)).toBe(0);
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(sql`tenant_id = ${slug}`)
+        .catch(() => {});
+      await db.execute(sql`DELETE FROM members WHERE tenant_id = ${slug}`).catch(() => {});
+      await db.execute(sql`DELETE FROM membership_plans WHERE tenant_id = ${slug}`).catch(() => {});
+      await db
+        .execute(sql`DELETE FROM tenant_invoice_settings WHERE tenant_id = ${slug}`)
+        .catch(() => {});
+    }
+  }, 45_000);
+
   it('is idempotent — second run reports zero deletions', async () => {
     // First run may delete leftovers. Second run must return a clean slate.
     await clearTestData();

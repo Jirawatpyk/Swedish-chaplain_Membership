@@ -71,15 +71,62 @@ export type ClearTestDataReport = {
 export async function clearTestData(): Promise<ClearTestDataReport> {
   // 1. E2E members (+ their contacts).
   const e2eFound = await db.execute(
-    sql`SELECT member_id FROM members WHERE company_name LIKE 'E2E Co %'`,
+    sql`SELECT tenant_id, member_id FROM members WHERE company_name LIKE 'E2E Co %'`,
   );
-  const e2eMemberIds = unwrap<{ member_id: string }>(e2eFound).map(
-    (r) => r.member_id,
+  const e2eMemberRows = unwrap<{ tenant_id: string; member_id: string }>(
+    e2eFound,
   );
+  const e2eMemberIds = e2eMemberRows.map((r) => r.member_id);
 
   let e2eContacts = 0;
   let e2eMembers = 0;
   if (e2eMemberIds.length > 0) {
+    // Rolling-anchor branch — the F8 on-paid hook now creates a
+    // `renewal_cycles` row (directly `member_id`-linked,
+    // `renewal_cycles_member_fk` RESTRICT) whenever ANY member pays an
+    // invoice, including E2E fixtures matched here. Purge cycles (and their
+    // RESTRICT-linked children: renewal_reminder_events,
+    // renewal_escalation_tasks, scheduled_plan_changes) BEFORE the member
+    // delete below, or it aborts with an FK violation the moment an E2E
+    // member has ever paid — this bit accumulated pollution in a
+    // NON-`test-%` tenant (the primary tenant), which the tenant-scoped
+    // 'test-%' cascade (step 2, below) cannot reach.
+    const memberPairs = sql.join(
+      e2eMemberRows.map(
+        (r) => sql`(${r.tenant_id}, ${r.member_id}::uuid)`,
+      ),
+      sql`, `,
+    );
+    const e2eCycleRows = await db.execute(
+      sql`SELECT tenant_id, cycle_id FROM renewal_cycles
+          WHERE (tenant_id, member_id) IN (${memberPairs})`,
+    );
+    const e2eCycles = unwrap<{ tenant_id: string; cycle_id: string }>(
+      e2eCycleRows,
+    );
+    if (e2eCycles.length > 0) {
+      const cyclePairs = sql.join(
+        e2eCycles.map((c) => sql`(${c.tenant_id}, ${c.cycle_id}::uuid)`),
+        sql`, `,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_reminder_events
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_escalation_tasks
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM scheduled_plan_changes
+            WHERE (tenant_id, effective_at_cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_cycles
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+    }
+
     const idListSql = sql.join(
       e2eMemberIds.map((id) => sql`${id}::uuid`),
       sql`, `,
