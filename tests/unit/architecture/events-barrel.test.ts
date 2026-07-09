@@ -105,9 +105,13 @@ describe('events module barrel — architecture guard (L1 round-3)', () => {
     // (~1 relink), Phase 10 (~3 retention/erasure). Bumped to <110 for
     // 054-event-fee-invoices Task 6a (`makeEventDetailsLookupForTenant`
     // F4 invoicing bridge, sibling of Task-5's
-    // `makeEventRegistrationLookupForTenant`). Bump again if it becomes
-    // load-bearing.
-    expect(exportedNames.length).toBeLessThan(110);
+    // `makeEventRegistrationLookupForTenant`). Bumped to <120 after the
+    // F6 remediation wave (#161–#171, notably #171's CSV column-remap
+    // surface) grew the reviewed barrel to 114 — that merge landed on
+    // main without this budget being re-run, so the bump records the
+    // reviewed growth rather than reverting shipped exports. Bump again
+    // if it becomes load-bearing.
+    expect(exportedNames.length).toBeLessThan(120);
     expect(exportedNames.length).toBeGreaterThan(30);
   });
 });
