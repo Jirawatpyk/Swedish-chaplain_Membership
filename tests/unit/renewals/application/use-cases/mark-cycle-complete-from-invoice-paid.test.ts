@@ -599,10 +599,61 @@ describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-pa
       }),
     });
 
-    // The reanchor branch returns BEFORE the erased/blocked guards read —
-    // classification does not bypass FR-005b/COMP-1, it simply never
-    // reaches that gate for a first-payment cycle (re-anchor ≠ reactivation).
-    expect(readGuardsMock).not.toHaveBeenCalled();
+    // Stop-the-line fix (erased-member-auto-reactivation regression) — the
+    // guards read now happens BEFORE classification (not after, as the
+    // reanchor branch used to bypass it entirely), so the erased flag can
+    // feed `classifyMembershipPayment` and route an erased member's
+    // first-ever payment to the hold-for-admin path instead of re-anchoring.
+    // For this NON-erased member, the read still resolves `memberErased:
+    // false` and reanchor proceeds exactly as before — see the sibling
+    // "erased member" test below for the gated case.
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('COMP-1 H4: erased member, first-ever unanchored cycle → held for admin, NOT reanchored', async () => {
+    // Same first-payment shape as the happy-path test above (only cycle,
+    // never anchored), but the member is GDPR-erased. Without threading the
+    // real erased flag into classification, this misclassified as
+    // `first_payment` and silently re-anchored an erased member's renewal
+    // timeline — COMP-1 forbids that just as much as auto-completing one.
+    const cycle = buildCycle();
+    const {
+      deps,
+      reanchorMock,
+      transitionMock,
+      emitInTxMock,
+      countCyclesMock,
+      readGuardsMock,
+    } = fakeDeps({
+      cycle,
+      countCyclesForMember: 1,
+      erased: true,
+      transitionImpl: async () =>
+        ({
+          ...cycle,
+          status: 'pending_admin_reactivation' as const,
+          enteredPendingAt: '2026-05-07T10:00:00Z',
+        }) as never,
+    });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('held_pending_admin');
+    // Classification ran (cycle is open) and consulted countCyclesForMember,
+    // but resolved to not_applicable(erased) — never first_payment.
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).not.toHaveBeenCalled();
+    // ONE combined guards read feeds BOTH classification and the
+    // hold-for-admin gate below — not two separate reads.
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'awaiting_payment',
+      to: 'pending_admin_reactivation',
+    });
+    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+      type: 'renewal_completed_post_lapse',
+      payload: { held_for_admin_review: true },
+    });
   });
 
   it('linked invoice + already-anchored cycle → existing completed behaviour is byte-identical', async () => {

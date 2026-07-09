@@ -243,6 +243,27 @@ export async function markCycleCompleteInTx(
     return { kind: 'no_cycle_for_invoice' as const };
   }
 
+  // FR-005b + COMP-1 — read BOTH reactivation guards in ONE round-trip
+  // (COMP-1 L3 fold): the admin `blocked_from_auto_reactivation` override AND
+  // the GDPR-erased state. Hoisted into this `openCycleInput` block (round 2
+  // fix — a prior version hardcoded `memberErased: false` into
+  // classification below, "since the erased/blocked gate a few lines down
+  // governs every outcome anyway"; that reasoning was WRONG for the
+  // `first_payment` shape: an erased member whose only-ever cycle is
+  // unanchored would misclassify as `first_payment` and RE-ANCHOR instead
+  // of falling through to the hold-for-admin path below — re-anchor is not
+  // literally a "reactivation" transition, but it silently revives a
+  // GDPR-erased member's renewal timeline, which COMP-1 forbids just as
+  // much). Reading the real flag here brings this LINKED path to parity
+  // with the UNLINKED hook (`resolveUnlinkedMembershipPaymentInTx`), which
+  // has always checked `erased` before classifying. Placed inside this
+  // block (not unconditionally at the top of the function) so a cycle
+  // that's already terminal/pending-admin (idempotent re-fire) still costs
+  // zero reads here, exactly as before — it hits the `awaiting_payment`
+  // guard below without ever needing these values. `null` (member
+  // RLS-hidden / absent) → both guards treated as false → auto-complete
+  // (defensive — preserves the prior null-read behaviour).
+  //
   // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
   // Task 6 (spec §1 consuming-site 2) — classify the payment for the
   // LINKED cycle's member using the SAME shared classifier every
@@ -251,19 +272,23 @@ export async function markCycleCompleteInTx(
   // anchored to a real payment — exactly confirm-renewal's pre-linked-
   // invoice shape) RE-ANCHORS instead of completing: confirm-renewal
   // previously settled such a member at the cycle's provisional
-  // registration-date period rather than the actual payment month.
-  //
-  // `memberErased` is deliberately fixed `false` here — this classify
-  // call exists ONLY to detect the first-payment shape. The erased/
-  // blocked gate a few lines down (`readReactivationGuardsInTx` +
-  // `holdForAdminReview`) is UNCHANGED and still governs every
-  // NON-first_payment outcome. A blocked (or erased) member whose cycle
-  // IS first-payment-eligible still re-anchors here: re-anchor is not a
-  // reactivation — it only resets the cycle's period dates and leaves
-  // status at `upcoming` — so it does not bypass FR-005b / COMP-1 in any
-  // way that matters.
+  // registration-date period rather than the actual payment month. An
+  // erased member's classification instead resolves to
+  // `not_applicable(erased)` (never `first_payment`), so it falls through
+  // to the UNCHANGED `awaiting_payment` guard + `holdForAdminReview` flow
+  // below — this is the ONLY gate an erased member's payment can reach.
+  let blocked = false;
+  let isErased = false;
   const openCycleInput = toOpenCycleClassifierInput(cycle);
   if (openCycleInput) {
+    const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+      tx,
+      event.tenantId,
+      cycle.memberId,
+    );
+    blocked = guards?.blocked === true;
+    isErased = guards?.erased === true;
+
     const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
       tx,
       event.tenantId,
@@ -272,7 +297,7 @@ export async function markCycleCompleteInTx(
     const classification = classifyMembershipPayment({
       cycleCountForMember,
       openCycle: openCycleInput,
-      memberErased: false,
+      memberErased: isErased,
     });
 
     if (classification.kind === 'first_payment') {
@@ -327,24 +352,14 @@ export async function markCycleCompleteInTx(
     };
   }
 
-  // FR-005b + COMP-1 — read BOTH reactivation guards in ONE round-trip
-  // (COMP-1 L3 fold): the admin `blocked_from_auto_reactivation` override AND
-  // the GDPR-erased state. An erased member must never AUTO-reactivate:
-  // erasure keeps `status` + forces `blocked_from_auto_reactivation = FALSE`
-  // (the 0094 CHECK forbids the flag staying TRUE once its provenance is
-  // scrubbed), so the block flag alone no longer fences an erased member.
-  // Routing a payment that lands against a GDPR-anonymised tombstone to the
-  // admin-hold path surfaces it to an admin instead of silently reactivating
-  // it. `null` (member RLS-hidden / absent) → both guards treated as false →
-  // auto-complete (defensive — preserves the prior null-read behaviour).
-  const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
-    tx,
-    event.tenantId,
-    cycle.memberId,
-  );
-  const blocked = guards?.blocked === true;
-  const isErased = guards?.erased === true;
-
+  // `blocked` / `isErased` were already resolved above (one combined read,
+  // reused here — see COMP-1 L3 fold comment at the top of this function).
+  // An erased member must never AUTO-reactivate: erasure keeps `status` +
+  // forces `blocked_from_auto_reactivation = FALSE` (the 0094 CHECK forbids
+  // the flag staying TRUE once its provenance is scrubbed), so the block
+  // flag alone no longer fences an erased member. Routing a payment that
+  // lands against a GDPR-anonymised tombstone to the admin-hold path
+  // surfaces it to an admin instead of silently reactivating it.
   const closedAt = event.paidAt;
   if (blocked || isErased) {
     // Hold for admin review — NOT a terminal state. cycle moves to
