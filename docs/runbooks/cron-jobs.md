@@ -1053,13 +1053,14 @@ than 30 days. Map it onto the existing config knob:
 UPDATE tenant_renewal_settings SET grace_period_days = 30 WHERE tenant_id = 'swecham';
 ```
 
-> **Caveat**: the TSCC 30-day rule is officially UNCONFIRMED (source:
-> public site — maintainer: "ไม่ชัวร์"). Their wording counts 30 days from
-> *invoice/reminder receipt*; F8 counts from *period end* — near-equivalent
-> since the final notices land at expiry, but get official confirmation
-> from TSCC and revisit if their answer differs. Until confirmed, 30 is a
-> strictly-more-forgiving setting than the seeded default 14 (members get
-> LONGER to pay before lapsing), so applying it early is low-risk.
+> **Status (RESOLVED 2026-07-09)**: TSCC confirmed there is **no fixed
+> lapse policy — it is board discretion per case**. 30 days is therefore
+> the CHOSEN DEFAULT (matches their public-site wording and common
+> chamber practice), not a compliance requirement. The board can change
+> it any time by updating this single config value (`grace_period_days`,
+> valid range 0–90) — no deploy needed. F8 counts the grace window from
+> *period end*; 30 is strictly more forgiving than the seeded default 14,
+> so applying it at ship is low-risk.
 
 Verify after applying:
 
