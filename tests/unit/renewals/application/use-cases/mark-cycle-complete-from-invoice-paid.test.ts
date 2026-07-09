@@ -247,7 +247,8 @@ function fakeDeps(args: {
       loadPlanFrozenFields: loadPlanFrozenFieldsMock,
     } as unknown as MarkCycleCompleteDeps['planLookupForRenewal'],
     cycleIdFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000cffff') },
-    clock: { now: () => new Date('2026-05-07T10:00:00Z') },
+    // FIX-8(d) (PR #173 review, 2026-07-09) — `clock` dropped from
+    // `MarkCycleCompleteDeps` (dead dependency, never read).
     memberPlanLookup: {
       loadMemberPlanInTx: loadMemberPlanMock,
     } as unknown as MarkCycleCompleteDeps['memberPlanLookup'],

@@ -57,9 +57,15 @@ export async function loadMemberRenewalContext(
   const ctx = asTenantContext(tenantSlug);
   const renewalsDeps = makeRenewalsDeps(tenantSlug);
 
-  const { classification, periodTo, termMonths } = await runInTenant(
-    ctx,
-    async (tx) => {
+  // FIX-8(h) (PR #173 review, 2026-07-09) — the classification read (F8
+  // renewals, its own tx) and the unpaid-membership-invoice peek (F4
+  // invoicing, its own separate `runInTenant`) are fully independent —
+  // neither depends on the other's result. Both are advisory-only reads
+  // feeding a UI hint line (module docstring), so running them
+  // concurrently via `Promise.all` is a safe latency win rather than the
+  // previous strictly-sequential await chain.
+  const [{ classification, periodTo, termMonths }, invoicesResult] = await Promise.all([
+    runInTenant(ctx, async (tx) => {
       const guards = await renewalsDeps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
         tx,
         tenantSlug,
@@ -110,19 +116,15 @@ export async function loadMemberRenewalContext(
         termMonths:
           classification.kind === 'renewal' ? (openCycle?.frozenPlanTermMonths ?? null) : null,
       };
-    },
-  );
-
-  // Unpaid-membership-invoice peek — a different module's repo (invoicing),
-  // so it runs OUTSIDE the renewals tx above (its own `runInTenant`, per
-  // `listInvoicesByMember`'s Drizzle adapter).
-  const invoicesResult = await listInvoicesByMember(makeListInvoicesByMemberDeps(tenantSlug), {
-    tenantId: tenantSlug,
-    memberId,
-    status: 'issued',
-    pageSize: UNPAID_CHECK_PAGE_SIZE,
-    offset: 0,
-  });
+    }),
+    listInvoicesByMember(makeListInvoicesByMemberDeps(tenantSlug), {
+      tenantId: tenantSlug,
+      memberId,
+      status: 'issued',
+      pageSize: UNPAID_CHECK_PAGE_SIZE,
+      offset: 0,
+    }),
+  ]);
   const hasUnpaidMembershipInvoice =
     invoicesResult.ok &&
     invoicesResult.value.rows.some((invoice) => invoice.invoiceSubject === 'membership');

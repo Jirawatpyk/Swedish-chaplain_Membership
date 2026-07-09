@@ -2567,12 +2567,22 @@ export const renewalsMetrics = {
   /**
    * `renewals_unlinked_payment_resolved_total{outcome}` — Renewal
    * rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238):
-   * outcome counter for `resolveUnlinkedMembershipPaymentInTx` (the
-   * unlinked-invoice on-paid hook fired from `markCycleCompleteInTx`'s
-   * `no_cycle_for_invoice` branch). `outcome` ∈ `reanchored` (first
-   * payment re-anchored a never-before-paid cycle) | `renewed` (open
-   * cycle completed + next cycle rolled forward) | `healed` (zero-cycle
-   * member self-healed a fresh anchored cycle) | `held` (FR-005b parity,
+   * outcome counter primarily for `resolveUnlinkedMembershipPaymentInTx`
+   * (the unlinked-invoice on-paid hook fired from `markCycleCompleteInTx`'s
+   * `no_cycle_for_invoice` branch), but NOT exclusively — `outcome ===
+   * 'reanchored'` is emitted from the SHARED `reanchorFirstPaymentCycleInTx`
+   * core (`_lib/reanchor-first-payment.ts`), which THREE settlement sites
+   * call: (1) this hook's own `firstPayment` branch, (2)
+   * `markCycleCompleteInTx`'s LINKED path (Task 6), and (3)
+   * `mark-paid-offline.ts`'s first-payment branch (Task 7). So a spike in
+   * the `reanchored` bucket does not necessarily mean unlinked/out-of-band
+   * payments increased — it aggregates all three re-anchor call sites.
+   * Every OTHER outcome value (`renewed` / `healed` / `held` / `skipped`)
+   * is emitted ONLY by this hook. `outcome` ∈ `reanchored` (first
+   * payment re-anchored a never-before-paid cycle, from ANY of the 3
+   * sites above) | `renewed` (open cycle completed + next cycle rolled
+   * forward) | `healed` (zero-cycle member self-healed a fresh anchored
+   * cycle) | `held` (FR-005b parity,
    * Task 5 review F4: a blocked member's renewal-branch completion was
    * redirected to `pending_admin_reactivation` instead of auto-completing
    * — mirrors the linked path's `holdForAdminReview`) | `skipped`

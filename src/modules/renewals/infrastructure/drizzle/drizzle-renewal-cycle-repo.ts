@@ -50,6 +50,8 @@ import {
 import {
   assertCanTransition,
   InvalidCycleTransitionError,
+  OPEN_CYCLE_STATUSES,
+  OPEN_CYCLE_STATUSES_SQL_LIST,
   type CycleStatus,
 } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
@@ -958,7 +960,7 @@ export function makeDrizzleRenewalCycleRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(args.cursor);
         const filters: SQL[] = [
-          sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment')`,
+          sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} >= ${args.cutoff}`,
         ];
         if (cursor) {
@@ -1332,11 +1334,7 @@ export function makeDrizzleRenewalCycleRepo(
         .where(
           and(
             eq(renewalCycles.memberId, memberId),
-            inArray(renewalCycles.status, [
-              'upcoming',
-              'reminded',
-              'awaiting_payment',
-            ]),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
           ),
         )
         .limit(1);

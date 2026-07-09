@@ -62,6 +62,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { omitUndefined } from '@/lib/object-helpers';
 // L1 (068 security review) — Postgres 23505 detection. `@/lib/db-errors`
 // is Infrastructure-free (only the stable Postgres SQLSTATE contract), so
 // importing it in the Application layer is Principle-III clean — the same
@@ -82,6 +83,7 @@ import {
 } from './create-cycle-in-tx';
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import { loadClassificationCounts } from './_lib/classification-input';
 import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
@@ -230,13 +232,11 @@ export async function adminRenewLapsedMember(
       // was built for. `countCyclesForMember` here already includes the
       // just-created row (same tx), so `settledCycleCountForMember`
       // (which excludes it) is what actually discriminates.
-      const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
-        tx,
-        input.tenantId,
-        input.memberId,
-      );
-      const settledCycleCountForMember =
-        await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+      // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+      // duplicated at every settlement site).
+      const { cycleCountForMember, settledCycleCountForMember } =
+        await loadClassificationCounts(
+          deps,
           tx,
           input.tenantId,
           input.memberId,
@@ -350,9 +350,11 @@ export async function adminRenewLapsedMember(
     planId: cycle.planIdAtCycleStart,
     planYear,
     frozenPlanPriceThb: cycle.frozenPlanPriceThb,
-    // exactOptionalPropertyTypes — omit the key entirely on the
-    // first-payment branch rather than assign an explicit `undefined`.
-    ...(membershipCoverage !== undefined ? { membershipCoverage } : {}),
+    // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces the
+    // conditional-spread idiom; exactOptionalPropertyTypes still omits the
+    // key entirely on the first-payment branch rather than assigning an
+    // explicit `undefined`.
+    ...omitUndefined({ membershipCoverage }),
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,

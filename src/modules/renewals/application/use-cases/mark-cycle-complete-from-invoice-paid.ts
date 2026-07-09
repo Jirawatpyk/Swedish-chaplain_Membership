@@ -59,6 +59,7 @@ import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import { loadClassificationCounts } from './_lib/classification-input';
 import {
   asCycleId,
   type RenewalCycle,
@@ -136,7 +137,8 @@ export type MarkCycleCompleteDeps = Pick<
   // other three.
   | 'planLookupForRenewal'
   | 'cycleIdFactory'
-  | 'clock'
+  // FIX-8(d) (PR #173 review, 2026-07-09) — `'clock'` was Pick'd but never
+  // referenced anywhere in this file; dropped (dead dependency).
   | 'memberPlanLookup'
   // FIX-3 (PR #173 review, 2026-07-09) — threaded into BOTH the unlinked
   // hook's `firstPayment` branch and the linked path's own reanchor call
@@ -302,16 +304,11 @@ export async function markCycleCompleteInTx(
     blocked = guards?.blocked === true;
     isErased = guards?.erased === true;
 
-    const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
-      tx,
-      event.tenantId,
-      cycle.memberId,
-    );
-    // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
-    // ever-anchored), not raw cycle count, discriminates first_payment vs
-    // renewal (see classify-membership-payment.ts docstring).
-    const settledCycleCountForMember =
-      await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+    // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+    // duplicated at every settlement site).
+    const { cycleCountForMember, settledCycleCountForMember } =
+      await loadClassificationCounts(
+        deps,
         tx,
         event.tenantId,
         cycle.memberId,

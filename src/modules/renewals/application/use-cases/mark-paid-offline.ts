@@ -39,6 +39,8 @@
  *     Phase 4 alongside the dispatcher cron emit sites.
  */
 import { z } from 'zod';
+import { omitUndefined } from '@/lib/object-helpers';
+import { loadClassificationCounts } from './_lib/classification-input';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -269,16 +271,11 @@ export async function markPaidOffline(
       // behaviour) falls through to the pre-existing `completed` path —
       // this classify call exists ONLY to detect the first-payment shape,
       // matching `markCycleCompleteInTx`'s linked-path rationale (Task 6).
-      const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
-        tx,
-        input.tenantId,
-        lockedCycle.memberId,
-      );
-      // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
-      // ever-anchored), not raw cycle count, discriminates first_payment
-      // vs renewal (see classify-membership-payment.ts docstring).
-      const settledCycleCountForMember =
-        await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+      // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+      // duplicated at every settlement site).
+      const { cycleCountForMember, settledCycleCountForMember } =
+        await loadClassificationCounts(
+          deps,
           tx,
           input.tenantId,
           lockedCycle.memberId,
@@ -517,9 +514,11 @@ export async function markPaidOffline(
         // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
         // path. (cluster A, 068 code-review fix.)
         frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
-        // exactOptionalPropertyTypes — omit the key entirely on the
-        // first-payment branch rather than assign an explicit `undefined`.
-        ...(membershipCoverage !== undefined ? { membershipCoverage } : {}),
+        // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces
+        // the conditional-spread idiom; exactOptionalPropertyTypes still
+        // omits the key entirely on the first-payment branch rather than
+        // assigning an explicit `undefined`.
+        ...omitUndefined({ membershipCoverage }),
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,

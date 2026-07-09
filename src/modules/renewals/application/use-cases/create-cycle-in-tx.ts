@@ -32,6 +32,7 @@
 import type { TenantTx } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { omitUndefined } from '@/lib/object-helpers';
 import type { MemberId } from '@/modules/members';
 import type {
   NewRenewalCycleInput,
@@ -293,7 +294,10 @@ export async function createCycleInTx(
     planIdAtCycleStart: input.planId,
     frozenPlanPriceThb: plan.priceTHB,
     frozenPlanTermMonths: plan.termMonths,
-    ...(input.startStatus !== undefined ? { startStatus: input.startStatus } : {}),
+    // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces the
+    // conditional-spread idiom (same exactOptionalPropertyTypes rationale
+    // as the membershipCoverage sites).
+    ...omitUndefined({ startStatus: input.startStatus }),
   };
   const cycle = await deps.cyclesRepo.insert(tx, input.tenantId, newCycle);
 

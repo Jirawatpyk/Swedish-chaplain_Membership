@@ -47,6 +47,7 @@ import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import { loadClassificationCounts } from './_lib/classification-input';
 import { asCycleId, type RenewalCycle } from '../../domain/renewal-cycle';
 import {
   CycleNotFoundError,
@@ -144,6 +145,29 @@ function correlationId(evt: F4InvoicePaidEvent): string {
   return `f4-paid:${evt.invoiceId}`;
 }
 
+/**
+ * FIX-8(e) (PR #173 review, 2026-07-09) — shared "ensure awaiting_payment"
+ * step, extracted from `heldForAdminReview`'s generic two-step form and
+ * reused by `renewalComplete`'s `reminded` branch (previously a duplicated
+ * inline `transitionStatus({from:'reminded', to:'awaiting_payment'})` call).
+ * No-ops when the cycle is already `awaiting_payment`. Written generically
+ * over "not already awaiting_payment" (not hardcoded to `reminded`) so it
+ * stays correct for any future open status.
+ */
+async function ensureAwaitingPaymentInTx(
+  deps: ResolveUnlinkedMembershipPaymentDeps,
+  evt: F4InvoicePaidEvent,
+  tx: TenantTx,
+  cycle: RenewalCycle,
+): Promise<void> {
+  if (cycle.status !== 'awaiting_payment') {
+    await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+      from: cycle.status,
+      to: 'awaiting_payment',
+    });
+  }
+}
+
 /** Fold the vestigial `'reminded'` status into `'upcoming'` for the classifier — mirrors the domain docstring on `classifyMembershipPayment`. */
 function toClassifierOpenCycle(
   cycle: RenewalCycle | null,
@@ -188,29 +212,21 @@ export async function resolveUnlinkedMembershipPaymentInTx(
   // LINKED path.
   const blocked = guards?.blocked === true;
 
-  const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
-    tx,
-    evt.tenantId,
-    evt.memberId,
-  );
   const openCycle = await deps.cyclesRepo.findOpenCycleForMemberInTx(
     tx,
     evt.tenantId,
     evt.memberId,
   );
-  // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
-  // ever-anchored), not raw cycle count, discriminates first_payment vs
-  // renewal (see classify-membership-payment.ts docstring). Only queried
-  // when an open cycle exists — `classifyMembershipPayment` never
-  // consults it otherwise (heal_no_cycle / terminal_only branches).
-  const settledCycleCountForMember = openCycle
-    ? await deps.cyclesRepo.countSettledCyclesForMemberInTx(
-        tx,
-        evt.tenantId,
-        evt.memberId,
-        openCycle.cycleId,
-      )
-    : 0;
+  // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+  // duplicated at every settlement site).
+  const { cycleCountForMember, settledCycleCountForMember } =
+    await loadClassificationCounts(
+      deps,
+      tx,
+      evt.tenantId,
+      evt.memberId,
+      openCycle?.cycleId ?? null,
+    );
 
   const classification = classifyMembershipPayment({
     cycleCountForMember,
@@ -461,18 +477,16 @@ async function renewalComplete(
     // straight through for a `reminded` cycle would throw
     // `InvalidCycleTransitionError` (uncaught by the
     // CycleTransitionConflictError/CycleNotFoundError catch below),
-    // crashing this hook instead of completing the payment. Take the
-    // SAME legal two-step route `heldForAdminReview` already uses for
-    // `upcoming|reminded → awaiting_payment` a few lines down.
-    // `reminded` has NO writer anywhere in `src/` today (vestigial status
-    // — see `classify-membership-payment.ts`'s module docstring), so this
-    // branch is currently unreachable in production; written defensively
-    // so a future writer doesn't reintroduce this crash.
+    // crashing this hook instead of completing the payment. FIX-8(e) — the
+    // first step now calls the SAME shared `ensureAwaitingPaymentInTx`
+    // helper `heldForAdminReview` uses for its own `upcoming|reminded →
+    // awaiting_payment` step (was a duplicated inline transitionStatus
+    // call). `reminded` has NO writer anywhere in `src/` today (vestigial
+    // status — see `classify-membership-payment.ts`'s module docstring),
+    // so this branch is currently unreachable in production; written
+    // defensively so a future writer doesn't reintroduce this crash.
     if (cycle.status === 'reminded') {
-      await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
-        from: 'reminded',
-        to: 'awaiting_payment',
-      });
+      await ensureAwaitingPaymentInTx(deps, evt, tx, cycle);
       updated = await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
         from: 'awaiting_payment',
         to: 'completed',
@@ -588,12 +602,9 @@ async function heldForAdminReview(
   cycle: RenewalCycle,
 ): Promise<UnlinkedResolutionOutcome> {
   try {
-    if (cycle.status !== 'awaiting_payment') {
-      await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
-        from: cycle.status,
-        to: 'awaiting_payment',
-      });
-    }
+    // FIX-8(e) (PR #173 review, 2026-07-09) — shared with `renewalComplete`'s
+    // `reminded` branch (see `ensureAwaitingPaymentInTx`'s docstring).
+    await ensureAwaitingPaymentInTx(deps, evt, tx, cycle);
     await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
       from: 'awaiting_payment',
       to: 'pending_admin_reactivation',
@@ -656,26 +667,21 @@ async function reclassifyAfterRace(
   tx: TenantTx,
   blocked: boolean,
 ): Promise<UnlinkedResolutionOutcome> {
-  const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
-    tx,
-    evt.tenantId,
-    evt.memberId,
-  );
   const openCycle = await deps.cyclesRepo.findOpenCycleForMemberInTx(
     tx,
     evt.tenantId,
     evt.memberId,
   );
-  // F2 fix (final-review, 2026-07-09) — see the main function's identical
-  // comment above.
-  const settledCycleCountForMember = openCycle
-    ? await deps.cyclesRepo.countSettledCyclesForMemberInTx(
-        tx,
-        evt.tenantId,
-        evt.memberId,
-        openCycle.cycleId,
-      )
-    : 0;
+  // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (see the main
+  // function's identical comment above).
+  const { cycleCountForMember, settledCycleCountForMember } =
+    await loadClassificationCounts(
+      deps,
+      tx,
+      evt.tenantId,
+      evt.memberId,
+      openCycle?.cycleId ?? null,
+    );
   const reclassified = classifyMembershipPayment({
     cycleCountForMember,
     settledCycleCountForMember,
