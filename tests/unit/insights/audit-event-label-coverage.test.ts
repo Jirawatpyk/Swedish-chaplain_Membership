@@ -10,7 +10,7 @@
  * `audit.eventType` renders English to TH/SV users somewhere. Nothing gated
  * this before: `check:i18n` verifies cross-locale KEY parity only, and the keys
  * were consistently absent from all three locales, so parity held. On main,
- * 209 of the 308 DB enum values were missing from `audit.eventType` (124 after
+ * 212 of the 311 DB enum values were missing from `audit.eventType` (127 after
  * the first 86-label sweep).
  *
  * Invariants pinned here:
@@ -74,10 +74,13 @@ function dbEnumValuesFromMigrations(): ReadonlySet<string> {
       /CREATE TYPE\s+"?(?:public"?\."?)?audit_event_type"?\s+AS ENUM\s*\(([\s\S]*?)\)/i,
     );
     if (created?.[1]) {
-      for (const m of created[1].matchAll(/'([a-z0-9_]+)'/g)) values.add(m[1]!);
+      // `[^']+`, NOT `[a-z0-9_]+`: three F8 values carry a hyphen
+      // (`…reactivation_reminder_t-7/-3/-1`) — a word-char class silently
+      // drops them from the universe (reviewer-2 round-2 finding).
+      for (const m of created[1].matchAll(/'([^']+)'/g)) values.add(m[1]!);
     }
     for (const m of sql.matchAll(
-      /ALTER TYPE\s+"?(?:public"?\."?)?audit_event_type"?\s+ADD VALUE(?:\s+IF NOT EXISTS)?\s+'([a-z0-9_]+)'/gi,
+      /ALTER TYPE\s+"?(?:public"?\."?)?audit_event_type"?\s+ADD VALUE(?:\s+IF NOT EXISTS)?\s+'([^']+)'/gi,
     )) {
       values.add(m[1]!);
     }

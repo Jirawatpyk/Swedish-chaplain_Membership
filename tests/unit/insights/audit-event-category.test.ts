@@ -46,6 +46,8 @@ describe('auditEventCategory', () => {
     ['at_risk_score_recomputed', 'renewals'],
     ['escalation_task_created', 'renewals'],
     ['lapsed_member_admin_reactivated', 'renewals'],
+    // hyphenated F8 reminder-ladder values (only non-[a-z0-9_] enum values)
+    ['lapsed_member_admin_reactivation_reminder_t-7', 'renewals'],
     ['member_auto_reactivation_blocked', 'renewals'],
     ['manual_outreach_required', 'renewals'],
     ['f8_role_violation_blocked', 'renewals'],
