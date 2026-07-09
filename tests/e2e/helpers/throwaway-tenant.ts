@@ -42,6 +42,9 @@ import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { tenantMemberSequences } from '@/modules/members/infrastructure/db/schema-member-sequences';
+import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
@@ -185,12 +188,23 @@ export async function createThrowawayTenant(
     // Delete in dependency order. Audit log rows are append-only by
     // trigger — let them accumulate with the throwaway slug; a
     // future F13 super-admin scan sweeps them.
+    //
+    // renewal_cycles FIRST (rolling-anchor 2026-07-09): since the F8
+    // on-paid hook ships, PAYING a membership invoice creates/anchors a
+    // cycle row referencing both the member AND the invoice
+    // (linked_invoice_id / anchor_invoice_id FKs) — it must go before
+    // invoices + members. renewal_reminder_events CASCADE with cycles.
+    // contacts + tenant_member_sequences accompany UI-created members
+    // (POST /api/members seeds both).
+    await db.delete(renewalCycles).where(eq(renewalCycles.tenantId, slug));
     await db.delete(invoiceLines).where(eq(invoiceLines.tenantId, slug));
     await db.delete(creditNotes).where(eq(creditNotes.tenantId, slug));
     await db.delete(invoices).where(eq(invoices.tenantId, slug));
     await db.delete(tenantDocumentSequences).where(eq(tenantDocumentSequences.tenantId, slug));
     await db.delete(tenantInvoiceSettings).where(eq(tenantInvoiceSettings.tenantId, slug));
+    await db.delete(contacts).where(eq(contacts.tenantId, slug));
     await db.delete(members).where(eq(members.tenantId, slug));
+    await db.delete(tenantMemberSequences).where(eq(tenantMemberSequences.tenantId, slug));
     await db
       .delete(membershipPlans)
       .where(
