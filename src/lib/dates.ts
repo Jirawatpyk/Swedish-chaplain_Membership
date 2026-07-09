@@ -42,3 +42,20 @@ export function addMonthsUtc(iso: string, months: number): string {
   d.setUTCDate(Math.min(day, lastDayOfTargetMonth));
   return d.toISOString();
 }
+
+/**
+ * The Asia/Bangkok calendar date (`YYYY-MM-DD`) for a UTC ISO instant.
+ *
+ * Bangkok is UTC+7 with NO DST — and always has been — so its local date is
+ * simply the date part of the instant shifted +7h; no timezone database is
+ * needed. This is the client-bundle-safe equivalent of `fiscal-year.ts`'s
+ * js-joda-backed `bangkokLocalDate`, for `'use client'` modules that must NOT
+ * drag the ~700 KB `@js-joda/timezone` IANA dataset into the browser bundle
+ * for a trivial "today" calculation (PR #173 round-2 review, 2026-07-09).
+ * Server code with js-joda already in scope should keep using
+ * `bangkokLocalDate`.
+ */
+export function bangkokDateOnly(iso: string): string {
+  const shifted = new Date(new Date(iso).getTime() + 7 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}

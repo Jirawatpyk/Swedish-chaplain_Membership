@@ -29,8 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { addMonthsUtc } from '@/lib/dates';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { addMonthsUtc, bangkokDateOnly } from '@/lib/dates';
 import { SearchableCombobox } from './searchable-combobox';
 import type { ComboboxOption } from './searchable-combobox';
 
@@ -137,7 +136,13 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
   // boundaries) — a raw UTC ISO instant is already tomorrow in Bangkok
   // between 17:00-23:59 UTC, which would shift the 6-month duplicate-
   // billing threshold by a day during that window every render.
-  const todayIso = `${bangkokLocalDate(new Date().toISOString())}T00:00:00.000Z`;
+  //
+  // R2-FIX-7 (PR #173 round-2 review, 2026-07-09) — uses the client-safe
+  // `bangkokDateOnly` (plain UTC+7 arithmetic in `@/lib/dates`) instead of
+  // `fiscal-year.ts`'s `bangkokLocalDate`, whose bare `import
+  // '@js-joda/timezone'` dragged the ~700 KB IANA dataset into this
+  // `'use client'` bundle. Bangkok has no DST, so the result is identical.
+  const todayIso = `${bangkokDateOnly(new Date().toISOString())}T00:00:00.000Z`;
   const showWarning = shouldShowRenewalDuplicateWarning(context, todayIso);
 
   return (
