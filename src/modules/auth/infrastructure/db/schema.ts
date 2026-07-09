@@ -371,14 +371,179 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
 ]);
 
 /**
- * Canonical FULL set of audit-event-type codes. Every module writes to this one
- * `audit_event_type` pg enum, so its values are the complete cross-module list
- * (auth + F2..F9). Surfaced through the auth barrel for the audit-viewer filter
- * (S1-P1-7) — which must list every type that can appear in `audit_log`, not
- * just auth/payment codes. Sorted for a stable dropdown order.
+ * Enum values that exist in the LIVE `audit_event_type` pg enum but NOT in the
+ * `auditEventTypeEnum` TS tuple above. F6 (events), F7/F7.1 (broadcasts) and
+ * F8 (renewals) added their audit values via hand-written
+ * `ALTER TYPE … ADD VALUE` migrations without syncing this file, so the tuple
+ * alone under-reports the real enum by these 145 values (reviewer-2 finding,
+ * QA 2026-07-09). Rows with these types exist in production audit_log — the
+ * viewer must be able to filter AND label them. Kept in lockstep with the
+ * migrations by the parity check in
+ * tests/unit/insights/audit-event-label-coverage.test.ts (it re-derives the
+ * enum from drizzle/migrations and fails on any drift in either direction).
+ * When a migration adds a value: add it here (or to the tuple) + a label in
+ * audit.eventType (en/th/sv).
+ */
+export const DB_ONLY_AUDIT_EVENT_TYPES: readonly string[] = [
+  'attendee_matched_member_contact',
+  'attendee_matched_member_domain',
+  'attendee_matched_member_fuzzy',
+  'attendee_non_member',
+  'attendee_unmatched',
+  'broadcast_approved',
+  'broadcast_audience_too_large',
+  'broadcast_body_image_source_unsafe',
+  'broadcast_body_too_large',
+  'broadcast_body_unsafe_html',
+  'broadcast_cancel_too_late',
+  'broadcast_cancelled',
+  'broadcast_complaint_rate_per_broadcast_breach',
+  'broadcast_complaint_received',
+  'broadcast_concurrent_action_blocked',
+  'broadcast_cross_member_probe',
+  'broadcast_cross_tenant_probe',
+  'broadcast_custom_recipient_unknown',
+  'broadcast_delivery_recorded',
+  'broadcast_dispatch_failure_notif_skipped_no_email',
+  'broadcast_dispatch_idempotency_conflict_pre_send',
+  'broadcast_dispatched_in_batches',
+  'broadcast_drafted',
+  'broadcast_empty_segment_blocked',
+  'broadcast_failed_to_dispatch',
+  'broadcast_image_allowlist_updated',
+  'broadcast_image_too_large',
+  'broadcast_image_unsafe',
+  'broadcast_immutable_after_submit',
+  'broadcast_member_dispatch_resumed',
+  'broadcast_member_halted_pending_review',
+  'broadcast_member_missing_primary_contact_email',
+  'broadcast_not_in_plan',
+  'broadcast_partial_delivery_accepted',
+  'broadcast_partially_sent',
+  'broadcast_quota_blocked',
+  'broadcast_quota_consumed',
+  'broadcast_rate_limit_exceeded',
+  'broadcast_rejected',
+  'broadcast_resend_audience_drift',
+  'broadcast_resend_drift_check_unverifiable',
+  'broadcast_resend_resource_missing',
+  'broadcast_retry_completed',
+  'broadcast_retry_initiated',
+  'broadcast_send_started',
+  'broadcast_send_timeout_completed',
+  'broadcast_sent',
+  'broadcast_sent_with_expired_member_plan',
+  'broadcast_subject_empty',
+  'broadcast_subject_too_long',
+  'broadcast_submitted',
+  'broadcast_suppression_applied',
+  'broadcast_template_created',
+  'broadcast_template_deleted',
+  'broadcast_template_seed_skipped_existing_name',
+  'broadcast_template_snapshot_refused_deleted',
+  'broadcast_template_snapshotted',
+  'broadcast_template_updated',
+  'broadcast_unsubscribe_token_invalid',
+  'broadcast_unsubscribed',
+  'broadcast_webhook_batch_missing',
+  'broadcast_webhook_signature_rejected',
+  'cron_bearer_auth_rejected',
+  'cron_dispatch_orchestrated',
+  'cross_tenant_probe',
+  'csv_import_completed',
+  'csv_import_cross_tenant_probe',
+  'csv_import_error_csv_downloaded',
+  'csv_import_error_csv_manually_erased',
+  'csv_import_event_mismatch_overridden',
+  'csv_import_row_cancelled_no_prior',
+  'csv_import_row_failed',
+  'csv_import_row_state_changed',
+  'escalation_task_completed',
+  'escalation_task_created',
+  'escalation_task_reassigned',
+  'escalation_task_skipped',
+  'event_archived',
+  'event_created',
+  'event_cultural_event_toggled',
+  'event_detail_not_found_probe',
+  'event_partner_benefit_toggled',
+  'f8_role_violation_blocked',
+  'ingest_disabled_super_admin',
+  'ingest_disabled_tenant_admin',
+  // F8 pending-reactivation reminder ladder (migration 0109, T138) — the only
+  // enum values with a hyphen; keep any parser of this enum hyphen-safe.
+  'lapsed_member_admin_reactivation_reminder_t-1',
+  'lapsed_member_admin_reactivation_reminder_t-3',
+  'lapsed_member_admin_reactivation_reminder_t-7',
+  'lapsed_member_action_blocked',
+  'lapsed_member_admin_reactivated',
+  'lapsed_member_admin_reactivation_rejected',
+  'lapsed_member_admin_reactivation_timed_out',
+  'member_acknowledged_broadcasts_terms',
+  'member_auto_reactivation_blocked',
+  'member_auto_reactivation_unblocked',
+  'member_email_unverified_threshold_crossed',
+  'member_missing_primary_contact',
+  'pii_erasure_completed',
+  'pii_erasure_requested',
+  'pii_pseudonymisation_sweep_run',
+  'pii_pseudonymised',
+  'quota_credit_back_archive',
+  'quota_credit_back_refund',
+  'quota_cultural_decremented',
+  'quota_over_quota_warning',
+  'quota_partnership_decremented',
+  'registration_relinked',
+  'renewal_completed',
+  'renewal_completed_post_lapse',
+  'renewal_cross_member_probe',
+  'renewal_cross_tenant_probe',
+  'renewal_cycle_cancelled',
+  'renewal_cycle_completed_offline',
+  'renewal_cycle_created',
+  'renewal_cycle_price_frozen',
+  'renewal_entered_awaiting_payment',
+  'renewal_invoice_created',
+  'renewal_kill_switch_blocked',
+  'renewal_payment_failed',
+  'renewal_reminder_deferred_read_only',
+  'renewal_reminder_retried',
+  'renewal_reminder_send_failed',
+  'renewal_reminder_send_failed_permanent',
+  'renewal_reminder_sent',
+  'renewal_reminder_skipped',
+  'renewal_schedule_policy_updated',
+  'renewal_self_service_initiated',
+  'renewal_skipped_no_joined_at',
+  'renewal_token_clicked_on_completed_cycle',
+  'renewal_token_invalid',
+  'renewal_with_plan_change',
+  'role_violation_blocked',
+  'webhook_duplicate_rejected',
+  'webhook_ingest_precondition_failed',
+  'webhook_malformed_rejected',
+  'webhook_rate_limit_exceeded',
+  'webhook_receipt_verified',
+  'webhook_replay_rejected',
+  'webhook_rolled_back',
+  'webhook_secret_force_expired',
+  'webhook_secret_generated',
+  'webhook_secret_grace_used',
+  'webhook_secret_rotated',
+  'webhook_test_invoked',
+  'wizard_privacy_notice_acknowledged',
+];
+
+/**
+ * Canonical FULL set of audit-event-type codes — the TS tuple UNION the
+ * migration-added values above, i.e. every value that can appear in
+ * `audit_log.event_type`. Surfaced through the auth barrel for the
+ * audit-viewer filter (S1-P1-7) and the i18n label-coverage guard. Sorted for
+ * a stable dropdown order.
  */
 export const ALL_AUDIT_EVENT_TYPES: readonly string[] = [
   ...auditEventTypeEnum.enumValues,
+  ...DB_ONLY_AUDIT_EVENT_TYPES,
 ].sort();
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
