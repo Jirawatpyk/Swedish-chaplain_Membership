@@ -170,6 +170,9 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
       // predecessor, the payment below would now re-anchor instead of
       // complete, breaking that assertion. 'cancelled' avoids needing a
       // second invoice FK target.
+      // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+      // cancelled-after-anchoring predecessor is SETTLED history; without
+      // it the member no longer classifies as `renewal`.
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId: randomUUID(),
@@ -184,6 +187,7 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date(now - 2 * 365 * MS_PER_DAY),
         closedAt: new Date(now - 365 * MS_PER_DAY),
         closedReason: 'cancelled',
       });

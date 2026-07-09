@@ -108,6 +108,9 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
     // single fresh cycle would otherwise now RE-ANCHOR on the markPaidOffline
     // tests below instead of reaching `completed`, breaking their edge
     // proof. 'cancelled' avoids needing a second invoice FK target.
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+    // cancelled-after-anchoring predecessor is SETTLED history; without it
+    // the member no longer classifies as `renewal`.
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
@@ -123,6 +126,7 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date(expiresAt.getTime() - 2 * 365 * MS_PER_DAY),
         closedAt: new Date(expiresAt.getTime() - 365 * MS_PER_DAY),
         closedReason: 'cancelled',
       }),

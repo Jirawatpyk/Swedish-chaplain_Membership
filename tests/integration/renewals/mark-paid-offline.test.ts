@@ -70,6 +70,14 @@ describe('F8 markPaidOffline — integration (T077)', () => {
     // resolves a frozen price. Terminal cycles never reach that lookup, so
     // they default to a throwaway uuid.
     planIdAtCycleStart: string = randomUUID(),
+    // FIX-2 (PR #173 review, 2026-07-09) — a terminal predecessor used to
+    // give a member "real cycle history" for the shared classifier must be
+    // ANCHORED (status='completed' OR anchored_at IS NOT NULL) to count as
+    // SETTLED — `countSettledCyclesForMemberInTx` no longer treats a raw
+    // terminal row as history if it was never anchored to a real payment.
+    // Callers seeding a predecessor purely to avoid `first_payment`
+    // classification (see call-site comments) pass `anchored: true`.
+    anchored = false,
   ) {
     await runInTenant(t.ctx, (tx) =>
       tx.insert(renewalCycles).values({
@@ -86,6 +94,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        ...(anchored ? { anchoredAt: new Date('2025-06-01T00:00:00Z') } : {}),
         ...(status === 'completed' || status === 'cancelled' || status === 'lapsed'
           ? {
               closedAt: new Date(),
@@ -137,7 +146,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
     // multiple non-terminal cycles per member. Same memberIdA reused.
     // (Using 'cancelled' instead of 'completed' to avoid F4 invoice FK
     // requirement; the cycle_not_payable assertion works for either.)
-    await seedCycle(tenantA, cycleCancelledId, memberIdA, 'cancelled');
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchored: true` so this
+    // predecessor counts as SETTLED history (was genuinely anchored to a
+    // real payment before being cancelled), keeping `cycleAwaitingPaymentId`
+    // classified `renewal` (not `first_payment`) below.
+    await seedCycle(tenantA, cycleCancelledId, memberIdA, 'cancelled', randomUUID(), true);
     await seedCycle(
       tenantA,
       cycleAwaitingPaymentId,
@@ -407,7 +420,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       // `cycleLoopId` would classify as `first_payment` and re-anchor
       // instead of completing, breaking every assertion below. 'cancelled'
       // (not 'completed') avoids needing a second real invoice FK target.
-      await seedCycle(tenantA, randomUUID(), memberIdLoop, 'cancelled');
+      // FIX-2 (PR #173 review, 2026-07-09) — `anchored: true` so this
+      // predecessor counts as genuinely SETTLED history under
+      // `countSettledCyclesForMemberInTx` (a raw cancelled-without-anchor
+      // row no longer counts as "renewal history" — see classifier docstring).
+      await seedCycle(tenantA, randomUUID(), memberIdLoop, 'cancelled', randomUUID(), true);
 
       // Prior renewal cycle in `awaiting_payment`, anchored to the REAL
       // plan so the next-cycle plan-lookup resolves a frozen price.

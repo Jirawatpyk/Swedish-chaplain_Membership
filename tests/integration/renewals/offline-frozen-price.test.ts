@@ -169,6 +169,10 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
     // re-anchor branch) — without this predecessor the payment below would
     // now re-anchor instead of complete, breaking that assertion.
     // 'cancelled' avoids needing a second invoice FK target.
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+    // cancelled-after-anchoring predecessor is SETTLED history under
+    // `countSettledCyclesForMemberInTx`; without it the member no longer
+    // classifies as `renewal`.
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
@@ -184,6 +188,7 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
         frozenPlanPriceThb: FROZEN_PRICE_THB,
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2024-01-01T00:00:00Z'),
         closedAt: new Date('2025-01-01T00:00:00Z'),
         closedReason: 'cancelled',
       }),

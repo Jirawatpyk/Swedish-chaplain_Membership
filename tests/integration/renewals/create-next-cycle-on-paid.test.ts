@@ -205,6 +205,13 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
     // instead of completing it (Task 6's first-payment branch), which would
     // break the load-bearing assertion this test exists to prove. Mirrors
     // e8da485b's pattern.
+    //
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+    // cancelled-after-anchoring predecessor is SETTLED history under
+    // `countSettledCyclesForMemberInTx` (status='completed' OR
+    // anchored_at IS NOT NULL). Without it, this predecessor no longer
+    // counts as "renewal history" and the classifier now (correctly)
+    // treats the member as first_payment-shaped.
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
@@ -220,6 +227,7 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2024-01-01T00:00:00.000Z'),
         closedAt: new Date('2025-01-01T00:00:00.000Z'),
         closedReason: 'cancelled',
       }),
@@ -331,6 +339,9 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
     // would try to re-anchor the single un-anchored cycleA (a DIFFERENT
     // race than the one this test documents), and cycleA would never reach
     // `completed`. Mirrors e8da485b's pattern.
+    //
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: see the
+    // identical rationale on the sibling seed above.
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
@@ -346,6 +357,7 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2024-01-01T00:00:00.000Z'),
         closedAt: new Date('2025-01-01T00:00:00.000Z'),
         closedReason: 'cancelled',
       }),
