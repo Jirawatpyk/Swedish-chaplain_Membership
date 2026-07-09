@@ -110,7 +110,7 @@ Two audit-viewer surfaces remain English **by design**; they are *stored data*,
 not translatable UI strings:
 
 | Surface | Why it stays | What full i18n would take |
-|---|---|---|
+| --- | --- | --- |
 | **Summary column** | Written in English at emit time into the append-only `audit_log` (e.g. `audit log queried by admin`); rows cannot be rewritten retroactively (audit-integrity + PDPA/GDPR evidentiary value). It is redacted per role (`redactSummaryForRole`) but not localisable per row. | Architectural change: store `summary_key` + params instead of prose, render per locale. Post-launch item if ever needed. |
 | **Payload detail rows** (expandable key/value, e.g. `Row count: 50`) | Keys are technical JSONB field names from ~170 emit sites — an **open set** (no enum), so a translation catalogue would silently drift back into this same bug class with no possible coverage guard; values themselves are raw stored data (ids, ISO dates, English enum strings). | Not planned — treat as technical detail, same class as request IDs / UUIDs shown in the same rows. |
 
