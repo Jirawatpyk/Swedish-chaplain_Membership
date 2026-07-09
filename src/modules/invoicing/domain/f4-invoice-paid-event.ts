@@ -130,10 +130,20 @@ export interface F4InvoicePaidEvent {
   /** Invoice subject partition — F8's hook acts ONLY on 'membership'. REQUIRED so the compiler forces every emit site. */
   readonly invoiceSubject: 'membership' | 'event';
   /**
-   * Admin-entered actual payment date (YYYY-MM-DD, Bangkok business date)
-   * when the rail carries one (record-payment / mark-paid-offline);
-   * null on rails where only paidAt exists (Stripe webhook). Rolling-anchor
-   * consumers prefer this over paidAt (recording lag on bank transfers).
+   * Admin-entered actual payment date (YYYY-MM-DD, Bangkok business date).
+   * Rolling-anchor consumers prefer this over paidAt (recording lag on
+   * bank transfers).
+   *
+   * F5 (final-review, 2026-07-09) — corrected: this is NOT null on the
+   * Stripe webhook rail. `mark-paid-from-processor.ts` (the F5 webhook
+   * onPaid target) always supplies `paymentDate: input.settlementDate`
+   * (a required field), same as `record-payment` / `mark-paid-offline`.
+   * The only sanctioned `null` emit site today is
+   * `issue-event-invoice-as-paid.ts` (event-fee invoices, `invoiceSubject:
+   * 'event'`) — deliberately null because event fees never drive
+   * membership anchoring and the F8 hook skips subject='event' before
+   * ever reading this field. Null in general means "no bookkeeping date
+   * exists for this emit", not "Stripe webhook".
    */
   readonly paymentDate: string | null;
 }

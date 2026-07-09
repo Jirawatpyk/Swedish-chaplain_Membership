@@ -83,12 +83,24 @@
  * infrastructure error; 2 = one or more writes failed (partial apply —
  * re-run is safe, already-anchored cycles skip).
  */
-process.loadEnvFile?.('.env.local');
-
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { isNull } from 'drizzle-orm';
+
+// F8 (final-review, 2026-07-09) — guard against a missing `.env.local`
+// (e.g. a fresh git worktree that never copied one — it's gitignored —
+// or a CI/prod runner where it simply doesn't exist) so this convenience
+// fallback doesn't crash the script with an ENOENT before argv even
+// parses. Layered UNDER the operator's explicit `--env-file=...` CLI flag
+// (see ## Usage above): Node's `--env-file` populates `process.env`
+// BEFORE this module starts running, and `process.loadEnvFile` (like
+// dotenv) never overwrites an already-set var — so calling it here can
+// only FILL IN vars the CLI flag didn't already supply, never override
+// them. Safe to skip entirely when the file is absent.
+if (existsSync('.env.local')) {
+  process.loadEnvFile?.('.env.local');
+}
 
 import { runInTenant } from '@/lib/db';
 import { asTenantContext, TENANT_SLUG_PATTERN, type TenantContext } from '@/modules/tenants';

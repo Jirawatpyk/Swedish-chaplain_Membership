@@ -1104,6 +1104,22 @@ Operational notes:
 - Run AFTER testing completes on the dev branch and AFTER migration 0238 is
   live in prod (decided 2026-07-08).
 
+### Ongoing note — `mark-paid-offline` suppresses the registration fee
+
+F8 (final-review, 2026-07-09): a FIRST payment recorded via the admin
+"mark paid offline" action bills at the cycle's FROZEN price and
+**suppresses the one-time registration-fee re-bill** (`mark-paid-offline.ts`
+threads `frozenPlanPriceThb` into the F4 chain's `renewalSignal`, which
+overrides the membership-line price and suppresses the reg-fee line —
+mirrors the online confirm-renewal renewal path, which also never re-bills
+a registration fee). This is CORRECT for a genuine renewal, but a brand-new
+member's very FIRST invoice normally carries a registration fee. **If a
+new member's first payment needs a registration fee on the invoice, bill
+them via the admin New-invoice form (which does NOT suppress the reg fee)
+instead of Renewals → mark paid offline.** Reserve mark-paid-offline for
+members whose invoice already exists (issued via New-invoice or a renewal
+dispatch) and who simply paid by an offline method (bank transfer, cheque).
+
 ## F6 — idempotency sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T116)
 
 Purges expired rows from `eventcreate_idempotency_receipts` (7-day

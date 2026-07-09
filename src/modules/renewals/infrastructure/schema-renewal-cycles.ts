@@ -114,6 +114,17 @@ export const renewalCycles = pgTable(
     // anchor is a forensic reference, not a lifecycle-critical link, so an
     // invoice hard-delete (e.g. GDPR erasure retention sweep) should clear
     // the pointer rather than block or cascade.
+    //
+    // F7 (final-review, 2026-07-09, doc-only nit) — this is a COMPOSITE FK
+    // on (tenant_id, anchor_invoice_id); "SET NULL" nulls BOTH columns,
+    // but tenant_id is NOT NULL (part of renewal_cycles_pk) — so in
+    // practice a hard-delete of a referenced invoice ERRORS on the NOT
+    // NULL violation instead of actually nulling the pointer, i.e. it
+    // behaves as NO ACTION (delete blocked), not literally SET NULL.
+    // Acceptable: tax invoices are never hard-deleted (GDPR erasure
+    // redacts in place; never drops invoice rows), and clear-test-data
+    // purges renewal_cycles before invoices — the ordering issue never
+    // surfaces in practice.
     anchorInvoiceFk: foreignKey({
       name: 'renewal_cycles_anchor_invoice_fk',
       columns: [table.tenantId, table.anchorInvoiceId],

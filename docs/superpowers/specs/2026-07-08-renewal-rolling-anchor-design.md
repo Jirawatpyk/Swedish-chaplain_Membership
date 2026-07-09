@@ -268,7 +268,7 @@ open-cycle read for R2's coverage text. Surface what it finds — closes the
   + `REQUIRED_ENUM_VALUES` guard entry (`scripts/lib/enum-migration-guard.ts`).
 - Loud logs: orphaned-dispatched-invoice sub-case; terminal-only no-op;
   degraded-mode refusal; frozen-field re-resolution failure.
-- Metrics: hook outcome counter (`reanchored | renewed | healed | skipped`).
+- Metrics: hook outcome counter (`reanchored | renewed | healed | held | skipped`).
 
 ## Security & compliance
 

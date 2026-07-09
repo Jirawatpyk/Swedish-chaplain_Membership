@@ -8,6 +8,17 @@
 --   I1 guard refuses overwrite).
 ALTER TABLE "renewal_cycles" ADD COLUMN IF NOT EXISTS "anchored_at" timestamptz;--> statement-breakpoint
 ALTER TABLE "renewal_cycles" ADD COLUMN IF NOT EXISTS "anchor_invoice_id" uuid;--> statement-breakpoint
+-- F7 (final-review, 2026-07-09, comment-only — migration already applied,
+-- no behavioural change): this is a COMPOSITE FK on (tenant_id,
+-- anchor_invoice_id). "ON DELETE SET NULL" nulls BOTH columns, including
+-- tenant_id — but tenant_id is NOT NULL (part of renewal_cycles_pk), so in
+-- practice a hard-delete of a referenced invoice ERRORS on the NOT NULL
+-- violation rather than actually nulling the pointer, i.e. it behaves as
+-- NO ACTION (the delete is blocked), not as literally documented SET NULL.
+-- Acceptable because tax invoices are never hard-deleted in this codebase
+-- (GDPR erasure redacts PII in place, it does not DROP invoice rows), and
+-- clear-test-data purges renewal_cycles before invoices, so the ordering
+-- issue never surfaces in practice either.
 ALTER TABLE "renewal_cycles" ADD CONSTRAINT "renewal_cycles_anchor_invoice_fk"
   FOREIGN KEY ("tenant_id","anchor_invoice_id")
   REFERENCES "invoices"("tenant_id","invoice_id")
