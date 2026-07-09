@@ -5579,7 +5579,10 @@
       "webhook_secret_grace_used": "Webhook signed with grace secret",
       "webhook_secret_rotated": "Webhook secret rotated",
       "webhook_test_invoked": "Admin test webhook invoked",
-      "wizard_privacy_notice_acknowledged": "Privacy notice acknowledged (import wizard)"
+      "wizard_privacy_notice_acknowledged": "Privacy notice acknowledged (import wizard)",
+      "lapsed_member_admin_reactivation_reminder_t-7": "Reactivation reminder — 7 days left",
+      "lapsed_member_admin_reactivation_reminder_t-3": "Reactivation reminder — 3 days left",
+      "lapsed_member_admin_reactivation_reminder_t-1": "Reactivation reminder — 1 day left"
     },
     "eventcreate": {
       "_bootstrap": "EventCreate audit events"

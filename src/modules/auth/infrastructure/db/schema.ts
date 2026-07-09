@@ -360,7 +360,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
  * `auditEventTypeEnum` TS tuple above. F6 (events), F7/F7.1 (broadcasts) and
  * F8 (renewals) added their audit values via hand-written
  * `ALTER TYPE … ADD VALUE` migrations without syncing this file, so the tuple
- * alone under-reports the real enum by these 142 values (reviewer-2 finding,
+ * alone under-reports the real enum by these 145 values (reviewer-2 finding,
  * QA 2026-07-09). Rows with these types exist in production audit_log — the
  * viewer must be able to filter AND label them. Kept in lockstep with the
  * migrations by the parity check in
@@ -455,6 +455,11 @@ export const DB_ONLY_AUDIT_EVENT_TYPES: readonly string[] = [
   'f8_role_violation_blocked',
   'ingest_disabled_super_admin',
   'ingest_disabled_tenant_admin',
+  // F8 pending-reactivation reminder ladder (migration 0109, T138) — the only
+  // enum values with a hyphen; keep any parser of this enum hyphen-safe.
+  'lapsed_member_admin_reactivation_reminder_t-1',
+  'lapsed_member_admin_reactivation_reminder_t-3',
+  'lapsed_member_admin_reactivation_reminder_t-7',
   'lapsed_member_action_blocked',
   'lapsed_member_admin_reactivated',
   'lapsed_member_admin_reactivation_rejected',

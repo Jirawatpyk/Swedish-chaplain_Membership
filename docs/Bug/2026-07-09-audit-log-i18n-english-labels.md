@@ -20,16 +20,20 @@ filter dropdown) resolve an `audit_event_type` code to a display label via
 Two compounding gaps (exact numbers verified against migrations + `origin/main`):
 
 - **Catalogue drift**: the catalogue was written in the F3/timeline era and
-  never extended. The live DB enum holds **308 values** (`CREATE TYPE` + every
+  never extended. The live DB enum holds **311 values** (`CREATE TYPE` + every
   `ALTER TYPE … ADD VALUE` across `drizzle/migrations/`); on `main`,
-  `audit.eventType` had 100 keys — **209 of 308** missed the primary catalogue,
-  and **191 of 308** missed *both* catalogues (English everywhere).
+  `audit.eventType` had 100 keys — **212 of 311** missed the primary catalogue,
+  and **194 of 311** missed *both* catalogues (English everywhere).
 - **Universe drift** (reviewer-2 finding): the TS pgEnum tuple only carries
-  **166** of the 308 values — F6/F7/F8 added 142 values via hand-written
+  **166** of the 311 values — F6/F7/F8 added 145 values via hand-written
   migrations without syncing the tuple. `ALL_AUDIT_EVENT_TYPES` (filter
   dropdown + any tuple-based guard) silently under-reported the enum, so the
   busiest families (broadcast lifecycle, CSV import, quota, renewal cycle) were
-  unfilterable AND invisible to a tuple-based coverage test.
+  unfilterable AND invisible to a tuple-based coverage test. Three of the 145
+  (`lapsed_member_admin_reactivation_reminder_t-7/-3/-1`, migration 0109) carry
+  a **hyphen** — the only non-`[a-z0-9_]` values — and were initially skipped
+  by a word-char-class parser on *both* sides of the parity check (reviewer-2
+  round-2 catch): keep any parser of this enum hyphen-safe (`'([^']+)'`).
 
 No gate caught either drift: `check:i18n` verifies cross-locale **key parity**
 only, and the keys were consistently *absent from all three locales*, so parity
@@ -50,23 +54,40 @@ held.
    - labels are non-empty.
    Adding an enum value without a label is now a RED unit test **regardless of
    whether it was added via the TS tuple or a hand-written migration**.
-2. **`DB_ONLY_AUDIT_EVENT_TYPES`** (142 values) added to
+2. **`DB_ONLY_AUDIT_EVENT_TYPES`** (145 values) added to
    `src/modules/auth/infrastructure/db/schema.ts`; `ALL_AUDIT_EVENT_TYPES` is
-   now tuple ∪ that list = the full 308-value enum, so the audit-viewer filter
+   now tuple ∪ that list = the full 311-value enum, so the audit-viewer filter
    dropdown can filter every type that appears in the log.
-3. **210 labels added** to `audit.eventType` ×3 locales across two rounds
+3. **213 labels added** to `audit.eventType` ×3 locales across three rounds
    (86 in round 1 — 85 missing over the tuple universe +
    `renewal_cycle_reanchored` pre-seeded for the in-flight
    `renewal-rolling-anchor` branch; 124 in round 2 over the full DB universe —
    42 copied from the F6 `admin.events.detail.auditEvents` catalogue, 18 from
-   `activity.events`, 64 fresh). Catalogue now 310 keys (308 enum + 2
-   pre-seeds). Terminology matched to the existing catalogue (แพ็กเกจ /
-   ใบแจ้งหนี้ / ใบลดหนี้ / บันทึกการตรวจสอบ / ทำเนียบสมาชิก; Paket / Faktura /
-   Kreditnota / Granskningslogg / Medlemskatalog).
+   `activity.events`, 64 fresh; 3 hyphenated F8 reminder values in round 3).
+   Catalogue now 313 keys (311 enum + 2 non-enum extras:
+   `renewal_cycle_reanchored` pre-seed and `manual_outreach_required`, a
+   pre-existing catalogue key no migration ever added — harmless, F8 records
+   that situation as `escalation_task_created`). Terminology matched to the
+   existing catalogue (แพ็กเกจ / ใบแจ้งหนี้ / ใบลดหนี้ / บันทึกการตรวจสอบ /
+   ทำเนียบสมาชิก; Paket / Faktura / Kreditnota / Granskningslogg /
+   Medlemskatalog).
 4. **Filter dropdown regrouped** — `auditEventCategory` gained `events` (F6
    attendee/CSV/quota/webhook-ingest/PII families) and `renewals` (F8
    renewal/tier-upgrade/at-risk/escalation families) categories; the `other`
-   group would otherwise have held 117 of 308 options.
+   group would otherwise have held 117+ of 311 options. Known cosmetic
+   compromises (reviewer-2, non-blocking): F6 ingest `webhook_*` values share
+   the F5 `webhook_` prefix and land under *Billing & payments*;
+   `member_email_unverified_threshold_crossed` lands under *Members*; `cron_*`
+   under *Other*.
+5. **Pre-existing label drift normalised at source + copies** (i18n review):
+   SV `webbhok` misspelling (13 F6 keys), TH `เว็บฮุค` → `webhook`
+   (label-catalogue convention), non-canonical cross-tenant-probe phrasings
+   (`cross_tenant_probe`, `csv_import_cross_tenant_probe`), SV `Plan skapad` →
+   `Paket skapat` family — fixed in both `admin.events.detail.auditEvents` /
+   `activity.events` and their `audit.eventType` copies. A TH prose sentence in
+   the F6 archive dialog still says เว็บฮุค (running text, not a label) and SV
+   `inskickningar` remains in a broadcasts error message (different word sense)
+   — both intentionally untouched.
 
 Surfaces fixed: audit-viewer Event column, event-type filter dropdown (now
 complete AND grouped), dashboard activity feed, and the member timeline
