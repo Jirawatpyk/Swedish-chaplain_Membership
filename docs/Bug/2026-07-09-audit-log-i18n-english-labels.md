@@ -74,11 +74,21 @@ held.
 4. **Filter dropdown regrouped** — `auditEventCategory` gained `events` (F6
    attendee/CSV/quota/webhook-ingest/PII families) and `renewals` (F8
    renewal/tier-upgrade/at-risk/escalation families) categories; the `other`
-   group would otherwise have held 117+ of 311 options. Known cosmetic
-   compromises (reviewer-2, non-blocking): F6 ingest `webhook_*` values share
-   the F5 `webhook_` prefix and land under *Billing & payments*;
-   `member_email_unverified_threshold_crossed` lands under *Members*; `cron_*`
-   under *Other*.
+   group would otherwise have held 117+ of 311 options. Cross-feature prefix
+   collisions (a self-review follow-up, PR #175) are resolved by an explicit
+   `AUDIT_CATEGORY_OVERRIDES` map keyed by verified emit-site module: the 12 F6
+   EventCreate `webhook_*` ingest events → *Events* (they share the `webhook_`
+   prefix with F5 payment webhooks); the two F4/088 invoicing values
+   `event_buyer_pii_redacted` + `registration_cross_tenant_probe` → *Billing*
+   (their `event_`/`registration_` prefix would otherwise be stolen by the
+   events arm); `cron_dispatch_orchestrated` → *Renewals*;
+   `member_acknowledged_broadcasts_terms` → *Broadcasts*. Two values are
+   **genuinely shared** across features and deliberately keep their default
+   group rather than being mislabelled: `webhook_signature_rejected` (emitted by
+   both F5 payments and F6 events) stays *Billing*, and `cron_bearer_auth_rejected`
+   (emitted by the shared `src/lib/cron-auth.ts` gate used by every feature's
+   cron routes) stays *Other*. Note: category only affects the group *heading* —
+   every event remains individually selectable and filters correctly regardless.
 5. **Pre-existing label drift normalised at source + copies** (i18n review):
    SV `webbhok` misspelling (13 F6 keys), TH `เว็บฮุค` → `webhook`
    (label-catalogue convention), non-canonical cross-tenant-probe phrasings

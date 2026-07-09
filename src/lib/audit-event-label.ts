@@ -46,10 +46,15 @@ export function resolveEventLabel(
 /**
  * Coarse category for an `audit_event_type` — used to GROUP the ~310-option
  * event-type filter so it stays keyboard/SR-navigable (a flat list with many
- * shared prefixes is hard to traverse). Order matters: F9-specific events are
- * matched before the generic `member_`/`account_` prefixes that would
- * otherwise capture them, and the F8 `member_auto_reactivation_*` arm before
- * the generic `member_` arm.
+ * shared prefixes is hard to traverse). `AUDIT_CATEGORY_OVERRIDES` resolves the
+ * cross-feature prefix collisions first; then a prefix heuristic. Order matters:
+ * F9-specific events are matched before the generic `member_`/`account_`
+ * prefixes that would otherwise capture them, and the F8
+ * `member_auto_reactivation_*` arm before the generic `member_` arm.
+ *
+ * Categories only affect the dropdown GROUP HEADING — the filter value is the
+ * event type itself, so a mis-grouping never hides an event, and a genuinely
+ * shared value is left in a sensible default rather than mislabelled.
  */
 export type AuditEventCategory =
   | 'dashboard'
@@ -61,7 +66,44 @@ export type AuditEventCategory =
   | 'broadcasts'
   | 'other';
 
+/**
+ * Exact-value overrides for events whose owning feature does NOT match what the
+ * prefix heuristic below would assign — resolved by verified emit-site module
+ * (2026-07-09 self-review). Checked FIRST. Only cross-feature *collisions* live
+ * here; genuinely ambiguous values shared by two features (`webhook_signature_rejected`
+ * = F5 payments + F6 events; `cron_bearer_auth_rejected` = the shared
+ * `src/lib/cron-auth.ts` gate used by every feature's cron routes) are
+ * deliberately absent — they keep their prefix/default category rather than
+ * being forced into one feature's group.
+ */
+const AUDIT_CATEGORY_OVERRIDES: ReadonlyMap<string, AuditEventCategory> = new Map([
+  // F6 EventCreate webhook-ingest events share the `webhook_` prefix with F5
+  // payment webhooks (billing arm) — these 12 are events-owned.
+  ['webhook_receipt_verified', 'events'],
+  ['webhook_replay_rejected', 'events'],
+  ['webhook_duplicate_rejected', 'events'],
+  ['webhook_malformed_rejected', 'events'],
+  ['webhook_rolled_back', 'events'],
+  ['webhook_ingest_precondition_failed', 'events'],
+  ['webhook_rate_limit_exceeded', 'events'],
+  ['webhook_test_invoked', 'events'],
+  ['webhook_secret_generated', 'events'],
+  ['webhook_secret_rotated', 'events'],
+  ['webhook_secret_grace_used', 'events'],
+  ['webhook_secret_force_expired', 'events'],
+  // F4/088 invoicing events whose `event_`/`registration_` prefix the events
+  // arm would otherwise steal — billing-owned.
+  ['event_buyer_pii_redacted', 'billing'],
+  ['registration_cross_tenant_probe', 'billing'],
+  // F8 renewals cron dispatch — no renewals-family prefix.
+  ['cron_dispatch_orchestrated', 'renewals'],
+  // F7 broadcast consent event carries a `member_` prefix.
+  ['member_acknowledged_broadcasts_terms', 'broadcasts'],
+] as const);
+
 export function auditEventCategory(eventType: string): AuditEventCategory {
+  const override = AUDIT_CATEGORY_OVERRIDES.get(eventType);
+  if (override) return override;
   // F9 read/oversight events first (some start with `member_`/`data_`).
   if (
     eventType === 'dashboard_viewed' ||
@@ -80,10 +122,9 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
   // enable-disable / attendee-PII erasure). BEFORE the generic `event*`-adjacent
   // billing arms; `pii_*` here is the F6 attendee-PII lifecycle (COMP-1 member
   // erasure emits `member_erased`/`user_erased`, which stay under members/other).
-  // NOTE: the F6 `webhook_*` ingest events are NOT matched here — they share the
-  // `webhook_` prefix with F5 payment webhooks (billing arm), and splitting the
-  // two would need a per-value table; they intentionally group under billing
-  // (accepted cosmetic compromise, see docs/Bug/2026-07-09-audit-log-i18n-*).
+  // The two invoicing values that share the `event_`/`registration_` prefix are
+  // steered back to billing by AUDIT_CATEGORY_OVERRIDES above; the F6 `webhook_*`
+  // ingest events are steered INTO events there (they share `webhook_` with F5).
   if (
     eventType.startsWith('attendee_') ||
     eventType.startsWith('csv_import_') ||
@@ -98,7 +139,8 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
   }
   // F8 renewal-pipeline family — incl. the `member_`-prefixed auto-reactivation
   // pair (ordering trap: must precede the generic `member_` arm) and the
-  // `lapsed_member_*` admin-reactivation events.
+  // `lapsed_member_*` admin-reactivation events. (`cron_dispatch_orchestrated`
+  // is steered in via AUDIT_CATEGORY_OVERRIDES — it has no renewals prefix.)
   if (
     eventType.startsWith('renewal_') ||
     eventType.startsWith('tier_upgrade_') ||
@@ -106,7 +148,6 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
     eventType.startsWith('escalation_task_') ||
     eventType.startsWith('lapsed_member_') ||
     eventType.startsWith('member_auto_reactivation_') ||
-    eventType === 'manual_outreach_required' ||
     eventType === 'f8_role_violation_blocked'
   ) {
     return 'renewals';
