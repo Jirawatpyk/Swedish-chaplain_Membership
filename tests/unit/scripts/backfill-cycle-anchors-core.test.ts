@@ -36,6 +36,8 @@ describe('parseBackfillCsv', () => {
       lineNumber: 2,
       companyNameRaw: 'Acme Co.',
       normalizedName: 'acme co',
+      // F6's normaliseCompanyName strips the "Co." suffix → 'acme'.
+      alternateNormalizedName: 'acme',
       paymentDate: '2026-03-16',
       periodFromRaw: null,
       periodToRaw: null,
@@ -107,6 +109,36 @@ describe('parseBackfillCsv', () => {
     const result = parseBackfillCsv(csv);
     expect(result.rows).toEqual([]);
     expect(result.issues).toEqual([{ lineNumber: 2, reason: 'invalid_payment_date' }]);
+  });
+
+  // FIX-5 (PR #173 review, 2026-07-09) — the shape regex accepts
+  // calendar-impossible dates; `isValidCalendarDate` catches what the regex
+  // misses.
+  it('flags a shape-valid but calendar-impossible payment_date (2026-02-30) as invalid_calendar_date', () => {
+    const csv = ['company_name,payment_date', 'Acme Co.,2026-02-30'].join('\n');
+    const result = parseBackfillCsv(csv);
+    expect(result.rows).toEqual([]);
+    expect(result.issues).toEqual([{ lineNumber: 2, reason: 'invalid_calendar_date' }]);
+  });
+
+  it('flags a shape-valid but calendar-impossible period_from as invalid_calendar_date', () => {
+    const csv = [
+      'company_name,payment_date,period_from,period_to',
+      'Legacy Co,2025-11-01,2026-02-30,2026-12-31',
+    ].join('\n');
+    const result = parseBackfillCsv(csv);
+    expect(result.rows).toEqual([]);
+    expect(result.issues).toEqual([{ lineNumber: 2, reason: 'invalid_calendar_date' }]);
+  });
+
+  it('flags a shape-valid but calendar-impossible period_to as invalid_calendar_date', () => {
+    const csv = [
+      'company_name,payment_date,period_from,period_to',
+      'Legacy Co,2025-11-01,2026-01-01,2026-04-31',
+    ].join('\n');
+    const result = parseBackfillCsv(csv);
+    expect(result.rows).toEqual([]);
+    expect(result.issues).toEqual([{ lineNumber: 2, reason: 'invalid_calendar_date' }]);
   });
 
   it('flags a row with only ONE of period_from/period_to set', () => {
@@ -190,6 +222,8 @@ describe('buildBackfillPlan', () => {
       lineNumber: 2,
       companyNameRaw: 'Acme Co.',
       normalizedName: 'acme co',
+      // F6's normaliseCompanyName strips the "Co." suffix → 'acme'.
+      alternateNormalizedName: 'acme',
       paymentDate: '2026-03-16',
       periodFromRaw: null,
       periodToRaw: null,
@@ -294,6 +328,130 @@ describe('buildBackfillPlan', () => {
     expect(plan.actions).toEqual([
       { kind: 'skip', row: r, reason: 'future_dated_payment' },
     ]);
+  });
+
+  // FIX-5 (PR #173 review, 2026-07-09) — the future-dated guard must use
+  // Asia/Bangkok "today", not `now`'s raw UTC calendar date. `now` here is
+  // 2026-03-16T18:00:00Z — UTC calendar date is still 2026-03-16, but
+  // Bangkok wall-clock (UTC+7) is already 2026-03-17.
+  it('Bangkok boundary: a payment dated "today" in Bangkok is NOT future-dated even though it is UTC-tomorrow', () => {
+    const nowInTheEveningUtc = new Date('2026-03-16T18:00:00.000Z');
+    const r = row({ paymentDate: '2026-03-17' }); // "today" in Bangkok
+    const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+      ['acme co', { memberId: 'member-1', companyName: 'Acme Co.' }],
+    ]);
+    const openCycleIndex = new Map<string, OpenCycleInfo>([
+      ['member-1', { cycleId: 'cycle-1', status: 'upcoming', anchoredAt: null }],
+    ]);
+    const plan = buildBackfillPlan({
+      rows: [r],
+      memberIndex,
+      openCycleIndex,
+      now: nowInTheEveningUtc,
+    });
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0]).toMatchObject({ kind: 'reanchor' });
+  });
+
+  it('Bangkok boundary: a payment genuinely dated tomorrow (Bangkok) is still future-dated', () => {
+    const nowInTheEveningUtc = new Date('2026-03-16T18:00:00.000Z'); // Bangkok 2026-03-17 01:00
+    const r = row({ paymentDate: '2026-03-18' }); // genuinely tomorrow in Bangkok
+    const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+      ['acme co', { memberId: 'member-1', companyName: 'Acme Co.' }],
+    ]);
+    const openCycleIndex = new Map<string, OpenCycleInfo>([
+      ['member-1', { cycleId: 'cycle-1', status: 'upcoming', anchoredAt: null }],
+    ]);
+    const plan = buildBackfillPlan({
+      rows: [r],
+      memberIndex,
+      openCycleIndex,
+      now: nowInTheEveningUtc,
+    });
+    expect(plan.actions).toEqual([
+      { kind: 'skip', row: r, reason: 'future_dated_payment' },
+    ]);
+  });
+
+  // FIX-5 (PR #173 review, 2026-07-09) — dual-key name matching.
+  describe('alternateMemberIndex fallback (FIX-5)', () => {
+    it('suffixed CSV name matches a bare member name via the F6 alternate key', () => {
+      // Primary key 'acme co' (backfill's own normalizer keeps 'co') misses
+      // against a member stored as bare "Acme" (primary key 'acme'). The F6
+      // alternate key strips the "Co." suffix from the ROW too, so both
+      // sides land on 'acme'.
+      const r = row({}); // normalizedName: 'acme co', alternateNormalizedName: 'acme'
+      const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>(); // no 'acme co' entry
+      const alternateMemberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+        ['acme', { memberId: 'member-1', companyName: 'Acme' }],
+      ]);
+      const openCycleIndex = new Map<string, OpenCycleInfo>([
+        ['member-1', { cycleId: 'cycle-1', status: 'upcoming', anchoredAt: null }],
+      ]);
+      const plan = buildBackfillPlan({
+        rows: [r],
+        memberIndex,
+        alternateMemberIndex,
+        openCycleIndex,
+        now,
+      });
+      expect(plan.actions).toEqual([
+        {
+          kind: 'reanchor',
+          row: r,
+          memberId: 'member-1',
+          companyName: 'Acme',
+          cycleId: 'cycle-1',
+          newPeriodFrom: '2026-03-01T00:00:00.000Z',
+          newPeriodTo: '2027-03-01T00:00:00.000Z',
+          periodSource: 'derived_month_start_plus_12',
+        },
+      ]);
+    });
+
+    it('a genuine collision under the alternate key is still reported ambiguous, never guessed', () => {
+      const r = row({});
+      const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>(); // primary misses
+      const alternateMemberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+        // Two distinct members ("Acme Ltd" and "Acme Limited") both
+        // collapse to 'acme' under F6's suffix-stripping normaliser — the
+        // caller building this index must mark it 'ambiguous'.
+        ['acme', 'ambiguous'],
+      ]);
+      const plan = buildBackfillPlan({
+        rows: [r],
+        memberIndex,
+        alternateMemberIndex,
+        openCycleIndex: new Map(),
+        now,
+      });
+      expect(plan.actions).toEqual([
+        { kind: 'skip', row: r, reason: 'ambiguous_name_collision' },
+      ]);
+    });
+
+    it('when the PRIMARY key already matches, the alternate index is never consulted', () => {
+      const r = row({});
+      const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+        ['acme co', { memberId: 'primary-match', companyName: 'Acme Co.' }],
+      ]);
+      // If this were consulted, it would resolve to a DIFFERENT member —
+      // proving the primary match wins outright.
+      const alternateMemberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>([
+        ['acme', { memberId: 'wrong-member', companyName: 'Acme' }],
+      ]);
+      const openCycleIndex = new Map<string, OpenCycleInfo>([
+        ['primary-match', { cycleId: 'cycle-1', status: 'upcoming', anchoredAt: null }],
+      ]);
+      const plan = buildBackfillPlan({
+        rows: [r],
+        memberIndex,
+        alternateMemberIndex,
+        openCycleIndex,
+        now,
+      });
+      expect(plan.actions[0]).toMatchObject({ memberId: 'primary-match' });
+    });
   });
 
   it('keeps the MAX(payment_date) row among duplicates and supersedes the rest', () => {

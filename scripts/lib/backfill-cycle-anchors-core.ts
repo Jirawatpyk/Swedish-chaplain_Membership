@@ -52,6 +52,8 @@
  *      before the operator wastes a write attempt).
  */
 import { addMonthsUtc } from '@/lib/dates';
+import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
+import { normaliseCompanyName as normaliseCompanyNameF6 } from '@/modules/events';
 
 // ---------------------------------------------------------------------------
 // CSV parsing
@@ -75,6 +77,16 @@ export interface BackfillCsvRow {
   readonly lineNumber: number;
   readonly companyNameRaw: string;
   readonly normalizedName: string;
+  /**
+   * FIX-5 (PR #173 review, 2026-07-09) — F6's `normaliseCompanyName`
+   * (corporate-suffix-stripping) applied to `companyNameRaw`. Tried as a
+   * FALLBACK match key (see `buildBackfillPlan`) when the primary
+   * `normalizedName` (punctuation-only stripping, no suffix removal) finds
+   * no member — closes the gap where the CSV name carries a suffix
+   * ("Acme Co., Ltd.") but the member's stored `company_name` is bare
+   * ("Acme").
+   */
+  readonly alternateNormalizedName: string;
   /** 'YYYY-MM-DD', already format-validated. */
   readonly paymentDate: string;
   /** 'YYYY-MM-DD' or null — present only when BOTH period_from and period_to are non-blank on this row. */
@@ -87,6 +99,14 @@ export type CsvRowIssueReason =
   | 'invalid_payment_date'
   | 'incomplete_period_override'
   | 'invalid_period_date'
+  /**
+   * FIX-5 (PR #173 review, 2026-07-09) — the SHAPE regex (`\d{4}-\d{2}-\d{2}`)
+   * accepts calendar-impossible dates like `2026-02-30`. Reported as a
+   * distinct structural issue (never silently coerced/rolled-over by a
+   * downstream `Date` parse) for `payment_date`, `period_from`, and
+   * `period_to` alike.
+   */
+  | 'invalid_calendar_date'
   | 'period_order_invalid';
 
 export interface CsvRowIssue {
@@ -209,6 +229,10 @@ export function parseBackfillCsv(text: string): CsvParseResult {
       issues.push({ lineNumber, reason: 'invalid_payment_date' });
       continue;
     }
+    if (!isValidCalendarDate(paymentDate)) {
+      issues.push({ lineNumber, reason: 'invalid_calendar_date' });
+      continue;
+    }
 
     const periodFromCell = get('period_from');
     const periodToCell = get('period_to');
@@ -227,6 +251,10 @@ export function parseBackfillCsv(text: string): CsvParseResult {
         issues.push({ lineNumber, reason: 'invalid_period_date' });
         continue;
       }
+      if (!isValidCalendarDate(periodFromCell!) || !isValidCalendarDate(periodToCell!)) {
+        issues.push({ lineNumber, reason: 'invalid_calendar_date' });
+        continue;
+      }
       if (periodToCell! <= periodFromCell!) {
         issues.push({ lineNumber, reason: 'period_order_invalid' });
         continue;
@@ -239,6 +267,7 @@ export function parseBackfillCsv(text: string): CsvParseResult {
       lineNumber,
       companyNameRaw,
       normalizedName: normalizeCompanyName(companyNameRaw),
+      alternateNormalizedName: normaliseCompanyNameF6(companyNameRaw),
       paymentDate,
       periodFromRaw,
       periodToRaw,
@@ -348,6 +377,18 @@ export interface BuildBackfillPlanInput {
   readonly rows: readonly BackfillCsvRow[];
   /** Keyed by `normalizeCompanyName(members.company_name)`. `'ambiguous'` marks a normalisation collision between ≥2 distinct members — the caller building this index must never silently pick one. */
   readonly memberIndex: ReadonlyMap<string, MemberLookupEntry | 'ambiguous'>;
+  /**
+   * FIX-5 (PR #173 review, 2026-07-09) — SECOND member index, keyed by F6's
+   * `normaliseCompanyName(members.company_name)` (corporate-suffix
+   * stripping). Consulted ONLY as a fallback when `memberIndex` finds no
+   * match for a row's primary `normalizedName` — see `buildBackfillPlan`.
+   * Same `'ambiguous'` collision-detection contract as `memberIndex`: if
+   * two distinct members collapse to the same F6-normalised key, the
+   * caller building this index must mark it `'ambiguous'`, never guess.
+   * Optional — omitting it simply disables the fallback (existing
+   * single-key behaviour).
+   */
+  readonly alternateMemberIndex?: ReadonlyMap<string, MemberLookupEntry | 'ambiguous'>;
   /** Keyed by `memberId`. Absence means "no open cycle for this member". */
   readonly openCycleIndex: ReadonlyMap<string, OpenCycleInfo>;
   /** Injected clock — "today" for the future-dated-payment guard. */
@@ -363,8 +404,14 @@ export interface BuildBackfillPlanInput {
  * regardless of internal grouping.
  */
 export function buildBackfillPlan(input: BuildBackfillPlanInput): BackfillPlan {
-  const { rows, memberIndex, openCycleIndex, now } = input;
-  const today = now.toISOString().slice(0, 10);
+  const { rows, memberIndex, alternateMemberIndex, openCycleIndex, now } = input;
+  // FIX-5 (PR #173 review, 2026-07-09) — the future-dated-payment guard must
+  // compare against TSCC's own wall-clock "today" (Asia/Bangkok, UTC+7), not
+  // `now`'s raw UTC calendar date. Between 17:00 and 23:59 UTC, the Bangkok
+  // calendar date is already the NEXT day — a UTC-sliced "today" would
+  // wrongly flag a payment dated "today (Bangkok)" as future-dated during
+  // that 7-hour band every single run.
+  const today = bangkokLocalDate(now.toISOString());
   const actions: PlannedAction[] = [];
 
   // Step 1 — drop future-dated payments FIRST (before de-dup): a bogus
@@ -401,8 +448,16 @@ export function buildBackfillPlan(input: BuildBackfillPlanInput): BackfillPlan {
       }
     }
 
-    // Step 3 — resolve the surviving candidate.
-    const matched = memberIndex.get(keep.normalizedName);
+    // Step 3 — resolve the surviving candidate. Primary key first; FIX-5
+    // (PR #173 review, 2026-07-09) falls back to the F6 suffix-stripping
+    // key ONLY when the primary key finds nothing — e.g. a suffixed CSV
+    // name ("Acme Co., Ltd.") against a bare stored `company_name`
+    // ("Acme"). A primary `'ambiguous'` result is reported immediately,
+    // never overridden by the fallback.
+    let matched = memberIndex.get(keep.normalizedName);
+    if (matched === undefined && alternateMemberIndex) {
+      matched = alternateMemberIndex.get(keep.alternateNormalizedName);
+    }
     if (matched === undefined) {
       actions.push({ kind: 'skip', row: keep, reason: 'unmatched_name' });
       continue;

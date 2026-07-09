@@ -112,6 +112,7 @@ import { asMemberId } from '@/modules/members/domain/member';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
 import { makeDrizzleRenewalAuditEmitter } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-audit-emitter';
+import { normaliseCompanyName as normaliseCompanyNameF6 } from '@/modules/events';
 import {
   buildBackfillPlan,
   normalizeCompanyName,
@@ -179,12 +180,20 @@ function parseArgs(argv: readonly string[]): CliArgs {
 // ---------------------------------------------------------------------------
 
 /**
- * One `runInTenant` read pass building both plan indexes:
+ * One `runInTenant` read pass building all plan indexes:
  *   - normalised company name → member (or 'ambiguous' on a collision),
  *     excluding erased members (their names are scrubbed sentinels anyway;
  *     COMP-1 read-exclusion convention).
+ *   - FIX-5 (PR #173 review, 2026-07-09) — SECOND index keyed by F6's
+ *     `normaliseCompanyName` (corporate-suffix stripping), consulted by
+ *     `buildBackfillPlan` ONLY as a fallback when the primary index misses
+ *     — closes the "suffixed CSV name vs bare stored company_name" gap.
+ *     Same independent collision-detection contract as the primary index.
  *   - memberId → open cycle info (via `findOpenCycleForMemberInTx`, but only
  *     for members the CSV actually references — no full-table cycle scan).
+ *     A member matched ONLY via the alternate index is looked up too (the
+ *     referenced-names set is the CSV's PRIMARY-key normalisation, so we
+ *     additionally probe the alternate index for each referenced name).
  *
  * Exported for the live-Neon integration test
  * (`tests/integration/renewals/backfill-cycle-anchors.test.ts`).
@@ -194,6 +203,7 @@ export async function loadPlanInputs(
   referencedNames: ReadonlySet<string>,
 ): Promise<{
   memberIndex: Map<string, MemberLookupEntry | 'ambiguous'>;
+  alternateMemberIndex: Map<string, MemberLookupEntry | 'ambiguous'>;
   openCycleIndex: Map<string, OpenCycleInfo>;
 }> {
   const cyclesRepo = makeDrizzleRenewalCycleRepo(ctx);
@@ -208,32 +218,50 @@ export async function loadPlanInputs(
       .where(isNull(members.erasedAt));
 
     const memberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>();
+    const alternateMemberIndex = new Map<string, MemberLookupEntry | 'ambiguous'>();
     for (const row of memberRows) {
       const key = normalizeCompanyName(row.companyName);
-      if (key === '') continue;
-      const existing = memberIndex.get(key);
-      if (existing === undefined) {
-        memberIndex.set(key, { memberId: row.memberId, companyName: row.companyName });
-      } else if (existing === 'ambiguous' || existing.memberId !== row.memberId) {
-        memberIndex.set(key, 'ambiguous');
+      if (key !== '') {
+        const existing = memberIndex.get(key);
+        if (existing === undefined) {
+          memberIndex.set(key, { memberId: row.memberId, companyName: row.companyName });
+        } else if (existing === 'ambiguous' || existing.memberId !== row.memberId) {
+          memberIndex.set(key, 'ambiguous');
+        }
+      }
+
+      const altKey = normaliseCompanyNameF6(row.companyName);
+      if (altKey !== '') {
+        const existingAlt = alternateMemberIndex.get(altKey);
+        if (existingAlt === undefined) {
+          alternateMemberIndex.set(altKey, { memberId: row.memberId, companyName: row.companyName });
+        } else if (existingAlt === 'ambiguous' || existingAlt.memberId !== row.memberId) {
+          alternateMemberIndex.set(altKey, 'ambiguous');
+        }
       }
     }
 
     const openCycleIndex = new Map<string, OpenCycleInfo>();
+    const resolvedMemberIds = new Set<string>();
     for (const name of referencedNames) {
-      const match = memberIndex.get(name);
-      if (match === undefined || match === 'ambiguous') continue;
-      const cycle = await cyclesRepo.findOpenCycleForMemberInTx(tx, ctx.slug, match.memberId);
-      if (cycle) {
-        openCycleIndex.set(match.memberId, {
-          cycleId: cycle.cycleId,
-          status: cycle.status as OpenCycleInfo['status'],
-          anchoredAt: cycle.anchoredAt,
-        });
+      const primary = memberIndex.get(name);
+      const alternate = alternateMemberIndex.get(name);
+      for (const match of [primary, alternate]) {
+        if (match === undefined || match === 'ambiguous') continue;
+        if (resolvedMemberIds.has(match.memberId)) continue;
+        resolvedMemberIds.add(match.memberId);
+        const cycle = await cyclesRepo.findOpenCycleForMemberInTx(tx, ctx.slug, match.memberId);
+        if (cycle) {
+          openCycleIndex.set(match.memberId, {
+            cycleId: cycle.cycleId,
+            status: cycle.status as OpenCycleInfo['status'],
+            anchoredAt: cycle.anchoredAt,
+          });
+        }
       }
     }
 
-    return { memberIndex, openCycleIndex };
+    return { memberIndex, alternateMemberIndex, openCycleIndex };
   });
 }
 
@@ -419,12 +447,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  const referencedNames = new Set(parsed.rows.map((r) => r.normalizedName));
-  const { memberIndex, openCycleIndex } = await loadPlanInputs(ctx, referencedNames);
+  // FIX-5 (PR #173 review, 2026-07-09) — include BOTH the primary and the
+  // F6 alternate normalisation of every row's company name, so
+  // `loadPlanInputs`'s open-cycle pre-population resolves a member reachable
+  // ONLY via the alternate (suffix-stripped) key too.
+  const referencedNames = new Set(
+    parsed.rows.flatMap((r) => [r.normalizedName, r.alternateNormalizedName]),
+  );
+  const { memberIndex, alternateMemberIndex, openCycleIndex } = await loadPlanInputs(
+    ctx,
+    referencedNames,
+  );
 
   const plan = buildBackfillPlan({
     rows: parsed.rows,
     memberIndex,
+    alternateMemberIndex,
     openCycleIndex,
     now,
   });
