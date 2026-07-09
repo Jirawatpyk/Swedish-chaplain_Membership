@@ -206,11 +206,16 @@ membershipCoverage?:
   - Rev 2: **no standalone `ปี {planYear}` token in either kind** — it contradicted
     rolling windows on a tax document. The plan display name (which may itself
     contain a year, e.g. "Regular Corporate 2026") prints as data.
-- Callers: F8 bridges pass `window` = `cycle.periodTo → addMonthsUtc(periodTo,
-  term)`; the admin New-invoice surface resolves the member's open cycle via the F8
-  barrel (presentation orchestrates two modules' barrels — Principle III holds; F4
-  never imports F8) and passes `window` for renewal-classified members, nothing
-  otherwise.
+- Callers: F8 bridges classify the payment (shared `classifyMembershipPayment`)
+  before calling the F4 bridge and pass `window` = `cycle.periodTo →
+  addMonthsUtc(periodTo, term)` ONLY for a `renewal`-classified cycle; a
+  `first_payment`-classified cycle omits the field entirely (falls back to
+  `from_payment` — the re-anchored period isn't known until the member actually
+  pays). `confirm-renewal.ts` gates this way (final-review fix, 2026-07-09) —
+  matches `mark-paid-offline.ts`'s pre-existing gate. The admin New-invoice surface
+  resolves the member's open cycle via the F8 barrel (presentation orchestrates two
+  modules' barrels — Principle III holds; F4 never imports F8) and passes `window`
+  for renewal-classified members, nothing otherwise.
 - `fiscalYearBoundaryForYear` remains for pro-rate math (policy `none` for TSCC) —
   untouched.
 - The §86/4 receipt renders stored line text + its own payment-date field: a

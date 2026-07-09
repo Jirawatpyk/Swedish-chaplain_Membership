@@ -215,6 +215,15 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
         isPrimary: true,
       });
       // Cycle frozen at the OLD plan's price, in awaiting_payment.
+      //
+      // F1 (final-review, 2026-07-09) — `anchoredAt` set to a PRIOR real
+      // payment date so `classifyMembershipPayment` resolves `'renewal'`
+      // (not `'first_payment'`): this is the member's SECOND-ever cycle
+      // in spirit (a plan-change mid-renewal), and the test's whole point
+      // is the exact-window coverage text below — a first-payment shape
+      // would correctly OMIT `membershipCoverage` (falls back to
+      // `from_payment`), which is a DIFFERENT scenario covered by its own
+      // sibling test further down.
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,
@@ -229,6 +238,7 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
         frozenPlanPriceThb: OLD_FROZEN_THB,
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2025-06-01T00:00:00Z'),
       });
     });
 
@@ -334,6 +344,109 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
     );
     expect(membershipLine!.descriptionTh).toContain(
       '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+    );
+  }, 120_000);
+
+  // F1 (final-review, 2026-07-09) — sibling of the coverage-window
+  // assertion above: a NEVER-PAID member's only-ever cycle (unanchored,
+  // cycleCountForMember=1) must classify as `first_payment` and OMIT
+  // `membershipCoverage` entirely, falling back to `createInvoiceDraft`'s
+  // own `{ kind: 'from_payment' }` default — the exact-window text would
+  // describe a period that doesn't exist yet (the actual re-anchor only
+  // happens once `mark-cycle-complete-from-invoice-paid.ts`'s linked path
+  // sees the real payment).
+  it('F1: first-payment shape (unanchored, only cycle) — bills FROM-PAYMENT text, no window', async () => {
+    const firstPayMemberId = randomUUID();
+    const firstPayCycleId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: firstPayMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'First-Payment Co',
+        country: 'TH',
+        planId: oldPlanId,
+        planYear: 2026,
+        registrationFeePaid: true,
+        registrationDate: '2026-05-01',
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId: firstPayMemberId,
+        firstName: 'First',
+        lastName: 'Payment',
+        email: 'first-payment@example.com',
+        isPrimary: true,
+      });
+      // NO anchoredAt — the member's one-and-only cycle, never anchored
+      // to a real payment. classifyMembershipPayment resolves
+      // 'first_payment' (cycleCountForMember=1, anchoredAt=null).
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: firstPayCycleId,
+        memberId: firstPayMemberId,
+        status: 'awaiting_payment',
+        periodFrom: new Date('2026-06-01T00:00:00Z'),
+        periodTo: new Date('2027-06-01T00:00:00Z'),
+        expiresAt: new Date('2027-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: oldPlanId,
+        frozenPlanPriceThb: OLD_FROZEN_THB,
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+      });
+    });
+
+    const realDeps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps: ConfirmRenewalDeps = {
+      tenant: realDeps.tenant,
+      cyclesRepo: realDeps.cyclesRepo,
+      auditEmitter: realDeps.auditEmitter,
+      clock: realDeps.clock,
+      planLookupForRenewal: realDeps.planLookupForRenewal,
+      f4InvoicingBridge: makeTestRenewalBridge(),
+    };
+
+    const result = await confirmRenewal(deps, {
+      tenantId: tenant.ctx.slug,
+      cycleId: firstPayCycleId,
+      memberId: firstPayMemberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      correlationId: `pc-first-${firstPayCycleId}`,
+    });
+    if (!result.ok) {
+      throw new Error(`confirm failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const lineRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          kind: invoiceLines.kind,
+          descriptionTh: invoiceLines.descriptionTh,
+          descriptionEn: invoiceLines.descriptionEn,
+        })
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, tenant.ctx.slug),
+            eq(invoiceLines.invoiceId, result.value.invoiceId),
+          ),
+        ),
+    );
+    const membershipLine = lineRows.find((l) => l.kind === 'membership_fee');
+    expect(membershipLine).toBeDefined();
+    // NOT the exact-window text — the first-payment shape omits
+    // `membershipCoverage`, so `createInvoiceDraft` falls back to its
+    // own `{ kind: 'from_payment' }` default.
+    expect(membershipLine!.descriptionEn).toContain(
+      'effective from the month of payment',
+    );
+    expect(membershipLine!.descriptionEn).not.toContain('coverage');
+    expect(membershipLine!.descriptionTh).toContain(
+      'เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม',
     );
   }, 120_000);
 });
