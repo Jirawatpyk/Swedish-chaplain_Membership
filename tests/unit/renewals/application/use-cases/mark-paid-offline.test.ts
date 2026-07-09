@@ -272,7 +272,7 @@ function fakeDeps(
     // FIX-3 (PR #173 review, 2026-07-09) — January default; no test in this
     // file exercises a non-January-start tenant's re-freeze decision.
     fiscalYearSettings: {
-      getFiscalYearStartMonth: vi.fn(async () => 1),
+      getFiscalYearStartMonthInTx: vi.fn(async () => 1),
     } as unknown as RenewalsDeps['fiscalYearSettings'],
     // Task 7 (rolling-anchor refactor) — GDPR-erased + admin-blocked guard
     // read the classify step consumes. Default both false (see the mock

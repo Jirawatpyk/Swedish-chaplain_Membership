@@ -11,23 +11,29 @@
  * port interface (no framework / Application-layer imports).
  */
 import { logger } from '@/lib/logger';
-import { drizzleTenantSettingsRepo } from '@/modules/invoicing';
+import { readFiscalYearStartMonthInTx } from '@/modules/invoicing';
 import type { FiscalYearStartMonthPort } from '../../application/ports/fiscal-year-settings-port';
 
 const DEFAULT_FISCAL_YEAR_START_MONTH = 1;
 
 export function makeDrizzleFiscalYearStartMonth(): FiscalYearStartMonthPort {
   return {
-    async getFiscalYearStartMonth(tenantId: string): Promise<number> {
-      const settings = await drizzleTenantSettingsRepo.getForIssue(tenantId);
-      if (!settings) {
+    async getFiscalYearStartMonthInTx(
+      tx: unknown,
+      tenantId: string,
+    ): Promise<number> {
+      // PR #173 round-2 review (2026-07-09) — read the ONE column on the
+      // caller's tx via F4's narrow `readFiscalYearStartMonthInTx` (no new
+      // `runInTenant`, so no second pooled connection mid-settlement); see
+      // port docstring.
+      const raw = await readFiscalYearStartMonthInTx(tx, tenantId);
+      if (raw === null) {
         logger.warn(
           { tenantId },
           '[fiscal-year-settings] no tenant_invoice_settings row — defaulting fiscal_year_start_month to January',
         );
         return DEFAULT_FISCAL_YEAR_START_MONTH;
       }
-      const raw = settings.fiscalYearStartMonth;
       if (!Number.isInteger(raw) || raw < 1 || raw > 12) {
         logger.warn(
           { tenantId, raw },

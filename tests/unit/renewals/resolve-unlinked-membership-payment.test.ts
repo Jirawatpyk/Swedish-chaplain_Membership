@@ -104,7 +104,7 @@ function fakeDeps(args: {
     loadPlanFrozenFields: ReturnType<typeof vi.fn>;
     loadMemberPlan: ReturnType<typeof vi.fn>;
     emitInTx: ReturnType<typeof vi.fn>;
-    getFiscalYearStartMonth: ReturnType<typeof vi.fn>;
+    getFiscalYearStartMonthInTx: ReturnType<typeof vi.fn>;
   };
 } {
   const readGuards = vi.fn(async () => ({
@@ -160,7 +160,7 @@ function fakeDeps(args: {
   const emitInTx = vi.fn(async () => {});
   // FIX-3 (PR #173 review, 2026-07-09) — default January; the pre-existing
   // FY-crossing tests below already assume a January-start tenant.
-  const getFiscalYearStartMonth = vi.fn(async () => 1);
+  const getFiscalYearStartMonthInTx = vi.fn(async () => 1);
 
   const deps: ResolveUnlinkedMembershipPaymentDeps = {
     cyclesRepo: {
@@ -177,7 +177,7 @@ function fakeDeps(args: {
     idFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000c9999') },
     memberRenewalFlagsRepo: { readReactivationGuardsInTx: readGuards } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberRenewalFlagsRepo'],
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlan } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
-    fiscalYearSettings: { getFiscalYearStartMonth },
+    fiscalYearSettings: { getFiscalYearStartMonthInTx },
   };
 
   return {
@@ -194,7 +194,7 @@ function fakeDeps(args: {
       loadPlanFrozenFields,
       loadMemberPlan,
       emitInTx,
-      getFiscalYearStartMonth,
+      getFiscalYearStartMonthInTx,
     },
   };
 }
@@ -954,7 +954,7 @@ function makeInterplayDeps(cyclesRepo: ReturnType<typeof makeInMemoryCyclesRepo>
     } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
     // FIX-3 (PR #173 review, 2026-07-09) — January default; none of the
     // interplay tests below exercise a fiscal-year crossing.
-    fiscalYearSettings: { getFiscalYearStartMonth: vi.fn(async () => 1) },
+    fiscalYearSettings: { getFiscalYearStartMonthInTx: vi.fn(async () => 1) },
   };
   return { deps, cyclesRepo };
 }

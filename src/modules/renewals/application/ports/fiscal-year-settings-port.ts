@@ -25,6 +25,13 @@ export interface FiscalYearStartMonthPort {
    * `tenant_invoice_settings` row yet (pre-F4-setup tenant) or the stored
    * value is out of range — never throws, since a missing/malformed
    * setting must not block a real member payment from settling.
+   *
+   * PR #173 round-2 review (2026-07-09) — reads on the CALLER's already-open
+   * settlement `tx` (the sole caller, `reanchorFirstPaymentCycleInTx`, is
+   * already inside the money-path payment tx). The prior no-`tx` variant
+   * opened its OWN `runInTenant` (a second pooled connection) mid-tx — the
+   * nested-connection pool-exhaustion class documented in `src/lib/db.ts`.
+   * `tx: unknown` mirrors every other F8 transactional port method.
    */
-  getFiscalYearStartMonth(tenantId: string): Promise<number>;
+  getFiscalYearStartMonthInTx(tx: unknown, tenantId: string): Promise<number>;
 }

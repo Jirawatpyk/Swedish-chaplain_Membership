@@ -60,7 +60,7 @@ function fakeDeps(opts?: { fiscalYearStartMonth?: number }): {
     reanchorPeriodInTx: ReturnType<typeof vi.fn>;
     emitInTx: ReturnType<typeof vi.fn>;
     loadPlanFrozenFields: ReturnType<typeof vi.fn>;
-    getFiscalYearStartMonth: ReturnType<typeof vi.fn>;
+    getFiscalYearStartMonthInTx: ReturnType<typeof vi.fn>;
   };
 } {
   const reanchorPeriodInTx = vi.fn(async () => ({
@@ -78,7 +78,8 @@ function fakeDeps(opts?: { fiscalYearStartMonth?: number }): {
   const loadPlanFrozenFields = vi.fn(async () => ({ status: 'not_found' as const }));
   // FIX-3 (PR #173 review, 2026-07-09) — default to January so pre-existing
   // tests (which build same-FY cycles) never exercise the re-freeze branch.
-  const getFiscalYearStartMonth = vi.fn(
+  // R2-FIX-1 — reads on the caller's tx (`getFiscalYearStartMonthInTx`).
+  const getFiscalYearStartMonthInTx = vi.fn(
     async () => opts?.fiscalYearStartMonth ?? 1,
   );
   return {
@@ -86,9 +87,9 @@ function fakeDeps(opts?: { fiscalYearStartMonth?: number }): {
       cyclesRepo: { reanchorPeriodInTx },
       planLookup: { loadPlanFrozenFields },
       auditEmitter: { emitInTx },
-      fiscalYearSettings: { getFiscalYearStartMonth },
+      fiscalYearSettings: { getFiscalYearStartMonthInTx },
     },
-    mocks: { reanchorPeriodInTx, emitInTx, loadPlanFrozenFields, getFiscalYearStartMonth },
+    mocks: { reanchorPeriodInTx, emitInTx, loadPlanFrozenFields, getFiscalYearStartMonthInTx },
   };
 }
 
@@ -177,7 +178,10 @@ describe('reanchorFirstPaymentCycleInTx — FIX-3: tenant fiscal-year-start-mont
       cycle,
     );
 
-    expect(mocks.getFiscalYearStartMonth).toHaveBeenCalledWith(TENANT_ID);
+    expect(mocks.getFiscalYearStartMonthInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+    );
     expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
     expect(result?.refrozePlanFields).toBe(false);
   });

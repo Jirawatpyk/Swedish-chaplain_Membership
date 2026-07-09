@@ -86,6 +86,39 @@ function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoic
   };
 }
 
+/**
+ * PR #173 round-2 review (2026-07-09) — narrow cross-context read of the
+ * tenant's `fiscal_year_start_month` on the CALLER's already-open tenant tx.
+ *
+ * F8's `reanchorFirstPaymentCycleInTx` needs this ONE column mid-settlement to
+ * decide whether a re-anchor crosses a fiscal-year boundary. Reading it via
+ * `drizzleTenantSettingsRepo.getForIssue` would open a SECOND pooled connection
+ * (its own `runInTenant`) while the money-path tx still holds the first — the
+ * nested-connection pool-exhaustion class documented in `src/lib/db.ts`. This
+ * runs the SELECT on the passed `tx` (no new connection, no `FOR UPDATE`) and
+ * returns only the one column the caller needs. Returns `null` when the tenant
+ * has no `tenant_invoice_settings` row yet (pre-F4-setup tenant); the F8
+ * adapter maps that to its January default. Deliberately a standalone narrow
+ * read rather than a new `TenantSettingsRepo` method — the full settings view
+ * is far heavier than F8 needs, and widening the shared port would force the
+ * new method onto ~12 unrelated F4 repo mocks.
+ *
+ * Caller MUST already be inside `runInTenant` (RLS context set) + pass that
+ * same `tx`.
+ */
+export async function readFiscalYearStartMonthInTx(
+  txUnknown: unknown,
+  tenantId: string,
+): Promise<number | null> {
+  const tx = txUnknown as TenantTx;
+  const rows = await tx
+    .select({ fiscalYearStartMonth: tenantInvoiceSettings.fiscalYearStartMonth })
+    .from(tenantInvoiceSettings)
+    .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+    .limit(1);
+  return rows[0]?.fiscalYearStartMonth ?? null;
+}
+
 export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
   async getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null> {
     const ctx = asTenantContext(tenantId);

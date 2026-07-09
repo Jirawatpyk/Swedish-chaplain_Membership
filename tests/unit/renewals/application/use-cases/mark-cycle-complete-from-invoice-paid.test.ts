@@ -222,7 +222,7 @@ function fakeDeps(args: {
   // FIX-3 (PR #173 review, 2026-07-09) — default January; no test in this
   // file exercises a non-January-start tenant's re-freeze decision (that's
   // covered by `_lib/reanchor-first-payment.test.ts`'s dedicated suite).
-  const getFiscalYearStartMonthMock = vi.fn(async () => 1);
+  const getFiscalYearStartMonthInTxMock = vi.fn(async () => 1);
   const deps: MarkCycleCompleteDeps = {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
     cyclesRepo: {
@@ -253,7 +253,7 @@ function fakeDeps(args: {
       loadMemberPlanInTx: loadMemberPlanMock,
     } as unknown as MarkCycleCompleteDeps['memberPlanLookup'],
     fiscalYearSettings: {
-      getFiscalYearStartMonth: getFiscalYearStartMonthMock,
+      getFiscalYearStartMonthInTx: getFiscalYearStartMonthInTxMock,
     },
   };
   return {

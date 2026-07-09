@@ -53,7 +53,7 @@ export type ReanchorFirstPaymentDeps = {
    */
   readonly fiscalYearSettings: Pick<
     FiscalYearStartMonthPort,
-    'getFiscalYearStartMonth'
+    'getFiscalYearStartMonthInTx'
   >;
 };
 
@@ -118,7 +118,14 @@ export async function reanchorFirstPaymentCycleInTx(
   // the plan's price/term for the new fiscal year (the previous
   // `deriveFiscalYear` calls below took no `startMonth` arg, defaulting
   // to January for every tenant).
-  const startMonth = (await deps.fiscalYearSettings.getFiscalYearStartMonth(
+  //
+  // R2-FIX-1 (PR #173 round-2 review, 2026-07-09) — read on the OUTER
+  // settlement `tx` (`getFiscalYearStartMonthInTx`) rather than the prior
+  // no-`tx` variant that opened its own `runInTenant` (a second pooled
+  // connection while this money-path tx still holds the first — the
+  // nested-connection pool-exhaustion class documented in `src/lib/db.ts`).
+  const startMonth = (await deps.fiscalYearSettings.getFiscalYearStartMonthInTx(
+    tx,
     evt.tenantId,
   )) as FiscalYearStartMonth;
   const oldFiscalYear = deriveFiscalYear(cycle.periodFrom, startMonth);

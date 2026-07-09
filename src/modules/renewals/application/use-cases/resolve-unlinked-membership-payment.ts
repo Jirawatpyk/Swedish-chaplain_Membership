@@ -135,7 +135,7 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
    */
   readonly fiscalYearSettings: Pick<
     FiscalYearStartMonthPort,
-    'getFiscalYearStartMonth'
+    'getFiscalYearStartMonthInTx'
   >;
 };
 
