@@ -366,7 +366,7 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         vatRateSnapshot: '0.0700',
         vatSatang: asSatang(350_000n),
         totalSatang: asSatang(totalSatang),
-        proRatePolicySnapshot: 'whole_year',
+        proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
         memberIdentitySnapshot: {

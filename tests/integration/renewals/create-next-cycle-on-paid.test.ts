@@ -85,7 +85,7 @@ describe('create-next-cycle-on-paid chain — integration (Slice 1 / Task 1.4)',
         vatRateSnapshot: '0.0700',
         vatSatang: asSatang(350_000n),
         totalSatang: asSatang(5_350_000n),
-        proRatePolicySnapshot: 'whole_year',
+        proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
         memberIdentitySnapshot: {

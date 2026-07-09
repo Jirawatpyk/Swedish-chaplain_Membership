@@ -137,7 +137,7 @@ describe('dispatchOneCycle Gate 7.5 — unreconciled paid membership invoice gua
         vatRateSnapshot: '0.0700',
         vatSatang: asSatang(350_000n),
         totalSatang: asSatang(5_350_000n),
-        proRatePolicySnapshot: 'whole_year',
+        proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
         memberIdentitySnapshot: {

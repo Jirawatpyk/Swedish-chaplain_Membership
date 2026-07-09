@@ -266,7 +266,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         // ALL of these fields populated when status != 'draft'.
         // Minimum stubs for FK satisfaction; F4 production code
         // populates them from tenant_invoice_settings + render+blob.
-        proRatePolicySnapshot: 'whole_year',
+        proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
         memberIdentitySnapshot: {
@@ -452,7 +452,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
           vatRateSnapshot: '0.0700',
           vatSatang: asSatang(350_000n),
           totalSatang: asSatang(5_350_000n),
-          proRatePolicySnapshot: 'whole_year',
+          proRatePolicySnapshot: 'none',
           netDaysSnapshot: 30,
           tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
           memberIdentitySnapshot: {
@@ -730,7 +730,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
           vatRateSnapshot: '0.0700',
           vatSatang: asSatang(350_000n),
           totalSatang: asSatang(5_350_000n),
-          proRatePolicySnapshot: 'whole_year',
+          proRatePolicySnapshot: 'none',
           netDaysSnapshot: 30,
           tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
           memberIdentitySnapshot: {
