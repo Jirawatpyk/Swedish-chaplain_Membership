@@ -887,6 +887,38 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         return rows[0]?.unreconciled ?? false;
       });
     },
+
+    /**
+     * FIX-6 (PR #173 review, 2026-07-09) — batched counterpart of
+     * `hasUnreconciledPaidMembershipInvoice` above: same predicate, minus
+     * the `member_id` filter, `SELECT DISTINCT member_id`. Called ONCE per
+     * cron pass (`dispatchRenewalCycle`) instead of once per candidate.
+     */
+    async listMemberIdsWithUnreconciledPaidMembershipInvoice(
+      tenantId: string,
+    ): Promise<Set<string>> {
+      return runInTenant(tenant, async (tx) => {
+        const txDb = tx as unknown as typeof db;
+        const rows = await txDb.execute<{ member_id: string }>(sql`
+          SELECT DISTINCT i.member_id
+          FROM invoices i
+          WHERE i.tenant_id = ${tenantId}
+            AND i.invoice_subject = 'membership'
+            AND i.status IN ('paid', 'partially_credited')
+            AND i.paid_at > NOW() - INTERVAL '12 months'
+            AND NOT EXISTS (
+              SELECT 1 FROM renewal_cycles c
+              WHERE c.tenant_id = i.tenant_id
+                AND c.member_id = i.member_id
+                AND (
+                  c.linked_invoice_id = i.invoice_id
+                  OR c.anchor_invoice_id = i.invoice_id
+                )
+            )
+        `);
+        return new Set(rows.map((r) => r.member_id));
+      });
+    },
   };
 }
 

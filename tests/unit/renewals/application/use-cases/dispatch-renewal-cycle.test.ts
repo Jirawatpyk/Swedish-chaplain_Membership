@@ -65,10 +65,14 @@ function buildCandidate(cycleId: string): DispatchCandidate {
   });
 }
 
-function fakeDeps(pages: ReadonlyArray<DispatchCandidate>[]): {
+function fakeDeps(
+  pages: ReadonlyArray<DispatchCandidate>[],
+  opts: { unreconciledMemberIds?: ReadonlySet<string> } = {},
+): {
   deps: RenewalsDeps;
   listMock: ReturnType<typeof vi.fn>;
   auditEmitMock: ReturnType<typeof vi.fn>;
+  listUnreconciledMemberIdsMock: ReturnType<typeof vi.fn>;
 } {
   let pageIdx = 0;
   const listMock = vi.fn(async () => {
@@ -82,12 +86,19 @@ function fakeDeps(pages: ReadonlyArray<DispatchCandidate>[]): {
   // Previously fakeDeps had no auditEmitter at all, so the outer
   // catch's audit emit was unobservable in unit tests.
   const auditEmitMock = vi.fn(async () => undefined);
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's batched skip-set read.
+  const listUnreconciledMemberIdsMock = vi.fn(
+    async () => opts.unreconciledMemberIds ?? new Set<string>(),
+  );
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     dispatchCandidateRepo: { list: listMock, findOne: vi.fn() } as unknown as RenewalsDeps['dispatchCandidateRepo'],
     auditEmitter: { emit: auditEmitMock } as unknown as RenewalsDeps['auditEmitter'],
+    memberRenewalFlagsRepo: {
+      listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
+    } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
   } as unknown as RenewalsDeps;
-  return { deps, listMock, auditEmitMock };
+  return { deps, listMock, auditEmitMock, listUnreconciledMemberIdsMock };
 }
 
 const VALID_INPUT = {
@@ -307,6 +318,39 @@ describe('dispatchRenewalCycle', () => {
     const { deps } = fakeDeps([candidates]);
     await dispatchRenewalCycle(deps, VALID_INPUT);
     expect(oneCycleMock.mock.calls[0]![2].nowIso).toBe(NOW_ISO);
+  });
+
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's skip-set is read ONCE
+  // per cron pass (not once per candidate/page) and threaded verbatim
+  // into every dispatchOneCycle ctx.
+  it('FIX-6: reads the unreconciled-member skip-set exactly ONCE across multiple pages and threads it into every ctx', async () => {
+    const pages = [
+      [buildCandidate('c-001')],
+      [buildCandidate('c-002')],
+      [buildCandidate('c-003')],
+    ];
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    const unreconciledMemberIds = new Set(['mem-unreconciled-1']);
+    const { deps, listUnreconciledMemberIdsMock } = fakeDeps(pages, {
+      unreconciledMemberIds,
+    });
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    assertOk(result);
+    expect(result.value.summary.candidatesProcessed).toBe(3);
+    // ONE read for the whole pass — not one per page (3 pages) or one per
+    // candidate (3 candidates).
+    expect(listUnreconciledMemberIdsMock).toHaveBeenCalledTimes(1);
+    expect(listUnreconciledMemberIdsMock).toHaveBeenCalledWith(TENANT_ID);
+    // Every candidate's ctx carries the SAME set reference.
+    for (const call of oneCycleMock.mock.calls) {
+      expect(call[2].unreconciledMemberIds).toBe(unreconciledMemberIds);
+    }
   });
 
   it('rejects empty tenantId with invalid_input', async () => {

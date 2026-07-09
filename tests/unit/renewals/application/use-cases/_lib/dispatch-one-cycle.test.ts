@@ -122,13 +122,6 @@ function fakeDeps(opts: {
    * Each entry pins `(stepId, yearInCycle)`. Default: [] (nothing fired).
    */
   alreadyFired?: ReadonlyArray<{ stepId: string; yearInCycle: number }>;
-  /**
-   * Gate 7.5 (rolling-anchor rev 2) — stub for
-   * `memberRenewalFlagsRepo.hasUnreconciledPaidMembershipInvoice`.
-   * Default: `false` (no unreconciled invoice — every pre-existing gate
-   * test below reaches Gate 8+ unaffected).
-   */
-  hasUnreconciledInvoice?: boolean;
 }): {
   deps: RenewalsDeps;
   emitMock: ReturnType<typeof vi.fn>;
@@ -249,9 +242,11 @@ function fakeDeps(opts: {
       ? opts.pauseResult.latestOutreachAt ?? '2026-05-12T00:00:00Z'
       : null,
   }));
-  const hasUnreconciledInvoiceMock = vi.fn(
-    async () => opts.hasUnreconciledInvoice ?? false,
-  );
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5 no longer calls this
+  // method per-candidate (see `ctx.unreconciledMemberIds`); kept as a
+  // mock purely so the Gate 7.5 tests can assert it is NEVER invoked.
+  const hasUnreconciledInvoiceMock = vi.fn(async () => false);
+  const listUnreconciledMemberIdsMock = vi.fn(async () => new Set<string>());
 
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
@@ -261,6 +256,7 @@ function fakeDeps(opts: {
     } as unknown as RenewalsDeps['auditEmitter'],
     memberRenewalFlagsRepo: {
       hasUnreconciledPaidMembershipInvoice: hasUnreconciledInvoiceMock,
+      listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
     } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
     reminderEventRepo: {
       insertIfAbsent: insertReminderMock,
@@ -315,6 +311,11 @@ const happyCtx: DispatchContext = {
   correlationId: 'corr-1',
   requestId: null,
   nowIso: NOW_ISO,
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's skip-set is now an
+  // in-memory Set on the context, not a per-candidate DB call. Empty by
+  // default so every pre-existing test below reaches Gate 8+ unaffected;
+  // the dedicated Gate 7.5 tests override this field explicitly.
+  unreconciledMemberIds: new Set(),
 };
 
 describe('dispatchOneCycle', () => {
@@ -574,17 +575,20 @@ describe('dispatchOneCycle', () => {
     // paid membership invoice belt-and-suspenders skip-guard.
     // -----------------------------------------------------------------------
 
+    // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5 is now an in-memory
+    // lookup against `ctx.unreconciledMemberIds` (the caller's batched
+    // tenant-wide read), not a per-candidate call to
+    // `hasUnreconciledPaidMembershipInvoice`. Every test below asserts
+    // `hasUnreconciledInvoiceMock` is NEVER called — proving the N+1
+    // round-trip is genuinely gone — and drives the gate via the ctx set.
     it('Gate 7.5 — unreconciled paid membership invoice: skip + emit renewal_reminder_skipped, gateway never called', async () => {
-      const { deps, emitMock, gatewayMock, hasUnreconciledInvoiceMock } =
-        fakeDeps({ hasUnreconciledInvoice: true });
-      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      const { deps, emitMock, gatewayMock, hasUnreconciledInvoiceMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
       expect(result.kind).toBe('skipped');
       if (result.kind !== 'skipped') return;
       expect(result.reason).toBe('unreconciled_paid_membership_invoice');
-      expect(hasUnreconciledInvoiceMock).toHaveBeenCalledWith(
-        TENANT_ID,
-        MEMBER_ID,
-      );
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
       expect(gatewayMock).not.toHaveBeenCalled();
       expect(emitMock).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -598,13 +602,12 @@ describe('dispatchOneCycle', () => {
     });
 
     it('Gate 7.5 — fires AFTER member-level gates: member_archived still wins even when the invoice is unreconciled', async () => {
-      const { deps, hasUnreconciledInvoiceMock } = fakeDeps({
-        hasUnreconciledInvoice: true,
-      });
+      const { deps, hasUnreconciledInvoiceMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
       const result = await dispatchOneCycle(
         deps,
         buildHappyCandidate({ member: { status: 'archived' as const } }),
-        happyCtx,
+        ctx,
       );
       expect(result.kind).toBe('skipped');
       if (result.kind !== 'skipped') return;
@@ -614,9 +617,8 @@ describe('dispatchOneCycle', () => {
     });
 
     it('Gate 7.5 — fires BEFORE not_due_today: an unreconciled invoice skips even when no step is due', async () => {
-      const { deps, hasUnreconciledInvoiceMock, gatewayMock } = fakeDeps({
-        hasUnreconciledInvoice: true,
-      });
+      const { deps, hasUnreconciledInvoiceMock, gatewayMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
       // expires_at = today + 90 → no T-30 step matches today (would
       // otherwise resolve to not_due_today at Gate 8).
       const result = await dispatchOneCycle(
@@ -624,20 +626,23 @@ describe('dispatchOneCycle', () => {
         buildHappyCandidate({
           cycle: { expiresAt: '2026-08-13T00:00:00.000Z' } as Partial<RenewalCycle>,
         }),
-        happyCtx,
+        ctx,
       );
       expect(result.kind).toBe('skipped');
       if (result.kind !== 'skipped') return;
       expect(result.reason).toBe('unreconciled_paid_membership_invoice');
-      expect(hasUnreconciledInvoiceMock).toHaveBeenCalledTimes(1);
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
-    it('Gate 7.5 — no unreconciled invoice (default false): dispatch proceeds normally to Gate 8+ (sent)', async () => {
+    it('Gate 7.5 — member NOT in the skip-set: dispatch proceeds normally to Gate 8+ (sent)', async () => {
       const { deps, hasUnreconciledInvoiceMock, gatewayMock } = fakeDeps({});
-      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      // happyCtx's default unreconciledMemberIds is empty — a DIFFERENT
+      // member's id in the set must not affect THIS member either.
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set(['some-other-member']) };
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
       expect(result.kind).toBe('sent');
-      expect(hasUnreconciledInvoiceMock).toHaveBeenCalledTimes(1);
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
       expect(gatewayMock).toHaveBeenCalledTimes(1);
     });
 

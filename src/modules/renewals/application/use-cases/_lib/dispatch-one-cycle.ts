@@ -124,6 +124,16 @@ export interface DispatchContext {
   readonly requestId: string | null;
   /** Injectable now-clock for tests. Default: real-time on each call. */
   readonly nowIso: string;
+  /**
+   * FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's batched skip-set:
+   * every memberId in the tenant with an unreconciled paid membership
+   * invoice (see `MemberRenewalFlagsRepo.listMemberIdsWithUnreconciledPaidMembershipInvoice`
+   * docstring). Computed ONCE per cron pass by `dispatchRenewalCycle` (or,
+   * for the single-candidate admin "send reminder now" path, derived from
+   * the single-member read) — Gate 7.5 below is a pure in-memory lookup,
+   * never a DB call.
+   */
+  readonly unreconciledMemberIds: ReadonlySet<string>;
 }
 
 /**
@@ -440,11 +450,12 @@ async function dispatchOneCycleInner(
   // OPERATIONAL ALARM (staff must reconcile manually), so unlike the
   // routine silent skips above, this one is LOUD: logger.error + the
   // standard `renewal_reminder_skipped` audit.
-  const hasUnreconciledInvoice =
-    await deps.memberRenewalFlagsRepo.hasUnreconciledPaidMembershipInvoice(
-      ctx.tenantId,
-      member.memberId,
-    );
+  //
+  // FIX-6 (PR #173 review, 2026-07-09) — was one SQL round-trip PER
+  // CANDIDATE (`hasUnreconciledPaidMembershipInvoice`); now an in-memory
+  // lookup against the tenant-wide skip-set the caller computed ONCE
+  // (`ctx.unreconciledMemberIds` — see `DispatchContext` docstring).
+  const hasUnreconciledInvoice = ctx.unreconciledMemberIds.has(member.memberId);
   if (hasUnreconciledInvoice) {
     logger.error(
       {

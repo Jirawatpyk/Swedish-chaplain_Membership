@@ -172,14 +172,6 @@ export async function dispatchRenewalCycle(
     durationMs: 0,
   };
 
-  const baseCtx: Omit<DispatchContext, 'nowIso'> = {
-    tenantId: input.tenantId,
-    actorUserId: null,
-    actorRole: 'cron',
-    correlationId: input.correlationId,
-    requestId: input.requestId ?? null,
-  };
-
   // F8 Phase 4 Wave I9 prep / F1 fix — wrap the cron pass in a root
   // span (FR-055). Children: composite query + per-cycle dispatch
   // spans (auto-instrumented from inside dispatchOneCycle).
@@ -223,6 +215,23 @@ export async function dispatchRenewalCycle(
   async function runDispatchLoop(): Promise<{
     summary: DispatchRenewalCycleSummary;
   }> {
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's skip-set, computed
+  // ONCE for the whole cron pass (was one SQL round-trip PER CANDIDATE).
+  // Read before the page loop so every candidate — across every page —
+  // shares the same tenant-wide snapshot. Inside the OTel span so its
+  // latency is attributed to the cron pass.
+  const unreconciledMemberIds =
+    await deps.memberRenewalFlagsRepo.listMemberIdsWithUnreconciledPaidMembershipInvoice(
+      input.tenantId,
+    );
+  const baseCtx: Omit<DispatchContext, 'nowIso'> = {
+    tenantId: input.tenantId,
+    actorUserId: null,
+    actorRole: 'cron',
+    correlationId: input.correlationId,
+    requestId: input.requestId ?? null,
+    unreconciledMemberIds,
+  };
   let cursor: string | undefined = undefined;
   let pages = 0;
   while (true) {
