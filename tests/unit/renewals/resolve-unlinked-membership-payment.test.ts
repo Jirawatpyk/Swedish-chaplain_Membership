@@ -104,6 +104,7 @@ function fakeDeps(args: {
     loadPlanFrozenFields: ReturnType<typeof vi.fn>;
     loadMemberPlan: ReturnType<typeof vi.fn>;
     emitInTx: ReturnType<typeof vi.fn>;
+    getFiscalYearStartMonth: ReturnType<typeof vi.fn>;
   };
 } {
   const readGuards = vi.fn(async () => ({
@@ -157,6 +158,9 @@ function fakeDeps(args: {
     args.memberPlan === undefined ? { planId: 'p1', isArchived: false } : args.memberPlan,
   );
   const emitInTx = vi.fn(async () => {});
+  // FIX-3 (PR #173 review, 2026-07-09) — default January; the pre-existing
+  // FY-crossing tests below already assume a January-start tenant.
+  const getFiscalYearStartMonth = vi.fn(async () => 1);
 
   const deps: ResolveUnlinkedMembershipPaymentDeps = {
     cyclesRepo: {
@@ -173,6 +177,7 @@ function fakeDeps(args: {
     idFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000c9999') },
     memberRenewalFlagsRepo: { readReactivationGuardsInTx: readGuards } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberRenewalFlagsRepo'],
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlan } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
+    fiscalYearSettings: { getFiscalYearStartMonth },
   };
 
   return {
@@ -189,6 +194,7 @@ function fakeDeps(args: {
       loadPlanFrozenFields,
       loadMemberPlan,
       emitInTx,
+      getFiscalYearStartMonth,
     },
   };
 }
@@ -946,6 +952,9 @@ function makeInterplayDeps(cyclesRepo: ReturnType<typeof makeInMemoryCyclesRepo>
     memberPlanLookup: {
       loadMemberPlanInTx: vi.fn(async () => ({ planId: 'p1', isArchived: false })),
     } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
+    // FIX-3 (PR #173 review, 2026-07-09) — January default; none of the
+    // interplay tests below exercise a fiscal-year crossing.
+    fiscalYearSettings: { getFiscalYearStartMonth: vi.fn(async () => 1) },
   };
   return { deps, cyclesRepo };
 }

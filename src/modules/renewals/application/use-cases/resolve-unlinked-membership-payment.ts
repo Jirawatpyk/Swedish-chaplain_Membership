@@ -61,6 +61,7 @@ import {
   type CreateCycleInTxDeps,
   type CreateCycleOutcome,
 } from './create-cycle-in-tx';
+import type { FiscalYearStartMonthPort } from '../ports/fiscal-year-settings-port';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
@@ -125,6 +126,16 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
    * creation.
    */
   readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * FIX-3 (PR #173 review, 2026-07-09) — threaded through to
+   * `reanchorFirstPaymentCycleInTx` (the `firstPayment` branch below) so
+   * its FY-crossing re-freeze check uses the tenant's REAL configured
+   * fiscal-year-start-month, not a silently-defaulted January.
+   */
+  readonly fiscalYearSettings: Pick<
+    FiscalYearStartMonthPort,
+    'getFiscalYearStartMonth'
+  >;
 };
 
 const AUDIT_ACTOR = { actorUserId: null, actorRole: 'system' as const };

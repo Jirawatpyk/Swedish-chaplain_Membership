@@ -361,6 +361,7 @@ export async function markPaidOffline(
               cyclesRepo: deps.cyclesRepo,
               planLookup: deps.planLookupForRenewal,
               auditEmitter: deps.auditEmitter,
+              fiscalYearSettings: deps.fiscalYearSettings,
             },
             evt,
             tx,

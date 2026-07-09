@@ -72,6 +72,8 @@ import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-r
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
+import { makeDrizzleFiscalYearStartMonth } from './ports-adapters/fiscal-year-settings-drizzle';
+import type { FiscalYearStartMonthPort } from '../application/ports/fiscal-year-settings-port';
 import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
@@ -214,6 +216,14 @@ export interface RenewalsDeps {
    * frozen-price fields (price + term + currency + tier-bucket).
    */
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
+  /**
+   * FIX-3 (PR #173 review, 2026-07-09) — F8 → F4 tenant fiscal-year-
+   * start-month lookup. Feeds `reanchorFirstPaymentCycleInTx`'s FY-crossing
+   * boundary check so a non-January-start tenant's re-freeze decision
+   * matches its OWN configured fiscal year, not a silently-defaulted
+   * January boundary. See `fiscal-year-settings-port.ts` docstring.
+   */
+  readonly fiscalYearSettings: FiscalYearStartMonthPort;
   /**
    * F8-completion Slice 3 (Task 3.1) — F8 → F3 member-plan lookup for the
    * admin lapsed-comeback path. Resolves the member's CURRENT `plan_id`
@@ -406,6 +416,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     f5RefundBridge,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
+    fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
     memberPlanLookup: memberPlanLookupDrizzle,
     benefitConsumptionReader: benefitConsumptionReaderInsights,
     cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },

@@ -138,6 +138,11 @@ export type MarkCycleCompleteDeps = Pick<
   | 'cycleIdFactory'
   | 'clock'
   | 'memberPlanLookup'
+  // FIX-3 (PR #173 review, 2026-07-09) — threaded into BOTH the unlinked
+  // hook's `firstPayment` branch and the linked path's own reanchor call
+  // below, so the FY-crossing re-freeze check uses the tenant's REAL
+  // configured fiscal-year-start-month.
+  | 'fiscalYearSettings'
 >;
 
 /**
@@ -222,6 +227,7 @@ export async function markCycleCompleteInTx(
         auditEmitter: deps.auditEmitter,
         idFactory: deps.cycleIdFactory,
         memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,
+        fiscalYearSettings: deps.fiscalYearSettings,
       },
       event,
       tx,
@@ -356,6 +362,7 @@ export async function markCycleCompleteInTx(
             cyclesRepo: deps.cyclesRepo,
             planLookup: deps.planLookupForRenewal,
             auditEmitter: deps.auditEmitter,
+            fiscalYearSettings: deps.fiscalYearSettings,
           },
           event,
           tx,

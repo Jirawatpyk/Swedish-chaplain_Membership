@@ -54,11 +54,13 @@ function buildEvent(
   };
 }
 
-function fakeDeps(): {
+function fakeDeps(opts?: { fiscalYearStartMonth?: number }): {
   deps: ReanchorFirstPaymentDeps;
   mocks: {
     reanchorPeriodInTx: ReturnType<typeof vi.fn>;
     emitInTx: ReturnType<typeof vi.fn>;
+    loadPlanFrozenFields: ReturnType<typeof vi.fn>;
+    getFiscalYearStartMonth: ReturnType<typeof vi.fn>;
   };
 } {
   const reanchorPeriodInTx = vi.fn(async () => ({
@@ -73,13 +75,20 @@ function fakeDeps(): {
     reminderEventsReset: 0,
   }));
   const emitInTx = vi.fn(async () => undefined);
+  const loadPlanFrozenFields = vi.fn(async () => ({ status: 'not_found' as const }));
+  // FIX-3 (PR #173 review, 2026-07-09) — default to January so pre-existing
+  // tests (which build same-FY cycles) never exercise the re-freeze branch.
+  const getFiscalYearStartMonth = vi.fn(
+    async () => opts?.fiscalYearStartMonth ?? 1,
+  );
   return {
     deps: {
       cyclesRepo: { reanchorPeriodInTx },
-      planLookup: { loadPlanFrozenFields: vi.fn() },
+      planLookup: { loadPlanFrozenFields },
       auditEmitter: { emitInTx },
+      fiscalYearSettings: { getFiscalYearStartMonth },
     },
-    mocks: { reanchorPeriodInTx, emitInTx },
+    mocks: { reanchorPeriodInTx, emitInTx, loadPlanFrozenFields, getFiscalYearStartMonth },
   };
 }
 
@@ -143,5 +152,74 @@ describe('reanchorFirstPaymentCycleInTx — orphaned-linked-invoice log', () => 
     await reanchorFirstPaymentCycleInTx(deps, buildEvent(), {} as never, cycle);
 
     expect(logger.error).not.toHaveBeenCalled();
+  });
+});
+
+// FIX-3 (PR #173 review, 2026-07-09) — the FY-crossing boundary check must
+// use the TENANT's real fiscal_year_start_month, not a silently-defaulted
+// January. `periodFrom` is Feb 2026 throughout; only the payment month
+// (March vs May) + the tenant's startMonth vary.
+describe('reanchorFirstPaymentCycleInTx — FIX-3: tenant fiscal-year-start-month threading', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FEB_PERIOD_FROM = '2026-02-01T00:00:00.000Z';
+
+  it('startMonth=4 (April) tenant, payment in March → SAME fiscal year as Feb periodFrom → no refreeze', async () => {
+    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 4 });
+    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
+
+    const result = await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paymentDate: '2026-03-16' }),
+      {} as never,
+      cycle,
+    );
+
+    expect(mocks.getFiscalYearStartMonth).toHaveBeenCalledWith(TENANT_ID);
+    expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
+    expect(result?.refrozePlanFields).toBe(false);
+  });
+
+  it('startMonth=4 (April) tenant, payment in May → CROSSES into the new fiscal year → refreezes at fiscalYear=2026', async () => {
+    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 4 });
+    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
+    mocks.loadPlanFrozenFields.mockResolvedValue({
+      status: 'found' as const,
+      plan: {
+        tierBucket: 'regular' as const,
+        priceTHB: '45000.00',
+        termMonths: 12,
+        currency: 'THB' as const,
+      },
+    });
+
+    const result = await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paymentDate: '2026-05-16' }),
+      {} as never,
+      cycle,
+    );
+
+    expect(mocks.loadPlanFrozenFields).toHaveBeenCalledWith(
+      expect.objectContaining({ fiscalYear: 2026, mode: 'freeze' }),
+    );
+    expect(result?.refrozePlanFields).toBe(true);
+  });
+
+  it('startMonth=1 (January, default) tenant, same dates → does NOT cross (calendar-year both sides) — contrast case proving the threading matters', async () => {
+    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 1 });
+    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
+
+    const result = await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paymentDate: '2026-05-16' }),
+      {} as never,
+      cycle,
+    );
+
+    expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
+    expect(result?.refrozePlanFields).toBe(false);
   });
 });

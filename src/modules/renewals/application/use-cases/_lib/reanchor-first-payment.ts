@@ -31,7 +31,7 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import { addMonthsUtc } from '@/lib/dates';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
@@ -39,12 +39,22 @@ import { asCycleId, type RenewalCycle } from '../../../domain/renewal-cycle';
 import type { RenewalCycleRepo } from '../../ports/renewal-cycle-repo';
 import type { PlanLookupForRenewalPort } from '../../ports/plan-lookup-for-renewal';
 import type { RenewalAuditEmitter } from '../../ports/renewal-audit-emitter';
+import type { FiscalYearStartMonthPort } from '../../ports/fiscal-year-settings-port';
 import { paymentAnchorMonthStartUtc } from './payment-anchor-date';
 
 export type ReanchorFirstPaymentDeps = {
   readonly cyclesRepo: Pick<RenewalCycleRepo, 'reanchorPeriodInTx'>;
   readonly planLookup: Pick<PlanLookupForRenewalPort, 'loadPlanFrozenFields'>;
   readonly auditEmitter: Pick<RenewalAuditEmitter, 'emitInTx'>;
+  /**
+   * FIX-3 (PR #173 review, 2026-07-09) — the tenant's configured
+   * `fiscal_year_start_month`, threaded into the FY-crossing boundary
+   * check below instead of silently defaulting to January.
+   */
+  readonly fiscalYearSettings: Pick<
+    FiscalYearStartMonthPort,
+    'getFiscalYearStartMonth'
+  >;
 };
 
 export type ReanchorFirstPaymentResult = {
@@ -102,8 +112,17 @@ export async function reanchorFirstPaymentCycleInTx(
 
   const anchorDate = paymentAnchorMonthStartUtc(evt);
 
-  const oldFiscalYear = deriveFiscalYear(cycle.periodFrom);
-  const newFiscalYear = deriveFiscalYear(anchorDate);
+  // FIX-3 (PR #173 review, 2026-07-09) — thread the tenant's REAL
+  // fiscal-year-start-month into the boundary check. Without this, a
+  // non-January-start tenant's re-anchor could silently skip re-freezing
+  // the plan's price/term for the new fiscal year (the previous
+  // `deriveFiscalYear` calls below took no `startMonth` arg, defaulting
+  // to January for every tenant).
+  const startMonth = (await deps.fiscalYearSettings.getFiscalYearStartMonth(
+    evt.tenantId,
+  )) as FiscalYearStartMonth;
+  const oldFiscalYear = deriveFiscalYear(cycle.periodFrom, startMonth);
+  const newFiscalYear = deriveFiscalYear(anchorDate, startMonth);
 
   let frozenPlanPriceThb = cycle.frozenPlanPriceThb;
   let frozenPlanTermMonths = cycle.frozenPlanTermMonths;
