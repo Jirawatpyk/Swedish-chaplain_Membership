@@ -1036,6 +1036,91 @@ genuine bug surfaces in audit).
 - **Schedule**: `0 5 * * 6` (Sat 05:00 Asia/Bangkok — 1h after token prune)
 - **Timeout**: 5 seconds (small table + partial-index-driven scan)
 
+## F8 — Rolling-anchor ship-day ops (renewal-rolling-anchor, 2026-07-09)
+
+One-time operator steps that accompany the rolling-anchor deploy (spec
+`docs/superpowers/specs/2026-07-08-renewal-rolling-anchor-design.md`,
+migration 0238). NOT a cron — listed here because this file is the F8
+operator reference and both steps must land in the same ship window as
+the code deploy.
+
+### Step 1 — grace period 14 → 30 days (R7)
+
+TSCC's public site states membership lapses when the fee is overdue more
+than 30 days. Map it onto the existing config knob:
+
+```sql
+UPDATE tenant_renewal_settings SET grace_period_days = 30 WHERE tenant_id = 'swecham';
+```
+
+> **Status (RESOLVED 2026-07-09)**: TSCC confirmed there is **no fixed
+> lapse policy — it is board discretion per case**. 30 days is therefore
+> the CHOSEN DEFAULT (matches their public-site wording and common
+> chamber practice), not a compliance requirement. The board can change
+> it any time by updating this single config value (`grace_period_days`,
+> valid range 0–90) — no deploy needed. F8 counts the grace window from
+> *period end*; 30 is strictly more forgiving than the seeded default 14,
+> so applying it at ship is low-risk.
+
+Verify after applying:
+
+```sql
+SELECT tenant_id, grace_period_days FROM tenant_renewal_settings WHERE tenant_id = 'swecham';
+```
+
+### Step 2 — backfill cycle anchors from TSCC payment dates (R4)
+
+Members onboarded before this deploy have cycles provisionally anchored at
+`registration_date`. Re-anchor them to TSCC's recorded payment dates with
+`scripts/backfill-cycle-anchors.ts` (full docs in the script header):
+
+```bash
+# 1. Author the CSV from TSCC's records (PII — keep OUTSIDE the repo):
+#    company_name,payment_date[,period_from,period_to]
+#    - explicit period_from/period_to WIN (the ~6 legacy full-year members
+#      keep their fixed calendar-year window, e.g. 2026-01-01,2026-12-31)
+#    - otherwise: period = first day of payment month → +12 months
+
+# 2. DRY-RUN first — prints matched/unmatched/skips, writes NOTHING:
+TENANT_SLUG=swecham node --env-file=.env.production --import tsx \
+  scripts/backfill-cycle-anchors.ts path/to/tscc-payment-dates.csv
+
+# 3. Review the plan output (unmatched names? unexpected skips?), then WRITE:
+TENANT_SLUG=swecham node --env-file=.env.production --import tsx \
+  scripts/backfill-cycle-anchors.ts path/to/tscc-payment-dates.csv --confirm-prod
+```
+
+Operational notes:
+
+- **Idempotent** — an already-anchored cycle skips (`already_anchored`);
+  re-running after a partial failure is safe.
+- **Skips are reported, never silent**: unmatched/ambiguous names, members
+  with no open cycle, future-dated payment dates (the workbook contains at
+  least one), duplicate rows (MAX(payment_date) wins).
+- **~7 paid-but-undated early-2025 members** are NOT auto-handled — staff
+  resolve each (ask TSCC, or fall back to the invoice date by decision) and
+  add them to the CSV. **Status: awaiting TSCC data confirmation.**
+- Every write emits a `renewal_cycle_reanchored` audit row
+  (`invoice_id: null` = the backfill arm) in the same transaction.
+- Run AFTER testing completes on the dev branch and AFTER migration 0238 is
+  live in prod (decided 2026-07-08).
+
+### Ongoing note — `mark-paid-offline` suppresses the registration fee
+
+F8 (final-review, 2026-07-09): a FIRST payment recorded via the admin
+"mark paid offline" action bills at the cycle's FROZEN price and
+**suppresses the one-time registration-fee re-bill** (`mark-paid-offline.ts`
+threads `frozenPlanPriceThb` into the F4 chain's `renewalSignal`, which
+overrides the membership-line price and suppresses the reg-fee line —
+mirrors the online confirm-renewal renewal path, which also never re-bills
+a registration fee). This is CORRECT for a genuine renewal, but a brand-new
+member's very FIRST invoice normally carries a registration fee. **If a
+new member's first payment needs a registration fee on the invoice, bill
+them via the admin New-invoice form (which does NOT suppress the reg fee)
+instead of Renewals → mark paid offline.** Reserve mark-paid-offline for
+members whose invoice already exists (issued via New-invoice or a renewal
+dispatch) and who simply paid by an offline method (bank transfer, cheque).
+
 ## F6 — idempotency sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T116)
 
 Purges expired rows from `eventcreate_idempotency_receipts` (7-day

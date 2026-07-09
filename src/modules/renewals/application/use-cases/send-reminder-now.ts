@@ -97,6 +97,16 @@ export async function sendReminderNow(
   }
   const nowIso = input.nowIso ?? new Date().toISOString();
   try {
+    // FIX-6 (PR #173 review, 2026-07-09) — this is a SINGLE-candidate
+    // path (admin dispatching exactly one cycle), so the batched
+    // tenant-wide read (`listMemberIdsWithUnreconciledPaidMembershipInvoice`)
+    // would be pure overhead here; keep the single-member read and wrap
+    // it into the Set shape `DispatchContext.unreconciledMemberIds` expects.
+    const hasUnreconciledInvoice =
+      await deps.memberRenewalFlagsRepo.hasUnreconciledPaidMembershipInvoice(
+        input.tenantId,
+        candidate.member.memberId,
+      );
     const outcome = await dispatchOneCycle(deps, candidate, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
@@ -104,6 +114,9 @@ export async function sendReminderNow(
       correlationId: input.correlationId,
       requestId: input.requestId ?? null,
       nowIso,
+      unreconciledMemberIds: hasUnreconciledInvoice
+        ? new Set([candidate.member.memberId])
+        : new Set(),
     });
     return ok(outcome);
   } catch (e) {

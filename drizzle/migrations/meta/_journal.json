@@ -1667,6 +1667,13 @@
 			"when": 1798536600000,
 			"tag": "0237_members_backup_exported_event",
 			"breakpoints": true
+		},
+		{
+			"idx": 241,
+			"version": "7",
+			"when": 1798536700000,
+			"tag": "0238_renewal_rolling_anchor",
+			"breakpoints": true
 		}
 	]
 }

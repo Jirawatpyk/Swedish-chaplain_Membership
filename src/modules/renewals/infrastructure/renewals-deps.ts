@@ -72,6 +72,8 @@ import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-r
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
+import { makeDrizzleFiscalYearStartMonth } from './ports-adapters/fiscal-year-settings-drizzle';
+import type { FiscalYearStartMonthPort } from '../application/ports/fiscal-year-settings-port';
 import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
@@ -214,6 +216,14 @@ export interface RenewalsDeps {
    * frozen-price fields (price + term + currency + tier-bucket).
    */
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
+  /**
+   * FIX-3 (PR #173 review, 2026-07-09) — F8 → F4 tenant fiscal-year-
+   * start-month lookup. Feeds `reanchorFirstPaymentCycleInTx`'s FY-crossing
+   * boundary check so a non-January-start tenant's re-freeze decision
+   * matches its OWN configured fiscal year, not a silently-defaulted
+   * January boundary. See `fiscal-year-settings-port.ts` docstring.
+   */
+  readonly fiscalYearSettings: FiscalYearStartMonthPort;
   /**
    * F8-completion Slice 3 (Task 3.1) — F8 → F3 member-plan lookup for the
    * admin lapsed-comeback path. Resolves the member's CURRENT `plan_id`
@@ -406,6 +416,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     f5RefundBridge,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
+    fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
     memberPlanLookup: memberPlanLookupDrizzle,
     benefitConsumptionReader: benefitConsumptionReaderInsights,
     cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },
@@ -615,6 +626,15 @@ export function f8OnPaidCallbacks(
       // (no Result wrapper — domain failures are non-throws so callers
       // never need to discriminate ok vs err). Infra throws still
       // propagate up so F4's tx rolls back on real DB failures.
+      //
+      // Rolling-anchor refactor (2026-07-08, migration 0238): the InTx
+      // path (atomic — F4's own tx) additionally resolves UNLINKED
+      // membership payments (re-anchor / renew / heal) via the hook
+      // inside `markCycleCompleteInTx`. The degraded wrapper path below
+      // REFUSES that resolution — `markCycleCompleteFromInvoicePaid`
+      // forces `allowUnlinkedResolution=false`, so a separately-committed
+      // re-anchor followed by an F4 payment rollback is impossible. The
+      // dispatcher skip-guard + reconciliation cover the resulting miss.
       const outcome =
         txForInTx !== undefined
           ? await markCycleCompleteInTx(deps, evt, txForInTx)
@@ -635,6 +655,12 @@ export function f8OnPaidCallbacks(
         case 'held_pending_admin':
         case 'no_cycle_for_invoice':
         case 'cycle_not_payable':
+        // Rolling-anchor refactor Task 6 — the linked-path first-payment
+        // re-anchor outcome. The use-case already wrote state + emitted
+        // `renewal_cycle_reanchored` + the metric; this dispatch site
+        // only needs to acknowledge the variant (same no-op contract as
+        // every other kind here).
+        case 'reanchored':
           break;
         default: {
           // Round 4 review-fix (R4-S1): defence-in-depth for the

@@ -54,11 +54,13 @@ import type { RiskBand } from '../../domain/value-objects/risk-band';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
   // RLS does the tenant binding via runInTenant at the use-case layer;
-  // this adapter receives only the tx + memberId and writes via the
-  // members table directly. The tenant param is reserved for future
-  // safety assertions or per-tenant adapter caching (consumed by the
-  // companion `WithTenant` factory below).
-  _tenant: TenantContext,
+  // most methods below receive only the tx + memberId and write via the
+  // members table directly, so `tenant` goes unused for them. Rolling-
+  // anchor rev 2 added `hasUnreconciledPaidMembershipInvoice`, which has
+  // no caller-supplied tx (the dispatcher gate calls it standalone) — it
+  // opens its OWN `runInTenant(tenant, …)` using this closed-over context,
+  // mirroring `makeDrizzleTierUpgradeEvalCandidateRepo`'s `list()` method.
+  tenant: TenantContext,
 ): MemberRenewalFlagsRepo {
   return {
     async setEmailUnverified(
@@ -571,7 +573,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
               WHERE status = 'issued'
                 AND created_at < NOW() - INTERVAL '30 days'
             ) AS overdue_count,
-            MAX(paid_at) AS last_paid_at
+            MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited')) AS last_paid_at
           FROM invoices
           -- Phase 6 review I7 — explicit tenant_id filter as
           -- defence-in-depth atop RLS. Constitution Principle I 2-layer
@@ -833,6 +835,89 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         previousValue: wasSnoozedActive,
         affectedRows: updated.length,
       };
+    },
+
+    /**
+     * Rolling-anchor refactor rev 2 (design 2026-07-08 §4) — belt-and-
+     * suspenders read for the dispatcher skip-guard. No caller tx is
+     * threaded (the dispatcher's decision tree has no outer tx open at
+     * this gate), so this method opens its OWN `runInTenant`, following
+     * the same standalone-method pattern as
+     * `makeDrizzleTierUpgradeEvalCandidateRepo.list()`.
+     *
+     * Tenant filters are explicit defence-in-depth on top of RLS
+     * (Constitution Principle I two-layer rule) even though `invoices`
+     * and `renewal_cycles` both carry strict isolating RLS policies.
+     */
+    async hasUnreconciledPaidMembershipInvoice(
+      tenantId: string,
+      memberId: string,
+    ): Promise<boolean> {
+      return runInTenant(tenant, async (tx) => {
+        const txDb = tx as unknown as typeof db;
+        // The inner NOT EXISTS correlates on c.member_id = i.member_id in
+        // addition to c.tenant_id = i.tenant_id even though it is not
+        // strictly required for correctness: a cycle only ever references
+        // its own member's invoices via linked_invoice_id/anchor_invoice_id,
+        // so no cycle belonging to a different member could match anyway.
+        // Adding it lets the planner use the existing
+        // renewal_cycles_member_idx (tenant_id, member_id) to narrow the
+        // scan to this member's handful of cycles instead of a
+        // per-candidate scan of the tenant's entire renewal_cycles table
+        // (there is no index on linked_invoice_id/anchor_invoice_id alone).
+        // Semantically safe, purely a planner hint (Review Task 10).
+        const rows = await txDb.execute<{ unreconciled: boolean }>(sql`
+          SELECT EXISTS (
+            SELECT 1 FROM invoices i
+            WHERE i.tenant_id = ${tenantId} AND i.member_id = ${memberId}
+              AND i.invoice_subject = 'membership'
+              AND i.status IN ('paid', 'partially_credited')
+              AND i.paid_at > NOW() - INTERVAL '12 months'
+              AND NOT EXISTS (
+                SELECT 1 FROM renewal_cycles c
+                WHERE c.tenant_id = i.tenant_id
+                  AND c.member_id = i.member_id
+                  AND (
+                    c.linked_invoice_id = i.invoice_id
+                    OR c.anchor_invoice_id = i.invoice_id
+                  )
+              )
+          ) AS unreconciled
+        `);
+        return rows[0]?.unreconciled ?? false;
+      });
+    },
+
+    /**
+     * FIX-6 (PR #173 review, 2026-07-09) — batched counterpart of
+     * `hasUnreconciledPaidMembershipInvoice` above: same predicate, minus
+     * the `member_id` filter, `SELECT DISTINCT member_id`. Called ONCE per
+     * cron pass (`dispatchRenewalCycle`) instead of once per candidate.
+     */
+    async listMemberIdsWithUnreconciledPaidMembershipInvoice(
+      tenantId: string,
+    ): Promise<Set<string>> {
+      return runInTenant(tenant, async (tx) => {
+        const txDb = tx as unknown as typeof db;
+        const rows = await txDb.execute<{ member_id: string }>(sql`
+          SELECT DISTINCT i.member_id
+          FROM invoices i
+          WHERE i.tenant_id = ${tenantId}
+            AND i.invoice_subject = 'membership'
+            AND i.status IN ('paid', 'partially_credited')
+            AND i.paid_at > NOW() - INTERVAL '12 months'
+            AND NOT EXISTS (
+              SELECT 1 FROM renewal_cycles c
+              WHERE c.tenant_id = i.tenant_id
+                AND c.member_id = i.member_id
+                AND (
+                  c.linked_invoice_id = i.invoice_id
+                  OR c.anchor_invoice_id = i.invoice_id
+                )
+            )
+        `);
+        return new Set(rows.map((r) => r.member_id));
+      });
     },
   };
 }

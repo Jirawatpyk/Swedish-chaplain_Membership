@@ -99,6 +99,26 @@ export const issueCreditNoteSchema = z.object({
    * bridge wrapper; F4-manual flows omit it.
    */
   sourceRefundId: z.string().min(1).optional(),
+  /**
+   * F-2 (2026-07-08) — what this credit means for the member's membership.
+   * REQUIRED when the invoice is subject='membership' AND the credit is a
+   * FULL credit (credited_total after this note >= invoice total); the
+   * partial-accumulation guard above already rejects anything that would
+   * exceed the remainder, so in practice "full" means the credited total
+   * lands EXACTLY on the invoice total. Forbidden/ignored otherwise (partial
+   * credits and event invoices never touch membership — TSCC has no
+   * established mid-term-refund practice, so per-case staff intent IS the
+   * business rule; see docs/superpowers/specs/2026-07-08-renewal-rolling-
+   * anchor-design.md § F-2).
+   *   'keep'              — paperwork correction / duplicate refund; no
+   *                          membership effect.
+   *   'cancel_membership' — refund with withdrawal; the ROUTE (presentation)
+   *                          cancels the member's in-flight renewal cycles
+   *                          via F8's `cancelInFlightCyclesForMember` AFTER
+   *                          this use-case commits (Principle III — F4 never
+   *                          imports F8 directly).
+   */
+  membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
 });
 
 export type IssueCreditNoteInput = z.infer<typeof issueCreditNoteSchema>;
@@ -135,6 +155,14 @@ export type CreditNoteEmailDelivery = 'sent' | 'skipped_no_recipient' | 'not_req
 export interface IssueCreditNoteSuccess {
   readonly creditNote: CreditNote;
   readonly emailDelivery: CreditNoteEmailDelivery;
+  /**
+   * F-2 (2026-07-08) — `true` only when this was a FULL credit on a
+   * `invoiceSubject==='membership'` invoice AND the caller declared
+   * `membershipEffect: 'cancel_membership'`. The use-case itself never
+   * touches F8 (Principle III); the ROUTE reads this flag to orchestrate
+   * `cancelInFlightCyclesForMember` after this transaction commits.
+   */
+  readonly membershipCancellationRequested: boolean;
 }
 
 export type IssueCreditNoteError =
@@ -190,7 +218,15 @@ export type IssueCreditNoteError =
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
-  | { code: 'concurrent_state_change' };
+  | { code: 'concurrent_state_change' }
+  /**
+   * F-2 (2026-07-08) — this credit note would FULLY credit a
+   * `invoiceSubject==='membership'` invoice, but the caller omitted the
+   * required `membershipEffect` field. Returned BEFORE `allocateNext` (no
+   * §87 sequence number burned) — same pre-allocation discipline as every
+   * other guard in this file.
+   */
+  | { code: 'membership_effect_required' };
 
 class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
   override readonly name = 'IssueCreditNoteInternalError';
@@ -503,6 +539,36 @@ export async function issueCreditNote(
       }
       const { creditAmount, vat, total } = vatCalc.value;
 
+      // F-2 (2026-07-08) — membership-effect intent gate. Computed here
+      // (BEFORE the POST-SEQUENCE zone) so a validation failure never burns
+      // a §87 sequence number — same discipline as `receipt_not_creditable` /
+      // `credit_exceeds_remainder` above. `prospectiveCreditedTotal` +
+      // `isFullCredit` are the single source of truth for "did this credit
+      // note complete the invoice?" — reused verbatim at the J. Rollup site
+      // below instead of recomputing.
+      const prospectiveCreditedTotal = addSatang(
+        asSatang(loaded.creditedTotal.satang),
+        asSatang(total.satang),
+      );
+      const isFullCredit =
+        prospectiveCreditedTotal === asSatang(loaded.total.satang);
+      const isMembershipInvoice = loaded.invoiceSubject === 'membership';
+      if (
+        isMembershipInvoice &&
+        isFullCredit &&
+        input.membershipEffect === undefined
+      ) {
+        return err({ code: 'membership_effect_required' });
+      }
+      // Only a full membership credit with an EXPLICIT 'cancel_membership'
+      // choice requests the F8 cascade. Partial credits + event invoices
+      // never reach here with `isMembershipInvoice && isFullCredit` true, so
+      // any `membershipEffect` they supplied is silently ignored per spec.
+      const membershipCancellationRequested =
+        isMembershipInvoice &&
+        isFullCredit &&
+        input.membershipEffect === 'cancel_membership';
+
       // --- POST-SEQUENCE zone begins. Every error path below MUST
       // throw IssueCreditNoteInternalError so withTx rolls back.
 
@@ -630,11 +696,12 @@ export async function issueCreditNote(
       // J. Rollup: bump credited_total_satang + flip invoice status.
       // F5R3 H-5 (2026-05-16) — branded arithmetic via addSatang
       // preserves the Satang brand into the port input.
-      const newCreditedTotal = addSatang(
-        asSatang(loaded.creditedTotal.satang),
-        asSatang(total.satang),
-      );
-      const fullyCredited = newCreditedTotal === asSatang(loaded.total.satang);
+      // F-2 (2026-07-08) — `newCreditedTotal` / `fullyCredited` are the SAME
+      // values as `prospectiveCreditedTotal` / `isFullCredit` computed above
+      // (before the POST-SEQUENCE zone) for the membership-effect gate;
+      // reused here as a single source of truth rather than recomputed.
+      const newCreditedTotal = prospectiveCreditedTotal;
+      const fullyCredited = isFullCredit;
       try {
         await deps.invoiceRepo.applyCreditNoteRollup(tx, {
           tenantId: input.tenantId,
@@ -954,7 +1021,7 @@ export async function issueCreditNote(
         );
       }
 
-      return ok({ creditNote: cn, emailDelivery });
+      return ok({ creditNote: cn, emailDelivery, membershipCancellationRequested });
     });
   } catch (e) {
     if (e instanceof IssueCreditNoteInternalError) {

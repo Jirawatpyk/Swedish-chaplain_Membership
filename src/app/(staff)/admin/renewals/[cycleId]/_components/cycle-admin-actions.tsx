@@ -24,7 +24,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import {
@@ -113,6 +113,7 @@ async function readError(res: Response): Promise<{
 
 export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
   const t = useTranslations('admin.renewals.cycleDetail');
+  const format = useFormatter();
   const router = useRouter();
 
   // --- Cancel state ---
@@ -152,15 +153,18 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
   };
 
   // Shared POST runner — owns the fetch + non-2xx error-toast + catch
-  // envelope that is identical for both endpoints. `onSuccess` does the
-  // toast + field reset + refresh; the optional `onError` returns true when
-  // it fully handled a specific code (mark-paid's f4_orphan_invoice
-  // deep-link), suppressing the generic code→toast fallback.
+  // envelope that is identical for both endpoints. `onSuccess` receives the
+  // parsed 2xx JSON body (branch-specific copy — e.g. mark-paid's
+  // 'reanchored' outcome — reads it there; cancel's onSuccess ignores it)
+  // and does the toast + field reset + refresh; the optional `onError`
+  // returns true when it fully handled a specific code (mark-paid's
+  // f4_orphan_invoice deep-link), suppressing the generic code→toast
+  // fallback.
   const runAction = async (
     endpoint: string,
     body: Record<string, unknown>,
     namespace: 'cancelCycle' | 'markPaidOffline',
-    onSuccess: () => void,
+    onSuccess: (data: unknown) => void,
     onError?: (err: { code: string; orphan_invoice_id?: string }) => boolean,
   ): Promise<void> => {
     try {
@@ -176,7 +180,8 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
         toast.error(t.has(key) ? t(key) : t(`${namespace}.error.server_error`));
         return;
       }
-      onSuccess();
+      const data: unknown = await res.json().catch(() => null);
+      onSuccess(data);
     } catch {
       toast.error(t(`${namespace}.error.server_error`));
     }
@@ -223,8 +228,29 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           payment_date: paymentDate,
         },
         'markPaidOffline',
-        () => {
-          toast.success(t('markPaidOffline.successToast'));
+        (data) => {
+          // Task 7 (rolling-anchor refactor) — the member's one-and-only
+          // cycle was re-anchored (not completed) to the actual payment
+          // month. Distinct copy so the admin understands the cycle
+          // stayed `upcoming` instead of completing. The authoritative
+          // new period dates render on the refreshed page below; the
+          // toast's `{date}` is the TRUE period start (first of month)
+          // after re-anchor.
+          const dataObj = data as
+            | { outcome?: string; new_period_from?: string }
+            | null;
+          if (dataObj?.outcome === 'reanchored' && dataObj.new_period_from) {
+            toast.success(
+              t('markPaidOffline.successReanchored', {
+                date: format.dateTime(
+                  new Date(dataObj.new_period_from),
+                  'dateMedium',
+                ),
+              }),
+            );
+          } else {
+            toast.success(t('markPaidOffline.successToast'));
+          }
           setMarkPaidOpen(false);
           resetMarkPaidFields();
           router.refresh();

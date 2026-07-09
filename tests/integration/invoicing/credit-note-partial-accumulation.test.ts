@@ -271,13 +271,16 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     expect(afterFirst?.status).toBe('partially_credited');
     expect(BigInt(afterFirst!.creditedTotalSatang as unknown as string)).toBe(64_200n);
 
-    // Second partial — exactly the remainder (40%).
+    // Second partial — exactly the remainder (40%). This COMPLETES the
+    // credit (partially_credited → credited), so F-2 (2026-07-08) now
+    // REQUIRES membershipEffect on this seeded membership invoice.
     const r2 = await issueCreditNote(deps, {
       tenantId: tenant.ctx.slug,
       actorUserId: user.userId,
       invoiceId,
       creditTotalSatang: 42_800n,
       reason: 'Partial refund 2',
+      membershipEffect: 'keep',
     });
     expect(r2.ok).toBe(true);
 
@@ -317,6 +320,9 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
       invoiceId,
       creditTotalSatang: INVOICE_TOTAL, // full
       reason: 'Full refund',
+      // F-2 (2026-07-08) — full credit on this seeded membership invoice
+      // now requires an explicit intent.
+      membershipEffect: 'keep',
     });
     expect(r1.ok).toBe(true);
 

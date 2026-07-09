@@ -248,14 +248,20 @@ export async function POST(
         }
       }
     }
-    return successResponse(
-      {
-        cycle_status: result.value.cycleStatus,
-        invoice_id: result.value.invoiceId,
-        new_expires_at: result.value.newExpiresAt,
-      },
-      ctx.correlationId,
-    );
+    const response: Record<string, unknown> = {
+      // Task 7 (rolling-anchor refactor) — discriminates the
+      // 'completed' vs 'reanchored' shared-classifier branch so the
+      // admin UI can show branch-specific copy without re-deriving it.
+      outcome: result.value.outcome,
+      cycle_status: result.value.cycleStatus,
+      invoice_id: result.value.invoiceId,
+      new_expires_at: result.value.newExpiresAt,
+    };
+    // RRA task 7 fix — include true period start for reanchored toast.
+    if (result.value.outcome === 'reanchored') {
+      response.new_period_from = result.value.newPeriodFrom;
+    }
+    return successResponse(response, ctx.correlationId);
   } catch (e) {
     logger.error(
       {

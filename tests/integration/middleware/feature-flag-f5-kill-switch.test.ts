@@ -41,10 +41,23 @@ describe('F5 feature-flag kill-switch', () => {
     'POST /api/payments/initiate',
     'GET /api/payments/abc-123',
     'POST /api/refunds',
+    // The CONCRETE refund mutation route (`src/app/api/refunds/initiate/
+    // route.ts` — the only route under /api/refunds). The bare
+    // `/api/refunds` case above proves prefix coverage; this one proves
+    // the real production surface is gated.
+    //
+    // Historical note (2026-07-09): this list previously asserted
+    // `POST /admin/invoices/abc-123/refund` — a route that NEVER existed.
+    // The real admin refund entry is `/admin/invoices/[id]?refund=1`
+    // (query-param auto-opens RefundDialog on the F4 invoice page; the
+    // page itself is deliberately NOT F5-gated — see the not-blocked list
+    // below — because its mutation goes through `/api/refunds/initiate`,
+    // which IS gated). The stale case failed forever once the proxy's
+    // isF5Path list was compared against real routes.
+    'POST /api/refunds/initiate',
     'POST /api/webhooks/stripe',
     'GET /api/tenant-payment-settings',
     'GET /portal/invoices/abc-123/pay',
-    'POST /admin/invoices/abc-123/refund',
   ])('%s → 503 feature_disabled', async (spec) => {
     const [method, path] = spec.split(' ') as [string, string];
     const response = proxy(makeRequest(method, path));

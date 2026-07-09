@@ -67,6 +67,7 @@ function makeIssuedInvoice(overrides: Partial<Invoice> = {}): Invoice {
   return {
     tenantId: TENANT_ID,
     invoiceId: asInvoiceId(INVOICE_ID),
+    invoiceSubject: 'membership',
     memberId: MEMBER_ID,
     planId: 'corporate-regular',
     planYear: 2026,
@@ -253,7 +254,7 @@ describe('Contract — F4 onPaidCallbacks (cross-module hook for F8/F5)', () => 
   });
 
   // ── Contract 2 ─────────────────────────────────────────────────────────
-  it('Contract 2: callbacks receive canonical F4InvoicePaidEvent shape (research.md R12 — full 9-field surface)', async () => {
+  it('Contract 2: callbacks receive canonical F4InvoicePaidEvent shape (research.md R12 — full 11-field surface)', async () => {
     let received: F4InvoicePaidEvent | null = null;
     const cb = async (evt: F4InvoicePaidEvent) => {
       received = evt;
@@ -279,6 +280,10 @@ describe('Contract — F4 onPaidCallbacks (cross-module hook for F8/F5)', () => 
     expect(evt.triggeredBy).toBe('admin_manual');
     // Default paymentMethod = input.paymentMethod when no processorMethod override
     expect(evt.paymentMethod).toBe('bank_transfer');
+    // Rolling-anchor fields (renewal-rolling-anchor task 3): the loaded
+    // Invoice's subject partition + the admin-entered payment date verbatim.
+    expect(evt.invoiceSubject).toBe('membership');
+    expect(evt.paymentDate).toBe(baseInput.paymentDate);
   });
 
   // ── Contract 2a ─────────────────────────────────────────────────────
@@ -306,6 +311,10 @@ describe('Contract — F4 onPaidCallbacks (cross-module hook for F8/F5)', () => 
     // Event surfaces the SEMANTIC rail, not the F4 row enum
     expect(evt.paymentMethod).toBe('stripe_card');
     expect(evt.triggeredBy).toBe('webhook');
+    // record-payment's paymentDate passthrough is trigger-agnostic — the
+    // F5 wrapper still supplies a real settlement date on this input schema.
+    expect(evt.invoiceSubject).toBe('membership');
+    expect(evt.paymentDate).toBe(f5Input.paymentDate);
   });
 
   // ── Contract 3 ─────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { addMonthsUtc } from '@/lib/dates';
 import {
   createInvoiceDraft,
   createInvoiceDraftSchema,
@@ -13,9 +14,11 @@ import {
   listInvoicesSchema,
   makeCreateInvoiceDraftDeps,
   makeListInvoicesDeps,
+  type CreateInvoiceDraftInput,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 import { serialiseInvoice } from './_serialise';
+import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
@@ -80,6 +83,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Task 9 (renewal-rolling-anchor §3b review-mandate) — server-authoritative
+  // coverage window: the client NEVER supplies `membershipCoverage` (it's a
+  // printed §86/4 tax-document field). Resolve the SAME classification the
+  // New-invoice form's advisory context line used, and thread the window
+  // ONLY for a `renewal`-classified member — everyone else keeps the
+  // `from_payment` default (Task 8). A lookup failure degrades to that same
+  // default rather than blocking draft creation (advisory-only per design).
+  let membershipCoverage: CreateInvoiceDraftInput['membershipCoverage'];
+  try {
+    const renewalContext = await loadMemberRenewalContext(tenantCtx.slug, parsed.data.member_id);
+    if (
+      renewalContext.classification.kind === 'renewal' &&
+      renewalContext.periodTo !== null &&
+      renewalContext.termMonths !== null
+    ) {
+      membershipCoverage = {
+        kind: 'window',
+        fromIso: renewalContext.periodTo,
+        toIso: addMonthsUtc(renewalContext.periodTo, renewalContext.termMonths),
+      };
+    }
+  } catch (err) {
+    logger.warn(
+      { err, tenantSlug: tenantCtx.slug, memberId: parsed.data.member_id },
+      '[invoices] member-renewal-context lookup failed at draft-create — falling back to from_payment coverage text',
+    );
+  }
+
   const input = createInvoiceDraftSchema.parse({
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
@@ -88,6 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     planId: parsed.data.plan_id,
     planYear: parsed.data.plan_year,
     autoEmailOnIssue: parsed.data.auto_email_on_issue ?? null,
+    ...(membershipCoverage ? { membershipCoverage } : {}),
   });
 
   const result = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenantCtx.slug), input);

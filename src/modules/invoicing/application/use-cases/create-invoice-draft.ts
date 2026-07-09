@@ -65,6 +65,47 @@ export const createInvoiceDraftSchema = z.object({
   renewalSignal: z
     .object({ unitPriceSatang: z.bigint() })
     .optional(),
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) —
+   * coverage wording for the membership line. Default
+   * `{ kind: 'from_payment' }` (generic "12 months from month of
+   * payment") is correct for a first bill or any caller that hasn't
+   * resolved an exact period; the F8 renewal bridges
+   * (`f4-invoice-bridge.ts` / `f4-invoicing-for-renewal-bridge-drizzle.ts`)
+   * pass `{ kind: 'window', fromIso, toIso }` — the cycle's known
+   * NEXT-period bounds — so the renewal invoice prints exact dates
+   * instead of the generic wording. Supersedes the FY-boundary text
+   * (`fiscalYearBoundaryForYear(input.planYear, …)`), which was WRONG
+   * under TSCC's rolling policy (printed calendar-year coverage that
+   * disagreed with the actual rolling period on the same tax document).
+   */
+  membershipCoverage: z
+    .discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('window'),
+        fromIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+        toIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+      }),
+      z.object({ kind: z.literal('from_payment') }),
+    ])
+    // Task 8 review-fix (F2, defence-in-depth) — the `fromIso`/`toIso`
+    // regexes above only check SHAPE (`YYYY-MM-DD` prefix), not ORDER.
+    // `.refine()` has to sit on the OUTER union (not on the `window`
+    // branch itself) — zod's `discriminatedUnion` requires every member
+    // to stay a plain `ZodObject` so it can introspect the discriminant;
+    // wrapping one branch in `.refine()` produces a `ZodEffects` that
+    // breaks that introspection at parse time. Every current caller
+    // derives `toIso` via `addMonthsUtc(fromIso, n>0)` so this can't fire
+    // from production code today, but this is a tax-document field
+    // (§86/4 printed coverage window) — a future caller passing a
+    // reversed/equal window must fail loud here rather than print a
+    // nonsensical "from 2028 to 2027" line. String comparison is safe
+    // because both fields are validated ISO `YYYY-MM-DD...` prefixes
+    // (lexicographic order == chronological order for that format).
+    .refine((v) => v.kind !== 'window' || v.fromIso < v.toIso, {
+      message: 'membershipCoverage window: fromIso must be before toIso',
+    })
+    .optional(),
 });
 
 export type CreateInvoiceDraftInput = z.infer<typeof createInvoiceDraftSchema>;
@@ -234,18 +275,17 @@ export async function createInvoiceDraft(
         });
 
     // 088 T036 (FR-011) — the membership line description MUST include the plan
-    // name and the coverage period. The plan name is resolved via the plan-
-    // lookup port (Thai falls back to English when the plan has no `th`
-    // translation — F2 `LocaleText` only requires `en`); the coverage period is
-    // the tenant fiscal-year boundary (Gregorian ISO — storage stays Gregorian,
-    // BE is display-only). getPlanName reuses the SAME (tenant, plan, year) +
+    // name. The plan name is resolved via the plan-lookup port (Thai falls back
+    // to English when the plan has no `th` translation — F2 `LocaleText` only
+    // requires `en`). getPlanName reuses the SAME (tenant, plan, year) +
     // not-soft-deleted filter as the fee gate above, so a draft that resolved a
     // fee also resolves a name; a null (TOCTOU / race) falls back to no name.
     //
     // Forward-only: the enriched string is composed HERE and STORED on the line;
     // the PDF template renders the stored text verbatim (no recompute), so
     // already-drafted/-issued documents keep their original description and only
-    // NEW drafts get the plan + period. No template-version gate is needed.
+    // NEW drafts get the plan + coverage wording. No template-version gate is
+    // needed.
     const planNameParts = await deps.planLookup.getPlanName(
       input.tenantId,
       input.planId,
@@ -253,16 +293,36 @@ export async function createInvoiceDraft(
     );
     const planLabelTh = planNameParts?.th ? `${planNameParts.th} ` : '';
     const planLabelEn = planNameParts?.en ? `${planNameParts.en} ` : '';
-    // 088 US4 review fix (HIGH) — the COVERAGE PERIOD label is the FY the invoice
-    // is FOR (input.planYear), NOT the FY containing wall-clock "now". An early
-    // renewal confirmed in Dec-2026 for planYear 2027 must read
-    // "coverage 2027-01-01 to 2027-12-31", not now's FY (which printed a
-    // self-contradictory §86/4). The pro-rate math above stays now-based (a new
-    // member joining THIS FY pro-rates from today); for a new member planYear == the
-    // current FY, so the two coincide.
-    const { fyStartDate: coverageStart, fyEndDate: coverageEnd } =
-      fiscalYearBoundaryForYear(input.planYear, settings.fiscalYearStartMonth);
-    // The full-cycle base carries plan name + coverage period; a pro-rated line
+
+    // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — the
+    // COVERAGE wording is no longer the tenant fiscal-year boundary
+    // (`fiscalYearBoundaryForYear(input.planYear, …)`), which contradicted
+    // TSCC's rolling-12-months-from-payment policy (a "ปี {planYear}" /
+    // "coverage {FY start} to {FY end}" label printed calendar-year dates
+    // that disagreed with the ACTUAL rolling period on the same tax
+    // document). Two kinds, caller-selected via `input.membershipCoverage`:
+    //   - `window`       — the caller (an F8 renewal bridge) already knows
+    //     the exact period (`cycle.periodTo → periodTo + term`); print it
+    //     verbatim, with NO standalone "ปี {planYear}" token (rev 2 — it
+    //     contradicted the printed window on a tax document).
+    //   - `from_payment` (default) — the anchor doesn't exist yet at
+    //     draft/issue time (a member's first bill, or any caller that
+    //     hasn't resolved a period), so the wording is generic: "12
+    //     months, effective from the month of payment". The §86/4 receipt
+    //     (rendered at payment) carries the actual payment date on its
+    //     face — this stored line text is never mutated after the fact.
+    const coverage = input.membershipCoverage ?? { kind: 'from_payment' as const };
+    const windowText =
+      coverage.kind === 'window'
+        ? {
+            th: `(ระยะเวลา ${coverage.fromIso.slice(0, 10)} ถึง ${coverage.toIso.slice(0, 10)})`,
+            en: `(coverage ${coverage.fromIso.slice(0, 10)} to ${coverage.toIso.slice(0, 10)})`,
+          }
+        : {
+            th: '(12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+            en: '(12 months, effective from the month of payment)',
+          };
+    // The full-cycle base carries plan name + coverage wording; a pro-rated line
     // appends the factor + start date. The start date is the pro-rate ANCHOR
     // (`proRateAnchor` — the member's join date when they joined mid-FY), i.e.
     // the SAME date the factor was derived from, NOT `issueDate` (today). The
@@ -270,12 +330,12 @@ export async function createInvoiceDraft(
     // a mid-FY joiner later would otherwise print a "from" date that contradicts
     // the factor (e.g. factor 0.8333 for a Mar join but "from <July issue>").
     const membershipDescTh =
-      `ค่าสมาชิก ${planLabelTh}ปี ${input.planYear} (ระยะเวลา ${coverageStart} ถึง ${coverageEnd})` +
+      `ค่าสมาชิก ${planLabelTh}${windowText.th}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${proRateAnchor})`);
     const membershipDescEn =
-      `Membership ${planLabelEn}${input.planYear} (coverage ${coverageStart} to ${coverageEnd})` +
+      `Membership ${planLabelEn}${windowText.en}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rated ${proRateFactor}, from ${proRateAnchor})`);

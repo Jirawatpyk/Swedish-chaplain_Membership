@@ -70,6 +70,17 @@ export const renewalCycles = pgTable(
 
     // F4 lifecycle FKs.
     linkedInvoiceId: uuid('linked_invoice_id'),
+    // Rolling-anchor refactor (design 2026-07-08, migration 0238).
+    // `anchoredAt` is the discriminator: "this cycle has been anchored to
+    // a real payment" (set by the re-anchor use-case AND by the R4
+    // backfill script). NULL = still the provisional `registration_date`
+    // anchor from onboarding. `anchorInvoiceId` is a forensic reference to
+    // the anchoring invoice — NULL for backfilled pre-system payments.
+    // Deliberately a SEPARATE column from `linkedInvoiceId`: the anchoring
+    // invoice never occupies `linkedInvoiceId`, so the member's next
+    // renewal can still link cleanly through the `linkInvoice` I1 guard.
+    anchoredAt: timestamp('anchored_at', { withTimezone: true }),
+    anchorInvoiceId: uuid('anchor_invoice_id'),
     linkedCreditNoteId: uuid('linked_credit_note_id'),
 
     closedAt: timestamp('closed_at', { withTimezone: true }),
@@ -99,6 +110,26 @@ export const renewalCycles = pgTable(
       columns: [table.tenantId, table.linkedInvoiceId],
       foreignColumns: [invoices.tenantId, invoices.invoiceId],
     }),
+    // Rolling-anchor refactor (migration 0238) — ON DELETE SET NULL: the
+    // anchor is a forensic reference, not a lifecycle-critical link, so an
+    // invoice hard-delete (e.g. GDPR erasure retention sweep) should clear
+    // the pointer rather than block or cascade.
+    //
+    // F7 (final-review, 2026-07-09, doc-only nit) — this is a COMPOSITE FK
+    // on (tenant_id, anchor_invoice_id); "SET NULL" nulls BOTH columns,
+    // but tenant_id is NOT NULL (part of renewal_cycles_pk) — so in
+    // practice a hard-delete of a referenced invoice ERRORS on the NOT
+    // NULL violation instead of actually nulling the pointer, i.e. it
+    // behaves as NO ACTION (delete blocked), not literally SET NULL.
+    // Acceptable: tax invoices are never hard-deleted (GDPR erasure
+    // redacts in place; never drops invoice rows), and clear-test-data
+    // purges renewal_cycles before invoices — the ordering issue never
+    // surfaces in practice.
+    anchorInvoiceFk: foreignKey({
+      name: 'renewal_cycles_anchor_invoice_fk',
+      columns: [table.tenantId, table.anchorInvoiceId],
+      foreignColumns: [invoices.tenantId, invoices.invoiceId],
+    }).onDelete('set null'),
     linkedCreditNoteFk: foreignKey({
       name: 'renewal_cycles_linked_credit_note_fk',
       columns: [table.tenantId, table.linkedCreditNoteId],

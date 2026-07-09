@@ -108,7 +108,12 @@ describe('findMissingEnumValues', () => {
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
       [
         'audit_event_type',
-        new Set(['sign_in_success', 'tax_receipt_issued', 'members_backup_exported']),
+        new Set([
+          'sign_in_success',
+          'tax_receipt_issued',
+          'members_backup_exported',
+          'renewal_cycle_reanchored',
+        ]),
       ],
     ]);
     expect(findMissingEnumValues(present)).toEqual([]);
@@ -121,7 +126,12 @@ describe('findMissingEnumValues', () => {
       ['document_type', new Set(['invoice', 'receipt', 'credit_note'])],
       [
         'audit_event_type',
-        new Set(['sign_in_success', 'tax_receipt_issued', 'members_backup_exported']),
+        new Set([
+          'sign_in_success',
+          'tax_receipt_issued',
+          'members_backup_exported',
+          'renewal_cycle_reanchored',
+        ]),
       ],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
@@ -137,7 +147,11 @@ describe('findMissingEnumValues', () => {
       {
         enumType: 'audit_event_type',
         typeExists: false,
-        missing: ['tax_receipt_issued', 'members_backup_exported'],
+        missing: [
+          'tax_receipt_issued',
+          'members_backup_exported',
+          'renewal_cycle_reanchored',
+        ],
       },
     ]);
   });
@@ -154,6 +168,7 @@ describe('findMissingEnumValues', () => {
     expect(REQUIRED_ENUM_VALUES['document_type']).toContain('receipt_105');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('tax_receipt_issued');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('members_backup_exported');
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('renewal_cycle_reanchored');
   });
 });
 

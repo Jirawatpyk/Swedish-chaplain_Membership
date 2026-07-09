@@ -10,11 +10,12 @@
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import {
@@ -38,7 +39,14 @@ export default async function NewMemberPage() {
   const { user } = await requireSession('staff');
   if (user.role !== 'admin') notFound();
 
-  const tenant = resolveTenantFromRequest();
+  // resolveTenantFromHeaders honours the T115t `x-tenant` header (same
+  // pattern as the sibling [memberId] page) — WITHOUT it this page lists
+  // the DEFAULT tenant's plans while POST /api/members resolves the
+  // header tenant, so a throwaway-tenant E2E submits a foreign plan_id
+  // and 404s on `plan_not_found`. Falls back to env.tenant.slug when the
+  // header machinery is off (production).
+  const h = await headers();
+  const tenant = resolveTenantFromHeaders(h);
   const deps = buildPlansDeps(tenant);
   const plansResult = await listPlans(
     { filter: { activeOnly: true } },

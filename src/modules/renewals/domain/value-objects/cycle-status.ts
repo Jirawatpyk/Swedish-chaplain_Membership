@@ -50,6 +50,40 @@ export const TERMINAL_CYCLE_STATUSES = [
 
 export type TerminalCycleStatus = (typeof TERMINAL_CYCLE_STATUSES)[number];
 
+/**
+ * FIX-8(b) (PR #173 review, 2026-07-09) — the "open" (non-terminal,
+ * non-pending-admin) cycle statuses: a member has AT MOST one cycle in
+ * one of these at a time (`renewal_cycles_active_member_uniq` partial-
+ * unique index). `'reminded'` is included defensively even though it is
+ * a vestigial status no current writer produces (see
+ * `classify-membership-payment.ts`'s module docstring). Single source of
+ * truth for the 3 (of 4, excluding the migration-0087 partial-index DDL
+ * comment, which stays a literal SQL fragment) previously hardcoded
+ * `('upcoming','reminded','awaiting_payment')` sites:
+ *   - `findOpenCycleForMemberInTx` (`inArray`)
+ *   - `listEligibleForDispatch` (raw SQL literal via `OPEN_CYCLE_STATUSES_SQL_LIST`)
+ *   - `DispatchCandidateRepo.list` (same)
+ */
+export const OPEN_CYCLE_STATUSES = [
+  'upcoming',
+  'reminded',
+  'awaiting_payment',
+] as const satisfies readonly CycleStatus[];
+
+export type OpenCycleStatus = (typeof OPEN_CYCLE_STATUSES)[number];
+
+/**
+ * Pre-formatted `'a','b','c'` SQL literal list, computed ONCE from
+ * `OPEN_CYCLE_STATUSES` at module load — byte-identical to the string the
+ * 2 raw-SQL call sites previously hardcoded, so substituting it changes
+ * NEITHER the generated SQL text NOR the query plan. Values are fixed
+ * string-literal enum members (never user input), so the un-escaped
+ * single-quote interpolation here is safe.
+ */
+export const OPEN_CYCLE_STATUSES_SQL_LIST = OPEN_CYCLE_STATUSES.map(
+  (s) => `'${s}'`,
+).join(',');
+
 export type CycleStatusError = {
   readonly kind: 'invalid_cycle_status';
   readonly raw: string;

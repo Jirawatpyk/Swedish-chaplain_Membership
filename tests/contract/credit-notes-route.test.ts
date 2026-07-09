@@ -32,6 +32,13 @@ const rateLimitCheckMock = vi.fn();
 const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
   () => ({}),
 );
+// F-2 (2026-07-08) — F8 cascade orchestration mocks. The route imports the
+// `@/modules/renewals` public barrel (Principle III: presentation may
+// orchestrate multiple module barrels; F4 Application itself never imports
+// F8) to call `cancelInFlightCyclesForMember` after a full membership credit
+// with `membershipEffect: 'cancel_membership'`.
+const cancelInFlightCyclesForMemberMock = vi.fn();
+const makeRenewalsDepsMock: (...args: unknown[]) => unknown = vi.fn(() => ({}));
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -57,6 +64,17 @@ vi.mock('@/modules/invoicing', async () => {
     issueCreditNote: (...args: unknown[]) => issueCreditNoteMock(...args),
     makeIssueCreditNoteDeps: (...args: unknown[]) =>
       makeIssueCreditNoteDepsMock(...args),
+  };
+});
+vi.mock('@/modules/renewals', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/renewals')>(
+    '@/modules/renewals',
+  );
+  return {
+    ...actual,
+    cancelInFlightCyclesForMember: (...args: unknown[]) =>
+      cancelInFlightCyclesForMemberMock(...args),
+    makeRenewalsDeps: (...args: unknown[]) => makeRenewalsDepsMock(...args),
   };
 });
 
@@ -120,32 +138,41 @@ describe('POST /api/credit-notes — contract', () => {
   // The heavy route-handler import is warmed in beforeAll (above), so this
   // test runs against the cached module. The explicit 30s budget remains as
   // headroom for the mocked call + JSON round-trip under parallel load.
+  /** Shared happy-path CreditNote fixture — F-2 adds `originalInvoiceMemberId`. */
+  function makeCreditNoteFixture(overrides: Record<string, unknown> = {}) {
+    return {
+      tenantId: 'test',
+      creditNoteId: 'cn-1',
+      originalInvoiceId: '00000000-0000-0000-0000-000000000001',
+      originalInvoiceMemberId: 'member-1',
+      fiscalYear: 2026,
+      sequenceNumber: 1,
+      documentNumber: { raw: 'CN-2026-000001' },
+      issueDate: '2026-04-20',
+      issuedByUserId: 'admin-1',
+      reason: 'contract test',
+      creditAmount: { satang: 50000n },
+      vat: { satang: 3500n },
+      total: { satang: 53500n },
+      tenantIdentitySnapshot: {},
+      memberIdentitySnapshot: {},
+      pdf: { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
   it('201 happy path — returns serialised credit note + email_delivery signal', async () => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     // MEDIUM-5 — issueCreditNote success value is now `{ creditNote, emailDelivery }`.
     issueCreditNoteMock.mockResolvedValueOnce(
       ok({
-        creditNote: {
-          tenantId: 'test',
-          creditNoteId: 'cn-1',
-          originalInvoiceId: '00000000-0000-0000-0000-000000000001',
-          fiscalYear: 2026,
-          sequenceNumber: 1,
-          documentNumber: { raw: 'CN-2026-000001' },
-          issueDate: '2026-04-20',
-          issuedByUserId: 'admin-1',
-          reason: 'contract test',
-          creditAmount: { satang: 50000n },
-          vat: { satang: 3500n },
-          total: { satang: 53500n },
-          tenantIdentitySnapshot: {},
-          memberIdentitySnapshot: {},
-          pdf: { blobKey: 'k', sha256: 'a'.repeat(64), templateVersion: 1 },
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
+        creditNote: makeCreditNoteFixture(),
         emailDelivery: 'skipped_no_recipient',
+        // F-2 — no membership cancellation requested on this (default) fixture.
+        membershipCancellationRequested: false,
       }),
     );
     const POST = await loadHandler();
@@ -159,6 +186,9 @@ describe('POST /api/credit-notes — contract', () => {
     // MEDIUM-5 — the email-delivery signal rides as a sibling field so the UI
     // can show a non-blocking notice on skip.
     expect(body.email_delivery).toBe('skipped_no_recipient');
+    // F-2 — no cascade requested → no warning field, and F8 was never called.
+    expect(body.membership_cancellation_failed).toBeUndefined();
+    expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
   }, 30_000);
 
   it('400 invalid_json on malformed body', async () => {
@@ -244,6 +274,9 @@ describe('POST /api/credit-notes — contract', () => {
     ['receipt_not_rendered', 409],
     ['pdf_render_failed', 500],
     ['blob_upload_failed', 500],
+    // F-2 (2026-07-08) — full membership credit missing the required intent
+    // field → 422 Unprocessable Entity.
+    ['membership_effect_required', 422],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
@@ -291,5 +324,142 @@ describe('POST /api/credit-notes — contract', () => {
     expect(body.error.alreadyCreditedSatang).toBe('53500');
     expect(body.error.proposedSatang).toBe('64200');
     expect(body.error.remainingSatang).toBe('53500');
+  });
+
+  // ---- F-2 (2026-07-08) — F8 membership-cancellation cascade orchestration --
+  //
+  // The route (presentation) orchestrates BOTH module barrels: it commits the
+  // credit note first (§86/10 numbering never depends on F8), THEN — only when
+  // `membershipCancellationRequested` is true — calls F8's
+  // `cancelInFlightCyclesForMember`. A cascade failure never retroactively
+  // fails the already-committed credit note; it surfaces as a non-blocking
+  // `membership_cancellation_failed: true` warning field alongside the normal
+  // 201 body.
+  describe('F-2 — F8 membership-cancellation cascade orchestration', () => {
+    it('membershipCancellationRequested=true + cascade succeeds → 201, no warning field, F8 called with correlationId=credit-note:<id>', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: true,
+        }),
+      );
+      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
+        ok({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0 }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.membership_cancellation_failed).toBeUndefined();
+
+      expect(cancelInFlightCyclesForMemberMock).toHaveBeenCalledTimes(1);
+      const [, cascadeInput] = cancelInFlightCyclesForMemberMock.mock.calls[0]!;
+      expect(cascadeInput).toMatchObject({
+        memberId: 'member-42',
+        cascadeReason: 'credit_note_refund',
+        initiatedByUserId: 'admin-1',
+        requestId: 'req-cn-1',
+        correlationId: 'credit-note:cn-1',
+      });
+    });
+
+    it('membershipCancellationRequested=false → F8 is never called', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture(),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: false,
+        }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      expect(res.status).toBe(201);
+      expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
+    });
+
+    it('cascade Result.ok but outcome="cascade_partial_failure" → 201 + membership_cancellation_failed:true (credit note unaffected)', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: true,
+        }),
+      );
+      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
+        ok({ outcome: 'cascade_partial_failure', cancelledCount: 0, skippedConcurrentCount: 1 }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      // The credit note is fully issued regardless — status stays 201.
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.credit_note_id).toBe('cn-1');
+      expect(body.membership_cancellation_failed).toBe(true);
+    });
+
+    it('cascade Result.err → 201 + membership_cancellation_failed:true', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: true,
+        }),
+      );
+      cancelInFlightCyclesForMemberMock.mockResolvedValueOnce(
+        err({ kind: 'cascade.server_error', message: 'boom', errName: 'TestError' }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.membership_cancellation_failed).toBe(true);
+    });
+
+    it('cascade THROWS → 201 + membership_cancellation_failed:true, credit note still returned', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: 'member-42' }),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: true,
+        }),
+      );
+      cancelInFlightCyclesForMemberMock.mockRejectedValueOnce(new Error('network down'));
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      // The already-committed credit note is NEVER retroactively failed.
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.credit_note_id).toBe('cn-1');
+      expect(body.membership_cancellation_failed).toBe(true);
+    });
+
+    it('membershipCancellationRequested=true but originalInvoiceMemberId is null (unreachable-in-practice) → 201 + warning, F8 never called', async () => {
+      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+      issueCreditNoteMock.mockResolvedValueOnce(
+        ok({
+          creditNote: makeCreditNoteFixture({ originalInvoiceMemberId: null }),
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: true,
+        }),
+      );
+      const POST = await loadHandler();
+      const res = await POST(makeReq());
+      expect(res.status).toBe(201);
+      const body = await res.json();
+      expect(body.membership_cancellation_failed).toBe(true);
+      expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
+    });
   });
 });

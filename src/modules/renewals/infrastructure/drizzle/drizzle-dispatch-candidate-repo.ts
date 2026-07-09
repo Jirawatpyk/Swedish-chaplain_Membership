@@ -31,6 +31,7 @@ import {
 } from '../../domain/tenant-renewal-schedule-policy';
 import type { ScheduleStepJson } from '../schema-tenant-renewal-config';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+import { OPEN_CYCLE_STATUSES_SQL_LIST } from '../../domain/value-objects/cycle-status';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SupportedLocale } from '../../application/ports/renewal-gateway';
 import type {
@@ -117,6 +118,8 @@ const dispatchCandidateProjection = {
   cycleStatus: renewalCycles.status,
   cycleEnteredPendingAt: renewalCycles.enteredPendingAt,
   cycleLinkedInvoiceId: renewalCycles.linkedInvoiceId,
+  cycleAnchoredAt: renewalCycles.anchoredAt,
+  cycleAnchorInvoiceId: renewalCycles.anchorInvoiceId,
   cycleLinkedCreditNoteId: renewalCycles.linkedCreditNoteId,
   cycleClosedAt: renewalCycles.closedAt,
   cycleClosedReason: renewalCycles.closedReason,
@@ -158,6 +161,8 @@ type DispatchCandidateRow = {
   cycleStatus: string;
   cycleEnteredPendingAt: Date | null;
   cycleLinkedInvoiceId: string | null;
+  cycleAnchoredAt: Date | null;
+  cycleAnchorInvoiceId: string | null;
   cycleLinkedCreditNoteId: string | null;
   cycleClosedAt: Date | null;
   cycleClosedReason: string | null;
@@ -196,6 +201,8 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     status: r.cycleStatus,
     enteredPendingAt: r.cycleEnteredPendingAt,
     linkedInvoiceId: r.cycleLinkedInvoiceId,
+    anchoredAt: r.cycleAnchoredAt,
+    anchorInvoiceId: r.cycleAnchorInvoiceId,
     linkedCreditNoteId: r.cycleLinkedCreditNoteId,
     closedAt: r.cycleClosedAt,
     closedReason: r.cycleClosedReason,
@@ -259,7 +266,7 @@ export function makeDrizzleDispatchCandidateRepo(
         // older than `NOW() - maxOffsetDays days` is still returned so the
         // schedule's positive-offset (post-expiry) reminder steps fire.
         const filters: SQL[] = [
-          sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment')`,
+          sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} <= ${args.cutoffExpiresAt}`,
           sql`${renewalCycles.expiresAt} >= NOW() - (${args.maxOffsetDays}::int * INTERVAL '1 day')`,
           // COMP-1 H4 — never dispatch a renewal reminder to a GDPR-erased

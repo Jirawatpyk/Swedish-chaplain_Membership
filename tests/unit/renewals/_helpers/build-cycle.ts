@@ -53,6 +53,8 @@ export function buildCycle(
     enteredPendingAt: null,
     linkedInvoiceId: null,
     linkedCreditNoteId: null,
+    anchoredAt: null,
+    anchorInvoiceId: null,
     closedAt: null,
     closedReason: null,
     createdAt: '2026-05-01T00:00:00Z',

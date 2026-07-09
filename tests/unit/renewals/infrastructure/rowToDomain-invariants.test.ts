@@ -39,6 +39,8 @@ function buildRow(overrides: Partial<RenewalCycleRow> = {}): RenewalCycleRow {
     frozenPlanCurrency: 'THB',
     enteredPendingAt: null,
     linkedInvoiceId: null,
+    anchoredAt: null,
+    anchorInvoiceId: null,
     linkedCreditNoteId: null,
     closedAt: null,
     closedReason: null,

@@ -67,6 +67,8 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { addMonthsUtc } from '@/lib/dates';
+import { omitUndefined } from '@/lib/object-helpers';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
@@ -75,6 +77,8 @@ import type {
   RenewalInvoiceErrorCode,
 } from '../ports/f4-invoicing-bridge';
 import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import { loadClassificationCounts } from './_lib/classification-input';
 import {
   parseCycleId,
   type CycleId,
@@ -147,7 +151,7 @@ export type ConfirmRenewalError =
 export interface ConfirmRenewalDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock'
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'memberRenewalFlagsRepo'
   > {
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
@@ -398,10 +402,72 @@ export async function confirmRenewal(
       );
     }
 
-    return ok({ cycle: resolvedCycle, planChanged });
+    // F1 (final-review, 2026-07-09) — classify the payment for the SAME
+    // shared classifier every settlement site consumes (mark-paid-offline,
+    // mark-cycle-complete-from-invoice-paid, resolve-unlinked-membership-
+    // payment), so the §86/4 issued below OMITS the exact-window text for
+    // a `first_payment` shape (the member's one-and-only cycle, never
+    // anchored to a real payment). Without this gate, a NEVER-PAID member
+    // reaching confirm-renewal got the "next period" window printed on
+    // their FIRST invoice — but `onPaid` at the F4-paid callback site
+    // (`mark-cycle-complete-from-invoice-paid.ts`) RE-ANCHORS a
+    // first-payment cycle to the actual payment month instead of
+    // completing it, so the printed window described a period that would
+    // never exist (tax-document text is stored at issue and never
+    // mutated). `resolvedCycle.status` is guaranteed `'awaiting_payment'`
+    // here (every other status returned `cycle_not_payable` above) — the
+    // ternary mirrors `mark-paid-offline.ts`'s existing shape rather than
+    // asserting, so a defensive `null`-style fallback isn't needed.
+    // FIX-7(d) (PR #173 review, 2026-07-09) — was a hardcoded
+    // `memberErased: false` on the reasoning "an erased member's session
+    // is invalidated at erasure time (COMP-1), so this route is
+    // unreachable for them". `mark-cycle-complete-from-invoice-paid.ts`'s
+    // own history shows that exact reasoning was WRONG once already (a
+    // hardcoded `false` there silently let an erased member's
+    // first-payment cycle re-anchor) — read the REAL flag here too,
+    // defensively, in the SAME round-trip pattern every other settlement
+    // site uses.
+    const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+      tx,
+      input.tenantId,
+      resolvedCycle.memberId,
+    );
+    // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+    // duplicated at every settlement site).
+    const { cycleCountForMember, settledCycleCountForMember } =
+      await loadClassificationCounts(
+        deps,
+        tx,
+        input.tenantId,
+        resolvedCycle.memberId,
+        resolvedCycle.cycleId,
+      );
+    const classification = classifyMembershipPayment({
+      cycleCountForMember,
+      settledCycleCountForMember,
+      openCycle:
+        resolvedCycle.status === 'awaiting_payment'
+          ? { status: 'awaiting_payment', anchoredAt: resolvedCycle.anchoredAt }
+          : { status: 'upcoming', anchoredAt: resolvedCycle.anchoredAt },
+      memberErased: guards?.erased === true,
+    });
+    // FIX-7(d) — widened from `=== 'first_payment'`: an erased member's
+    // classification resolves `not_applicable(erased)`, not `first_payment`
+    // or `renewal`; printing the exact next-period window on a §86/4 for a
+    // GDPR-erased member is just as wrong as printing it for a genuine
+    // first-payment member (the window describes a period this classifier
+    // call says should not be trusted) — omit it for ANY non-`renewal`
+    // result, not only the literal `first_payment` shape.
+    const omitMembershipCoverage = classification.kind !== 'renewal';
+
+    return ok({ cycle: resolvedCycle, planChanged, omitMembershipCoverage });
   });
   if (!stateResult.ok) return err(stateResult.error);
-  const { cycle: cycleAfterPlanChange, planChanged } = stateResult.value;
+  const {
+    cycle: cycleAfterPlanChange,
+    planChanged,
+    omitMembershipCoverage,
+  } = stateResult.value;
 
   // ---- Step 3: F4 invoice creation OUTSIDE F8 tx
   // FR-022 — bill the cycle's FROZEN price on the §86/4, not the live
@@ -425,12 +491,46 @@ export async function confirmRenewal(
   // AND off-by-one for cycles whose period crosses a calendar-year edge.)
   const planYear = deriveFiscalYear(cycleAfterPlanChange.periodFrom);
 
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — a
+  // RENEWAL-classified confirm-renewal cycle always has a defined period,
+  // so the §86/4 prints the EXACT NEXT-period window (`periodTo →
+  // periodTo + frozenPlanTermMonths`) instead of the generic "from
+  // payment" default. CAREFUL: this bills the period STARTING at the
+  // open cycle's `periodTo` (the current cycle completes on payment; the
+  // invoice covers the cycle that gets created next), NOT `periodFrom →
+  // periodTo` (the cycle's OWN, already-elapsing period).
+  //
+  // F1 (final-review, 2026-07-09) — classification-gated (was
+  // unconditional). A `first_payment` shape OMITS `membershipCoverage`
+  // entirely: `createInvoiceDraft` falls back to its own `{ kind:
+  // 'from_payment' }` default, matching `mark-paid-offline.ts`'s
+  // first-payment branch — the re-anchored period doesn't exist yet at
+  // invoice-issue time (re-anchor happens later, at the F4-paid callback
+  // site, when the member actually pays). FIX-7(d) — ALSO omitted for the
+  // (previously unreachable-in-theory, now defensively handled)
+  // GDPR-erased `not_applicable` shape; see `omitMembershipCoverage`'s
+  // Step-1 computation above.
+  const membershipCoverage = omitMembershipCoverage
+    ? undefined
+    : ({
+        kind: 'window' as const,
+        fromIso: cycleAfterPlanChange.periodTo,
+        toIso: addMonthsUtc(
+          cycleAfterPlanChange.periodTo,
+          cycleAfterPlanChange.frozenPlanTermMonths,
+        ),
+      });
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycleAfterPlanChange.planIdAtCycleStart,
     planYear,
     frozenPlanPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
+    // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces the
+    // conditional-spread idiom; exactOptionalPropertyTypes still omits the
+    // key entirely on the first-payment branch rather than assigning an
+    // explicit `undefined`.
+    ...omitUndefined({ membershipCoverage }),
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,

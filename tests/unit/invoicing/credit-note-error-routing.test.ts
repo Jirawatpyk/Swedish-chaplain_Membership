@@ -42,6 +42,13 @@ describe('routeCreditNoteError (FR-032)', () => {
     });
   });
 
+  it('maps membership_effect_required to a dedicated inline message (F-2, 2026-07-08)', () => {
+    expect(routeCreditNoteError('membership_effect_required')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.membershipEffectRequired',
+    });
+  });
+
   it('an unrecognised but present code falls back to codeFallback with the raw code', () => {
     expect(routeCreditNoteError('overflow')).toEqual({
       kind: 'failure',

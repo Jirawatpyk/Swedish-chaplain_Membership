@@ -108,6 +108,9 @@ export default async function NewCreditNotePage({
             documentNumber={displayNumber ?? ''}
             remainingSatang={remainingSatang}
             currencySymbol="THB"
+            // F-2 (2026-07-08) — the form shows the membership-effect radio
+            // ONLY for a membership invoice whose amount fully credits it.
+            invoiceSubject={invoice.invoiceSubject}
           />
         </CardContent>
       </Card>

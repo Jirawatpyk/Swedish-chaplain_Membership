@@ -74,6 +74,32 @@ function fakeDeps(args: {
   linkInvoiceImpl?: () => Promise<RenewalCycle>;
   transitionStatusImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
+  /**
+   * F1 (final-review, 2026-07-09) — feeds the Step-1 classify call
+   * (`classifyMembershipPayment`) that gates `membershipCoverage`.
+   * Defaults to `2` (member has a predecessor cycle) so the classifier
+   * resolves `'renewal'` (NOT `'first_payment'`) by default — preserves
+   * every pre-existing test's behaviour (window included), matching the
+   * default `buildCycle()`'s `anchoredAt: null` here which, combined
+   * with count=1, would otherwise misclassify as `first_payment`.
+   */
+  cycleCountForMember?: number;
+  /**
+   * F2 fix (final-review, 2026-07-09) — feeds the SAME Step-1 classify
+   * call's `settledCycleCountForMember` (the completed-OR-ever-anchored
+   * predecessor count that now discriminates first_payment/renewal, NOT
+   * the raw `cycleCountForMember`). Defaults to `1` (the assumed
+   * predecessor cycle IS settled) so every pre-existing test stays on
+   * `'renewal'` byte-identically.
+   */
+  settledCycleCountForMember?: number;
+  /**
+   * FIX-7(d) (PR #173 review, 2026-07-09) — feeds the real
+   * `readReactivationGuardsInTx` read that now backs the classify call's
+   * `memberErased` flag (was hardcoded `false`). Defaults to `false` so
+   * every pre-existing test stays on its intended classification.
+   */
+  memberErased?: boolean;
 }): {
   deps: ConfirmRenewalDeps;
   planLookupMock: ReturnType<typeof vi.fn>;
@@ -82,6 +108,9 @@ function fakeDeps(args: {
   linkInvoiceMock: ReturnType<typeof vi.fn>;
   transitionStatusMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
+  countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
 } {
   // First findByIdInTx call returns the seed cycle; any subsequent call
   // (the CAS-loss re-read) returns `rereadCycle` (defaults to the seed).
@@ -135,6 +164,16 @@ function fakeDeps(args: {
       },
   );
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));
+  const countCyclesForMemberInTxMock = vi.fn(
+    async () => args.cycleCountForMember ?? 2,
+  );
+  const countSettledCyclesForMemberInTxMock = vi.fn(
+    async () => args.settledCycleCountForMember ?? 1,
+  );
+  const readReactivationGuardsInTxMock = vi.fn(async () => ({
+    blocked: false,
+    erased: args.memberErased ?? false,
+  }));
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
   };
@@ -157,6 +196,10 @@ function fakeDeps(args: {
       // for these unit tests — real serialise-via-pg-advisory-lock
       // semantics are exercised by integration tests.
       acquireCycleLockInTx: vi.fn(async () => {}),
+      // F1 (final-review, 2026-07-09) — feeds the Step-1 classify call.
+      countCyclesForMemberInTx: countCyclesForMemberInTxMock,
+      // F2 fix (final-review, 2026-07-09) — settled-history discriminator.
+      countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),
@@ -167,6 +210,9 @@ function fakeDeps(args: {
     clock: { now: () => new Date('2026-06-13T00:00:00.000Z') },
     f4InvoicingBridge: invoiceBridge,
     planLookupForRenewal: planLookup,
+    memberRenewalFlagsRepo: {
+      readReactivationGuardsInTx: readReactivationGuardsInTxMock,
+    } as unknown as ConfirmRenewalDeps['memberRenewalFlagsRepo'],
   };
   return {
     deps,
@@ -176,6 +222,9 @@ function fakeDeps(args: {
     linkInvoiceMock,
     transitionStatusMock,
     emitInTxMock,
+    countCyclesForMemberInTxMock,
+    countSettledCyclesForMemberInTxMock,
+    readReactivationGuardsInTxMock,
   };
 }
 
@@ -308,6 +357,115 @@ describe('confirmRenewal (T122) — happy paths', () => {
     if (r.ok) expect(r.value.planChanged).toBe(false);
     expect(planLookupMock).not.toHaveBeenCalled();
     expect(updateFrozenPlanMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmRenewal (F1, final-review 2026-07-09) — membershipCoverage gated by shared classifier', () => {
+  // A NEVER-PAID member's only-ever cycle (`cycleCountForMember: 1`,
+  // `anchoredAt: null`) classifies as `first_payment` — the bridge must
+  // be called WITHOUT `membershipCoverage` (falls back to F4's own
+  // `{ kind: 'from_payment' }` default), because `mark-cycle-complete-
+  // from-invoice-paid.ts`'s linked-path re-anchor moves the period to the
+  // actual payment month once the member pays — the exact window isn't
+  // knowable yet at invoice-issue time.
+  it('first-payment shape (count=1, unanchored) — bridge called WITHOUT membershipCoverage', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, invoiceBridgeMock, countCyclesForMemberInTxMock } =
+      fakeDeps({ cycle, cycleCountForMember: 1, settledCycleCountForMember: 0 });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(countCyclesForMemberInTxMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      MEMBER_UUID,
+    );
+    expect(invoiceBridgeMock).toHaveBeenCalledOnce();
+    const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(bridgeInput).not.toHaveProperty('membershipCoverage');
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history" — the member's first real payment is
+  // still first_payment even though a predecessor cycle row exists.
+  it('cancelled-only-history shape (predecessor exists but NEVER settled) — still first_payment, bridge called WITHOUT membershipCoverage', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 2, // a predecessor row exists (e.g. cancelled)...
+      settledCycleCountForMember: 0, // ...but it was NEVER settled/anchored
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(bridgeInput).not.toHaveProperty('membershipCoverage');
+  });
+
+  // FIX-7(d) (PR #173 review, 2026-07-09) — memberErased now reads the
+  // REAL guard (was hardcoded `false`). An erased member classifies
+  // `not_applicable(erased)`, not `renewal` — the §86/4 must NOT print an
+  // exact window it cannot vouch for, even though the shape otherwise
+  // looks like a normal renewal (predecessor history, anchored cycle).
+  it('erased member (real guard, not hardcoded) — classification not_applicable, bridge called WITHOUT membershipCoverage', async () => {
+    const cycle = buildCycle({ anchoredAt: '2025-06-01T00:00:00Z' });
+    const { deps, invoiceBridgeMock, readReactivationGuardsInTxMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 2,
+      settledCycleCountForMember: 1,
+      memberErased: true,
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(readReactivationGuardsInTxMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      MEMBER_UUID,
+    );
+    const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(bridgeInput).not.toHaveProperty('membershipCoverage');
+  });
+
+  // A renewal-classified cycle (either already anchored, or the member
+  // has a predecessor cycle) keeps the EXACT next-period window text —
+  // unchanged from the pre-fix behaviour.
+  it('renewal shape (anchored) — membershipCoverage window UNCHANGED', async () => {
+    const cycle = buildCycle({ anchoredAt: '2025-06-01T00:00:00Z' });
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 1,
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      membershipCoverage: {
+        kind: 'window',
+        fromIso: cycle.periodTo,
+        toIso: '2028-06-01T00:00:00.000Z', // periodTo + 12 months
+      },
+    });
+  });
+
+  it('renewal shape (predecessor cycle exists, unanchored) — membershipCoverage window UNCHANGED', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 2, // predecessor cycle exists...
+      settledCycleCountForMember: 1, // ...and it WAS settled → not first_payment
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(invoiceBridgeMock.mock.calls[0]?.[0]).toMatchObject({
+      membershipCoverage: { kind: 'window' },
+    });
   });
 });
 

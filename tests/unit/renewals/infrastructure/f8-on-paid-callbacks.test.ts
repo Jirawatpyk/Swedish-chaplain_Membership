@@ -244,6 +244,8 @@ const buildEvent = (): F4InvoicePaidEvent => ({
   currency: 'THB',
   paymentMethod: 'stripe_card',
   triggeredBy: 'webhook',
+  invoiceSubject: 'membership',
+  paymentDate: null,
 });
 
 // 065 Fix A precision — the pending F2 row's `reason` carries

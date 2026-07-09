@@ -59,6 +59,8 @@ function buildEvent(): F4InvoicePaidEvent {
     currency: 'THB',
     paymentMethod: 'stripe_card',
     triggeredBy: 'webhook',
+    invoiceSubject: 'membership',
+    paymentDate: null,
   };
 }
 

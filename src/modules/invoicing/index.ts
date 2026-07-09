@@ -495,6 +495,9 @@ export {
 // `audit_log` with `retention_years` map). `receiptPdfRenderEnqueueAdapter`
 // is the cron-trigger adapter for the async receipt-PDF worker.
 export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
+// PR #173 round-2 review — narrow tx-threaded fiscal-year-start read for F8's
+// re-anchor (avoids a nested pooled connection inside the settlement tx).
+export { readFiscalYearStartMonthInTx } from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
 export {
   makeDrizzleInvoiceRepo,

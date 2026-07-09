@@ -163,6 +163,34 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         isPrimary: true,
         preferredLanguage: 'en',
       });
+      // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+      // this member has TWO cycles ever, not the shared classifier's
+      // `first_payment` shape. This file pins the 070 Item-D tier-upgrade-
+      // on-offline wiring (`prior?.status === 'completed'`) — without a
+      // predecessor, the payment below would now re-anchor instead of
+      // complete, breaking that assertion. 'cancelled' avoids needing a
+      // second invoice FK target.
+      // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+      // cancelled-after-anchoring predecessor is SETTLED history; without
+      // it the member no longer classifies as `renewal`.
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date(now - 2 * 365 * MS_PER_DAY),
+        periodTo: new Date(now - 365 * MS_PER_DAY),
+        expiresAt: new Date(now - 365 * MS_PER_DAY),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: 'regular',
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date(now - 2 * 365 * MS_PER_DAY),
+        closedAt: new Date(now - 365 * MS_PER_DAY),
+        closedReason: 'cancelled',
+      });
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,
@@ -213,7 +241,7 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         vatRateSnapshot: '0.0700',
         vatSatang: asSatang(350_000n),
         totalSatang: asSatang(5_350_000n),
-        proRatePolicySnapshot: 'whole_year',
+        proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
         memberIdentitySnapshot: {
@@ -273,6 +301,8 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
               currency: 'THB',
               paymentMethod: input.paymentMethod,
               triggeredBy: 'admin_offline_mark',
+              invoiceSubject: 'membership',
+              paymentDate: input.paymentDate,
             });
           }
           return { ok: true, value: { invoiceId, paidAt } };

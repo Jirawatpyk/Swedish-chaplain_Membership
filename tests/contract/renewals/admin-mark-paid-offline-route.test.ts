@@ -119,6 +119,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
       ok({
+        outcome: 'completed',
         cycleStatus: 'completed',
         invoiceId: 'inv-1',
         newExpiresAt: '2028-06-01T00:00:00.000Z',
@@ -128,9 +129,39 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     const res = await POST(makeReq(), makeCtx());
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body.outcome).toBe('completed');
     expect(body.cycle_status).toBe('completed');
     expect(body.invoice_id).toBe('inv-1');
     expect(body.new_expires_at).toBe('2028-06-01T00:00:00.000Z');
+    // RRA task 7 fix — new_period_from is reanchored-only, never on completed.
+    expect(body).not.toHaveProperty('new_period_from');
+  });
+
+  // Task 7 (rolling-anchor refactor) — the first-payment re-anchor branch's
+  // response shape: outcome discriminator flips to 'reanchored' and
+  // cycle_status stays 'upcoming' (never 'completed').
+  it('200 happy path — first-payment re-anchor branch response shape', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      ok({
+        outcome: 'reanchored',
+        cycleStatus: 'upcoming',
+        invoiceId: 'inv-1',
+        newExpiresAt: '2027-06-01T00:00:00.000Z',
+        // RRA task 7 fix — the reanchored outcome carries the TRUE period
+        // start (first of month) so the admin toast can display it.
+        newPeriodFrom: '2026-05-01T00:00:00.000Z',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.outcome).toBe('reanchored');
+    expect(body.cycle_status).toBe('upcoming');
+    expect(body.invoice_id).toBe('inv-1');
+    expect(body.new_expires_at).toBe('2027-06-01T00:00:00.000Z');
+    expect(body.new_period_from).toBe('2026-05-01T00:00:00.000Z');
   });
 
   it('400 invalid_body on malformed JSON', async () => {
@@ -281,6 +312,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
       if (expected === 'allow') {
         markPaidOfflineMock.mockResolvedValueOnce(
           ok({
+            outcome: 'completed' as const,
             cycleStatus: 'completed' as const,
             invoiceId: 'inv-1',
             newExpiresAt: '2027-06-01T00:00:00Z',
@@ -336,6 +368,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
       ok({
+        outcome: 'completed' as const,
         cycleStatus: 'completed' as const,
         invoiceId: 'inv-1',
         newExpiresAt: '2027-06-01T00:00:00Z',
@@ -356,6 +389,7 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     markPaidOfflineMock.mockResolvedValueOnce(
       ok({
+        outcome: 'completed' as const,
         cycleStatus: 'completed' as const,
         invoiceId: 'inv-1',
         newExpiresAt: '2027-06-01T00:00:00Z',

@@ -66,13 +66,24 @@ function buildCandidate(): DispatchCandidate {
   });
 }
 
-function fakeDeps(candidate: DispatchCandidate | null): RenewalsDeps {
+function fakeDeps(
+  candidate: DispatchCandidate | null,
+  opts: { hasUnreconciledInvoice?: boolean } = {},
+): RenewalsDeps {
   return {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     dispatchCandidateRepo: {
       list: vi.fn(),
       findOne: vi.fn(async () => candidate),
     } as unknown as RenewalsDeps['dispatchCandidateRepo'],
+    // FIX-6 (PR #173 review, 2026-07-09) — the single-candidate path keeps
+    // the single-member read (batching would be pure overhead for one
+    // cycle) and wraps it into the Set shape DispatchContext expects.
+    memberRenewalFlagsRepo: {
+      hasUnreconciledPaidMembershipInvoice: vi.fn(
+        async () => opts.hasUnreconciledInvoice ?? false,
+      ),
+    } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
   } as unknown as RenewalsDeps;
 }
 
@@ -138,6 +149,42 @@ describe('sendReminderNow', () => {
     const ctx = oneCycleMock.mock.calls[0]![2];
     expect(ctx.actorUserId).toBe(ACTOR_USER_ID);
     expect(ctx.actorRole).toBe('admin');
+  });
+
+  // FIX-6 (PR #173 review, 2026-07-09) — the single-member read is wrapped
+  // into the Set shape `DispatchContext.unreconciledMemberIds` expects.
+  it('wraps the single-member unreconciled-invoice read into unreconciledMemberIds', async () => {
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    const candidate = buildCandidate();
+    await sendReminderNow(
+      fakeDeps(candidate, { hasUnreconciledInvoice: true }),
+      VALID_INPUT,
+    );
+    const ctx = oneCycleMock.mock.calls[0]![2];
+    expect(ctx.unreconciledMemberIds.has(candidate.member.memberId)).toBe(true);
+    expect(ctx.unreconciledMemberIds.size).toBe(1);
+  });
+
+  it('unreconciledMemberIds is empty when the member has no unreconciled invoice', async () => {
+    const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+    oneCycleMock.mockImplementation(async () => ({
+      kind: 'sent',
+      reminderEventId: 'r1',
+      deliveryId: 'd1',
+      dispatchedAt: NOW_ISO,
+    }));
+    await sendReminderNow(
+      fakeDeps(buildCandidate(), { hasUnreconciledInvoice: false }),
+      VALID_INPUT,
+    );
+    const ctx = oneCycleMock.mock.calls[0]![2];
+    expect(ctx.unreconciledMemberIds.size).toBe(0);
   });
 
   it('rejects non-UUID cycleId with invalid_input', async () => {

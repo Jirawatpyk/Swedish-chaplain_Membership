@@ -313,6 +313,47 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     opts: ListAtRiskWidgetOpts,
   ): Promise<ListAtRiskWidgetResult>;
+
+  /**
+   * Rolling-anchor refactor rev 2 (design 2026-07-08 §4) — TRUE when the
+   * member has a paid membership invoice from the last 12 months that is
+   * neither any cycle's `linked_invoice_id` nor any cycle's
+   * `anchor_invoice_id` — an unreconciled out-of-band payment. Belt-and-
+   * suspenders safety net for the deploy→backfill gap (the R4 backfill
+   * script deliberately runs after testing, leaving a window where a real
+   * payment could land without being anchored) and for any future
+   * onPaidCallback regression that silently misses a hook.
+   *
+   * Consumed by `dispatchOneCycle`'s skip-guard (reason
+   * `unreconciled_paid_membership_invoice`) — a hit means the member's
+   * cycle state may be stale, so dispatch is suppressed until staff
+   * reconciles manually.
+   *
+   * Unlike the rest of this port's methods, this one does NOT take a `tx`
+   * — the dispatcher's decision tree has no outer tx open at this point,
+   * so the adapter opens its own `runInTenant`.
+   */
+  hasUnreconciledPaidMembershipInvoice(
+    tenantId: string,
+    memberId: string,
+  ): Promise<boolean>;
+
+  /**
+   * FIX-6 (PR #173 review, 2026-07-09) — BATCHED counterpart to
+   * `hasUnreconciledPaidMembershipInvoice`. Same predicate (paid
+   * membership invoice in the last 12 months that is neither any cycle's
+   * `linked_invoice_id` nor `anchor_invoice_id`), minus the `memberId`
+   * filter — returns every matching member ONCE per tenant. The cron
+   * dispatch pass (`dispatchRenewalCycle`) calls this exactly once per
+   * run and threads the result into `DispatchContext.unreconciledMemberIds`
+   * so Gate 7.5 becomes an in-memory `Set.has()` lookup instead of one
+   * SQL round-trip PER CANDIDATE. The single-member method above is kept
+   * for the single-candidate admin "send reminder now" path
+   * (`send-reminder-now.ts`), where batching would be pure overhead.
+   */
+  listMemberIdsWithUnreconciledPaidMembershipInvoice(
+    tenantId: string,
+  ): Promise<Set<string>>;
 }
 
 export interface ListAtRiskWidgetOpts {

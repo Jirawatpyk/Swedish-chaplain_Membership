@@ -71,15 +71,62 @@ export type ClearTestDataReport = {
 export async function clearTestData(): Promise<ClearTestDataReport> {
   // 1. E2E members (+ their contacts).
   const e2eFound = await db.execute(
-    sql`SELECT member_id FROM members WHERE company_name LIKE 'E2E Co %'`,
+    sql`SELECT tenant_id, member_id FROM members WHERE company_name LIKE 'E2E Co %'`,
   );
-  const e2eMemberIds = unwrap<{ member_id: string }>(e2eFound).map(
-    (r) => r.member_id,
+  const e2eMemberRows = unwrap<{ tenant_id: string; member_id: string }>(
+    e2eFound,
   );
+  const e2eMemberIds = e2eMemberRows.map((r) => r.member_id);
 
   let e2eContacts = 0;
   let e2eMembers = 0;
   if (e2eMemberIds.length > 0) {
+    // Rolling-anchor branch — the F8 on-paid hook now creates a
+    // `renewal_cycles` row (directly `member_id`-linked,
+    // `renewal_cycles_member_fk` RESTRICT) whenever ANY member pays an
+    // invoice, including E2E fixtures matched here. Purge cycles (and their
+    // RESTRICT-linked children: renewal_reminder_events,
+    // renewal_escalation_tasks, scheduled_plan_changes) BEFORE the member
+    // delete below, or it aborts with an FK violation the moment an E2E
+    // member has ever paid — this bit accumulated pollution in a
+    // NON-`test-%` tenant (the primary tenant), which the tenant-scoped
+    // 'test-%' cascade (step 2, below) cannot reach.
+    const memberPairs = sql.join(
+      e2eMemberRows.map(
+        (r) => sql`(${r.tenant_id}, ${r.member_id}::uuid)`,
+      ),
+      sql`, `,
+    );
+    const e2eCycleRows = await db.execute(
+      sql`SELECT tenant_id, cycle_id FROM renewal_cycles
+          WHERE (tenant_id, member_id) IN (${memberPairs})`,
+    );
+    const e2eCycles = unwrap<{ tenant_id: string; cycle_id: string }>(
+      e2eCycleRows,
+    );
+    if (e2eCycles.length > 0) {
+      const cyclePairs = sql.join(
+        e2eCycles.map((c) => sql`(${c.tenant_id}, ${c.cycle_id}::uuid)`),
+        sql`, `,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_reminder_events
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_escalation_tasks
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM scheduled_plan_changes
+            WHERE (tenant_id, effective_at_cycle_id) IN (${cyclePairs})`,
+      );
+      await db.execute(
+        sql`DELETE FROM renewal_cycles
+            WHERE (tenant_id, cycle_id) IN (${cyclePairs})`,
+      );
+    }
+
     const idListSql = sql.join(
       e2eMemberIds.map((id) => sql`${id}::uuid`),
       sql`, `,
@@ -303,14 +350,22 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // invoice/member/credit-note deletes. Scoped to exactly the test-user-orphan
   // set — NOT broadened to all tenants.
   //
-  // The orphan set (068 R2-5): cycles whose
+  // The orphan set (068 R2-5; FIX-4 PR #173 review, 2026-07-09 adds the
+  // `anchor_invoice_id` arm): cycles whose
   //   - `linked_invoice_id` ∈ {invoices referencing a test user via
   //     draft/recorded/voided}, OR
+  //   - `anchor_invoice_id` ∈ {invoices referencing a test user via
+  //     draft/recorded/voided} — the rolling-anchor refactor (migration
+  //     0238) stamps `anchor_invoice_id` on heal/re-anchor and CLEARS
+  //     `linked_invoice_id` in the same UPDATE, so a re-anchored cycle's
+  //     ONLY remaining FK to a test-user-orphaned invoice can be this
+  //     column — without this arm, `renewal_cycles_anchor_invoice_fk`
+  //     blocks the orphan-invoice DELETE below, OR
   //   - `(tenant_id, member_id)` ∈ {members on a test-user-created/updated
   //     plan}, OR
   //   - `linked_credit_note_id` ∈ {credit_notes issued by a test user, or
   //     against a test-user invoice}
-  // — the SAME three predicates the orphan invoice + member + credit_note
+  // — the SAME predicates the orphan invoice + member + credit_note
   // deletes below use. Children of renewal_cycles:
   //   renewal_reminder_events (CASCADE) · renewal_escalation_tasks (NO ACTION)
   //   · scheduled_plan_changes.effective_at_cycle_id (RESTRICT).
@@ -322,6 +377,18 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // list. When the set is empty every dependent DELETE is skipped.
   const orphanCyclePredicate = sql`(
     linked_invoice_id IN (
+      SELECT invoice_id FROM invoices
+      WHERE draft_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR payment_recorded_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR voided_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+    OR anchor_invoice_id IN (
       SELECT invoice_id FROM invoices
       WHERE draft_by_user_id IN (
         SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'

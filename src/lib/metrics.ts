@@ -2539,11 +2539,12 @@ export const renewalsMetrics = {
   /**
    * `renewals_onpaid_unknown_outcome_kind_total{tenant}` — Round 4
    * review-fix (R4-S1): F8 dispatch site received a
-   * `MarkCycleCompleteOutcome` whose `kind` is not one of the 4 known
+   * `MarkCycleCompleteOutcome` whose `kind` is not one of the 5 known
    * variants enumerated by the exhaustive switch at
-   * `renewals-deps.ts`. The TS `_exhaustive: never` pin guarantees
+   * `renewals-deps.ts` (5th = 'reanchored', rolling-anchor 2026-07-08).
+   * The TS `_exhaustive: never` pin guarantees
    * compile-time exhaustiveness in steady state; this counter pages
-   * on the deploy-skew window when (a) the use-case ships a 5th
+   * on the deploy-skew window when (a) the use-case ships a 6th
    * variant before the dispatch site rebuilds, OR (b) a runtime
    * polyfill / hot-fix bundles only the use-case bundle. Without
    * this counter the unknown variant would silently swallow the
@@ -2561,6 +2562,56 @@ export const renewalsMetrics = {
         ).add(value, { tenant: attrs.tenant_id });
       });
     },
+  },
+
+  /**
+   * `renewals_unlinked_payment_resolved_total{outcome}` — Renewal
+   * rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238):
+   * outcome counter primarily for `resolveUnlinkedMembershipPaymentInTx`
+   * (the unlinked-invoice on-paid hook fired from `markCycleCompleteInTx`'s
+   * `no_cycle_for_invoice` branch), but NOT exclusively — `outcome ===
+   * 'reanchored'` is emitted from the SHARED `reanchorFirstPaymentCycleInTx`
+   * core (`_lib/reanchor-first-payment.ts`), which THREE settlement sites
+   * call: (1) this hook's own `firstPayment` branch, (2)
+   * `markCycleCompleteInTx`'s LINKED path (Task 6), and (3)
+   * `mark-paid-offline.ts`'s first-payment branch (Task 7). So a spike in
+   * the `reanchored` bucket does not necessarily mean unlinked/out-of-band
+   * payments increased — it aggregates all three re-anchor call sites.
+   * Every OTHER outcome value (`renewed` / `healed` / `held` / `skipped`)
+   * is emitted ONLY by this hook. `outcome` ∈ `reanchored` (first
+   * payment re-anchored a never-before-paid cycle, from ANY of the 3
+   * sites above) | `renewed` (open cycle completed + next cycle rolled
+   * forward) | `healed` (zero-cycle member self-healed a fresh anchored
+   * cycle) | `held` (FR-005b parity,
+   * Task 5 review F4: a blocked member's renewal-branch completion was
+   * redirected to `pending_admin_reactivation` instead of auto-completing
+   * — mirrors the linked path's `holdForAdminReview`) | `skipped`
+   * (GDPR-erased member / terminal-only member / a catalogue-gap plan
+   * unresolvable during heal (Task 5 review F1) / lost a create-or-
+   * reanchor race / degraded non-atomic-tx mode refused to run). Mirrors
+   * the `remindersSkipped(reason)` shape (single bounded-enum label, no
+   * tenant dimension — cardinality stays small).
+   *
+   * Event-fee invoices are EXCLUDED from this metric entirely — behaviour
+   * 1's early return (`invoiceSubject !== 'membership'`) fires before any
+   * metric call, so an event-fee invoice contributes to NO bucket,
+   * including `skipped` (corrected Task 5 review F3 — a prior revision of
+   * this doc incorrectly listed event-fee invoices as a `skipped`
+   * contributor).
+   *
+   * Dashboard use: a sustained `skipped` share materially above baseline
+   * signals either a wave of ad-hoc admin invoices for erased/lapsed
+   * members, or (rarer) the degraded-mode F4-contract-drift path firing.
+   */
+  unlinkedPaymentResolved(
+    outcome: 'reanchored' | 'renewed' | 'healed' | 'held' | 'skipped',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_unlinked_payment_resolved_total',
+        'F8 unlinked-invoice on-paid hook resolution outcome (rolling-anchor refactor)',
+      ).add(1, { outcome });
+    });
   },
 
   // ==========================================================================

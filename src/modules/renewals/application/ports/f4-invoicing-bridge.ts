@@ -1,6 +1,7 @@
 import type { Satang, ThbDecimal } from '@/lib/money';
 import type {
   CreateInvoiceDraftError,
+  CreateInvoiceDraftInput,
   IssueInvoiceError,
 } from '@/modules/invoicing';
 
@@ -47,6 +48,29 @@ export interface IssueInvoiceForRenewalInput {
    * 068 speckit-review).
    */
   readonly frozenPlanPriceThb: ThbDecimal;
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — the
+   * exact coverage window for the renewal §86/4, threaded verbatim into
+   * `createInvoiceDraft`'s `membershipCoverage`.
+   *
+   * F1 (final-review, 2026-07-09) — CLASSIFICATION-GATED, not always
+   * supplied. `confirm-renewal.ts` classifies the payment via the shared
+   * `classifyMembershipPayment` (same classifier every settlement site
+   * consumes) before calling this bridge: a `renewal` shape supplies
+   * `{ kind: 'window', fromIso, toIso }` — the cycle's known NEXT-period
+   * bounds (`periodTo → periodTo + frozenPlanTermMonths`); a
+   * `first_payment` shape (the member's one-and-only cycle, never
+   * anchored to a real payment) OMITS this field, because the actual
+   * re-anchored period doesn't exist yet at invoice-issue time — it's
+   * only known once the member pays (see
+   * `mark-cycle-complete-from-invoice-paid.ts`'s linked-path re-anchor).
+   * Optional (not every bridge caller has resolved a window yet) —
+   * omitted, `createInvoiceDraft` falls back to its own default (`{
+   * kind: 'from_payment' }`), which is correct for a first payment
+   * (prints "from the payment month" — the month that becomes the
+   * actual anchor).
+   */
+  readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;

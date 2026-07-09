@@ -149,7 +149,7 @@ export function makeDrizzleAtRiskScorer(
             WHERE status = 'issued'
               AND created_at < NOW() - INTERVAL '30 days'
           )::text AS overdue_count,
-          MAX(paid_at) AS last_paid_at
+          MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited')) AS last_paid_at
         FROM ${invoices}
         WHERE member_id = ${memberId}
           -- I7 defence-in-depth: invoices has a strict isolating RLS policy
@@ -179,11 +179,27 @@ export function makeDrizzleAtRiskScorer(
         aggRow?.overdue_count != null
           ? Number.parseInt(aggRow.overdue_count, 10) || 0
           : 0;
-      const daysSinceLastPayment =
+      // Review Task 11 follow-up fix — postgres-js returns a raw
+      // `tx.execute(sql\`...\`)` timestamptz column as EITHER a `Date` or
+      // an ISO string depending on column metadata (same documented
+      // gotcha as the batch scorer's `toIso` helper in
+      // drizzle-member-renewal-flags-repo.ts). Calling `.getTime()`
+      // directly on `aggRow.last_paid_at` crashed with "getTime is not a
+      // function" the first time a live (non-credited/void) paid invoice
+      // reached this path — no prior test had ever seeded one, so the
+      // F-3 status-filter integration tests (at-risk-f2-f7-factors.test.ts)
+      // are what surfaced it. Normalise via the `Date` constructor before
+      // computing the day delta, mirroring the batch scorer's pattern.
+      const lastPaidAtDate: Date | null =
         aggRow?.last_paid_at != null
+          ? aggRow.last_paid_at instanceof Date
+            ? aggRow.last_paid_at
+            : new Date(aggRow.last_paid_at)
+          : null;
+      const daysSinceLastPayment =
+        lastPaidAtDate != null
           ? Math.floor(
-              (nowMs - aggRow.last_paid_at.getTime()) /
-                (24 * 60 * 60 * 1000),
+              (nowMs - lastPaidAtDate.getTime()) / (24 * 60 * 60 * 1000),
             )
           : undefined;
 

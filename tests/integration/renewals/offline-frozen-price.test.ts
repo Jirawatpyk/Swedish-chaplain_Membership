@@ -161,6 +161,39 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
       });
     });
 
+    // Task 7 (rolling-anchor refactor) — a TERMINAL predecessor cycle so
+    // this member has TWO cycles ever, not the shared classifier's
+    // `first_payment` shape ("exactly one cycle ever, unanchored"). This
+    // test drives the real `markPaidOffline` and asserts `cycleStatus ===
+    // 'completed'` (FR-022 frozen-price billing is orthogonal to Task 7's
+    // re-anchor branch) — without this predecessor the payment below would
+    // now re-anchor instead of complete, breaking that assertion.
+    // 'cancelled' avoids needing a second invoice FK target.
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set: a genuinely
+    // cancelled-after-anchoring predecessor is SETTLED history under
+    // `countSettledCyclesForMemberInTx`; without it the member no longer
+    // classifies as `renewal`.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2024-01-01T00:00:00Z'),
+        periodTo: new Date('2025-01-01T00:00:00Z'),
+        expiresAt: new Date('2025-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: FROZEN_PRICE_THB,
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2024-01-01T00:00:00Z'),
+        closedAt: new Date('2025-01-01T00:00:00Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+
     // Cycle frozen at 50,000.50 THB, payable. periodFrom in 2026 so the
     // §87 fiscal-year bucket is 2026 (matches the member plan_year above).
     await runInTenant(tenant.ctx, (tx) =>
@@ -232,6 +265,8 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
           kind: invoiceLines.kind,
           totalSatang: invoiceLines.totalSatang,
           proRateFactor: invoiceLines.proRateFactor,
+          descriptionTh: invoiceLines.descriptionTh,
+          descriptionEn: invoiceLines.descriptionEn,
         })
         .from(invoiceLines)
         .where(
@@ -249,6 +284,23 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
     expect(BigInt(membershipLine!.totalSatang)).toBe(FROZEN_SUBTOTAL_SATANG);
     // Full cycle on the renewal path.
     expect(membershipLine!.proRateFactor).toBe('1.0000');
+
+    // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — this
+    // member has a TERMINAL predecessor cycle (seeded above), so the
+    // payment classifies as `renewal` (not `first_payment`). `mark-paid-
+    // offline` must thread the LOCKED cycle's exact NEXT-period window
+    // (`periodTo` 2027-06-01 → `periodTo + frozenPlanTermMonths` (12) =
+    // 2028-06-01) into `createInvoiceDraft`'s `membershipCoverage`, so the
+    // §86/4 line prints the EXACT window — not the generic "from payment"
+    // text (which would print if the coverage signal were dropped) and
+    // NOT the old FY-boundary "ปี {year}" text (dropped by this refactor).
+    expect(membershipLine!.descriptionTh).toContain(
+      '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+    );
+    expect(membershipLine!.descriptionEn).toContain(
+      '(coverage 2027-06-01 to 2028-06-01)',
+    );
+    expect(membershipLine!.descriptionTh).not.toContain('ปี ');
 
     // (2) NO registration_fee line on the renewal path (suppressed) even
     // though registrationFeePaid=false + the tenant has a non-zero reg fee.

@@ -198,14 +198,14 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
     expect(r.value.invoiceNumber).toBeTruthy();
     expect(r.value.planChanged).toBe(false);
 
-    // The linked invoice is a real ISSUED §86/4 (a §87 number was allocated) —
-    // no buyer TIN required.
+    // The linked invoice is a real ISSUED §86/4 — no buyer TIN required.
     const [inv] = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select({
           status: invoices.status,
           memberId: invoices.memberId,
           documentNumber: invoices.documentNumber,
+          billDocumentNumberRaw: invoices.billDocumentNumberRaw,
           // The document-kind discriminator + the frozen buyer block are what
           // make this a §86/4 full tax invoice (not a §105 receipt or an empty
           // buyer block) — without these the regression net would still PASS if
@@ -218,7 +218,18 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
     );
     expect(inv?.status).toBe('issued');
     expect(inv?.memberId).toBe(memberId);
-    expect(inv?.documentNumber).not.toBeNull();
+    // 088 tax-flow redesign (FEATURE_088_TAX_AT_PAYMENT, on in this env,
+    // shipped PR #149 — pre-existing on `main`, unrelated to the rolling-
+    // anchor Tasks 6/7 on this branch) — the NEW bill-at-issue flow mints
+    // the §87 §86/4 `documentNumber` at PAYMENT, not at issue; the printed
+    // pre-payment identity is the non-§87 `billDocumentNumberRaw` (ใบแจ้งหนี้
+    // bill number), which is what `confirmRenewal`'s returned
+    // `invoiceNumber` surfaces (`billFirstDocumentNumber`). This test
+    // predates 088 and asserted the legacy documentNumber-at-issue shape;
+    // updated to the shipped 088 behaviour.
+    expect(inv?.documentNumber).toBeNull();
+    expect(inv?.billDocumentNumberRaw).not.toBeNull();
+    expect(inv?.billDocumentNumberRaw).toBe(r.value.invoiceNumber);
 
     // §86/4 — a membership tax invoice (ใบกำกับภาษี), NOT a §105 receipt. If
     // the no-TIN path regressed to 'receipt_separate'/'receipt_combined' this

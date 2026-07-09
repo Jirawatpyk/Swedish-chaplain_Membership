@@ -49,6 +49,12 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
         planYear: input.planYear,
         autoEmailOnIssue: input.autoEmailOnIssue,
         renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+        // exactOptionalPropertyTypes — omit the key entirely when the
+        // caller didn't resolve a window rather than assign an explicit
+        // `undefined` (falls back to `createInvoiceDraft`'s default).
+        ...(input.membershipCoverage !== undefined
+          ? { membershipCoverage: input.membershipCoverage }
+          : {}),
       },
     );
     if (!createResult.ok) {

@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, asc, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ne, sql, inArray, desc, or, isNull, isNotNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
@@ -50,6 +50,8 @@ import {
 import {
   assertCanTransition,
   InvalidCycleTransitionError,
+  OPEN_CYCLE_STATUSES,
+  OPEN_CYCLE_STATUSES_SQL_LIST,
   type CycleStatus,
 } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
@@ -117,6 +119,12 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     frozenPlanTermMonths: row.frozenPlanTermMonths,
     frozenPlanCurrency: row.frozenPlanCurrency as 'THB',
     linkedCreditNoteId: row.linkedCreditNoteId,
+    // Rolling-anchor refactor (migration 0238) — anchoredAt is the
+    // discriminator; anchorInvoiceId is a forensic-only reference (NULL
+    // for the R4 backfill of pre-system payments). Same Date-or-null
+    // conversion pattern as closedAt/enteredPendingAt below.
+    anchoredAt: row.anchoredAt ? row.anchoredAt.toISOString() : null,
+    anchorInvoiceId: row.anchorInvoiceId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -952,7 +960,7 @@ export function makeDrizzleRenewalCycleRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(args.cursor);
         const filters: SQL[] = [
-          sql`${renewalCycles.status} IN ('upcoming','reminded','awaiting_payment')`,
+          sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} >= ${args.cutoff}`,
         ];
         if (cursor) {
@@ -1256,6 +1264,152 @@ export function makeDrizzleRenewalCycleRepo(
           summary,
         };
       });
+    },
+
+    /**
+     * Rolling-anchor refactor (migration 0238) — ALL cycle rows for the
+     * member, any status. In-tx (NOT `runInTenant`) so the classification
+     * caller sees uncommitted writes made earlier in the SAME tx, mirroring
+     * `findActiveForMemberInTx`'s in-tx-visibility rationale above.
+     */
+    async countCyclesForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<number> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ count: sql<number>`count(*)::int` })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.memberId, memberId));
+      return rows[0]?.count ?? 0;
+    },
+
+    /**
+     * F2 fix (final-review, 2026-07-09) — count of the member's cycles,
+     * EXCLUDING `excludeCycleId` (the caller's current open cycle), that
+     * represent a SETTLED renewal: status 'completed' OR
+     * anchored_at IS NOT NULL. In-tx for the same uncommitted-visibility
+     * reason as `countCyclesForMemberInTx` above.
+     */
+    async countSettledCyclesForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      excludeCycleId: string,
+    ): Promise<number> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ count: sql<number>`count(*)::int` })
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            ne(renewalCycles.cycleId, excludeCycleId),
+            or(
+              eq(renewalCycles.status, 'completed'),
+              isNotNull(renewalCycles.anchoredAt),
+            ),
+          ),
+        );
+      return rows[0]?.count ?? 0;
+    },
+
+    /**
+     * Rolling-anchor refactor (migration 0238) — the member's open cycle
+     * (status IN upcoming|reminded|awaiting_payment), or null. At most one
+     * by the `renewal_cycles_active_member_uniq` partial-unique invariant;
+     * `'reminded'` is folded into the open set defensively even though it's
+     * a vestigial status no current writer produces.
+     */
+    async findOpenCycleForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+          ),
+        )
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    },
+
+    /**
+     * Rolling-anchor refactor (migration 0238) — rolling first-payment
+     * re-anchor (spec rev 2 §2). Guarded single UPDATE: only an
+     * un-anchored open cycle qualifies (`anchoredAt IS NULL` + status IN
+     * the active set). `status` is force-reset to `'upcoming'` regardless
+     * of the cycle's current active status — a SANCTIONED bypass of
+     * `transitionStatus`'s `assertCanTransition` guard, because re-anchor
+     * restarts the reminder ladder from its beginning rather than
+     * following a normal lifecycle edge. `linkedInvoiceId` is cleared so
+     * the member's actual next renewal invoice can link cleanly through
+     * the `linkInvoice` I1 idempotent-or-conflict guard. Frozen-plan
+     * fields are overwritten with the caller-supplied values (pass the
+     * cycle's current values when no re-resolution is needed).
+     *
+     * Returns `null` when the guard matched 0 rows — either the cycle no
+     * longer exists, was already anchored (race), moved to a terminal
+     * status, or belongs to a different tenant (RLS hides it). The caller
+     * re-reads and reclassifies rather than treating this as a hard error.
+     *
+     * Deletes the cycle's `renewal_reminder_events` rows in the SAME tx
+     * (the re-anchored period invalidates any dispatch history logged
+     * against the old period) and returns the deleted count so the caller
+     * can audit `reminderEventsReset`.
+     */
+    async reanchorPeriodInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly periodFrom: string;
+        readonly periodTo: string;
+        readonly anchoredAt: string;
+        readonly anchorInvoiceId: string | null;
+        readonly frozenPlanPriceThb: ThbDecimal;
+        readonly frozenPlanTermMonths: number;
+      },
+    ): Promise<{ readonly cycle: RenewalCycle; readonly reminderEventsReset: number } | null> {
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          periodFrom: new Date(args.periodFrom),
+          periodTo: new Date(args.periodTo),
+          status: 'upcoming', // sanctioned TRANSITIONS bypass — spec rev 2 §2
+          anchoredAt: new Date(args.anchoredAt),
+          anchorInvoiceId: args.anchorInvoiceId,
+          linkedInvoiceId: null,
+          frozenPlanPriceThb: args.frozenPlanPriceThb,
+          frozenPlanTermMonths: args.frozenPlanTermMonths,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            inArray(renewalCycles.status, [
+              'upcoming',
+              'reminded',
+              'awaiting_payment',
+            ]),
+            isNull(renewalCycles.anchoredAt),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) return null;
+      const deleted = await txDb
+        .delete(renewalReminderEvents)
+        .where(eq(renewalReminderEvents.cycleId, cycleId))
+        .returning({ id: renewalReminderEvents.reminderEventId });
+      return { cycle: rowToDomain(row), reminderEventsReset: deleted.length };
     },
   };
 }

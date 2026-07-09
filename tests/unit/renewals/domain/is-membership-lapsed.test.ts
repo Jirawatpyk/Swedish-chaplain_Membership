@@ -22,6 +22,8 @@ function cycle(overrides: Partial<RenewalCycle>): RenewalCycle {
     frozenPlanTermMonths: 12,
     frozenPlanCurrency: 'THB',
     linkedCreditNoteId: null,
+    anchoredAt: null,
+    anchorInvoiceId: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     closedAt: null,

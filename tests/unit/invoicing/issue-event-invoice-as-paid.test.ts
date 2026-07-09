@@ -762,6 +762,8 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
         memberId: 'member-1',
         paymentMethod: 'bank_transfer',
         triggeredBy: 'admin_manual',
+        invoiceSubject: 'event',
+        paymentDate: null,
       }),
       OPAQUE_TX,
     );
@@ -932,6 +934,8 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
         currency: 'THB',
         paymentMethod: 'bank_transfer',
         triggeredBy: 'admin_manual',
+        invoiceSubject: 'event',
+        paymentDate: null,
       }),
       OPAQUE_TX,
     );

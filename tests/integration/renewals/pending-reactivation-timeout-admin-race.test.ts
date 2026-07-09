@@ -218,6 +218,8 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
       enteredPendingAt: enteredPendingAt.toISOString(),
       linkedInvoiceId: invoiceId,
       linkedCreditNoteId: null,
+      anchoredAt: null,
+      anchorInvoiceId: null,
       closedAt: null,
       closedReason: null,
       createdAt: '2026-04-14T00:00:00.000Z',

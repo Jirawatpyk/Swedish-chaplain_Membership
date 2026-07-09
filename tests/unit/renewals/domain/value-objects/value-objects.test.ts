@@ -20,6 +20,7 @@ import {
   isTerminalCycleStatus,
   canTransition,
   assertCanTransition,
+  InvalidCycleTransitionError,
 } from '@/modules/renewals/domain/value-objects/cycle-status';
 import {
   RISK_BANDS,
@@ -464,5 +465,20 @@ describe('ReminderStep (T033)', () => {
       task_type: 'phone_call',
       assignee_role: 'admin',
     });
+  });
+});
+
+describe('InvalidCycleTransitionError', () => {
+  // Domain 100%-line requirement — the throwing wrapper's constructor
+  // (cycle-status.ts:167-172) was the only uncovered region in this VO file.
+  it('carries the offending edge and a stable name/message', () => {
+    const err = new InvalidCycleTransitionError('completed', 'upcoming');
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('InvalidCycleTransitionError');
+    expect(err.from).toBe('completed');
+    expect(err.to).toBe('upcoming');
+    expect(err.message).toBe(
+      'Invalid cycle transition: completed → upcoming is not a declared edge',
+    );
   });
 });

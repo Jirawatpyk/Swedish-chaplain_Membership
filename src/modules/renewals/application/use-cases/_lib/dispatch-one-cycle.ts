@@ -3,11 +3,14 @@
  * cron entry (`dispatchRenewalCycle`) and the admin entry
  * (`sendReminderNow`) per FR-018 single-source-of-truth requirement.
  *
- * Decision tree: 13 gates (first match wins). The canonical list lives
- * inline as `// Gate N — …` comments next to the runtime checks below
- * — keeping a single source of truth so a future gate addition can't
- * drift between the header narrative and the executable logic. Skip
- * reasons emitted by the gates: see the `SKIP_REASONS` const tuple.
+ * Decision tree: 14 gates (first match wins; two are `N.5` sub-gates —
+ * 4.5 and 7.5 — inserted later without renumbering the rest so existing
+ * `Gate 8`/`Gate 9`/… references elsewhere in this file stay stable).
+ * The canonical list lives inline as `// Gate N — …` comments next to
+ * the runtime checks below — keeping a single source of truth so a
+ * future gate addition can't drift between the header narrative and
+ * the executable logic. Skip reasons emitted by the gates: see the
+ * `SKIP_REASONS` const tuple.
  *
  * Channel branch (after gate 12 idempotency insert):
  *   - email — gateway.sendRenewalEmail → success: transition + audit
@@ -69,7 +72,7 @@ import type { MemberId } from '@/modules/members';
 export const RETRY_BUDGET_HOURS = 24 as const;
 
 /**
- * The 13 skip reasons emitted by the dispatcher. Single audit event
+ * The 14 skip reasons emitted by the dispatcher. Single audit event
  * `renewal_reminder_skipped` carries `{reason}` payload. Distinct from
  * `renewal_reminder_deferred_read_only` + `renewal_skipped_no_joined_at`
  * (their own events for backward compatibility with FR-012 audit-trail
@@ -84,6 +87,9 @@ export const SKIP_REASONS = [
   'member_opted_out',
   'email_unverified',
   'tenant_misconfigured',
+  // Rolling-anchor refactor rev 2 (design 2026-07-08 §4) — Gate 7.5
+  // belt-and-suspenders skip for the deploy→backfill gap.
+  'unreconciled_paid_membership_invoice',
   'not_due_today',
   'multi_year_non_final_year',
   'outreach_in_progress',
@@ -98,9 +104,9 @@ export type SkipReason = (typeof SKIP_REASONS)[number];
  * Mirrors the `_AssertF8AuditEventCount` pattern in renewal-audit-emitter.ts.
  * Bump the literal when intentionally adding/removing a skip reason.
  */
-type _AssertSkipReasonCount = (typeof SKIP_REASONS)['length'] extends 13
+type _AssertSkipReasonCount = (typeof SKIP_REASONS)['length'] extends 14
   ? true
-  : 'SKIP_REASONS count mismatch — expected 13';
+  : 'SKIP_REASONS count mismatch — expected 14';
 const _assertSkipReasonCount: _AssertSkipReasonCount = true;
 void _assertSkipReasonCount;
 
@@ -118,6 +124,16 @@ export interface DispatchContext {
   readonly requestId: string | null;
   /** Injectable now-clock for tests. Default: real-time on each call. */
   readonly nowIso: string;
+  /**
+   * FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's batched skip-set:
+   * every memberId in the tenant with an unreconciled paid membership
+   * invoice (see `MemberRenewalFlagsRepo.listMemberIdsWithUnreconciledPaidMembershipInvoice`
+   * docstring). Computed ONCE per cron pass by `dispatchRenewalCycle` (or,
+   * for the single-candidate admin "send reminder now" path, derived from
+   * the single-member read) — Gate 7.5 below is a pure in-memory lookup,
+   * never a DB call.
+   */
+  readonly unreconciledMemberIds: ReadonlySet<string>;
 }
 
 /**
@@ -292,7 +308,7 @@ async function emitSkipAudit(
     return;
   }
   // K7: explicit exhaustiveness check on the `SkipReason` union. The
-  // remaining 8 reasons all flow through the generic
+  // remaining 9 reasons all flow through the generic
   // `renewal_reminder_skipped` audit emit. The `_remaining` switch
   // pins exhaustiveness — if a future `SkipReason` lands without
   // either an early-return special-case above OR explicit handling
@@ -303,6 +319,7 @@ async function emitSkipAudit(
     | 'member_opted_out'
     | 'email_unverified'
     | 'tenant_misconfigured'
+    | 'unreconciled_paid_membership_invoice'
     | 'multi_year_non_final_year'
     | 'outreach_in_progress'
     | 'no_primary_contact' = reason;
@@ -419,6 +436,46 @@ async function dispatchOneCycleInner(
   if (schedulePolicy === null) {
     await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured');
     return { kind: 'skipped', reason: 'tenant_misconfigured' };
+  }
+  // Gate 7.5 — unreconciled paid membership invoice (rolling-anchor
+  // refactor rev 2, design 2026-07-08 §4 — restored from bug-doc R3).
+  // Belt-and-suspenders safety net for the deploy→backfill gap: the R4
+  // backfill script deliberately runs AFTER testing, so there is a
+  // window where a real out-of-band payment could land without being
+  // anchored/linked onto the member's cycle. If the member has a paid
+  // membership invoice from the last 12 months that is neither any
+  // cycle's `linked_invoice_id` nor any cycle's `anchor_invoice_id`,
+  // the cycle's period/expiry may be stale — dispatching a reminder off
+  // a possibly-wrong period would confuse the member. This is an
+  // OPERATIONAL ALARM (staff must reconcile manually), so unlike the
+  // routine silent skips above, this one is LOUD: logger.error + the
+  // standard `renewal_reminder_skipped` audit.
+  //
+  // FIX-6 (PR #173 review, 2026-07-09) — was one SQL round-trip PER
+  // CANDIDATE (`hasUnreconciledPaidMembershipInvoice`); now an in-memory
+  // lookup against the tenant-wide skip-set the caller computed ONCE
+  // (`ctx.unreconciledMemberIds` — see `DispatchContext` docstring).
+  const hasUnreconciledInvoice = ctx.unreconciledMemberIds.has(member.memberId);
+  if (hasUnreconciledInvoice) {
+    logger.error(
+      {
+        cycleId: cycle.cycleId,
+        memberId: member.memberId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+      },
+      'dispatchOneCycleInner: member has an unreconciled paid membership invoice from the last 12 months — skipping reminder dispatch, staff must reconcile the cycle manually',
+    );
+    await emitSkipAudit(
+      deps,
+      candidate,
+      ctx,
+      'unreconciled_paid_membership_invoice',
+    );
+    return {
+      kind: 'skipped',
+      reason: 'unreconciled_paid_membership_invoice',
+    };
   }
   // Gate 8 — resolve the due (or recently-overdue) step(s) + bounded catch-up.
   //

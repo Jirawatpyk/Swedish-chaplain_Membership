@@ -17,7 +17,7 @@
  *
  * What this contract pins:
  *
- *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 65`.
+ *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 66`.
  *      Mirrors the compile-time assertion as a runtime smoke check so
  *      a future refactor that bypasses the compile-time pin (e.g. via
  *      `as readonly string[]`) still trips the test.
@@ -62,8 +62,10 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 65 event types (matches compile-time _AssertF8AuditEventCount)', () => {
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(65);
+  it('catalogue contains exactly 66 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+    // Renewal rolling-anchor refactor (migration 0238): 65 → 66, +1
+    // `renewal_cycle_reanchored`.
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(66);
   });
 
   it('catalogue contains no duplicate event types', () => {
@@ -213,6 +215,30 @@ describe('F8 audit-port contract (T258)', () => {
       },
     };
     expect(event.payload.route).toBe('/portal/renewal/abc');
+  });
+
+  it('renewal_cycle_reanchored — canonical payload accepted (heal_no_cycle branch, nullable old_* + invoice_id)', () => {
+    // Renewal rolling-anchor refactor (migration 0238) — the heal_no_cycle
+    // classification has no prior period, so old_period_from/to are null.
+    // invoice_id is nullable too (backfilled pre-system payments never
+    // carry a forensic invoice reference).
+    const event: F8AuditEvent<'renewal_cycle_reanchored'> = {
+      type: 'renewal_cycle_reanchored',
+      payload: {
+        cycle_id: '00000000-0000-0000-0000-000000000002' as never,
+        member_id: '00000000-0000-0000-0000-000000000003' as never,
+        invoice_id: null,
+        old_period_from: null,
+        old_period_to: null,
+        new_period_from: '2026-03-01T00:00:00.000Z',
+        new_period_to: '2027-03-01T00:00:00.000Z',
+        old_status: 'upcoming',
+        refroze_plan_fields: false,
+        reminder_events_reset: 0,
+      },
+    };
+    expect(event.payload.old_period_from).toBeNull();
+    expect(event.payload.new_period_from).toBe('2026-03-01T00:00:00.000Z');
   });
 
   it('renewal_token_invalid — canonical payload accepts every reason variant', () => {

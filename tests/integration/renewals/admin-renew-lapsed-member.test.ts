@@ -35,6 +35,7 @@ import { db, runInTenant } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import {
@@ -95,6 +96,13 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
           planYear: input.planYear,
           autoEmailOnIssue: input.autoEmailOnIssue,
           renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+          // Task 8 window-parity — forward the bridge's membershipCoverage
+          // exactly like the production `f4InvoicingForRenewalBridge`
+          // drizzle adapter (exactOptionalPropertyTypes — omit the key
+          // rather than assign an explicit `undefined`).
+          ...(input.membershipCoverage !== undefined
+            ? { membershipCoverage: input.membershipCoverage }
+            : {}),
         },
       );
       if (!createResult.ok) {
@@ -176,6 +184,8 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       planLookupForRenewal: real.planLookupForRenewal,
       memberPlanLookup: real.memberPlanLookup,
       cycleIdFactory: real.cycleIdFactory,
+      // R2-FIX-2 — the real erased-guard read the Step-1 classify now consumes.
+      memberRenewalFlagsRepo: real.memberRenewalFlagsRepo,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };
   }
@@ -222,6 +232,8 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',
+      invoiceSubject: 'membership',
+      paymentDate: null,
     };
   }
 
@@ -284,6 +296,45 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
   it('renews a lapsed member: fresh awaiting_payment cycle + §86/4 at the frozen price + linked; then payment closes the loop (next upcoming cycle)', async () => {
     const memberId = await seedLapsedMember();
 
+    // Rolling-anchor refactor (Task 6, migration 0238) — a TERMINAL
+    // predecessor cycle (`status:'lapsed'`) so this member has real cycle
+    // history, not the shared classifier's `first_payment` shape ("exactly
+    // one cycle ever, unanchored"). "Lapsed" means the member's PRIOR cycle
+    // expired without renewal — this is exactly that prior cycle, dated to
+    // line up with `seedLapsedMember`'s `registrationDate: '2020-01-01'`.
+    // Without it, paying the fresh comeback cycle below would re-anchor it
+    // instead of completing + creating the next cycle, breaking this test's
+    // whole "the loop closes" premise. Mirrors e8da485b's pattern.
+    //
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set to `periodFrom`:
+    // a genuinely lapsed member (was actively paying, THEN missed a
+    // renewal) has real SETTLED history — `countSettledCyclesForMemberInTx`
+    // (status='completed' OR anchored_at IS NOT NULL) only counts a
+    // predecessor as "settled" if it was ever anchored to a real payment.
+    // Without this, the classifier's F2 fix would (correctly) treat this
+    // member as having NEVER actually paid, misclassifying the comeback
+    // payment below as `first_payment` instead of `renewal`.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'lapsed',
+        periodFrom: new Date('2020-01-01T00:00:00Z'),
+        periodTo: new Date('2021-01-01T00:00:00Z'),
+        expiresAt: new Date('2021-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: EXPECTED_FROZEN_THB,
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2020-01-01T00:00:00Z'),
+        closedAt: new Date('2021-01-01T00:00:00Z'),
+        closedReason: 'lapsed',
+      }),
+    );
+
     const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
       tenantId: tenant.ctx.slug,
       memberId,
@@ -305,6 +356,7 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
           status: renewalCycles.status,
           frozenPrice: renewalCycles.frozenPlanPriceThb,
           linkedInvoiceId: renewalCycles.linkedInvoiceId,
+          periodFrom: renewalCycles.periodFrom,
           periodTo: renewalCycles.periodTo,
         })
         .from(renewalCycles)
@@ -331,6 +383,35 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     expect(invoiceRow[0]?.status).toBe('issued');
     expect(invoiceRow[0]?.memberId).toBe(memberId);
     expect(Number(invoiceRow[0]?.subtotalSatang)).toBe(ANNUAL_FEE_MINOR);
+
+    // Task 8 window-parity — the comeback §86/4's membership line prints
+    // the EXACT fresh-cycle window (periodFrom → periodTo), not the
+    // generic "12 months from month of payment" fallback (which would
+    // apply if `membershipCoverage` were never threaded through this
+    // bridge call).
+    const membershipLine = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          descriptionEn: invoiceLines.descriptionEn,
+          descriptionTh: invoiceLines.descriptionTh,
+        })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
+    );
+    const fromDate = freshCycle[0]!.periodFrom.toISOString().slice(0, 10);
+    const toDate = freshCycle[0]!.periodTo.toISOString().slice(0, 10);
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionEn.includes(`(coverage ${fromDate} to ${toDate})`),
+      ),
+    ).toBe(true);
+    // Task 8 F3 review-fix — the Thai counterpart must carry the same
+    // window (this test previously asserted EN only).
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionTh.includes(`(ระยะเวลา ${fromDate} ถึง ${toDate})`),
+      ),
+    ).toBe(true);
 
     // A renewal_cycle_created audit (from createCycleInTx) landed for the
     // fresh cycle.
@@ -368,16 +449,63 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
         .from(renewalCycles)
         .where(eq(renewalCycles.memberId, memberId)),
     );
-    // Exactly 2 cycles: the fresh one (now completed) + the next (upcoming).
-    expect(allCycles).toHaveLength(2);
+    // Exactly 3 cycles: the terminal `lapsed` predecessor (seeded above) +
+    // the fresh one (now completed) + the next (upcoming).
+    expect(allCycles).toHaveLength(3);
     const fresh = allCycles.find((c) => c.cycleId === result.value.cycleId);
-    const next = allCycles.find((c) => c.cycleId !== result.value.cycleId);
+    const next = allCycles.find(
+      (c) => c.cycleId !== result.value.cycleId && c.status === 'upcoming',
+    );
     expect(fresh?.status).toBe('completed');
     expect(next?.status).toBe('upcoming');
     // Gapless: the next cycle anchors at the fresh cycle's period_to.
     expect(next?.periodFrom.toISOString()).toBe(
       freshCycle[0]!.periodTo.toISOString(),
     );
+  }, 180_000);
+
+  // FIX-1 (PR #173 review, 2026-07-09) — the zero-history cohort, reachable
+  // via `RenewalHealthCard`'s "Renew" CTA on a member whose renewal status
+  // is `null` (never had a cycle at all — `isLapsed(null) === true`). The
+  // fresh cycle created here is this member's ONLY cycle ever, unanchored
+  // — the shared classifier's `first_payment` shape. The §86/4 must print
+  // the GENERIC "from month of payment" wording, not an exact window that
+  // does not exist yet (mirrors confirm-renewal's identical fix).
+  it('zero-history cohort: a member who NEVER had a renewal cycle → §86/4 prints the GENERIC coverage wording, not an exact window', async () => {
+    const memberId = await seedLapsedMember(); // seeds member + contact, NO cycle at all
+
+    const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-zero-history-${memberId}`,
+      requestId: `req-zh-${memberId.slice(0, 8)}`,
+    });
+    if (!result.ok) {
+      throw new Error(`admin renew failed: ${JSON.stringify(result.error)}`);
+    }
+    expect(result.value.cycleStatus).toBe('awaiting_payment');
+
+    const membershipLine = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          descriptionEn: invoiceLines.descriptionEn,
+          descriptionTh: invoiceLines.descriptionTh,
+        })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
+    );
+    // Generic fallback wording (createInvoiceDraft's `{ kind: 'from_payment' }`
+    // default) — NOT an exact "(coverage X to Y)" window.
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionEn.includes('(12 months, effective from the month of payment)'),
+      ),
+    ).toBe(true);
+    expect(
+      membershipLine.some((l) => l.descriptionEn.includes('(coverage ')),
+    ).toBe(false);
   }, 180_000);
 
   it('member_has_active_cycle: renewing a member who already has an active cycle creates NO second cycle', async () => {

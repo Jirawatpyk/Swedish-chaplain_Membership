@@ -388,6 +388,59 @@ export interface RenewalCycleRepo {
     tenantId: string,
     opts: ListMembersWithoutCycleOpts,
   ): Promise<MembersWithoutCyclePage>;
+
+  /** ALL cycle rows for the member, any status. In-tx (classification must see uncommitted writes). */
+  countCyclesForMemberInTx(tx: TenantTx, tenantId: string, memberId: string): Promise<number>;
+
+  /**
+   * Count of the member's cycles — EXCLUDING `excludeCycleId` (the
+   * caller's current open cycle) — that represent a SETTLED renewal:
+   * status `'completed'` OR `anchored_at IS NOT NULL`. F2 fix
+   * (final-review, 2026-07-09) — feeds `classifyMembershipPayment`'s
+   * `settledCycleCountForMember` so a member whose only prior cycles are
+   * cancelled/lapsed WITHOUT ever anchoring (never actually paid) still
+   * classifies `first_payment` on their first real payment, even though
+   * `countCyclesForMemberInTx` is > 0 for them. In-tx (classification
+   * must see uncommitted writes, same rationale as
+   * `countCyclesForMemberInTx`).
+   */
+  countSettledCyclesForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    excludeCycleId: string,
+  ): Promise<number>;
+
+  /** The member's open cycle (status IN upcoming|reminded|awaiting_payment), or null. At most one by invariant; 'reminded' folded into the open set defensively (vestigial status). */
+  findOpenCycleForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * Rolling first-payment re-anchor (spec rev 2 §2). Guarded single UPDATE:
+   * only an un-anchored open cycle qualifies; status resets to 'upcoming'
+   * (sanctioned TRANSITIONS bypass — documented at the SQL); linked_invoice_id
+   * cleared so the future renewal links cleanly; frozen fields replaced when
+   * the caller re-resolved them (pass current values otherwise). Deletes the
+   * cycle's renewal_reminder_events rows in the same tx and returns their
+   * count. Returns null when the guard matched 0 rows (race — caller re-reads
+   * and reclassifies).
+   */
+  reanchorPeriodInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly periodFrom: string;
+      readonly periodTo: string;
+      readonly anchoredAt: string;
+      readonly anchorInvoiceId: string | null;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+    },
+  ): Promise<{ readonly cycle: RenewalCycle; readonly reminderEventsReset: number } | null>;
 }
 
 // ---------------------------------------------------------------------------

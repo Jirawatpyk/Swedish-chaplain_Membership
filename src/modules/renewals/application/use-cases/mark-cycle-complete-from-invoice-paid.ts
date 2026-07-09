@@ -55,8 +55,11 @@
  */
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import { loadClassificationCounts } from './_lib/classification-input';
 import {
   asCycleId,
   type RenewalCycle,
@@ -65,6 +68,8 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
+import { resolveUnlinkedMembershipPaymentInTx } from './resolve-unlinked-membership-payment';
+import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
 
 export type MarkCycleCompleteOutcome =
   | { readonly kind: 'no_cycle_for_invoice' }
@@ -78,11 +83,68 @@ export type MarkCycleCompleteOutcome =
       readonly kind: 'held_pending_admin';
       readonly cycleId: string;
       readonly memberId: string;
+    }
+  | {
+      /**
+       * Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+       * Task 6 — the LINKED-path counterpart to the unlinked hook's
+       * `'reanchored'` outcome. A first-ever payment on a cycle that
+       * confirm-renewal (or a dispatched F8 invoice) already linked to
+       * THIS invoice re-anchors instead of completing — see
+       * `markCycleCompleteInTx`'s classify-before-guard block below.
+       */
+      readonly kind: 'reanchored';
+      readonly cycleId: string;
+      readonly memberId: string;
     };
+
+/**
+ * Fold a resolved cycle into the shared classifier's `openCycle` input
+ * shape, or `null` when the cycle is not in an "open" status at all
+ * (`completed` / `lapsed` / `cancelled` / `pending_admin_reactivation`).
+ * `'reminded'` (vestigial, no writer in `src/`) folds to `'upcoming'` —
+ * mirrors `resolve-unlinked-membership-payment.ts`'s `toClassifierOpenCycle`,
+ * generalised to accept ANY cycle (that helper's input is guaranteed
+ * pre-filtered to open statuses by `findOpenCycleForMemberInTx`; this one
+ * is called on a cycle resolved by invoice-id, which can be in ANY
+ * status — e.g. an idempotent re-fire against an already-`completed`
+ * cycle must NOT be treated as open).
+ */
+function toOpenCycleClassifierInput(
+  cycle: RenewalCycle,
+): { readonly status: 'upcoming' | 'awaiting_payment'; readonly anchoredAt: string | null } | null {
+  if (cycle.status === 'awaiting_payment') {
+    return { status: 'awaiting_payment', anchoredAt: cycle.anchoredAt };
+  }
+  if (cycle.status === 'upcoming' || cycle.status === 'reminded') {
+    return { status: 'upcoming', anchoredAt: cycle.anchoredAt };
+  }
+  return null;
+}
 
 export type MarkCycleCompleteDeps = Pick<
   RenewalsDeps,
-  'tenant' | 'cyclesRepo' | 'auditEmitter' | 'memberRenewalFlagsRepo'
+  | 'tenant'
+  | 'cyclesRepo'
+  | 'auditEmitter'
+  | 'memberRenewalFlagsRepo'
+  // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238) —
+  // widened for the unlinked-payment resolution hook
+  // (`resolveUnlinkedMembershipPaymentInTx`) the `!cycle` branch below
+  // delegates to. `memberPlanLookup` is required by the hook's
+  // `heal_no_cycle` branch (resolves the member's current plan — see that
+  // file's docstring) even though the original task brief only named the
+  // other three.
+  | 'planLookupForRenewal'
+  | 'cycleIdFactory'
+  // FIX-8(d) (PR #173 review, 2026-07-09) — `'clock'` was Pick'd but never
+  // referenced anywhere in this file; dropped (dead dependency).
+  | 'memberPlanLookup'
+  // FIX-3 (PR #173 review, 2026-07-09) — threaded into BOTH the unlinked
+  // hook's `firstPayment` branch and the linked path's own reanchor call
+  // below, so the FY-crossing re-freeze check uses the tenant's REAL
+  // configured fiscal-year-start-month.
+  | 'fiscalYearSettings'
 >;
 
 /**
@@ -119,18 +181,216 @@ export async function markCycleCompleteInTx(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
   tx: TenantTx,
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238) —
+   * gates whether the `!cycle` branch may delegate to
+   * `resolveUnlinkedMembershipPaymentInTx`. Defaults `true`: the atomic
+   * in-tx path (F4 threads a real `TenantTx`) always resolves unlinked
+   * membership payments. `markCycleCompleteFromInvoicePaid` (the
+   * degraded/legacy wrapper — see its own docstring for the three
+   * sanctioned uses) forces `false`: a separately-committed re-anchor or
+   * renewal-completion followed by an unrelated payment-tx rollback must
+   * be impossible, so the wrapper's non-atomic tx NEVER runs the hook.
+   * The dispatcher skip-guard + reconciliation cover the resulting miss.
+   *
+   * F3 (final-review, 2026-07-09) — ALSO gates the LINKED-path
+   * classify→re-anchor block below (Task 6). `false` skips the
+   * re-anchor branch too, falling through to the pre-existing
+   * guard/autoComplete/holdForAdminReview flow with the SAME
+   * "non-atomic tx must not commit a consequential mutation"
+   * rationale — see that branch's comment for detail.
+   */
+  allowUnlinkedResolution = true,
 ): Promise<MarkCycleCompleteOutcome> {
-  const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
+  let cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
     tx,
     event.tenantId,
     event.invoiceId,
   );
   if (!cycle) {
+    if (!allowUnlinkedResolution) {
+      logger.error(
+        {
+          invoiceId: event.invoiceId,
+          tenantId: event.tenantId,
+          memberId: event.memberId,
+        },
+        '[mark-cycle-complete] degraded mode (non-atomic tx) — refusing unlinked-payment resolution; dispatcher skip-guard + reconciliation cover the miss',
+      );
+      renewalsMetrics.unlinkedPaymentResolved('skipped');
+      return { kind: 'no_cycle_for_invoice' as const };
+    }
+
+    const resolution = await resolveUnlinkedMembershipPaymentInTx(
+      {
+        cyclesRepo: deps.cyclesRepo,
+        planLookup: deps.planLookupForRenewal,
+        memberPlanLookup: deps.memberPlanLookup,
+        auditEmitter: deps.auditEmitter,
+        idFactory: deps.cycleIdFactory,
+        memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,
+        fiscalYearSettings: deps.fiscalYearSettings,
+      },
+      event,
+      tx,
+    );
+    // F2 fix (Task 5 review) — logging the raw `resolution` object here
+    // would nest a `reason` field (the `skipped` branch's discriminant)
+    // one level deep whenever the outcome is `skipped`. `src/lib/logger.ts`
+    // blacklists BOTH `reason`/`*.reason` AND `skipped_reason`/
+    // `skippedReason` for defence-in-depth against PCI/PII leakage via a
+    // gateway-error `reason` field — pino would silently redact it to
+    // `[REDACTED]`, losing the forensic signal this log line exists for.
+    // Flattened to neutral field names (`resolutionKind` / `resolutionCode`
+    // — neither is on the redact list) instead.
     logger.info(
-      { invoiceId: event.invoiceId, tenantId: event.tenantId },
-      '[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment',
+      {
+        invoiceId: event.invoiceId,
+        tenantId: event.tenantId,
+        memberId: event.memberId,
+        resolutionKind: resolution.kind,
+        ...(resolution.kind === 'skipped'
+          ? { resolutionCode: resolution.reason }
+          : {}),
+      },
+      '[mark-cycle-complete] no F8 cycle linked to invoice — resolved via unlinked-payment hook',
     );
     return { kind: 'no_cycle_for_invoice' as const };
+  }
+
+  // FR-005b + COMP-1 — read BOTH reactivation guards in ONE round-trip
+  // (COMP-1 L3 fold): the admin `blocked_from_auto_reactivation` override AND
+  // the GDPR-erased state. Hoisted into this `openCycleInput` block (round 2
+  // fix — a prior version hardcoded `memberErased: false` into
+  // classification below, "since the erased/blocked gate a few lines down
+  // governs every outcome anyway"; that reasoning was WRONG for the
+  // `first_payment` shape: an erased member whose only-ever cycle is
+  // unanchored would misclassify as `first_payment` and RE-ANCHOR instead
+  // of falling through to the hold-for-admin path below — re-anchor is not
+  // literally a "reactivation" transition, but it silently revives a
+  // GDPR-erased member's renewal timeline, which COMP-1 forbids just as
+  // much). Reading the real flag here brings this LINKED path to parity
+  // with the UNLINKED hook (`resolveUnlinkedMembershipPaymentInTx`), which
+  // has always checked `erased` before classifying. Placed inside this
+  // block (not unconditionally at the top of the function) so a cycle
+  // that's already terminal/pending-admin (idempotent re-fire) still costs
+  // zero reads here, exactly as before — it hits the `awaiting_payment`
+  // guard below without ever needing these values. `null` (member
+  // RLS-hidden / absent) → both guards treated as false → auto-complete
+  // (defensive — preserves the prior null-read behaviour).
+  //
+  // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
+  // Task 6 (spec §1 consuming-site 2) — classify the payment for the
+  // LINKED cycle's member using the SAME shared classifier every
+  // settlement site consumes, BEFORE the awaiting_payment guard below. A
+  // `first_payment` result (the member's one-and-only cycle, never
+  // anchored to a real payment — exactly confirm-renewal's pre-linked-
+  // invoice shape) RE-ANCHORS instead of completing: confirm-renewal
+  // previously settled such a member at the cycle's provisional
+  // registration-date period rather than the actual payment month. An
+  // erased member's classification instead resolves to
+  // `not_applicable(erased)` (never `first_payment`), so it falls through
+  // to the UNCHANGED `awaiting_payment` guard + `holdForAdminReview` flow
+  // below — this is the ONLY gate an erased member's payment can reach.
+  let blocked = false;
+  let isErased = false;
+  const openCycleInput = toOpenCycleClassifierInput(cycle);
+  if (openCycleInput) {
+    const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+      tx,
+      event.tenantId,
+      cycle.memberId,
+    );
+    blocked = guards?.blocked === true;
+    isErased = guards?.erased === true;
+
+    // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
+    // duplicated at every settlement site).
+    const { cycleCountForMember, settledCycleCountForMember } =
+      await loadClassificationCounts(
+        deps,
+        tx,
+        event.tenantId,
+        cycle.memberId,
+        cycle.cycleId,
+      );
+    const classification = classifyMembershipPayment({
+      cycleCountForMember,
+      settledCycleCountForMember,
+      openCycle: openCycleInput,
+      memberErased: isErased,
+    });
+
+    if (classification.kind === 'first_payment') {
+      if (!allowUnlinkedResolution) {
+        // F3 (final-review, 2026-07-09) — degraded mode (the wrapper's
+        // own, SEPARATELY-committed tx — see this function's
+        // `allowUnlinkedResolution` param docstring) must NOT commit a
+        // re-anchor here either. A re-anchor is a far more consequential
+        // mutation than the plain status flip below (period dates move,
+        // frozen fields re-freeze, reminder events reset) — the
+        // atomic-tx guarantee the linked path normally rides on is
+        // exactly what makes it safe to run, and degraded mode has no
+        // such guarantee. Fall through to the PRE-EXISTING
+        // guard/autoComplete/holdForAdminReview flow below instead —
+        // the same legacy behaviour this linked path had before the
+        // rolling-anchor refactor (Task 6) introduced the reanchor
+        // branch: a first-ever payment settles the cycle at its
+        // provisional (pre-anchor) dates rather than re-anchoring to
+        // the actual payment month. The dispatcher skip-guard +
+        // reconciliation cover the resulting miss — mirrors the sibling
+        // `!cycle` degraded-mode refusal a few lines above, including
+        // reusing the SAME `unlinkedPaymentResolved('skipped')` metric
+        // bucket so both degraded-mode refusals land on one dashboard
+        // counter.
+        logger.error(
+          {
+            cycleId: cycle.cycleId,
+            invoiceId: event.invoiceId,
+            tenantId: event.tenantId,
+            memberId: event.memberId,
+          },
+          '[mark-cycle-complete] degraded mode (non-atomic tx) — refusing linked-path first-payment re-anchor; falling through to legacy complete/hold flow',
+        );
+        renewalsMetrics.unlinkedPaymentResolved('skipped');
+      } else {
+        const reanchoredResult = await reanchorFirstPaymentCycleInTx(
+          {
+            cyclesRepo: deps.cyclesRepo,
+            planLookup: deps.planLookupForRenewal,
+            auditEmitter: deps.auditEmitter,
+            fiscalYearSettings: deps.fiscalYearSettings,
+          },
+          event,
+          tx,
+          cycle,
+        );
+        if (reanchoredResult) {
+          return {
+            kind: 'reanchored' as const,
+            cycleId: reanchoredResult.cycle.cycleId,
+            memberId: cycle.memberId,
+          };
+        }
+        // Lost the re-anchor race (a concurrent write moved the cycle
+        // out of the un-anchored-open state between our classify read
+        // and the guarded UPDATE) — re-read the SAME row by id once and
+        // fall through to the EXISTING guard+autoComplete/
+        // holdForAdminReview flow below with fresh data. Never loop
+        // (design rev 2 §2 race-recovery discipline — mirrors the
+        // unlinked hook's `reclassifyAfterRace`, but the linked path's
+        // fallback IS its own pre-existing flow, so no separate
+        // reclassify function is needed).
+        const refreshed = await deps.cyclesRepo.findByIdInTx(
+          tx,
+          event.tenantId,
+          cycle.cycleId,
+        );
+        if (refreshed) {
+          cycle = refreshed;
+        }
+      }
+    }
   }
 
   if (cycle.status !== 'awaiting_payment') {
@@ -148,24 +408,14 @@ export async function markCycleCompleteInTx(
     };
   }
 
-  // FR-005b + COMP-1 — read BOTH reactivation guards in ONE round-trip
-  // (COMP-1 L3 fold): the admin `blocked_from_auto_reactivation` override AND
-  // the GDPR-erased state. An erased member must never AUTO-reactivate:
-  // erasure keeps `status` + forces `blocked_from_auto_reactivation = FALSE`
-  // (the 0094 CHECK forbids the flag staying TRUE once its provenance is
-  // scrubbed), so the block flag alone no longer fences an erased member.
-  // Routing a payment that lands against a GDPR-anonymised tombstone to the
-  // admin-hold path surfaces it to an admin instead of silently reactivating
-  // it. `null` (member RLS-hidden / absent) → both guards treated as false →
-  // auto-complete (defensive — preserves the prior null-read behaviour).
-  const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
-    tx,
-    event.tenantId,
-    cycle.memberId,
-  );
-  const blocked = guards?.blocked === true;
-  const isErased = guards?.erased === true;
-
+  // `blocked` / `isErased` were already resolved above (one combined read,
+  // reused here — see COMP-1 L3 fold comment at the top of this function).
+  // An erased member must never AUTO-reactivate: erasure keeps `status` +
+  // forces `blocked_from_auto_reactivation = FALSE` (the 0094 CHECK forbids
+  // the flag staying TRUE once its provenance is scrubbed), so the block
+  // flag alone no longer fences an erased member. Routing a payment that
+  // lands against a GDPR-anonymised tombstone to the admin-hold path
+  // surfaces it to an admin instead of silently reactivating it.
   const closedAt = event.paidAt;
   if (blocked || isErased) {
     // Hold for admin review — NOT a terminal state. cycle moves to
@@ -214,7 +464,13 @@ export async function markCycleCompleteFromInvoicePaid(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
 ): Promise<MarkCycleCompleteOutcome> {
-  return runInTenant(deps.tenant, (tx) => markCycleCompleteInTx(deps, event, tx));
+  // Rolling-anchor refactor — `allowUnlinkedResolution=false`: this
+  // wrapper's tx commits SEPARATELY from F4's payment tx, so it must never
+  // run the unlinked-payment resolution hook (see `markCycleCompleteInTx`'s
+  // parameter docstring).
+  return runInTenant(deps.tenant, (tx) =>
+    markCycleCompleteInTx(deps, event, tx, false),
+  );
 }
 
 async function autoComplete(

@@ -77,6 +77,9 @@ interface DepsResult {
   linkInvoiceMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   bridgeMock: ReturnType<typeof vi.fn>;
+  countCyclesForMemberMock: ReturnType<typeof vi.fn>;
+  countSettledCyclesForMemberMock: ReturnType<typeof vi.fn>;
+  readGuardsMock: ReturnType<typeof vi.fn>;
 }
 
 function makeDeps(opts?: {
@@ -84,6 +87,28 @@ function makeDeps(opts?: {
   activeCycle?: RenewalCycle | null;
   planFrozenStatus?: 'found' | 'not_found' | 'plan_inactive';
   bridgeResult?: IssueInvoiceForRenewalResult;
+  /**
+   * FIX-1 (PR #173 review, 2026-07-09) — feeds the Step-1 classify call
+   * that gates `membershipCoverage`. Defaults to `2` (member has REAL
+   * terminal history in addition to the just-created cycle) so the
+   * classifier resolves `'renewal'` by default — the common "lapsed
+   * comeback" case this use-case was built for, preserving every
+   * pre-existing test's behaviour (exact window included).
+   */
+  countCyclesForMember?: number;
+  /**
+   * FIX-1 — feeds the SAME classify call's `settledCycleCountForMember`.
+   * Defaults to `1` (the predecessor cycle WAS settled) so pre-existing
+   * tests stay on `'renewal'` byte-identically.
+   */
+  settledCycleCountForMember?: number;
+  /**
+   * R2-FIX-2 (PR #173 round-2 review, 2026-07-09) — feeds the erased-guard
+   * read the Step-1 classify now consumes. Defaults to `false`. When `true`
+   * the classifier resolves `not_applicable('erased')` (`!== 'renewal'`) →
+   * the §86/4 OMITS the exact window even for a member WITH settled history.
+   */
+  erased?: boolean;
 }): DepsResult {
   const memberPlan =
     opts?.memberPlan === undefined
@@ -124,6 +149,17 @@ function makeDeps(opts?: {
   const bridgeMock = vi.fn(
     async (_input: IssueInvoiceForRenewalInput) => bridgeResult,
   );
+  const countCyclesForMemberMock = vi.fn(
+    async () => opts?.countCyclesForMember ?? 2,
+  );
+  const countSettledCyclesForMemberMock = vi.fn(
+    async () => opts?.settledCycleCountForMember ?? 1,
+  );
+  // R2-FIX-2 — the erased-guard read the Step-1 classify now consumes.
+  const readGuardsMock = vi.fn(async () => ({
+    blocked: false,
+    erased: opts?.erased ?? false,
+  }));
 
   const deps: AdminRenewLapsedMemberDeps = {
     tenant: { slug: TENANT_ID } as unknown as AdminRenewLapsedMemberDeps['tenant'],
@@ -132,11 +168,16 @@ function makeDeps(opts?: {
       insert: insertMock,
       acquireCycleLockInTx: acquireLockMock,
       linkInvoice: linkInvoiceMock,
+      countCyclesForMemberInTx: countCyclesForMemberMock,
+      countSettledCyclesForMemberInTx: countSettledCyclesForMemberMock,
     } as unknown as AdminRenewLapsedMemberDeps['cyclesRepo'],
     auditEmitter: {
       emitInTx: emitInTxMock,
     } as unknown as AdminRenewLapsedMemberDeps['auditEmitter'],
     clock: { now: () => new Date('2026-06-13T00:00:00.000Z') },
+    memberRenewalFlagsRepo: {
+      readReactivationGuardsInTx: readGuardsMock,
+    } as unknown as AdminRenewLapsedMemberDeps['memberRenewalFlagsRepo'],
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenMock,
     },
@@ -155,6 +196,9 @@ function makeDeps(opts?: {
     linkInvoiceMock,
     emitInTxMock,
     bridgeMock,
+    countCyclesForMemberMock,
+    countSettledCyclesForMemberMock,
+    readGuardsMock,
   };
 }
 
@@ -209,6 +253,79 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       asCycleId(CYCLE_UUID),
       'inv-1',
     );
+  });
+
+  // FIX-1 (PR #173 review, 2026-07-09) — mirrors confirm-renewal's
+  // classification-gated membershipCoverage (F1, final-review 2026-07-09).
+  describe('FIX-1 — membershipCoverage gated by shared classifier', () => {
+    it('real terminal history (settled predecessor) — bridge called WITH the exact membershipCoverage window (existing behaviour, explicit)', async () => {
+      const t = makeDeps({ countCyclesForMember: 2, settledCycleCountForMember: 1 });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as IssueInvoiceForRenewalInput;
+      expect(bridgeArg.membershipCoverage).toEqual({
+        kind: 'window',
+        fromIso: expect.any(String),
+        toIso: expect.any(String),
+      });
+    });
+
+    // Zero-history cohort — reachable via RenewalHealthCard's "Renew" CTA
+    // on a member whose renewal status is `null` (never had a cycle at
+    // all: `isLapsed(null) === true`). The fresh cycle created in Step 1
+    // is this member's ONLY cycle ever + unanchored.
+    it('zero-history cohort (member never had a cycle before) — bridge called WITHOUT membershipCoverage', async () => {
+      const t = makeDeps({ countCyclesForMember: 1, settledCycleCountForMember: 0 });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      expect(t.countCyclesForMemberMock).toHaveBeenCalledWith(
+        expect.anything(),
+        TENANT_ID,
+        MEMBER_ID,
+      );
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as Record<string, unknown>;
+      expect(bridgeArg).not.toHaveProperty('membershipCoverage');
+    });
+
+    // A predecessor cycle that was cancelled WITHOUT ever anchoring
+    // (genuinely never paid) must NOT count as "renewal history" —
+    // mirrors FIX-2's classifier fix.
+    it('cancelled-only-history (predecessor exists but NEVER settled) — still zero-history shape, bridge called WITHOUT membershipCoverage', async () => {
+      const t = makeDeps({ countCyclesForMember: 2, settledCycleCountForMember: 0 });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as Record<string, unknown>;
+      expect(bridgeArg).not.toHaveProperty('membershipCoverage');
+    });
+
+    // R2-FIX-2 (PR #173 round-2 review, 2026-07-09) — a GDPR-erased member
+    // (erasure NULLs risk_score + stamps erased_at but does NOT archive, so
+    // the isArchived precheck does not catch them) with REAL settled history
+    // must NOT print the exact period window on a §86/4: the classifier now
+    // reads the real erased flag → `not_applicable('erased')` (`!== 'renewal'`)
+    // → window omitted. Without the fix this member classified `'renewal'`
+    // and printed the real period for a scrubbed member.
+    it('erased member with settled history — bridge called WITHOUT membershipCoverage (R2-FIX-2)', async () => {
+      const t = makeDeps({
+        countCyclesForMember: 2,
+        settledCycleCountForMember: 1,
+        erased: true,
+      });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      // The real erased guard was consulted for THIS member.
+      expect(t.readGuardsMock).toHaveBeenCalledWith(
+        expect.anything(),
+        TENANT_ID,
+        MEMBER_ID,
+      );
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as Record<string, unknown>;
+      expect(bridgeArg).not.toHaveProperty('membershipCoverage');
+    });
   });
 
   it('member_has_active_cycle: the member already holds an active cycle (createCycleInTx no-ops) — no invoice issued', async () => {

@@ -1699,6 +1699,16 @@
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
+        "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
+        "membershipEffect": {
+          "legend": "What should happen to the membership?",
+          "keep": {
+            "label": "Document correction / duplicate refund — membership unaffected"
+          },
+          "cancelMembership": {
+            "label": "Refund and cancel membership — active renewal cycles will be cancelled"
+          }
+        },
         "errors": {
           "failed": "Credit note could not be issued.",
           "unknown": "An unknown error occurred. Please try again.",
@@ -1706,6 +1716,7 @@
           "refreshAction": "Refresh",
           "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
           "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
+          "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
           "codeFallback": "Error code: {code}"
         }
       },
@@ -2120,6 +2131,13 @@
         "planInfo": {
           "annualFee": "Annual fee: {amount} THB (before VAT)",
           "changePlan": "Change member's plan →"
+        },
+        "renewalContext": {
+          "renewal": "Current period ends {periodTo} — paying this bill renews the membership ({from} to {to}).",
+          "firstPayment": "Membership period has not started — paying this bill starts the 12-month period from the payment date.",
+          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members).",
+          "duplicateWarning": "This member already has an unpaid membership invoice, or their current period runs {periodTo} — another paid bill buys a further year.",
+          "duplicateWarningUnpaidOnly": "This member already has an unpaid membership invoice — another paid bill buys a further year."
         }
       },
       "detail": {
@@ -3235,6 +3253,7 @@
           "cancel": "Cancel",
           "submitting": "Recording…",
           "successToast": "Offline payment recorded — the cycle is now completed.",
+          "successReanchored": "Payment recorded — membership period now starts {date}.",
           "viewOrphanInvoice": "View invoice",
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",

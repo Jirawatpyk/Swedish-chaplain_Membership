@@ -132,6 +132,7 @@ function fakeDeps(opts: {
   gatewayMock: ReturnType<typeof vi.fn>;
   pauseRepoMock: ReturnType<typeof vi.fn>;
   listForCycleMock: ReturnType<typeof vi.fn>;
+  hasUnreconciledInvoiceMock: ReturnType<typeof vi.fn>;
 } {
   const emitMock = vi.fn(async () => {});
   const emitInTxMock = vi.fn(async () => {});
@@ -241,6 +242,11 @@ function fakeDeps(opts: {
       ? opts.pauseResult.latestOutreachAt ?? '2026-05-12T00:00:00Z'
       : null,
   }));
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5 no longer calls this
+  // method per-candidate (see `ctx.unreconciledMemberIds`); kept as a
+  // mock purely so the Gate 7.5 tests can assert it is NEVER invoked.
+  const hasUnreconciledInvoiceMock = vi.fn(async () => false);
+  const listUnreconciledMemberIdsMock = vi.fn(async () => new Set<string>());
 
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
@@ -248,6 +254,10 @@ function fakeDeps(opts: {
       emit: emitMock,
       emitInTx: emitInTxMock,
     } as unknown as RenewalsDeps['auditEmitter'],
+    memberRenewalFlagsRepo: {
+      hasUnreconciledPaidMembershipInvoice: hasUnreconciledInvoiceMock,
+      listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
+    } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
     reminderEventRepo: {
       insertIfAbsent: insertReminderMock,
       transitionStatus: transitionReminderMock,
@@ -290,6 +300,7 @@ function fakeDeps(opts: {
     gatewayMock,
     pauseRepoMock,
     listForCycleMock,
+    hasUnreconciledInvoiceMock,
   };
 }
 
@@ -300,6 +311,11 @@ const happyCtx: DispatchContext = {
   correlationId: 'corr-1',
   requestId: null,
   nowIso: NOW_ISO,
+  // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5's skip-set is now an
+  // in-memory Set on the context, not a per-candidate DB call. Empty by
+  // default so every pre-existing test below reaches Gate 8+ unaffected;
+  // the dedicated Gate 7.5 tests override this field explicitly.
+  unreconciledMemberIds: new Set(),
 };
 
 describe('dispatchOneCycle', () => {
@@ -552,6 +568,82 @@ describe('dispatchOneCycle', () => {
       expect(result.kind).toBe('skipped');
       if (result.kind !== 'skipped') return;
       expect(result.reason).toBe('tenant_misconfigured');
+    });
+
+    // -----------------------------------------------------------------------
+    // Gate 7.5 — rolling-anchor rev 2 (design 2026-07-08 §4) unreconciled
+    // paid membership invoice belt-and-suspenders skip-guard.
+    // -----------------------------------------------------------------------
+
+    // FIX-6 (PR #173 review, 2026-07-09) — Gate 7.5 is now an in-memory
+    // lookup against `ctx.unreconciledMemberIds` (the caller's batched
+    // tenant-wide read), not a per-candidate call to
+    // `hasUnreconciledPaidMembershipInvoice`. Every test below asserts
+    // `hasUnreconciledInvoiceMock` is NEVER called — proving the N+1
+    // round-trip is genuinely gone — and drives the gate via the ctx set.
+    it('Gate 7.5 — unreconciled paid membership invoice: skip + emit renewal_reminder_skipped, gateway never called', async () => {
+      const { deps, emitMock, gatewayMock, hasUnreconciledInvoiceMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('unreconciled_paid_membership_invoice');
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
+      expect(gatewayMock).not.toHaveBeenCalled();
+      expect(emitMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'renewal_reminder_skipped',
+          payload: expect.objectContaining({
+            reason: 'unreconciled_paid_membership_invoice',
+          }),
+        }),
+        expect.anything(),
+      );
+    });
+
+    it('Gate 7.5 — fires AFTER member-level gates: member_archived still wins even when the invoice is unreconciled', async () => {
+      const { deps, hasUnreconciledInvoiceMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({ member: { status: 'archived' as const } }),
+        ctx,
+      );
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      // Gate 4 (member_archived) short-circuits BEFORE Gate 7.5 is reached.
+      expect(result.reason).toBe('member_archived');
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
+    });
+
+    it('Gate 7.5 — fires BEFORE not_due_today: an unreconciled invoice skips even when no step is due', async () => {
+      const { deps, hasUnreconciledInvoiceMock, gatewayMock } = fakeDeps({});
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set([MEMBER_ID]) };
+      // expires_at = today + 90 → no T-30 step matches today (would
+      // otherwise resolve to not_due_today at Gate 8).
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: { expiresAt: '2026-08-13T00:00:00.000Z' } as Partial<RenewalCycle>,
+        }),
+        ctx,
+      );
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('unreconciled_paid_membership_invoice');
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
+      expect(gatewayMock).not.toHaveBeenCalled();
+    });
+
+    it('Gate 7.5 — member NOT in the skip-set: dispatch proceeds normally to Gate 8+ (sent)', async () => {
+      const { deps, hasUnreconciledInvoiceMock, gatewayMock } = fakeDeps({});
+      // happyCtx's default unreconciledMemberIds is empty — a DIFFERENT
+      // member's id in the set must not affect THIS member either.
+      const ctx = { ...happyCtx, unreconciledMemberIds: new Set(['some-other-member']) };
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), ctx);
+      expect(result.kind).toBe('sent');
+      expect(hasUnreconciledInvoiceMock).not.toHaveBeenCalled();
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
     });
 
     it('Gate 8 — step not due today: silent skip not_due_today (no audit)', async () => {

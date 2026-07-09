@@ -11,7 +11,8 @@ function cycle(overrides: Partial<RenewalCycle>): RenewalCycle {
     periodFrom: '2026-01-01T00:00:00.000Z', periodTo: '2027-01-01T00:00:00.000Z',
     expiresAt: '2027-01-01T00:00:00.000Z', cycleLengthMonths: 12, tierAtCycleStart: 'regular',
     planIdAtCycleStart: 'p', frozenPlanPriceThb: '50000.00', frozenPlanTermMonths: 12,
-    frozenPlanCurrency: 'THB', linkedCreditNoteId: null, createdAt: '2026-01-01T00:00:00.000Z',
+    frozenPlanCurrency: 'THB', linkedCreditNoteId: null, anchoredAt: null, anchorInvoiceId: null,
+    createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z', closedAt: null, closedReason: null, linkedInvoiceId: null,
     enteredPendingAt: null, ...overrides,
   } as RenewalCycle;

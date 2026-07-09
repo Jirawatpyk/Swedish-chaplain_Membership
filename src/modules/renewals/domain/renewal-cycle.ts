@@ -119,6 +119,11 @@ interface RenewalCycleBase {
 
   readonly linkedCreditNoteId: string | null;
 
+  /** Rolling-anchor discriminator — non-null once a real payment (or the R4 backfill) anchored this cycle. */
+  readonly anchoredAt: string | null;
+  /** Forensic reference to the anchoring invoice; null for backfilled pre-system payments. */
+  readonly anchorInvoiceId: string | null;
+
   readonly createdAt: string;
   readonly updatedAt: string;
 }

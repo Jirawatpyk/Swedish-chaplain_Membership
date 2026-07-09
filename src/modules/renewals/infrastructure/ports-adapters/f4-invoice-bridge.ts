@@ -39,6 +39,7 @@ import {
   makeIssueInvoiceDeps,
   makeRecordPaymentDeps,
   type F4InvoicePaidEvent,
+  type CreateInvoiceDraftInput,
 } from '@/modules/invoicing';
 
 export type F4OfflinePaymentMethod = 'bank_transfer' | 'cash' | 'cheque';
@@ -63,6 +64,18 @@ export interface IssueAndMarkPaidInput {
    * assigned into this tax-document price slot (I-1, 068 speckit-review).
    */
   readonly frozenPlanPriceThb: ThbDecimal;
+  /**
+   * Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — the
+   * exact coverage window for the renewal §86/4, threaded verbatim into
+   * `createInvoiceDraft`'s `membershipCoverage`. `mark-paid-offline.ts`
+   * supplies `{ kind: 'window', fromIso, toIso }` (the LOCKED cycle's
+   * `periodTo → periodTo + frozenPlanTermMonths`) when the payment
+   * classifies as a RENEWAL; it omits the field entirely (undefined) on
+   * a first-payment classification, so `createInvoiceDraft` falls back
+   * to its own default (`{ kind: 'from_payment' }` — the anchor doesn't
+   * exist yet).
+   */
+  readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   readonly paymentMethod: F4OfflinePaymentMethod;
   readonly paymentReference: string;
   /** YYYY-MM-DD Bangkok-local. */
@@ -142,6 +155,13 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
       // has a printed receipt or out-of-band acknowledgement).
       autoEmailOnIssue: false,
       renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+      // exactOptionalPropertyTypes — omit the key entirely rather than
+      // assign an explicit `undefined` when the caller didn't classify
+      // this as a renewal (first-payment path defaults to `from_payment`
+      // inside `createInvoiceDraft`).
+      ...(input.membershipCoverage !== undefined
+        ? { membershipCoverage: input.membershipCoverage }
+        : {}),
     });
     if (!created.ok) {
       return err({

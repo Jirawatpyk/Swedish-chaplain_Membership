@@ -107,6 +107,9 @@ describe('CycleAdminActions mark-paid-offline — EN i18n coverage (DV-5)', () =
       'cancel',
       'submitting',
       'successToast',
+      // Task 7 (rolling-anchor refactor) — the first-payment re-anchor
+      // branch's distinct success copy.
+      'successReanchored',
       'viewOrphanInvoice',
     ]) {
       expect(typeof block[k], `markPaidOffline.${k}`).toBe('string');

@@ -28,7 +28,12 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 65 unique event types (F8-completion slice 2: +1 — renewal_entered_awaiting_payment)', () => {
+  it('contains 66 unique event types (renewal rolling-anchor: +1 — renewal_cycle_reanchored)', () => {
+    // Renewal rolling-anchor refactor (design 2026-07-08, migration 0238):
+    // 65 → 66 (added `renewal_cycle_reanchored` — emitted when the shared
+    // payment classifier re-anchors a first-payment cycle instead of
+    // completing it; see docs/superpowers/specs/2026-07-08-renewal-
+    // rolling-anchor-design.md § 5).
     // F8-completion slice 2: 64 → 65 (added the T-0 payability-flip audit
     // `renewal_entered_awaiting_payment` with a `source: 'cron' | 'confirm'`
     // discriminator — migration 0215. Emitted by the enter-awaiting-payment
@@ -47,7 +52,7 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     // 3 lapsed-pending reminder-ladder events `_t-7` / `_t-3` / `_t-1`).
     // K6 (prior): 54 → 55 (added cron_bearer_auth_rejected per spec.md
     // line 365 taxonomy + verifyCronBearer 401 path now emits this audit).
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(65);
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(66);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });
@@ -69,13 +74,18 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     expect(isF8AuditEventType(null)).toBe(false);
   });
 
-  it('contains the lifecycle anchor events (data-model.md § 4)', () => {
+  // `renewal_cycle_reanchored` postdates specs/011-renewal-reminders/
+  // data-model.md § 4 — it ships with the rolling-anchor refactor
+  // (docs/superpowers/specs/2026-07-08-renewal-rolling-anchor-design.md,
+  // migration 0238); the rest of the lifecycle set is data-model.md § 4.
+  it('contains the lifecycle anchor events (data-model.md § 4 + rolling-anchor spec)', () => {
     const lifecycle = [
       'renewal_cycle_created',
       'renewal_cycle_cancelled',
       'renewal_lapsed',
       'renewal_completed',
       'renewal_completed_post_lapse',
+      'renewal_cycle_reanchored',
       'renewal_cross_tenant_probe',
     ];
     for (const e of lifecycle) {
@@ -103,16 +113,18 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
 });
 
 describe('SKIP_REASONS catalogue', () => {
-  it('K12-S (TST-K-5): contains 13 unique skip reasons (runtime complement to compile-time _AssertSkipReasonCount)', () => {
-    // The compile-time `_AssertSkipReasonCount extends 13` in
+  it('K12-S (TST-K-5): contains 14 unique skip reasons (runtime complement to compile-time _AssertSkipReasonCount)', () => {
+    // The compile-time `_AssertSkipReasonCount extends 14` in
     // dispatch-one-cycle.ts is the primary pin, but a single-commit
-    // change that flips both the literal `13` AND the tuple in lock-
+    // change that flips both the literal `14` AND the tuple in lock-
     // step would compile silently. This runtime check duplicates
     // the safeguard so each commit has a chance to surface drift.
     // Mirrors the dual-coverage already in place for
     // F8_AUDIT_EVENT_TYPES (compile-time _AssertF8AuditEventCount +
     // runtime `expect(F8_AUDIT_EVENT_TYPES.length).toBe(N)` above).
-    expect(SKIP_REASONS.length).toBe(13);
+    // Rolling-anchor rev 2 (2026-07-08 §4) added
+    // `unreconciled_paid_membership_invoice` (13 → 14).
+    expect(SKIP_REASONS.length).toBe(14);
     const set = new Set(SKIP_REASONS);
     expect(set.size).toBe(SKIP_REASONS.length);
   });
