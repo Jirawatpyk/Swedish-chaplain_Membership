@@ -142,7 +142,10 @@ export type AdminRenewLapsedMemberError =
   | { readonly kind: 'server_error'; readonly message: string };
 
 export interface AdminRenewLapsedMemberDeps
-  extends Pick<RenewalsDeps, 'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock'> {
+  extends Pick<
+    RenewalsDeps,
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'memberRenewalFlagsRepo'
+  > {
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
   readonly memberPlanLookup: MemberPlanLookupPort;
@@ -172,7 +175,7 @@ export async function adminRenewLapsedMember(
   };
 
   let stateResult: Result<
-    { cycle: RenewalCycle; isFirstPayment: boolean },
+    { cycle: RenewalCycle; omitMembershipCoverage: boolean },
     AdminRenewLapsedMemberError
   >;
   try {
@@ -234,6 +237,27 @@ export async function adminRenewLapsedMember(
       // (which excludes it) is what actually discriminates.
       // FIX-8(a) (PR #173 review, 2026-07-09) — shared loader (was inline
       // duplicated at every settlement site).
+      //
+      // R2-FIX-2 (PR #173 round-2 review, 2026-07-09) — read the REAL
+      // GDPR-erased guard (was hardcoded `memberErased: false`) and gate
+      // the printed window on `classification.kind === 'renewal'` (was the
+      // narrower `=== 'first_payment'` boolean). Erasure NULLs risk_score +
+      // stamps erased_at but does NOT archive the member, so the
+      // `member.isArchived` precheck above does NOT catch an erased member;
+      // without reading the flag, an erased member with settled history
+      // classified `renewal` and printed the exact next-period window on a
+      // §86/4 for a scrubbed member. Now the erased shape resolves
+      // `not_applicable('erased')` — which, like `first_payment`, is
+      // `!== 'renewal'` → the window is omitted (`createInvoiceDraft` falls
+      // back to its `from_payment` default). This is the EXACT pattern
+      // FIX-7(d) applied to confirm-renewal in this same PR; it gates only
+      // the invoice TEXT, not whether the renewal is allowed (a hard erased
+      // refusal is a separate COMP-1 policy decision).
+      const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+        tx,
+        input.tenantId,
+        input.memberId,
+      );
       const { cycleCountForMember, settledCycleCountForMember } =
         await loadClassificationCounts(
           deps,
@@ -246,15 +270,11 @@ export async function adminRenewLapsedMember(
         cycleCountForMember,
         settledCycleCountForMember,
         openCycle: { status: 'awaiting_payment', anchoredAt: outcome.cycle.anchoredAt },
-        // Mirrors confirm-renewal's rationale: this gate only chooses
-        // which invoice TEXT to print, not whether the action is allowed
-        // — an erased member reaching this admin action is out of scope
-        // for THIS fix (COMP-1 erasure guards are a separate surface).
-        memberErased: false,
+        memberErased: guards?.erased === true,
       });
       return ok({
         cycle: outcome.cycle,
-        isFirstPayment: classification.kind === 'first_payment',
+        omitMembershipCoverage: classification.kind !== 'renewal',
       });
     });
   } catch (e) {
@@ -302,7 +322,7 @@ export async function adminRenewLapsedMember(
     return err({ kind: 'server_error', message });
   }
   if (!stateResult.ok) return err(stateResult.error);
-  const { cycle, isFirstPayment } = stateResult.value;
+  const { cycle, omitMembershipCoverage } = stateResult.value;
   const cycleId: CycleId = cycle.cycleId;
 
   // L2 (068 security review) — derive plan_year SERVER-SIDE. The renewal
@@ -337,7 +357,10 @@ export async function adminRenewLapsedMember(
   // 'from_payment' }` default, matching confirm-renewal's + mark-paid-
   // offline's first-payment branch — the printed window would otherwise
   // describe a period that gets re-anchored away once the member pays.
-  const membershipCoverage = isFirstPayment
+  // R2-FIX-2 — `omitMembershipCoverage` is now `classification.kind !==
+  // 'renewal'` (computed in Step 1), so the GDPR-erased `not_applicable`
+  // shape ALSO omits the window, not only `first_payment`.
+  const membershipCoverage = omitMembershipCoverage
     ? undefined
     : ({
         kind: 'window' as const,

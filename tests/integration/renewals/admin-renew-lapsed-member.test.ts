@@ -184,6 +184,8 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       planLookupForRenewal: real.planLookupForRenewal,
       memberPlanLookup: real.memberPlanLookup,
       cycleIdFactory: real.cycleIdFactory,
+      // R2-FIX-2 — the real erased-guard read the Step-1 classify now consumes.
+      memberRenewalFlagsRepo: real.memberRenewalFlagsRepo,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };
   }
