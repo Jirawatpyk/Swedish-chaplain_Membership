@@ -303,6 +303,15 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     // Without it, paying the fresh comeback cycle below would re-anchor it
     // instead of completing + creating the next cycle, breaking this test's
     // whole "the loop closes" premise. Mirrors e8da485b's pattern.
+    //
+    // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set to `periodFrom`:
+    // a genuinely lapsed member (was actively paying, THEN missed a
+    // renewal) has real SETTLED history — `countSettledCyclesForMemberInTx`
+    // (status='completed' OR anchored_at IS NOT NULL) only counts a
+    // predecessor as "settled" if it was ever anchored to a real payment.
+    // Without this, the classifier's F2 fix would (correctly) treat this
+    // member as having NEVER actually paid, misclassifying the comeback
+    // payment below as `first_payment` instead of `renewal`.
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
@@ -318,6 +327,7 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
         frozenPlanPriceThb: EXPECTED_FROZEN_THB,
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        anchoredAt: new Date('2020-01-01T00:00:00Z'),
         closedAt: new Date('2021-01-01T00:00:00Z'),
         closedReason: 'lapsed',
       }),
@@ -450,6 +460,50 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     expect(next?.periodFrom.toISOString()).toBe(
       freshCycle[0]!.periodTo.toISOString(),
     );
+  }, 180_000);
+
+  // FIX-1 (PR #173 review, 2026-07-09) — the zero-history cohort, reachable
+  // via `RenewalHealthCard`'s "Renew" CTA on a member whose renewal status
+  // is `null` (never had a cycle at all — `isLapsed(null) === true`). The
+  // fresh cycle created here is this member's ONLY cycle ever, unanchored
+  // — the shared classifier's `first_payment` shape. The §86/4 must print
+  // the GENERIC "from month of payment" wording, not an exact window that
+  // does not exist yet (mirrors confirm-renewal's identical fix).
+  it('zero-history cohort: a member who NEVER had a renewal cycle → §86/4 prints the GENERIC coverage wording, not an exact window', async () => {
+    const memberId = await seedLapsedMember(); // seeds member + contact, NO cycle at all
+
+    const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-zero-history-${memberId}`,
+      requestId: `req-zh-${memberId.slice(0, 8)}`,
+    });
+    if (!result.ok) {
+      throw new Error(`admin renew failed: ${JSON.stringify(result.error)}`);
+    }
+    expect(result.value.cycleStatus).toBe('awaiting_payment');
+
+    const membershipLine = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          descriptionEn: invoiceLines.descriptionEn,
+          descriptionTh: invoiceLines.descriptionTh,
+        })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
+    );
+    // Generic fallback wording (createInvoiceDraft's `{ kind: 'from_payment' }`
+    // default) — NOT an exact "(coverage X to Y)" window.
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionEn.includes('(12 months, effective from the month of payment)'),
+      ),
+    ).toBe(true);
+    expect(
+      membershipLine.some((l) => l.descriptionEn.includes('(coverage ')),
+    ).toBe(false);
   }, 180_000);
 
   it('member_has_active_cycle: renewing a member who already has an active cycle creates NO second cycle', async () => {

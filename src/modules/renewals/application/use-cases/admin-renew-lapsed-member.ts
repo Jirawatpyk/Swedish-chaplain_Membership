@@ -81,6 +81,7 @@ import {
   type CreateCycleInTxDeps,
 } from './create-cycle-in-tx';
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
+import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
@@ -169,7 +170,7 @@ export async function adminRenewLapsedMember(
   };
 
   let stateResult: Result<
-    { cycle: RenewalCycle },
+    { cycle: RenewalCycle; isFirstPayment: boolean },
     AdminRenewLapsedMemberError
   >;
   try {
@@ -212,7 +213,49 @@ export async function adminRenewLapsedMember(
       if (outcome.kind === 'skipped_active_exists') {
         return err({ kind: 'member_has_active_cycle' as const });
       }
-      return ok({ cycle: outcome.cycle });
+
+      // FIX-1 (PR #173 review, 2026-07-09) — mirror confirm-renewal's
+      // classification gate (F1, final-review 2026-07-09) so the §86/4
+      // printed below OMITS the exact-window text for a `first_payment`
+      // shape: a member reachable ONLY via `RenewalHealthCard`'s
+      // "Renew"-on-null-status affordance (`isLapsed(null)` — the
+      // zero-history cohort that never had a renewal cycle at all) gets
+      // this admin-created cycle as their FIRST ever cycle. Without this
+      // gate, that member's first invoice printed an exact window that
+      // does not exist yet — `onPaid` re-anchors a first-payment cycle to
+      // the actual payment month instead of completing it (same rationale
+      // as confirm-renewal's docstring). Members with real terminal
+      // history (a genuinely SETTLED predecessor cycle) keep the exact
+      // window — this is the common "lapsed comeback" case this use-case
+      // was built for. `countCyclesForMember` here already includes the
+      // just-created row (same tx), so `settledCycleCountForMember`
+      // (which excludes it) is what actually discriminates.
+      const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
+        tx,
+        input.tenantId,
+        input.memberId,
+      );
+      const settledCycleCountForMember =
+        await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+          tx,
+          input.tenantId,
+          input.memberId,
+          outcome.cycle.cycleId,
+        );
+      const classification = classifyMembershipPayment({
+        cycleCountForMember,
+        settledCycleCountForMember,
+        openCycle: { status: 'awaiting_payment', anchoredAt: outcome.cycle.anchoredAt },
+        // Mirrors confirm-renewal's rationale: this gate only chooses
+        // which invoice TEXT to print, not whether the action is allowed
+        // — an erased member reaching this admin action is out of scope
+        // for THIS fix (COMP-1 erasure guards are a separate surface).
+        memberErased: false,
+      });
+      return ok({
+        cycle: outcome.cycle,
+        isFirstPayment: classification.kind === 'first_payment',
+      });
     });
   } catch (e) {
     // L1 (068 security review) — concurrent double-submit. The loser's
@@ -259,7 +302,7 @@ export async function adminRenewLapsedMember(
     return err({ kind: 'server_error', message });
   }
   if (!stateResult.ok) return err(stateResult.error);
-  const cycle = stateResult.value.cycle;
+  const { cycle, isFirstPayment } = stateResult.value;
   const cycleId: CycleId = cycle.cycleId;
 
   // L2 (068 security review) — derive plan_year SERVER-SIDE. The renewal
@@ -286,17 +329,30 @@ export async function adminRenewLapsedMember(
   // Step-1 creation above), so the §86/4 prints the EXACT window
   // (`periodFrom → periodTo`) instead of the generic "12 months from month
   // of payment" fallback.
+  //
+  // FIX-1 (PR #173 review, 2026-07-09) — classification-gated (was
+  // unconditional). A `first_payment` shape (the zero-history cohort —
+  // see the classify call in Step 1 above) OMITS `membershipCoverage`
+  // entirely: `createInvoiceDraft` falls back to its own `{ kind:
+  // 'from_payment' }` default, matching confirm-renewal's + mark-paid-
+  // offline's first-payment branch — the printed window would otherwise
+  // describe a period that gets re-anchored away once the member pays.
+  const membershipCoverage = isFirstPayment
+    ? undefined
+    : ({
+        kind: 'window' as const,
+        fromIso: cycle.periodFrom,
+        toIso: cycle.periodTo,
+      });
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycle.planIdAtCycleStart,
     planYear,
     frozenPlanPriceThb: cycle.frozenPlanPriceThb,
-    membershipCoverage: {
-      kind: 'window',
-      fromIso: cycle.periodFrom,
-      toIso: cycle.periodTo,
-    },
+    // exactOptionalPropertyTypes — omit the key entirely on the
+    // first-payment branch rather than assign an explicit `undefined`.
+    ...(membershipCoverage !== undefined ? { membershipCoverage } : {}),
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,
