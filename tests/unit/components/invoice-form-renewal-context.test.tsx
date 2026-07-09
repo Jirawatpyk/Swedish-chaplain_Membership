@@ -109,7 +109,13 @@ describe('<RenewalContextPanel> — informational context line (3 classification
 });
 
 describe('<RenewalContextPanel> — duplicate-billing warning (non-blocking, amber)', () => {
-  it('shows when an unpaid membership invoice already exists', () => {
+  // FIX-7 (PR #173 review, 2026-07-09) — periodTo is null whenever the
+  // warning fires purely from `hasUnpaidMembershipInvoice` (non-renewal
+  // classifications never carry a periodTo). Pins the FULL sentence to
+  // prove the unpaid-only copy variant is used — the original single-key
+  // copy interpolated the missing-value '—' literally, producing
+  // "...runs — — another paid bill..." (two adjacent em-dashes).
+  it('shows when an unpaid membership invoice already exists (periodTo null) — unpaid-only copy, no "— —"', () => {
     renderPanel({
       classification: { kind: 'first_payment' },
       periodTo: null,
@@ -119,7 +125,10 @@ describe('<RenewalContextPanel> — duplicate-billing warning (non-blocking, amb
     const warning = screen.getByTestId('renewal-duplicate-warning');
     expect(warning).toHaveAttribute('role', 'status');
     expect(warning.querySelector('svg')).not.toBeNull();
-    expect(warning).toHaveTextContent(/another paid bill buys a further year/);
+    expect(warning).toHaveTextContent(
+      'This member already has an unpaid membership invoice — another paid bill buys a further year.',
+    );
+    expect(warning.textContent).not.toMatch(/—\s*—/);
   });
 
   it('shows for a renewal-classified member whose period ends more than 6 months away', () => {

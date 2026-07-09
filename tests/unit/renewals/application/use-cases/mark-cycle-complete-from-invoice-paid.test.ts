@@ -635,6 +635,43 @@ describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-pa
     expect(readGuardsMock).toHaveBeenCalledTimes(1);
   });
 
+  // FIX-7(e) (PR #173 review, 2026-07-09) — the sibling `'upcoming'` open
+  // status (the OTHER status `toOpenCycleClassifierInput` folds into the
+  // classifier's open set alongside `'awaiting_payment'`) was untested for
+  // the LINKED-path re-anchor branch. A linked invoice + an `'upcoming'`,
+  // never-anchored, only-ever cycle must re-anchor exactly like the
+  // `'awaiting_payment'` shape above.
+  it('linked invoice + status=upcoming, only-cycle unanchored member → reanchored (NOT completed)', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const { deps, reanchorMock, transitionMock, insertMock, emitInTxMock } =
+      fakeDeps({ cycle, countCyclesForMember: 1 });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('reanchored');
+    if (r.kind === 'reanchored') {
+      expect(r.cycleId).toBe(CYCLE_UUID);
+      expect(r.memberId).toBe(MEMBER_ID);
+    }
+    expect(reanchorMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).toHaveBeenCalledWith(
+      SENTINEL_TX,
+      TENANT_ID,
+      CYCLE_UUID,
+      expect.objectContaining({ anchorInvoiceId: INVOICE_UUID }),
+    );
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(insertMock).not.toHaveBeenCalled();
+    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+      type: 'renewal_cycle_reanchored',
+      payload: expect.objectContaining({
+        cycle_id: CYCLE_UUID,
+        member_id: MEMBER_ID,
+        invoice_id: INVOICE_UUID,
+      }),
+    });
+  });
+
   it('F3 (final-review): degraded mode (wrapper) + first-payment shape → NOT reanchored, falls through to legacy complete flow', async () => {
     // Same first-payment shape as the happy-path test above (only cycle,
     // never anchored, linked to THIS invoice), but driven through the

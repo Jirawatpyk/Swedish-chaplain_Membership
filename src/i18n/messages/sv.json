@@ -1714,7 +1714,7 @@
           "unknown": "Ett okänt fel uppstod. Försök igen.",
           "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
-          "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota.",
+          "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
           "codeFallback": "Felkod: {code}"
         }
       },
@@ -2134,7 +2134,8 @@
           "renewal": "Nuvarande period slutar {periodTo} — betalning av denna faktura förnyar medlemskapet ({from} till {to}).",
           "firstPayment": "Medlemsperioden har inte börjat — betalning startar 12-månadersperioden från betalningsdatumet.",
           "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar).",
-          "duplicateWarning": "Medlemmen har redan en obetald medlemsfaktura, eller så löper nuvarande period till {periodTo} — ytterligare en betald faktura köper ett år till."
+          "duplicateWarning": "Medlemmen har redan en obetald medlemsfaktura, eller så löper nuvarande period till {periodTo} — ytterligare en betald faktura köper ett år till.",
+          "duplicateWarningUnpaidOnly": "Medlemmen har redan en obetald medlemsfaktura — ytterligare en betald faktura köper ett år till."
         }
       },
       "detail": {

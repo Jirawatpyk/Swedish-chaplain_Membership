@@ -93,6 +93,13 @@ function fakeDeps(args: {
    * `'renewal'` byte-identically.
    */
   settledCycleCountForMember?: number;
+  /**
+   * FIX-7(d) (PR #173 review, 2026-07-09) — feeds the real
+   * `readReactivationGuardsInTx` read that now backs the classify call's
+   * `memberErased` flag (was hardcoded `false`). Defaults to `false` so
+   * every pre-existing test stays on its intended classification.
+   */
+  memberErased?: boolean;
 }): {
   deps: ConfirmRenewalDeps;
   planLookupMock: ReturnType<typeof vi.fn>;
@@ -103,6 +110,7 @@ function fakeDeps(args: {
   emitInTxMock: ReturnType<typeof vi.fn>;
   countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
   countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
 } {
   // First findByIdInTx call returns the seed cycle; any subsequent call
   // (the CAS-loss re-read) returns `rereadCycle` (defaults to the seed).
@@ -162,6 +170,10 @@ function fakeDeps(args: {
   const countSettledCyclesForMemberInTxMock = vi.fn(
     async () => args.settledCycleCountForMember ?? 1,
   );
+  const readReactivationGuardsInTxMock = vi.fn(async () => ({
+    blocked: false,
+    erased: args.memberErased ?? false,
+  }));
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
   };
@@ -198,6 +210,9 @@ function fakeDeps(args: {
     clock: { now: () => new Date('2026-06-13T00:00:00.000Z') },
     f4InvoicingBridge: invoiceBridge,
     planLookupForRenewal: planLookup,
+    memberRenewalFlagsRepo: {
+      readReactivationGuardsInTx: readReactivationGuardsInTxMock,
+    } as unknown as ConfirmRenewalDeps['memberRenewalFlagsRepo'],
   };
   return {
     deps,
@@ -209,6 +224,7 @@ function fakeDeps(args: {
     emitInTxMock,
     countCyclesForMemberInTxMock,
     countSettledCyclesForMemberInTxMock,
+    readReactivationGuardsInTxMock,
   };
 }
 
@@ -384,6 +400,33 @@ describe('confirmRenewal (F1, final-review 2026-07-09) — membershipCoverage ga
     });
     const r = await confirmRenewal(deps, baseInput);
     expect(r.ok).toBe(true);
+    const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(bridgeInput).not.toHaveProperty('membershipCoverage');
+  });
+
+  // FIX-7(d) (PR #173 review, 2026-07-09) — memberErased now reads the
+  // REAL guard (was hardcoded `false`). An erased member classifies
+  // `not_applicable(erased)`, not `renewal` — the §86/4 must NOT print an
+  // exact window it cannot vouch for, even though the shape otherwise
+  // looks like a normal renewal (predecessor history, anchored cycle).
+  it('erased member (real guard, not hardcoded) — classification not_applicable, bridge called WITHOUT membershipCoverage', async () => {
+    const cycle = buildCycle({ anchoredAt: '2025-06-01T00:00:00Z' });
+    const { deps, invoiceBridgeMock, readReactivationGuardsInTxMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 2,
+      settledCycleCountForMember: 1,
+      memberErased: true,
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(readReactivationGuardsInTxMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      MEMBER_UUID,
+    );
     const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
       string,
       unknown

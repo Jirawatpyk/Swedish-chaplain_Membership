@@ -149,7 +149,7 @@ export type ConfirmRenewalError =
 export interface ConfirmRenewalDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock'
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'memberRenewalFlagsRepo'
   > {
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
@@ -416,11 +416,20 @@ export async function confirmRenewal(
     // here (every other status returned `cycle_not_payable` above) — the
     // ternary mirrors `mark-paid-offline.ts`'s existing shape rather than
     // asserting, so a defensive `null`-style fallback isn't needed.
-    // `memberErased: false` — an erased member's session is invalidated
-    // at erasure time (COMP-1), so this member-facing confirm route is
-    // unreachable for them; the classifier's erased gate matters only at
-    // the actual re-anchor sites, not here where we merely choose which
-    // text to print on the draft invoice.
+    // FIX-7(d) (PR #173 review, 2026-07-09) — was a hardcoded
+    // `memberErased: false` on the reasoning "an erased member's session
+    // is invalidated at erasure time (COMP-1), so this route is
+    // unreachable for them". `mark-cycle-complete-from-invoice-paid.ts`'s
+    // own history shows that exact reasoning was WRONG once already (a
+    // hardcoded `false` there silently let an erased member's
+    // first-payment cycle re-anchor) — read the REAL flag here too,
+    // defensively, in the SAME round-trip pattern every other settlement
+    // site uses.
+    const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+      tx,
+      input.tenantId,
+      resolvedCycle.memberId,
+    );
     const cycleCountForMember = await deps.cyclesRepo.countCyclesForMemberInTx(
       tx,
       input.tenantId,
@@ -443,17 +452,24 @@ export async function confirmRenewal(
         resolvedCycle.status === 'awaiting_payment'
           ? { status: 'awaiting_payment', anchoredAt: resolvedCycle.anchoredAt }
           : { status: 'upcoming', anchoredAt: resolvedCycle.anchoredAt },
-      memberErased: false,
+      memberErased: guards?.erased === true,
     });
-    const isFirstPayment = classification.kind === 'first_payment';
+    // FIX-7(d) — widened from `=== 'first_payment'`: an erased member's
+    // classification resolves `not_applicable(erased)`, not `first_payment`
+    // or `renewal`; printing the exact next-period window on a §86/4 for a
+    // GDPR-erased member is just as wrong as printing it for a genuine
+    // first-payment member (the window describes a period this classifier
+    // call says should not be trusted) — omit it for ANY non-`renewal`
+    // result, not only the literal `first_payment` shape.
+    const omitMembershipCoverage = classification.kind !== 'renewal';
 
-    return ok({ cycle: resolvedCycle, planChanged, isFirstPayment });
+    return ok({ cycle: resolvedCycle, planChanged, omitMembershipCoverage });
   });
   if (!stateResult.ok) return err(stateResult.error);
   const {
     cycle: cycleAfterPlanChange,
     planChanged,
-    isFirstPayment,
+    omitMembershipCoverage,
   } = stateResult.value;
 
   // ---- Step 3: F4 invoice creation OUTSIDE F8 tx
@@ -493,8 +509,11 @@ export async function confirmRenewal(
   // 'from_payment' }` default, matching `mark-paid-offline.ts`'s
   // first-payment branch — the re-anchored period doesn't exist yet at
   // invoice-issue time (re-anchor happens later, at the F4-paid callback
-  // site, when the member actually pays).
-  const membershipCoverage = isFirstPayment
+  // site, when the member actually pays). FIX-7(d) — ALSO omitted for the
+  // (previously unreachable-in-theory, now defensively handled)
+  // GDPR-erased `not_applicable` shape; see `omitMembershipCoverage`'s
+  // Step-1 computation above.
+  const membershipCoverage = omitMembershipCoverage
     ? undefined
     : ({
         kind: 'window' as const,

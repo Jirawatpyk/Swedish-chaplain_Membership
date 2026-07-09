@@ -30,6 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { addMonthsUtc } from '@/lib/dates';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { SearchableCombobox } from './searchable-combobox';
 import type { ComboboxOption } from './searchable-combobox';
 
@@ -130,7 +131,13 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
   // Computed at render, never during SSR — this panel only mounts once the
   // client-side fetch resolves (see `CreateDraftForm`), so there is no
   // hydration-mismatch risk from reading the wall clock here.
-  const todayIso = new Date().toISOString();
+  //
+  // FIX-7 (PR #173 review, 2026-07-09) — Asia/Bangkok wall-clock "today",
+  // mirroring the project-wide convention (F4 invoice dates, fiscal-year
+  // boundaries) — a raw UTC ISO instant is already tomorrow in Bangkok
+  // between 17:00-23:59 UTC, which would shift the 6-month duplicate-
+  // billing threshold by a day during that window every render.
+  const todayIso = `${bangkokLocalDate(new Date().toISOString())}T00:00:00.000Z`;
   const showWarning = shouldShowRenewalDuplicateWarning(context, todayIso);
 
   return (
@@ -150,7 +157,17 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
         >
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
           <AlertDescription className="text-amber-900 dark:text-amber-200">
-            {t('duplicateWarning', { periodTo: formatPeriodDate(context.periodTo) })}
+            {/* FIX-7 (PR #173 review, 2026-07-09) — `periodTo` is null
+                whenever the warning fires purely from `hasUnpaidMembershipInvoice`
+                (non-renewal classifications never carry a periodTo). The
+                original single-key copy rendered the missing-value '—'
+                literally into the sentence next to its own em-dash
+                separator ("...runs — — another paid bill..."). Route to
+                the unpaid-only variant (no {periodTo} placeholder) instead
+                of ever interpolating the missing-value sentinel. */}
+            {context.periodTo !== null
+              ? t('duplicateWarning', { periodTo: formatPeriodDate(context.periodTo) })
+              : t('duplicateWarningUnpaidOnly')}
           </AlertDescription>
         </Alert>
       )}

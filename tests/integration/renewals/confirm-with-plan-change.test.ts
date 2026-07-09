@@ -272,6 +272,7 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
       auditEmitter: realDeps.auditEmitter,
       clock: realDeps.clock,
       planLookupForRenewal: realDeps.planLookupForRenewal,
+      memberRenewalFlagsRepo: realDeps.memberRenewalFlagsRepo,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };
 
@@ -406,6 +407,7 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
       auditEmitter: realDeps.auditEmitter,
       clock: realDeps.clock,
       planLookupForRenewal: realDeps.planLookupForRenewal,
+      memberRenewalFlagsRepo: realDeps.memberRenewalFlagsRepo,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };
 
