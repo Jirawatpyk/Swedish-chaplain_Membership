@@ -168,13 +168,15 @@ export function TimelineEventItem({
   // --- localised label resolution (FR-014) --------------------------------
   let eventLabel: string;
   if (source === 'audit') {
-    // `.has` guard (NOT a try/catch): the `audit.eventType` catalogue does not
-    // cover every `audit_event_type` enum value (e.g. F4 `invoice_pdf_downloaded`,
-    // many F6/F7 internal events). Calling `tAuditEvent(eventType)` on a missing
-    // key makes next-intl's onError reporter log `MISSING_MESSAGE` to the console
-    // BEFORE a try/catch can swallow the throw — so guard with `.has` first
-    // (silent), falling back to the row summary then the source label. Mirrors
-    // the shared `resolveEventLabel` helper (src/lib/audit-event-label.ts).
+    // `.has` guard (NOT a try/catch): the `audit.eventType` catalogue now covers
+    // every `audit_event_type` enum value (pinned by
+    // tests/unit/insights/audit-event-label-coverage.test.ts), but keep the
+    // guard as defence for rows written by a migration that lands ahead of its
+    // label. Calling `tAuditEvent(eventType)` on a missing key makes next-intl's
+    // onError reporter log `MISSING_MESSAGE` to the console BEFORE a try/catch
+    // can swallow the throw — so guard with `.has` first (silent), falling back
+    // to the row summary then the source label. Mirrors the shared
+    // `resolveEventLabel` helper (src/lib/audit-event-label.ts).
     if (tAuditEvent.has(eventType)) {
       eventLabel = tAuditEvent(eventType);
     } else {
