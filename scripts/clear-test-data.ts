@@ -350,14 +350,22 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // invoice/member/credit-note deletes. Scoped to exactly the test-user-orphan
   // set — NOT broadened to all tenants.
   //
-  // The orphan set (068 R2-5): cycles whose
+  // The orphan set (068 R2-5; FIX-4 PR #173 review, 2026-07-09 adds the
+  // `anchor_invoice_id` arm): cycles whose
   //   - `linked_invoice_id` ∈ {invoices referencing a test user via
   //     draft/recorded/voided}, OR
+  //   - `anchor_invoice_id` ∈ {invoices referencing a test user via
+  //     draft/recorded/voided} — the rolling-anchor refactor (migration
+  //     0238) stamps `anchor_invoice_id` on heal/re-anchor and CLEARS
+  //     `linked_invoice_id` in the same UPDATE, so a re-anchored cycle's
+  //     ONLY remaining FK to a test-user-orphaned invoice can be this
+  //     column — without this arm, `renewal_cycles_anchor_invoice_fk`
+  //     blocks the orphan-invoice DELETE below, OR
   //   - `(tenant_id, member_id)` ∈ {members on a test-user-created/updated
   //     plan}, OR
   //   - `linked_credit_note_id` ∈ {credit_notes issued by a test user, or
   //     against a test-user invoice}
-  // — the SAME three predicates the orphan invoice + member + credit_note
+  // — the SAME predicates the orphan invoice + member + credit_note
   // deletes below use. Children of renewal_cycles:
   //   renewal_reminder_events (CASCADE) · renewal_escalation_tasks (NO ACTION)
   //   · scheduled_plan_changes.effective_at_cycle_id (RESTRICT).
@@ -369,6 +377,18 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // list. When the set is empty every dependent DELETE is skipped.
   const orphanCyclePredicate = sql`(
     linked_invoice_id IN (
+      SELECT invoice_id FROM invoices
+      WHERE draft_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR payment_recorded_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+      OR voided_by_user_id IN (
+        SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+      )
+    )
+    OR anchor_invoice_id IN (
       SELECT invoice_id FROM invoices
       WHERE draft_by_user_id IN (
         SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'

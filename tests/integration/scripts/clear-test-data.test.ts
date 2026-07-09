@@ -378,6 +378,199 @@ describe('clearTestData script', () => {
     }
   }, 45_000);
 
+  // FIX-4 (PR #173 review, 2026-07-09) — the orphan-cycle purge must ALSO
+  // match `anchor_invoice_id` (rolling-anchor refactor, migration 0238). A
+  // re-anchored cycle CLEARS `linked_invoice_id` in the same UPDATE that
+  // stamps `anchor_invoice_id` (see `reanchorPeriodInTx`), so a re-anchored
+  // orphan cycle's ONLY remaining FK to a test-user-drafted invoice is
+  // `anchor_invoice_id`. The member's plan is deliberately created by a
+  // PRODUCTION-shaped (non-test) user so the member-orphan predicate does
+  // NOT also match — isolating this test to the `anchor_invoice_id` arm
+  // specifically (without this isolation, the member-arm would mask the
+  // bug and this test would pass even with the arm missing).
+  it('purges a renewal_cycle referencing a test-user-orphaned invoice ONLY via anchor_invoice_id (re-anchored shape, cluster E)', async () => {
+    const email = `test-${Date.now()}-anchorpurge@swecham.test`;
+    createdEmails.push(email);
+    const hash = await argon2Hasher.hash('Test-Password-AnchorPurge-2026!');
+    const userRows = await db
+      .insert(users)
+      .values({
+        email,
+        role: 'admin',
+        status: 'active',
+        passwordHash: hash,
+        lastPasswordChangedAt: new Date(),
+      })
+      .returning();
+    const userId = userRows[0]!.id;
+
+    // A PRODUCTION-shaped user owns the plan — the member must NOT match
+    // the member-orphan predicate, so only the anchor_invoice_id arm can
+    // explain the purge below.
+    const prodEmail = `prod-sentinel-anchorpurge-${Date.now()}@swecham.example`;
+    createdEmails.push(prodEmail);
+    const prodHash = await argon2Hasher.hash('Prod-Sentinel-AnchorPurge-2026!');
+    const prodUserRows = await db
+      .insert(users)
+      .values({
+        email: prodEmail,
+        role: 'admin',
+        status: 'active',
+        passwordHash: prodHash,
+        lastPasswordChangedAt: new Date(),
+      })
+      .returning();
+    const prodUserId = prodUserRows[0]!.id;
+
+    const slug = `clearanchor-${randomUUID().slice(0, 8)}`;
+    const ctx = asTenantContext(slug);
+    const memberId = randomUUID();
+    const invoiceId = randomUUID();
+    const cycleId = randomUUID();
+
+    try {
+      await runInTenant(ctx, async (tx) => {
+        await tx.insert(tenantInvoiceSettings).values({
+          tenantId: slug,
+          currencyCode: 'THB',
+          vatRate: '0.0700',
+          registrationFeeSatang: 100000n,
+          legalNameTh: 'AnchorP TH',
+          legalNameEn: 'AnchorP EN',
+          taxId: '0000000000000',
+          registeredAddressTh: 'Addr TH',
+          registeredAddressEn: 'Addr EN',
+          invoiceNumberPrefix: 'INV',
+          creditNoteNumberPrefix: 'CN',
+        });
+        await tx.insert(membershipPlans).values({
+          tenantId: slug,
+          planId: 'clearanchor-plan',
+          planYear: 2026,
+          planName: { en: 'AnchorP Plan' },
+          description: { en: 'desc' },
+          sortOrder: 10,
+          planCategory: 'corporate',
+          memberTypeScope: 'company',
+          annualFeeMinorUnits: 5_000_000,
+          includesCorporatePlanId: null,
+          minTurnoverMinorUnits: null,
+          maxTurnoverMinorUnits: null,
+          maxDurationYears: null,
+          maxMemberAge: null,
+          benefitMatrix: MATRIX,
+          isActive: true,
+          // PRODUCTION user — the member must NOT be an "orphan member".
+          createdBy: prodUserId,
+          updatedBy: prodUserId,
+        });
+        await tx.insert(members).values({
+          tenantId: slug,
+          memberId,
+          memberNumber: 1,
+          companyName: `AnchorP Co ${Date.now()}`,
+          country: 'TH',
+          planId: 'clearanchor-plan',
+          planYear: 2026,
+          registrationDate: new Date().toISOString().slice(0, 10),
+          registrationFeePaid: true,
+          status: 'active',
+          archivedAt: null,
+        });
+        // An ISSUED invoice drafted by the TEST user → drives the
+        // orphan-INVOICE predicate.
+        await tx.insert(invoices).values({
+          tenantId: slug,
+          invoiceId,
+          memberId,
+          planYear: 2026,
+          planId: 'clearanchor-plan',
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          draftByUserId: userId,
+          fiscalYear: 2026,
+          sequenceNumber: 1,
+          documentNumber: 'INV-2026-000002',
+          issueDate: '2026-05-15',
+          dueDate: '2026-06-14',
+          currency: 'THB',
+          subtotalSatang: asSatang(5_000_000n),
+          vatRateSnapshot: '0.0700',
+          vatSatang: asSatang(350_000n),
+          totalSatang: asSatang(5_350_000n),
+          proRatePolicySnapshot: 'none',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+          memberIdentitySnapshot: {
+            companyName: 'AnchorP Co',
+            country: 'TH',
+            legal_name: 'AnchorP Co Ltd',
+            address: '1 Test Rd, Bangkok 10110',
+            primary_contact_name: 'Test',
+            primary_contact_email: 'anchorp@example.com',
+          } as unknown,
+          pdfBlobKey: `invoicing/${slug}/2026/${invoiceId}.pdf`,
+          pdfSha256: 'a'.repeat(64),
+          pdfTemplateVersion: 1,
+        });
+        // The RE-ANCHORED shape: linked_invoice_id is NULL (cleared by the
+        // re-anchor UPDATE); anchor_invoice_id points at the orphan invoice.
+        await tx.insert(renewalCycles).values({
+          tenantId: slug,
+          cycleId,
+          memberId,
+          status: 'upcoming',
+          periodFrom: new Date('2026-06-01T00:00:00Z'),
+          periodTo: new Date('2027-06-01T00:00:00Z'),
+          expiresAt: new Date('2027-06-01T00:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: 'clearanchor-plan',
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          linkedInvoiceId: null,
+          anchoredAt: new Date('2026-06-01T00:00:00Z'),
+          anchorInvoiceId: invoiceId,
+        });
+      });
+
+      // Without the anchor_invoice_id arm, the orphan invoice DELETE would
+      // abort with `renewal_cycles_anchor_invoice_fk` — the whole script
+      // throws instead of completing.
+      const report = await clearTestData();
+      expect(report.testUsers).toBeGreaterThanOrEqual(1);
+
+      const cycleLeft = await db.execute(
+        sql`SELECT cycle_id FROM renewal_cycles WHERE cycle_id = ${cycleId}::uuid`,
+      );
+      const invoiceLeft = await db.execute(
+        sql`SELECT invoice_id FROM invoices WHERE invoice_id = ${invoiceId}::uuid`,
+      );
+      const userLeft = await db.execute(
+        sql`SELECT id FROM users WHERE email = ${email}`,
+      );
+      const count = (r: unknown) =>
+        Array.isArray(r) ? r.length : (r as { rows?: unknown[] }).rows?.length ?? 0;
+      expect(count(cycleLeft)).toBe(0);
+      expect(count(invoiceLeft)).toBe(0);
+      expect(count(userLeft)).toBe(0);
+      // The member + plan are NOT orphans (production-shaped creator) —
+      // they survive; cleaned up in `finally` below.
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(sql`tenant_id = ${slug}`)
+        .catch(() => {});
+      await db.execute(sql`DELETE FROM invoices WHERE tenant_id = ${slug}`).catch(() => {});
+      await db.execute(sql`DELETE FROM members WHERE tenant_id = ${slug}`).catch(() => {});
+      await db.execute(sql`DELETE FROM membership_plans WHERE tenant_id = ${slug}`).catch(() => {});
+      await db
+        .execute(sql`DELETE FROM tenant_invoice_settings WHERE tenant_id = ${slug}`)
+        .catch(() => {});
+    }
+  }, 45_000);
+
   // 068 R2-5 — the orphan-cycle purge must ALSO match `linked_credit_note_id`.
   // A NON-`test-%` tenant cycle linking a test-user-issued credit_note (whose
   // row is purged later by the test-user pass) would otherwise block the
