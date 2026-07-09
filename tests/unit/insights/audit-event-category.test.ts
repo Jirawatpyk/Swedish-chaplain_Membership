@@ -30,6 +30,25 @@ describe('auditEventCategory', () => {
     // members (generic member_ prefix)
     ['member_created', 'members'],
     ['member_updated', 'members'],
+    // F6 EventCreate family (incl. the pii_ attendee-erasure lifecycle)
+    ['attendee_matched_member_fuzzy', 'events'],
+    ['csv_import_completed', 'events'],
+    ['quota_partnership_decremented', 'events'],
+    ['event_created', 'events'],
+    ['event_buyer_pii_redacted', 'events'],
+    ['registration_cross_tenant_probe', 'events'],
+    ['ingest_disabled_tenant_admin', 'events'],
+    ['wizard_privacy_notice_acknowledged', 'events'],
+    ['pii_erasure_completed', 'events'],
+    // F8 renewals family — incl. the member_-prefixed ordering trap
+    ['renewal_reminder_sent', 'renewals'],
+    ['tier_upgrade_suggested', 'renewals'],
+    ['at_risk_score_recomputed', 'renewals'],
+    ['escalation_task_created', 'renewals'],
+    ['lapsed_member_admin_reactivated', 'renewals'],
+    ['member_auto_reactivation_blocked', 'renewals'],
+    ['manual_outreach_required', 'renewals'],
+    ['f8_role_violation_blocked', 'renewals'],
     // billing
     ['invoice_issued', 'billing'],
     ['payment_succeeded', 'billing'],

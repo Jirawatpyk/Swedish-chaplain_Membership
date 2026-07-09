@@ -44,16 +44,19 @@ export function resolveEventLabel(
 }
 
 /**
- * Coarse category for an `audit_event_type` — used to GROUP the ~44-option
- * event-type filter so it stays keyboard/SR-navigable (a flat list of 44 with
- * many shared prefixes is hard to traverse). Order matters: F9-specific events
- * are matched before the generic `member_`/`account_` prefixes that would
- * otherwise capture them.
+ * Coarse category for an `audit_event_type` — used to GROUP the ~310-option
+ * event-type filter so it stays keyboard/SR-navigable (a flat list with many
+ * shared prefixes is hard to traverse). Order matters: F9-specific events are
+ * matched before the generic `member_`/`account_` prefixes that would
+ * otherwise capture them, and the F8 `member_auto_reactivation_*` arm before
+ * the generic `member_` arm.
  */
 export type AuditEventCategory =
   | 'dashboard'
   | 'authentication'
   | 'members'
+  | 'events'
+  | 'renewals'
   | 'billing'
   | 'broadcasts'
   | 'other';
@@ -72,6 +75,37 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
     eventType.startsWith('insights_')
   ) {
     return 'dashboard';
+  }
+  // F6 EventCreate family (attendee import / CSV / benefit quota / webhook
+  // ingest controls / attendee-PII erasure). BEFORE the generic `event*`-adjacent
+  // billing arms; `pii_*` here is the F6 attendee-PII lifecycle (COMP-1 member
+  // erasure emits `member_erased`/`user_erased`, which stay under members/other).
+  if (
+    eventType.startsWith('attendee_') ||
+    eventType.startsWith('csv_import_') ||
+    eventType.startsWith('quota_') ||
+    eventType.startsWith('event_') ||
+    eventType.startsWith('registration_') ||
+    eventType.startsWith('ingest_disabled_') ||
+    eventType.startsWith('wizard_') ||
+    eventType.startsWith('pii_')
+  ) {
+    return 'events';
+  }
+  // F8 renewal-pipeline family — incl. the `member_`-prefixed auto-reactivation
+  // pair (ordering trap: must precede the generic `member_` arm) and the
+  // `lapsed_member_*` admin-reactivation events.
+  if (
+    eventType.startsWith('renewal_') ||
+    eventType.startsWith('tier_upgrade_') ||
+    eventType.startsWith('at_risk_') ||
+    eventType.startsWith('escalation_task_') ||
+    eventType.startsWith('lapsed_member_') ||
+    eventType.startsWith('member_auto_reactivation_') ||
+    eventType === 'manual_outreach_required' ||
+    eventType === 'f8_role_violation_blocked'
+  ) {
+    return 'renewals';
   }
   if (eventType.startsWith('member_')) return 'members';
   if (eventType.startsWith('broadcast_')) return 'broadcasts';
@@ -115,6 +149,8 @@ export const AUDIT_EVENT_CATEGORY_ORDER: readonly AuditEventCategory[] = [
   'dashboard',
   'authentication',
   'members',
+  'events',
+  'renewals',
   'billing',
   'broadcasts',
   'other',
