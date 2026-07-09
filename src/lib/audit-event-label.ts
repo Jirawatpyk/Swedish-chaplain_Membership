@@ -76,10 +76,14 @@ export function auditEventCategory(eventType: string): AuditEventCategory {
   ) {
     return 'dashboard';
   }
-  // F6 EventCreate family (attendee import / CSV / benefit quota / webhook
-  // ingest controls / attendee-PII erasure). BEFORE the generic `event*`-adjacent
+  // F6 EventCreate family (attendee import / CSV / benefit quota / webhook-ingest
+  // enable-disable / attendee-PII erasure). BEFORE the generic `event*`-adjacent
   // billing arms; `pii_*` here is the F6 attendee-PII lifecycle (COMP-1 member
   // erasure emits `member_erased`/`user_erased`, which stay under members/other).
+  // NOTE: the F6 `webhook_*` ingest events are NOT matched here — they share the
+  // `webhook_` prefix with F5 payment webhooks (billing arm), and splitting the
+  // two would need a per-value table; they intentionally group under billing
+  // (accepted cosmetic compromise, see docs/Bug/2026-07-09-audit-log-i18n-*).
   if (
     eventType.startsWith('attendee_') ||
     eventType.startsWith('csv_import_') ||

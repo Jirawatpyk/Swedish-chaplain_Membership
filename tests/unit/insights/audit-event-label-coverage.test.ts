@@ -132,6 +132,28 @@ describe('audit event-label i18n coverage', () => {
     ).toEqual([]);
   });
 
+  // The Thai-script check above catches the TH half of the reported bug, but
+  // SV and EN share the Latin script so a copy-pasted English SV label passes
+  // it silently — exactly the "English in SV" half QA reported. Guard SV by
+  // requiring each label to DIFFER from its EN counterpart. No allowlist is
+  // needed today (0 identical pairs); if a label is ever legitimately identical
+  // (a bare proper noun), add it to SV_MAY_EQUAL_EN with a one-line reason
+  // rather than weakening the check.
+  const SV_MAY_EQUAL_EN: ReadonlySet<string> = new Set();
+  it('every SV label differs from its EN counterpart (no English copy-paste)', () => {
+    const en = catalogues(enMessages);
+    const sv = catalogues(svMessages);
+    const copied: string[] = [];
+    for (const ns of ['activityEvents', 'eventType'] as const) {
+      const nsLabel = ns === 'eventType' ? 'audit.eventType' : 'activity.events';
+      for (const [key, svValue] of Object.entries(sv[ns])) {
+        if (SV_MAY_EQUAL_EN.has(key)) continue;
+        if (svValue === en[ns][key]) copied.push(`${nsLabel}.${key} = "${svValue}"`);
+      }
+    }
+    expect(copied, 'SV label values must be translated, not copied from EN').toEqual([]);
+  });
+
   it('labels are non-empty in every locale', () => {
     for (const [locale, messages] of LOCALES) {
       const { activityEvents, eventType } = catalogues(messages);
