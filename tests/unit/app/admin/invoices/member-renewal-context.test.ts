@@ -158,6 +158,8 @@ describe('loadMemberRenewalContext — classification mapping', () => {
     expect(out.classification).toEqual({ kind: 'renewal' });
     expect(out.periodTo).toBe('2027-06-01T00:00:00Z');
     expect(out.termMonths).toBe(12);
+    // R2-FIX-9 — with a known open cycle the dead count-all read is skipped.
+    expect(countCyclesMock).not.toHaveBeenCalled();
   });
 
   // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was

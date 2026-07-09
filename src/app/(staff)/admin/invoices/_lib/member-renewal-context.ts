@@ -73,16 +73,28 @@ export async function loadMemberRenewalContext(
       );
       const memberErased = guards?.erased === true;
 
-      const cycleCountForMember = await renewalsDeps.cyclesRepo.countCyclesForMemberInTx(
-        tx,
-        tenantSlug,
-        memberId,
-      );
       const openCycle = await renewalsDeps.cyclesRepo.findOpenCycleForMemberInTx(
         tx,
         tenantSlug,
         memberId,
       );
+      // R2-FIX-9 (PR #173 round-2 review, 2026-07-09) — load the open cycle
+      // FIRST: it is itself a `renewal_cycles` row, so once it exists the
+      // member provably has ≥ 1 cycle and classify's `cycleCountForMember
+      // === 0` (heal) branch is unreachable — the count-all read is then dead
+      // work on this interactive path, replaced by a `1` sentinel. Queried
+      // for real only when NO open cycle exists (to tell `heal_no_cycle` from
+      // `terminal_only`). Mirrors the shared `_lib/classification-input`
+      // loader (R2-FIX-8); kept as an inline copy here because presentation
+      // may only import a module's PUBLIC barrel (Constitution Principle III),
+      // not this internal orchestration helper.
+      const cycleCountForMember = openCycle
+        ? 1
+        : await renewalsDeps.cyclesRepo.countCyclesForMemberInTx(
+            tx,
+            tenantSlug,
+            memberId,
+          );
       // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
       // ever-anchored), not raw cycle count, discriminates first_payment
       // vs renewal (see classify-membership-payment.ts docstring). Only
