@@ -74,7 +74,11 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     expect(isF8AuditEventType(null)).toBe(false);
   });
 
-  it('contains the lifecycle anchor events (data-model.md § 4)', () => {
+  // `renewal_cycle_reanchored` postdates specs/011-renewal-reminders/
+  // data-model.md § 4 — it ships with the rolling-anchor refactor
+  // (docs/superpowers/specs/2026-07-08-renewal-rolling-anchor-design.md,
+  // migration 0238); the rest of the lifecycle set is data-model.md § 4.
+  it('contains the lifecycle anchor events (data-model.md § 4 + rolling-anchor spec)', () => {
     const lifecycle = [
       'renewal_cycle_created',
       'renewal_cycle_cancelled',

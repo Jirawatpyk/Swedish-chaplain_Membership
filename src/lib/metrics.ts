@@ -2539,11 +2539,12 @@ export const renewalsMetrics = {
   /**
    * `renewals_onpaid_unknown_outcome_kind_total{tenant}` — Round 4
    * review-fix (R4-S1): F8 dispatch site received a
-   * `MarkCycleCompleteOutcome` whose `kind` is not one of the 4 known
+   * `MarkCycleCompleteOutcome` whose `kind` is not one of the 5 known
    * variants enumerated by the exhaustive switch at
-   * `renewals-deps.ts`. The TS `_exhaustive: never` pin guarantees
+   * `renewals-deps.ts` (5th = 'reanchored', rolling-anchor 2026-07-08).
+   * The TS `_exhaustive: never` pin guarantees
    * compile-time exhaustiveness in steady state; this counter pages
-   * on the deploy-skew window when (a) the use-case ships a 5th
+   * on the deploy-skew window when (a) the use-case ships a 6th
    * variant before the dispatch site rebuilds, OR (b) a runtime
    * polyfill / hot-fix bundles only the use-case bundle. Without
    * this counter the unknown variant would silently swallow the
