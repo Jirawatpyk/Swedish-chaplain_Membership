@@ -105,9 +105,13 @@ describe('events module barrel — architecture guard (L1 round-3)', () => {
     // (~1 relink), Phase 10 (~3 retention/erasure). Bumped to <110 for
     // 054-event-fee-invoices Task 6a (`makeEventDetailsLookupForTenant`
     // F4 invoicing bridge, sibling of Task-5's
-    // `makeEventRegistrationLookupForTenant`). Bump again if it becomes
+    // `makeEventRegistrationLookupForTenant`). Bumped to <120 for F6 [104]
+    // CSV column remap (#171: CSV_* column constants +
+    // parseColumnMappingObject + mapping types → 114) — #171 merged while
+    // the gate could only run pre-push, so main crossed the old cap
+    // unnoticed and every later push was blocked. Bump again if it becomes
     // load-bearing.
-    expect(exportedNames.length).toBeLessThan(110);
+    expect(exportedNames.length).toBeLessThan(120);
     expect(exportedNames.length).toBeGreaterThan(30);
   });
 });
