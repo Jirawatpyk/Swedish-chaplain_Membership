@@ -100,6 +100,8 @@ interface FakeDepsResult {
   tierUpgradeFindByIdMock: ReturnType<typeof vi.fn>;
   // Task 7 (rolling-anchor) — shared-classifier + re-anchor seams.
   countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  // F2 fix (final-review, 2026-07-09) — settled-history discriminator.
+  countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
   readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
   reanchorPeriodInTxMock: ReturnType<typeof vi.fn>;
 }
@@ -204,6 +206,12 @@ function fakeDeps(
   // tests override `countCyclesForMemberInTxMock` to 1 to drive the
   // first_payment classification.
   const countCyclesForMemberInTxMock = vi.fn(async () => 2);
+  // F2 fix (final-review, 2026-07-09) — default 1 (the assumed predecessor
+  // IS settled) so every pre-existing test stays on 'renewal' /
+  // 'completed' byte-identically. Task 7 tests that flip
+  // `countCyclesForMemberInTxMock` to 1 to force first_payment must ALSO
+  // flip this to 0 (see that describe block below).
+  const countSettledCyclesForMemberInTxMock = vi.fn(async () => 1);
   const readReactivationGuardsInTxMock = vi.fn(async () => ({
     blocked: false,
     erased: false,
@@ -251,6 +259,7 @@ function fakeDeps(
       findActiveForMemberInTx: findActiveForMemberInTxMock,
       insert: insertMock,
       countCyclesForMemberInTx: countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
       reanchorPeriodInTx: reanchorPeriodInTxMock,
     } as unknown as RenewalsDeps['cyclesRepo'],
     f4InvoiceBridge: {
@@ -303,6 +312,7 @@ function fakeDeps(
     f2RecordMock,
     tierUpgradeFindByIdMock,
     countCyclesForMemberInTxMock,
+    countSettledCyclesForMemberInTxMock,
     readReactivationGuardsInTxMock,
     reanchorPeriodInTxMock,
   };
@@ -588,11 +598,13 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
     const {
       deps,
       countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
       reanchorPeriodInTxMock,
       transitionMock,
       emitInTxMock,
     } = fakeDeps(cycle);
     countCyclesForMemberInTxMock.mockResolvedValue(1);
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
 
     const r = await markPaidOffline(deps, baseInput);
 
@@ -620,9 +632,15 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
     // asserted here by overriding the SAME mock the completed-branch tests
     // use to simulate "prior cycle resolved by invoice id".
     const cycle = buildCycle({ anchoredAt: null });
-    const { deps, countCyclesForMemberInTxMock, findByInvoiceIdInTxMock, insertMock } =
-      fakeDeps(cycle);
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
+      findByInvoiceIdInTxMock,
+      insertMock,
+    } = fakeDeps(cycle);
     countCyclesForMemberInTxMock.mockResolvedValue(1);
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
     findByInvoiceIdInTxMock.mockResolvedValue(null);
 
     const r = await markPaidOffline(deps, baseInput);
@@ -632,9 +650,14 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
 
   it("newExpiresAt on the reanchor branch is the re-anchored cycle’s OWN periodTo (never hand-recomputed)", async () => {
     const cycle = buildCycle({ anchoredAt: null });
-    const { deps, countCyclesForMemberInTxMock, reanchorPeriodInTxMock } =
-      fakeDeps(cycle);
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
+      reanchorPeriodInTxMock,
+    } = fakeDeps(cycle);
     countCyclesForMemberInTxMock.mockResolvedValue(1);
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
 
     const r = await markPaidOffline(deps, baseInput);
     expect(r.ok).toBe(true);
@@ -670,6 +693,28 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
       (c) => (c[1] as { type?: string }).type,
     );
     expect(emittedTypes).toContain('renewal_cycle_completed_offline');
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history" — re-anchors, not completes.
+  it('a member with an UNSETTLED predecessor cycle (cancelled, never anchored) still re-anchors — first_payment despite count!==1', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
+      reanchorPeriodInTxMock,
+      transitionMock,
+    } = fakeDeps(cycle);
+    countCyclesForMemberInTxMock.mockResolvedValue(2); // a predecessor row exists...
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0); // ...but never settled
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('reanchored');
+    expect(reanchorPeriodInTxMock).toHaveBeenCalledTimes(1);
+    expect(transitionMock).not.toHaveBeenCalled();
   });
 
   it('an already-anchored cycle (anchored_at set) stays on the completed branch even with count===1', async () => {
@@ -713,9 +758,14 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
 
   it('rolls back to server_error when the re-anchor guard loses the race (0 rows — contract-regression alarm)', async () => {
     const cycle = buildCycle({ anchoredAt: null });
-    const { deps, countCyclesForMemberInTxMock, reanchorPeriodInTxMock } =
-      fakeDeps(cycle);
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
+      reanchorPeriodInTxMock,
+    } = fakeDeps(cycle);
     countCyclesForMemberInTxMock.mockResolvedValue(1);
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
     reanchorPeriodInTxMock.mockResolvedValueOnce(null);
 
     const r = await markPaidOffline(deps, baseInput);

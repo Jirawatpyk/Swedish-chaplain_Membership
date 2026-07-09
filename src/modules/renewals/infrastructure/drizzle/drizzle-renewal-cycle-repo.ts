@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, asc, eq, ne, sql, inArray, desc, or, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, ne, sql, inArray, desc, or, isNull, isNotNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
@@ -1280,6 +1280,36 @@ export function makeDrizzleRenewalCycleRepo(
         .select({ count: sql<number>`count(*)::int` })
         .from(renewalCycles)
         .where(eq(renewalCycles.memberId, memberId));
+      return rows[0]?.count ?? 0;
+    },
+
+    /**
+     * F2 fix (final-review, 2026-07-09) — count of the member's cycles,
+     * EXCLUDING `excludeCycleId` (the caller's current open cycle), that
+     * represent a SETTLED renewal: status 'completed' OR
+     * anchored_at IS NOT NULL. In-tx for the same uncommitted-visibility
+     * reason as `countCyclesForMemberInTx` above.
+     */
+    async countSettledCyclesForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      excludeCycleId: string,
+    ): Promise<number> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ count: sql<number>`count(*)::int` })
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            ne(renewalCycles.cycleId, excludeCycleId),
+            or(
+              eq(renewalCycles.status, 'completed'),
+              isNotNull(renewalCycles.anchoredAt),
+            ),
+          ),
+        );
       return rows[0]?.count ?? 0;
     },
 

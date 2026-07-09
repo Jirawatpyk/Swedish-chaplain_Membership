@@ -84,6 +84,15 @@ function fakeDeps(args: {
    * with count=1, would otherwise misclassify as `first_payment`.
    */
   cycleCountForMember?: number;
+  /**
+   * F2 fix (final-review, 2026-07-09) — feeds the SAME Step-1 classify
+   * call's `settledCycleCountForMember` (the completed-OR-ever-anchored
+   * predecessor count that now discriminates first_payment/renewal, NOT
+   * the raw `cycleCountForMember`). Defaults to `1` (the assumed
+   * predecessor cycle IS settled) so every pre-existing test stays on
+   * `'renewal'` byte-identically.
+   */
+  settledCycleCountForMember?: number;
 }): {
   deps: ConfirmRenewalDeps;
   planLookupMock: ReturnType<typeof vi.fn>;
@@ -93,6 +102,7 @@ function fakeDeps(args: {
   transitionStatusMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
+  countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
 } {
   // First findByIdInTx call returns the seed cycle; any subsequent call
   // (the CAS-loss re-read) returns `rereadCycle` (defaults to the seed).
@@ -149,6 +159,9 @@ function fakeDeps(args: {
   const countCyclesForMemberInTxMock = vi.fn(
     async () => args.cycleCountForMember ?? 2,
   );
+  const countSettledCyclesForMemberInTxMock = vi.fn(
+    async () => args.settledCycleCountForMember ?? 1,
+  );
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
   };
@@ -173,6 +186,8 @@ function fakeDeps(args: {
       acquireCycleLockInTx: vi.fn(async () => {}),
       // F1 (final-review, 2026-07-09) — feeds the Step-1 classify call.
       countCyclesForMemberInTx: countCyclesForMemberInTxMock,
+      // F2 fix (final-review, 2026-07-09) — settled-history discriminator.
+      countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),
@@ -193,6 +208,7 @@ function fakeDeps(args: {
     transitionStatusMock,
     emitInTxMock,
     countCyclesForMemberInTxMock,
+    countSettledCyclesForMemberInTxMock,
   };
 }
 
@@ -339,7 +355,7 @@ describe('confirmRenewal (F1, final-review 2026-07-09) — membershipCoverage ga
   it('first-payment shape (count=1, unanchored) — bridge called WITHOUT membershipCoverage', async () => {
     const cycle = buildCycle({ anchoredAt: null });
     const { deps, invoiceBridgeMock, countCyclesForMemberInTxMock } =
-      fakeDeps({ cycle, cycleCountForMember: 1 });
+      fakeDeps({ cycle, cycleCountForMember: 1, settledCycleCountForMember: 0 });
     const r = await confirmRenewal(deps, baseInput);
     expect(r.ok).toBe(true);
     expect(countCyclesForMemberInTxMock).toHaveBeenCalledWith(
@@ -348,6 +364,26 @@ describe('confirmRenewal (F1, final-review 2026-07-09) — membershipCoverage ga
       MEMBER_UUID,
     );
     expect(invoiceBridgeMock).toHaveBeenCalledOnce();
+    const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    expect(bridgeInput).not.toHaveProperty('membershipCoverage');
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history" — the member's first real payment is
+  // still first_payment even though a predecessor cycle row exists.
+  it('cancelled-only-history shape (predecessor exists but NEVER settled) — still first_payment, bridge called WITHOUT membershipCoverage', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, invoiceBridgeMock } = fakeDeps({
+      cycle,
+      cycleCountForMember: 2, // a predecessor row exists (e.g. cancelled)...
+      settledCycleCountForMember: 0, // ...but it was NEVER settled/anchored
+    });
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
     const bridgeInput = invoiceBridgeMock.mock.calls[0]?.[0] as Record<
       string,
       unknown
@@ -379,7 +415,8 @@ describe('confirmRenewal (F1, final-review 2026-07-09) — membershipCoverage ga
     const cycle = buildCycle({ anchoredAt: null });
     const { deps, invoiceBridgeMock } = fakeDeps({
       cycle,
-      cycleCountForMember: 2, // predecessor cycle exists → not first_payment
+      cycleCountForMember: 2, // predecessor cycle exists...
+      settledCycleCountForMember: 1, // ...and it WAS settled → not first_payment
     });
     const r = await confirmRenewal(deps, baseInput);
     expect(r.ok).toBe(true);

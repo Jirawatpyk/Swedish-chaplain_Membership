@@ -121,6 +121,18 @@ function fakeDeps(args: {
   // real end-to-end resolution without every test needing to configure
   // each mock individually.
   countCyclesForMember?: number;
+  /**
+   * F2 fix (final-review, 2026-07-09) — feeds `classifyMembershipPayment`'s
+   * `settledCycleCountForMember` (completed-OR-ever-anchored predecessor
+   * count, NOT the raw `countCyclesForMember`). Defaults to `0`, matching
+   * `countCyclesForMember`'s own conservative default — every existing
+   * test either short-circuits on `heal_no_cycle` before this value is
+   * consulted, or explicitly sets `countCyclesForMember: 1` expecting
+   * `first_payment` (settled=0 is exactly right). The ONE test that needs
+   * a genuine settled predecessor (line ~733, `countCyclesForMember: 2`
+   * expecting `renewal`) overrides this explicitly.
+   */
+  settledCycleCountForMember?: number;
   openCycleForHook?: RenewalCycle | null;
   memberPlan?: { planId: string; isArchived: boolean } | null;
   /**
@@ -146,6 +158,7 @@ function fakeDeps(args: {
   emitInTxMock: ReturnType<typeof vi.fn>;
   readGuardsMock: ReturnType<typeof vi.fn>;
   countCyclesMock: ReturnType<typeof vi.fn>;
+  countSettledCyclesMock: ReturnType<typeof vi.fn>;
   findOpenCycleMock: ReturnType<typeof vi.fn>;
   reanchorMock: ReturnType<typeof vi.fn>;
   insertMock: ReturnType<typeof vi.fn>;
@@ -174,6 +187,9 @@ function fakeDeps(args: {
         },
   );
   const countCyclesMock = vi.fn(async () => args.countCyclesForMember ?? 0);
+  const countSettledCyclesMock = vi.fn(
+    async () => args.settledCycleCountForMember ?? 0,
+  );
   const findOpenCycleMock = vi.fn(async () => args.openCycleForHook ?? null);
   const reanchorMock = vi.fn(
     args.reanchorImpl ??
@@ -210,6 +226,7 @@ function fakeDeps(args: {
       findByIdInTx: findByIdMock,
       transitionStatus: transitionMock,
       countCyclesForMemberInTx: countCyclesMock,
+      countSettledCyclesForMemberInTx: countSettledCyclesMock,
       findOpenCycleForMemberInTx: findOpenCycleMock,
       reanchorPeriodInTx: reanchorMock,
       insert: insertMock,
@@ -239,6 +256,7 @@ function fakeDeps(args: {
     emitInTxMock,
     readGuardsMock,
     countCyclesMock,
+    countSettledCyclesMock,
     findOpenCycleMock,
     reanchorMock,
     insertMock,
@@ -727,10 +745,12 @@ describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-pa
     const cycle = buildCycle({ anchoredAt: null });
     const { deps, transitionMock, reanchorMock, countCyclesMock } = fakeDeps({
       cycle,
-      // Member has a prior (predecessor) cycle in addition to this one —
-      // classifyMembershipPayment's "exactly one cycle ever" branch does
-      // not match, so this is 'renewal' even though anchoredAt is null.
+      // Member has a prior (predecessor) cycle in addition to this one,
+      // and it WAS settled (completed/anchored) — classifyMembershipPayment's
+      // settled-history branch does not match `first_payment`, so this is
+      // 'renewal' even though anchoredAt is null on THIS cycle.
       countCyclesForMember: 2,
+      settledCycleCountForMember: 1,
     });
 
     const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
@@ -739,6 +759,25 @@ describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-pa
     expect(countCyclesMock).toHaveBeenCalledTimes(1);
     expect(reanchorMock).not.toHaveBeenCalled();
     expect(transitionMock).toHaveBeenCalledTimes(1);
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history" — reanchors, not completes.
+  it('linked invoice + predecessor cycle exists but was NEVER settled (cancelled, never anchored) → reanchored, not completed', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const { deps, transitionMock, reanchorMock, countCyclesMock } = fakeDeps({
+      cycle,
+      countCyclesForMember: 2, // a predecessor row exists...
+      settledCycleCountForMember: 0, // ...but it was NEVER settled
+    });
+
+    const r = await markCycleCompleteInTx(deps, buildEvent(), SENTINEL_TX);
+
+    expect(r.kind).toBe('reanchored');
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
+    expect(reanchorMock).toHaveBeenCalledTimes(1);
+    expect(transitionMock).not.toHaveBeenCalled();
   });
 
   it('lost the re-anchor race (0 rows) → re-reads by id + falls through to the existing flow, never loops', async () => {

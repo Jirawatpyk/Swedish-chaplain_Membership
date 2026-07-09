@@ -22,6 +22,7 @@ import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 
 const runInTenantMock = vi.hoisted(() => vi.fn());
 const countCyclesMock = vi.hoisted(() => vi.fn());
+const countSettledCyclesMock = vi.hoisted(() => vi.fn());
 const findOpenCycleMock = vi.hoisted(() => vi.fn());
 const readGuardsMock = vi.hoisted(() => vi.fn());
 const listInvoicesByMemberMock = vi.hoisted(() => vi.fn());
@@ -37,6 +38,7 @@ vi.mock('@/modules/renewals', async (importOriginal) => {
     makeRenewalsDeps: () => ({
       cyclesRepo: {
         countCyclesForMemberInTx: countCyclesMock,
+        countSettledCyclesForMemberInTx: countSettledCyclesMock,
         findOpenCycleForMemberInTx: findOpenCycleMock,
       },
       memberRenewalFlagsRepo: {
@@ -106,6 +108,11 @@ beforeEach(() => {
   );
   readGuardsMock.mockResolvedValue({ blocked: false, erased: false });
   countCyclesMock.mockResolvedValue(0);
+  // F2 fix (final-review, 2026-07-09) — default 0 (no settled predecessor).
+  // Only consulted when an open cycle exists (see the implementation's
+  // conditional fetch) — most tests below leave `findOpenCycleMock` at its
+  // `null` default and never reach this read at all.
+  countSettledCyclesMock.mockResolvedValue(0);
   findOpenCycleMock.mockResolvedValue(null);
   stubInvoices();
 });
@@ -151,6 +158,23 @@ describe('loadMemberRenewalContext — classification mapping', () => {
     expect(out.classification).toEqual({ kind: 'renewal' });
     expect(out.periodTo).toBe('2027-06-01T00:00:00Z');
     expect(out.termMonths).toBe(12);
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history".
+  it('first_payment — predecessor cycle exists but was NEVER settled → still first_payment (not renewal)', async () => {
+    countCyclesMock.mockResolvedValue(2);
+    countSettledCyclesMock.mockResolvedValue(0);
+    findOpenCycleMock.mockResolvedValue(
+      buildOpenCycle({ status: 'upcoming', anchoredAt: null }),
+    );
+
+    const out = await loadMemberRenewalContext(TENANT_SLUG, MEMBER_ID);
+
+    expect(out.classification).toEqual({ kind: 'first_payment' });
+    expect(out.periodTo).toBeNull();
+    expect(out.termMonths).toBeNull();
   });
 
   it('not_applicable:erased — GDPR-erased member, regardless of cycle history', async () => {

@@ -71,6 +71,16 @@ function fakeDeps(args: {
   erased?: boolean | null;
   blocked?: boolean;
   cycleCountForMember?: number;
+  /**
+   * F2 fix (final-review, 2026-07-09) — feeds `classifyMembershipPayment`'s
+   * `settledCycleCountForMember` (completed-OR-ever-anchored predecessor
+   * count, NOT the raw `cycleCountForMember`). Defaults to
+   * `Math.max(cycleCountForMember - 1, 0)` — mirrors every pre-existing
+   * test's implicit assumption that a predecessor row (when present) WAS
+   * settled, so no existing test needs updating. Tests targeting the
+   * cancelled-only-history bug override this explicitly.
+   */
+  settledCycleCountForMember?: number;
   openCycle?: RenewalCycle | null;
   memberPlan?: { planId: string; isArchived: boolean } | null;
   reanchorResult?:
@@ -85,6 +95,7 @@ function fakeDeps(args: {
   mocks: {
     readGuards: ReturnType<typeof vi.fn>;
     countCycles: ReturnType<typeof vi.fn>;
+    countSettledCycles: ReturnType<typeof vi.fn>;
     findOpenCycle: ReturnType<typeof vi.fn>;
     reanchor: ReturnType<typeof vi.fn>;
     transitionStatus: ReturnType<typeof vi.fn>;
@@ -100,6 +111,11 @@ function fakeDeps(args: {
     erased: args.erased ?? false,
   }));
   const countCycles = vi.fn(async () => args.cycleCountForMember ?? 0);
+  const countSettledCycles = vi.fn(
+    async () =>
+      args.settledCycleCountForMember ??
+      Math.max((args.cycleCountForMember ?? 0) - 1, 0),
+  );
   const findOpenCycle = vi.fn(async () => args.openCycle ?? null);
   const reanchor = vi.fn(
     args.reanchorResult !== undefined
@@ -147,6 +163,7 @@ function fakeDeps(args: {
       findActiveForMemberInTx: findActiveForMember,
       insert,
       countCyclesForMemberInTx: countCycles,
+      countSettledCyclesForMemberInTx: countSettledCycles,
       findOpenCycleForMemberInTx: findOpenCycle,
       reanchorPeriodInTx: reanchor,
       transitionStatus,
@@ -163,6 +180,7 @@ function fakeDeps(args: {
     mocks: {
       readGuards,
       countCycles,
+      countSettledCycles,
       findOpenCycle,
       reanchor,
       transitionStatus,
@@ -334,6 +352,33 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 4: first_payment', 
         refroze_plan_fields: false,
       }),
     });
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('reanchored');
+  });
+
+  // F2 fix (final-review, 2026-07-09) — a predecessor cycle that was
+  // cancelled/lapsed WITHOUT ever anchoring (genuinely never paid) must
+  // NOT count as "renewal history" — this member's first real payment is
+  // still first_payment even though `cycleCountForMember > 1`.
+  it('cancelled-only-history: predecessor cycle exists but was NEVER settled → still re-anchors (first_payment)', async () => {
+    const openCycle = buildCycle({
+      status: 'upcoming',
+      anchoredAt: null,
+      periodFrom: '2026-05-01T00:00:00Z',
+      periodTo: '2027-05-01T00:00:00Z',
+    });
+    const { deps, mocks } = fakeDeps({
+      cycleCountForMember: 2, // a predecessor row exists (e.g. cancelled)...
+      settledCycleCountForMember: 0, // ...but it was NEVER settled/anchored
+      openCycle,
+    });
+    const r = await resolveUnlinkedMembershipPaymentInTx(
+      deps,
+      buildEvent({ paymentDate: '2026-05-16' }),
+      SENTINEL_TX,
+    );
+    expect(r).toEqual({ kind: 'reanchored', cycleId: openCycle.cycleId });
+    expect(mocks.reanchor).toHaveBeenCalledTimes(1);
+    expect(mocks.transitionStatus).not.toHaveBeenCalled();
     expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('reanchored');
   });
 
@@ -804,6 +849,27 @@ function makeInMemoryCyclesRepo() {
     async countCyclesForMemberInTx(_tx: unknown, _tenantId: string, memberId: string) {
       let n = 0;
       for (const c of rows.values()) if (c.memberId === memberId) n++;
+      return n;
+    },
+    // F2 fix (final-review, 2026-07-09) — real settled-history semantics
+    // (status='completed' OR anchoredAt !== null), excluding the caller's
+    // open cycle — mirrors the production Drizzle query.
+    async countSettledCyclesForMemberInTx(
+      _tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      excludeCycleId: string,
+    ) {
+      let n = 0;
+      for (const c of rows.values()) {
+        if (
+          c.memberId === memberId &&
+          c.cycleId !== excludeCycleId &&
+          (c.status === 'completed' || c.anchoredAt !== null)
+        ) {
+          n++;
+        }
+      }
       return n;
     },
     async findOpenCycleForMemberInTx(_tx: unknown, _tenantId: string, memberId: string) {

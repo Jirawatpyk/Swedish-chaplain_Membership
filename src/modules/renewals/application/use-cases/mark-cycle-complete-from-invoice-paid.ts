@@ -301,8 +301,19 @@ export async function markCycleCompleteInTx(
       event.tenantId,
       cycle.memberId,
     );
+    // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
+    // ever-anchored), not raw cycle count, discriminates first_payment vs
+    // renewal (see classify-membership-payment.ts docstring).
+    const settledCycleCountForMember =
+      await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+        tx,
+        event.tenantId,
+        cycle.memberId,
+        cycle.cycleId,
+      );
     const classification = classifyMembershipPayment({
       cycleCountForMember,
+      settledCycleCountForMember,
       openCycle: openCycleInput,
       memberErased: isErased,
     });

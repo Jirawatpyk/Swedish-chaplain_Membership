@@ -77,9 +77,22 @@ export async function loadMemberRenewalContext(
         tenantSlug,
         memberId,
       );
+      // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
+      // ever-anchored), not raw cycle count, discriminates first_payment
+      // vs renewal (see classify-membership-payment.ts docstring). Only
+      // queried when an open cycle exists.
+      const settledCycleCountForMember = openCycle
+        ? await renewalsDeps.cyclesRepo.countSettledCyclesForMemberInTx(
+            tx,
+            tenantSlug,
+            memberId,
+            openCycle.cycleId,
+          )
+        : 0;
 
       const classification = classifyMembershipPayment({
         cycleCountForMember,
+        settledCycleCountForMember,
         openCycle: openCycle
           ? {
               // Vestigial 'reminded' status folds into 'upcoming' — mirrors

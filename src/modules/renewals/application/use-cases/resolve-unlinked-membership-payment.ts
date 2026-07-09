@@ -107,6 +107,7 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
     | 'findActiveForMemberInTx'
     | 'insert'
     | 'countCyclesForMemberInTx'
+    | 'countSettledCyclesForMemberInTx'
     | 'findOpenCycleForMemberInTx'
     | 'reanchorPeriodInTx'
     | 'transitionStatus'
@@ -186,9 +187,23 @@ export async function resolveUnlinkedMembershipPaymentInTx(
     evt.tenantId,
     evt.memberId,
   );
+  // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
+  // ever-anchored), not raw cycle count, discriminates first_payment vs
+  // renewal (see classify-membership-payment.ts docstring). Only queried
+  // when an open cycle exists — `classifyMembershipPayment` never
+  // consults it otherwise (heal_no_cycle / terminal_only branches).
+  const settledCycleCountForMember = openCycle
+    ? await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+        tx,
+        evt.tenantId,
+        evt.memberId,
+        openCycle.cycleId,
+      )
+    : 0;
 
   const classification = classifyMembershipPayment({
     cycleCountForMember,
+    settledCycleCountForMember,
     openCycle: toClassifierOpenCycle(openCycle),
     memberErased: false, // already handled above
   });
@@ -640,8 +655,19 @@ async function reclassifyAfterRace(
     evt.tenantId,
     evt.memberId,
   );
+  // F2 fix (final-review, 2026-07-09) — see the main function's identical
+  // comment above.
+  const settledCycleCountForMember = openCycle
+    ? await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+        tx,
+        evt.tenantId,
+        evt.memberId,
+        openCycle.cycleId,
+      )
+    : 0;
   const reclassified = classifyMembershipPayment({
     cycleCountForMember,
+    settledCycleCountForMember,
     openCycle: toClassifierOpenCycle(openCycle),
     memberErased: false,
   });

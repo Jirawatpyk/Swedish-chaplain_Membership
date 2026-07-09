@@ -274,6 +274,16 @@ export async function markPaidOffline(
         input.tenantId,
         lockedCycle.memberId,
       );
+      // F2 fix (final-review, 2026-07-09) — SETTLED history (completed OR
+      // ever-anchored), not raw cycle count, discriminates first_payment
+      // vs renewal (see classify-membership-payment.ts docstring).
+      const settledCycleCountForMember =
+        await deps.cyclesRepo.countSettledCyclesForMemberInTx(
+          tx,
+          input.tenantId,
+          lockedCycle.memberId,
+          lockedCycle.cycleId,
+        );
       const reactivationGuards =
         await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
           tx,
@@ -282,6 +292,7 @@ export async function markPaidOffline(
         );
       const classification = classifyMembershipPayment({
         cycleCountForMember,
+        settledCycleCountForMember,
         openCycle:
           lockedCycle.status === 'awaiting_payment'
             ? { status: 'awaiting_payment', anchoredAt: lockedCycle.anchoredAt }

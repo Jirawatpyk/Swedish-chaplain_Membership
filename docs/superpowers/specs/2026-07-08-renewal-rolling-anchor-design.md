@@ -55,6 +55,10 @@ Today three things disagree with that policy:
 ```ts
 interface ClassificationInput {
   readonly cycleCountForMember: number;        // ALL cycles ever, incl. terminal
+  readonly settledCycleCountForMember: number;  // F2 fix (2026-07-09): cycles
+    // EXCLUDING the open cycle with status='completed' OR anchored_at IS
+    // NOT NULL — i.e. genuine prior payment history. A predecessor that
+    // was cancelled/lapsed WITHOUT ever anchoring does NOT count.
   readonly openCycle: {                        // status upcoming|awaiting_payment, or null
     readonly status: 'upcoming' | 'awaiting_payment';
     readonly anchoredAt: string | null;
@@ -76,8 +80,8 @@ treats it as `upcoming` defensively and the spec records it as vestigial):
 |---|---|
 | GDPR-erased | `not_applicable` — never auto-anchor/renew (COMP-1 guard reused) |
 | Zero cycle rows ever | `heal_no_cycle` — create cycle at payment date + stamp anchor |
-| Exactly one cycle ever, it is open (`upcoming` **or** `awaiting_payment`), `anchored_at IS NULL` | `first_payment` — re-anchor (rev 2: the post-T-0 `awaiting_payment` provisional cycle is first-payment, NOT renewal) |
-| Open cycle exists, anything else (anchored, or member has predecessor cycles) | `renewal` — complete + next cycle at `periodTo` |
+| Open cycle (`upcoming` **or** `awaiting_payment`), `anchored_at IS NULL`, AND zero SETTLED predecessor cycles (`settledCycleCountForMember === 0`) | `first_payment` — re-anchor (rev 2: the post-T-0 `awaiting_payment` provisional cycle is first-payment, NOT renewal. **F2 fix, 2026-07-09**: a predecessor cycle that was cancelled/lapsed WITHOUT ever anchoring — i.e. genuinely never paid — does NOT disqualify this branch, even though `cycleCountForMember > 1` for that member) |
+| Open cycle exists, anything else (anchored, or member has a SETTLED predecessor cycle) | `renewal` — complete + next cycle at `periodTo` |
 | Only terminal cycles (lapsed/cancelled), none open | `not_applicable` — loud log; admin-comeback flow owns reactivation |
 
 **Consuming sites** (all four consume the same function):

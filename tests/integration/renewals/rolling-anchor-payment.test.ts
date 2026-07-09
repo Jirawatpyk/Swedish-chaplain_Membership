@@ -231,6 +231,43 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     return cycleId;
   }
 
+  /**
+   * F2 fix (final-review, 2026-07-09) — a TERMINATED cycle that was
+   * cancelled WITHOUT ever being anchored to a real payment (the
+   * genuinely-never-paid shape). Distinct from `seedProvisionalCycle`'s
+   * still-open row — this one is already `cancelled` + `closed_at` set
+   * (the `renewal_cycles_closed_at_iff_terminal_check` CHECK requires
+   * `closed_at` for any terminal status).
+   */
+  async function seedCancelledCycle(
+    t: TestTenant,
+    memberId: string,
+    planId: string,
+  ): Promise<string> {
+    const cycleId = randomUUID();
+    await runInTenant(t.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: t.ctx.slug,
+        cycleId,
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date('2025-06-01T00:00:00Z'),
+        periodTo: new Date('2026-06-01T00:00:00Z'),
+        expiresAt: new Date('2026-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: null,
+        closedAt: new Date('2025-07-01T00:00:00Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+    return cycleId;
+  }
+
   function buildEvent(
     invoiceId: string,
     memberId: string,
@@ -517,6 +554,35 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     // shared createCycleInTx emits its own `renewal_cycle_created`.
     const reanchoredAfter = await countAuditRows(tenantA, 'renewal_cycle_reanchored');
     expect(reanchoredAfter).toBe(reanchoredBefore + 1);
+  }, 120_000);
+
+  // F2 fix (final-review, 2026-07-09) — closes a bug where a member whose
+  // ONLY prior cycle was cancelled without ever anchoring (genuinely never
+  // paid) had their comeback payment misclassified `renewal`: the raw
+  // `countCyclesForMemberInTx` (which counts the cancelled row) was the
+  // sole discriminator, so the payment COMPLETED the fresh provisional
+  // cycle at its stale provisional period instead of re-anchoring to the
+  // real payment month. `countSettledCyclesForMemberInTx` (completed OR
+  // ever-anchored, excluding the open cycle) now correctly reports ZERO
+  // settled history for this member, so the payment still RE-ANCHORS.
+  it('cancelled-only-history member: predecessor cycle was cancelled WITHOUT ever anchoring → payment still RE-ANCHORS (not completes)', async () => {
+    const memberId = await seedMember(tenantA, planIdA);
+    await seedCancelledCycle(tenantA, memberId, planIdA);
+    const provisionalCycleId = await seedProvisionalCycle(tenantA, memberId, planIdA);
+    const invoiceId = await seedIssuedInvoice(tenantA, memberId, planIdA);
+
+    await fireOnPaidChainInTx(tenantA, invoiceId, memberId, '2026-08-16');
+
+    const cycles = await loadCycles(tenantA, memberId);
+    // The cancelled predecessor + the re-anchored provisional cycle —
+    // NOT a third (gapless-next) cycle, since a re-anchor never completes.
+    expect(cycles).toHaveLength(2);
+    const reanchored = cycles.find((c) => c.cycleId === provisionalCycleId)!;
+    expect(reanchored.status).toBe('upcoming');
+    expect(reanchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.anchorInvoiceId).toBe(invoiceId);
+    expect(reanchored.closedReason).toBeNull(); // never completed
   }, 120_000);
 
   it('R2(a) catalogue-gap heal skip: zero-cycle member on an inactive-only plan → PlanNotResolvableError caught, payment stands (paid), no cycle, no reanchor audit', async () => {
