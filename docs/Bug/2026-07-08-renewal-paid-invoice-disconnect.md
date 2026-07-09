@@ -307,3 +307,41 @@ Remaining open items:
 - [x] Decide fix direction for F-1 — IMPLEMENTED (rolling-anchor Tasks 5–7): every payment path settles renewal state via `classifyMembershipPayment` (unlinked-invoice hook + linked path + mark-paid-offline), plus the dispatcher skip-guard `unreconciled_paid_membership_invoice` (Task 10) as the pre-backfill safety net. Grace-30 (R7) runbook'd in `docs/runbooks/cron-jobs.md` § Rolling-anchor ship-day ops.
 - [x] Decide business rule for F-2 — IMPLEMENTED (Task 13): credit-note `membershipEffect` intent capture (`keep` | `cancel_membership`) required on full membership credits; route orchestrates F8 cycle cancellation post-commit.
 - [x] Fix F-3 status filter (both scorers) — IMPLEMENTED (Task 11): `MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited'))` in both the batch flags repo and the single-member at-risk scorer.
+
+## PR #173 code-review (2026-07-09) — deferred findings
+
+A `/code-review` (xhigh) of PR #173 surfaced 15 findings. The ones touching real
+data / tax documents / member state were FIXED in the same PR's review fix-wave
+(admin-renew §86/4 window classification-gate; cancelled-only-history
+misclassification; fiscal-year start-month in re-freeze; clear-test-data
+`anchor_invoice_id` FK; backfill calendar-date validation + Bangkok "today" +
+suffix-aware name matching; Gate 7.5 batching; UI copy + missing tests). The
+following four were **deliberately deferred** — none touch money, tax, membership
+state, or production behaviour under the current single-tenant deployment:
+
+- [ ] **F-3 × credit-note `keep` intent** (at-risk recency) — a full credit note
+  issued as `membershipEffect: 'keep'` (paperwork correction / duplicate refund)
+  still removes that invoice's `paid_at` from the at-risk `daysSinceLastPayment`
+  factor, so a paid-up member's recency can regress. Impact is confined to the
+  soft at-risk **score** (a staff-outreach signal, human-correctable), not money
+  or cycle state; TSCC has no established mid-term-refund practice so it is rare.
+  **Blocked on a business decision**: a correct fix needs the credit's intent
+  persisted and consulted by the scorer. → track separately before the F-2
+  credit-note flow sees real volume. *(candidate for a GitHub issue)*
+- [ ] **Tenant-resolution rollout** — ~37 Server-Component pages still call the
+  bare `resolveTenantFromRequest()` (ignores the `X-Tenant` E2E header, falls to
+  the env default). Pre-existing; production is single-tenant so no live impact;
+  only a throwaway-tenant E2E touching one of those pages would reproduce the
+  class. Proper fix (auto-detect `next/headers` inside the resolver → async
+  signature change across ~55 callers, or finish the `resolveTenantFromHeaders`
+  rollout) is its own focused PR, out of scope for the rolling-anchor feature.
+- [ ] **EXPLAIN index-precision test** — `load-members-membership-status.test.ts`
+  was loosened from pinning the recency index by name to a 3-index allowlist to
+  fix a genuine small-table (~14 rows) planner cost-tie flake. Test precision
+  only; the separate index drop-guard test still backstops the "index removed"
+  regression class. Optional tightening = seed a larger row count so the recency
+  index wins decisively.
+- [x] **POST /api/invoices re-read** — WON'T FIX (correct by design). The route
+  re-derives `membershipCoverage` server-side rather than trusting the client's
+  advisory value; caching/reusing the client read would reintroduce a
+  trust-the-client path on a §86/4 tax-document field. Accepted, not deferred.
