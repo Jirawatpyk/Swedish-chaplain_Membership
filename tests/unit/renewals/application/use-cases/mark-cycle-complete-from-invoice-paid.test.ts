@@ -610,6 +610,48 @@ describe('markCycleCompleteInTx (rolling-anchor Task 6) — LINKED-path first-pa
     expect(readGuardsMock).toHaveBeenCalledTimes(1);
   });
 
+  it('F3 (final-review): degraded mode (wrapper) + first-payment shape → NOT reanchored, falls through to legacy complete flow', async () => {
+    // Same first-payment shape as the happy-path test above (only cycle,
+    // never anchored, linked to THIS invoice), but driven through the
+    // WRAPPER (`markCycleCompleteFromInvoicePaid`), which forces
+    // `allowUnlinkedResolution=false` (separately-committed, non-atomic
+    // tx). The reanchor branch must be skipped entirely — a re-anchor is
+    // too consequential a mutation to commit outside F4's real payment
+    // tx — falling through to the pre-existing auto-complete flow
+    // instead (legacy behaviour, byte-identical to the
+    // already-anchored-cycle test below).
+    const cycle = buildCycle();
+    const {
+      deps,
+      reanchorMock,
+      transitionMock,
+      emitInTxMock,
+      countCyclesMock,
+      readGuardsMock,
+    } = fakeDeps({ cycle, countCyclesForMember: 1 });
+
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+
+    expect(r.kind).toBe('completed');
+    // The reanchor ACTION never runs — only the completion path does.
+    expect(reanchorMock).not.toHaveBeenCalled();
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'awaiting_payment',
+      to: 'completed',
+      closedReason: 'paid',
+    });
+    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+      type: 'renewal_completed',
+    });
+    // Classification still ran (countCycles + guards consulted once each)
+    // — only the reanchor ACTION was gated, not the classify read itself.
+    expect(countCyclesMock).toHaveBeenCalledTimes(1);
+    expect(readGuardsMock).toHaveBeenCalledTimes(1);
+    // Reuses the SAME metric bucket as the sibling `!cycle` degraded
+    // refusal so both land on one dashboard counter.
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
+  });
+
   it('COMP-1 H4: erased member, first-ever unanchored cycle → held for admin, NOT reanchored', async () => {
     // Same first-payment shape as the happy-path test above (only cycle,
     // never anchored), but the member is GDPR-erased. Without threading the

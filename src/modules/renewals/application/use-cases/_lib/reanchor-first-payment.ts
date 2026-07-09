@@ -74,6 +74,32 @@ export async function reanchorFirstPaymentCycleInTx(
   tx: TenantTx,
   cycle: RenewalCycle,
 ): Promise<ReanchorFirstPaymentResult | null> {
+  // F2 (final-review, 2026-07-09) — a first-payment cycle can still carry
+  // a `linkedInvoiceId` that is NOT the invoice actually being paid: e.g.
+  // confirm-renewal (or an F8-dispatched reminder) parked a DIFFERENT
+  // invoice on this cycle, and the member instead settled an unrelated
+  // ad-hoc invoice out of band. Re-anchoring proceeds regardless (the
+  // guarded UPDATE below clears `linked_invoice_id`, matching
+  // `reanchorPeriodInTx`'s documented WHERE clause), but the now-orphaned
+  // parked invoice needs a human to void it — mirrors the SAME loud-log
+  // pattern `resolve-unlinked-membership-payment.ts`'s `renewalComplete`
+  // branch already applies for the `renewal` classification; this closes
+  // the gap for the `first_payment` classification (both call sites of
+  // this shared core — the unlinked hook's `firstPayment` branch and
+  // `markCycleCompleteInTx`'s linked path).
+  if (cycle.linkedInvoiceId !== null && cycle.linkedInvoiceId !== evt.invoiceId) {
+    logger.error(
+      {
+        cycleId: cycle.cycleId,
+        orphanedInvoiceId: cycle.linkedInvoiceId,
+        payingInvoiceId: evt.invoiceId,
+        tenantId: evt.tenantId,
+        memberId: evt.memberId,
+      },
+      '[reanchor-first-payment] orphaned invoice — staff must void',
+    );
+  }
+
   const anchorDate = paymentAnchorMonthStartUtc(evt);
 
   const oldFiscalYear = deriveFiscalYear(cycle.periodFrom);

@@ -542,6 +542,50 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 5: renewal', () => 
   });
 
   // ---------------------------------------------------------------------
+  // F4 fix (final-review, 2026-07-09, defensive) — 'reminded' has NO
+  // direct edge into 'completed' (only 'upcoming' and 'awaiting_payment'
+  // do — see cycle-status.ts's TRANSITIONS map). `toClassifierOpenCycle`
+  // folds a 'reminded' RAW cycle to 'upcoming' for classification only —
+  // the raw cycle object (still status='reminded') is what actually gets
+  // passed into `renewalComplete`. Without the two-step guard this would
+  // throw `InvalidCycleTransitionError`, crashing the hook. 'reminded'
+  // has no writer in `src/` today (vestigial), so this scenario is
+  // unreachable in production — this test locks the defensive guard.
+  // ---------------------------------------------------------------------
+  it("F4 (defensive): 'reminded'-status open cycle → legal two-step transition, no crash", async () => {
+    const openCycle = buildCycle({
+      status: 'reminded',
+      anchoredAt: '2025-06-01T00:00:00Z',
+      periodFrom: '2026-06-01T00:00:00Z',
+      periodTo: '2027-06-01T00:00:00Z',
+      linkedInvoiceId: null,
+    });
+    const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle });
+    const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+    expect(r).toEqual({ kind: 'renewed', cycleId: openCycle.cycleId });
+    expect(mocks.transitionStatus).toHaveBeenCalledTimes(2);
+    expect(mocks.transitionStatus).toHaveBeenNthCalledWith(
+      1,
+      SENTINEL_TX,
+      TENANT_ID,
+      openCycle.cycleId,
+      expect.objectContaining({ from: 'reminded', to: 'awaiting_payment' }),
+    );
+    expect(mocks.transitionStatus).toHaveBeenNthCalledWith(
+      2,
+      SENTINEL_TX,
+      TENANT_ID,
+      openCycle.cycleId,
+      expect.objectContaining({
+        from: 'awaiting_payment',
+        to: 'completed',
+        closedReason: 'paid',
+        linkedInvoiceId: INVOICE_UUID,
+      }),
+    );
+  });
+
+  // ---------------------------------------------------------------------
   // F1 fix (Task 5 review, Critical) — deliberate ASYMMETRY pin: unlike
   // healNoCycle's guard, a PlanNotResolvableError surfacing from the
   // renewal branch's own next-cycle creation must PROPAGATE, exactly

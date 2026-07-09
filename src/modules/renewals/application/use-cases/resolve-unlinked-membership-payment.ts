@@ -428,13 +428,41 @@ async function renewalComplete(
 
   let updated: RenewalCycle;
   try {
-    updated = await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
-      from: cycle.status,
-      to: 'completed',
-      closedAt: evt.paidAt,
-      closedReason: 'paid',
-      linkedInvoiceId: evt.invoiceId,
-    });
+    // F4 (final-review, 2026-07-09, defensive) — `reminded` has NO direct
+    // edge into `completed` (`TRANSITIONS.reminded = ['awaiting_payment',
+    // 'cancelled']` in `cycle-status.ts`) — only `upcoming` (offline-mark
+    // shortcut) and `awaiting_payment` do. Passing raw `cycle.status`
+    // straight through for a `reminded` cycle would throw
+    // `InvalidCycleTransitionError` (uncaught by the
+    // CycleTransitionConflictError/CycleNotFoundError catch below),
+    // crashing this hook instead of completing the payment. Take the
+    // SAME legal two-step route `heldForAdminReview` already uses for
+    // `upcoming|reminded → awaiting_payment` a few lines down.
+    // `reminded` has NO writer anywhere in `src/` today (vestigial status
+    // — see `classify-membership-payment.ts`'s module docstring), so this
+    // branch is currently unreachable in production; written defensively
+    // so a future writer doesn't reintroduce this crash.
+    if (cycle.status === 'reminded') {
+      await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+        from: 'reminded',
+        to: 'awaiting_payment',
+      });
+      updated = await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+        from: 'awaiting_payment',
+        to: 'completed',
+        closedAt: evt.paidAt,
+        closedReason: 'paid',
+        linkedInvoiceId: evt.invoiceId,
+      });
+    } else {
+      updated = await deps.cyclesRepo.transitionStatus(tx, evt.tenantId, cycle.cycleId, {
+        from: cycle.status,
+        to: 'completed',
+        closedAt: evt.paidAt,
+        closedReason: 'paid',
+        linkedInvoiceId: evt.invoiceId,
+      });
+    }
   } catch (e) {
     if (e instanceof CycleTransitionConflictError || e instanceof CycleNotFoundError) {
       logger.warn(

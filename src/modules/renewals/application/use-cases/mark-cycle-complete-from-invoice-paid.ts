@@ -185,6 +185,13 @@ export async function markCycleCompleteInTx(
    * renewal-completion followed by an unrelated payment-tx rollback must
    * be impossible, so the wrapper's non-atomic tx NEVER runs the hook.
    * The dispatcher skip-guard + reconciliation cover the resulting miss.
+   *
+   * F3 (final-review, 2026-07-09) — ALSO gates the LINKED-path
+   * classify→re-anchor block below (Task 6). `false` skips the
+   * re-anchor branch too, falling through to the pre-existing
+   * guard/autoComplete/holdForAdminReview flow with the SAME
+   * "non-atomic tx must not commit a consequential mutation"
+   * rationale — see that branch's comment for detail.
    */
   allowUnlinkedResolution = true,
 ): Promise<MarkCycleCompleteOutcome> {
@@ -301,38 +308,72 @@ export async function markCycleCompleteInTx(
     });
 
     if (classification.kind === 'first_payment') {
-      const reanchoredResult = await reanchorFirstPaymentCycleInTx(
-        {
-          cyclesRepo: deps.cyclesRepo,
-          planLookup: deps.planLookupForRenewal,
-          auditEmitter: deps.auditEmitter,
-        },
-        event,
-        tx,
-        cycle,
-      );
-      if (reanchoredResult) {
-        return {
-          kind: 'reanchored' as const,
-          cycleId: reanchoredResult.cycle.cycleId,
-          memberId: cycle.memberId,
-        };
-      }
-      // Lost the re-anchor race (a concurrent write moved the cycle out
-      // of the un-anchored-open state between our classify read and the
-      // guarded UPDATE) — re-read the SAME row by id once and fall
-      // through to the EXISTING guard+autoComplete/holdForAdminReview
-      // flow below with fresh data. Never loop (design rev 2 §2 race-
-      // recovery discipline — mirrors the unlinked hook's
-      // `reclassifyAfterRace`, but the linked path's fallback IS its own
-      // pre-existing flow, so no separate reclassify function is needed).
-      const refreshed = await deps.cyclesRepo.findByIdInTx(
-        tx,
-        event.tenantId,
-        cycle.cycleId,
-      );
-      if (refreshed) {
-        cycle = refreshed;
+      if (!allowUnlinkedResolution) {
+        // F3 (final-review, 2026-07-09) — degraded mode (the wrapper's
+        // own, SEPARATELY-committed tx — see this function's
+        // `allowUnlinkedResolution` param docstring) must NOT commit a
+        // re-anchor here either. A re-anchor is a far more consequential
+        // mutation than the plain status flip below (period dates move,
+        // frozen fields re-freeze, reminder events reset) — the
+        // atomic-tx guarantee the linked path normally rides on is
+        // exactly what makes it safe to run, and degraded mode has no
+        // such guarantee. Fall through to the PRE-EXISTING
+        // guard/autoComplete/holdForAdminReview flow below instead —
+        // the same legacy behaviour this linked path had before the
+        // rolling-anchor refactor (Task 6) introduced the reanchor
+        // branch: a first-ever payment settles the cycle at its
+        // provisional (pre-anchor) dates rather than re-anchoring to
+        // the actual payment month. The dispatcher skip-guard +
+        // reconciliation cover the resulting miss — mirrors the sibling
+        // `!cycle` degraded-mode refusal a few lines above, including
+        // reusing the SAME `unlinkedPaymentResolved('skipped')` metric
+        // bucket so both degraded-mode refusals land on one dashboard
+        // counter.
+        logger.error(
+          {
+            cycleId: cycle.cycleId,
+            invoiceId: event.invoiceId,
+            tenantId: event.tenantId,
+            memberId: event.memberId,
+          },
+          '[mark-cycle-complete] degraded mode (non-atomic tx) — refusing linked-path first-payment re-anchor; falling through to legacy complete/hold flow',
+        );
+        renewalsMetrics.unlinkedPaymentResolved('skipped');
+      } else {
+        const reanchoredResult = await reanchorFirstPaymentCycleInTx(
+          {
+            cyclesRepo: deps.cyclesRepo,
+            planLookup: deps.planLookupForRenewal,
+            auditEmitter: deps.auditEmitter,
+          },
+          event,
+          tx,
+          cycle,
+        );
+        if (reanchoredResult) {
+          return {
+            kind: 'reanchored' as const,
+            cycleId: reanchoredResult.cycle.cycleId,
+            memberId: cycle.memberId,
+          };
+        }
+        // Lost the re-anchor race (a concurrent write moved the cycle
+        // out of the un-anchored-open state between our classify read
+        // and the guarded UPDATE) — re-read the SAME row by id once and
+        // fall through to the EXISTING guard+autoComplete/
+        // holdForAdminReview flow below with fresh data. Never loop
+        // (design rev 2 §2 race-recovery discipline — mirrors the
+        // unlinked hook's `reclassifyAfterRace`, but the linked path's
+        // fallback IS its own pre-existing flow, so no separate
+        // reclassify function is needed).
+        const refreshed = await deps.cyclesRepo.findByIdInTx(
+          tx,
+          event.tenantId,
+          cycle.cycleId,
+        );
+        if (refreshed) {
+          cycle = refreshed;
+        }
       }
     }
   }
