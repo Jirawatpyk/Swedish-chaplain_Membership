@@ -345,3 +345,71 @@ state, or production behaviour under the current single-tenant deployment:
   re-derives `membershipCoverage` server-side rather than trusting the client's
   advisory value; caching/reusing the client read would reintroduce a
   trust-the-client path on a §86/4 tax-document field. Accepted, not deferred.
+
+## PR #173 round-2 code-review (2026-07-09) — deferred findings
+
+A second `/code-review` (xhigh, workflow-orchestrated: 10 finders → verify →
+sweep → synthesize) stress-tested the round-1 fix-wave and produced 9 findings —
+each of FIX-1 / FIX-3 / FIX-6 / FIX-7 had left a residual. **Five were fixed in
+this same PR** (commits `[R2-FIX-1/2/7/9]`):
+
+- **R2-FIX-1** (HIGH) — reanchor's FIX-3 fiscal-year read opened a nested
+  `runInTenant` (2nd pooled connection) inside the payment-settlement tx →
+  threaded the outer tx via a narrow F4 `readFiscalYearStartMonthInTx`.
+- **R2-FIX-2** (HIGH) — admin-renew still hardcoded `memberErased:false` (the
+  exact pattern FIX-7(d) removed elsewhere) → reads the real erased guard + gates
+  the §86/4 window on `classification.kind === 'renewal'`.
+- **R2-FIX-7** (perf) — invoice-form dragged `@js-joda/timezone` into the client
+  bundle → client-safe `bangkokDateOnly` in `@/lib/dates`.
+- **R2-FIX-9** (perf) — dead count-all on the New-Invoice interactive read → open
+  cycle loaded first, count-all only when none exists.
+
+The remaining items were **deliberately deferred** — none touch money, tax,
+membership state, or production behaviour under the current single-tenant
+(SweCham, January fiscal year) deployment:
+
+- [ ] **Multi-tenant fiscal-year: sibling `planYear` defaults January**
+  (findings #3/#4) — FIX-3 threaded the tenant's `fiscal_year_start_month` into
+  ONLY reanchor's FY-crossing re-freeze; every sibling `deriveFiscalYear(periodFrom)`
+  that feeds the renewal §86/4 label + `(plan_id, plan_year)` catalogue lookup
+  (confirm-renewal ×2, admin-renew, mark-paid-offline, create-cycle-in-tx ×2)
+  still defaults to January. Conversely FIX-3's threading of `startMonth` into
+  reanchor's *plan-catalogue* lookup is arguably wrong — the catalogue is keyed by
+  CALENDAR `plan_year` everywhere else, so for a non-January tenant reanchor would
+  re-freeze on a different `plan_year` row than the invoice. **Zero SweCham impact**
+  (January-start → `startMonth` is always 1). Verified NOT to affect §87 tax
+  numbering (F4 derives its numbering fiscal year independently from
+  `settings.fiscalYearStartMonth`, not from the renewals `planYear`) — it affects
+  only the printed "Membership {year}" label + the price-row lookup for a future
+  non-January tenant. **The two findings conflict in direction** (thread it
+  everywhere vs. revert the plan-lookup threading), so this needs the future-tenant
+  fiscal-year semantics pinned first — a decision, not a mechanical fix; blind-
+  fixing one would amplify the other. → defer to the multi-tenant workstream.
+- [ ] **FIX-6 stale skip-set snapshot** (finding #5) — FIX-6 batched Gate 7.5's
+  unreconciled-paid-invoice read into a single per-cron-pass snapshot. A payment
+  that reconciles (or becomes unreconciled) mid-pass is not reflected for
+  candidates beyond page 1 → a narrow duplicate-reminder race (member pays an
+  ad-hoc membership invoice during the exact pass AND is beyond page 1);
+  self-corrects on the next daily pass. Negligible at SweCham single-page scale.
+  Revisit if a tenant's candidate set spans many pages: re-read the skip-set per
+  page, or restore a per-candidate fresh read behind a size threshold.
+- [ ] **Shared classifier-input mapping duplication** (finding #6) — the
+  open-cycle → classifier-input `{status, anchoredAt}` mapping (fold vestigial
+  'reminded' into 'upcoming') is duplicated across six settlement sites; FIX-8(a)
+  consolidated only the two COUNT reads. Consolidating the mapping too crosses the
+  module barrel (member-renewal-context lives in presentation), so it was scoped
+  out. Cleanup only — a future open-status change (e.g. a 'grace' status) must be
+  replicated in all six. → follow-up cleanup.
+- [ ] **Skip the dead count-all in the SHARED settlement loader**
+  (would-be R2-FIX-8, ATTEMPTED then REVERTED this round) —
+  `loadClassificationCounts` runs `countCyclesForMemberInTx` unconditionally even
+  when an open cycle is known (where classify's `=== 0` heal branch is
+  unreachable) — 1 dead COUNT per settlement at 4+ sites inside the payment tx.
+  The optimisation (sentinel when `openCycleId` is non-null) is correct in
+  production but changes classification *in tests* that seed the impossible "open
+  cycle + zero total-count" state as a shortcut, rippling into ~10 money-path
+  classification-test assertions (mark-cycle-complete, confirm-renewal, admin-renew)
+  for a NEGLIGIBLE background-tx query saving. Not worth the pre-delivery risk;
+  R2-FIX-9 captured the same win on the user-facing New-Invoice path where it was
+  clean. → follow-up: make those tests use realistic settled/anchored setups,
+  then apply the loader gate.
