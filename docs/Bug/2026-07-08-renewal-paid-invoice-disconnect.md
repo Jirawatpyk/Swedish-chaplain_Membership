@@ -302,8 +302,8 @@ Remaining open items:
 ## Follow-ups
 
 - [ ] Answer QA: explain F-1 + the "Mark paid offline" step; confirm which screen they saw the count on.
-- [ ] Decide Q-1 business rule: calendar-year cycles (align with plan/invoice coverage) vs registration-anniversary (current).
-- [ ] Confirm Q-3 mid-year-joiner pricing with chamber board/manager (recommended: C+A hybrid, Oct cut-off placeholder).
-- [ ] Decide fix direction for F-1 (options 1–3 above) — recommend at least (3) before Sep 2026.
-- [ ] Decide business rule for F-2 (credit note vs membership state).
-- [ ] Fix F-3 status filter (both scorers) when touching at-risk code.
+- [x] Decide Q-1 business rule — DECIDED 2026-07-08: TSCC answered rolling/anniversary (see § TSCC ANSWER); implemented by the rolling-anchor refactor (branch `renewal-rolling-anchor`, migration 0238).
+- [x] Confirm Q-3 mid-year-joiner pricing — DISSOLVED by the TSCC answer: no pro-rating; every joiner gets 12 months from the payment month.
+- [x] Decide fix direction for F-1 — IMPLEMENTED (rolling-anchor Tasks 5–7): every payment path settles renewal state via `classifyMembershipPayment` (unlinked-invoice hook + linked path + mark-paid-offline), plus the dispatcher skip-guard `unreconciled_paid_membership_invoice` (Task 10) as the pre-backfill safety net. Grace-30 (R7) runbook'd in `docs/runbooks/cron-jobs.md` § Rolling-anchor ship-day ops.
+- [x] Decide business rule for F-2 — IMPLEMENTED (Task 13): credit-note `membershipEffect` intent capture (`keep` | `cancel_membership`) required on full membership credits; route orchestrates F8 cycle cancellation post-commit.
+- [x] Fix F-3 status filter (both scorers) — IMPLEMENTED (Task 11): `MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited'))` in both the batch flags repo and the single-member at-risk scorer.
