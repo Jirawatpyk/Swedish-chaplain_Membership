@@ -15,8 +15,11 @@ export interface ActivityFeedEntry {
   readonly label: string;
   /** ISO 8601 for the `<time dateTime>` attribute. */
   readonly occurredAt: string;
-  /** Locale-formatted display label. */
+  /** Visible relative label ("5 minutes ago"), locale-aware (FR-003). */
   readonly timeLabel: string;
+  /** Exact date+time in the tenant timezone — shown as the `<time>` tooltip so
+   *  the relative label stays glanceable without losing the precise instant. */
+  readonly absoluteLabel?: string;
 }
 
 export function ActivityFeed({
@@ -48,6 +51,7 @@ export function ActivityFeed({
                 <span>{item.label}</span>
                 <time
                   dateTime={item.occurredAt}
+                  {...(item.absoluteLabel ? { title: item.absoluteLabel } : {})}
                   className="shrink-0 text-caption text-muted-foreground tabular-nums"
                 >
                   {item.timeLabel}

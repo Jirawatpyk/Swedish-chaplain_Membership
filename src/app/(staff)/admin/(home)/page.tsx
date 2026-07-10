@@ -20,6 +20,7 @@ import {
   ActivityFeed,
   type ActivityFeedEntry,
 } from '@/components/dashboard/activity-feed';
+import { activityTimeLabels } from '@/components/dashboard/activity-time';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
 import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
@@ -232,20 +233,31 @@ export default async function StaffHomePage() {
     ...(insight.scopeRef !== undefined ? { scopeRef: insight.scopeRef } : {}),
   }));
 
-  const timeFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
   // Fallback to the timeline `audit.eventType` catalogue (EN/TH/SV) for codes
   // the feed namespace lacks → localised label instead of humanised English.
   const tEventsFallback = await getTranslations('audit.eventType');
-  const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => ({
-    id: item.id,
-    // Localised action label (FR-034) — resolved per-locale from the audit
-    // event type, NOT the raw English summary (which would leak to TH/SV).
-    // Falls back to the timeline catalogue, then a humanised token.
-    label: resolveEventLabel(tEvents, item.eventType, tEventsFallback),
-    occurredAt: item.occurredAt,
-    timeLabel: timeFmt.format(new Date(item.occurredAt)),
-  }));
+  const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => {
+    // Relative visible label ("5 minutes ago", FR-003) + exact tenant-tz tooltip.
+    // The absolute label MUST carry the tenant timezone (the Vercel runtime is
+    // UTC), or Bangkok events render 7h behind / on the wrong day — parity with
+    // the `asOf` header above.
+    const { relative, absolute } = activityTimeLabels(
+      item.occurredAt,
+      locale,
+      env.tenant.timezone,
+    );
+    return {
+      id: item.id,
+      // Localised action label (FR-034) — resolved per-locale from the audit
+      // event type, NOT the raw English summary (which would leak to TH/SV).
+      // Falls back to the timeline catalogue, then a humanised token.
+      label: resolveEventLabel(tEvents, item.eventType, tEventsFallback),
+      occurredAt: item.occurredAt,
+      timeLabel: relative,
+      absoluteLabel: absolute,
+    };
+  });
 
   // FR-001a trend charts — display-ready points (visible to all staff; the
   // empty state shows only when a tenant genuinely has no paid revenue yet).
