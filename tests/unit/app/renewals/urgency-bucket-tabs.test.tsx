@@ -28,8 +28,20 @@ describe('UrgencyBucketTabs colour + All state', () => {
     expect(badge.className).toMatch(/red/);
   });
 
+  it('marks exactly the current tab active when current is a bucket', () => {
+    const { container } = renderTabs('t-30');
+    // Base UI Tabs (`@base-ui/react/tabs`) marks the active tab with
+    // `aria-selected="true"` (NOT Radix's `data-state="active"`). This
+    // positive case proves the selector is real + discriminating: it
+    // finds exactly one active tab, and it's the T-30 trigger.
+    const active = container.querySelectorAll('[aria-selected="true"]');
+    expect(active).toHaveLength(1);
+    expect(active[0]).toHaveTextContent('T-30');
+  });
+
   it('renders with no active tab when current is null (month lens active)', () => {
     const { container } = renderTabs(null);
-    expect(container.querySelector('[data-state="active"]')).toBeNull();
+    // `current ?? ''` → empty Tabs value → no tab is aria-selected.
+    expect(container.querySelectorAll('[aria-selected="true"]')).toHaveLength(0);
   });
 });
