@@ -44,3 +44,10 @@ export type {
   PipelineRow,
   UrgencyBucket,
 } from './application/ports/renewal-cycle-repo';
+
+// Renewals-by-month view-model types — pure Domain (client-bundle-safe).
+export type {
+  RenewalMonthBucket,
+  RenewalMonthSummary,
+  RenewalMonthAggregation,
+} from './domain/renewal-month-bucket';

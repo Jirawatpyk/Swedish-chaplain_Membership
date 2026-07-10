@@ -295,6 +295,14 @@ export type {
   MembersWithoutCyclePage,
 } from './application/ports/renewal-cycle-repo';
 
+// Renewals-by-month view-model types (pure Domain).
+export type {
+  RenewalMonthBucket,
+  RenewalMonthSummary,
+  RenewalMonthAggregation,
+  RawMonthCount,
+} from './domain/renewal-month-bucket';
+
 // --- Phase 3 use-cases (Wave H2 T056-T059) ---------------------------------
 export {
   loadPipeline,
