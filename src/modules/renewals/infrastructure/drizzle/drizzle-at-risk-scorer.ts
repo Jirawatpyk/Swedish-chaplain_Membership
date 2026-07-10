@@ -402,26 +402,39 @@ export function makeDrizzleAtRiskScorer(
       // BUG-1 follow-up — F6 cultural-ticket quota-usage factor (FR-029 line 4).
       let culturalTicketQuotaPctUsed: number | undefined;
       if (f6Available) {
+        // Fetch a safe superset (now-370d covers a full 12 CALENDAR months
+        // incl. leap) so the calendar-month count below is never truncated.
         const attendances = await deps.eventAttendees.listAttendances(
           tenantId,
           memberId,
           {
-            sinceIso: new Date(nowMs - 365 * 24 * 60 * 60 * 1000).toISOString(),
+            sinceIso: new Date(nowMs - 370 * 24 * 60 * 60 * 1000).toISOString(),
             limit: 500,
           },
         );
-        // BUG-1 review: upper-bound at `now` — count only events ATTENDED
-        // (past), NOT future registrations. `listAttendances` takes only
-        // `sinceIso` (no `until`), so a member registered for an upcoming event
-        // would otherwise inflate the count and suppress the +25/+10
-        // disengagement factors. Matches the batch LATERAL's `start_date <= NOW()`.
-        eventsAttendedLast12Months = attendances.filter(
-          (a) => new Date(a.attendedAt).getTime() <= nowMs,
-        ).length;
-        const threeMoMs = nowMs - 90 * 24 * 60 * 60 * 1000;
+        // Final-review fix: use CALENDAR-month lower bounds (setMonth) to match
+        // the batch CTE's `NOW() - INTERVAL '12 months'/'3 months'` — FR-029
+        // says "last N MONTHS", and a fixed-day (365d/90d) bound diverged from
+        // the batch by 1-2 days at the boundary (band flicker between the
+        // admin single-recompute and the weekly cron). Both now upper-bound at
+        // `now` so future registrations don't count (batch: `start_date <= NOW()`).
+        const twelveMonthsAgoMs = (() => {
+          const d = new Date(nowMs);
+          d.setMonth(d.getMonth() - 12);
+          return d.getTime();
+        })();
+        const threeMonthsAgoMs = (() => {
+          const d = new Date(nowMs);
+          d.setMonth(d.getMonth() - 3);
+          return d.getTime();
+        })();
+        eventsAttendedLast12Months = attendances.filter((a) => {
+          const t = new Date(a.attendedAt).getTime();
+          return t > twelveMonthsAgoMs && t <= nowMs;
+        }).length;
         eventsAttendedLast3Months = attendances.filter((a) => {
           const t = new Date(a.attendedAt).getTime();
-          return t > threeMoMs && t <= nowMs;
+          return t > threeMonthsAgoMs && t <= nowMs;
         }).length;
 
         // BUG-1 follow-up — cultural-ticket quota % used (FR-029 line 4:
