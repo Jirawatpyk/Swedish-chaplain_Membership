@@ -221,11 +221,98 @@ describe('countCyclesByExpiryMonth — integration', () => {
     });
 
     // Reconciliation: rows returned for the month == the bucket count.
+    // NB: the RED for this case (rows=5 vs bucket=2, pre-fix) is real-wall-
+    // clock-coupled — it reproduces only while NOW() < ~2026-11, before the
+    // Feb-2027 cycle enters the old 90-day ceiling. The GREEN assertion below
+    // is wall-clock-STABLE: the month lens binds `nowIso`, not `NOW()`.
     expect(monthPage.rows.length).toBe(febBucket!.count);
-    expect(monthPage.rows.every((r) => r.expiresAt >= '2027-02')).toBe(true);
+    expect(
+      monthPage.rows.every((r) => r.expiresAt >= '2027-02' && r.expiresAt < '2027-03'),
+    ).toBe(true);
 
     // F3: the urgency summary + lapsed count are identical with/without month.
     expect(monthPage.summary.byUrgency).toEqual(base.summary.byUrgency);
     expect(monthPage.summary.lapsedCount).toBe(base.summary.lapsedCount);
+  });
+
+  it('overdue month lens reconciles with agg.overdueCount and runtime-exercises the overdue .toISOString() bound', async () => {
+    // Fresh distinct member (renewal_cycles_active_member_uniq allows one
+    // open cycle per member) with an OVERDUE open cycle — BKK 2026-04, before
+    // the current BKK month (2026-07). This is the FIRST test to drive the
+    // `monthFilter: 'overdue'` branch of monthBoundPredicate at runtime.
+    const overdue = await seedMember(false);
+    await seedCycle({ memberId: overdue, status: 'upcoming', expiresAt: new Date('2026-04-10T04:00:00Z') });
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const agg = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
+      nowIso: NOW_ISO,
+      timezone: 'Asia/Bangkok',
+    });
+    expect(agg.overdueCount).toBeGreaterThan(0);
+
+    const page = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      monthFilter: 'overdue',
+      nowIso: NOW_ISO,
+      limit: 200,
+    });
+
+    // Reconciliation: overdue rows == the overdue bucket count.
+    expect(page.rows.length).toBe(agg.overdueCount);
+    // Every overdue row expires before the first BKK instant of the current
+    // month (2026-07). Lexicographic ISO-string compare is a valid sanity
+    // bound here — all seeded overdue cycles are mid-month/mid-day.
+    expect(page.rows.every((r) => r.expiresAt < '2026-07')).toBe(true);
+  });
+
+  it('later month lens reconciles with agg.laterCount and runtime-exercises the later .toISOString() bound', async () => {
+    // Fresh distinct member with a cycle comfortably past now+12mo — BKK
+    // 2027-09, beyond the 2027-07 `later` boundary. FIRST test to drive the
+    // `monthFilter: 'later'` branch of monthBoundPredicate at runtime.
+    const later = await seedMember(false);
+    await seedCycle({ memberId: later, status: 'upcoming', expiresAt: new Date('2027-09-05T04:00:00Z') });
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const agg = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
+      nowIso: NOW_ISO,
+      timezone: 'Asia/Bangkok',
+    });
+    expect(agg.laterCount).toBeGreaterThan(0);
+
+    const page = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      monthFilter: 'later',
+      nowIso: NOW_ISO,
+      limit: 200,
+    });
+
+    // Reconciliation: later rows == the later bucket count.
+    expect(page.rows.length).toBe(agg.laterCount);
+    expect(page.rows.every((r) => r.expiresAt >= '2027-07')).toBe(true);
+  });
+
+  it('buckets a cycle at the first BKK instant of a month into that month (half-open lower bound == to_char grouping)', async () => {
+    // 2027-03-31T17:00:00Z == 2027-04-01T00:00:00+07:00 — the FIRST BKK
+    // instant of 2027-04. The half-open lower bound is INCLUSIVE, so this must
+    // bucket into 2027-04 (matching `to_char(... AT TIME ZONE 'Asia/Bangkok')`
+    // = '2027-04'), NOT the exclusive upper bound of 2027-03.
+    const edge = await seedMember(false);
+    await seedCycle({ memberId: edge, status: 'upcoming', expiresAt: new Date('2027-03-31T17:00:00Z') });
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const aprPage = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      monthFilter: '2027-04',
+      nowIso: NOW_ISO,
+      limit: 200,
+    });
+    const marPage = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      monthFilter: '2027-03',
+      nowIso: NOW_ISO,
+      limit: 200,
+    });
+
+    // Membership assertion (exact) — lexicographic month compares are
+    // deliberately NOT used at this boundary, where they would mislead.
+    expect(aprPage.rows.some((r) => r.memberId === edge)).toBe(true);
+    expect(marPage.rows.some((r) => r.memberId === edge)).toBe(false);
   });
 });
