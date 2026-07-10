@@ -5,10 +5,13 @@ import { MonthBarChart } from '@/components/renewals/month-bar-chart';
 import type { MonthBarItem } from '@/components/renewals/month-bucket-label';
 import en from '@/i18n/messages/en.json';
 
+// Seed the current URL with a stale urgency lens + cursor so the "nonzero →
+// link" test can prove the href builder sets `month` AND deletes both
+// `urgency` (mutually-exclusive lens) and `cursor` (pagination reset).
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/renewals',
-  useSearchParams: () => new URLSearchParams(''),
+  useSearchParams: () => new URLSearchParams('urgency=t-30&cursor=abc123'),
 }));
 
 function renderChart(items: MonthBarItem[], selectedKey: string | null = null) {
@@ -20,10 +23,10 @@ function renderChart(items: MonthBarItem[], selectedKey: string | null = null) {
 }
 
 const ITEMS: MonthBarItem[] = [
-  { key: 'overdue', label: 'Overdue', count: 2, barPercent: 12, interactive: true },
-  { key: '2026-07', label: 'July 2026', count: 17, barPercent: 100, interactive: true },
-  { key: '2026-08', label: 'August 2026', count: 0, barPercent: 0, interactive: false },
-  { key: 'later', label: 'July 2027 or later', count: 1, barPercent: 4, interactive: true },
+  { key: 'overdue', label: 'Overdue', count: 2, barPercent: 12, interactive: true, band: 't-0' },
+  { key: '2026-07', label: 'July 2026', count: 17, barPercent: 100, interactive: true, band: 't-7' },
+  { key: '2026-08', label: 'August 2026', count: 0, barPercent: 0, interactive: false, band: 't-14' },
+  { key: 'later', label: 'July 2027 or later', count: 1, barPercent: 4, interactive: true, band: 't-90' },
 ];
 
 describe('MonthBarChart', () => {
@@ -34,10 +37,13 @@ describe('MonthBarChart', () => {
     expect(screen.getByText('17')).toBeInTheDocument();
   });
 
-  it('nonzero buckets are links to ?month=<key>', () => {
+  it('nonzero buckets link to ?month=<key> and clear the urgency+cursor params', () => {
     renderChart(ITEMS);
     const link = screen.getByRole('link', { name: /July 2026/ });
-    expect(link).toHaveAttribute('href', expect.stringContaining('month=2026-07'));
+    const href = link.getAttribute('href') ?? '';
+    expect(href).toContain('month=2026-07');
+    expect(href).not.toContain('urgency=');
+    expect(href).not.toContain('cursor=');
   });
 
   it('a zero bucket is NOT a link and is aria-disabled', () => {

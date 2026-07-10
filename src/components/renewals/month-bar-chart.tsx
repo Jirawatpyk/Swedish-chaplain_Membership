@@ -18,23 +18,10 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { VARIANT_CLASSES } from '@/components/renewals/urgency-pill';
 import type { MonthBarItem } from '@/components/renewals/month-bucket-label';
-import type { UrgencyBucket } from '@/modules/renewals/client';
 
 export interface MonthBarChartProps {
   readonly items: ReadonlyArray<MonthBarItem>;
   readonly selectedKey: string | null;
-}
-
-/**
- * Bucket-position → representative urgency bucket, so the bar band reuses the
- * pill's exact Tailwind class string. Order: [overdue, m0, m1, m2, m3…m11, later].
- *   overdue → red (t-0) · m0 → orange (t-7) · m1-m2 → amber (t-14) · rest → slate (t-90)
- */
-function bandBucketForIndex(i: number): UrgencyBucket {
-  if (i === 0) return 't-0';
-  if (i === 1) return 't-7';
-  if (i === 2 || i === 3) return 't-14';
-  return 't-90';
 }
 
 export function MonthBarChart({
@@ -54,8 +41,8 @@ export function MonthBarChart({
 
   return (
     <ul role="list" aria-label={t('listAriaLabel')} className="flex flex-col gap-1">
-      {items.map((item, i) => {
-        const bandClass = VARIANT_CLASSES[bandBucketForIndex(i)];
+      {items.map((item) => {
+        const bandClass = VARIANT_CLASSES[item.band];
         const isSelected = selectedKey === item.key;
         const rowLabel = item.interactive
           ? t('bucketAriaLabel', { label: item.label, count: item.count })
@@ -63,7 +50,10 @@ export function MonthBarChart({
 
         const inner = (
           <>
-            <span className="w-40 shrink-0 truncate text-sm text-foreground">
+            <span
+              title={item.label}
+              className="w-40 shrink-0 truncate text-sm text-foreground"
+            >
               {item.label}
             </span>
             <span className="relative h-4 flex-1 overflow-hidden rounded bg-muted/40">
