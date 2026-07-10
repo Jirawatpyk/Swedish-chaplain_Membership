@@ -19,6 +19,7 @@ import type {
 } from '../../domain/renewal-cycle';
 import type { CycleStatus } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket';
 
 export interface NewRenewalCycleInput {
   readonly tenantId: string;
@@ -389,6 +390,23 @@ export interface RenewalCycleRepo {
     opts: ListMembersWithoutCycleOpts,
   ): Promise<MembersWithoutCyclePage>;
 
+  /**
+   * Renewals-by-month aggregation. Groups `MONTH_PLANNING_MEMBER_SQL`
+   * cycles by `to_char(expires_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`
+   * then folds into overdue / 12-month window / later relative to `nowIso`.
+   * Excludes GDPR-erased members + terminal + pending_admin_reactivation
+   * cycles by construction (see the shared predicate). Runs inside
+   * `runInTenant` (RLS+FORCE; threads `tx`, never global `db`).
+   *
+   * `expires_at` is `timestamptz`; `AT TIME ZONE 'Asia/Bangkok'` yields the
+   * correct BKK wall-clock month. A future column-type change to a plain
+   * timestamp would silently break this — must trip review.
+   */
+  countCyclesByExpiryMonth(
+    tenantId: string,
+    opts: { nowIso: string; timezone: 'Asia/Bangkok' },
+  ): Promise<RenewalMonthAggregation>;
+
   /** ALL cycle rows for the member, any status. In-tx (classification must see uncommitted writes). */
   countCyclesForMemberInTx(tx: TenantTx, tenantId: string, memberId: string): Promise<number>;
 
@@ -460,6 +478,16 @@ export type UrgencyBucket =
 export interface PipelineQueryOpts {
   readonly tier?: TierBucket;
   readonly urgency?: UrgencyBucket;
+  /**
+   * Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'` (validated
+   * upstream by the use-case). When present the row query is rebuilt from
+   * `MONTH_PLANNING_MEMBER_SQL` + a month bound and the 90-day ceiling is
+   * SUPPRESSED; the urgency summary + lapsed count are UNAFFECTED. Requires
+   * `nowIso` to resolve the BKK month boundaries. Ignores `tier`.
+   */
+  readonly monthFilter?: string;
+  /** ISO instant driving the month-filter boundaries (BKK). */
+  readonly nowIso?: string;
   readonly cursor?: string | null;
   readonly limit: number;
 }
