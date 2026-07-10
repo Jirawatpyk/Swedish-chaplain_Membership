@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { UrgencyBucket } from '@/modules/renewals/client';
+import { VARIANT_CLASSES } from '@/components/renewals/urgency-pill';
 
 const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   't-90',
@@ -41,7 +42,7 @@ type DashToUnderscore<S extends string> = S extends `${infer A}-${infer B}`
 type UrgencyI18nKey = DashToUnderscore<(typeof TAB_ORDER)[number]>;
 
 export interface UrgencyBucketTabsProps {
-  readonly current: UrgencyBucket;
+  readonly current: UrgencyBucket | null;
   readonly counts: Readonly<Record<UrgencyBucket, number>>;
   readonly lapsedCount: number;
 }
@@ -96,7 +97,7 @@ export function UrgencyBucketTabs({
       tabIndex={0}
       className="w-full overflow-x-auto overflow-y-hidden py-0.5 focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
     >
-      <Tabs value={current} onValueChange={handleChange}>
+      <Tabs value={current ?? ''} onValueChange={handleChange}>
         {/* `gap-1` separates adjacent triggers — without it the count
             badge of one tab visually butts against the next tab's
             label, producing the unreadable "T-90 0T-60 0T-14 0" run.
@@ -134,7 +135,10 @@ export function UrgencyBucketTabs({
             >
               <span>{label}</span>
               <span
-                className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
+                className={cn(
+                  'ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs font-medium ring-1 ring-inset tabular-nums',
+                  VARIANT_CLASSES[bucket],
+                )}
                 aria-hidden
               >
                 {count}
