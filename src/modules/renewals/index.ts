@@ -309,6 +309,7 @@ export type {
 // (not just types) so Presentation never deep-imports `./domain/**`
 // (blocked by the ESLint no-restricted-imports module-barrel rule).
 export {
+  parseMonthParam,
   barWidthPercent,
   addMonthsToYm,
   bkkYearMonth,

@@ -35,11 +35,19 @@ import {
   loadPipeline,
   loadPendingReactivationReview,
   makeRenewalsDeps,
+  parseMonthParam,
+  addMonthsToYm,
+  bkkYearMonth,
   TIER_BUCKETS,
   type TierBucket,
   type UrgencyBucket,
   type LoadPendingReactivationReviewOutput,
 } from '@/modules/renewals';
+import { formatMonthKeyLabel } from '@/components/renewals/month-bucket-label';
+import {
+  RenewalsByMonthSection,
+  RenewalsByMonthSectionSkeleton,
+} from './_components/renewals-by-month-section';
 import { RenewalsEmptyState } from './_components/empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import { PipelineTable } from './_components/pipeline-table';
@@ -83,6 +91,8 @@ interface SearchParams {
   readonly cursor?: string;
   /** `'pending-review'` selects the reactivation-review discovery view. */
   readonly view?: string;
+  /** Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'`. */
+  readonly month?: string;
 }
 
 export default async function RenewalsPipelinePage({
@@ -133,6 +143,13 @@ export default async function RenewalsPipelinePage({
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
   const isPendingReviewView = query.view === 'pending-review';
 
+  // Renewals-by-month lens. A present + VALID month wins over urgency
+  // (mutually-exclusive). `nowIso` anchors BOTH the chart aggregation and the
+  // pipeline month bounds — computed ONCE so they reconcile exactly.
+  const nowIso = new Date().toISOString();
+  const month = parseMonthParam(query.month);
+  const monthLensActive = month !== null;
+
   const deps = makeRenewalsDeps(tenantCtx.slug);
 
   // 070 F8 item #18 — "Pending review" discovery view. Loaded ONLY when
@@ -166,6 +183,7 @@ export default async function RenewalsPipelinePage({
     tenantId: tenantCtx.slug,
     ...(tier !== undefined ? { tier } : {}),
     urgency,
+    ...(monthLensActive ? { month: month as string, nowIso } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
     limit: 50,
   });
@@ -208,16 +226,41 @@ export default async function RenewalsPipelinePage({
 
   const { rows, summary, nextCursor } = result.value;
 
-  // Build the "Next 50" URL preserving tier + urgency but replacing the
-  // cursor. Matches the `/admin/audit` keyset-pagination pattern.
+  // Build the "Next 50" URL preserving tier + the active lens (month wins over
+  // urgency) but replacing the cursor. Matches the `/admin/audit`
+  // keyset-pagination pattern.
   const paginationParams = new URLSearchParams();
   if (tier !== undefined) paginationParams.set('tier', tier);
-  paginationParams.set('urgency', urgency);
+  if (monthLensActive) {
+    paginationParams.set('month', month as string);
+  } else {
+    paginationParams.set('urgency', urgency);
+  }
   if (nextCursor !== null) paginationParams.set('cursor', nextCursor);
   const nextHref =
     nextCursor !== null
       ? `/admin/renewals?${paginationParams.toString()}`
       : null;
+
+  // Localized label for the active month lens (BE-aware). `overdue`/`later`
+  // reuse the byMonth strings; a `YYYY-MM` renders the localized month+year.
+  // The `later` label uses the same BKK+12 start-key as the chart section, so
+  // both surfaces read identically.
+  const tByMonth = await getTranslations('admin.renewals.byMonth');
+  const locale = await getLocale();
+  const monthLabel =
+    month === null
+      ? undefined
+      : month === 'overdue'
+        ? tByMonth('overdue')
+        : month === 'later'
+          ? tByMonth('later', {
+              month: formatMonthKeyLabel(
+                addMonthsToYm(bkkYearMonth(nowIso), 12),
+                locale,
+              ),
+            })
+          : formatMonthKeyLabel(month, locale);
   // `RenewalsEmptyState` replaces the entire pipeline shell (tabs +
   // filter + table) with a full-card "no renewals due" illustration,
   // so it must only fire when NO filter is active. Otherwise applying
@@ -247,6 +290,20 @@ export default async function RenewalsPipelinePage({
 
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
+      {/* Renewals-by-month year view. Rendered ABOVE the urgency pipeline on
+          the main view and NOT gated behind `showEmptyState`: the urgency
+          window can be empty while the 14-month chart still shows future
+          renewals. Suspense-wrapped so its aggregation streams in without
+          blocking the pipeline render; `nowIso` is the SAME instant threaded
+          into `loadPipeline` above so the chart buckets and any
+          month-filtered pipeline rows reconcile exactly. */}
+      <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
+        <RenewalsByMonthSection
+          tenantSlug={tenantCtx.slug}
+          nowIso={nowIso}
+          selectedMonth={month}
+        />
+      </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 070 F8 item #18 — view toggle reachable from the pipeline so
@@ -261,7 +318,7 @@ export default async function RenewalsPipelinePage({
             <>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <UrgencyBucketTabs
-                  current={urgency}
+                  current={monthLensActive ? null : urgency}
                   counts={summary.byUrgency}
                   lapsedCount={summary.lapsedCount}
                 />
@@ -269,12 +326,17 @@ export default async function RenewalsPipelinePage({
               </div>
               <ResultCountAnnouncer
                 count={rows.length}
-                urgencyKey={urgency}
+                {...(monthLensActive
+                  ? { monthLabel: monthLabel as string }
+                  : { urgencyKey: urgency })}
               />
               {urgency === 'lapsed' ? (
                 <LapsedTab rows={rows} />
               ) : (
-                <PipelineTable rows={rows} />
+                <PipelineTable
+                  rows={rows}
+                  {...(monthLabel !== undefined ? { monthLabel } : {})}
+                />
               )}
               {nextHref ? (
                 // Keyset cursor pagination: when the repo returns
