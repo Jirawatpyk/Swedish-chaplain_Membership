@@ -100,7 +100,9 @@ const INTERSTITIAL_COPY = {
   },
   sv: {
     title: 'Fortsätt till din förnyelse',
-    body: 'Av säkerhetsskäl, välj knappen nedan för att öppna din medlemsförnyelse.',
+    // i18n review — natural Swedish (was a calque of "Av säkerhetsskäl, välj
+    // knappen…"; corpus uses "För din säkerhet" + "klicka på knappen").
+    body: 'För din säkerhet öppnar du din förnyelse genom att klicka på knappen nedan.',
     button: 'Fortsätt till förnyelse',
   },
 } as const;

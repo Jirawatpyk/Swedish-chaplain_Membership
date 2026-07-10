@@ -126,6 +126,32 @@ describe('contract: /api/portal/renewal/redeem-link (BUG-4 anti-prefetch)', () =
     expect(verifyMock).not.toHaveBeenCalled();
   });
 
+  it('GET localizes the interstitial per the NEXT_LOCALE cookie (en/th/sv coverage)', async () => {
+    // The interstitial copy is inline (not the next-intl catalog) so it
+    // bypasses check:i18n — this asserts every locale renders its button +
+    // lang, catching a missing/empty locale key.
+    const { GET } = await import(
+      '@/app/api/portal/renewal/redeem-link/route'
+    );
+    const cases: ReadonlyArray<{ locale: string; button: string }> = [
+      { locale: 'en', button: 'Continue to renewal' },
+      { locale: 'th', button: 'ดำเนินการต่อ' },
+      { locale: 'sv', button: 'Fortsätt till förnyelse' },
+    ];
+    for (const { locale, button } of cases) {
+      const res = await GET(
+        new NextRequest(
+          `http://localhost/api/portal/renewal/redeem-link?t=${TOK}`,
+          { method: 'GET', headers: { cookie: `NEXT_LOCALE=${locale}` } },
+        ),
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(button);
+      expect(html).toContain(`lang="${locale}"`);
+    }
+  });
+
   it('POST consumes the token (via verify), mints a session, and 302-redirects to the renewal page', async () => {
     // The real verify runs the preConsumeGate to capture the linked user +
     // consume the token; the mock mirrors that contract so the route's
