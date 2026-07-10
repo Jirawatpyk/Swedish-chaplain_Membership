@@ -2902,7 +2902,7 @@
       "byMonth": {
         "title": "Förnyelser per månad",
         "subtitle": "{count, plural, one {# förnyelse under det kommande året} other {# förnyelser under det kommande året}}",
-        "overdue": "Förfallna",
+        "overdue": "Försenade",
         "later": "{month} eller senare",
         "listAriaLabel": "Förnyelser per månad",
         "bucketAriaLabel": "{label}: {count, plural, one {# medlem} other {# medlemmar}}",
