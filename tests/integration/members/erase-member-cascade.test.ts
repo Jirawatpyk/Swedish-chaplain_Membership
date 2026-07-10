@@ -46,6 +46,7 @@ import { emailChangeTokenAdapter } from '@/modules/members/infrastructure/adapte
 import { userEmailAdapter } from '@/modules/members/infrastructure/adapters/user-email-adapter';
 import { outboxCancelAdapter } from '@/modules/members/infrastructure/adapters/outbox-cancel-adapter';
 import { noopEventRegistrationErasureAdapter } from '@/modules/members/infrastructure/adapters/event-registration-erasure-adapter';
+import { noopDirectoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
 import { noopBroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -108,6 +109,10 @@ function buildEraseMemberDeps(tenant: TestTenant): EraseMemberDeps {
     // in-tx scrub + F1 cascade, not the F6 event-registration erasure (that has
     // its own live-Neon coverage in erase-member-f6-registrations.test.ts).
     eventRegistrationErasure: noopEventRegistrationErasureAdapter,
+    // COMP-1 / F9 — no-op directory-erasure adapter (this test exercises ONLY
+    // the in-tx scrub + F1 cascade; the real directory_listings + logo erase is
+    // covered live in tests/integration/insights/directory-erasure.test.ts).
+    directoryErasure: noopDirectoryErasureAdapter,
     // US3-C — no-op sub-processor cascade adapters (this test exercises ONLY the
     // in-tx scrub + F1 cascade; the real Resend audience-derivation + removal
     // are covered live in subprocessor-erasure.test.ts).

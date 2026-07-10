@@ -36,6 +36,7 @@ function stubRepo(
     findByMemberId: vi.fn(),
     upsertInTx: vi.fn(),
     setLogoInTx: vi.fn(),
+    deleteForMemberInTx: vi.fn(),
     search: vi.fn().mockResolvedValue(result),
     listPublishedInTx: vi.fn(),
   };

@@ -24,6 +24,7 @@ function stubDeps(): SetDirectoryLogoDeps {
       findByMemberId: vi.fn(),
       upsertInTx: vi.fn(),
       setLogoInTx: vi.fn(),
+      deleteForMemberInTx: vi.fn(),
       search: vi.fn(),
       listPublishedInTx: vi.fn(),
     },
