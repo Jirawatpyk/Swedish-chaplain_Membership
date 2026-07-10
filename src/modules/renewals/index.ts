@@ -312,6 +312,11 @@ export {
 } from './application/use-cases/load-pipeline';
 
 export {
+  loadRenewalMonthSummary,
+  type LoadRenewalMonthSummaryInput,
+} from './application/use-cases/load-renewal-month-summary';
+
+export {
   loadCycleDetail,
   loadCycleDetailInputSchema,
   type LoadCycleDetailInput,
