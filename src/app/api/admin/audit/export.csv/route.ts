@@ -18,6 +18,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
+import { isValidTargetRef } from '@/app/(staff)/admin/audit/_lib/audit-filter-validation';
 import { toCsvField } from '@/lib/csv';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -86,8 +87,14 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   // Guard the date format BEFORE js-joda conversion — a malformed `from`/`to`
   // (tampered URL) would otherwise throw outside the try/catch below → bodyless
-  // 500 + no log. A bad date is a client error → 400 invalid_range.
-  if ((from !== '' && !isYmd(from)) || (to !== '' && !isYmd(to))) {
+  // 500 + no log. Likewise a non-UUID `targetRef` hits the uuid `target_user_id`
+  // column and, though caught below, surfaces as a 500 server_error rather than
+  // the correct client error. Both are client errors → 400 invalid_range.
+  if (
+    (from !== '' && !isYmd(from)) ||
+    (to !== '' && !isYmd(to)) ||
+    !isValidTargetRef(targetRef)
+  ) {
     return NextResponse.json({ error: { code: 'invalid_range' } }, { status: 400 });
   }
 
