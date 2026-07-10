@@ -278,3 +278,7 @@ export {
   makeExportMembersBackupDeps,
   systemClock,
 } from './infrastructure/insights-deps';
+
+// COMP-1 / GDPR Art.17 — directory footprint erasure (row + public logo blob),
+// called by the members erasure cascade via its DirectoryErasurePort adapter.
+export { eraseMemberDirectoryFootprint } from './infrastructure/directory-erasure';

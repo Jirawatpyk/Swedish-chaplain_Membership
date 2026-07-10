@@ -72,6 +72,12 @@ export type StubbedEraseDeps = EraseMemberDeps & {
   // registrations). Tests override to return `{ outcome: 'partial', ... }` /
   // `{ outcome: 'failed' }` (→ allCascadesClean=false, member_erased withheld).
   eventRegistrationErasure: { eraseAllForMember: ReturnType<typeof vi.fn> };
+  // COMP-1 / F9 — insights directory footprint erasure cascade (post-commit).
+  // A real `vi.fn` so cascade tests can assert the (tenant, memberId, meta) call
+  // args + override the outcome. Default: `{ outcome: 'ok' }` (no directory
+  // footprint, or the erase ran clean). Tests override to `{ outcome: 'failed' }`
+  // → allCascadesClean=false, member_erased withheld.
+  directoryErasure: { eraseForMember: ReturnType<typeof vi.fn> };
   // COMP-1 US3-C — in-tx Resend audience-contact derivation (FAIL-LOUD, runs
   // inside the scrub tx) + post-commit best-effort sub-processor propagation.
   // Real `vi.fn`s so cascade tests can assert call args + override the
@@ -189,6 +195,12 @@ export function buildEraseDeps(): StubbedEraseDeps {
     // withholds member_erased.
     eventRegistrationErasure: {
       eraseAllForMember: vi.fn(async () => ({ outcome: 'ok', erasedCount: 0 })),
+    },
+    // COMP-1 / F9 directory footprint erasure. Default clean 'ok' (no listing/
+    // logo, or the erase ran end-to-end). Tests override to `{ outcome: 'failed' }`
+    // → allCascadesClean=false, member_erased withheld.
+    directoryErasure: {
+      eraseForMember: vi.fn(async () => ({ outcome: 'ok' })),
     },
     // COMP-1 US3-C. Default in-tx derivation: no audience pairs (member received
     // no audience-bearing broadcasts). Default propagation: clean 'ok' with 0

@@ -218,6 +218,22 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       return { memberNotFound: false };
     },
 
+    async deleteForMemberInTx(tx: TenantTx, memberId: string): Promise<void> {
+      // Non-UUID never matches a `member_id uuid` row — skip the query rather
+      // than fire a failing cast that would poison the caller's tx.
+      if (!UUID_RE.test(memberId)) return;
+      // Explicit tenant predicate (Principle I second wall, defence-in-depth
+      // alongside RLS). Idempotent — 0 rows when the member never had a listing.
+      await tx
+        .delete(directoryListings)
+        .where(
+          and(
+            eq(directoryListings.tenantId, tenantId),
+            eq(directoryListings.memberId, memberId),
+          ),
+        );
+    },
+
     async search(
       ctx: TenantContext,
       filter: DirectorySearchFilter,

@@ -31,6 +31,7 @@ import { f7BroadcastsContentScrubAdapter } from './infrastructure/adapters/broad
 import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
 import { outboxCancelAdapter } from './infrastructure/adapters/outbox-cancel-adapter';
 import { eventRegistrationErasureAdapter } from './infrastructure/adapters/event-registration-erasure-adapter';
+import { directoryErasureAdapter } from './infrastructure/adapters/directory-erasure-adapter';
 import { f7BroadcastsAudienceDerivationAdapter } from './infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { subprocessorErasureAdapter } from './infrastructure/adapters/subprocessor-erasure-adapter';
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
@@ -214,6 +215,9 @@ export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
     // consumed benefit quota. Best-effort + re-drive-stable (keyed on
     // matched_member_id, which erasure does not scrub).
     eventRegistrationErasure: eventRegistrationErasureAdapter,
+    // COMP-1 / F9 — insights directory footprint erasure (directory_listings row
+    // + public logo blob). Best-effort + re-drive-safe (blob-before-row).
+    directoryErasure: directoryErasureAdapter,
     // COMP-1 US3-C — sub-processor erasure propagation. The audience-derivation
     // adapter reads the member's (Resend audience, email) pairs INSIDE the
     // atomic scrub tx (before the delivery tombstone redacts the emails); the

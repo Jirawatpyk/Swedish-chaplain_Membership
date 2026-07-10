@@ -21,6 +21,7 @@ import { outboxCancelAdapter } from '@/modules/members/infrastructure/adapters/o
 import { f7BroadcastsContentScrubAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-content-scrub-adapter';
 import { f7BroadcastsDeliveryTombstoneAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
 import { eventRegistrationErasureAdapter } from '@/modules/members/infrastructure/adapters/event-registration-erasure-adapter';
+import { directoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
 import { f7BroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { subprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
 import type { TenantContext } from '@/modules/tenants';
@@ -63,6 +64,7 @@ describe('buildEraseMemberDeps', () => {
       'broadcastsDeliveryTombstone',
       'clock',
       'contactRepo',
+      'directoryErasure',
       'eventRegistrationErasure',
       'invitations',
       'memberRepo',
@@ -119,6 +121,12 @@ describe('buildEraseMemberDeps', () => {
     // survive in event_registrations forever). The full `MembersDeps` bag has
     // no `eventRegistrationErasure` (erase-only), so pin the real singleton.
     expect(erase.eventRegistrationErasure).toBe(eventRegistrationErasureAdapter);
+    // COMP-1 / F9: a type-compatible but WRONG directoryErasure adapter would
+    // silently skip the directory_listings + public-logo-blob erasure (the
+    // member's directory PII + a publicly-fetchable logo would survive Art.17
+    // erasure). The full bag has no `directoryErasure` (erase-only), so pin the
+    // real singleton.
+    expect(erase.directoryErasure).toBe(directoryErasureAdapter);
     // M1/L1: a wrong tokens / userEmails / outboxCancel adapter would silently
     // skip the post-erasure PII-resurrection + outbox-dispatch defences. The
     // full `MembersDeps` bag DOES carry `tokens` + `userEmails` (used by the

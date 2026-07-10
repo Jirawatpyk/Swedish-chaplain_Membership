@@ -328,6 +328,27 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
+  it('erases the F9 directory footprint (row + logo) on the post-commit cascade', async () => {
+    const deps = buildEraseDeps();
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.directoryErasure.eraseForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      { actorUserId: META.actorUserId, requestId: META.requestId },
+    );
+  });
+
+  it('withholds member_erased when the F9 directory-erasure cascade fails', async () => {
+    const deps = buildEraseDeps();
+    deps.directoryErasure.eraseForMember = vi.fn(async () => ({ outcome: 'failed' }) as const);
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
   // Distinct from the prior case (a non-ok OUTCOME): here the cascade adapter
   // THROWS. The post-commit cascade try/catch must catch it, flip
   // allCascadesClean=false, and suppress member_erased — never let a best-effort
