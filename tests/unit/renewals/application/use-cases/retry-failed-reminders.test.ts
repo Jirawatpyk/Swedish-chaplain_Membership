@@ -18,6 +18,7 @@ import {
 import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { ok, err } from '@/lib/result';
+import { env } from '@/lib/env'; // mocked object; BUG-2 read_only test mutates env.flags
 import { assertOk } from '../../_helpers/assert-result';
 import { buildDispatchCandidate } from '../../_helpers/build-cycle';
 
@@ -36,6 +37,10 @@ vi.mock('@/lib/env', () => ({
   env: {
     log: { level: 'silent' },
     app: { baseUrl: 'http://localhost:3100' },
+    // BUG-2 — attemptRetry now reads env.flags.readOnlyMode (Gate 2). Default
+    // false so the existing gateway-reaching tests still fire; the read_only
+    // test mutates this object.
+    flags: { readOnlyMode: false },
     isProduction: false,
     isDevelopment: false,
     isTest: true,
@@ -93,6 +98,11 @@ function fakeDeps(opts: {
   gatewayResult?: ReturnType<typeof ok> | ReturnType<typeof err>;
   insertTaskCreated?: boolean;
   transitionFailedToSentImpl?: () => Promise<ReminderEvent>;
+  // BUG-2 — retry-pass gate re-validation (Gate 7.5 + Gate 10). Defaults keep
+  // the member unblocked so the gateway-reaching tests are unaffected.
+  hasOutreach?: boolean;
+  outreachLatestAt?: string | null;
+  hasUnreconciledInvoice?: boolean;
 }): {
   deps: RenewalsDeps;
   emitInTxMock: ReturnType<typeof vi.fn>;
@@ -100,6 +110,8 @@ function fakeDeps(opts: {
   transitionFailedToSentMock: ReturnType<typeof vi.fn>;
   insertTaskMock: ReturnType<typeof vi.fn>;
   gatewayMock: ReturnType<typeof vi.fn>;
+  outreachMock: ReturnType<typeof vi.fn>;
+  unreconciledMock: ReturnType<typeof vi.fn>;
 } {
   const emitInTxMock = vi.fn(async () => {});
   const markExhaustedMock = vi.fn(async (_tx, input) => ({
@@ -133,6 +145,14 @@ function fakeDeps(opts: {
   }));
   const gatewayMock = vi.fn(
     async () => opts.gatewayResult ?? ok({ deliveryId: 'retry-d1', dispatchedAt: NOW_ISO }),
+  );
+  // BUG-2 — Gate 10 (pauseRemindersAfterOutreach reads this) + Gate 7.5.
+  const outreachMock = vi.fn(async () => ({
+    hasOutreach: opts.hasOutreach ?? false,
+    latestAt: opts.outreachLatestAt ?? null,
+  }));
+  const unreconciledMock = vi.fn(
+    async () => opts.hasUnreconciledInvoice ?? false,
   );
 
   const candidate =
@@ -172,6 +192,15 @@ function fakeDeps(opts: {
       emit: vi.fn(),
       emitInTx: emitInTxMock,
     } as unknown as RenewalsDeps['auditEmitter'],
+    // BUG-2 — wired so attemptRetry's new Gate 7.5 + Gate 10 reads don't throw
+    // (an unwired repo would TypeError → per-event catch → passErrors, masking
+    // the intended blocked_by_gate outcome).
+    atRiskOutreachReadRepo: {
+      hasOutreachWithinDays: outreachMock,
+    } as unknown as RenewalsDeps['atRiskOutreachReadRepo'],
+    memberRenewalFlagsRepo: {
+      hasUnreconciledPaidMembershipInvoice: unreconciledMock,
+    } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
   } as unknown as RenewalsDeps;
   return {
     deps,
@@ -180,6 +209,8 @@ function fakeDeps(opts: {
     transitionFailedToSentMock,
     insertTaskMock,
     gatewayMock,
+    outreachMock,
+    unreconciledMock,
   };
 }
 
@@ -225,6 +256,49 @@ describe('retryFailedReminders', () => {
         expect.objectContaining({ type: 'renewal_reminder_sent' }),
         expect.anything(),
       );
+    });
+
+    // BUG-2 — the retry pass must re-apply the dispatcher gates whose
+    // conditions can flip during the 24h retry window. Each of these was a
+    // silent re-send before the fix (retrySucceeded=1, gateway called).
+    it('BUG-2 (Gate 10): active admin outreach within 7 days → blocked_by_gate, gateway NOT called', async () => {
+      const { deps, gatewayMock, outreachMock } = fakeDeps({
+        eligible: [buildFailedEvent()],
+        hasOutreach: true,
+        outreachLatestAt: '2026-05-14T09:00:00.000Z', // 1 day before NOW_ISO → inside 7d window
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.retryBlockedByGate).toBe(1);
+      expect(result.value.summary.retrySucceeded).toBe(0);
+      expect(gatewayMock).not.toHaveBeenCalled();
+      expect(outreachMock).toHaveBeenCalled();
+    });
+
+    it('BUG-2 (Gate 7.5): unreconciled paid membership invoice → blocked_by_gate, gateway NOT called', async () => {
+      const { deps, gatewayMock, unreconciledMock } = fakeDeps({
+        eligible: [buildFailedEvent()],
+        hasUnreconciledInvoice: true,
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.retryBlockedByGate).toBe(1);
+      expect(result.value.summary.retrySucceeded).toBe(0);
+      expect(gatewayMock).not.toHaveBeenCalled();
+      expect(unreconciledMock).toHaveBeenCalledWith(TENANT_ID, MEMBER_ID);
+    });
+
+    it('BUG-2 (Gate 2): read-only write-freeze → blocked_by_gate, gateway NOT called', async () => {
+      const { deps, gatewayMock } = fakeDeps({ eligible: [buildFailedEvent()] });
+      (env.flags as { readOnlyMode: boolean }).readOnlyMode = true;
+      try {
+        const result = await retryFailedReminders(deps, VALID_INPUT);
+        assertOk(result);
+        expect(result.value.summary.retryBlockedByGate).toBe(1);
+        expect(gatewayMock).not.toHaveBeenCalled();
+      } finally {
+        (env.flags as { readOnlyMode: boolean }).readOnlyMode = false;
+      }
     });
 
     it('J2-B4: concurrent winner (ReminderEventNotFoundError) → tallied as retryConcurrentWin, NOT retrySucceeded; no audits emitted', async () => {

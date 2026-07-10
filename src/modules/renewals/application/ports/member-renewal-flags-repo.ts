@@ -440,9 +440,10 @@ export interface BulkSetRiskScoreRow {
  *   ✓ eBlastQuotaPctUsed        — direct (null when plan has no
  *                                  eblast_per_year benefit)
  *   ✓ tierDowngradedLast12Months — direct boolean
- *   ⊘ eventsAttendedLast12Months — F6-dependent (skip via FR-029a)
- *   ⊘ eventsAttendedLast3Months  — F6-dependent
- *   ⊘ culturalTicketQuotaPctUsed — F6-dependent
+ *   ✓ eventsAttendedLast12Months — F6 event_registrations→events (BUG-1)
+ *   ✓ eventsAttendedLast3Months  — F6 event_registrations→events (BUG-1)
+ *   ✓ culturalTicketQuotaPctUsed — F6 cultural attendance / cultural_tickets
+ *                                  _per_year, current calendar year (BUG-1)
  */
 export interface AtRiskBatchFactorRow {
   readonly memberId: string;
@@ -458,6 +459,20 @@ export interface AtRiskBatchFactorRow {
    * factor when null.
    */
   readonly eblastQuotaPctUsed: number | null;
+  /**
+   * BUG-1 — F6 event-attendance counts (rolling windows). FR-029 line 1
+   * (+25 when 12mo==0) + line 2 (+10 when 3mo==0 with 12mo>0). Gathered via
+   * the event_registrations→events LATERAL; the Domain skips both factors
+   * when a scorer runs with `eventAttendeesAvailable=false` (F6 module off).
+   */
+  readonly eventsAttendedLast12Months: number;
+  readonly eventsAttendedLast3Months: number;
+  /**
+   * BUG-1 — F6 cultural-ticket quota % used (0–100), FR-029 line 4 (+10 when
+   * <50%). Null when the member's plan has no `cultural_tickets_per_year`
+   * entitlement → Domain skips the factor. Current calendar year in tenant tz.
+   */
+  readonly culturalTicketQuotaPctUsed: number | null;
   /**
    * True when the member's plan tier was downgraded in the last 12
    * months (F1 audit_log scan). FR-029 line 8 weight +15.

@@ -27,6 +27,13 @@ export interface EventAttendanceRecord {
 export interface ListAttendancesOpts {
   /** Lookback window. Defaults to 12 months in adapter. */
   readonly sinceIso?: string;
+  /**
+   * Upper bound on `start_date` (the adapter applies `start_date <= until`).
+   * The at-risk scorer passes `now` so future-dated registrations neither
+   * consume the row cap before the in-window rows are read nor get counted as
+   * attended. Omit to include everything up to the query time.
+   */
+  readonly untilIso?: string;
   readonly limit?: number;
 }
 

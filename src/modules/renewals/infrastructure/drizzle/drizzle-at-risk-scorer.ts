@@ -8,9 +8,9 @@
  * `computeAtRiskScore` function (FR-029 + FR-029a F6-readiness fallback
  * + FR-030 proportional bands + FR-035 min-tenure gate).
  *
- * Factor coverage (5 of 8 implemented end-to-end as of PR #24 Round 7;
- * the 3 F6-dependent factors stay at 0 contribution until F6
- * EventCreate integration ships):
+ * Factor coverage (all 8 implemented end-to-end; BUG-1 + follow-up wired the
+ * three F6 factors via `EventAttendeesPort.listAttendances` now that F6
+ * shipped 2026-05-19 — activeMax=100 is now fully realizable):
  *
  *   F6-INDEPENDENT (5):
  *     ✓ tenureDays                 — F3 members.created_at proxy
@@ -39,13 +39,16 @@
  *                                     #8 usage-notion fix)
  *
  *   F6-DEPENDENT (3):
- *     ⊘ eventsAttendedLast12Months — F6 EventCreate not shipped
- *     ⊘ eventsAttendedLast3Months  — same
- *     ⊘ culturalTicketQuotaPctUsed — F6 ticket data not shipped
+ *     ✓ eventsAttendedLast12Months — F6 listAttendances, 12mo window (BUG-1)
+ *     ✓ eventsAttendedLast3Months  — F6 listAttendances, 3mo window (BUG-1)
+ *     ✓ culturalTicketQuotaPctUsed — F6 cultural attendance / cultural_tickets
+ *                                     _per_year, current calendar year (BUG-1
+ *                                     follow-up; nextResetAtFor window)
  *
- * The 3 remaining deferred factors return `undefined` from the gather
- * step, which the Domain function tolerates by skipping (contributes 0).
- * Wave A1's property-based test pins the "0-contribution-when-undefined"
+ * F6 factors are gathered ONLY when `isAvailable()` (F6 flag on); the stub
+ * returns [] so activeMax stays 70. Any factor left `undefined` (e.g. a plan
+ * with no cultural entitlement) the Domain tolerates by skipping (contributes
+ * 0); Wave A1's property-based test pins the "0-contribution-when-undefined"
  * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
  * Tenant isolation: most tables (members, invoices, membership_plans,
@@ -79,7 +82,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
-import { currentQuotaYear } from '@/modules/broadcasts';
+import { currentQuotaYear, nextResetAtFor } from '@/modules/broadcasts';
 import { env } from '@/lib/env';
 import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import {
@@ -337,6 +340,9 @@ export function makeDrizzleAtRiskScorer(
       // correct).
       // ----------------------------------------------------------------
       let eBlastQuotaPctUsed: number | undefined;
+      // BUG-1 follow-up — cultural-ticket entitlement hoisted out of the eblast
+      // block so the F6 block below can read it from the SAME plan row.
+      let culturalEntitlement = 0;
       if (memberRow != null) {
         const planRows = await tx
           .select({
@@ -348,8 +354,9 @@ export function makeDrizzleAtRiskScorer(
                 AND ${membershipPlans.planYear} = ${memberRow.planYear}`,
           )
           .limit(1);
-        const eblastQuota =
-          planRows[0]?.benefitMatrix?.eblast_per_year ?? 0;
+        const benefitMatrix = planRows[0]?.benefitMatrix;
+        culturalEntitlement = benefitMatrix?.cultural_tickets_per_year ?? 0;
+        const eblastQuota = benefitMatrix?.eblast_per_year ?? 0;
         if (eblastQuota > 0) {
           const quotaYear = currentQuotaYear(
             new Date(),
@@ -383,6 +390,84 @@ export function makeDrizzleAtRiskScorer(
         }
       }
 
+      // BUG-1 — F6 event-attendance factors (events_12mo/3mo). Reuse the
+      // injected EventAttendeesPort (proven RLS-scoped + fail-open) instead of
+      // a raw events query. Gathered ONLY when F6 is available; the stub
+      // returns [] and activeMax stays 70. `listAttendances` opens its own
+      // runInTenant (nested, separate RLS-scoped tx) — one extra round-trip on
+      // this ad-hoc/small-N per-member path (the weekly cron uses the set-based
+      // batch CTE in drizzle-member-renewal-flags-repo.ts, not this scorer).
+      let eventsAttendedLast12Months: number | undefined;
+      let eventsAttendedLast3Months: number | undefined;
+      // BUG-1 follow-up — F6 cultural-ticket quota-usage factor (FR-029 line 4).
+      let culturalTicketQuotaPctUsed: number | undefined;
+      if (f6Available) {
+        // Fetch [now-370d, now]: the lower bound is a safe superset (370d
+        // covers a full 12 CALENDAR months incl. leap) so the calendar-month
+        // count below is never truncated; `untilIso: now` upper-bounds at the
+        // DB so future-dated registrations are excluded BEFORE the 500-row cap
+        // + DESC ordering apply (else future rows could sort first and consume
+        // the cap, undercounting real past attendance). Matches the batch
+        // LATERAL's `start_date <= NOW()`.
+        const attendances = await deps.eventAttendees.listAttendances(
+          tenantId,
+          memberId,
+          {
+            sinceIso: new Date(nowMs - 370 * 24 * 60 * 60 * 1000).toISOString(),
+            untilIso: new Date(nowMs).toISOString(),
+            limit: 500,
+          },
+        );
+        // Final-review fix: use CALENDAR-month lower bounds (setMonth) to match
+        // the batch CTE's `NOW() - INTERVAL '12 months'/'3 months'` — FR-029
+        // says "last N MONTHS", and a fixed-day (365d/90d) bound diverged from
+        // the batch by 1-2 days at the boundary (band flicker between the
+        // admin single-recompute and the weekly cron). Both now upper-bound at
+        // `now` so future registrations don't count (batch: `start_date <= NOW()`).
+        const twelveMonthsAgoMs = (() => {
+          const d = new Date(nowMs);
+          d.setMonth(d.getMonth() - 12);
+          return d.getTime();
+        })();
+        const threeMonthsAgoMs = (() => {
+          const d = new Date(nowMs);
+          d.setMonth(d.getMonth() - 3);
+          return d.getTime();
+        })();
+        eventsAttendedLast12Months = attendances.filter((a) => {
+          const t = new Date(a.attendedAt).getTime();
+          return t > twelveMonthsAgoMs && t <= nowMs;
+        }).length;
+        eventsAttendedLast3Months = attendances.filter((a) => {
+          const t = new Date(a.attendedAt).getTime();
+          return t > threeMonthsAgoMs && t <= nowMs;
+        }).length;
+
+        // BUG-1 follow-up — cultural-ticket quota % used (FR-029 line 4:
+        // <50% used -> +10). Cultural attendance = an event whose eventType
+        // includes 'cultural' (derived directly from events.is_cultural_event
+        // by the F6 adapter's deriveEventType — provably equivalent to the
+        // batch CTE's `is_cultural_event = true`), within the CURRENT calendar
+        // year in the tenant timezone (F9 benefit-usage parity: window start =
+        // nextResetAtFor(quotaYear-1) = Jan-01 of the current quota year),
+        // upper-bounded at now. Both scorers use nextResetAtFor so single and
+        // batch cannot drift. Skipped (undefined -> Domain contributes 0) when
+        // the plan has no cultural entitlement.
+        if (culturalEntitlement > 0) {
+          const quotaYear = currentQuotaYear(new Date(), env.tenant.timezone);
+          const yearStartMs = new Date(
+            nextResetAtFor(quotaYear - 1, env.tenant.timezone),
+          ).getTime();
+          const culturalUsed = attendances.filter((a) => {
+            if (!a.eventType.includes('cultural')) return false;
+            const t = new Date(a.attendedAt).getTime();
+            return t >= yearStartMs && t <= nowMs;
+          }).length;
+          culturalTicketQuotaPctUsed =
+            (culturalUsed / culturalEntitlement) * 100;
+        }
+      }
+
       const factors: AtRiskFactors = {
         ...(tenureDays !== undefined ? { tenureDays } : {}),
         ...(daysSinceContactUpdate !== undefined
@@ -392,8 +477,17 @@ export function makeDrizzleAtRiskScorer(
         ...(daysSinceLastPayment !== undefined
           ? { daysSinceLastPayment }
           : {}),
-        // PR #24 Round 7 — F2 + F7 unblocked; 3 F6 factors still pending
-        // F6 EventCreate ship.
+        // BUG-1 — F6 factors (events_12mo/3mo + cultural). Undefined when F6 is
+        // unavailable → Domain skips them, activeMax stays 70.
+        ...(eventsAttendedLast12Months !== undefined
+          ? { eventsAttendedLast12Months }
+          : {}),
+        ...(eventsAttendedLast3Months !== undefined
+          ? { eventsAttendedLast3Months }
+          : {}),
+        ...(culturalTicketQuotaPctUsed !== undefined
+          ? { culturalTicketQuotaPctUsed }
+          : {}),
         tierDowngradedLast12Months,
         ...(eBlastQuotaPctUsed !== undefined ? { eBlastQuotaPctUsed } : {}),
       };

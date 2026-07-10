@@ -39,6 +39,10 @@ import { parseInput } from './_lib/parse-input';
 import type { NewTierUpgradeSuggestionInput } from '../ports/tier-upgrade-suggestion-repo';
 import type { TierUpgradeEvalCandidate } from '../ports/tier-upgrade-eval-candidate-repo';
 import type { PlanCatalogEntry } from '../ports/plan-catalog-port';
+// BUG-3 anti-downgrade guard — VALUE import (runtime tuple, `.indexOf`), not
+// type-only. Application orchestrating a Domain value is allowed (Principle III);
+// sibling `tier-bucket-ordinal-sql.ts` imports TIER_BUCKETS the same way.
+import { TIER_BUCKETS } from '../../domain/value-objects/tier-bucket';
 import type {
   TierUpgradeReasonCode,
   TierUpgradeEvidence,
@@ -83,11 +87,19 @@ export type EvaluateTierUpgradeError =
  *
  * Catalogue is pre-sorted ascending by `minTurnoverThb NULLS FIRST`
  * (per `PlanCatalogPort.listForTenant` contract). The decision walks
- * the catalogue and picks the HIGHEST plan whose threshold is
- * crossed AND whose tier-bucket is strictly above the member's
- * current bucket (so a same-bucket plan with no threshold doesn't
- * trigger a no-op upgrade). Multi-signal reason fires when BOTH
- * turnover AND 12m paid-invoice volume cross.
+ * the catalogue and picks the HIGHEST plan whose threshold is crossed
+ * AND whose tier-bucket is NOT BELOW the member's current bucket
+ * (anti-downgrade guard — `>=`, NOT `>`: `large` and `regular` share
+ * the `regular` bucket, so a genuine same-bucket size upgrade
+ * regular→large must still pass; it is gated by the turnover-
+ * monotonicity clause). Multi-signal reason fires when BOTH turnover
+ * AND 12m paid-invoice volume cross.
+ *
+ * BUG-3 fix: the bucket-ordinal guard is load-bearing. Filtering on
+ * `minTurnoverThb` alone let a `partnership` member (bucket ordinal 4,
+ * the HIGHEST, with `min_turnover_thb = null`) match every threshold-
+ * bearing corporate plan and get a tier DOWNGRADE surfaced as an
+ * "upgrade" suggestion.
  */
 function decideUpgrade(
   candidate: TierUpgradeEvalCandidate,
@@ -105,11 +117,23 @@ function decideUpgrade(
   // Iterate catalogue in descending priority (highest threshold first)
   // so the cron picks the most aspirational tier the member qualifies
   // for in a single pass.
+  // BUG-3 — anti-downgrade tier-bucket ordinal. `renewal_tier_bucket` is a
+  // 5-value reminder-cadence grouping (TIER_BUCKETS: thai_alumni=0 … partnership=4),
+  // NOT a 1:1 plan hierarchy, so multiple plans share a bucket (large + regular
+  // both map to `regular`). A target may only be a candidate when its bucket is
+  // NOT BELOW the member's current bucket (`>=`). This blocks the partnership
+  // (ordinal 4, null turnover floor) → corporate (ordinal ≤3) downgrade while
+  // still permitting the legitimate same-bucket regular→large size upgrade
+  // (which the turnover-monotonicity clause then gates).
+  const currentBucketOrdinal = TIER_BUCKETS.indexOf(currentPlan.renewalTierBucket);
   const candidatesAbove = catalogue
     .filter(
       (p) =>
         p.isActive &&
         p.minTurnoverThb !== null &&
+        // Never suggest a strictly-lower tier bucket (anti-downgrade). `>=`
+        // (not `>`) so a same-bucket size upgrade still qualifies.
+        TIER_BUCKETS.indexOf(p.renewalTierBucket) >= currentBucketOrdinal &&
         // Strictly higher than the member's current threshold (or any
         // bucket above when current bucket has no threshold).
         (currentPlan.minTurnoverThb === null ||

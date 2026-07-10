@@ -37,6 +37,10 @@ import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
 import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
+// BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
+// the same way the main dispatcher does. Same use-cases/ dir, no cycle
+// (pause file imports only zod/result/otel + RenewalsDeps type).
+import { pauseRemindersAfterOutreach } from './pause-reminders-after-outreach';
 import { randomUUID } from 'node:crypto';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -176,6 +180,67 @@ async function attemptRetry(
     candidate.cycle.status === 'lapsed' ||
     candidate.primaryContact === null
   ) {
+    return { kind: 'blocked_by_gate' };
+  }
+  // BUG-2 — the main dispatcher (`dispatchOneCycle`) applies 14 gates; the
+  // retry pass previously re-checked only the 5 candidate-level gates above,
+  // silently OMITTING three whose conditions can flip DURING the 24h retry
+  // window. Re-apply them here so a retry never re-sends what a fresh dispatch
+  // would suppress. Ordered cheap→expensive (no-I/O flag → 1 read → 1 read).
+  //
+  // Gate 2 — read-only write-freeze (dispatch-one-cycle:394).
+  if (env.flags.readOnlyMode) {
+    return { kind: 'blocked_by_gate' };
+  }
+  // Gate 7.5 — the member has an out-of-band paid membership invoice not yet
+  // reconciled onto a cycle (dispatch-one-cycle:440-479). Re-sending a "please
+  // renew" reminder to someone who already paid is exactly the confusion this
+  // gate prevents. Per-member port read — takes NO tx (the adapter opens its
+  // own runInTenant), the same call send-reminder-now makes for its single
+  // candidate.
+  const hasUnreconciledInvoice =
+    await deps.memberRenewalFlagsRepo.hasUnreconciledPaidMembershipInvoice(
+      event.tenantId,
+      candidate.member.memberId,
+    );
+  if (hasUnreconciledInvoice) {
+    logger.error(
+      {
+        reminderEventId: event.reminderEventId,
+        cycleId: event.cycleId,
+        memberId: candidate.member.memberId,
+        tenantId: event.tenantId,
+        correlationId,
+      },
+      'attemptRetry: member has an unreconciled paid membership invoice — blocking retry (staff must reconcile the cycle manually)',
+    );
+    return { kind: 'blocked_by_gate' };
+  }
+  // Gate 10 — FR-033 7-day pause after an admin records an at-risk outreach
+  // (dispatch-one-cycle:694-739). Mirror the dispatcher's defensive handling:
+  // block on BOTH an err Result (Zod/repo fault — never email on uncertainty)
+  // AND paused===true, so a retried system reminder can never collide with an
+  // admin's logged personal outreach.
+  const pauseResult = await pauseRemindersAfterOutreach(deps, {
+    tenantId: event.tenantId,
+    memberId: candidate.member.memberId,
+  });
+  if (!pauseResult.ok) {
+    logger.error(
+      {
+        reminderEventId: event.reminderEventId,
+        cycleId: event.cycleId,
+        memberId: candidate.member.memberId,
+        tenantId: event.tenantId,
+        correlationId,
+        errKind: pauseResult.error.kind,
+        errMessage: pauseResult.error.message,
+      },
+      'attemptRetry: outreach pause-check returned err — defensive block to preserve FR-033',
+    );
+    return { kind: 'blocked_by_gate' };
+  }
+  if (pauseResult.value.paused) {
     return { kind: 'blocked_by_gate' };
   }
   // Re-fire the gateway with the SAME idempotency key as the original
