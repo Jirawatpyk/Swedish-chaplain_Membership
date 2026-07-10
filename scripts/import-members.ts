@@ -169,12 +169,20 @@ export async function commitMembers(
       isPrimary: boolean,
     ): Promise<void> => {
       const contactId = randomUUID();
+      // DB CHECK `char_length(first_name/last_name) BETWEEN 1 AND 100` (migration
+      // 0009) rejects an empty name part, but validate.ts intentionally allows a
+      // mononym (single-name Thai/foreign contact) with the missing part as ''.
+      // Reconcile at the write boundary: store a '-' placeholder surname so the
+      // legitimate mononym contact inserts instead of aborting the atomic batch.
+      const NAME_PLACEHOLDER = '-';
+      const firstName = c.firstName.trim().length > 0 ? c.firstName : NAME_PLACEHOLDER;
+      const lastName = c.lastName.trim().length > 0 ? c.lastName : NAME_PLACEHOLDER;
       await tx.insert(contacts).values({
         tenantId: ctx.slug,
         contactId,
         memberId,
-        firstName: c.firstName,
-        lastName: c.lastName,
+        firstName,
+        lastName,
         email: c.email,
         phone: c.phone,
         roleTitle: c.roleTitle,

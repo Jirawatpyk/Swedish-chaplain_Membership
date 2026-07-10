@@ -63,10 +63,16 @@ describe('validateRows (spec § 3)', () => {
     expect(r.members[0]!.contacts).toHaveLength(2);
   });
 
-  it('rule 8: TH company with no tax_id → required_for_company error, member excluded', () => {
+  it('rule 8 (relaxed 2026-07-10): TH company with no tax_id → missing_for_company WARNING, member still imports', () => {
     const r = validateRows([row({ rowIndex: 2, country: 'TH', taxId: '' })], RESOLVER);
-    expect(errCodes(r)).toContain('required_for_company');
-    expect(r.members).toHaveLength(0);
+    expect(r.stats.errorCount).toBe(0);
+    expect(
+      r.issues.some(
+        (i) => i.field === 'taxId' && i.code === 'missing_for_company' && i.severity === 'warning',
+      ),
+    ).toBe(true);
+    expect(r.members).toHaveLength(1);
+    expect(r.members[0]!.taxId).toBeNull();
   });
 
   it('rule 8: TH company with malformed tax_id → th_wrong_format error', () => {

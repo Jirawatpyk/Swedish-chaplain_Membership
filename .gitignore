@@ -147,6 +147,9 @@ docs/*.xlsx
 docs/*.xlsm
 docs/*.xls
 docs/~$*
+# Member-import PII workbooks + generated import templates (subfolder not
+# covered by the docs/*.xlsx glob above — has real member emails/TINs).
+docs/import/
 # Excel lock files anywhere in the repo
 ~$*.xls*
 
