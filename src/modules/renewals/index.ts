@@ -303,6 +303,17 @@ export type {
   RawMonthCount,
 } from './domain/renewal-month-bucket';
 
+// Renewals-by-month pure helper functions (Task 9) — bar-width scaling +
+// BKK month arithmetic, needed by the `RenewalsByMonthSection` server
+// component to resolve the `later` bucket's label. Re-exported as values
+// (not just types) so Presentation never deep-imports `./domain/**`
+// (blocked by the ESLint no-restricted-imports module-barrel rule).
+export {
+  barWidthPercent,
+  addMonthsToYm,
+  bkkYearMonth,
+} from './domain/renewal-month-bucket';
+
 // --- Phase 3 use-cases (Wave H2 T056-T059) ---------------------------------
 export {
   loadPipeline,
