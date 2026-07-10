@@ -49,6 +49,7 @@ import {
   RenewalsByMonthSectionSkeleton,
 } from './_components/renewals-by-month-section';
 import { RenewalsEmptyState } from './_components/empty-state';
+import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
@@ -263,17 +264,18 @@ export default async function RenewalsPipelinePage({
           : formatMonthKeyLabel(month, locale);
   // `RenewalsEmptyState` replaces the entire pipeline shell (tabs +
   // filter + table) with a full-card "no renewals due" illustration,
-  // so it must only fire when NO filter is active. Otherwise applying
-  // a tier that happens to match zero cycles (e.g. `tier=premium`
-  // when no premium member is in the renewal window) tears out the
-  // tier-filter dropdown itself, trapping the admin in the empty
-  // state with no way to clear the filter. When a filter is active
-  // and matches nothing, the existing table/lapsed-tab "No members"
-  // body-row pattern is the right empty surface.
-  const showEmptyState =
-    tier === undefined &&
-    summary.totalInWindow === 0 &&
-    summary.lapsedCount === 0;
+  // so it must only fire when NO filter is active. A tier filter OR the
+  // renewals-by-month lens each count as an active filter — with either
+  // on, an empty result belongs in the table body ("No members renew in
+  // {month}" / bucket copy), never the full-card illustration (which
+  // tears out the filter controls, trapping the admin). See
+  // `shouldShowRenewalsEmptyState` for the pinned predicate.
+  const showEmptyState = shouldShowRenewalsEmptyState({
+    monthLensActive,
+    tierSelected: tier !== undefined,
+    totalInWindow: summary.totalInWindow,
+    lapsedCount: summary.lapsedCount,
+  });
 
   // Phase 6 Wave E (T167) — at-risk widget plugged in alongside the
   // pipeline table. Hidden by route gate when:
