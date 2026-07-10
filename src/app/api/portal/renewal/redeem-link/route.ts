@@ -74,7 +74,144 @@ function failureRedirect(req: NextRequest): NextResponse {
   return res;
 }
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
+// ---------------------------------------------------------------------------
+// BUG-4 — anti-prefetch interstitial
+// ---------------------------------------------------------------------------
+//
+// The token is a ONE-TIME credential consumed on redemption. When redemption
+// ran on GET, corporate email security gateways (Microsoft SafeLinks,
+// Proofpoint, Mimecast) that PREFETCH links in email would issue the GET,
+// pass the HMAC, and burn the token before the member ever clicked — leaving
+// the real member with a generic "link invalid" failure. The fix splits the
+// flow: GET renders a non-consuming interstitial whose "Continue" button
+// POSTs the token back; POST does the verify + consume + session-mint.
+// Scanners GET but do not POST or run JS, so the token survives their scan.
+
+const INTERSTITIAL_COPY = {
+  en: {
+    title: 'Continue to your renewal',
+    body: 'For your security, select the button below to open your membership renewal.',
+    button: 'Continue to renewal',
+  },
+  th: {
+    title: 'ดำเนินการต่อเพื่อต่ออายุสมาชิก',
+    body: 'เพื่อความปลอดภัยของคุณ โปรดกดปุ่มด้านล่างเพื่อเปิดหน้าต่ออายุสมาชิก',
+    button: 'ดำเนินการต่อ',
+  },
+  sv: {
+    title: 'Fortsätt till din förnyelse',
+    // i18n review — natural Swedish (was a calque of "Av säkerhetsskäl, välj
+    // knappen…"; corpus uses "För din säkerhet" + "klicka på knappen").
+    body: 'För din säkerhet öppnar du din förnyelse genom att klicka på knappen nedan.',
+    button: 'Fortsätt till förnyelse',
+  },
+} as const;
+type InterstitialLocale = keyof typeof INTERSTITIAL_COPY;
+
+function resolveInterstitialLocale(request: NextRequest): InterstitialLocale {
+  const cookieLocale = request.cookies.get('NEXT_LOCALE')?.value;
+  if (cookieLocale === 'th' || cookieLocale === 'sv' || cookieLocale === 'en') {
+    return cookieLocale;
+  }
+  return 'en';
+}
+
+/** Escape a value reflected into an HTML attribute (the token is untrusted URL input). */
+function htmlEscape(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderInterstitial(
+  locale: InterstitialLocale,
+  escapedToken: string,
+): string {
+  const copy = INTERSTITIAL_COPY[locale];
+  // No inline <script> (CSP is script-src nonce-only); a native <form> needs
+  // none. Inline <style> is allowed (style-src 'unsafe-inline'). Theme-aware
+  // + WCAG target-size (>=44px) + visible focus ring.
+  return `<!doctype html>
+<html lang="${locale}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- BUG-4 review: MUST be strict-origin, NOT no-referrer. Per the Fetch spec
+     'Append a request Origin header', a non-GET request from a no-referrer
+     document sends a null Origin, which the CSRF Origin allow-list (proxy
+     checkCsrf) rejects with 403 — breaking the Continue POST for every member.
+     strict-origin keeps a valid same-origin Origin header (CSRF passes) while
+     still stripping the token-bearing path+query from the Referer. -->
+<meta name="referrer" content="strict-origin">
+<title>${copy.title}</title>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #0f172a; padding: 24px; }
+.card { max-width: 420px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; text-align: center; }
+h1 { font-size: 1.25rem; margin: 0 0 12px; }
+p { font-size: 0.95rem; line-height: 1.5; margin: 0 0 24px; color: #475569; }
+button { min-height: 44px; min-width: 44px; width: 100%; padding: 12px 20px; font-size: 1rem; font-weight: 600; color: #fff; background: #2563eb; border: 0; border-radius: 8px; cursor: pointer; }
+button:hover { background: #1d4ed8; }
+button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  body { background: #0f172a; color: #f1f5f9; }
+  .card { background: #1e293b; border-color: #334155; }
+  p { color: #cbd5e1; }
+  button:focus-visible { outline-color: #3b82f6; }
+}
+</style>
+</head>
+<body>
+<main class="card">
+<h1>${copy.title}</h1>
+<p>${copy.body}</p>
+<form method="post" action="/api/portal/renewal/redeem-link">
+<input type="hidden" name="t" value="${escapedToken}">
+<button type="submit">${copy.button}</button>
+</form>
+</main>
+</body>
+</html>`;
+}
+
+/**
+ * GET — NON-consuming interstitial (BUG-4). Does ZERO verification: no deps,
+ * no DB read, no token consume, no session, no audit — critical so a scanner
+ * prefetch causes no state change and no token-state oracle. Renders the
+ * "Continue" form that POSTs the token to the consuming handler below.
+ */
+export async function GET(request: NextRequest): Promise<Response> {
+  // Kill-switch — identical to POST; short-circuit before any work.
+  if (!env.features.f8Renewals) {
+    return NextResponse.json(
+      { error: { code: 'feature_disabled' } },
+      { status: 503 },
+    );
+  }
+  const rawToken = request.nextUrl.searchParams.get('t') ?? '';
+  if (rawToken.length === 0) {
+    return failureRedirect(request);
+  }
+  const locale = resolveInterstitialLocale(request);
+  const html = renderInterstitial(locale, htmlEscape(rawToken));
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      // BUG-4 review: strict-origin (NOT no-referrer) so the Continue-button
+      // POST carries a valid same-origin Origin header (CSRF Origin allow-list
+      // passes) while the token-bearing path+query is stripped from the Referer.
+      'referrer-policy': 'strict-origin',
+    },
+  });
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
   // Kill-switch — short-circuit BEFORE any DB read so a disabled-F8
   // deploy never touches the renewals composition root.
   if (!env.features.f8Renewals) {
@@ -89,13 +226,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const tenantCtx = asTenantContext(tenant.slug);
   const correlationId = uuidv7();
 
-  // Token MUST come from `?t=`. We never read the body or other params
-  // so the token value is bounded to one source — minimises leak surface.
-  const rawToken = request.nextUrl.searchParams.get('t') ?? '';
+  // BUG-4 — the token now arrives in the POST FORM BODY (submitted by the
+  // GET interstitial above), NOT the query string, so an email-scanner
+  // prefetch GET can never reach this consume path. Single source, still
+  // bounded — minimises leak surface.
+  const form = await request.formData().catch(() => null);
+  const rawToken = (form?.get('t') as string | null) ?? '';
   if (rawToken.length === 0) {
     logger.warn(
       { correlationId, tenantId: tenant.slug },
-      '[redeem-renewal-link] missing token param',
+      '[redeem-renewal-link] missing token in POST body',
     );
     return failureRedirect(request);
   }
