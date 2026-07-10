@@ -514,6 +514,92 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(audits).toHaveLength(1);
   }, 60_000);
 
+  it('BUG-3 — partnership member (highest bucket, null turnover floor) is never suggested a lower corporate tier', async () => {
+    // Regression: `decideUpgrade` filtered upgrade candidates by
+    // `minTurnoverThb` ALONE, never consulting the tier-bucket ordinal. A
+    // `partnership` member (bucket ordinal 4 — the HIGHEST — with a null
+    // turnover floor) satisfied the threshold disjunction for every
+    // threshold-bearing corporate plan, so a tier DOWNGRADE (partnership →
+    // premium) was emitted as `tier_upgrade_suggested`. The anti-downgrade
+    // ordinal guard (`ordinal(target) >= ordinal(current)`) must exclude
+    // every strictly-lower bucket → no suggestion.
+    await seedPlan(tenant, admin, {
+      planId: 'premium',
+      tierBucket: 'premium',
+      minTurnoverMinorUnits: 100_000_000,
+    });
+    await seedPlan(tenant, admin, {
+      planId: 'diamond',
+      tierBucket: 'partnership',
+      minTurnoverMinorUnits: null,
+    });
+    // Partnership member with declared turnover that crosses premium's floor
+    // — pre-fix this produced a diamond→premium DOWNGRADE suggestion.
+    await seedMember(tenant, admin, {
+      planId: 'diamond',
+      turnoverThb: 120_000_000,
+    });
+    await setAutoUpgradeEnabled(tenant, true);
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await evaluateTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+      pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Pre-fix: 1 (the partnership→premium downgrade). Post-fix: 0.
+    expect(result.value.suggestionsCreated).toBe(0);
+    // decideUpgrade returns null (no non-downgrade candidate) → alreadyAtTarget.
+    expect(result.value.alreadyAtTarget).toBe(1);
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(tierUpgradeSuggestions),
+    );
+    expect(rows).toHaveLength(0);
+  }, 60_000);
+
+  it('BUG-3 — a same-bucket size upgrade (regular→large, both `regular` bucket) is still suggested (validates >= over >)', async () => {
+    // `large` and `regular` share the `regular` tier bucket (a reminder-cadence
+    // grouping, not a 1:1 hierarchy), so the anti-downgrade guard MUST use `>=`
+    // (not `>`): a strict `>` would exclude the same-bucket target and silently
+    // drop this legitimate corporate upgrade for a high-turnover regular member.
+    await seedPlan(tenant, admin, {
+      planId: 'regular',
+      tierBucket: 'regular',
+      minTurnoverMinorUnits: null, // no floor (matches SweCham regular)
+    });
+    await seedPlan(tenant, admin, {
+      planId: 'large',
+      tierBucket: 'regular', // SAME bucket ordinal as regular
+      minTurnoverMinorUnits: 100_000_000,
+    });
+    await seedMember(tenant, admin, {
+      planId: 'regular',
+      turnoverThb: 120_000_000, // crosses large's floor
+    });
+    await setAutoUpgradeEnabled(tenant, true);
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await evaluateTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+      pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // A strict `>` guard would yield 0 here — the regression this pins.
+    expect(result.value.suggestionsCreated).toBe(1);
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(tierUpgradeSuggestions),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.fromPlanId).toBe('regular');
+    expect(rows[0]?.toPlanId).toBe('large');
+  }, 60_000);
+
   it('suppression — dismissed row in last 90d hides the member', async () => {
     await seedPlan(tenant, admin, {
       planId: 'regular',
