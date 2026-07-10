@@ -225,8 +225,21 @@ export default async function StaffHomePage() {
 
   // Live-filter insights against current dismissals (T028) so a just-dismissed
   // insight disappears on refresh without waiting for the ~5-min cron recompute.
-  const liveInsights = await listSmartInsights(tenant, makeListSmartInsightsDeps(tenant.slug));
-  const topInsights = liveInsights.ok ? liveInsights.value : metrics.topInsights;
+  // Default to the snapshot's own (compute-time-filtered) insights and only
+  // override when the live read succeeds. listSmartInsights degrades to
+  // err('unavailable') on a snapshot-read blip; the try/catch is belt-and-
+  // suspenders so an unexpected throw can't collapse the already-computed
+  // dashboard (parity with the allSettled widget isolation above).
+  let topInsights = metrics.topInsights;
+  try {
+    const liveInsights = await listSmartInsights(tenant, makeListSmartInsightsDeps(tenant.slug));
+    if (liveInsights.ok) topInsights = liveInsights.value;
+  } catch (e) {
+    logger.warn(
+      { tenantId: tenant.slug, errKind: errKind(e) },
+      'insights.dashboard.live_insights_rejected',
+    );
+  }
   const insightLines: readonly InsightLine[] = topInsights.map((insight) => ({
     key: insight.key,
     text: t(`insights.${insight.key}`, { count: insight.count }),
