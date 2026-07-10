@@ -70,9 +70,11 @@ import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
+  /** When set, the empty state reads "No members renew in {month}" (month lens). */
+  readonly monthLabel?: string;
 }
 
-export function PipelineTable({ rows }: PipelineTableProps) {
+export function PipelineTable({ rows, monthLabel }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
@@ -216,8 +218,16 @@ export function PipelineTable({ rows }: PipelineTableProps) {
               colSpan={columns.length}
               className="text-center text-muted-foreground py-8"
             >
-              <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
-              <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+              {monthLabel !== undefined ? (
+                <p className="text-sm font-medium text-foreground">
+                  {t('noRowsInMonth', { month: monthLabel })}
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
+                  <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+                </>
+              )}
             </TableCell>
           </TableRow>
         ) : (
