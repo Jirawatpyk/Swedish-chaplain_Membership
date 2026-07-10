@@ -26,5 +26,9 @@ describe('isValidTargetRef', () => {
     expect(isValidTargetRef('123')).toBe(false);
     // a UUID with the wrong shape (extra segment) must not slip through
     expect(isValidTargetRef('3f2504e0-4f89-41d3-9a0c-0305e82c3301-extra')).toBe(false);
+    // leading junk before a valid UUID must be rejected (locks the `^` anchor)
+    expect(isValidTargetRef('garbage3f2504e0-4f89-41d3-9a0c-0305e82c3301')).toBe(false);
+    // a trailing newline must not slip past `$` (JS `$` is not multiline here)
+    expect(isValidTargetRef('3f2504e0-4f89-41d3-9a0c-0305e82c3301\n')).toBe(false);
   });
 });

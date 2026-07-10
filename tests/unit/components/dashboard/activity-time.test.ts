@@ -28,6 +28,14 @@ describe('activityTimeLabels — absolute label honours the tenant timezone (bug
   });
 });
 
+describe('activityTimeLabels — degrades on an unparseable instant (never throws)', () => {
+  it('returns the raw string instead of throwing a RangeError', () => {
+    expect(() => activityTimeLabels('not-a-date', 'en', 'Asia/Bangkok')).not.toThrow();
+    const { absolute } = activityTimeLabels('not-a-date', 'en', 'Asia/Bangkok');
+    expect(absolute).toBe('not-a-date');
+  });
+});
+
 describe('activityTimeLabels — visible label is relative (bug 7)', () => {
   it('produces a relative label distinct from the absolute one', () => {
     const now = new Date('2026-07-11T00:05:00.000Z');

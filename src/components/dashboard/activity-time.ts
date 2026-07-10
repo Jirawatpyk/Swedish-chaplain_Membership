@@ -27,10 +27,17 @@ export function activityTimeLabels(
   now: Date = new Date(),
 ): ActivityTimeLabels {
   const relative = formatRelativeTime(iso, locale, now);
-  const absolute = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
-    dateStyle: 'short',
-    timeStyle: 'short',
-    timeZone,
-  }).format(new Date(iso));
+  // Guard an unparseable instant: `Intl.DateTimeFormat.format(Invalid Date)`
+  // throws a RangeError. `occurredAt` is a DB-controlled ISO string so this is
+  // not expected, but the caller maps this outside the page's allSettled guard
+  // — degrade to the raw string rather than 500 the whole dashboard.
+  const date = new Date(iso);
+  const absolute = Number.isNaN(date.getTime())
+    ? iso
+    : new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+        dateStyle: 'short',
+        timeStyle: 'short',
+        timeZone,
+      }).format(date);
   return { relative, absolute };
 }
