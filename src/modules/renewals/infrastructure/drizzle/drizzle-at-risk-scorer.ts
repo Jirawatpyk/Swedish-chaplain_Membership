@@ -402,13 +402,19 @@ export function makeDrizzleAtRiskScorer(
       // BUG-1 follow-up — F6 cultural-ticket quota-usage factor (FR-029 line 4).
       let culturalTicketQuotaPctUsed: number | undefined;
       if (f6Available) {
-        // Fetch a safe superset (now-370d covers a full 12 CALENDAR months
-        // incl. leap) so the calendar-month count below is never truncated.
+        // Fetch [now-370d, now]: the lower bound is a safe superset (370d
+        // covers a full 12 CALENDAR months incl. leap) so the calendar-month
+        // count below is never truncated; `untilIso: now` upper-bounds at the
+        // DB so future-dated registrations are excluded BEFORE the 500-row cap
+        // + DESC ordering apply (else future rows could sort first and consume
+        // the cap, undercounting real past attendance). Matches the batch
+        // LATERAL's `start_date <= NOW()`.
         const attendances = await deps.eventAttendees.listAttendances(
           tenantId,
           memberId,
           {
             sinceIso: new Date(nowMs - 370 * 24 * 60 * 60 * 1000).toISOString(),
+            untilIso: new Date(nowMs).toISOString(),
             limit: 500,
           },
         );
