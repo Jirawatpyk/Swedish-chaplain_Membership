@@ -45,12 +45,17 @@ const MIXED: readonly ActivityFeedItem[] = [
   item('6', 'broadcast_approved'),
 ];
 
-function depsReturning(items: readonly ActivityFeedItem[]): {
-  deps: { activitySource: ActivityFeedSource };
+function depsReturning(
+  items: readonly ActivityFeedItem[],
+  identities: ReadonlyMap<string, { displayName: string | null }> = new Map(),
+): {
+  deps: { activitySource: ActivityFeedSource; actorDirectory: { labelsFor: ReturnType<typeof vi.fn> } };
   recent: ReturnType<typeof vi.fn>;
+  labelsFor: ReturnType<typeof vi.fn>;
 } {
   const recent = vi.fn().mockResolvedValue(items);
-  return { deps: { activitySource: { recent } }, recent };
+  const labelsFor = vi.fn().mockResolvedValue(identities);
+  return { deps: { activitySource: { recent }, actorDirectory: { labelsFor } }, recent, labelsFor };
 }
 
 describe('activityFeedQuery', () => {
@@ -111,5 +116,33 @@ describe('activityFeedQuery', () => {
     const { deps, recent } = depsReturning(MIXED);
     await activityFeedQuery({}, meta('admin'), ctx, deps);
     expect(recent).toHaveBeenCalledWith(ctx, 20);
+  });
+
+  it('resolves the actor display name for a UUID actor (FR-003)', async () => {
+    const actorId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const feed: readonly ActivityFeedItem[] = [
+      { ...item('1', 'member_created'), actorUserId: actorId },
+    ];
+    const { deps, labelsFor } = depsReturning(
+      feed,
+      new Map([[actorId, { displayName: 'Jane Doe' }]]),
+    );
+    const result = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value[0]!.actorLabel).toBe('Jane Doe');
+    // Batch-resolved via the PDPA-safe directory.
+    expect(labelsFor).toHaveBeenCalledWith([actorId]);
+  });
+
+  it('leaves actorLabel null for a system/non-UUID actor (no resolve attempt)', async () => {
+    const feed: readonly ActivityFeedItem[] = [
+      { ...item('1', 'broadcast_dispatched'), actorUserId: 'system:cron' },
+    ];
+    const { deps, labelsFor } = depsReturning(feed);
+    const result = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value[0]!.actorLabel).toBeNull();
+    // system:* sentinels are never sent to the PDPA-safe resolver.
+    expect(labelsFor).not.toHaveBeenCalled();
   });
 });

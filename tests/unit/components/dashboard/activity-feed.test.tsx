@@ -39,6 +39,21 @@ describe('ActivityFeed', () => {
     expect(time).toHaveAttribute('title', '11/07/2026, 05:00');
   });
 
+  it('renders the actor name before the action label when present', () => {
+    const items: readonly ActivityFeedEntry[] = [
+      {
+        id: 'a1',
+        actor: 'Jane Doe',
+        label: 'Payment recorded',
+        occurredAt: '2026-07-10T22:00:00.000Z',
+        timeLabel: '5 minutes ago',
+      },
+    ];
+    render(<ActivityFeed {...PROPS} items={items} />);
+    expect(screen.getByText('Jane Doe')).toBeInTheDocument();
+    expect(screen.getByText(/Payment recorded/)).toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no items', () => {
     render(<ActivityFeed {...PROPS} items={[]} />);
     expect(screen.getByText('No recent activity')).toBeInTheDocument();

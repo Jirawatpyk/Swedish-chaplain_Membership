@@ -262,6 +262,9 @@ export default async function StaffHomePage() {
     );
     return {
       id: item.id,
+      // Actor display name (FR-003), resolved PDPA-safe in the use-case; omitted
+      // for system:*/anonymous events (rendered without an actor prefix).
+      ...(item.actorLabel ? { actor: item.actorLabel } : {}),
       // Localised action label (FR-034) — resolved per-locale from the audit
       // event type, NOT the raw English summary (which would leak to TH/SV).
       // Falls back to the timeline catalogue, then a humanised token.

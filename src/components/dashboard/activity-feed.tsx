@@ -10,6 +10,9 @@ import { ActivityFeedRefresh } from './activity-feed-refresh';
 
 export interface ActivityFeedEntry {
   readonly id: string;
+  /** Actor display name (FR-003), PDPA-safe (name only). Omitted for
+   *  `system:*`/anonymous events, which render without an actor prefix. */
+  readonly actor?: string;
   /** Localised event-type label (resolved per-locale in the page, FR-034) —
    *  not the raw English audit summary, so TH/SV users see translated text. */
   readonly label: string;
@@ -48,7 +51,15 @@ export function ActivityFeed({
           <ul className="grid gap-2 text-body">
             {items.map((item) => (
               <li key={item.id} className="flex items-baseline justify-between gap-3">
-                <span>{item.label}</span>
+                <span className="min-w-0 truncate">
+                  {item.actor ? (
+                    <>
+                      <span className="font-medium">{item.actor}</span>
+                      <span className="text-muted-foreground"> · </span>
+                    </>
+                  ) : null}
+                  {item.label}
+                </span>
                 <time
                   dateTime={item.occurredAt}
                   {...(item.absoluteLabel ? { title: item.absoluteLabel } : {})}
