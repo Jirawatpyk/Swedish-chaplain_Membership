@@ -1,113 +1,131 @@
-# Renewals-by-Month — Design
+# Renewals-by-Month — Design (v2, post specialist review)
 
 **Date:** 2026-07-10 · **Feature:** F8 admin renewal-planning widget · **Branch:** `renewals-by-month`
 
+> **v2 changelog** — revised after `chamber-os-ux-architect` + `chamber-os-architect` reviews. Fixes: (F1) suppress the pipeline's 90-day ceiling under a month filter; (F2) one shared status+erasure predicate (the pipeline has NO reusable "non-lapsed, non-erased, unbounded" set); (F3) month filter scopes ROWS only, not the urgency badges; (U1) colours align to the shipped `UrgencyPill`, not a new blue palette; (U2/F2) add an **Overdue** bucket so `chart total == pipeline non-terminal total`; plus horizontal-bar form, error-propagation, VM-type placement, and a11y/i18n tightenings.
+
 ## Goal
 
-Give staff a **calendar-month overview** of the renewal workload on `/admin/renewals`: a horizontal bar chart showing how many members' renewals (`renewal_cycles.expires_at`) fall in each of the next 12 months (+ a "12+ later" catch-all). Clicking a month filters the pipeline table to that month. This complements — does **not** replace — the existing relative-urgency buckets (T-90…Lapsed).
+Give staff a **renewal-workload overview** on `/admin/renewals`: a horizontal **bar list** — one row per bucket — showing how many members' renewals fall in **Overdue · this month · the next 11 months · "Jul 2027 or later"** (from `renewal_cycles.expires_at`, Asia/Bangkok). Clicking a bucket filters the pipeline table to it. This **complements** — does not replace — the relative-urgency buckets (T-90…Lapsed), which stay exactly as shipped.
 
-**Why:** the urgency buckets only surface members within ~90 days of renewal (currently ~11 of 95); the other ~84 members renewing in 2027 are invisible in that view. The month chart is the planning lens that shows all 95 across the year, mirroring the operator's spreadsheet "who renews which month". This replaces the manual spreadsheet's `End of Membership` + `Renewal` tracking columns (the system already automates reminder status; the missing piece was the by-month planning view).
+**Why:** the urgency buckets only surface members within ~90 days of renewal (currently ~11 of 95); the other ~84 renewing in 2027 are invisible there. The month view is the planning lens that shows **all** non-terminal members across the year (the ~84 far-future + any already-overdue), mirroring the operator's spreadsheet "who renews which month" and replacing its manual `End of Membership` / `Renewal` columns. **Invariant: the chart is a complete, reconcilable partition of the same set the pipeline enumerates** — its total must equal the pipeline's non-terminal, non-erased member count.
 
 ## Scope decisions (locked with the operator)
 
-1. **Placement:** a new card ("Renewals by month") on `/admin/renewals`, positioned **above** the existing pipeline card (overview → detail flow). Purely **additive** — the urgency-bucket-tabs, pipeline table, and everything shipped stay untouched in behaviour.
-2. **Rendering:** **horizontal bar chart** (magnitude visible at a glance — the whole point is "which months are heavy"). Not a pill strip / plain table.
-3. **Interactive:** clicking a month bar **filters the pipeline** below via `?month=YYYY-MM` (mirrors the urgency-bucket-tabs `?urgency=` pattern). The "12+ later" bar filters via `?month=later`.
-4. **Time range:** current month + next 11 (rolling 12) + a **"12+ later"** catch-all bucket for anything ≥12 months out.
-5. **month vs urgency = mutually-exclusive lenses.** They are two views of the SAME dimension (urgency is derived from `expires_at`), so an AND-combine yields mostly-empty/confusing results. Selecting a month clears `?urgency`; selecting an urgency tab clears `?month`. The pipeline query applies whichever one filter is present.
-6. **Urgency-tabs colour polish (bundled):** give the existing T-90…Lapsed tabs an urgency colour language **consistent with the chart** so the two lenses read as one system:
-   - 🔴 red band → `T-0`, `Grace`, `Lapsed` (due/overdue)
-   - 🟠 amber band → `T-14`, `T-7` (near)
-   - 🔵 blue/neutral band → `T-90`, `T-60`, `T-30` (planning)
-   This is a **styling-only** change to `urgency-bucket-tabs.tsx` (no behaviour change).
+1. **Placement:** new card "Renewals by month" on `/admin/renewals`, **above** the pipeline card (overview → detail). Purely **additive** to the shipped urgency tabs + table.
+2. **Rendering:** **true horizontal bar list** — each row = `label │ bar │ count`, the whole row is the link. (Not vertical columns: with 14 buckets and localised `month + BE-year` labels + Swedish compounds, columns force truncation/rotation or a mandatory horizontal-scroll region and blow the 320px reflow budget; horizontal rows never truncate, are a natural mobile list, and give a ≥44px target for free.)
+3. **Interactive:** clicking a bucket filters the pipeline via `?month=<key>` where `<key> ∈ { 'overdue', 'YYYY-MM' (×12), 'later' }`. Mirrors the `urgency-bucket-tabs` `?urgency=` pattern.
+4. **Buckets (14):** `overdue` (non-terminal, `expires_at < current-month-start`) · current month + next 11 (rolling 12) · `later` (`expires_at ≥ now + 12 months`).
+5. **month vs urgency = mutually-exclusive lenses** (they are two views of the SAME dimension — urgency is derived from `expires_at` — so AND-combine is mostly empty/confusing). Precedence: a **present AND valid** `month` wins and `urgency` is ignored; an invalid `month` string is treated as absent so a valid `urgency` still applies.
+6. **Urgency-tabs colour polish (bundled, styling-only) — aligned to the SHIPPED `UrgencyPill`, not a new palette.** The pill (`urgency-pill.tsx:16-33`, rendered in every pipeline row and staying on screen) already defines the colour language; the tabs must match it, and the chart must match the tabs:
+   - **slate** → `t-90`, `t-60` (planning / far)
+   - **amber** → `t-30`, `t-14` (approaching)
+   - **orange** → `t-7`
+   - **red** → `t-0`, `grace` (imminent/overdue)
+   - **gray/neutral** → `lapsed` (deliberately NOT red — "gone, not an actionable urgency")
+   Reuse the exact Tailwind class strings + `dark:` variants from `urgency-pill.tsx:16-33` (light **and** dark match by construction). The chart's three bands map to the same tokens: Overdue = red, this-month/near = amber/orange, later = slate. **No blue** (it appears nowhere in shipped renewals).
 
 ### Out of scope (YAGNI — deferred)
 
-- ❌ Rename `T-90`/`T-0` labels to human strings, hide zero-count buckets (separate UX pass; touches i18n × 3 locales).
-- ❌ Per-tier breakdown within each month.
-- ❌ A by-month CSV export (the members backup export already covers data export).
-- ❌ Combined month **AND** urgency filter.
-- ❌ Replacing the urgency tabs with a unified timeline (option B — rejected: loses the reminder-stage granularity + higher risk).
+- ❌ Rename `T-90`/`T-0` labels to human strings; hide zero-count urgency buckets (separate UX pass, i18n × 3).
+- ❌ Migrating `UrgencyPill`'s own palette (if the operator later wants a 3-band simplification, that's a conscious `UrgencyPill` migration, not this "styling-only" polish).
+- ❌ Per-tier breakdown per month · by-month CSV export · combined month **AND** urgency filter · option-B unified timeline.
 
 ## Architecture
 
-Mirrors the existing pipeline data path (`load-pipeline.ts` → cycle repo → `PipelineTable`) and the urgency-tabs filter pattern. Four units:
+### 0. ONE shared status + erasure predicate (fixes F2 — the crux)
+
+`load-pipeline` does **not** expose a reusable "upcoming, non-lapsed, non-erased, unbounded" set. Its base filter is (`drizzle-renewal-cycle-repo.ts:1071-1091`): `status NOT IN ('cancelled','completed')` (**keeps `lapsed`** — that's the Lapsed tab) **AND** `MEMBER_NOT_ERASED_SQL` (`:1079`, `:378-383` — COMP-1 H4 drops GDPR-erased members from operational admin enumerations) **AND** `expires_at <= NOW() + INTERVAL '90 days'`.
+
+Define **one** SQL fragment reused by both new paths (aggregation + month-filtered page):
+
+```
+MONTH_PLANNING_MEMBER_SQL =
+   status = ANY(OPEN_CYCLE_STATUSES)   -- {upcoming, reminded, awaiting_payment} (cycle-status.ts:67-71)
+   AND <MEMBER_NOT_ERASED_SQL>          -- reuse the existing constant (drizzle-renewal-cycle-repo.ts:378-383)
+```
+
+Decision (F7): use `OPEN_CYCLE_STATUSES` — it is the module's canonical "an upcoming renewal" set and deliberately **excludes** `pending_admin_reactivation` (a reopened-lapsed money-hold, not a normal upcoming renewal). This is the "an upcoming renewal that will actually happen" set; it is a strict subset of the pipeline's `NOT IN (cancelled,completed)` (which additionally shows lapsed for the Lapsed tab). **`MEMBER_NOT_ERASED_SQL` is non-negotiable** — without it the chart counts erased members the month-filtered pipeline (which inherits it) omits, breaking reconciliation and re-entering a member COMP-1 removed.
 
 ### 1. Data — repo aggregation (Infrastructure)
 
-New method on the renewal-cycle repo (`drizzle-renewal-cycle-repo.ts`):
+New method on the renewal-cycle repo:
 
 ```ts
 countCyclesByExpiryMonth(
-  tenantId: string,
-  opts: { nowIso: string; horizonMonths: 12; timezone: string },
-): Promise<{ months: Array<{ month: string /* 'YYYY-MM' */; count: number }>; laterCount: number }>
+  tenantId, opts: { nowIso: string; timezone: 'Asia/Bangkok' },
+): Promise<{ overdueCount: number; months: Array<{ month: 'YYYY-MM'; count: number }>; laterCount: number }>
 ```
 
-- SQL: `GROUP BY to_char(expires_at AT TIME ZONE $tz, 'YYYY-MM')`, `$tz = 'Asia/Bangkok'` (tenant TZ) so month boundaries match how staff read dates. Counts **non-terminal** cycles only (NOT `completed`/`cancelled`/`lapsed` — the exact same set the pipeline's upcoming urgency buckets show; a terminal cycle is not an upcoming renewal). The precise status predicate reuses whatever the pipeline query already uses for its "upcoming" set (single source of truth — confirm against `load-pipeline.ts` at build time).
-- The use-case buckets the raw month→count map into the fixed 12-month window + `laterCount`. Runs inside `runInTenant` (RLS-safe, never the raw `db`).
-- Composite-index note: relies on the existing `(tenant_id, status, expires_at)` access path; no new index required for a ~131-member tenant (add later only if a large tenant regresses).
+- `WHERE <MONTH_PLANNING_MEMBER_SQL>` (§0), grouped `to_char(expires_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`. `expires_at` is **`timestamptz`** (`schema-renewal-cycles.ts:52`, `withTimezone:true`) so `AT TIME ZONE 'Asia/Bangkok'` yields the correct BKK wall-clock month (call this dependency out — a future column-type change must trip review). BKK is fixed UTC+7, no DST.
+- The aggregation returns raw month→count for **all** non-terminal-non-erased cycles; the use-case slots them into `overdue` / the 12-window / `later`. (Hygiene F9: the aggregation MAY floor scanning but the past-month rows collapse into the single `overdue` count anyway.)
+- Runs inside `runInTenant` — **thread the `tx`, never global `db`** (F7.1a RLS gotcha). RLS auto-scopes; no explicit `tenant_id` WHERE.
 
-### 2. Application — use-case
+### 2. Application — use-case + view-model type
 
-`loadRenewalMonthSummary(deps, { tenantId, nowIso })` (new file `application/use-cases/load-renewal-month-summary.ts`):
+- View-model type lives in the **pure `domain/renewal-month-bucket.ts`** (zero framework imports) and is re-exported via **both** the server barrel and `@/modules/renewals/client` — so the client chart imports it without dragging the server graph into the browser bundle (F5: `PipelineRow`/`UrgencyBucket` are re-exportable from `client.ts:43-46` *because* they live in a pure port file, NOT in a use-case file that imports `RenewalsDeps`/otel/metrics).
+- `loadRenewalMonthSummary(deps, { tenantId, nowIso })` → `Result<RenewalMonthSummary, never>` (module convention: input server-sourced, no business error). **The infra throw PROPAGATES** — the use-case does NOT catch (F4: mirrors `loadMembersWithoutCycle` at `load-members-without-cycle.ts:29-59`; the *page wrapper* try/catches to render the couldn't-load card). Empty-state (all buckets 0) is a distinct non-error path.
+- Output: `{ buckets: Array<{ key: 'overdue' | 'YYYY-MM' | 'later'; count: number }>; maxCount: number; totalCount: number }` — chronological, month buckets may be 0. **Labels are NOT in the view-model** (Constitution III — resolved in Presentation via next-intl). `totalCount` = sum of all buckets = the pipeline's non-terminal-non-erased member count (the reconciliation invariant).
 
-- Read-only, returns `Result<RenewalMonthSummary, never>` (error channel `never`; a repo throw degrades to an empty summary at the presentation boundary, never a 500 — matches `MembersWithoutCycleTray`'s posture).
-- Output: `{ buckets: Array<{ key: 'YYYY-MM' | 'later'; count: number }>; maxCount: number; totalCount: number }` — 12 month buckets (each may be count 0) + the `later` bucket, in chronological order. Month **labels are NOT in the view-model** — they're resolved in Presentation via next-intl (Constitution III: no i18n in Application). `maxCount` drives bar-width scaling in presentation.
-- Exported via the renewals barrel (`@/modules/renewals`); the client bar-chart imports **types** from the client-safe sub-barrel `@/modules/renewals/client` (same rationale as `PipelineRow` / `UrgencyBucket` — Turbopack + server-only deps).
+### 3. Pipeline filter extension (fixes F1 + F3)
 
-### 3. Pipeline filter extension
+Extend `load-pipeline.ts` + the repo's pipeline query with an optional validated `monthFilter`:
 
-Extend `load-pipeline.ts` + the repo's pipeline query to accept an optional `monthFilter: string`:
-
-- `'YYYY-MM'` → `WHERE expires_at >= <month-start, BKK> AND expires_at < <next-month-start, BKK>` (half-open range on the indexed column — index-friendly, no `to_char` in the WHERE).
-- `'later'` → `WHERE expires_at >= <now + 12 months, BKK month-start>`.
-- The renewals `page.tsx` reads `searchParams.month`; when present it takes precedence and `urgency` is ignored (mutually-exclusive lenses). When absent, existing `urgency` behaviour is unchanged.
+- **F1 — suppress the 90-day ceiling under a month filter.** When `monthFilter` is present the repo MUST NOT emit `expires_at <= NOW()+INTERVAL '90 days'` (`:1088-1090`) — the month bounds ARE the window. Replace it with:
+  - `'overdue'` → `expires_at < <current-month-start, BKK>` (+ `MONTH_PLANNING_MEMBER_SQL`).
+  - `'YYYY-MM'` → half-open `expires_at >= <month-start,BKK> AND expires_at < <next-month-start,BKK>` (indexed column, no `to_char` in WHERE).
+  - `'later'` → `expires_at >= <now + 12 months, BKK month-start>`.
+  - Use `MONTH_PLANNING_MEMBER_SQL` (§0) as the status/erasure base so the row set == the bucket's counted set.
+- **F3 — month scopes ROWS only, NOT the urgency badges.** `loadPipelinePage` computes `summary.byUrgency` + `lapsedCount` from `baseFilters` (`:1104-1132`). The month filter must apply to the **paged rows** only; the urgency summary + lapsed count stay computed on the **unfiltered 90-day base** so the urgency tabs show the same picture regardless of which month is selected (the "two independent lenses" contract). i.e. thread `monthFilter` into the row query but NOT into the summary aggregation.
+- **F6 — validate precedence in the use-case, not SQL.** Add `month` to `loadPipelineInputSchema` (`load-pipeline.ts:43`) as `/^\d{4}-\d{2}$/ | 'overdue' | 'later'`; invalid → treated as absent → `urgency` still honored. The use-case forwards at most one of `{urgency, month}` to the repo.
+- `page.tsx` reads `searchParams.month`; present-and-valid → month view (urgency ignored); else existing `urgency` behaviour unchanged.
 
 ### 4. Presentation
 
-- `RenewalsByMonthSection` (async server component, new `_components/renewals-by-month-section.tsx`) — calls `loadRenewalMonthSummary`, resolves month labels (locale + BE via next-intl `useFormatter`/`format-date-localised`), passes a serialisable view-model to the client chart. Own `<Suspense>` boundary + skeleton (never blocks the pipeline paint — same pattern as `MembersWithoutCycleTray`).
-- `MonthBarChart` (client component, new `src/components/renewals/month-bar-chart.tsx`) — renders a row of month columns: count (top) · vertical bar (height ∝ `count / maxCount`) · month label (bottom). Each column is a **link** to `?month=<key>` (soft-nav via `router.push`, clears `?urgency`, resets pagination cursor — mirrors `urgency-bucket-tabs.handleChange`). Selected month highlighted. Bars coloured by band (🔴 current-month/overdue, 🟠 next 1–2 months, 🔵 later) — the same palette as the polished tabs. A legend row explains the colours.
-- **Urgency-tabs colour polish:** edit `urgency-bucket-tabs.tsx` `TabsTrigger` to apply band-based colour classes (Tailwind tokens, both light+dark). Behaviour unchanged.
+- `RenewalsByMonthSection` (async server component) — calls `loadRenewalMonthSummary`, resolves bucket labels (locale + **BE year via `formatLocalisedDate`**, `format-date-localised.ts:20-28` — never a literal year), passes a serialisable VM to the client chart. Own `<Suspense>` + skeleton. Uses the tray's structure: `<section aria-labelledby>` + a **real `<h2>`** (NOT shadcn `CardTitle`, which renders a `<div>` — `members-without-cycle-tray.tsx:91-105`); heading order page-`h1` → this `h2` → pipeline `h2`s. Displays `totalCount` near the title ("95 renewals over the next year" — the exact aggregate the spreadsheet gave them).
+- `MonthBarChart` (client, `src/components/renewals/month-bar-chart.tsx`) — a `<ul>`/`role="list"` of rows; each **nonzero** bucket row is a full-width `<Link>` to `?month=<key>` (soft-nav `router.push`, **clears `?urgency`**, resets pagination cursor — mirrors `urgency-bucket-tabs.tsx:59-65`). Per row: localised `label` · bar (length ∝ `count/maxCount`, **min length ~8–12px so nonzero ≠ zero**, `ring-1 ring-inset` edge so magnitude survives low fill-contrast — 1.4.11) · numeric `count` as text (primary magnitude cue). Bands coloured per §6 tokens. **Zero-count buckets: non-interactive** (muted text, `aria-disabled`, out of tab order). **Selected bucket:** `aria-current="true"` + a non-colour affordance (ring + bolder count), not colour alone (1.4.1).
+- **Urgency-tabs polish:** `urgency-bucket-tabs.tsx` `TabsTrigger` gets band colour classes per §6 (styling only). When `?month` is active the tabs render a **no-selection/"All"** state (nullable `current` or an "all" pseudo-value) so exactly one lens ever looks active.
+- **Clear-filter affordance:** a dismissible chip beside the chart under a month filter — "Renewing in ธันวาคม 2569 ✕" → back to default. The pipeline empty copy becomes month-aware: add `noRowsInMonth` ("No members renew in {month}") alongside the existing `noRowsInBucket` (`pipeline-table.tsx:219-220`). Wire the month filter into the existing result-count live region (`role="status" aria-live="polite"`) so SR users hear "showing N members renewing in ธันวาคม 2569".
 
-## Best-UX requirements (the operator asked for "best UX")
+## Best-UX / a11y / i18n requirements
 
-- **WCAG 2.1 AA:** each bar is a keyboard-focusable link with a descriptive `aria-label` ("ธ.ค. 2026 — 17 members — filter pipeline"); urgency conveyed by **colour + position + the numeric count** (never colour alone, WCAG 1.4.1); visible focus ring (2.4.7); the chart row is a `role="group"`/`region` with an `aria-label`; horizontal `overflow-x-auto` for narrow viewports (1.4.10 Reflow) with a keyboard-pannable focusable region (mirror `urgency-bucket-tabs`' scroll-region pattern).
-- **i18n (en/th/sv):** widget title, month labels (localised, **BE year for th-TH**), "12+ later", "N members" count, all aria strings. Missing EN key fails build; TH/SV fall back + CI-warn (existing `check:i18n`).
-- **States:** shimmer skeleton while streaming; empty state ("No upcoming renewals") when every bucket is 0; graceful "couldn't load" card on read failure — none crash the pipeline page.
-- **Consistency:** the chart + polished tabs share ONE colour language; the card matches the shipped card chrome (border, radius, `CardHeader` real `<h2>` for SR heading-nav, per `docs/ux-standards.md`).
-- **Zero layout shift** (skeleton reserves the chart height); soft-nav preserves scroll/state.
+- **WCAG 2.1 AA:** every interactive bucket = a keyboard-focusable link, full-row hit-area ≥44px; urgency by **colour + position + numeric count** (never colour alone, 1.4.1); `aria-current` on selected; visible focus ring (2.4.7); `<ul>/<li>` list semantics (SR "3 of 14"); bar edge for graphical-object contrast (1.4.11). Horizontal-row form means **no** focusable scroll-region is needed (deletes the tabs' `overflow-x` a11y burden).
+- **i18n (en/th/sv):** title, bucket labels, `overdue`, `later`, "N members", all aria — via next-intl. **Every month label carries its year** (the window spans two Gregorian → BE years, e.g. 2026-07…2027-06; a bare "มิ.ย." is ambiguous 2569-vs-2570). **BE for th-TH via the helper, never a literal** (the v1 aria example "ธ.ค. 2026" was an off-by-543 bug — it is **2569**). `later` label is dated + localised — "ก.ค. 2570 เป็นต้นไป" / "Jul 2027 or later" / "från jul 2027" (not the vague "12+").
+- **States:** shimmer skeleton = **14 bar placeholders** matching final layout (CLS 0, motion-safe via `<Skeleton>`, mirrors `MembersWithoutCycleTraySkeleton:172-182`); empty = shared `EmptyState` primitive (`members-without-cycle-tray.tsx:107-113`), copy "No upcoming renewals", no CTA; error = "couldn't load" card (page wrapper catch), never a 500, never masking empty.
+- **Consistency:** chart + polished tabs + pills share ONE colour language (§6); card chrome matches shipped cards.
 
 ## Error handling
 
-- Repo throw → use-case returns empty summary → widget shows "couldn't load" card (best-effort). Pipeline load is independent and unaffected.
-- Malformed/absent `?month` param → ignored (falls back to default urgency view), never a 500.
-- Cross-tenant: the aggregation runs inside `runInTenant` (RLS `SET LOCAL app.current_tenant`) — a foreign tenant's cycles are invisible; no explicit `tenant_id` WHERE needed.
+- Infra throw → propagates from the use-case → **page wrapper** try/catch renders "couldn't load" (F4). Empty (all buckets 0) is a separate render. Pipeline load is independent.
+- Invalid/absent `?month` → treated as absent (F6), `urgency` honored; never a 500.
+- Cross-tenant: both new paths inside `runInTenant` (RLS `SET LOCAL app.current_tenant`); foreign cycles invisible.
 
 ## Testing
 
-- **Unit** (pure, mock-free): the month-bucketing helper — grouping expiry ISO dates into the rolling-12 + `later` buckets across the **Asia/Bangkok** boundary (a renewal at 2026-12-01T00:00+07 counts in `2026-12`, not `2026-11`); bar-width scaling; empty/all-later edge cases; `?month` param parsing (`YYYY-MM`, `later`, garbage → null).
-- **Integration** (live Neon): `countCyclesByExpiryMonth` returns correct per-month counts + `laterCount` on seeded cycles; the pipeline `monthFilter` returns exactly the members whose `expires_at` falls in that month (BKK); RLS isolation (a second tenant's cycles never leak); terminal cycles excluded from the counts.
-- **Component:** `MonthBarChart` renders the right bars/counts, a click navigates to `?month=`, selected-month highlight; `@axe-core` a11y scan (0 violations); polished urgency-tabs still navigate + carry the new colour classes.
-- **E2E (optional):** click a month bar → pipeline filters to that month; switch to an urgency tab → `?month` cleared.
+- **Unit (pure):** the bucketing helper — group expiry ISO into `overdue` / rolling-12 / `later` across the **Asia/Bangkok** boundary (a `2026-12-01T00:00+07` cycle → `2026-12`, not `2026-11`; a past-expiry non-terminal → `overdue`; a `now+12mo` edge → `later`); bar-width scaling incl. the 17-vs-2 domination (min-length applied); `?month` param parse (`YYYY-MM` / `overdue` / `later` / garbage→null). Use explicit +7 / js-joda, never host-local `Date`.
+- **Integration (live Neon):** `countCyclesByExpiryMonth` per-bucket counts incl. `overdueCount`/`laterCount`; **erased members excluded** (`MEMBER_NOT_ERASED_SQL`); terminal + `pending_admin_reactivation` excluded (`OPEN_CYCLE_STATUSES`); the month-filtered pipeline **suppresses the 90-day ceiling** and returns members >90 days out; the urgency `summary`/`lapsedCount` are **unchanged** by a month filter (F3); RLS isolation (second tenant never leaks).
+- **Reconciliation invariant (integration, F2/U9):** for every bucket key, `bucket.count === rows returned by monthFilter=<key>` on the same seeded set — incl. `overdue`, `later`, and the current-month + `now+12mo` edges. And `sum(all buckets) === pipeline non-terminal-non-erased member count`.
+- **Component:** `MonthBarChart` renders correct bars/counts, click → `?month=` (clears urgency), zero buckets non-interactive, selected `aria-current` + ring; `@axe-core` 0 violations; polished urgency-tabs still navigate + carry the pill-matched colours + go to "All" state under a month filter.
 
 ## File structure
 
 ```
 src/modules/renewals/
-  application/use-cases/load-renewal-month-summary.ts        (new)
-  application/use-cases/load-pipeline.ts                     (modify: monthFilter)
-  application/ports/renewal-cycle-repo.ts                    (modify: countCyclesByExpiryMonth + pipeline monthFilter)
-  infrastructure/drizzle/drizzle-renewal-cycle-repo.ts       (modify: impl)
-  domain/renewal-month-bucket.ts                             (new: pure bucketing helper)
-  index.ts / client sub-barrel                               (modify: exports + client types)
+  domain/renewal-month-bucket.ts                            (new: pure bucketing helper + RenewalMonthSummary VM type)
+  application/use-cases/load-renewal-month-summary.ts       (new: use-case, propagates throw)
+  application/use-cases/load-pipeline.ts                    (modify: validated month param, precedence, thread to rows-only)
+  application/ports/renewal-cycle-repo.ts                   (modify: countCyclesByExpiryMonth + pipeline monthFilter opt)
+  infrastructure/drizzle/drizzle-renewal-cycle-repo.ts      (modify: MONTH_PLANNING_MEMBER_SQL, aggregation, suppress 90d under monthFilter, summary stays on base)
+  domain/value-objects/cycle-status.ts                      (reference: OPEN_CYCLE_STATUSES)
+  index.ts / client.ts                                      (modify: export use-case + VM type via both barrels)
 src/app/(staff)/admin/renewals/
-  page.tsx                                                   (modify: read ?month, render widget, thread filter)
-  _components/renewals-by-month-section.tsx                  (new: server section + skeleton)
-  _components/urgency-bucket-tabs.tsx                        (modify: colour polish + clear ?month on select)
-src/components/renewals/month-bar-chart.tsx                  (new: client bar chart)
-src/i18n/messages/{en,th,sv}.json                            (modify: admin.renewals.byMonth.*)
-tests/unit/renewals/domain/renewal-month-bucket.test.ts     (new)
-tests/integration/renewals/count-cycles-by-month.test.ts    (new)
-tests/unit/app/renewals/month-bar-chart.test.tsx            (new)
+  page.tsx                                                  (modify: read+validate ?month, render section, thread filter, clear-chip)
+  _components/renewals-by-month-section.tsx                 (new: server section + 14-bar skeleton)
+  _components/urgency-bucket-tabs.tsx                        (modify: pill-matched colours + "All" state under ?month)
+  _components/pipeline-table.tsx                             (modify: noRowsInMonth empty copy + month-aware live region)
+src/components/renewals/month-bar-chart.tsx                 (new: horizontal bar list)
+src/i18n/messages/{en,th,sv}.json                           (modify: admin.renewals.byMonth.* incl. dated later label)
+tests/unit/renewals/domain/renewal-month-bucket.test.ts    (new)
+tests/integration/renewals/count-cycles-by-month.test.ts   (new: counts + reconciliation + erasure + 90d-suppression + summary-unchanged)
+tests/unit/app/renewals/month-bar-chart.test.tsx           (new)
 ```
