@@ -411,21 +411,23 @@ const EXPIRY_MONTH_SQL = sql<string>`to_char(${renewalCycles.expiresAt} AT TIME 
 /**
  * Half-open `expires_at` bound for a `?month` bucket, in BKK. Used by the
  * month-filtered pipeline rows (Task 5) so the row set matches the bucket's
- * counted set exactly. Bounds are JS `Date` instants (drizzle binds them as
- * `timestamptz` params) — no `to_char` in the WHERE, so the `expires_at`
- * index stays usable.
+ * counted set exactly. Bounds are BKK month-start instants bound as ISO 8601
+ * UTC strings (matching the `sql\`${expiresAt} <= ${nowIso}\`` string-bind
+ * pattern used elsewhere in this repo — postgres.js cannot serialize a raw
+ * `Date` interpolated into a `sql` fragment). No `to_char` in the WHERE, so
+ * the `expires_at` index stays usable.
  */
 function monthBoundPredicate(key: string, nowIso: string): SQL {
   const currentYm = bkkYearMonth(nowIso);
   if (key === 'overdue') {
-    return sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(currentYm)}`;
+    return sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(currentYm).toISOString()}`;
   }
   if (key === 'later') {
-    return sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(addMonthsToYm(currentYm, 12))}`;
+    return sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(addMonthsToYm(currentYm, 12)).toISOString()}`;
   }
   return and(
-    sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(key)}`,
-    sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(addMonthsToYm(key, 1))}`,
+    sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(key).toISOString()}`,
+    sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(addMonthsToYm(key, 1)).toISOString()}`,
   )!;
 }
 
@@ -1203,10 +1205,27 @@ export function makeDrizzleRenewalCycleRepo(
         }
         const lapsedCount = lapsedCountRows[0]?.count ?? 0;
 
-        // Page query: filter + cursor + ORDER BY (expires_at, cycle_id) ASC + limit+1
-        const pageFilters = baseFilters.slice();
-        if (opts.urgency && opts.urgency !== 'lapsed') {
-          pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
+        // Page query filters. Two mutually-exclusive shapes:
+        //  - MONTH lens (opts.monthFilter present): REBUILD from
+        //    MONTH_PLANNING_MEMBER_SQL — NOT baseFilters.slice(). baseFilters
+        //    carries `status NOT IN (cancelled,completed)` (keeps lapsed) AND
+        //    the 90-day ceiling; the month bounds ARE the window and lapsed
+        //    must not leak into an `overdue` click. Tier is intentionally
+        //    ignored (the chart aggregation is whole-tenant). Summary +
+        //    lapsedCount above stay on `baseFilters` → urgency badges are
+        //    unchanged by a month filter (F3, "two independent lenses").
+        //  - URGENCY lens (default): unchanged — slice baseFilters + urgency.
+        let pageFilters: SQL[];
+        if (opts.monthFilter && opts.nowIso) {
+          pageFilters = [
+            MONTH_PLANNING_MEMBER_SQL,
+            monthBoundPredicate(opts.monthFilter, opts.nowIso),
+          ];
+        } else {
+          pageFilters = baseFilters.slice();
+          if (opts.urgency && opts.urgency !== 'lapsed') {
+            pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
+          }
         }
         if (cursor) {
           pageFilters.push(

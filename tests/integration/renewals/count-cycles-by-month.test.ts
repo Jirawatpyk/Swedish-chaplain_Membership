@@ -189,4 +189,43 @@ describe('countCyclesByExpiryMonth — integration', () => {
       agg.overdueCount + agg.laterCount + agg.months.reduce((s, m) => s + m.count, 0);
     expect(total).toBe(5);
   });
+
+  it('month-filtered pipeline reconciles with the bucket count, suppresses the 90d ceiling, and leaves the urgency summary unchanged', async () => {
+    // Fresh tenant slice within the same suite tenant is fine — assert by
+    // month membership, not absolute totals, to stay robust to prior rows.
+    const live = await seedMember(false);
+    // A cycle > 90 days out (BKK 2027-02) — invisible to the urgency window,
+    // visible to the month lens.
+    await seedCycle({ memberId: live, status: 'upcoming', expiresAt: new Date('2027-02-14T04:00:00Z') });
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const agg = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
+      nowIso: NOW_ISO,
+      timezone: 'Asia/Bangkok',
+    });
+    const febBucket = agg.months.find((m) => m.month === '2027-02');
+    expect(febBucket).toBeDefined();
+
+    // Baseline summary WITHOUT month filter.
+    const base = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      urgency: 't-30',
+      limit: 200,
+    });
+
+    // Rows WITH month filter — 90d ceiling must be suppressed (Feb 2027 > 90d).
+    const monthPage = await deps.cyclesRepo.loadPipelinePage(tenant.ctx.slug, {
+      monthFilter: '2027-02',
+      nowIso: NOW_ISO,
+      limit: 200,
+    });
+
+    // Reconciliation: rows returned for the month == the bucket count.
+    expect(monthPage.rows.length).toBe(febBucket!.count);
+    expect(monthPage.rows.every((r) => r.expiresAt >= '2027-02')).toBe(true);
+
+    // F3: the urgency summary + lapsed count are identical with/without month.
+    expect(monthPage.summary.byUrgency).toEqual(base.summary.byUrgency);
+    expect(monthPage.summary.lapsedCount).toBe(base.summary.lapsedCount);
+  });
 });
