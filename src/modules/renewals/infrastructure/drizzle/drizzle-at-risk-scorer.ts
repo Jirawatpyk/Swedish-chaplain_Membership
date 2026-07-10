@@ -8,9 +8,9 @@
  * `computeAtRiskScore` function (FR-029 + FR-029a F6-readiness fallback
  * + FR-030 proportional bands + FR-035 min-tenure gate).
  *
- * Factor coverage (7 of 8 implemented end-to-end; BUG-1 wired the two F6
- * event-attendance factors via `EventAttendeesPort.listAttendances` now that
- * F6 shipped 2026-05-19; only `culturalTicketQuotaPctUsed` remains deferred):
+ * Factor coverage (all 8 implemented end-to-end; BUG-1 + follow-up wired the
+ * three F6 factors via `EventAttendeesPort.listAttendances` now that F6
+ * shipped 2026-05-19 — activeMax=100 is now fully realizable):
  *
  *   F6-INDEPENDENT (5):
  *     ✓ tenureDays                 — F3 members.created_at proxy
@@ -41,14 +41,15 @@
  *   F6-DEPENDENT (3):
  *     ✓ eventsAttendedLast12Months — F6 listAttendances, 12mo window (BUG-1)
  *     ✓ eventsAttendedLast3Months  — F6 listAttendances, 3mo window (BUG-1)
- *     ⊘ culturalTicketQuotaPctUsed — deferred (calendar-year window; recipe
- *                                     exists, not yet wired)
+ *     ✓ culturalTicketQuotaPctUsed — F6 cultural attendance / cultural_tickets
+ *                                     _per_year, current calendar year (BUG-1
+ *                                     follow-up; nextResetAtFor window)
  *
- * Event factors are gathered ONLY when `isAvailable()` (F6 flag on); the stub
- * returns [] so activeMax stays 70. The still-deferred cultural factor returns
- * `undefined`, which the Domain tolerates by skipping (contributes 0); Wave
- * A1's property-based test pins the "0-contribution-when-undefined" invariant
- * (`tests/unit/renewals/domain/at-risk-score.test.ts`).
+ * F6 factors are gathered ONLY when `isAvailable()` (F6 flag on); the stub
+ * returns [] so activeMax stays 70. Any factor left `undefined` (e.g. a plan
+ * with no cultural entitlement) the Domain tolerates by skipping (contributes
+ * 0); Wave A1's property-based test pins the "0-contribution-when-undefined"
+ * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
  * Tenant isolation: most tables (members, invoices, membership_plans,
  * renewal_*) use strict isolating RLS policies and require NO explicit
@@ -81,7 +82,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
-import { currentQuotaYear } from '@/modules/broadcasts';
+import { currentQuotaYear, nextResetAtFor } from '@/modules/broadcasts';
 import { env } from '@/lib/env';
 import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import {
@@ -339,6 +340,9 @@ export function makeDrizzleAtRiskScorer(
       // correct).
       // ----------------------------------------------------------------
       let eBlastQuotaPctUsed: number | undefined;
+      // BUG-1 follow-up — cultural-ticket entitlement hoisted out of the eblast
+      // block so the F6 block below can read it from the SAME plan row.
+      let culturalEntitlement = 0;
       if (memberRow != null) {
         const planRows = await tx
           .select({
@@ -350,8 +354,9 @@ export function makeDrizzleAtRiskScorer(
                 AND ${membershipPlans.planYear} = ${memberRow.planYear}`,
           )
           .limit(1);
-        const eblastQuota =
-          planRows[0]?.benefitMatrix?.eblast_per_year ?? 0;
+        const benefitMatrix = planRows[0]?.benefitMatrix;
+        culturalEntitlement = benefitMatrix?.cultural_tickets_per_year ?? 0;
+        const eblastQuota = benefitMatrix?.eblast_per_year ?? 0;
         if (eblastQuota > 0) {
           const quotaYear = currentQuotaYear(
             new Date(),
@@ -394,6 +399,8 @@ export function makeDrizzleAtRiskScorer(
       // batch CTE in drizzle-member-renewal-flags-repo.ts, not this scorer).
       let eventsAttendedLast12Months: number | undefined;
       let eventsAttendedLast3Months: number | undefined;
+      // BUG-1 follow-up — F6 cultural-ticket quota-usage factor (FR-029 line 4).
+      let culturalTicketQuotaPctUsed: number | undefined;
       if (f6Available) {
         const attendances = await deps.eventAttendees.listAttendances(
           tenantId,
@@ -416,6 +423,30 @@ export function makeDrizzleAtRiskScorer(
           const t = new Date(a.attendedAt).getTime();
           return t > threeMoMs && t <= nowMs;
         }).length;
+
+        // BUG-1 follow-up — cultural-ticket quota % used (FR-029 line 4:
+        // <50% used -> +10). Cultural attendance = an event whose eventType
+        // includes 'cultural' (derived directly from events.is_cultural_event
+        // by the F6 adapter's deriveEventType — provably equivalent to the
+        // batch CTE's `is_cultural_event = true`), within the CURRENT calendar
+        // year in the tenant timezone (F9 benefit-usage parity: window start =
+        // nextResetAtFor(quotaYear-1) = Jan-01 of the current quota year),
+        // upper-bounded at now. Both scorers use nextResetAtFor so single and
+        // batch cannot drift. Skipped (undefined -> Domain contributes 0) when
+        // the plan has no cultural entitlement.
+        if (culturalEntitlement > 0) {
+          const quotaYear = currentQuotaYear(new Date(), env.tenant.timezone);
+          const yearStartMs = new Date(
+            nextResetAtFor(quotaYear - 1, env.tenant.timezone),
+          ).getTime();
+          const culturalUsed = attendances.filter((a) => {
+            if (!a.eventType.includes('cultural')) return false;
+            const t = new Date(a.attendedAt).getTime();
+            return t >= yearStartMs && t <= nowMs;
+          }).length;
+          culturalTicketQuotaPctUsed =
+            (culturalUsed / culturalEntitlement) * 100;
+        }
       }
 
       const factors: AtRiskFactors = {
@@ -427,14 +458,16 @@ export function makeDrizzleAtRiskScorer(
         ...(daysSinceLastPayment !== undefined
           ? { daysSinceLastPayment }
           : {}),
-        // BUG-1 — F6 event-attendance (events_12mo/3mo). Undefined when F6 is
-        // unavailable → Domain skips them. cultural_ticket stays deferred
-        // (calendar-year window; see follow-up).
+        // BUG-1 — F6 factors (events_12mo/3mo + cultural). Undefined when F6 is
+        // unavailable → Domain skips them, activeMax stays 70.
         ...(eventsAttendedLast12Months !== undefined
           ? { eventsAttendedLast12Months }
           : {}),
         ...(eventsAttendedLast3Months !== undefined
           ? { eventsAttendedLast3Months }
+          : {}),
+        ...(culturalTicketQuotaPctUsed !== undefined
+          ? { culturalTicketQuotaPctUsed }
           : {}),
         tierDowngradedLast12Months,
         ...(eBlastQuotaPctUsed !== undefined ? { eBlastQuotaPctUsed } : {}),

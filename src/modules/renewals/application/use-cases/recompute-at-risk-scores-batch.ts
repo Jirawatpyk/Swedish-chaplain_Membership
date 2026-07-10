@@ -225,6 +225,12 @@ export async function recomputeAtRiskScoresBatch(
                   eventsAttendedLast3Months: row.eventsAttendedLast3Months,
                 }
               : {}),
+            // BUG-1 follow-up — F6 cultural factor. Gated on f6Available (like
+            // the event factors) AND null-checked (like eblast — null when the
+            // plan has no cultural entitlement).
+            ...(f6Available && row.culturalTicketQuotaPctUsed !== null
+              ? { culturalTicketQuotaPctUsed: row.culturalTicketQuotaPctUsed }
+              : {}),
             // F2 tier-downgrade — direct boolean
             tierDowngradedLast12Months: row.tierDowngradedLast12Months,
           };

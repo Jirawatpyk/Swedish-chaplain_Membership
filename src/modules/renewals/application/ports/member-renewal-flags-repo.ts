@@ -442,7 +442,8 @@ export interface BulkSetRiskScoreRow {
  *   ✓ tierDowngradedLast12Months — direct boolean
  *   ✓ eventsAttendedLast12Months — F6 event_registrations→events (BUG-1)
  *   ✓ eventsAttendedLast3Months  — F6 event_registrations→events (BUG-1)
- *   ⊘ culturalTicketQuotaPctUsed — F6-dependent (deferred: calendar-year window)
+ *   ✓ culturalTicketQuotaPctUsed — F6 cultural attendance / cultural_tickets
+ *                                  _per_year, current calendar year (BUG-1)
  */
 export interface AtRiskBatchFactorRow {
   readonly memberId: string;
@@ -466,6 +467,12 @@ export interface AtRiskBatchFactorRow {
    */
   readonly eventsAttendedLast12Months: number;
   readonly eventsAttendedLast3Months: number;
+  /**
+   * BUG-1 — F6 cultural-ticket quota % used (0–100), FR-029 line 4 (+10 when
+   * <50%). Null when the member's plan has no `cultural_tickets_per_year`
+   * entitlement → Domain skips the factor. Current calendar year in tenant tz.
+   */
+  readonly culturalTicketQuotaPctUsed: number | null;
   /**
    * True when the member's plan tier was downgraded in the last 12
    * months (F1 audit_log scan). FR-029 line 8 weight +15.

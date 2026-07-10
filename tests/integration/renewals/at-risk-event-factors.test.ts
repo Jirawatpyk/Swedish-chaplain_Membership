@@ -45,18 +45,45 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
   let tenant: TestTenant;
   let user: TestUser;
   let planId: string;
+  // Cultural-entitled plans (retained across tests like `planId`) — the
+  // default test matrix has cultural_tickets_per_year=0 so cultural is inert
+  // for the event tests; these give a non-zero entitlement to exercise it.
+  let culturalPlan4Id: string; // cultural_tickets_per_year = 4
+  let culturalPlan2Id: string; // cultural_tickets_per_year = 2
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await seedRenewalPolicies(tenant.ctx);
     planId = `f8-ev-${randomUUID().slice(0, 8)}`;
+    culturalPlan4Id = `f8-cult4-${randomUUID().slice(0, 8)}`;
+    culturalPlan2Id = `f8-cult2-${randomUUID().slice(0, 8)}`;
     await runInTenant(tenant.ctx, async (tx) => {
       await seedF8MembershipPlan(tx, {
         tenantSlug: tenant.ctx.slug,
         planId,
         planName: { en: 'Event Plan' },
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      });
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId: culturalPlan4Id,
+        planName: { en: 'Cultural Plan 4' },
+        benefitMatrix: {
+          ...DEFAULT_TEST_BENEFIT_MATRIX,
+          cultural_tickets_per_year: 4,
+        },
+        createdBy: user.userId,
+      });
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId: culturalPlan2Id,
+        planName: { en: 'Cultural Plan 2' },
+        benefitMatrix: {
+          ...DEFAULT_TEST_BENEFIT_MATRIX,
+          cultural_tickets_per_year: 2,
+        },
         createdBy: user.userId,
       });
     });
@@ -102,6 +129,12 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
    */
   async function seedMember(opts: {
     readonly recentEventDaysAgo?: number;
+    /** Override the member's plan (e.g. a cultural-entitled plan). */
+    readonly planIdOverride?: string;
+    /** Mark the seeded event as a cultural event (is_cultural_event=true). */
+    readonly eventIsCultural?: boolean;
+    /** Explicit event start-date (overrides recentEventDaysAgo). */
+    readonly eventDate?: Date;
   }): Promise<string> {
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
@@ -111,7 +144,7 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
         memberNumber: nextSeedMemberNumber(),
         companyName: 'Event Co',
         country: 'TH',
-        planId,
+        planId: opts.planIdOverride ?? planId,
         planYear: 2026,
         createdAt: new Date(NOW_MS - 400 * MS_PER_DAY),
         lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY), // >365d → +5
@@ -141,15 +174,18 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
       });
-      if (opts.recentEventDaysAgo !== undefined) {
+      if (opts.recentEventDaysAgo !== undefined || opts.eventDate !== undefined) {
         const eventId = randomUUID();
-        const when = new Date(NOW_MS - opts.recentEventDaysAgo * MS_PER_DAY);
+        const when =
+          opts.eventDate ??
+          new Date(NOW_MS - (opts.recentEventDaysAgo ?? 0) * MS_PER_DAY);
         await tx.insert(events).values({
           tenantId: tenant.ctx.slug,
           eventId,
           externalId: `ext-${eventId.slice(0, 8)}`,
-          name: 'Networking Dinner',
+          name: opts.eventIsCultural ? 'Cultural Evening' : 'Networking Dinner',
           startDate: when,
+          isCulturalEvent: opts.eventIsCultural ?? false,
         });
         await tx.insert(eventRegistrations).values({
           tenantId: tenant.ctx.slug,
@@ -225,6 +261,99 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
     expect(factorKeys).toContain('events_attended_last_3mo_zero');
     expect(factorKeys).not.toContain('events_attended_last_12mo_zero');
   }, 60_000);
+
+  it('single scorer — cultural quota <50% used fires cultural_ticket_quota_under_50pct (+10)', async () => {
+    const memberId = await seedMember({
+      planIdOverride: culturalPlan4Id, // quota 4
+      recentEventDaysAgo: 20,
+      eventIsCultural: true, // 1 cultural event this year → 1/4 = 25% < 50%
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(
+      result.contributions.some(
+        (c) => c.factor === 'cultural_ticket_quota_under_50pct',
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it('single scorer — cultural quota >=50% used does NOT fire the cultural factor', async () => {
+    const memberId = await seedMember({
+      planIdOverride: culturalPlan2Id, // quota 2
+      recentEventDaysAgo: 20,
+      eventIsCultural: true, // 1 cultural event → 1/2 = 50% >= 50%
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(result.contributions.map((c) => c.factor)).not.toContain(
+      'cultural_ticket_quota_under_50pct',
+    );
+  }, 60_000);
+
+  it('single scorer — a cultural attendance in the PREVIOUS calendar year is NOT counted (calendar-year window, not rolling)', async () => {
+    // Oct 1 of last calendar year — within the 365-day fetch window but before
+    // this year's Jan-01 boundary.
+    const prevYearOct = new Date(new Date().getFullYear() - 1, 9, 1);
+    const memberId = await seedMember({
+      planIdOverride: culturalPlan2Id, // quota 2
+      eventDate: prevYearOct,
+      eventIsCultural: true,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await deps.atRiskScorer.scoreMember(
+      tenant.ctx.slug,
+      memberId,
+    );
+    // 0 cultural used THIS calendar year → 0% < 50% → factor FIRES. A rolling-
+    // window bug would count the prev-year event (1/2 = 50%) and NOT fire.
+    expect(
+      result.contributions.some(
+        (c) => c.factor === 'cultural_ticket_quota_under_50pct',
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it('batch CTE — the cultural FILTER runs on live Neon; a cultural-entitled member scores exactly +10 above an identical member whose plan has no cultural entitlement', async () => {
+    const eventDaysAgo = 20;
+    const memberCultural = await seedMember({
+      planIdOverride: culturalPlan4Id, // quota 4 → 1/4 = 25% < 50% → +10
+      recentEventDaysAgo: eventDaysAgo,
+      eventIsCultural: true,
+    });
+    const memberNoEntitlement = await seedMember({
+      // default plan (cultural_tickets_per_year = 0) → cultural skipped
+      recentEventDaysAgo: eventDaysAgo,
+      eventIsCultural: true,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await recomputeAtRiskScoresBatch(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.membersFailed).toBe(0);
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ memberId: members.memberId, riskScore: members.riskScore })
+        .from(members),
+    );
+    const scoreOf = (id: string): number | null =>
+      rows.find((r) => r.memberId === id)?.riskScore ?? null;
+    const scoreCultural = scoreOf(memberCultural);
+    const scoreNoEntitlement = scoreOf(memberNoEntitlement);
+    expect(scoreCultural).not.toBeNull();
+    expect(scoreNoEntitlement).not.toBeNull();
+    // Identical members except the plan's cultural entitlement → the only score
+    // difference is the +10 cultural factor the CTE now gathers.
+    expect((scoreCultural ?? 0) - (scoreNoEntitlement ?? 0)).toBe(10);
+  }, 90_000);
 
   it('batch CTE — the events LATERAL runs on live Neon; a 0-event member scores exactly +25 above an otherwise-identical member with a recent event', async () => {
     const memberNoEvents = await seedMember({});
