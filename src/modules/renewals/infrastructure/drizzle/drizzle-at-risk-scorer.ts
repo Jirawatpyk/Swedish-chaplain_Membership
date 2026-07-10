@@ -8,9 +8,9 @@
  * `computeAtRiskScore` function (FR-029 + FR-029a F6-readiness fallback
  * + FR-030 proportional bands + FR-035 min-tenure gate).
  *
- * Factor coverage (5 of 8 implemented end-to-end as of PR #24 Round 7;
- * the 3 F6-dependent factors stay at 0 contribution until F6
- * EventCreate integration ships):
+ * Factor coverage (7 of 8 implemented end-to-end; BUG-1 wired the two F6
+ * event-attendance factors via `EventAttendeesPort.listAttendances` now that
+ * F6 shipped 2026-05-19; only `culturalTicketQuotaPctUsed` remains deferred):
  *
  *   F6-INDEPENDENT (5):
  *     ✓ tenureDays                 — F3 members.created_at proxy
@@ -39,14 +39,16 @@
  *                                     #8 usage-notion fix)
  *
  *   F6-DEPENDENT (3):
- *     ⊘ eventsAttendedLast12Months — F6 EventCreate not shipped
- *     ⊘ eventsAttendedLast3Months  — same
- *     ⊘ culturalTicketQuotaPctUsed — F6 ticket data not shipped
+ *     ✓ eventsAttendedLast12Months — F6 listAttendances, 12mo window (BUG-1)
+ *     ✓ eventsAttendedLast3Months  — F6 listAttendances, 3mo window (BUG-1)
+ *     ⊘ culturalTicketQuotaPctUsed — deferred (calendar-year window; recipe
+ *                                     exists, not yet wired)
  *
- * The 3 remaining deferred factors return `undefined` from the gather
- * step, which the Domain function tolerates by skipping (contributes 0).
- * Wave A1's property-based test pins the "0-contribution-when-undefined"
- * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
+ * Event factors are gathered ONLY when `isAvailable()` (F6 flag on); the stub
+ * returns [] so activeMax stays 70. The still-deferred cultural factor returns
+ * `undefined`, which the Domain tolerates by skipping (contributes 0); Wave
+ * A1's property-based test pins the "0-contribution-when-undefined" invariant
+ * (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
  * Tenant isolation: most tables (members, invoices, membership_plans,
  * renewal_*) use strict isolating RLS policies and require NO explicit
@@ -383,6 +385,39 @@ export function makeDrizzleAtRiskScorer(
         }
       }
 
+      // BUG-1 — F6 event-attendance factors (events_12mo/3mo). Reuse the
+      // injected EventAttendeesPort (proven RLS-scoped + fail-open) instead of
+      // a raw events query. Gathered ONLY when F6 is available; the stub
+      // returns [] and activeMax stays 70. `listAttendances` opens its own
+      // runInTenant (nested, separate RLS-scoped tx) — one extra round-trip on
+      // this ad-hoc/small-N per-member path (the weekly cron uses the set-based
+      // batch CTE in drizzle-member-renewal-flags-repo.ts, not this scorer).
+      let eventsAttendedLast12Months: number | undefined;
+      let eventsAttendedLast3Months: number | undefined;
+      if (f6Available) {
+        const attendances = await deps.eventAttendees.listAttendances(
+          tenantId,
+          memberId,
+          {
+            sinceIso: new Date(nowMs - 365 * 24 * 60 * 60 * 1000).toISOString(),
+            limit: 500,
+          },
+        );
+        // BUG-1 review: upper-bound at `now` — count only events ATTENDED
+        // (past), NOT future registrations. `listAttendances` takes only
+        // `sinceIso` (no `until`), so a member registered for an upcoming event
+        // would otherwise inflate the count and suppress the +25/+10
+        // disengagement factors. Matches the batch LATERAL's `start_date <= NOW()`.
+        eventsAttendedLast12Months = attendances.filter(
+          (a) => new Date(a.attendedAt).getTime() <= nowMs,
+        ).length;
+        const threeMoMs = nowMs - 90 * 24 * 60 * 60 * 1000;
+        eventsAttendedLast3Months = attendances.filter((a) => {
+          const t = new Date(a.attendedAt).getTime();
+          return t > threeMoMs && t <= nowMs;
+        }).length;
+      }
+
       const factors: AtRiskFactors = {
         ...(tenureDays !== undefined ? { tenureDays } : {}),
         ...(daysSinceContactUpdate !== undefined
@@ -392,8 +427,15 @@ export function makeDrizzleAtRiskScorer(
         ...(daysSinceLastPayment !== undefined
           ? { daysSinceLastPayment }
           : {}),
-        // PR #24 Round 7 — F2 + F7 unblocked; 3 F6 factors still pending
-        // F6 EventCreate ship.
+        // BUG-1 — F6 event-attendance (events_12mo/3mo). Undefined when F6 is
+        // unavailable → Domain skips them. cultural_ticket stays deferred
+        // (calendar-year window; see follow-up).
+        ...(eventsAttendedLast12Months !== undefined
+          ? { eventsAttendedLast12Months }
+          : {}),
+        ...(eventsAttendedLast3Months !== undefined
+          ? { eventsAttendedLast3Months }
+          : {}),
         tierDowngradedLast12Months,
         ...(eBlastQuotaPctUsed !== undefined ? { eBlastQuotaPctUsed } : {}),
       };

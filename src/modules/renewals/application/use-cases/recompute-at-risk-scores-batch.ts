@@ -131,10 +131,13 @@ export async function recomputeAtRiskScoresBatch(
   // PR #24 review-fix — F6 availability read folded INTO the lock too.
   // Previously read outside `runInTenant`, leaving a window where a
   // tenant flipping F6 mid-cron could observe inconsistent state
-  // between this read and the CTE-compute-time. F7 currently stubs
-  // `isAvailable() === false`, so the prior placement was inert; the
-  // move here is a forward-compat hardening matching the R4-W5
-  // settings hoist rationale.
+  // between this read and the CTE-compute-time. BUG-1 — F6 shipped
+  // 2026-05-19 so isAvailable() now returns true in prod, and the CTE now
+  // GATHERS the F6 event-attendance factors (events_12mo/3mo LATERAL), so
+  // `f6Available` legitimately drives activeMax=100 +
+  // eventAttendanceFactorSkipped=false. Keeping the read inside the lock
+  // stays correct — a tenant flipping F6 mid-cron is observed consistently
+  // with the CTE compute.
   // Round-5 H5: honour injected clock when provided; default to
   // wall-clock new Date(). Pinning here means `computedAt`,
   // `nowMs`, and downstream FR-035 min-tenure cutoff all reference
@@ -210,6 +213,17 @@ export async function recomputeAtRiskScoresBatch(
             // F7 e-blast quota — null ⇒ plan has no quota; Domain skips
             ...(row.eblastQuotaPctUsed !== null
               ? { eBlastQuotaPctUsed: row.eblastQuotaPctUsed }
+              : {}),
+            // BUG-1 — F6 event-attendance factors. The CTE always computes
+            // them, but include them ONLY when F6 is available so a run with
+            // eventAttendeesAvailable=false does not let events fire (the
+            // Domain's own f6-active guard also skips them — gating here keeps
+            // the factor set honest and matches the single scorer).
+            ...(f6Available
+              ? {
+                  eventsAttendedLast12Months: row.eventsAttendedLast12Months,
+                  eventsAttendedLast3Months: row.eventsAttendedLast3Months,
+                }
               : {}),
             // F2 tier-downgrade — direct boolean
             tierDowngradedLast12Months: row.tierDowngradedLast12Months,

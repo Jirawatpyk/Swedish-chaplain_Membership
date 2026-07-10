@@ -478,12 +478,14 @@ export function makeDrizzleMemberRenewalFlagsRepo(
      * year — F9 benefit-usage `used`, NOT F7's enforcement count; see the
      * #8 note in the LATERAL below), F1 audit_log EXISTS
      * (member_plan_changed events in last 12 months indicating
-     * tier-downgrade per FR-029 line 8).
+     * tier-downgrade per FR-029 line 8), and (BUG-1) F6
+     * event_registrations→events LATERAL (events_attended 12mo/3mo,
+     * upper-bounded at NOW() so only ATTENDED — not future-registered —
+     * events count).
      *
-     * 6 of 8 FR-029 factors implemented end-to-end against real data
-     * (only F6 events_attended_12mo + events_attended_3mo +
-     * cultural_ticket_quota stay stubbed — pending F6 EventCreate
-     * integration).
+     * 7 of 8 FR-029 factors implemented end-to-end against real data (only
+     * F6 cultural_ticket_quota stays deferred — calendar-year window, recipe
+     * known, realizable max→95 so band 'critical' remains reachable).
      */
     async gatherAtRiskFactorsForTenant(
       tx: unknown,
@@ -504,6 +506,8 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         last_paid_at: Date | null;
         eblast_quota: string | null;
         eblast_consumed: string;
+        events_12mo: string;
+        events_3mo: string;
         tier_downgraded: boolean;
       }>(sql`
         SELECT
@@ -515,6 +519,10 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           inv.last_paid_at,
           (p.benefit_matrix->>'eblast_per_year')::text AS eblast_quota,
           COALESCE(eb.consumed, 0)::text AS eblast_consumed,
+          -- BUG-1 — F6 event-attendance factors (events_attended 12mo/3mo).
+          -- Set-based LATERAL below; counts are rolling windows so no tz math.
+          COALESCE(ev.events_12mo, 0)::text AS events_12mo,
+          COALESCE(ev.events_3mo, 0)::text AS events_3mo,
           EXISTS (
             SELECT 1
             FROM audit_log al
@@ -623,6 +631,30 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             AND b.status IN ('sent', 'partial_delivery_accepted')
             AND b.quota_year_consumed = ${quotaYear}
         ) eb ON true
+        -- BUG-1 — F6 event-attendance LATERAL. Mirrors the proven
+        -- drizzle-event-attendees-by-member join/filters (FR-032 exclude
+        -- pseudonymised registrations, FR-019a exclude archived events). The
+        -- attendance date is events.start_date (reached via (tenant_id,
+        -- event_id)); event_registrations has no per-row attended_at. Seeks
+        -- the member's registrations via event_regs_tenant_matched_member_idx.
+        LEFT JOIN LATERAL (
+          SELECT
+            count(*) FILTER (WHERE e.start_date > NOW() - INTERVAL '12 months') AS events_12mo,
+            count(*) FILTER (WHERE e.start_date > NOW() - INTERVAL '3 months')  AS events_3mo
+          FROM event_registrations er
+          JOIN events e
+            ON e.tenant_id = er.tenant_id
+            AND e.event_id = er.event_id
+          WHERE er.tenant_id = m.tenant_id
+            AND er.matched_member_id = m.member_id
+            AND er.pii_pseudonymised_at IS NULL
+            AND e.archived_at IS NULL
+            AND e.start_date > NOW() - INTERVAL '12 months'
+            -- BUG-1 review: upper-bound at NOW(). FR-029 counts events
+            -- ATTENDED — a member who merely REGISTERED for a future event
+            -- must not have the +25/+10 disengagement factors suppressed.
+            AND e.start_date <= NOW()
+        ) ev ON true
         WHERE m.status = 'active'
           -- COMP-1 H4 — exclude GDPR-erased members from the at-risk batch
           -- recompute (erasure keeps status, stamps erased_at).
@@ -657,6 +689,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           invoicesOverdueCount: Number.parseInt(r.overdue_count, 10) || 0,
           lastPaidAtIso: toIso(r.last_paid_at),
           eblastQuotaPctUsed,
+          // BUG-1 — F6 event-attendance factors (rolling windows).
+          eventsAttendedLast12Months: Number.parseInt(r.events_12mo, 10) || 0,
+          eventsAttendedLast3Months: Number.parseInt(r.events_3mo, 10) || 0,
           tierDowngradedLast12Months: r.tier_downgraded,
         };
       });
