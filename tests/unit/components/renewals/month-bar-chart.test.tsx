@@ -5,13 +5,14 @@ import { MonthBarChart } from '@/components/renewals/month-bar-chart';
 import type { MonthBarItem } from '@/components/renewals/month-bucket-label';
 import en from '@/i18n/messages/en.json';
 
-// Seed the current URL with a stale urgency lens + cursor so the "nonzero →
-// link" test can prove the href builder sets `month` AND deletes both
-// `urgency` (mutually-exclusive lens) and `cursor` (pagination reset).
+// Seed the current URL with a stale urgency lens + tier filter + cursor so
+// the "nonzero → link" test can prove the href builder sets `month` AND
+// deletes `urgency` (mutually-exclusive lens), `tier` (whole-tenant lens
+// can't honour a tier filter), and `cursor` (pagination reset).
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/renewals',
-  useSearchParams: () => new URLSearchParams('urgency=t-30&cursor=abc123'),
+  useSearchParams: () => new URLSearchParams('urgency=t-30&cursor=abc123&tier=premium'),
 }));
 
 function renderChart(items: MonthBarItem[], selectedKey: string | null = null) {
@@ -37,12 +38,13 @@ describe('MonthBarChart', () => {
     expect(screen.getByText('17')).toBeInTheDocument();
   });
 
-  it('nonzero buckets link to ?month=<key> and clear the urgency+cursor params', () => {
+  it('nonzero buckets link to ?month=<key> and clear the urgency+tier+cursor params', () => {
     renderChart(ITEMS);
     const link = screen.getByRole('link', { name: /July 2026/ });
     const href = link.getAttribute('href') ?? '';
     expect(href).toContain('month=2026-07');
     expect(href).not.toContain('urgency=');
+    expect(href).not.toContain('tier=');
     expect(href).not.toContain('cursor=');
   });
 

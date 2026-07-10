@@ -3,7 +3,10 @@
  *
  * A `<ul role="list">` of `label │ bar │ count` rows; each NONZERO bucket row
  * is a full-width `<Link>` to `?month=<key>` (soft-nav; clears `?urgency` +
- * `?cursor`, mirroring the urgency-tabs contract). Zero buckets render
+ * `?tier` + `?cursor` — the month lens is whole-tenant, so entering it also
+ * clears any tier filter the dropdown can't honour, closing spec §3 F1 — and
+ * mirrors the reverse direction: urgency tabs / tier select clear `?month`).
+ * Zero buckets render
  * non-interactive (muted, `aria-disabled`, out of tab order — the "0 in July"
  * signal still aids planning). The selected bucket gets `aria-current` + a ring
  * + bolder count (non-colour affordance, WCAG 1.4.1). Band colours reuse the
@@ -35,6 +38,7 @@ export function MonthBarChart({
     const next = new URLSearchParams(params.toString());
     next.set('month', key);
     next.delete('urgency'); // mutually-exclusive lens
+    next.delete('tier'); // whole-tenant lens — clear tier so the dropdown can't lie
     next.delete('cursor'); // reset pagination
     return `/admin/renewals?${next.toString()}`;
   }

@@ -61,6 +61,7 @@ export function UrgencyBucketTabs({
     if (!TAB_ORDER.includes(value as UrgencyBucket)) return;
     const next = new URLSearchParams(params.toString());
     next.set('urgency', value);
+    next.delete('month'); // mutually-exclusive lens — exit the month lens
     next.delete('cursor'); // reset pagination on tab switch
     router.push(`${pathname}?${next.toString()}`);
   }

@@ -50,6 +50,7 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
         params.set('tier', next);
       }
       params.delete('cursor');
+      params.delete('month'); // mutually-exclusive lens — changing tier exits the month lens
       const query = params.toString();
       startTransition(() => {
         router.replace(query ? `${pathname}?${query}` : pathname);
