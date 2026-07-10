@@ -187,20 +187,20 @@ export function validateRows(
     const regDate = parseGregorianDate(head.registrationDate);
     if (!regDate.ok) err(head.rowIndex, 'registrationDate', regDate.error.code);
 
-    // Rule 8: tax_id required for company-scope members; TH company → checksum.
+    // Rule 8 (RELAXED 2026-07-10): tax_id is OPTIONAL for every scope. The DB
+    // column `members.tax_id` is nullable, and Thai tax law only needs the buyer
+    // TIN on a §86/4 tax invoice issued to a VAT-registrant buyer — collected at
+    // invoice-issue time, NOT at membership entry. Foreign company members
+    // legitimately have no Thai TIN. So a company with no tax_id gets a WARNING
+    // (operator can backfill later) instead of a blocking error. When a tax_id IS
+    // supplied it is still checksum-validated for either scope.
     let taxId: TaxId | null = null;
     if (tier.ok && country.ok) {
       const scope = tier.value.memberTypeScope;
       const rawTax = head.taxId.trim();
-      if (scope === 'company') {
-        if (rawTax.length === 0) {
-          err(head.rowIndex, 'taxId', 'required_for_company');
-        } else {
-          const parsed = asTaxId(rawTax, country.value);
-          if (!parsed.ok) err(head.rowIndex, 'taxId', parsed.error.code);
-          else taxId = parsed.value;
-        }
-      } else if (rawTax.length > 0) {
+      if (rawTax.length === 0) {
+        if (scope === 'company') warn(head.rowIndex, 'taxId', 'missing_for_company');
+      } else {
         const parsed = asTaxId(rawTax, country.value);
         if (!parsed.ok) err(head.rowIndex, 'taxId', parsed.error.code);
         else taxId = parsed.value;
