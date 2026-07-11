@@ -55,6 +55,10 @@ const SYNTHETIC_DATA_OBJECT: Record<string, unknown> = {
   disputeId: 'dp_test_superset_1',
   amountSatang: 150000n,
   amountProjectionFailed: true,
+  // PR-A Task A.9 — `refundStatus` added to VerifiedStripeEvent['dataObject'].
+  // The route's `reprojectDataObject` MUST copy it so the later
+  // `charge.refund.updated` arm (A.10) never needs to re-add the copy.
+  refundStatus: 'succeeded',
 };
 
 describe('reprojectDataObject — superset regression guard (M-f)', () => {
@@ -94,5 +98,6 @@ describe('reprojectDataObject — superset regression guard (M-f)', () => {
     expect(result).not.toHaveProperty('latestChargeId');
     expect(result).not.toHaveProperty('amountSatang');
     expect(result).not.toHaveProperty('amountProjectionFailed');
+    expect(result).not.toHaveProperty('refundStatus');
   });
 });

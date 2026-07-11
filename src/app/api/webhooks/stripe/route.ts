@@ -385,6 +385,15 @@ export function reprojectDataObject(
     ...(rawDataObject?.['amountProjectionFailed'] === true
       ? { amountProjectionFailed: true }
       : {}),
+    // PR-A Task A.9 (#1) — preserve the verifier-set `refundStatus`
+    // through this re-projection. The `charge.refund.updated` verifier
+    // arm (A.10) sets it; `processRefundUpdated` (A.11) needs it to
+    // finalize a pending refund. Copied HERE (ahead of A.10) so the
+    // single-projection superset guard already covers it and A.10 does
+    // not have to re-add the copy. PCI SAQ-A: a bare status string only.
+    ...(typeof rawDataObject?.['refundStatus'] === 'string'
+      ? { refundStatus: rawDataObject['refundStatus'] }
+      : {}),
   };
 }
 

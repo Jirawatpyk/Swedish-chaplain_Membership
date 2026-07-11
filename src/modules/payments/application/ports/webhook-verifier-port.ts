@@ -106,6 +106,18 @@ export interface VerifiedStripeEvent {
      * / sentinel paths instead of substituting a misleading 0.
      */
     readonly amountProjectionFailed?: boolean;
+    /**
+     * PR-A Task A.9 (#1) — the Stripe Refund object's `status`
+     * (`pending | succeeded | failed | canceled | requires_action`),
+     * projected by the verifier's `charge.refund.updated` arm (wired in
+     * A.10). `processRefundUpdated` (A.11) branches on this to finalize
+     * a `pending` refund row. PCI SAQ-A: a bare status string only —
+     * NEVER card metadata, `destination_details`, or the raw Refund
+     * object. Copied through the route's `reprojectDataObject` here in
+     * A.9 (ahead of A.10) so the single-projection superset guard
+     * (`webhook-reprojection-superset.test.ts`) already covers it.
+     */
+    readonly refundStatus?: string | null;
   };
 }
 

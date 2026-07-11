@@ -3622,7 +3622,8 @@
         }
       },
       "success": {
-        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen"
+        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen",
+        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalleverantören. Kreditnotan utfärdas när återbetalningen har genomförts."
       },
       "error": {
         "title": "Det gick inte att utfärda återbetalningen",

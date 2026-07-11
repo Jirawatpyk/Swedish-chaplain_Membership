@@ -3622,7 +3622,8 @@
         }
       },
       "success": {
-        "toast": "Refund processed — credit note {number} issued and emailed to member"
+        "toast": "Refund processed — credit note {number} issued and emailed to member",
+        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles."
       },
       "error": {
         "title": "Couldn't issue the refund",

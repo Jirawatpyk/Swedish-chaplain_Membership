@@ -402,7 +402,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r1',
     });
     expect(r1.ok).toBe(true);
-    if (r1.ok) {
+    if (r1.ok && r1.value.kind === 'succeeded') {
       expect(r1.value.payment.status).toBe('partially_refunded');
       expect(r1.value.payment.refundedAmountSatang).toBe(1_000_000n);
       expect(r1.value.payment.remainingRefundableSatang).toBe(4_350_000n);
@@ -422,7 +422,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r2',
     });
     expect(r2.ok).toBe(true);
-    if (r2.ok) {
+    if (r2.ok && r2.value.kind === 'succeeded') {
       expect(r2.value.payment.status).toBe('partially_refunded');
       expect(r2.value.payment.refundedAmountSatang).toBe(2_500_000n);
       expect(r2.value.payment.remainingRefundableSatang).toBe(2_850_000n);
@@ -467,7 +467,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r4',
     });
     expect(r4.ok).toBe(true);
-    if (r4.ok) {
+    if (r4.ok && r4.value.kind === 'succeeded') {
       expect(r4.value.payment.status).toBe('refunded');
       expect(r4.value.payment.refundedAmountSatang).toBe(TOTAL_SATANG);
       expect(r4.value.payment.remainingRefundableSatang).toBe(0n);

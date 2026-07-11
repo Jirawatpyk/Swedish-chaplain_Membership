@@ -92,7 +92,21 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
       status: 'pending' as const,
       processorRefundId: null,
     })),
-    updateStatus: vi.fn(),
+    // A.9: default returns a truthy RefundRow so the finalize helper's
+    // `expectedCurrentStatus='pending'` flip is treated as "we won the
+    // race" (non-null). The null/sibling-won path overrides this per-test.
+    updateStatus: vi.fn(async () => ({
+      id: 'rfnd_01J',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId(PAYMENT_ID),
+      invoiceId: 'inv-1',
+      amountSatang: asSatang(350_000n),
+      status: 'succeeded' as const,
+      processorRefundId: 're_test_xxx',
+    })),
+    // A.6/guard#1: attach the Stripe refund id in the just-inserted
+    // pending window (webhook-matchable). Returns void.
+    attachProcessorRefundId: vi.fn(async () => undefined),
     findByProcessorRefundId: vi.fn(),
     getRefundContextForUpdate: vi.fn(async () => ({
       pendingCount: 0,
@@ -341,7 +355,7 @@ describe('issueRefund (T108) — happy paths', () => {
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.refund.status).toBe('succeeded');
       expect(r.value.refund.processorRefundId).toBe('re_test_xxx');
       expect(r.value.refund.creditNoteId).toBe('cn_test_1');
@@ -350,7 +364,13 @@ describe('issueRefund (T108) — happy paths', () => {
       expect(r.value.payment.refundedAmountSatang).toBe(350_000n);
       expect(r.value.payment.remainingRefundableSatang).toBe(5_000_000n);
       expect(r.value.invoice.status).toBe('partially_credited');
+    } else {
+      throw new Error('expected kind=succeeded');
     }
+    // A.9: card refund with Stripe status=succeeded books immediately +
+    // attaches the processor_refund_id in the pending window.
+    expect(asMock(deps.refundsRepo.attachProcessorRefundId)).toHaveBeenCalledTimes(1);
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledTimes(1);
     // Idempotency key uses rfnd-{paymentId}-{seq=1}
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
     expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-1`);
@@ -381,10 +401,12 @@ describe('issueRefund (T108) — happy paths', () => {
 
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.refund.status).toBe('succeeded');
       expect(r.value.payment.status).toBe('partially_refunded');
       expect(r.value.invoice.status).toBe('partially_credited');
+    } else {
+      throw new Error('expected kind=succeeded');
     }
     // Stripe gateway receives the PaymentIntent id of the PromptPay
     // PI — Stripe routes the refund to the originating Thai bank
@@ -409,10 +431,12 @@ describe('issueRefund (T108) — happy paths', () => {
 
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(5_350_000n) }));
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.payment.status).toBe('refunded');
       expect(r.value.payment.remainingRefundableSatang).toBe(0n);
       expect(r.value.invoice.status).toBe('credited');
+    } else {
+      throw new Error('expected kind=succeeded');
     }
   });
 
@@ -435,9 +459,11 @@ describe('issueRefund (T108) — happy paths', () => {
 
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.payment.status).toBe('refunded');
       expect(r.value.payment.refundedAmountSatang).toBe(5_350_000n);
+    } else {
+      throw new Error('expected kind=succeeded');
     }
   });
 
@@ -454,10 +480,12 @@ describe('issueRefund (T108) — happy paths', () => {
 
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(1_000_000n) }));
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.payment.status).toBe('partially_refunded');
       expect(r.value.payment.refundedAmountSatang).toBe(3_000_000n);
       expect(r.value.payment.remainingRefundableSatang).toBe(2_350_000n);
+    } else {
+      throw new Error('expected kind=succeeded');
     }
   });
 
@@ -482,5 +510,276 @@ describe('issueRefund (T108) — happy paths', () => {
     await issueRefund(deps, baseInput());
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
     expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-1-dev-salt`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bug #1 — issueRefund finalizes a credit note ONLY when Stripe reports the
+// refund as `succeeded`. `pending`/`requires_action` await the webhook;
+// `failed`/`canceled` mark the refund failed with the processor id attached.
+// 100% branch coverage over the `switch (stripeRefund.value.status)`.
+// ---------------------------------------------------------------------------
+describe('issueRefund (#1) — Stripe refund-status branch', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('attaches processor_refund_id in the pending window BEFORE branching (all ok statuses)', async () => {
+    const deps = makeDeps();
+    await issueRefund(deps, baseInput());
+    // The attach runs after createRefund ok, before any status flip, so the
+    // row is webhook-matchable even for the pending/requires_action path.
+    const attachCall = asMock(deps.refundsRepo.attachProcessorRefundId).mock.calls[0]?.[1] as {
+      refundId: string;
+      tenantId: string;
+      processorRefundId: string;
+    };
+    expect(attachCall.processorRefundId).toBe('re_test_xxx');
+    expect(attachCall.tenantId).toBe(TENANT_ID);
+  });
+
+  it.each(['pending', 'requires_action'] as const)(
+    'status=%s → kind:pending, NO credit note, NO payment flip, refund stays pending',
+    async (status) => {
+      const deps = makeDeps();
+      asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+        ok({ id: 're_async_1', status, amountSatang: asSatang(350_000n) }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+      expect(r.ok).toBe(true);
+      if (r.ok && r.value.kind === 'pending') {
+        expect(r.value.refund.status).toBe('pending');
+        expect(r.value.refund.processorRefundId).toBe('re_async_1');
+        expect(r.value.refund.id).toBe('rfnd_01JTESTID0000000000000000');
+      } else {
+        throw new Error('expected kind=pending');
+      }
+      // No credit note issued; no payment flip.
+      expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).not.toHaveBeenCalled();
+      expect(asMock(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+      // The refund row is NOT flipped to failed either (stays pending).
+      const flippedToFailed = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+        (c) => c[1].nextStatus === 'failed',
+      );
+      expect(flippedToFailed).toBeUndefined();
+      // processor_refund_id still attached in the pending window (matchable).
+      expect(asMock(deps.refundsRepo.attachProcessorRefundId)).toHaveBeenCalledTimes(1);
+      // refund_succeeded audit must NOT be emitted on the pending path.
+      const succeededAudit = asMock(deps.audit.emit).mock.calls.find(
+        (c) => c[1].eventType === 'refund_succeeded',
+      );
+      expect(succeededAudit).toBeUndefined();
+    },
+  );
+
+  it.each(['failed', 'canceled'] as const)(
+    'status=%s → processor_unavailable(permanent) + finaliseFailedRefund persists processor_refund_id + NO CN',
+    async (status) => {
+      const deps = makeDeps();
+      asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+        ok({ id: 're_dead_1', status, amountSatang: asSatang(350_000n) }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+      expect(r.ok).toBe(false);
+      if (!r.ok && r.error.code === 'processor_unavailable') {
+        expect(r.error.kind).toBe('permanent');
+        // The Stripe refund status is surfaced as the closed-union reason.
+        expect(r.error.reason).toBe(status);
+      } else {
+        throw new Error('expected processor_unavailable');
+      }
+      // No F4 credit note on a failed/canceled Stripe refund.
+      expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).not.toHaveBeenCalled();
+      // The pending row is flipped to failed AND the processor id persisted
+      // (forensic completeness + webhook-matchable).
+      const failedCall = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+        (c) => c[1].nextStatus === 'failed',
+      );
+      expect(failedCall?.[1].processorRefundId).toBe('re_dead_1');
+      const failedAudit = asMock(deps.audit.emit).mock.calls.find(
+        (c) => c[1].eventType === 'refund_failed',
+      );
+      expect(failedAudit).toBeDefined();
+    },
+  );
+
+  it('unexpected Stripe status → treated as pending-awaiting (safe: never books success) + warns', async () => {
+    const warn = vi.fn();
+    const deps = makeDeps({
+      logger: { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as unknown as NonNullable<IssueRefundDeps['logger']>,
+    });
+    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+      // Not one of the known statuses — must NOT book success nor mark failed.
+      ok({ id: 're_weird_1', status: 'requires_capture', amountSatang: asSatang(350_000n) }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'pending') {
+      expect(r.value.refund.processorRefundId).toBe('re_weird_1');
+    } else {
+      throw new Error('expected kind=pending for an unexpected status');
+    }
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).not.toHaveBeenCalled();
+    expect(asMock(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+    // The drift-detection warn fired with a bounded status string only.
+    expect(warn).toHaveBeenCalledWith(
+      'issue_refund.unexpected_stripe_refund_status',
+      expect.objectContaining({ stripeRefundStatus: 'requires_capture' }),
+    );
+  });
+
+  it('succeeded + sibling-won race (updateStatus→null) → kind:succeeded, NO double payment flip / audit', async () => {
+    const deps = makeDeps();
+    // A concurrent charge.refund.updated webhook finalized the same refund
+    // first: the guarded flip matches zero rows → repo returns null (A.5).
+    asMock(deps.refundsRepo.updateStatus).mockResolvedValueOnce(null);
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'succeeded') {
+      // The idempotent F4 CN read (A.7) still returns the existing CN.
+      expect(r.value.refund.creditNoteId).toBe('cn_test_1');
+      expect(r.value.refund.status).toBe('succeeded');
+    } else {
+      throw new Error('expected kind=succeeded on the sibling-won path');
+    }
+    // The CN issuance ran (idempotent — returned the sibling's CN).
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledTimes(1);
+    // Sibling already flipped the payment → we must NOT flip it again.
+    expect(asMock(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+    // Sibling already emitted refund_succeeded → we must NOT emit a duplicate.
+    const succeededAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_succeeded',
+    );
+    expect(succeededAudit.length).toBe(0);
+  });
+
+  it('succeeded + Phase B DB flip throws → f4_bridge_error (out-of-band recovery)', async () => {
+    const deps = makeDeps();
+    // Stripe + F4 CN both succeed; the payment-status flip throws (DB outage).
+    asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
+      new Error('connection terminated'),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('f4_bridge_error');
+    }
+    // The pending row is flipped to failed with the phase-B discriminator.
+    const failedCall = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+      (c) => c[1].nextStatus === 'failed',
+    );
+    expect(failedCall?.[1].failureReasonCode).toBe('f4_bridge_phase_b_db_error');
+  });
+
+  it('succeeded + double-fault (Phase B flip AND finaliseFailedRefund both throw) → stale_pending audit', async () => {
+    const deps = makeDeps();
+    // Helper's refund flip succeeds (call #1), payment flip throws → caught
+    // → finaliseFailedRefund runs, whose own refund flip (call #2) also
+    // throws → the double-fault `.catch` emits the synchronous
+    // `stale_pending_refund_detected` forensic audit (10y) on a null tx.
+    asMock(deps.refundsRepo.updateStatus)
+      .mockImplementationOnce(async () => ({
+        id: 'rfnd_01J',
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId(PAYMENT_ID),
+        invoiceId: 'inv-1',
+        amountSatang: asSatang(350_000n),
+        status: 'succeeded' as const,
+        processorRefundId: 're_test_xxx',
+      }))
+      .mockImplementationOnce(async () => {
+        throw new Error('failed-flip DB down');
+      });
+    asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
+      new Error('phase B DB down'),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('f4_bridge_error');
+    }
+    // The synchronous double-fault forensic audit fired on a null tx.
+    const staleAudit = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'stale_pending_refund_detected',
+    );
+    expect(staleAudit).toBeDefined();
+    expect(staleAudit?.[0]).toBeNull();
+    expect(staleAudit?.[1].retentionYears).toBe(10);
+  });
+
+  it('double-fault with null requestId + non-Error throws + logger present', async () => {
+    // Covers the defensive arms: `requestId ?? 'no-request-id'`, both
+    // `instanceof Error` false branches (non-Error throws), and the
+    // double-fault `logger?.warn` defined branch.
+    const warn = vi.fn();
+    const deps = makeDeps({
+      logger: { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as unknown as NonNullable<IssueRefundDeps['logger']>,
+    });
+    asMock(deps.refundsRepo.updateStatus)
+      .mockImplementationOnce(async () => ({
+        id: 'rfnd_01J',
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId(PAYMENT_ID),
+        invoiceId: 'inv-1',
+        amountSatang: asSatang(350_000n),
+        status: 'succeeded' as const,
+        processorRefundId: 're_test_xxx',
+      }))
+      // finaliseFailedRefund's failed flip throws a NON-Error.
+      .mockImplementationOnce(async () => {
+        throw 'failed-flip string fault';
+      });
+    // Phase B payment flip throws a NON-Error.
+    asMock(deps.paymentsRepo.updateStatus).mockImplementationOnce(async () => {
+      throw 'phase-B string fault';
+    });
+
+    const r = await issueRefund(deps, baseInput({ requestId: null }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('f4_bridge_error');
+      if (r.error.code === 'f4_bridge_error') {
+        // Non-Error throw scrubbed to the constant 'unknown'.
+        expect(r.error.detail).toBe('unknown');
+      }
+    }
+    expect(warn).toHaveBeenCalledWith(
+      'issue_refund.finalise_failed_double_fault',
+      expect.objectContaining({ finaliseErrKind: 'unknown' }),
+    );
+    const staleAudit = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'stale_pending_refund_detected',
+    );
+    // Null requestId falls back to the sentinel in the audit payload.
+    expect(
+      (staleAudit?.[1].payload as { original_correlation_id: string }).original_correlation_id,
+    ).toBe('no-request-id');
+  });
+
+  it('span wrapper re-throws an uncaught body error (createRefund throws)', async () => {
+    const deps = makeDeps();
+    // A raw SDK throw (not an err Result) is NOT swallowed by the body — it
+    // propagates through the OTel span wrapper, which sets ERROR status +
+    // re-throws so the route's outer try/catch maps it to a 500.
+    asMock(deps.processorGateway.createRefund).mockRejectedValueOnce(
+      new Error('stripe sdk exploded'),
+    );
+    await expect(issueRefund(deps, baseInput())).rejects.toThrow('stripe sdk exploded');
+  });
+
+  it('span wrapper handles a non-Error throw (refund_threw branch)', async () => {
+    const deps = makeDeps();
+    // Non-Error throw exercises the `e instanceof Error ? … : 'refund_threw'`
+    // false branch in the span status message.
+    asMock(deps.processorGateway.createRefund).mockImplementationOnce(async () => {
+      throw 'string-shaped failure';
+    });
+    await expect(issueRefund(deps, baseInput())).rejects.toBe('string-shaped failure');
   });
 });

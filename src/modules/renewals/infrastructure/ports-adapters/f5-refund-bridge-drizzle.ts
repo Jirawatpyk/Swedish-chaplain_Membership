@@ -79,6 +79,27 @@ export const f5RefundBridge: F5RefundBridge = {
               : refundResult.error.code,
       };
     }
+    // #1 (2026-07-11) — `issueRefund` now discriminates on the Stripe
+    // refund status. An async `pending`/`requires_action` refund has NOT
+    // returned the money and has NO credit note yet (both settle when the
+    // F5 `charge.refund.updated` webhook / Stripe-aware sweep confirms it).
+    // The F8 reactivation-reject flow needs a settled refund + CN to
+    // resolve the cycle, and the bridge's 3-outcome contract has no
+    // `pending` state, so surface it as a NON-terminal failure with a
+    // distinct code. This is safe: the F5 `refund_in_progress` guard
+    // prevents a double refund on any retry, and no false CN is recorded
+    // (which would violate the `renewal_cycles → credit_notes` FK). It is
+    // NOT ideal — the cron path (`reconcile-pending-reactivations`) will
+    // keep the cycle pending. FOLLOW-UP (F8, tracked in the A.9 report):
+    // add an explicit `refund_pending` bridge outcome so the reject /
+    // reconcile flows resolve the cycle once the async refund is confirmed.
+    if (refundResult.value.kind === 'pending') {
+      return {
+        status: 'refund_failed',
+        errorCode: 'refund_pending_async',
+        detail: `Stripe refund ${refundResult.value.refund.processorRefundId} is settling asynchronously; the credit note is issued once the processor confirms it.`,
+      };
+    }
     return {
       status: 'refunded',
       refundId: refundResult.value.refund.id,

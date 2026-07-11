@@ -205,11 +205,20 @@ export function RefundForm({
         return;
       }
       const body = (await res.json()) as {
-        refund: { creditNoteNumber: string };
+        refund: { status?: string; creditNoteNumber?: string };
       };
-      toast.success(
-        t('success.toast', { number: body.refund.creditNoteNumber }),
-      );
+      // #1 (2026-07-11) — an async Stripe refund returns 202 with a
+      // `pending` row (no credit note yet). Show an "awaiting confirmation"
+      // toast; the `charge.refund.updated` webhook books the credit note
+      // once the refund settles. A synchronous `succeeded` refund (201)
+      // carries the credit-note number.
+      if (res.status === 202 || body.refund.status === 'pending') {
+        toast.success(t('success.pendingToast'));
+      } else {
+        toast.success(
+          t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
+        );
+      }
       succeeded = true;
       onClose();
       router.refresh();
