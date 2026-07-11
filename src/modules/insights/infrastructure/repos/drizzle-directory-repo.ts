@@ -151,9 +151,11 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       // Existence check BEFORE the write so a missing member never fires an FK
       // violation that would poison the caller's tx. Explicit tenant predicate
       // (Principle I second wall, defence-in-depth alongside RLS) matches the
-      // rest of this file's queries. (code-review max F9 — finding #13)
+      // rest of this file's queries. (code-review max F9 — finding #13) The
+      // `erased_at IS NULL` guard refuses a listing write for a GDPR-erased
+      // member (COMP-1) — a post-erasure upsert would resurrect directory PII.
       const existing = (await tx.execute(
-        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid LIMIT 1`,
+        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid AND erased_at IS NULL LIMIT 1`,
       )) as unknown as Array<{ ok: number }>;
       if (existing.length === 0) return { memberNotFound: true };
 
@@ -194,9 +196,11 @@ export function makeDrizzleDirectoryRepo(tenantId: string): DirectoryRepo {
       logoUrl: string | null,
     ): Promise<{ readonly memberNotFound: boolean }> {
       if (!UUID_RE.test(memberId)) return { memberNotFound: true };
-      // Explicit tenant predicate (Principle I second wall). #13
+      // Explicit tenant predicate (Principle I second wall) + `erased_at IS NULL`
+      // so a logo set/clear after GDPR erasure is refused (COMP-1 — it would
+      // orphan a public logo blob under an erased member). #13
       const existing = (await tx.execute(
-        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid LIMIT 1`,
+        sql`SELECT 1 AS ok FROM members WHERE tenant_id = ${tenantId} AND member_id = ${memberId}::uuid AND erased_at IS NULL LIMIT 1`,
       )) as unknown as Array<{ ok: number }>;
       if (existing.length === 0) return { memberNotFound: true };
 

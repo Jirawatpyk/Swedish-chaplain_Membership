@@ -16,11 +16,12 @@
  * `del` is not exercised — the test stays hermetic to the DB).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { eraseMemberDirectoryFootprint } from '@/modules/insights';
+import { makeDrizzleDirectoryRepo } from '@/modules/insights/infrastructure/repos/drizzle-directory-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { directoryListings } from '@/modules/insights/infrastructure/db/schema-insights';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -121,5 +122,21 @@ describe('eraseMemberDirectoryFootprint — hard-deletes the directory listing, 
     await eraseMemberDirectoryFootprint(tenantA.ctx, memberId);
     expect(await listingCount(tenantA.ctx)).toBe(0);
     expect(await listingCount(tenantB.ctx)).toBe(1);
+  });
+
+  it('refuses a directory write for a GDPR-erased member (COMP-1 I-8 race guard)', async () => {
+    // Stamp erased_at on tenant B's member, then attempt a logo write — the
+    // repo's `erased_at IS NULL` existence guard must refuse it (memberNotFound),
+    // so a post-erasure upload can't resurrect a listing / orphan a public blob.
+    await runInTenant(tenantB.ctx, async (tx) => {
+      await tx.execute(
+        sql`UPDATE members SET erased_at = now() WHERE tenant_id = ${tenantB.ctx.slug} AND member_id = ${memberId}::uuid`,
+      );
+    });
+    const repo = makeDrizzleDirectoryRepo(tenantB.ctx.slug);
+    const result = await runInTenant(tenantB.ctx, (tx) =>
+      repo.setLogoInTx(tx, memberId, 'https://blob.example/new-logo.png'),
+    );
+    expect(result.memberNotFound).toBe(true);
   });
 });
