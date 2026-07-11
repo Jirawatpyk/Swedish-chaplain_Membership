@@ -114,6 +114,11 @@ export async function POST(
         reminders_failed: result.value.remindersFailed,
         timed_out: result.value.timedOut,
         timeout_refund_failures: result.value.timeoutRefundFailures,
+        // F8-RP: refund submitted but settling asynchronously (Stripe
+        // pending/requires_action or a prior refund already in-flight). Cycle
+        // stays pending + self-heals next run. NOT a failure — split out from
+        // `timeout_refund_failures` so an in-flight refund is not mislabelled.
+        timeout_refund_pending: result.value.timeoutRefundPending,
         // MONEY-SAFETY (063): cycles skipped because an admin approve/
         // reject won the per-cycle lock race BEFORE the refund (Step-1;
         // no money moved).

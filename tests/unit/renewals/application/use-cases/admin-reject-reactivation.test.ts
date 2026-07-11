@@ -163,9 +163,14 @@ describe('adminRejectReactivation (T137)', () => {
     const r = await adminRejectReactivation(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) {
-      expect(r.value.cycleStatus).toBe('cancelled');
-      expect(r.value.closedReason).toBe('admin_rejected_with_refund');
-      expect(r.value.refundCreditNoteId).toBe('cn-1');
+      // F8-RP: the success output is now a tagged union; the rejected
+      // (common) path keeps its exact shape under the `rejected` tag.
+      expect(r.value.outcome).toBe('rejected');
+      if (r.value.outcome === 'rejected') {
+        expect(r.value.cycleStatus).toBe('cancelled');
+        expect(r.value.closedReason).toBe('admin_rejected_with_refund');
+        expect(r.value.refundCreditNoteId).toBe('cn-1');
+      }
     }
     expect(refundMock).toHaveBeenCalledOnce();
     expect(refundMock.mock.calls[0]?.[0]).toMatchObject({
@@ -192,7 +197,9 @@ describe('adminRejectReactivation (T137)', () => {
     const { deps, refundMock, emitInTxMock } = fakeDeps({ cycle });
     const r = await adminRejectReactivation(deps, baseInput);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.refundCreditNoteId).toBeNull();
+    if (r.ok && r.value.outcome === 'rejected') {
+      expect(r.value.refundCreditNoteId).toBeNull();
+    }
     expect(refundMock).not.toHaveBeenCalled();
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       payload: { refund_credit_note_id: null },
@@ -207,7 +214,9 @@ describe('adminRejectReactivation (T137)', () => {
     });
     const r = await adminRejectReactivation(deps, baseInput);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.refundCreditNoteId).toBeNull();
+    if (r.ok && r.value.outcome === 'rejected') {
+      expect(r.value.refundCreditNoteId).toBeNull();
+    }
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       payload: { refund_credit_note_id: null },
     });
@@ -229,6 +238,37 @@ describe('adminRejectReactivation (T137)', () => {
       expect(r.error.errorCode).toBe('processor_unavailable');
     }
     expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it('F8-RP: F5 refund_pending — ok({outcome:refund_pending}), cycle NOT transitioned, no escalation task', async () => {
+    // The async Stripe refund was created (row `pending`); the reject use-
+    // case must NOT transition the cycle to `cancelled`, must NOT insert a
+    // post-refund escalation task, and must NOT emit the `_rejected` audit —
+    // the cycle stays `pending_admin_reactivation` and the async settlement
+    // (webhook/sweep) + the reconcile cron resolve it later. Money-safe: the
+    // pending row makes any retry hit F5's `refund_in_progress` guard.
+    const cycle = buildCycle();
+    const { deps, transitionMock, emitInTxMock, insertTaskMock } = fakeDeps({
+      cycle,
+      refundResult: {
+        status: 'refund_pending',
+        refundId: 'rfnd-async-1',
+        processorRefundId: 're_async_1',
+      },
+    });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.outcome).toBe('refund_pending');
+      if (r.value.outcome === 'refund_pending') {
+        expect(r.value.cycleStatus).toBe('pending_admin_reactivation');
+        expect(r.value.refundId).toBe('rfnd-async-1');
+        expect(r.value.processorRefundId).toBe('re_async_1');
+      }
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    expect(insertTaskMock).not.toHaveBeenCalled();
   });
 
   it('cycle_not_found — null re-read after lock', async () => {

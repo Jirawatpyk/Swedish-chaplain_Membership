@@ -320,7 +320,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     });
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.outcome === 'rejected') {
       expect(r.value.cycleStatus).toBe('cancelled');
       expect(r.value.closedReason).toBe('admin_rejected_with_refund');
       expect(r.value.refundCreditNoteId).not.toBeNull();
@@ -400,7 +400,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     });
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.outcome === 'rejected') {
       expect(r.value.cycleStatus).toBe('cancelled');
       expect(r.value.refundCreditNoteId).toBeNull();
     }

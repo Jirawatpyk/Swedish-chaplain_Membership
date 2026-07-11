@@ -380,8 +380,42 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     if (r.ok) {
       expect(r.value.timedOut).toBe(0);
       expect(r.value.timeoutRefundFailures).toBe(1);
+      // F8-RP REGRESSION: a genuine failure MUST NOT bump the new pending
+      // counter — the two are distinct money outcomes.
+      expect(r.value.timeoutRefundPending).toBe(0);
     }
     expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it('F8-RP: refund_pending — cycle stays pending, counted as timeoutRefundPending (NOT a failure)', async () => {
+    // The F5 bridge returned `refund_pending` (async Stripe refund created,
+    // row `pending`, awaiting the `charge.refund.updated` webhook). The cron
+    // MUST leave the cycle in `pending_admin_reactivation` and NOT transition
+    // it, MUST NOT count it as a timeout or a refund failure, and MUST surface
+    // it via the distinct informational `timeoutRefundPending` counter. The
+    // next cron run self-heals once the webhook/sweep settles the refund
+    // (bridge then returns `no_payment_found` → normal lapse transition).
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      refundResult: {
+        status: 'refund_pending',
+        refundId: 'rfnd-async-1',
+        processorRefundId: 're_async_1',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.timeoutRefundPending).toBe(1);
+      // Not a timeout (no transition), not a refund failure (nothing failed).
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutRefundOrphaned).toBe(0);
+    }
+    // Cycle stays pending — no transition, no timed_out audit.
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
   it('admin-approve-before-lock — re-confirm UNDER lock shows completed → NO refund, no transition (money safety)', async () => {

@@ -141,6 +141,18 @@ export function PendingReactivationActions({
           );
           return;
         }
+        // F8-RP: a 202 means the F5 refund is settling ASYNCHRONOUSLY — the
+        // cycle intentionally stays in the pending list until the refund
+        // confirms. Handle it BEFORE parsing the 200 body: the 202 has no
+        // `refund_credit_note_id`, so the default parse would wrongly render
+        // the "no payment to refund" toast for an in-flight refund.
+        if (res.status === 202) {
+          toast.success(t('reject.successPendingToast'));
+          setRejectOpen(false);
+          setReason('');
+          router.refresh();
+          return;
+        }
         const body = (await res.json()) as RejectSuccessBody;
         toast.success(
           body.refund_credit_note_id === null

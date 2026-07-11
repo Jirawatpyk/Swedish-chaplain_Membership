@@ -3233,6 +3233,7 @@
             "submitting": "Rejecting…",
             "successRefundedToast": "Reactivation rejected and the payment was refunded.",
             "successNoRefundToast": "Reactivation rejected. There was no payment to refund.",
+            "successPendingToast": "Refund submitted — it's settling with the payment processor. This reactivation stays in the pending list until the refund confirms.",
             "error": {
               "cycle_not_pending": "This cycle is no longer awaiting review — it may have already been handled.",
               "refund_failed": "The refund could not be processed. The cycle was left as-is — please retry.",

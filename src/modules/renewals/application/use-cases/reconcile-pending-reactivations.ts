@@ -86,6 +86,19 @@ export interface ReconcilePendingReactivationsOutput {
   /** Auto-timeouts where the F5 refund failed; cron will retry tomorrow. */
   readonly timeoutRefundFailures: number;
   /**
+   * F8-RP (2026-07-11): auto-timeouts where the F5 refund was submitted but
+   * is settling ASYNCHRONOUSLY (Stripe `pending`/`requires_action`, or a
+   * prior refund already in-flight → `refund_in_progress`). The cycle stays
+   * `pending_admin_reactivation` (NO transition) and self-heals on a later
+   * cron pass once the `charge.refund.updated` webhook (A.11) / sweep (A.14)
+   * settles the refund (the bridge then returns `no_payment_found` → normal
+   * lapse). NOT counted in `timeoutRefundFailures` (nothing failed) and NOT
+   * in `timedOut` (no lapse written). INFORMATIONAL — surfaced via
+   * `renewalsMetrics.timeoutRefundPending`, never pages. Before F8-RP this
+   * case was mislabelled as a refund failure.
+   */
+  readonly timeoutRefundPending: number;
+  /**
    * MONEY-SAFETY (063 audit): timed-out cycles SKIPPED because the
    * validate-under-lock re-read found the cycle was no longer
    * `pending_admin_reactivation` — a concurrent admin approve (→ member
@@ -263,6 +276,7 @@ export async function reconcilePendingReactivations(
   let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
+  let timeoutRefundPending = 0;
   let timeoutAdminRaceSkipped = 0;
   let timeoutRefundOrphaned = 0;
   let timeoutTransitionFailedPostRefund = 0;
@@ -284,6 +298,14 @@ export async function reconcilePendingReactivations(
           break;
         case 'refund_failed':
           timeoutRefundFailures += 1;
+          break;
+        case 'refund_pending':
+          // F8-RP: the F5 refund is settling asynchronously (Stripe
+          // pending/requires_action, or a prior refund already in-flight).
+          // NOT a failure and NOT a lapse — the cycle stays pending and
+          // self-heals next run. Surfaced via its own informational counter.
+          timeoutRefundPending += 1;
+          renewalsMetrics.timeoutRefundPending(cycle.tenantId);
           break;
         case 'admin_race_skipped':
           timeoutAdminRaceSkipped += 1;
@@ -381,6 +403,7 @@ export async function reconcilePendingReactivations(
     remindersFailed,
     timedOut,
     timeoutRefundFailures,
+    timeoutRefundPending,
     timeoutAdminRaceSkipped,
     timeoutRefundOrphaned,
     timeoutTransitionFailedPostRefund,
@@ -435,6 +458,15 @@ export async function reconcilePendingReactivations(
 type ProcessTimeoutOutcome =
   | 'timed_out'
   | 'refund_failed'
+  // F8-RP: the F5 refund was submitted but is settling ASYNCHRONOUSLY
+  // (Stripe `pending`/`requires_action`, or a prior refund already in-flight
+  // → `refund_in_progress`). The row stays `pending`; the cron leaves the
+  // cycle in `pending_admin_reactivation` (NO transition) and self-heals on
+  // a later pass once the webhook/sweep settles the refund. NOT a failure
+  // (money did not fail to move) and NOT a lapse. Money-safe: the pending
+  // row blocks a double refund. Classified distinctly from `refund_failed`
+  // so an in-flight refund is not mislabelled as a Stripe failure.
+  | 'refund_pending'
   | 'admin_race_skipped'
   | 'post_refund_admin_race'
   | 'transition_failed_post_refund'
@@ -628,6 +660,31 @@ async function processTimeout(
         '[reconcile-pending-reactivations] F5 refund failed — cycle stays pending; cron will retry tomorrow',
       );
       return 'refund_failed';
+    }
+    if (refundResult.status === 'refund_pending') {
+      // F8-RP: the refund was submitted but is settling ASYNCHRONOUSLY
+      // (Stripe pending/requires_action, or a prior refund already in-flight
+      // → refund_in_progress). Leave the cycle pending and skip the Step-3
+      // transition entirely — the refund row is `pending`, so the
+      // `charge.refund.updated` webhook (A.11) / sweep (A.14) settles it and
+      // the NEXT cron run self-heals (the bridge then returns
+      // `no_payment_found` → normal lapse). Money-safe: the pending row
+      // blocks a double refund. Classified distinctly from `refund_failed`
+      // (nothing failed) via its own informational counter.
+      logger.info(
+        {
+          cycleId: cycle.cycleId,
+          tenantId: cycle.tenantId,
+          // `refundId`/`processorRefundId` are optional (absent on the
+          // refund_in_progress path); PCI-safe ids only — never card data.
+          ...(refundResult.refundId ? { refundId: refundResult.refundId } : {}),
+          ...(refundResult.processorRefundId
+            ? { processorRefundId: refundResult.processorRefundId }
+            : {}),
+        },
+        '[reconcile-pending-reactivations] F5 refund settling asynchronously — cycle stays pending; next cron run self-heals once the refund confirms',
+      );
+      return 'refund_pending';
     }
     // `refunded` → money moved; `no_payment_found` → nothing to claw back
     // (cycle entered pending without a settled charge). Only the former

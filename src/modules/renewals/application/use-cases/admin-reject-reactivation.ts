@@ -79,13 +79,39 @@ export type AdminRejectReactivationInput = z.infer<
   typeof adminRejectReactivationInputSchema
 >;
 
-export interface AdminRejectReactivationOutput {
-  readonly cycleStatus: 'cancelled';
-  readonly closedReason: 'admin_rejected_with_refund';
-  readonly closedAt: string;
-  /** Null when no payment was found (cycle entered pending without one). */
-  readonly refundCreditNoteId: string | null;
-}
+/**
+ * F8-RP (2026-07-11): the success output is a tagged union on `outcome`
+ * (mirrors F5 `IssueRefundSuccess`'s `kind` union):
+ *
+ *   - `rejected` — the common path: the refund settled synchronously (or the
+ *     cycle had no payment), the cycle transitioned
+ *     `pending_admin_reactivation` → `cancelled`, and the audit + post-refund
+ *     escalation task were emitted. Shape is UNCHANGED from before F8-RP.
+ *   - `refund_pending` — the F5 refund is settling ASYNCHRONOUSLY (Stripe
+ *     `pending`/`requires_action`, or a prior refund already in-flight). The
+ *     cycle is LEFT in `pending_admin_reactivation` (NO transition, NO audit,
+ *     NO escalation task); the async settlement (webhook/sweep) + the
+ *     reconcile cron resolve it later. Money-safe: the pending refund row
+ *     blocks a double refund on any retry.
+ */
+export type AdminRejectReactivationOutput =
+  | {
+      readonly outcome: 'rejected';
+      readonly cycleStatus: 'cancelled';
+      readonly closedReason: 'admin_rejected_with_refund';
+      readonly closedAt: string;
+      /** Null when no payment was found (cycle entered pending without one). */
+      readonly refundCreditNoteId: string | null;
+    }
+  | {
+      readonly outcome: 'refund_pending';
+      /** The cycle is intentionally left pending until the async refund settles. */
+      readonly cycleStatus: 'pending_admin_reactivation';
+      /** F5 refund row id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly refundId?: string;
+      /** Stripe `re_…` id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly processorRefundId?: string;
+    };
 
 export type AdminRejectReactivationError =
   | { readonly kind: 'invalid_input'; readonly message: string }
@@ -216,6 +242,44 @@ export async function adminRejectReactivation(
         kind: 'refund_failed',
         errorCode: refundResult.errorCode,
         detail: refundResult.detail,
+      });
+    }
+    if (refundResult.status === 'refund_pending') {
+      // F8-RP: the F5 refund is settling ASYNCHRONOUSLY (Stripe
+      // pending/requires_action, or a prior refund already in-flight →
+      // refund_in_progress). Short-circuit BEFORE the cycle-transition tx:
+      // do NOT transition to `cancelled`, do NOT emit the `_rejected` audit,
+      // and do NOT insert the post-refund escalation task. The cycle stays
+      // `pending_admin_reactivation`; the async settlement (webhook A.11 /
+      // sweep A.14) + the reconcile cron resolve it later. Money-safe: the
+      // pending refund row makes any retry hit F5's `refund_in_progress`
+      // guard, so no double refund. Surfaced as a NON-failure 202 by the
+      // route; the informational metric mirrors the F5-side telemetry.
+      logger.info(
+        {
+          cycleId: lockedCycle.cycleId,
+          invoiceId: lockedCycle.linkedInvoiceId,
+          // PCI-safe ids only (never card data); optional on the
+          // refund_in_progress path.
+          ...(refundResult.refundId
+            ? { refundId: refundResult.refundId }
+            : {}),
+          ...(refundResult.processorRefundId
+            ? { processorRefundId: refundResult.processorRefundId }
+            : {}),
+        },
+        '[admin-reject-reactivation] F5 refund settling asynchronously — cycle stays pending; async settlement + reconcile cron resolve it',
+      );
+      renewalsMetrics.adminRejectCompleted(input.tenantId, 'refund_pending');
+      return ok({
+        outcome: 'refund_pending' as const,
+        cycleStatus: 'pending_admin_reactivation' as const,
+        ...(refundResult.refundId
+          ? { refundId: refundResult.refundId }
+          : {}),
+        ...(refundResult.processorRefundId
+          ? { processorRefundId: refundResult.processorRefundId }
+          : {}),
       });
     }
     if (refundResult.status === 'refunded') {
@@ -413,6 +477,9 @@ export async function adminRejectReactivation(
     );
 
     return ok({
+      // F8-RP: tag the common path `rejected`. The remaining fields are
+      // UNCHANGED — the route maps this to the same byte-identical 200 body.
+      outcome: 'rejected' as const,
       cycleStatus: 'cancelled' as const,
       closedReason: 'admin_rejected_with_refund' as const,
       closedAt,

@@ -2351,12 +2351,21 @@ export const renewalsMetrics = {
    *     pre-payment path); cycle cancelled without refund.
    *   - `failed` — cycle never transitioned (refund_failed or
    *     transition lost race).
+   *   - `refund_pending` — F8-RP (2026-07-11): the F5 refund is settling
+   *     ASYNCHRONOUSLY (Stripe `pending`/`requires_action`, or a prior
+   *     refund already in-flight). The cycle stays `pending_admin_
+   *     reactivation` and self-heals when the webhook/sweep confirms the
+   *     refund. NOT a failure — informational, does NOT page.
    *
    * Alert rule: a sustained `failed` rate >0 for 15 min pages on-call —
    * indicates F5 refund pipeline is degraded and admins are getting
-   * stuck cycles. Steady-state `refunded` is informational only.
+   * stuck cycles. Steady-state `refunded` / `refund_pending` is
+   * informational only.
    */
-  adminRejectCompleted(tenantId: string, outcome: 'refunded' | 'no_payment' | 'failed'): void {
+  adminRejectCompleted(
+    tenantId: string,
+    outcome: 'refunded' | 'no_payment' | 'failed' | 'refund_pending',
+  ): void {
     safeMetric(() => {
       counter(
         'renewals_admin_reject_total',
@@ -3351,6 +3360,41 @@ export const renewalsMetrics = {
       counter(
         'renewals_reconcile_timeout_transition_failed_no_refund_total',
         'F8 reconcile-pending-reactivations timeout — tx2 transition threw (non-conflict) but NO refund issued; no money at stake, next cron run self-heals (informational, NOT paging)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_refund_pending_total{tenant}` — F8-RP
+   * (2026-07-11) async-refund-settling observability.
+   *
+   * Incremented in `processTimeout` when the F5 bridge returned
+   * `refund_pending` — the timeout refund was submitted to Stripe but is
+   * settling ASYNCHRONOUSLY (`pending`/`requires_action`), or a prior
+   * refund for the payment is already in-flight (`refund_in_progress`).
+   * The cron leaves the cycle in `pending_admin_reactivation` and does NOT
+   * write the lapse transition; the NEXT cron run self-heals once the
+   * `charge.refund.updated` webhook (A.11) / Stripe-aware sweep (A.14)
+   * settles the refund (the bridge then returns `no_payment_found` and the
+   * transition completes).
+   *
+   * Distinct from `timeoutRefundFailures` (the Stripe refund itself FAILED
+   * — money did not move, admin/cron must retry). BEFORE F8-RP the async
+   * case was mislabelled as a refund failure (bridge mapped it to
+   * `refund_failed('refund_pending_async')`), inflating the failure counter
+   * and hiding the in-flight refund.
+   *
+   * Alert rule: INFORMATIONAL (mirrors `timeoutRefundOrphaned` /
+   * `timeoutTransitionFailedNoRefund`) — a non-zero rate is expected while
+   * async refunds settle and NEVER pages. A SUSTAINED rate warrants
+   * checking that the F5 webhook/sweep pipeline is settling refunds (the
+   * self-heal is not clearing), but on its own it is not money-at-risk.
+   */
+  timeoutRefundPending(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_refund_pending_total',
+        'F8 reconcile-pending-reactivations timeout — F5 refund settling asynchronously (pending/requires_action or refund_in_progress); cycle stays pending, next cron run self-heals (informational, NOT paging)',
       ).add(1, { tenant: tenantId });
     });
   },

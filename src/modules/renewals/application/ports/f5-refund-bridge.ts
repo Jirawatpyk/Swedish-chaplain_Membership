@@ -65,6 +65,33 @@ export type IssueRefundForInvoiceResult =
       /** F5 error code (`processor_unavailable`, `f4_bridge_error`, etc.). */
       readonly errorCode: string;
       readonly detail: string;
+    }
+  | {
+      /**
+       * F8-RP (2026-07-11): the F5 refund is settling ASYNCHRONOUSLY — a
+       * NON-terminal, non-failure state. Two paths land here:
+       *   1. `issueRefund` → `kind:'pending'` — Stripe created the refund
+       *      (`pending`/`requires_action`); the row is `pending` with its
+       *      `re_…` id attached and NO credit note yet. The
+       *      `charge.refund.updated` webhook (A.11) / Stripe-aware sweep
+       *      (A.14) finalises it later.
+       *   2. `issueRefund` → `refund_in_progress` — a prior refund for this
+       *      payment is ALREADY pending/settling (F5's Phase-A pending-row
+       *      guard). No ids are available from that error, so they are
+       *      omitted here.
+       *
+       * MONEY-SAFETY: the refund row stays `pending`, so any retry hits the
+       * F5 `refund_in_progress` guard → NO double refund. The F8 cycle stays
+       * `pending_admin_reactivation` and self-heals on a later cron pass once
+       * the refund settles (bridge then returns `no_payment_found` → normal
+       * lapse transition). Distinct from `refund_failed` (genuine Stripe
+       * failed/canceled, which the admin must retry).
+       */
+      readonly status: 'refund_pending';
+      /** F5 refund row id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly refundId?: string;
+      /** Stripe `re_…` id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly processorRefundId?: string;
     };
 
 export interface F5RefundBridge {

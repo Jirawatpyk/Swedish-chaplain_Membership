@@ -88,11 +88,13 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
     expect(validInput.requestId).toBeNull();
   });
 
-  it('IssueRefundForInvoiceResult discriminated union covers 3 outcomes', () => {
+  it('IssueRefundForInvoiceResult discriminated union covers 4 outcomes', () => {
     // The result union must cover: refunded (success) + no_payment_found
     // (cycle without linked payment — admin can still reject) +
     // refund_failed (transient/processor error — F8 cycle stays pending
-    // for retry per admin-reject-reactivation.ts:204-227).
+    // for retry per admin-reject-reactivation.ts) + refund_pending
+    // (F8-RP: async Stripe refund settling via webhook/sweep — the row
+    // stays `pending`, no CN yet; the cycle stays pending and self-heals).
     const refunded: IssueRefundForInvoiceResult = {
       status: 'refunded',
       refundId: 'ref-123',
@@ -107,13 +109,19 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
       errorCode: 'processor_unavailable',
       detail: 'Stripe API timeout',
     };
-    // Exhaustive switch — adding a 4th status without updating
-    // admin-reject-reactivation.ts:204+ would type-check as
-    // `never` here.
+    const refundPending: IssueRefundForInvoiceResult = {
+      status: 'refund_pending',
+      refundId: 'ref-789',
+      processorRefundId: 're_async_1',
+    };
+    // Exhaustive switch — adding a 5th status without updating
+    // admin-reject-reactivation.ts + reconcile-pending-reactivations.ts
+    // would type-check as `never` here.
     const outcomes: ReadonlyArray<IssueRefundForInvoiceResult> = [
       refunded,
       noPayment,
       refundFailed,
+      refundPending,
     ];
     for (const outcome of outcomes) {
       switch (outcome.status) {
@@ -127,6 +135,11 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
         case 'refund_failed':
           expect(outcome.errorCode).toBeTruthy();
           expect(outcome.detail).toBeTruthy();
+          break;
+        case 'refund_pending':
+          // Ids are OPTIONAL: present on the F5 `kind:'pending'` path,
+          // absent on the `refund_in_progress` retry path.
+          expect(outcome.processorRefundId).toBe('re_async_1');
           break;
         default: {
           const _exhaustive: never = outcome;

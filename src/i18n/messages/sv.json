@@ -3233,6 +3233,7 @@
             "submitting": "Avslår…",
             "successRefundedToast": "Återaktivering avslagen och betalningen återbetalades.",
             "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
+            "successPendingToast": "Återbetalning inskickad – den behandlas hos betalningsleverantören. Den här återaktiveringen ligger kvar i väntelistan tills återbetalningen bekräftas.",
             "error": {
               "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
               "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",

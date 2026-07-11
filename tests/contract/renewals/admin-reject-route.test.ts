@@ -164,6 +164,7 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRejectReactivationMock.mockResolvedValueOnce(
       ok({
+        outcome: 'rejected',
         cycleStatus: 'cancelled',
         closedReason: 'admin_rejected_with_refund',
         closedAt: '2026-06-14T10:00:00.000Z',
@@ -180,10 +181,11 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     spy.mockRestore();
   });
 
-  it('200 happy path (refund issued) with snake_case body', async () => {
+  it('200 happy path (refund issued) with snake_case body — BYTE-IDENTICAL rejected shape (F8-RP)', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRejectReactivationMock.mockResolvedValueOnce(
       ok({
+        outcome: 'rejected',
         cycleStatus: 'cancelled',
         closedReason: 'admin_rejected_with_refund',
         closedAt: '2026-06-14T10:00:00.000Z',
@@ -194,16 +196,21 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     const res = await POST(makeReq(), makeCtx());
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.cycle_status).toBe('cancelled');
-    expect(body.closed_reason).toBe('admin_rejected_with_refund');
-    expect(body.closed_at).toBe('2026-06-14T10:00:00.000Z');
-    expect(body.refund_credit_note_id).toBe('cn-42');
+    // F8-RP regression: adding the `refund_pending` variant MUST NOT change
+    // the rejected-path 200 body — same four snake_case keys, no extras.
+    expect(body).toEqual({
+      cycle_status: 'cancelled',
+      closed_reason: 'admin_rejected_with_refund',
+      closed_at: '2026-06-14T10:00:00.000Z',
+      refund_credit_note_id: 'cn-42',
+    });
   });
 
   it('200 no-payment variant carries null refund_credit_note_id', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminRejectReactivationMock.mockResolvedValueOnce(
       ok({
+        outcome: 'rejected',
         cycleStatus: 'cancelled',
         closedReason: 'admin_rejected_with_refund',
         closedAt: '2026-06-14T10:00:00.000Z',
@@ -214,6 +221,47 @@ describe('POST /api/admin/renewals/[cycleId]/reject — contract', () => {
     const res = await POST(makeReq(), makeCtx());
     expect(res.status).toBe(200);
     expect((await res.json()).refund_credit_note_id).toBe(null);
+  });
+
+  it('F8-RP: 202 refund_pending — async refund settling, NOT a 502 failure', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRejectReactivationMock.mockResolvedValueOnce(
+      ok({
+        outcome: 'refund_pending',
+        cycleStatus: 'pending_admin_reactivation',
+        refundId: 'rfnd-async-1',
+        processorRefundId: 're_async_1',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.outcome).toBe('refund_pending');
+    expect(body.refund).toEqual({
+      id: 'rfnd-async-1',
+      status: 'pending',
+      processor_refund_id: 're_async_1',
+    });
+    // Self-describing bilingual copy (mirrors the F5 refunds-route 202).
+    expect(typeof body.message).toBe('string');
+    expect(typeof body.message_thai).toBe('string');
+  });
+
+  it('F8-RP: 202 refund_pending without ids (refund_in_progress retry) omits refund object', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminRejectReactivationMock.mockResolvedValueOnce(
+      ok({
+        outcome: 'refund_pending',
+        cycleStatus: 'pending_admin_reactivation',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.outcome).toBe('refund_pending');
+    expect(body.refund).toBeUndefined();
   });
 
   it('400 invalid_body on malformed JSON', async () => {

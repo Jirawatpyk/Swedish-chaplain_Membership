@@ -68,6 +68,19 @@ export const f5RefundBridge: F5RefundBridge = {
       },
     );
     if (!refundResult.ok) {
+      // F8-RP (2026-07-11): `refund_in_progress` is NOT a failure — it means
+      // a prior refund for this payment is ALREADY pending/settling (F5's
+      // Phase-A pending-row guard fired). The correct action is to WAIT for
+      // that refund to settle, not to alert the admin or count a failure.
+      // Surface it as `refund_pending` (no ids — the error carries none) so
+      // the reject route returns 202 and the cron does not count a timeout
+      // failure. Money-safe: the pending row still blocks a double refund;
+      // the cycle self-heals when the refund settles. Every OTHER error
+      // (processor_unavailable, f4_bridge_error, payment_not_refundable, …)
+      // is a genuine `refund_failed` the admin must act on — unchanged.
+      if (refundResult.error.code === 'refund_in_progress') {
+        return { status: 'refund_pending' };
+      }
       return {
         status: 'refund_failed',
         errorCode: refundResult.error.code,
@@ -79,25 +92,22 @@ export const f5RefundBridge: F5RefundBridge = {
               : refundResult.error.code,
       };
     }
-    // #1 (2026-07-11) — `issueRefund` now discriminates on the Stripe
-    // refund status. An async `pending`/`requires_action` refund has NOT
-    // returned the money and has NO credit note yet (both settle when the
-    // F5 `charge.refund.updated` webhook / Stripe-aware sweep confirms it).
-    // The F8 reactivation-reject flow needs a settled refund + CN to
-    // resolve the cycle, and the bridge's 3-outcome contract has no
-    // `pending` state, so surface it as a NON-terminal failure with a
-    // distinct code. This is safe: the F5 `refund_in_progress` guard
-    // prevents a double refund on any retry, and no false CN is recorded
-    // (which would violate the `renewal_cycles → credit_notes` FK). It is
-    // NOT ideal — the cron path (`reconcile-pending-reactivations`) will
-    // keep the cycle pending. FOLLOW-UP (F8, tracked in the A.9 report):
-    // add an explicit `refund_pending` bridge outcome so the reject /
-    // reconcile flows resolve the cycle once the async refund is confirmed.
+    // F8-RP (2026-07-11): `issueRefund` discriminates on the Stripe refund
+    // status. An async `pending`/`requires_action` refund has NOT returned
+    // the money and has NO credit note yet — both settle when the F5
+    // `charge.refund.updated` webhook (A.11) / Stripe-aware sweep (A.14)
+    // confirms it. Surface it as the first-class `refund_pending` outcome
+    // carrying the refund + processor ids (webhook-matchable). Money-safe:
+    // the row stays `pending`, so a retry hits F5's `refund_in_progress`
+    // guard (no double refund) and no false CN is recorded (which would
+    // violate the `renewal_cycles → credit_notes` FK). The F8 cycle stays
+    // `pending_admin_reactivation` and self-heals on a later cron pass once
+    // the refund settles (bridge then returns `no_payment_found`).
     if (refundResult.value.kind === 'pending') {
       return {
-        status: 'refund_failed',
-        errorCode: 'refund_pending_async',
-        detail: `Stripe refund ${refundResult.value.refund.processorRefundId} is settling asynchronously; the credit note is issued once the processor confirms it.`,
+        status: 'refund_pending',
+        refundId: refundResult.value.refund.id,
+        processorRefundId: refundResult.value.refund.processorRefundId,
       };
     }
     return {
