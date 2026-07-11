@@ -250,17 +250,22 @@ export interface F5AuditPayloadByType {
     idempotency_key: string;
   };
   /**
-   * Two emit shapes:
-   *   (a) admin-initiated refund (`issueRefund` use-case,
-   *       `path: 'admin_initiated'` emit) — creates F4 CN and flips
-   *       payment/invoice status; payload carries the full
-   *       state-transition record.
-   *   (b) webhook-driven recovery (`processChargeRefunded` use-case,
-   *       `path: 'webhook_recovery'` emit) — Stripe `charge.refunded`
-   *       event arrives for a known refund row that was stuck
-   *       `pending`; payload carries Stripe ids + recovery_path
-   *       discriminator. (R3 comment-rot fix: symbolic refs replace
-   *       precise line numbers that rotted past R1+R2.)
+   * `refund_succeeded` is emitted by the shared `finalizeSucceededRefund`
+   * helper from three trigger sites, distinguished by the `path`
+   * discriminator (all three carry the SAME full state-transition record —
+   * F4 CN minted + payment/invoice status advanced):
+   *   (a) `path: 'admin_initiated'` — admin-initiated refund (`issueRefund`
+   *       use-case).
+   *   (b) `path: 'webhook_refund_updated'` — async Stripe
+   *       `charge.refund.updated(succeeded)` webhook finalises a `pending`
+   *       refund row.
+   *   (c) `path: 'sweep_recovery'` — the stale-pending-refund sweep
+   *       reconciles a `pending` row the webhook never resolved.
+   * `processChargeRefunded` no longer emits `refund_succeeded` (A.12
+   * removed that emit site; its former `path: 'webhook_recovery'` arm was
+   * dead and removed here — final-review cleanup, 2026-07-12). (R3
+   * comment-rot fix: symbolic refs replace precise line numbers that
+   * rotted past R1+R2.)
    */
   /**
    * R3 TD-2 (2026-04-28): explicit `path` discriminator on both arms
@@ -280,24 +285,6 @@ export interface F5AuditPayloadByType {
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
         invoice_next_status: 'partially_credited' | 'credited';
-      }
-    | {
-        path: 'webhook_recovery';
-        refund_id: string;
-        processor_refund_id: string;
-        processor_charge_id: string;
-        recovery_path: 'webhook_charge_refunded';
-        /**
-         * F5R3 SB-1 (2026-05-16) — when the webhook recovery flips a
-         * stuck-pending refund row, it ALSO atomically recovers the
-         * parent Payment.status (mirrors issueRefund Phase B).
-         *   `'partially_refunded' | 'refunded'` — parent was advanced
-         *   `null` — parent already at the correct status (no-op) OR
-         *     a concurrent writer raced us (race-guard returned null);
-         *     the refund-row flip still committed, parent status was
-         *     correct without our help.
-         */
-        parent_payment_status_recovered_to: 'partially_refunded' | 'refunded' | null;
       }
     | {
         /**
