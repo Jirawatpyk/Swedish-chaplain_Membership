@@ -68,6 +68,11 @@ export const payments = pgTable('payments', {
   cardExpMonth: smallint('card_exp_month'),
   cardExpYear: smallint('card_exp_year'),
   failureReasonCode: text('failure_reason_code'),
+  // Durable auto-refund marker (migration 0240). Set when a stuck-pending
+  // payment is auto-refunded on invoice void/stale; carries the processor
+  // refund id (re_…) for idempotent A4b lookup. Partial UNIQUE on
+  // (tenant_id, auto_refund_processor_refund_id) WHERE NOT NULL.
+  autoRefundProcessorRefundId: text('auto_refund_processor_refund_id'),
   initiatedAt: timestamp('initiated_at', { withTimezone: true }).notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   actorUserId: text('actor_user_id').notNull(), // uuid at DB

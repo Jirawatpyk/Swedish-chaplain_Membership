@@ -1681,6 +1681,13 @@
 			"when": 1798536800000,
 			"tag": "0239_broadcast_templates_partial_uniq",
 			"breakpoints": true
+		},
+		{
+			"idx": 243,
+			"version": "7",
+			"when": 1798536900000,
+			"tag": "0240_payments_auto_refunded_status",
+			"breakpoints": true
 		}
 	]
 }
