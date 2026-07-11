@@ -93,23 +93,27 @@ export function MonthBarChart({
                 <span
                   className={cn(
                     'text-xs leading-none tabular-nums',
-                    item.count > 0 ? 'text-foreground' : 'text-muted-foreground/50',
+                    item.count > 0 ? 'text-foreground' : 'text-muted-foreground',
                     isSelected && 'font-bold',
                   )}
                 >
                   {item.count}
                 </span>
-                {/* height is a % of the plot (scales with the h-32 above), capped so
-                    the count always fits above even the tallest bar. */}
-                <span
-                  aria-hidden
-                  className={cn(
-                    'w-10 rounded-t border border-black/10 dark:border-white/15',
-                    fillClass,
-                    isSelected && 'ring-2 ring-ring ring-offset-1 ring-offset-card',
-                  )}
-                  style={{ height: `${item.barPercent}%`, maxHeight: 'calc(100% - 1.25rem)' }}
-                />
+                {/* Bar only for nonzero counts — a 0-height bar with a border
+                    would clamp to a ~2px band-coloured tick and misread as a
+                    tiny value. Height is a % of the plot (scales with h-32),
+                    capped so the count always fits above even the tallest bar. */}
+                {item.count > 0 ? (
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'w-10 rounded-t border border-black/10 dark:border-white/15',
+                      fillClass,
+                      isSelected && 'ring-2 ring-ring ring-offset-1 ring-offset-card',
+                    )}
+                    style={{ height: `${item.barPercent}%`, maxHeight: 'calc(100% - 1.25rem)' }}
+                  />
+                ) : null}
               </span>
               {/* compact axis label (BE-aware short month); `title` restores the
                   full label as a hover affordance for sighted mouse users. */}
