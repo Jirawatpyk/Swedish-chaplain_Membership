@@ -56,9 +56,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // A.14 — the Stripe-aware sweep issues N external `retrieveRefund` calls
 // per tenant. Pin an explicit function budget (default is far lower) so the
-// use-case's total-elapsed budget guard (SWEEP_TOTAL_BUDGET_MS=45s) sits
-// safely under it. Keep in lockstep with the cron-job.org request timeout
-// for this job (docs/runbooks/cron-jobs.md).
+// use-case's total-elapsed budget guard (SWEEP_TOTAL_BUDGET_MS=35s) sits
+// safely under it, leaving headroom for the in-flight row's own
+// (retrieve + finalize) tail — see the const's doc comment. Keep in
+// lockstep with the cron-job.org request timeout for this job
+// (docs/runbooks/cron-jobs.md).
 export const maxDuration = 60;
 
 const DEFAULT_OLDER_THAN_HOURS = 24;

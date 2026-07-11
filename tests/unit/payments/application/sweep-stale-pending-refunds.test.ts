@@ -613,7 +613,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
       makeStaleRow({ id: 'rfnd_b', processorRefundId: 're_b' }),
     ]);
     asMock(deps.processorGateway.retrieveRefund).mockImplementation(async () => {
-      elapsed += 50_000; // exceed the 45s budget after the first retrieve
+      elapsed += 50_000; // exceed the 35s budget after the first retrieve
       return retrievedRefund('succeeded');
     });
 

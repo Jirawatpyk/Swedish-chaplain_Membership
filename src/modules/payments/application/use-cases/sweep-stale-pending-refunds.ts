@@ -101,11 +101,28 @@ const RETRIEVE_TIMEOUT_MS = 8_000;
 /**
  * Total wall-clock budget across all retrieves in one tenant run. When
  * exceeded, the loop stops starting new rows (remaining → next sweep) and
- * logs the deferral. 45 s leaves margin under BOTH `maxDuration=60` and the
- * cron-job.org 60 s request timeout; LOWER this if that external timeout is
- * ever reduced (e.g. to 30 s → set this to ~25 s).
+ * logs the deferral.
+ *
+ * **Review-hardening (headroom math).** The guard only stops the loop
+ * BEFORE *starting* a new row — the row that was already in flight when the
+ * budget tipped over still pays its own (retrieve + finalise) cost:
+ * `RETRIEVE_TIMEOUT_MS` (≤8s) for the Stripe read, plus
+ * `finalizeSucceededRefund` on the `succeeded` path (F4 credit-note render +
+ * Blob upload — effectively unbounded on a bad day). A kill mid-finalise is
+ * safe (tx rolls back → row stays `pending` → next sweep reconciles; the CN
+ * bridge is idempotent) but wastes the external Stripe call, so budget
+ * enough headroom that the last row's tail usually finishes:
+ *
+ *   35s budget + ≤8s last retrieve + finalize allowance < 60s maxDuration
+ *
+ * This is coupled to BOTH the route's `maxDuration=60`
+ * (`src/app/api/cron/sweep-stale-pending-refunds/route.ts`) AND the
+ * cron-job.org per-job request timeout for this endpoint (currently 60s per
+ * `docs/runbooks/stale-pending-refund-sweep.md`) — LOWER this const in
+ * lockstep if either of those is ever reduced (e.g. cron-job.org timeout
+ * dropped to 30s → set this to ~20s).
  */
-const SWEEP_TOTAL_BUDGET_MS = 45_000;
+const SWEEP_TOTAL_BUDGET_MS = 35_000;
 
 /**
  * A stale-pending refund the sweep cannot terminalise (Stripe still

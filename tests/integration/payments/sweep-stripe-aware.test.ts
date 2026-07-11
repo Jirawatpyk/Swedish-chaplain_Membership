@@ -15,6 +15,12 @@
  *   - `pending`   → refund row STAYS `pending` (never marked failed).
  *   - null `processor_refund_id` (aged) → STAYS `pending` (never blind-failed),
  *     counted as escalated.
+ *   - fresh (< 24h `olderThanHours` cutoff) → NOT picked up by
+ *     `listPendingOlderThan`'s `initiatedAt < cutoff` clause at all: no
+ *     retrieve, no finalize, status untouched. Regression guard for the
+ *     cutoff WHERE clause (review-hardening — the old T130a integration test
+ *     asserted this; restored here since every other seeded row in this file
+ *     is deliberately stale).
  *   - NO `stale_pending_refund_detected` audit for ANY row (blind-fail removed).
  *   - Idempotent: a second run sweeps 0.
  *   - RR-1: a row finalised by a concurrent writer between the list-read and
@@ -79,8 +85,8 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
   let memberId: string;
   let invoiceId: string;
   // Single active payment per invoice (payments_one_active_per_invoice). All
-  // four seeded refunds hang off this one payment; only the succeeded one
-  // flips its status (failed/pending/null-id never touch payment status).
+  // five seeded refunds hang off this one payment; only the succeeded one
+  // flips its status (failed/pending/null-id/fresh never touch payment status).
   let paymentSucc: PaymentId;
 
   // Refund ids
@@ -88,9 +94,15 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
   const rfndFail = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
   const rfndPend = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
   const rfndNull = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
+  // Fresh (< 24h) regression row — MUST stay outside the cutoff (see class
+  // doc comment "fresh" bullet). No mapping in `fakeGateway` on purpose: if
+  // the cutoff clause ever regressed and let this row through, `retrieveRefund`
+  // would be called with an unmapped id and the test would fail loudly.
+  const rfndFresh = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
   const reSucc = `re_succ_${randomUUID().slice(0, 8)}`;
   const reFail = `re_fail_${randomUUID().slice(0, 8)}`;
   const rePend = `re_pend_${randomUUID().slice(0, 8)}`;
+  const reFresh = `re_fresh_${randomUUID().slice(0, 8)}`;
 
   let succCnId: string; // pre-seeded placeholder credit note for the succeeded path
 
@@ -393,6 +405,22 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         correlationId: 'corr-null',
         initiatedAt: AGED_INITIATED,
       });
+      // Fresh row (initiated now, well within the default 24h cutoff) — MUST
+      // be excluded by `listPendingOlderThan`'s `initiatedAt < cutoff`
+      // clause. Regression guard restored from the deleted T130a test.
+      await repo.insert(tx, {
+        id: rfndFresh,
+        tenantId: tenant.ctx.slug,
+        paymentId: paymentSucc,
+        invoiceId,
+        amountSatang: asSatang(70_000n),
+        reason: 'fresh — must NOT be swept',
+        status: 'pending',
+        processorRefundId: reFresh,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-fresh',
+        initiatedAt: new Date(),
+      });
     });
   }, 90_000);
 
@@ -446,8 +474,22 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
     // null-id aged → untouched (NEVER blind-failed).
     expect((await refundStatusFields(rfndNull)).status).toBe('pending');
 
+    // Fresh (< 24h cutoff) → NOT picked up at all: status untouched, no
+    // Stripe retrieve, no finalize. Regression guard for the
+    // `initiatedAt < cutoff` WHERE clause (restored from the deleted T130a
+    // test — every OTHER seeded row in this file is deliberately stale, so
+    // without this row the cutoff clause had no coverage).
+    expect((await refundStatusFields(rfndFresh)).status).toBe('pending');
+    expect(vi.mocked(deps.processorGateway.retrieveRefund)).not.toHaveBeenCalledWith(
+      reFresh,
+      expect.anything(),
+    );
+    expect(
+      vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund),
+    ).not.toHaveBeenCalledWith(expect.objectContaining({ refundId: rfndFresh }));
+
     // Blind-fail is gone: NO stale_pending_refund_detected for ANY row.
-    for (const id of [rfndSucc, rfndFail, rfndPend, rfndNull]) {
+    for (const id of [rfndSucc, rfndFail, rfndPend, rfndNull, rfndFresh]) {
       expect(await auditCount('stale_pending_refund_detected', id)).toBe(0);
     }
   }, 60_000);
