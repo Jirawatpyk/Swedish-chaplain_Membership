@@ -353,6 +353,16 @@ describe('tax#2 — cross-fiscal-year credit-note numbering (accountant sign-off
     await tenant.cleanup().catch(() => {});
   });
 
+  // NOTE (review fix, 2026-07-12): this intentionally does NOT clear
+  // `tenant_document_sequences`. The single `it` below asserts
+  // `seq2025Before === 1` (nothing allocated yet in the FY-2025 credit_note
+  // stream) — true today only because this suite has exactly ONE `it` and
+  // `tenant` is a fresh UUID-suffixed tenant per test run (see
+  // `createTestTenant`, never reused across runs). If a future `it` is added
+  // to this file that also allocates a FY-2025 credit note, that
+  // precondition breaks (the sequence counter carries over from the prior
+  // `it`) — either clear `tenantDocumentSequences` for this tenant here too,
+  // or make each new `it` read the CURRENT counter instead of assuming 1.
   beforeEach(async () => {
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.delete(creditNotes).where(eq(creditNotes.tenantId, tenant.ctx.slug));
