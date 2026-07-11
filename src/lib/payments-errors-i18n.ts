@@ -33,6 +33,11 @@ export type F5RouteErrorCode =
   | 'method_not_enabled'
   | 'payment_not_cancelable'
   | 'tenant_settings_incomplete'
+  // #7 (F5R3v3 H-1) — F4 bridge flagged a corrupt/negative invoice
+  // total; distinct from `tenant_settings_incomplete` so ops can tell
+  // "misconfigured tenant" apart from "corrupted invoice data" at a
+  // glance in logs/alerts even though both currently map to 422.
+  | 'invoice_data_corrupt'
   | 'rate_limited'
   | 'processor_unavailable'
   | 'internal_error'
@@ -97,6 +102,10 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   tenant_settings_incomplete: {
     message: 'Payment settings are incomplete. Please contact support.',
     messageThai: 'การตั้งค่าการชำระเงินไม่สมบูรณ์ กรุณาติดต่อฝ่ายสนับสนุน',
+  },
+  invoice_data_corrupt: {
+    message: 'Invoice data is corrupt. Please contact your administrator.',
+    messageThai: 'ข้อมูลใบแจ้งหนี้ผิดพลาด กรุณาติดต่อผู้ดูแลระบบ',
   },
   rate_limited: {
     message: 'Too many requests. Please try again shortly.',

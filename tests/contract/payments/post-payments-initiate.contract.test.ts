@@ -399,6 +399,28 @@ describe('contract: POST /api/payments/initiate (T041)', () => {
     expect(error['code']).toBe('tenant_settings_incomplete');
   });
 
+  // #7 (F5R3v3 H-1) — the F4 bridge detects a malformed invoice (e.g.
+  // negative `totalSatang` from data corruption / a dropped CHECK
+  // constraint) and the use-case short-circuits BEFORE any Stripe call
+  // with `{ code: 'invoice_data_corrupt' }`. `initiate-payment.ts`'s
+  // docstring already promises "Route handler maps to 422 with a
+  // runbook pointer" — this pins that contract so a future regression
+  // (falling through to the `default: 500 internal_error` branch)
+  // fails loudly instead of surfacing an opaque 500 to the member.
+  it('422 invoice_data_corrupt — F4 bridge reports a corrupt/negative invoice total', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberContext);
+    initiatePaymentMock.mockResolvedValueOnce(
+      err({ code: 'invoice_data_corrupt', invoiceId: VALID_INVOICE_ID }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+    const body = await res.json() as Record<string, unknown>;
+    const error = body['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('invoice_data_corrupt');
+  });
+
   it('429 rate_limited — includes Retry-After header', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberContext);
     const { rateLimiter } = await getMockedAuthDeps();

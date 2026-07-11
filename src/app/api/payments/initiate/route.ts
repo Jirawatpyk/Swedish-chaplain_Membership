@@ -113,6 +113,15 @@ function httpStatusForUseCaseError(code: string): {
       return { status: 409, routeCode: 'method_not_enabled' };
     case 'tenant_settings_incomplete':
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
+    // #7 (F5R3v3 H-1) — the F4 bridge detected a malformed invoice
+    // (e.g. negative `totalSatang`) and the use-case short-circuited
+    // before any Stripe call. `initiate-payment.ts`'s docstring
+    // promises "Route handler maps to 422 with a runbook pointer" —
+    // this was previously falling through to `default: 500
+    // internal_error`, hiding an actionable client-facing message
+    // behind an opaque server error.
+    case 'invoice_data_corrupt':
+      return { status: 422, routeCode: 'invoice_data_corrupt' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
     default:
