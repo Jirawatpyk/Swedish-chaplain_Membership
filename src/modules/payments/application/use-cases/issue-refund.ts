@@ -653,7 +653,13 @@ async function issueRefundBody(
 
   // T141 metric: refund → CN throughput. AFTER the Phase B tx commits so
   // a rollback (caught above) does not bump the counter.
-  paymentsMetrics.refundSucceededCount(input.tenantId);
+  // A.9 review fix (#1): gate on `siblingWon === false` — when a
+  // concurrent writer (A.11's webhook consumer) already finalised this
+  // refund first, THAT writer owns the increment; counting it here too
+  // would double-book `refundSucceededCount` for a single refund.
+  if (!finalizeResult.value.siblingWon) {
+    paymentsMetrics.refundSucceededCount(input.tenantId);
+  }
 
   const completedAt = new Date(deps.clock.nowMs());
   return ok({

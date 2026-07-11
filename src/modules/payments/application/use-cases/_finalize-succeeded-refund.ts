@@ -84,6 +84,18 @@ export interface FinalizeSucceededRefundResult {
   readonly creditNoteNumber: string;
   readonly paymentNextStatus: 'partially_refunded' | 'refunded';
   readonly invoiceStatus: 'partially_credited' | 'credited';
+  /**
+   * A.9 review fix (#1) — `true` when the refund-flip's
+   * `expectedCurrentStatus='pending'` guard matched ZERO rows (a sibling
+   * writer, e.g. A.11's `charge.refund.updated` webhook consumer, already
+   * finalised this refund — the null-race branch above). `false` when THIS
+   * call performed the genuine flip. Callers MUST gate any
+   * finalize-once side effect (metric increments) on `siblingWon === false`
+   * — the sibling that actually flipped the row already owns that side
+   * effect. Internal helper-return detail only: NOT part of the public
+   * `IssueRefundSuccess` envelope.
+   */
+  readonly siblingWon: boolean;
 }
 
 /**
@@ -163,6 +175,7 @@ export async function finalizeSucceededRefund(
       creditNoteNumber: cnResult.value.creditNoteNumber,
       paymentNextStatus: input.paymentNextStatus,
       invoiceStatus,
+      siblingWon: true,
     });
   }
 
@@ -203,5 +216,6 @@ export async function finalizeSucceededRefund(
     creditNoteNumber: cnResult.value.creditNoteNumber,
     paymentNextStatus: input.paymentNextStatus,
     invoiceStatus,
+    siblingWon: false,
   });
 }

@@ -17,6 +17,24 @@ import type { IssueRefundDeps, IssueRefundInput } from '@/modules/payments/appli
 import type { Payment } from '@/modules/payments/domain/payment';
 import { asPaymentId } from '@/modules/payments/domain/payment';
 
+// A.9 review fix (#1) — metrics module mocked so the `refundSucceededCount`
+// double-count-on-null-race regression can be asserted directly. Without
+// this mock the real OTel no-op meter silently swallows every call,
+// hiding a metric-gating bug behind a passing test.
+const metricsMocks = vi.hoisted(() => ({
+  refundInitiateCount: vi.fn(),
+  refundSucceededCount: vi.fn(),
+  refundFailedCount: vi.fn(),
+  refundFinaliseDoubleFault: vi.fn(),
+}));
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: metricsMocks,
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -386,6 +404,11 @@ describe('issueRefund (T108) — happy paths', () => {
     const succeeded = auditCalls.find((c) => c[1].eventType === 'refund_succeeded');
     expect(initiated?.[1].retentionYears).toBe(10);
     expect(succeeded?.[1].retentionYears).toBe(10);
+    // A.9 review fix (#1) — the genuine-finalize path (this writer actually
+    // flipped the refund row, `updateStatus` returned non-null) owns the
+    // metric increment: exactly once.
+    expect(metricsMocks.refundSucceededCount).toHaveBeenCalledTimes(1);
+    expect(metricsMocks.refundSucceededCount).toHaveBeenCalledWith(TENANT_ID);
   });
 
   it('AS2 — PromptPay refund happy path uses same flow as card', async () => {
@@ -655,6 +678,10 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
       (c) => c[1].eventType === 'refund_succeeded',
     );
     expect(succeededAudit.length).toBe(0);
+    // A.9 review fix (#1) — the sibling that actually flipped the row
+    // (the concurrent webhook writer, once A.11 lands) owns the metric
+    // increment. This loser MUST NOT double-count refundSucceededCount.
+    expect(metricsMocks.refundSucceededCount).not.toHaveBeenCalled();
   });
 
   it('succeeded + Phase B DB flip throws → f4_bridge_error (out-of-band recovery)', async () => {
