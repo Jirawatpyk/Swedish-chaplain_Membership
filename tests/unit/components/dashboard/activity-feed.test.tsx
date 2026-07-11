@@ -54,6 +54,37 @@ describe('ActivityFeed', () => {
     expect(screen.getByText(/Payment recorded/)).toBeInTheDocument();
   });
 
+  it('renders the action label as a link to the related record when href is present', () => {
+    const href = '/admin/audit?targetRef=3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const items: readonly ActivityFeedEntry[] = [
+      {
+        id: 'a1',
+        actor: 'Jane Doe',
+        label: 'Member updated',
+        href,
+        occurredAt: '2026-07-10T22:00:00.000Z',
+        timeLabel: '5 minutes ago',
+      },
+    ];
+    render(<ActivityFeed {...PROPS} items={items} />);
+    const link = screen.getByRole('link', { name: 'Member updated' });
+    expect(link).toHaveAttribute('href', href);
+  });
+
+  it('renders the action label as plain text (no link) when href is absent', () => {
+    const items: readonly ActivityFeedEntry[] = [
+      {
+        id: 'a1',
+        label: 'System reminder sent',
+        occurredAt: '2026-07-10T22:00:00.000Z',
+        timeLabel: '5 minutes ago',
+      },
+    ];
+    render(<ActivityFeed {...PROPS} items={items} />);
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('System reminder sent')).toBeInTheDocument();
+  });
+
   it('shows the empty state when there are no items', () => {
     render(<ActivityFeed {...PROPS} items={[]} />);
     expect(screen.getByText('No recent activity')).toBeInTheDocument();

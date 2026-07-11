@@ -16,6 +16,9 @@ export interface ActivityFeedEntry {
   /** Localised event-type label (resolved per-locale in the page, FR-034) —
    *  not the raw English audit summary, so TH/SV users see translated text. */
   readonly label: string;
+  /** Link to the event's related record (FR-003) — the audit viewer filtered to
+   *  the target. Omitted for events with no user target (rendered as plain text). */
+  readonly href?: string;
   /** ISO 8601 for the `<time dateTime>` attribute. */
   readonly occurredAt: string;
   /** Visible relative label ("5 minutes ago"), locale-aware (FR-003). */
@@ -58,7 +61,16 @@ export function ActivityFeed({
                       <span className="text-muted-foreground"> · </span>
                     </>
                   ) : null}
-                  {item.label}
+                  {item.href ? (
+                    <a
+                      href={item.href}
+                      className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {item.label}
+                    </a>
+                  ) : (
+                    item.label
+                  )}
                 </span>
                 <time
                   dateTime={item.occurredAt}

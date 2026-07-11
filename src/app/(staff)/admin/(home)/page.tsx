@@ -265,6 +265,12 @@ export default async function StaffHomePage() {
       // Actor display name (FR-003), resolved PDPA-safe in the use-case; omitted
       // for system:*/anonymous events (rendered without an actor prefix).
       ...(item.actorLabel ? { actor: item.actorLabel } : {}),
+      // Related-record link (FR-003) — the audit viewer filtered to this event's
+      // target record. Omitted for events with no user target (payload-only
+      // entity). targetUserId is a uuid column so it passes the viewer's guard.
+      ...(item.targetUserId
+        ? { href: `/admin/audit?targetRef=${encodeURIComponent(item.targetUserId)}` }
+        : {}),
       // Localised action label (FR-034) — resolved per-locale from the audit
       // event type, NOT the raw English summary (which would leak to TH/SV).
       // Falls back to the timeline catalogue, then a humanised token.

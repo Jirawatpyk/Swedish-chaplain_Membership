@@ -134,6 +134,16 @@ describe('activityFeedQuery', () => {
     expect(labelsFor).toHaveBeenCalledWith([actorId]);
   });
 
+  it('passes the target record ref through for the related-record link (FR-003)', async () => {
+    const targetId = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+    const feed: readonly ActivityFeedItem[] = [
+      { ...item('1', 'member_updated'), targetUserId: targetId },
+    ];
+    const result = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, depsReturning(feed).deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value[0]!.targetUserId).toBe(targetId);
+  });
+
   it('leaves actorLabel null for a system/non-UUID actor (no resolve attempt)', async () => {
     const feed: readonly ActivityFeedItem[] = [
       { ...item('1', 'broadcast_dispatched'), actorUserId: 'system:cron' },

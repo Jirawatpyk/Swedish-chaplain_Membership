@@ -26,6 +26,7 @@ export const activityFeedSourceAdapter: ActivityFeedSource = {
       id: e.id,
       eventType: e.eventType,
       actorUserId: e.actorUserId,
+      targetUserId: e.targetUserId,
       summary: e.summary,
       occurredAt: e.occurredAt.toISOString(),
     }));
