@@ -415,3 +415,96 @@ forensic audit + auto-refund the captured funds; leave the row `failed` (do NOT 
   ever issued on the stale path, so §86/10 would be forbidden).
 - **PR-B is MANDATORY** (tax#5): report `invoice.status` from F4's `credited_total_satang`
   (authoritative), and pre-flight `remaining = min(payment-based, invoice-credit-based)`.
+
+---
+
+# v2.1 — Re-review round (5/5 CLEARED): plan-level refinements
+
+All five specialists re-reviewed the v2 consolidation and confirmed their findings CLOSED
+(direction NOT re-opened). They surfaced these **implementation-level** refinements — fold
+each into the implementation plan as explicit tasks. Two would bite in production if missed
+(RR-1 sweep coupling, RR-6 pre-flight dup check).
+
+## RR-1 (regression risk — architect) — `refundsRepo.updateStatus` throw→null BREAKS the sweep
+`sweep-stale-pending-refunds.ts:158-169` emits `stale_pending_refund_detected` **before** the
+flip and relies on `updateStatus` **throwing** to roll the per-row tx back on a zero-match
+(its own comment `:164-168`). If H-b changes it to return `null`, the audit **commits** with
+no sweep → **false `stale_pending_refund_detected` rows**. Plan MUST: (a) update the sweep to
+explicitly roll back / skip on a `null` return; (b) make `finalizeSucceededRefund` treat `null`
+as "sibling won → reconcile no-op" (not error); (c) add a task to **audit EVERY
+`refundsRepo.updateStatus` caller** for the throw→null behaviour change.
+
+## RR-2 (impl gotcha — reliability + migration) — CRITICAL-1 losing path needs a FRESH tx
+A Postgres unique-violation (`23505`) aborts the current tx (`25P02` on any further statement).
+So the "read existing CN → return it" reconcile MUST run in a **fresh tx / SAVEPOINT**, not the
+aborted F4 tx. Also: the "read existing by `sourceRefundId`" must run **inside** the invoice
+`FOR UPDATE` (after lock acquisition), never before (TOCTOU). Add an integration test pinning
+that the §87 allocator stays a **counter-row** (no-gap depends on it; a future switch to
+`nextval()` would silently reintroduce a gap on the losing insert).
+
+## RR-3 (migration inventory — architect + migration) — final 3-file migration set
+- `0240_payments_auto_refunded_status.sql` — DROP+ADD `payments_status_enum` (+ `auto_refunded`)
+  + DROP+ADD `payments_card_metadata_iff_card` (add `auto_refunded` to all-NULL set) **+ the
+  CRITICAL-2 column** `auto_refund_processor_refund_id text` **+ partial UNIQUE index
+  `(tenant_id, auto_refund_processor_refund_id) WHERE NOT NULL`** (A4b lookup; one re_id → one
+  auto-refund). (M-d omitted the column — fold it here.)
+- `0241_audit_log_refund_reconcile_events.sql` — idempotent `ADD VALUE` for genuinely-new audit
+  types only. Prefer reusing `refund_succeeded` + a new `path` arm (TS-only, no enum) for the
+  webhook-finalize audit (M-c). New types still needed: `auto_refund_failed_needs_manual_reconcile`
+  (retention: **10y** — money-not-returned forensic) and, IF it lands as an audit rather than a
+  pure metric, `refund_pending_awaiting_processor` (retention: **5y** operational — NOT 10y;
+  retention is per-event, precedent `refund_initiate_rate_limited` is `refund_`-prefixed but 5y).
+- `0242_credit_notes_source_refund_uniq.sql` — `DROP INDEX IF EXISTS credit_notes_source_refund_id_idx`
+  (0038 non-unique, now redundant) + `CREATE UNIQUE INDEX credit_notes_source_refund_id_uniq ON
+  credit_notes (tenant_id, source_refund_id) WHERE source_refund_id IS NOT NULL`. No CONCURRENTLY
+  (drizzle tx-wraps). RLS/grants unaffected.
+- Numbering: highest on origin/main is 0239; reserve 0240–0242; **re-check
+  `git ls-tree origin/main drizzle/migrations | tail` immediately before commit** (parallel branches).
+
+## RR-4 (BLOCKING operator pre-flight — migration) — 0242 duplicate check
+`CREATE UNIQUE INDEX` (non-concurrent) fails the WHOLE migration on any existing duplicate, and
+**prod auto-migrates on Vercel deploy** → a duplicate = broken/stop-the-line deploy. Before
+applying 0242, run on **BOTH the `dev` Neon branch AND prod**:
+```sql
+SELECT tenant_id, source_refund_id, COUNT(*) AS n FROM credit_notes
+WHERE source_refund_id IS NOT NULL GROUP BY tenant_id, source_refund_id HAVING COUNT(*) > 1;
+```
+If rows return → void the duplicate CN + reconcile the §87 sequence BEFORE the migration. Prod
+risk is LOW (wiped 2026-06-24/07-10, low refund volume) but the `dev` branch (accumulated refund
+test rows) is higher. This is a required operator gate at ship time.
+
+## RR-5 (dead-code + A3 — reliability) 
+- Once the durable `payments` column replaces the audit lookup, `findStaleInvoiceAutoRefund`
+  (`drizzle-payments-repo.ts:475-494`) is orphaned → remove or repurpose (don't leave a second
+  misleading lookup path).
+- A3: verify the refactor keeps the amount-mismatch sanity branch (`process-charge-refunded.ts:232-267`)
+  **reachable** and ports SB-1 parent-payment recovery to `processRefundUpdated` — both currently
+  live inside the `existing.status === 'pending'` block being removed.
+
+## RR-6 (#8 false OOB — reliability, LOW) 
+The confirm-payment `failed → succeeded` auto-refund (Option i) leaves the row `failed` (not
+`auto_refunded`) so it does NOT populate the durable marker → its own `charge.refund.updated(succeeded)`
+hits the OOB branch → **false OOB alert in live mode** every occurrence. Either reuse the durable-marker
+mechanism for the #8 auto-refund's `re_` id, or document the false OOB as expected. (The *failed*-refund
+OOB signal for #8 is correct — only the succeeded case is noise.)
+
+## RR-7 (tax — plan holds) 
+- **Tax #2 (cross-FY CN numbering):** record the decision explicitly. Recommended: CN §87 number
+  + document-year follow the **settlement (issue-date) fiscal year** per §82/10 (tax point = reduction
+  date). BUT this is **F4-wide baseline behaviour** (`issue-credit-note.ts:577` uses
+  `loaded.fiscalYear` = invoice FY), not F5-specific → treat as an **accountant sign-off item**;
+  until confirmed, **document the current invoice-FY behaviour explicitly** (do not silently ship)
+  + add the boundary integration test (refund FY N → settle FY N+1; SweCham = calendar FY).
+- **Tax #5:** put the F4-authoritative `invoice.status` read (from `credited_total_satang`) INSIDE
+  the shared `finalizeSucceededRefund` so A1/A2/A5 all report identically.
+
+## RR-8 (PCI — one-liner) 
+Pin the `auto_refund_failed_needs_manual_reconcile` audit payload to the allow-list:
+`{ payment_id, invoice_id, auto_refund_processor_refund_id, refund_status, amount_satang(string), runbook_url }`
+— no card metadata, no raw event, no `error.message` (constructor-name only). SAQ-A sign-off: v2
+keeps SAQ-A intact; `auto_refund_processor_refund_id` (`re_`) + `source_refund_id` (internal
+`refunds.id` ULID — NOT a Stripe ref) are both non-card identifiers.
+
+**Bottom line:** design is implementation-ready. Proceed to the implementation plan (writing-plans),
+carrying RR-1…RR-8 as explicit tasks; RR-1 and RR-4 are the two that would cause production
+incidents if skipped.
