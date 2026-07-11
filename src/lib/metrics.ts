@@ -920,6 +920,25 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments_auto_refund_failed_needs_manual_reconcile_total{tenant}` —
+   * A.16 (H-e) PAGING counter. Fires from `processRefundUpdated` when a
+   * `charge.refund.updated` webhook reports that a system-initiated
+   * stale-invoice AUTO-refund settled `failed`/`canceled` on Stripe — i.e.
+   * the money was NEVER returned to the customer and manual reconciliation
+   * (Stripe dashboard) is required. Emitted ALONGSIDE the 10y
+   * `auto_refund_failed_needs_manual_reconcile` forensic audit; the audit is
+   * the durable evidence, this counter is the alerting anchor (pino logs roll
+   * off in 30 days). Alert: PAGE on any non-zero rate — a customer is owed
+   * money and the automated refund did not land.
+   */
+  autoRefundFailedNeedsReconcile(tenantId: string): void {
+    counter(
+      'payments_auto_refund_failed_needs_manual_reconcile_total',
+      'Stale-invoice auto-refund settled failed/canceled on Stripe — money not returned, manual reconciliation required (page on any non-zero rate)',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
    * `refunds.initiate.count{tenant, method, partial:bool}` — refund volume.
    */
   refundInitiateCount(tenantId: string, method: 'card' | 'promptpay', partial: boolean): void {
@@ -1262,6 +1281,37 @@ export const paymentsMetrics = {
     counter(
       'payments_stale_pending_refund_escalated_total',
       'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `payments_refund_pending_awaiting_processor_total{tenant}` — A.16 (H-e)
+   * monitoring signal for the `charge.refund.updated` subscription health. A
+   * refund left `pending` awaits Stripe's async settlement webhook; if that
+   * webhook is NOT enabled on the Stripe endpoint, every async refund hangs
+   * forever (design H-e). Emitted at both moments a refund is (still) awaiting
+   * the processor's async confirmation:
+   *   - `issueRefund` returns `kind:'pending'` (a refund was created but Stripe
+   *     reported `pending`/`requires_action` — awaiting the webhook), AND
+   *   - the stale-pending-refund sweep finds Stripe STILL reports `pending`
+   *     (the webhook has not reconciled it yet).
+   *
+   * TYPE — COUNTER (whose RATE is the alert signal), NOT an observable gauge,
+   * despite the "gauge" label in the A.16 brief. Both emit sites are PER-EVENT
+   * (a single refund transitioning/remaining in the awaiting state) and carry
+   * NO total-count; the codebase's `observeGauge` idiom is a LAST-VALUE
+   * observation that REQUIRES a real count (see `stalePendingCount`, fed by a
+   * counting cron). A per-event `.add(1)` matches the established
+   * `outbox_stuck_rows_total` / sibling `stalePendingRefundEscalated` idiom for
+   * sweep-emitted stuck-row signals. Alert: `rate(...[15m]) > 0` sustained →
+   * the `charge.refund.updated` delivery is likely disabled/broken (go-live
+   * gate H-e). We do NOT `.add(0)` on healthy ticks — absence of rate is the
+   * healthy signal.
+   */
+  refundPendingAwaitingProcessor(tenantId: string): void {
+    counter(
+      'payments_refund_pending_awaiting_processor_total',
+      'Refund awaiting the async charge.refund.updated webhook (issue-refund pending return + sweep still-pending) — alert on sustained rate>0: subscription likely disabled (H-e)',
     ).add(1, { tenant: tenantId });
   },
 } as const;

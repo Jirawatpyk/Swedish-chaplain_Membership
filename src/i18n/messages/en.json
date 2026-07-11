@@ -5790,6 +5790,7 @@
       "failed": "Payment failed",
       "refunded": "Payment refunded",
       "partially_refunded": "Payment partially refunded",
+      "auto_refunded": "Payment auto-refunded",
       "canceled": "Payment canceled"
     },
     "event": {

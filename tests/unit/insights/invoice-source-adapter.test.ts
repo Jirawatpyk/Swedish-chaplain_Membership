@@ -168,6 +168,89 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting',
   });
 });
 
+describe('invoiceSourceAdapter — auto_refunded payment money is non-revenue (M-h)', () => {
+  // F5 `auto_refunded` is a terminal PAYMENT status reached ONLY from `pending`
+  // (the stale-invoice auto-refund path): the Stripe charge was captured for an
+  // invoice that was no longer payable (voided / credited / already paid
+  // out-of-band), so it NEVER settled the invoice. F9 revenue is driven purely
+  // by INVOICE status + credit-note netting (it never sums the `payments`
+  // table), so an auto_refunded payment's money is structurally excluded. These
+  // lock that invariant — mirroring the F9 credit-note lesson (do NOT drop the
+  // whole invoice; do NOT double-count).
+
+  it('YTD: a voided invoice (auto-refund on a stale/voided invoice) contributes 0 revenue', async () => {
+    getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          // The auto-refunded Stripe charge left the invoice `void` → excluded.
+          { status: 'void', subtotal: { satang: 100_000n }, total: { satang: 107_000n }, creditedTotal: { satang: 0n } },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-02-15T00:00:00.000Z',
+    );
+
+    expect(total).toBe(0n);
+  });
+
+  it('YTD: an invoice paid OUT-OF-BAND with a duplicate auto_refunded Stripe charge is counted EXACTLY ONCE (no double-count)', async () => {
+    getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
+    // The member paid out-of-band (bank transfer) → invoice is `paid` and
+    // counts once. The concurrent Stripe charge was auto_refunded (a duplicate
+    // that never settled the invoice). Because F9 sums the INVOICE by status —
+    // not the `payments` rows — the auto_refunded money adds nothing: the
+    // invoice contributes its ex-VAT subtotal exactly once, not twice.
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          { status: 'paid', subtotal: { satang: 100_000n }, total: { satang: 107_000n }, creditedTotal: { satang: 0n } },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-02-15T00:00:00.000Z',
+    );
+
+    expect(total).toBe(100_000n); // ex-VAT, counted once — NOT 200,000
+  });
+
+  it('monthly trend: a voided invoice (auto-refund outcome) never appears in the settled-revenue trend', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          {
+            status: 'void',
+            paidAt: '2026-03-10T05:00:00.000Z',
+            subtotal: { satang: 100_000n },
+            total: { satang: 107_000n },
+            creditedTotal: { satang: 0n },
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const buckets = await invoiceSourceAdapter.getMonthlyPaidRevenueSatang(
+      ctx,
+      ['2026-03'],
+      'Asia/Bangkok',
+    );
+
+    expect(buckets['2026-03']).toBeUndefined();
+  });
+});
+
 describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netting', () => {
   it('buckets net-of-VAT revenue by settle month across paid + credited statuses', async () => {
     listInvoicesMock.mockResolvedValue({

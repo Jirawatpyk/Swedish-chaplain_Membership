@@ -207,8 +207,12 @@ export async function processRefundUpdated(
                   'auto_refund_failed_needs_manual_reconcile',
                 ),
               });
-              // A.16 wires the paging metric here
-              // (`paymentsMetrics.autoRefundFailedNeedsReconcile`).
+              // A.16 (H-e) — paging counter for the money-not-returned path.
+              // Fires INSIDE the tx (same trade-off as `outOfBandRefundRejected`
+              // below): OTel buffers until process-flush, so a tx rollback yields
+              // at most a tiny over-count window; consistency with the forensic
+              // audit above matters more than that window.
+              paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
               await deps.processorEventsRepo.markProcessed(tx, input.eventId);
               return {
                 kind: 'auto_refund_failed',

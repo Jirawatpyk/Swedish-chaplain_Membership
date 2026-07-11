@@ -45,6 +45,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       outOfBandRefundRejected: vi.fn(),
       refundFailedCount: vi.fn(),
       refundSucceededCount: vi.fn(),
+      autoRefundFailedNeedsReconcile: vi.fn(),
     },
   };
 });
@@ -223,6 +224,12 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     });
     expect(evt.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK);
     expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+    // A.16 (H-e) — the money-not-returned forensic path also increments the
+    // paging counter so on-call is alerted (pino logs roll off; the counter
+    // anchors the long-term alert).
+    expect(vi.mocked(paymentsMetrics.autoRefundFailedNeedsReconcile)).toHaveBeenCalledWith(
+      TENANT_ID,
+    );
   });
 
   it('not found + auto-refund matched + incoming canceled → auto_refund_failed (canceled classifies as failed)', async () => {

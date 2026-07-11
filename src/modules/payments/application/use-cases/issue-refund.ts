@@ -521,6 +521,10 @@ async function issueRefundBody(
         stripeRefundStatus: refundStatus,
       });
     }
+    // A.16 (H-e) — the refund is now awaiting Stripe's async
+    // `charge.refund.updated` webhook; emit the monitoring signal so a disabled
+    // subscription (async refunds hang forever) is alertable.
+    paymentsMetrics.refundPendingAwaitingProcessor(input.tenantId);
     return ok({
       kind: 'pending',
       refund: {

@@ -409,6 +409,11 @@ export async function sweepStalePendingRefunds(
       // Stripe still pending / requires_action (or a null-coerced 'pending',
       // A.8) → NEVER mark failed. Skip + escalate if aged.
       skippedCount += 1;
+      // A.16 (H-e) — the refund is confirmed STILL awaiting the async
+      // `charge.refund.updated` webhook. Emit the monitoring signal on every
+      // still-pending skip (independent of the aged-escalation gate below); a
+      // sustained rate>0 flags a disabled subscription (refunds hang).
+      paymentsMetrics.refundPendingAwaitingProcessor(input.tenantId);
       if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'stripe_pending')) {
         escalatedCount += 1;
       }

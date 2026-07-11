@@ -26,6 +26,9 @@ const metricsMocks = vi.hoisted(() => ({
   refundSucceededCount: vi.fn(),
   refundFailedCount: vi.fn(),
   refundFinaliseDoubleFault: vi.fn(),
+  // A.16 — emitted on the kind:'pending' return (refund awaiting the async
+  // charge.refund.updated webhook). MUST be present or the real call throws.
+  refundPendingAwaitingProcessor: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -593,6 +596,9 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
         (c) => c[1].eventType === 'refund_succeeded',
       );
       expect(succeededAudit).toBeUndefined();
+      // A.16 (H-e) — the awaiting-processor monitoring signal fires so a
+      // disabled charge.refund.updated subscription (refunds hang) is alertable.
+      expect(metricsMocks.refundPendingAwaitingProcessor).toHaveBeenCalledWith(TENANT_ID);
     },
   );
 

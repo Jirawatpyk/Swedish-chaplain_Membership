@@ -32,6 +32,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       refundSucceededCount: vi.fn(),
       refundFailedCount: vi.fn(),
       stalePendingRefundEscalated: vi.fn(),
+      refundPendingAwaitingProcessor: vi.fn(),
     },
   };
 });
@@ -376,6 +377,12 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     }
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).toHaveBeenCalledWith(TENANT_ID);
+    // A.16 (H-e) — a Stripe-still-pending stale refund is awaiting the async
+    // charge.refund.updated webhook → the monitoring signal fires (independent
+    // of the aged-escalation signal above).
+    expect(
+      asMock(paymentsMetrics.refundPendingAwaitingProcessor),
     ).toHaveBeenCalledWith(TENANT_ID);
     expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
       'sweep_stale_pending_refunds.escalation',

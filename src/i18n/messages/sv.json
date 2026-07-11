@@ -5790,6 +5790,7 @@
       "failed": "Betalning misslyckades",
       "refunded": "Betalning återbetald",
       "partially_refunded": "Betalning delvis återbetald",
+      "auto_refunded": "Betalning automatiskt återbetald",
       "canceled": "Betalning avbruten"
     },
     "event": {
