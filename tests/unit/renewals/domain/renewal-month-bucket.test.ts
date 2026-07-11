@@ -31,6 +31,10 @@ describe('addMonthsToYm', () => {
     expect(addMonthsToYm('2026-11', 2)).toBe('2027-01');
     expect(addMonthsToYm('2026-07', 12)).toBe('2027-07');
   });
+  it('subtracts for a negative n, including across a year boundary', () => {
+    expect(addMonthsToYm('2026-01', -1)).toBe('2025-12');
+    expect(addMonthsToYm('2026-03', -5)).toBe('2025-10');
+  });
 });
 
 describe('bkkMonthStartInstant', () => {
@@ -120,5 +124,8 @@ describe('barWidthPercent', () => {
     expect(barWidthPercent(1, 1000)).toBe(MIN_BAR_PERCENT); // tiny nonzero floored
     expect(barWidthPercent(0, 17)).toBe(0); // zero stays zero
     expect(barWidthPercent(5, 0)).toBe(0); // empty dataset guard
+  });
+  it('clamps to 100 when count exceeds maxCount', () => {
+    expect(barWidthPercent(20, 17)).toBe(100);
   });
 });

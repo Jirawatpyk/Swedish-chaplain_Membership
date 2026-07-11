@@ -86,7 +86,6 @@ export async function loadPipeline(
   // `nowIso` for the BKK boundaries; without it, fall back to urgency.
   const monthFilter =
     input.nowIso !== undefined ? parseMonthParam(input.month) : null;
-  const useMonthLens = monthFilter !== null;
   // Phase 3.5 S-06 — wrap the composite-query repo call in an OTel
   // span so the SLO alerting on SC-003 (p95<500ms) has a named hop in
   // Vercel Observability traces. Auto-instrumented Drizzle child
@@ -104,9 +103,11 @@ export async function loadPipeline(
     async (span) => {
       const r = await deps.cyclesRepo.loadPipelinePage(input.tenantId, {
         ...(input.tier !== undefined ? { tier: input.tier } : {}),
-        // Mutually-exclusive lenses: month wins, else urgency.
-        ...(useMonthLens
-          ? { monthFilter: monthFilter as string, nowIso: input.nowIso as string }
+        // Mutually-exclusive lenses: month wins, else urgency. The guard
+        // `monthFilter !== null && input.nowIso !== undefined` lets TS
+        // narrow both to `string` inside this branch — no `as string`.
+        ...(monthFilter !== null && input.nowIso !== undefined
+          ? { monthFilter, nowIso: input.nowIso }
           : input.urgency !== undefined
             ? { urgency: input.urgency }
             : {}),
@@ -131,6 +132,13 @@ export async function loadPipeline(
         bucketCount(r.summary.lapsedCount),
       );
       span.setAttribute('renewals.page_size', r.rows.length);
+      // T4 fix-wave — under the month lens the urgency filter above is
+      // reported as 'all' even though it was dropped in favour of the
+      // month lens (mutually-exclusive), which hid which lens actually ran.
+      // Surface the month filter explicitly so an APM operator can tell.
+      // Does NOT carry an exact member count (bucketed counts above cover
+      // that; this is just the lens key, e.g. '2026-07' / 'overdue' / 'later').
+      span.setAttribute('renewals.month_filter', monthFilter ?? 'none');
 
       // W0-09: § 23.1.1 pipeline.row_count gauge = rows returned for the CURRENT
       // page (bounded ≤ page-size 50), matching the instrument name + doc. MUST be

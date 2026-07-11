@@ -124,5 +124,5 @@ export const MIN_BAR_PERCENT = 4;
 /** Bar fill percent (0–100). Nonzero clamps up to `MIN_BAR_PERCENT`. */
 export function barWidthPercent(count: number, maxCount: number): number {
   if (maxCount <= 0 || count <= 0) return 0;
-  return Math.max(MIN_BAR_PERCENT, (count / maxCount) * 100);
+  return Math.min(100, Math.max(MIN_BAR_PERCENT, (count / maxCount) * 100));
 }

@@ -1352,10 +1352,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(MONTH_PLANNING_MEMBER_SQL)
           .groupBy(EXPIRY_MONTH_SQL);
-        return foldRawMonths(
-          rows.map((r) => ({ month: r.month, count: r.count })),
-          opts.nowIso,
-        );
+        return foldRawMonths(rows, opts.nowIso);
       });
     },
 

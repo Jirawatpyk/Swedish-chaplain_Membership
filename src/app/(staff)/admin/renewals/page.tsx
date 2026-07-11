@@ -94,6 +94,12 @@ interface SearchParams {
   readonly view?: string;
   /** Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'`. */
   readonly month?: string;
+  /**
+   * #6 fix-wave — instant carried across a month-lens "Next 50" pagination
+   * session so the overdue/later bounds don't drift mid-pagination (see
+   * the `nowIso` computation below).
+   */
+  readonly nowIso?: string;
 }
 
 export default async function RenewalsPipelinePage({
@@ -147,7 +153,18 @@ export default async function RenewalsPipelinePage({
   // Renewals-by-month lens. A present + VALID month wins over urgency
   // (mutually-exclusive). `nowIso` anchors BOTH the chart aggregation and the
   // pipeline month bounds — computed ONCE so they reconcile exactly.
-  const nowIso = new Date().toISOString();
+  //
+  // #6 fix-wave — prefer a `nowIso` carried in the URL over minting a fresh
+  // instant. Without this, a month bucket with >50 rows that straddles a
+  // BKK month rollover mid-pagination would recompute `overdue`/`later`
+  // bounds on "Next 50" and could miss/dup rows across the session. A
+  // present `nowIso` anchors the whole pagination session to one instant;
+  // normal (non-paginated) navigation still mints fresh each request. A
+  // stale bookmarked `nowIso` safe-degrades (validated by `Date.parse`).
+  const nowIso =
+    typeof query.nowIso === 'string' && !Number.isNaN(Date.parse(query.nowIso))
+      ? query.nowIso
+      : new Date().toISOString();
   const month = parseMonthParam(query.month);
   const monthLensActive = month !== null;
 
@@ -234,6 +251,10 @@ export default async function RenewalsPipelinePage({
   if (tier !== undefined) paginationParams.set('tier', tier);
   if (monthLensActive) {
     paginationParams.set('month', month as string);
+    // #6 fix-wave — carry the anchor instant so a "Next 50" continuation
+    // reuses the SAME overdue/later bounds as the first page instead of
+    // recomputing them against a fresh `new Date()`.
+    paginationParams.set('nowIso', nowIso);
   } else {
     paginationParams.set('urgency', urgency);
   }

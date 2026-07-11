@@ -315,4 +315,101 @@ describe('countCyclesByExpiryMonth — integration', () => {
     expect(aprPage.rows.some((r) => r.memberId === edge)).toBe(true);
     expect(marPage.rows.some((r) => r.memberId === edge)).toBe(false);
   });
+
+  it('does not count another tenant\'s cycles — RLS cross-tenant isolation (#7)', async () => {
+    // Second, fully independent tenant + owner. `seedMember`/`seedCycle`
+    // above close over the suite's `tenant` variable, so a foreign-tenant
+    // seed needs its own inline variant bound to `otherTenant.ctx`.
+    const otherTenant = await createTestTenant();
+    const otherOwner = await createActiveTestUser('admin');
+    try {
+      // Prerequisite membership_plans row for the OTHER tenant — same
+      // composite-FK requirement as the suite tenant's beforeAll seed.
+      await runInTenant(otherTenant.ctx, (tx) =>
+        tx
+          .insert(membershipPlans)
+          .values({
+            tenantId: otherTenant.ctx.slug,
+            planId: 'regular',
+            planYear: 2026,
+            planName: { en: 'Test regular' },
+            description: { en: 'Test regular description' },
+            sortOrder: 10,
+            planCategory: 'corporate',
+            memberTypeScope: 'company',
+            annualFeeMinorUnits: 5_000_000,
+            benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+            isActive: true,
+            createdBy: otherOwner.userId,
+            updatedBy: otherOwner.userId,
+          })
+          .onConflictDoNothing(),
+      );
+
+      // Tenant A's aggregation BEFORE the foreign tenant has any rows.
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const before = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
+        nowIso: NOW_ISO,
+        timezone: 'Asia/Bangkok',
+      });
+      const totalOf = (agg: typeof before): number =>
+        agg.overdueCount + agg.laterCount + agg.months.reduce((s, m) => s + m.count, 0);
+      const beforeTotal = totalOf(before);
+
+      // Seed an IN-WINDOW open cycle (BKK 2026-07, the current month) for a
+      // member owned by the OTHER tenant.
+      const foreignMemberId = randomUUID();
+      await runInTenant(otherTenant.ctx, (tx) =>
+        tx.insert(members).values({
+          tenantId: otherTenant.ctx.slug,
+          memberId: foreignMemberId,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: `Co ${foreignMemberId.slice(0, 6)}`,
+          country: 'TH',
+          planId: 'regular',
+          planYear: 2026,
+        }),
+      );
+      await runInTenant(otherTenant.ctx, (tx) =>
+        tx.insert(renewalCycles).values({
+          tenantId: otherTenant.ctx.slug,
+          cycleId: randomUUID(),
+          memberId: foreignMemberId,
+          status: 'upcoming',
+          periodFrom: new Date('2025-07-20T04:00:00Z'),
+          periodTo: new Date('2026-07-20T04:00:00Z'),
+          expiresAt: new Date('2026-07-20T04:00:00Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: 'regular',
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        }),
+      );
+
+      // Tenant A's aggregation AFTER the foreign seed — RLS must keep it
+      // byte-for-byte unchanged; the foreign cycle must never leak in.
+      const after = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
+        nowIso: NOW_ISO,
+        timezone: 'Asia/Bangkok',
+      });
+      expect(totalOf(after)).toBe(beforeTotal);
+      expect(after).toEqual(before);
+
+      // Positive control: the OTHER tenant's own view DOES see its cycle,
+      // proving the seed landed and the isolation assertion above isn't
+      // vacuously true because nothing was ever written.
+      const otherDeps = makeRenewalsDeps(otherTenant.ctx.slug);
+      const otherAgg = await otherDeps.cyclesRepo.countCyclesByExpiryMonth(
+        otherTenant.ctx.slug,
+        { nowIso: NOW_ISO, timezone: 'Asia/Bangkok' },
+      );
+      const otherJulyCount = otherAgg.months.find((m) => m.month === '2026-07')?.count ?? 0;
+      expect(otherJulyCount).toBe(1);
+    } finally {
+      await otherTenant.cleanup().catch(() => {});
+      await deleteTestUser(otherOwner).catch(() => {});
+    }
+  });
 });
