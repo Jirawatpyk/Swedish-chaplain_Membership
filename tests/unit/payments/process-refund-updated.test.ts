@@ -480,6 +480,38 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
   // SB-1 parent-recovery race + outer catch
   // -------------------------------------------------------------------------
 
+  it('found + pending + succeeded + lockForUpdate returns null (parent payment not found) → still reconciled_succeeded; recovery skipped, no payment flip, refund still finalized', async () => {
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeRefund({ status: 'pending' }),
+    );
+    // SB-1 defensive branch: the self-lock finds no parent payment row.
+    // Should be practically unreachable (a refund cannot exist without its
+    // parent payment), but the helper defends against it — see
+    // `_finalize-succeeded-refund.ts` `parent != null` guards.
+    vi.mocked(deps.paymentsRepo.lockForUpdate).mockResolvedValueOnce(null);
+
+    const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('reconciled_succeeded');
+    // `parent != null` guards the recovery flip — a null parent means the
+    // whole recovery `if` is skipped, so the payment row is NEVER touched.
+    expect(vi.mocked(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+    // The refund is still finalized: CN issued, refund row flipped, and
+    // `refund_succeeded` audited — NOT blocked by the missing parent.
+    expect(vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledTimes(1);
+    const succeededAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(succeededAudit).toBeDefined();
+    expect((succeededAudit![1].payload as { payment_next_status: string }).payment_next_status).toBe(
+      'partially_refunded',
+    );
+    expect(vi.mocked(paymentsMetrics.refundSucceededCount)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+  });
+
   it('found + pending + succeeded + payment-flip loses the expectedCurrentStatus race → still reconciled_succeeded (parent-recovery race warn, benign)', async () => {
     vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
       makeRefund({ status: 'pending' }),
