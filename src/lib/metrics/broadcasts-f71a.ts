@@ -214,6 +214,27 @@ export const broadcastsF71aMetrics = {
   },
 
   /**
+   * `broadcasts.recipient_set_drift_count{tenant}` — counter incremented when
+   * the dispatch cron observes the resolved recipient set having GROWN past
+   * the split-time coverage, so recipients beyond the last batch's range are
+   * excluded (bug #8 / #11). With the recipient-snapshot auto-heal in place
+   * this should sit at ~0: a non-zero rate means dispatch is falling back to
+   * re-resolution (split-time snapshot missing) AND the set grew since split.
+   * Emitted once per broadcast (from the last batch) — not once per batch.
+   * Alert: sustained rate > 0 over 1h → warn (snapshots not being written, or
+   * abnormal inter-cron churn); investigate the split cron's
+   * `recipient_snapshot_put_failed` logs.
+   */
+  recipientSetDriftCount(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_recipient_set_drift_count',
+        'F7.1a US1 — dispatch-time recipient set grew past split-time coverage (tail excluded)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.manual_retry_count{tenant,broadcast_id}` — counter
    * incremented when an admin invokes "retry failed batches" on a
    * `partially_sent` broadcast. Per FR-008d the 3-retry budget is
