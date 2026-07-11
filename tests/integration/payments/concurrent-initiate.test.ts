@@ -142,6 +142,9 @@ function makeRaceGateway(piId: string): {
       async createRefund() {
         throw new Error('not used in T136');
       },
+      async retrieveRefund() {
+        throw new Error('not used in T136');
+      },
     },
     counts,
   };

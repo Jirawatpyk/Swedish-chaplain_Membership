@@ -82,6 +82,25 @@ export interface CreatedRefund {
   readonly amountSatang: Satang;
 }
 
+/**
+ * PR-A Task A.8 (PCI-3) — read-only projection of a Stripe Refund,
+ * used by the Stripe-aware sweep (A.14) to reconcile a `refunds` row
+ * against Stripe's own state.
+ *
+ * **PCI SAQ-A allow-list**: ONLY these 5 fields. The raw Stripe
+ * `Refund` also carries `destination_details` (a card-network
+ * reference blob keyed by refund method) which MUST NEVER cross this
+ * boundary — see `stripe-gateway.ts` `retrieveRefund` for the
+ * projection site.
+ */
+export interface RetrievedRefund {
+  readonly id: string;                   // `re_…`
+  readonly status: string;               // 'pending' | 'succeeded' | 'failed' | 'canceled' | 'requires_action'
+  readonly chargeId: string | null;
+  readonly paymentIntentId: string | null;
+  readonly amountSatang: Satang;
+}
+
 import type { Result } from '@/lib/result';
 import type { Satang } from '@/lib/money';
 
@@ -120,4 +139,9 @@ export interface ProcessorGatewayPort {
     readonly idempotencyKey: string;
     readonly stripeAccount: string;
   }): Promise<Result<CreatedRefund, ProcessorGatewayError>>;
+
+  retrieveRefund(
+    refundId: string,
+    stripeAccount: string,
+  ): Promise<Result<RetrievedRefund, ProcessorGatewayError>>;
 }

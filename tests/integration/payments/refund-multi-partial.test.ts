@@ -132,6 +132,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
           amountSatang: asSatang(0n),
         }),
       ),
+      retrieveRefund: vi.fn(),
     },
     invoicingBridge: {
       getInvoiceForPayment: vi.fn(),
