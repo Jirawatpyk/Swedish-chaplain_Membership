@@ -54,6 +54,14 @@ type BroadcastFixture = {
   status: 'partially_sent' | 'sent' | 'draft';
   manualRetryCount: number;
   failedBatchIds: string[];
+  /**
+   * Per-batch auto-retry counter the failed manifests carry. On the REAL
+   * normal partially_sent path this is AUTO_RETRY_BUDGET (5) — auto-retry
+   * exhausted before roll-up marked the batch terminal. Default 0 preserves
+   * the original fixtures. (Bug #1 regression: at 5 the old `+1` wrote 6 and
+   * violated the CHECK the mock updateStatus below now enforces.)
+   */
+  failedBatchRetryCount?: number;
 };
 
 /**
@@ -65,7 +73,10 @@ type BroadcastFixture = {
  */
 function makeStubDeps(
   broadcast: BroadcastFixture,
-  options?: { readonly advisoryLockAcquired?: boolean },
+  options?: {
+    readonly advisoryLockAcquired?: boolean;
+    readonly updateStatusFails?: boolean;
+  },
 ): {
   emits: Array<{ eventType: string }>;
   manualRetryCountAfter: () => number;
@@ -120,7 +131,7 @@ function makeStubDeps(
             // that the use case MUST rotate on retry. The stub now
             // provides the field so the test can assert rotation.
             idempotencyKey: `broadcast-22222222-batch-${i}-attempt-0`,
-            retryCount: 0,
+            retryCount: broadcast.failedBatchRetryCount ?? 0,
           }));
         },
         async updateStatus(
@@ -129,6 +140,24 @@ function makeStubDeps(
           update: { status: string; retryCount?: number; idempotencyKey?: string },
           _tx?: unknown,
         ) {
+          if (options?.updateStatusFails) {
+            return {
+              ok: false as const,
+              error: { kind: 'storage_error' as const, detail: 'db blip' },
+            };
+          }
+          // Bug #1 regression: enforce the real DB CHECK
+          // `retry_count BETWEEN 0 AND 5` so a fixture at retry_count=5 catches
+          // the old `+1 → 6` overflow (which aborted the tx + 500'd the route).
+          if (
+            update.retryCount !== undefined &&
+            (update.retryCount < 0 || update.retryCount > 5)
+          ) {
+            return {
+              ok: false as const,
+              error: { kind: 'check_violation' as const },
+            };
+          }
           statusUpdates.push({ batchId: id as string, update });
           return { ok: true, value: {} };
         },
@@ -321,5 +350,66 @@ describe('retryFailedBatches contract (T033)', () => {
     expect(manualRetryCountAfter()).toBe(0);
     expect(statusUpdates).toHaveLength(0);
     expect(emits).toHaveLength(0);
+  });
+
+  // Bug #1 (2026-07-10) regression — on the NORMAL partially_sent path a
+  // failed batch already sits at retry_count = AUTO_RETRY_BUDGET (5). The old
+  // code bumped it to 6, violating the DB CHECK, aborting the tx and 500-ing
+  // the route (FR-008b unusable). The fix RESETS the per-batch counter to 0.
+  it('#1: failed batches at retry_count=5 (auto-retry exhausted) → manual retry SUCCEEDS + writes retryCount=0', async () => {
+    const { retryFailedBatches } = await importRetryUseCase();
+    const { deps, emits, statusUpdates } = makeStubDeps({
+      status: 'partially_sent',
+      manualRetryCount: 0,
+      failedBatchIds: ['batch-a', 'batch-b'],
+      failedBatchRetryCount: 5, // auto-retry budget exhausted
+    });
+
+    const result = await retryFailedBatches(deps, {
+      tenantId: tenant,
+      broadcastId,
+      actorUserId,
+    });
+
+    // Would previously FAIL: `+1 → 6` tripped the CHECK the mock now enforces.
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected success');
+    expect((result.value as { retriedBatchCount: number }).retriedBatchCount).toBe(2);
+    // Every requeue writes a FRESH auto-retry budget (0), never 6.
+    expect(statusUpdates).toHaveLength(2);
+    for (const u of statusUpdates) {
+      expect(u.update.retryCount).toBe(0);
+    }
+    // Both audits emitted — the tx committed cleanly.
+    expect(emits.find((e) => e.eventType === 'broadcast_retry_initiated')).toBeDefined();
+    expect(emits.find((e) => e.eventType === 'broadcast_retry_completed')).toBeDefined();
+  });
+
+  it('#1: a batch updateStatus failure fails the retry cleanly (server_error, no retry_completed audit)', async () => {
+    const { retryFailedBatches } = await importRetryUseCase();
+    const { deps, emits } = makeStubDeps(
+      {
+        status: 'partially_sent',
+        manualRetryCount: 0,
+        failedBatchIds: ['batch-x'],
+      },
+      { updateStatusFails: true },
+    );
+
+    const result = await retryFailedBatches(deps, {
+      tenantId: tenant,
+      broadcastId,
+      actorUserId,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe(
+      'retry_failed_batches.server_error',
+    );
+    // Bailed before the completed audit (the withTx rollback reverts the rest).
+    expect(
+      emits.find((e) => e.eventType === 'broadcast_retry_completed'),
+    ).toBeUndefined();
   });
 });

@@ -654,6 +654,62 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     ).toBeDefined();
   });
 
+  // ---- Bug #13: audience grew past the cap since submit ----------------
+  it('#13: audience grew past the 5,000 cap since submit → failed reason "audience_too_large" (NOT mislabelled empty)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway();
+    // 5,001 distinct recipients resolve now (e.g. a bulk member import landed
+    // between submit and this dispatch tick) → resolveSegmentRecipients
+    // returns broadcast_audience_too_large.
+    const bigAudience = Array.from({ length: 5001 }, (_, i) =>
+      recipient(`m-${i}`, `u${i}@example.com`),
+    );
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: bigAudience,
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(new Set()),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Bug #13: previously ALL resolve failures returned
+      // broadcast_audience_post_suppression_empty — mislabelling "too large".
+      expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+      if (result.error.kind === 'broadcast_failed_to_dispatch') {
+        expect(result.error.reason).toBe('audience_too_large');
+      }
+    }
+    expect(gw.audienceCalls).toHaveLength(0);
+    // The audit payload reason reflects "too large", not "empty".
+    const failAudit = audit.emits.find(
+      (e) => e.eventType === 'broadcast_failed_to_dispatch',
+    );
+    expect(failAudit).toBeDefined();
+    expect((failAudit?.payload as { reason?: string })?.reason).toBe(
+      'audience_too_large',
+    );
+  });
+
   // ---- Bridge throw on requesting-member primary lookup (W2-05) ------
 
   it('getMemberPrimaryContact throws โ’ dispatch.server_error, no transition, no audit (retried next tick)', async () => {

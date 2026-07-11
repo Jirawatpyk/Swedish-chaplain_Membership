@@ -155,6 +155,130 @@ export async function processWebhookEvent(
         // race on tenant rebind would surface here. Treat as unknown.
         return ok({ kind: 'unknown_broadcast' as const });
       }
+
+      // Bug #7 fix (2026-07-10): recipient-level suppression on hard-bounce /
+      // complaint is INDEPENDENT of the broadcast lifecycle (FR-027 — "once
+      // hard-bounced/complained, never email again"). Complaint feedback-loop
+      // and many hard-bounce notifications routinely arrive hours-to-days
+      // AFTER the broadcast reaches a terminal status, so the suppression
+      // cascade must be reachable from the terminal branch too — not only
+      // the non-terminal switch. Extracted as a closure so ALL THREE call
+      // sites — the terminal branch AND the non-terminal `bounced`/`complained`
+      // switch cases — share ONE implementation. The member-halt cascade +
+      // completion check remain lifecycle-scoped and are NOT invoked here.
+      const applySuppressionCascade = async (): Promise<boolean> => {
+        const isHardBounce =
+          event.data.status === 'bounced' && event.data.bounceType === 'hard';
+        const isComplaint = event.data.status === 'complained';
+        if (!isHardBounce && !isComplaint) return false;
+
+        const reason = isHardBounce ? 'hard_bounce' : 'complaint';
+        const suppressionInput: NewSuppressionInput = {
+          tenantId,
+          emailLower: recipientLower.value,
+          memberId: null,
+          reason,
+          reasonText: event.data.errorMessage ?? null,
+          sourceBroadcastId: broadcastId,
+          sourceTokenHash: null,
+        };
+        const sup = await deps.marketingUnsubscribes.upsert(
+          tx,
+          suppressionInput,
+        );
+        if (isComplaint) {
+          await deps.audit.emit(
+            tx,
+            f7Audit({
+              eventType: 'broadcast_complaint_received',
+              tenantId,
+              actorUserId: 'system:resend-webhook',
+              summary: `Complaint recorded on broadcast ${broadcastId}`,
+              payload: {
+                broadcastId,
+                memberId: fresh.requestedByMemberId,
+                recipientEmailHashed: hashRecipient(
+                  tenantId,
+                  recipientLower.value,
+                ),
+              },
+              requestId: input.requestId,
+            }),
+          );
+        }
+        await deps.audit.emit(
+          tx,
+          f7Audit({
+            eventType: 'broadcast_suppression_applied',
+            tenantId,
+            actorUserId: 'system:resend-webhook',
+            summary: `${isHardBounce ? 'Hard bounce' : 'Complaint'} suppressed recipient on broadcast ${broadcastId}`,
+            payload: {
+              broadcastId,
+              recipientEmailHashed: hashRecipient(
+                tenantId,
+                recipientLower.value,
+              ),
+              reason,
+              // Preserve the hard-bounce audit's bounceType field so the
+              // non-terminal switch can route through this same closure.
+              ...(isHardBounce && {
+                bounceType: event.data.bounceType ?? null,
+              }),
+            },
+            requestId: input.requestId,
+          }),
+        );
+        return sup.wasNew;
+      };
+
+      // Bug #10 fix (2026-07-10): `email.unsubscribed` reaches the F7 MVP
+      // (single-audience) path when a recipient uses Resend's managed
+      // unsubscribe link. It is NOT a `broadcast_deliveries` enum value, so
+      // it must be handled BEFORE the delivery-row insert (which would fail
+      // the pg enum) — we record it as a recipient-level suppression instead.
+      // Multi-batch broadcasts never reach here: the route increments the
+      // per-batch `unsubscribed_count` and returns early. Idempotent — the
+      // suppression upsert's `wasNew` gates the audit emit against replays.
+      if (event.data.status === 'unsubscribed') {
+        const sup = await deps.marketingUnsubscribes.upsert(tx, {
+          tenantId,
+          emailLower: recipientLower.value,
+          memberId: null,
+          reason: 'recipient_initiated',
+          reasonText: null,
+          sourceBroadcastId: broadcastId,
+          sourceTokenHash: null,
+        });
+        if (sup.wasNew) {
+          await deps.audit.emit(
+            tx,
+            f7Audit({
+              eventType: 'broadcast_suppression_applied',
+              tenantId,
+              actorUserId: 'system:resend-webhook',
+              summary: `Recipient unsubscribed via Resend on broadcast ${broadcastId}`,
+              payload: {
+                broadcastId,
+                recipientEmailHashed: hashRecipient(
+                  tenantId,
+                  recipientLower.value,
+                ),
+                reason: 'recipient_initiated',
+              },
+              requestId: input.requestId,
+            }),
+          );
+        }
+        return ok({
+          kind: 'recorded' as const,
+          broadcastId,
+          transitionedToSent: false,
+          suppressionAdded: sup.wasNew,
+          memberHalted: false,
+        });
+      }
+
       if (
         fresh.status === 'sent' ||
         fresh.status === 'cancelled' ||
@@ -204,6 +328,11 @@ export async function processWebhookEvent(
               requestId: input.requestId,
             }),
           );
+          // Bug #7 fix: apply recipient suppression for a genuinely-new late
+          // hard-bounce/complaint event even though the broadcast is already
+          // terminal (FR-027). Idempotent — gated on the delivery-row insert
+          // above so replays never re-suppress or re-audit.
+          await applySuppressionCascade();
         }
         return ok({
           kind: 'broadcast_terminal' as const,
@@ -267,88 +396,19 @@ export async function processWebhookEvent(
           );
           break;
         case 'bounced':
-          if (event.data.bounceType === 'hard') {
-            const suppressionInput: NewSuppressionInput = {
-              tenantId,
-              emailLower: recipientLower.value,
-              memberId: null,
-              reason: 'hard_bounce',
-              reasonText: event.data.errorMessage ?? null,
-              sourceBroadcastId: broadcastId,
-              sourceTokenHash: null,
-            };
-            const sup = await deps.marketingUnsubscribes.upsert(
-              tx,
-              suppressionInput,
-            );
-            if (sup.wasNew) suppressionAdded = true;
-            await deps.audit.emit(
-              tx,
-              f7Audit({
-                eventType: 'broadcast_suppression_applied',
-                tenantId,
-                actorUserId: 'system:resend-webhook',
-                summary: `Hard bounce suppressed recipient on broadcast ${broadcastId}`,
-                payload: {
-                  broadcastId,
-                  recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
-                  reason: 'hard_bounce',
-                  bounceType: event.data.bounceType ?? null,
-                },
-                requestId: input.requestId,
-              }),
-            );
-          }
+          // Hard bounce → suppress via the shared cascade (it no-ops on soft
+          // bounces). Cleanup: was an inline copy of the suppression logic.
+          if (await applySuppressionCascade()) suppressionAdded = true;
           break;
         case 'soft_bounced':
           // Resend retries internally; no suppression cascade. Row is
           // recorded for diagnostics only.
           break;
         case 'complained': {
-          const suppressionInput: NewSuppressionInput = {
-            tenantId,
-            emailLower: recipientLower.value,
-            memberId: null,
-            reason: 'complaint',
-            reasonText: event.data.errorMessage ?? null,
-            sourceBroadcastId: broadcastId,
-            sourceTokenHash: null,
-          };
-          const sup = await deps.marketingUnsubscribes.upsert(
-            tx,
-            suppressionInput,
-          );
-          if (sup.wasNew) suppressionAdded = true;
-          await deps.audit.emit(
-            tx,
-            f7Audit({
-              eventType: 'broadcast_complaint_received',
-              tenantId,
-              actorUserId: 'system:resend-webhook',
-              summary: `Complaint recorded on broadcast ${broadcastId}`,
-              payload: {
-                broadcastId,
-                memberId: fresh.requestedByMemberId,
-                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
-              },
-              requestId: input.requestId,
-            }),
-          );
-          await deps.audit.emit(
-            tx,
-            f7Audit({
-              eventType: 'broadcast_suppression_applied',
-              tenantId,
-              actorUserId: 'system:resend-webhook',
-              summary: `Complaint suppressed recipient on broadcast ${broadcastId}`,
-              payload: {
-                broadcastId,
-                recipientEmailHashed: hashRecipient(tenantId, recipientLower.value),
-                reason: 'complaint',
-              },
-              requestId: input.requestId,
-            }),
-          );
+          // Suppress + emit complaint_received/suppression_applied via the
+          // shared cascade (cleanup: was an inline copy). The per-broadcast
+          // complaint-rate auto-halt below is lifecycle-scoped and stays here.
+          if (await applySuppressionCascade()) suppressionAdded = true;
           // Per-broadcast >5% complaint-rate auto-halt (Clarifications
           // Q14, B / SC-005 (b)). Computed against running aggregate
           // INSIDE the same tx so concurrent complaint events converge

@@ -18,6 +18,17 @@
 import type { BroadcastDeliveryStatus } from '../../domain/value-objects/delivery-status';
 
 /**
+ * Webhook-only status superset. Resend also emits `email.unsubscribed`,
+ * which is NOT one of the five `broadcast_deliveries.status` enum values
+ * (bug #10, 2026-07-10). It is carried through the verifier so the route's
+ * per-batch counter path can increment `unsubscribed_count`; on the F7 MVP
+ * single-audience path it is handled as a recipient-level suppression
+ * signal and is NEVER written to the `broadcast_deliveries` table (its
+ * enum has no `unsubscribed` value).
+ */
+export type WebhookEventStatus = BroadcastDeliveryStatus | 'unsubscribed';
+
+/**
  * Custom Error class with discriminated `kind` field — same pattern as
  * F5 `WebhookSignatureError`. Adapter throws this on verification
  * failure; the route handler catches it, emits
@@ -58,7 +69,7 @@ export interface VerifiedBroadcastEvent {
     readonly broadcastId: string;
     readonly recipientEmail: string;
     readonly resendMessageId: string;
-    readonly status: BroadcastDeliveryStatus;
+    readonly status: WebhookEventStatus;
     readonly errorMessage?: string;
     readonly bounceType?: 'hard' | 'soft';
   };

@@ -1127,6 +1127,207 @@ describe('process-webhook-event โ€” defence-in-depth checks', () => {
   });
 });
 
+describe('process-webhook-event — bug fixes 2026-07-10 (#7 late suppression, #10 unsubscribed)', () => {
+  it('#7: late hard bounce on an already-sent broadcast STILL suppresses (FR-027) + suppression audit', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({
+        status: 'sent',
+        sentAt: FROZEN_NOW,
+        quotaYearConsumed: 2026,
+        quotaConsumedAt: FROZEN_NOW,
+      }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true], // genuinely-new late event
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 0,
+        bounced: 1,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('bounced', { bounceType: 'hard' }),
+        requestId: null,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.kind).toBe('broadcast_terminal');
+    // Core regression: suppression MUST fire even though terminal.
+    expect(unsub.upserts).toHaveLength(1);
+    expect(unsub.upserts[0]!.reason).toBe('hard_bounce');
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBeDefined();
+    // No lifecycle mutation on the terminal path.
+    expect(broadcasts.transitions).toHaveLength(0);
+  });
+
+  it('#7: late complaint on a cancelled broadcast suppresses + complaint_received (no member halt)', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({
+        status: 'cancelled',
+        cancelledAt: FROZEN_NOW,
+      }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 0,
+        bounced: 0,
+        softBounced: 0,
+        complained: 1,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('complained'),
+        requestId: null,
+      },
+    );
+
+    expect(unsub.upserts).toHaveLength(1);
+    expect(unsub.upserts[0]!.reason).toBe('complaint');
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_complaint_received'),
+    ).toBeDefined();
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBeDefined();
+    // Member-halt cascade is lifecycle-scoped — must NOT run on a terminal row.
+    expect(members.haltCalls).toHaveLength(0);
+  });
+
+  it('#7: idempotent replay of a late bounce (inserted=false) does NOT re-suppress or re-audit', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ status: 'sent', sentAt: FROZEN_NOW }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [false], // replay
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 0,
+        bounced: 1,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      {
+        broadcastId,
+        event: buildEvent('bounced', { bounceType: 'hard' }),
+        requestId: null,
+      },
+    );
+
+    expect(unsub.upserts).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
+
+  it('#10: email.unsubscribed (MVP path) suppresses recipient WITHOUT writing a delivery row', async () => {
+    const broadcasts = makeBroadcastsRepo({ currentBroadcast: baseBroadcast() });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 0,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members = makeMembersBridge();
+
+    const unsubEvent: VerifiedBroadcastEvent = {
+      id: 'msg_unsub_1',
+      type: 'email.unsubscribed',
+      createdAtUnixSeconds: Math.floor(FROZEN_NOW.getTime() / 1000),
+      data: {
+        broadcastId: 'rsb-1',
+        recipientEmail: 'alice@example.com',
+        resendMessageId: 'mid-1',
+        status: 'unsubscribed',
+      },
+    };
+
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members.port,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+      },
+      { broadcastId, event: unsubEvent, requestId: null },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.kind).toBe('recorded');
+    // Suppression recorded as recipient_initiated...
+    expect(unsub.upserts).toHaveLength(1);
+    expect(unsub.upserts[0]!.reason).toBe('recipient_initiated');
+    expect(
+      audit.emits.find((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBeDefined();
+    // ...but NO broadcast_deliveries row (unsubscribed is not in that enum).
+    expect(deliveries.upserts).toHaveLength(0);
+    expect(broadcasts.transitions).toHaveLength(0);
+  });
+});
+
 describe('helpers: shape conformance', () => {
   it('asBroadcastDeliveryId rejects malformed uuid', () => {
     expect(() => asBroadcastDeliveryId('not-a-uuid')).not.toThrow();

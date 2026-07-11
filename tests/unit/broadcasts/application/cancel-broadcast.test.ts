@@ -134,6 +134,13 @@ interface RepoOpts {
   readonly applyTransitionThrows?: boolean;
   readonly refreshAfterRace?: Broadcast | null;
   readonly withTxThrows?: Error | string;
+  /**
+   * Bug #5 — observe whether the withTx callback committed (returned) or
+   * rolled back (threw). Mirrors db.transaction semantics so a test can prove
+   * the concurrency path forces a ROLLBACK rather than committing partial
+   * batch halts.
+   */
+  readonly onTxOutcome?: (outcome: 'committed' | 'rolled_back') => void;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -147,7 +154,16 @@ function makeRepo(opts: RepoOpts): {
     port: {
       async withTx(fn) {
         if (opts.withTxThrows) throw opts.withTxThrows;
-        return fn(null);
+        // Mimic db.transaction: commit on normal return, rollback + rethrow
+        // on throw. Lets the bug #5 test distinguish the two outcomes.
+        try {
+          const result = await fn(null);
+          opts.onTxOutcome?.('committed');
+          return result;
+        } catch (e) {
+          opts.onTxOutcome?.('rolled_back');
+          throw e;
+        }
       },
       async insertDraft() {
         throw new Error('not used');
@@ -568,6 +584,54 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     if (!result.ok && result.error.kind === 'broadcast_concurrent_action_blocked') {
       expect(result.error.observedStatus).toBe('unknown');
     }
+  });
+
+  // Bug #5 (2026-07-10) — on the hasBatches (split-broadcast) path, batch
+  // halts are applied IN-TX before the row transition. A concurrent mutation
+  // that makes applyTransition throw MUST roll the halts back, not commit
+  // them (the old `return err(...)` from inside withTx committed the halts
+  // while the row transition never happened — "M batches cancelled + still
+  // sending"). This proves the fix forces a rollback.
+  it('#5: concurrency on the hasBatches path forces a ROLLBACK (batch halts reverted, not committed)', async () => {
+    const audit = makeAudit();
+    const txOutcomes: Array<'committed' | 'rolled_back'> = [];
+    const markCancelledCalls: Array<readonly string[]> = [];
+    const repo = makeRepo({
+      existing: makeBroadcast('sending'), // split broadcast in-flight
+      applyTransitionThrows: true, // concurrent worker moved it off 'sending'
+      refreshAfterRace: makeBroadcast('sent'),
+      onTxOutcome: (o) => txOutcomes.push(o),
+    });
+    const batchManifests = {
+      async findPendingByBroadcast() {
+        return [{ id: 'b1' }, { id: 'b2' }];
+      },
+      async markCancelled(_t: unknown, ids: readonly string[]) {
+        markCancelledCalls.push(ids);
+        return ids.length;
+      },
+    } as unknown as NonNullable<
+      Parameters<typeof cancelBroadcast>[0]['batchManifests']
+    >;
+
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: repo.port, batchManifests, audit: audit.port, clock },
+      baseInput,
+    );
+
+    // Still surfaces the 409 with the drifted status.
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_concurrent_action_blocked');
+      if (result.error.kind === 'broadcast_concurrent_action_blocked') {
+        expect(result.error.observedStatus).toBe('sent');
+      }
+    }
+    // The halts WERE attempted in-tx...
+    expect(markCancelledCalls).toEqual([['b1', 'b2']]);
+    // ...but the tx ROLLED BACK (the fix) — it never committed the
+    // "M batches cancelled + broadcast still sending/sent" half-state.
+    expect(txOutcomes).toEqual(['rolled_back']);
   });
 
   // ---- Audit payload shape --------------------------------------------

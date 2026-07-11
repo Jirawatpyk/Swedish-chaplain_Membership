@@ -425,6 +425,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         broadcastId,
         eventType: batchEventType,
         recipientEmailHashed,
+        // Bug #10 (code-review) — plaintext lower + bounceType so the batch
+        // path can suppress hard-bounce/complaint/unsubscribe recipients.
+        recipientEmailLower: verified.data.recipientEmail,
+        ...(verified.data.bounceType !== undefined && {
+          bounceType: verified.data.bounceType,
+        }),
         resendEventId: verified.id,
         requestId,
       });

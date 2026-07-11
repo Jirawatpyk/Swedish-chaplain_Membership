@@ -231,14 +231,47 @@ export async function reclaimOrphanedAudiences(
 
   const uniqueIds: ReadonlyArray<BroadcastId> = [...new Set(candidates.map((c) => c.broadcastId))];
 
-  let existing: ReadonlySet<BroadcastId>;
-  try {
-    existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
-  } catch (e) {
-    return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+  let orphans: Array<{ audienceId: string; broadcastId: BroadcastId }>;
+  if (deps.broadcastsRepo.referencedAudienceIdsForBroadcasts) {
+    // Bug #16 fix (2026-07-10, revised after code-review): an audience is
+    // orphaned when EITHER (a) its broadcast row is GONE, OR (b) the row exists
+    // but references this audience NOWHERE — not in broadcasts.resend_audience_id
+    // AND not in any of the broadcast's batch_manifests.provider_audience_id.
+    // The old row-existence-only check kept the crash-before-attach orphan
+    // forever (row survived with a NULL/stale audience ref while the next tick
+    // minted + persisted a new audience). CRITICAL: the referenced set MUST
+    // include the per-batch (F7.1a US1 split) audiences — on the split path
+    // broadcasts.resend_audience_id stays NULL and the real audience ids live
+    // only in the manifests, so comparing against a single id would delete a
+    // live split broadcast's in-use batch audiences. The grace window still
+    // protects any freshly-created (in-flight) audience.
+    let referencedByBroadcast: ReadonlyMap<BroadcastId, ReadonlySet<string>>;
+    try {
+      referencedByBroadcast =
+        await deps.broadcastsRepo.referencedAudienceIdsForBroadcasts(
+          deps.tenant.slug,
+          uniqueIds,
+        );
+    } catch (e) {
+      return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+    }
+    orphans = candidates.filter((c) => {
+      const referenced = referencedByBroadcast.get(c.broadcastId);
+      if (referenced === undefined) return true; // broadcast row is gone
+      return !referenced.has(c.audienceId); // row references this audience nowhere
+    });
+  } else {
+    // Legacy fallback (row-existence only) — misses the crash-before-attach
+    // orphans above. Retained for BroadcastsRepo fixtures that don't stub the
+    // new method; production always wires it.
+    let existing: ReadonlySet<BroadcastId>;
+    try {
+      existing = await deps.broadcastsRepo.existingBroadcastIds(deps.tenant.slug, uniqueIds);
+    } catch (e) {
+      return err({ kind: 'reclaim.server_error', message: toSafeMessage(e) });
+    }
+    orphans = candidates.filter((c) => !existing.has(c.broadcastId));
   }
-
-  const orphans = candidates.filter((c) => !existing.has(c.broadcastId));
   const orphaned = orphans.length;
 
   // -------------------------------------------------------------------------

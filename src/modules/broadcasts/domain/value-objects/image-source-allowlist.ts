@@ -97,7 +97,15 @@ export function extractImgSources(
     .replace(/<style\b[\s\S]*?<\/style>/gi, '');
 
   const out: Array<{ src: string; alt?: string }> = [];
-  const imgRe = /<img\b([^>]*?)\/?>/gi;
+  // Bug #2 fix (2026-07-10): the attribute capture must skip a literal '>'
+  // that appears INSIDE a quoted attribute value, otherwise a preceding
+  // attr such as alt="a>b" truncates the tag before the extractor reaches
+  // `src` — silently hiding a non-allowlisted image source from the FR-011
+  // allowlist validator (DOMPurify serialisation does NOT escape '>' inside
+  // attribute values). Each attribute position matches exactly one branch
+  // (a double-quoted run, a single-quoted run, or a non-quote/non-'>' char),
+  // so the alternation cannot ambiguously backtrack.
+  const imgRe = /<img\b((?:[^>"']|"[^"]*"|'[^']*')*?)\/?>/gi;
   let match: RegExpExecArray | null;
   while ((match = imgRe.exec(stripped)) !== null) {
     const attrs = match[1] ?? '';

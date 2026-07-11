@@ -619,6 +619,8 @@ export function makeApplyBatchWebhookEventDeps(
     batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
+    // Bug #10 (code-review) — batch webhook path suppresses recipients too.
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
   };
 }
 

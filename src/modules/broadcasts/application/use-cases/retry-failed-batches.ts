@@ -240,16 +240,35 @@ export async function retryFailedBatches(
       // `rotateForManualRetry` (single source of truth for retry-path
       // namespaces).
       const rotatedKey = rotateForManualRetry(batch.idempotencyKey, retryAttempt);
-      await deps.batchManifests.updateStatus(
+      // Bug #1 fix (2026-07-10): RESET the per-batch auto-retry counter to 0
+      // on manual retry — do NOT bump it. On the normal partially_sent path a
+      // failed batch already sits at retry_count = AUTO_RETRY_BUDGET (5), so a
+      // `+ 1` wrote 6, violating the `retry_count <= 5` CHECK, aborting the
+      // whole withTx (rolling back the manual_retry_count increment + audit)
+      // and 500-ing the route — FR-008b (manual retry of a normally-exhausted
+      // partial broadcast) was unusable. Manual attempts are tracked
+      // SEPARATELY on broadcasts.manual_retry_count (capped at
+      // MANUAL_RETRY_BUDGET); requeuing with a fresh auto-retry budget (0) is
+      // the correct semantic and keeps the batch inside the CHECK.
+      const updated = await deps.batchManifests.updateStatus(
         tenantSlug,
         batch.id,
         {
           status: 'pending',
-          retryCount: (batch.retryCount ?? 0) + 1,
+          retryCount: 0,
           idempotencyKey: rotatedKey,
         },
         tx,
       );
+      if (!updated.ok) {
+        // Fail the whole retry cleanly rather than continuing on a possibly-
+        // aborted tx (the next statement would throw opaquely). Returning err
+        // from the withTx callback rolls back the increment + initiated audit.
+        return err({
+          kind: 'retry_failed_batches.server_error',
+          message: `batch ${batch.id} requeue failed: ${updated.error.kind}`,
+        });
+      }
     }
 
     // 6. Emit `broadcast_retry_completed` — same tx so the entire

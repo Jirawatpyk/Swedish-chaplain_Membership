@@ -35,6 +35,25 @@ export type NotificationLocale = Locale;
 
 const MAX_REASON_LENGTH = 500;
 
+/**
+ * Bug #5 (2026-07-10) — thrown from the withTx callback to force a tx
+ * ROLLBACK when a concurrent mutation is detected AFTER the batch halts were
+ * already applied in the same tx. `return err(...)` from the callback is a
+ * NORMAL return that COMMITS the halts while the broadcast-row transition
+ * never happened — defeating the F-21 halt-before-transition atomicity and
+ * leaving "M batches cancelled + broadcast still sending/sent". Rethrowing
+ * this sentinel makes `db.transaction` roll the halts back with the
+ * (never-applied) transition; the outer catch maps it to the
+ * `broadcast_concurrent_action_blocked` 409. Carries the drifted status for
+ * the response payload.
+ */
+class CancelConcurrentMutationSignal extends Error {
+  constructor(public readonly observedStatus: string) {
+    super('cancel concurrent mutation — rolling back');
+    this.name = 'CancelConcurrentMutationSignal';
+  }
+}
+
 export type CancelActor =
   | { readonly kind: 'member'; readonly memberId: string; readonly userId: string }
   | { readonly kind: 'admin'; readonly userId: string };
@@ -299,10 +318,12 @@ export async function cancelBroadcast(
           deps.tenant.slug,
           input.broadcastId,
         );
-        return err({
-          kind: 'broadcast_concurrent_action_blocked',
-          observedStatus: refresh?.status ?? 'unknown',
-        });
+        // Bug #5 fix: DO NOT `return err(...)` here — a normal return COMMITS
+        // the tx, leaving the earlier `markCancelled` batch halts applied
+        // while the broadcast-row transition never happened. Rethrow a
+        // sentinel so `db.transaction` ROLLS BACK (reverting the halts with
+        // the never-applied transition); the outer catch maps it to the 409.
+        throw new CancelConcurrentMutationSignal(refresh?.status ?? 'unknown');
       }
 
       await deps.audit.emit(tx, {
@@ -363,6 +384,15 @@ export async function cancelBroadcast(
       return ok({ broadcast: cancelled, reservationReleased: true as const });
     });
   } catch (e) {
+    // Bug #5: the concurrency signal was rethrown from inside withTx to force
+    // the rollback (batch halts + never-applied transition reverted). Map it
+    // to the 409 here — NOT to a generic server_error.
+    if (e instanceof CancelConcurrentMutationSignal) {
+      return err({
+        kind: 'broadcast_concurrent_action_blocked',
+        observedStatus: e.observedStatus,
+      });
+    }
     return err({
       kind: 'cancel.server_error',
       message: e instanceof Error ? e.message : 'unknown error',

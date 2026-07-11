@@ -47,21 +47,25 @@ function rowToSuppression(row: MarketingUnsubscribeRow): MarketingUnsubscribe {
   };
 }
 
-export function makeDrizzleMarketingUnsubscribesRepo(
-  tenantId: string,
-): MarketingUnsubscribesRepo {
-  const ctx = asTenantContext(tenantId);
-
-  return {
-    async upsert(
-      txUnknown,
-      input: NewSuppressionInput,
-    ): Promise<{
-      readonly wasNew: boolean;
-      readonly suppression: MarketingUnsubscribe;
-    }> {
-      const tx = txUnknown as TenantTx;
-      const result = (await tx.execute(sql`
+/**
+ * Shared idempotent suppression upsert — the strength-precedence + bug #11
+ * reason_text handling — so BOTH the caller-tx `upsert` (MVP webhook + public
+ * unsubscribe paths) and the self-tx `upsertStandalone` (bug #10 batch-webhook
+ * path, which has no caller tx) run byte-identical SQL from one place.
+ *
+ * Strength order (higher wins): complaint(4) > hard_bounce(3) > admin_added(2)
+ * > recipient_initiated(1). Never DOWNGRADE a stronger classification. A strict
+ * upgrade takes the new reason's text (even NULL); equal strength keeps the
+ * latest non-null text.
+ */
+async function executeSuppressionUpsert(
+  tx: TenantTx,
+  input: NewSuppressionInput,
+): Promise<{
+  readonly wasNew: boolean;
+  readonly suppression: MarketingUnsubscribe;
+}> {
+  const result = (await tx.execute(sql`
         INSERT INTO marketing_unsubscribes
           (tenant_id, email_lower, member_id, reason, reason_text,
            source_broadcast_id, source_token_hash)
@@ -70,14 +74,64 @@ export function makeDrizzleMarketingUnsubscribesRepo(
            ${input.reason}::marketing_unsubscribe_reason, ${input.reasonText},
            ${input.sourceBroadcastId}, ${input.sourceTokenHash})
         ON CONFLICT (tenant_id, email_lower) DO UPDATE
-          SET reason = EXCLUDED.reason,
-              reason_text = EXCLUDED.reason_text,
+          SET reason = CASE
+                WHEN (CASE EXCLUDED.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                     >= (CASE marketing_unsubscribes.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                THEN EXCLUDED.reason
+                ELSE marketing_unsubscribes.reason
+              END,
+              reason_text = CASE
+                -- Strict UPGRADE (new reason stronger): take the NEW reason's
+                -- text — even if NULL. Keeping the old weaker reason's text
+                -- would mislabel a stronger classification (e.g. a spam
+                -- complaint annotated with the prior hard-bounce SMTP
+                -- diagnostic) — code-review fix 2026-07-11.
+                WHEN (CASE EXCLUDED.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                     > (CASE marketing_unsubscribes.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                THEN EXCLUDED.reason_text
+                -- EQUAL strength: latest non-null text wins, keep prior if the
+                -- new event carries none.
+                WHEN (CASE EXCLUDED.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                     = (CASE marketing_unsubscribes.reason
+                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                THEN COALESCE(EXCLUDED.reason_text, marketing_unsubscribes.reason_text)
+                -- DOWNGRADE: keep the stronger prior reason + its text.
+                ELSE marketing_unsubscribes.reason_text
+              END,
               source_token_hash = COALESCE(EXCLUDED.source_token_hash, marketing_unsubscribes.source_token_hash)
         RETURNING *, (xmax = 0) AS was_new
       `)) as unknown as Array<MarketingUnsubscribeRow & { was_new: boolean }>;
-      const row = result[0];
-      if (!row) throw new Error('marketing_unsubscribes upsert returned no row');
-      return { wasNew: row.was_new, suppression: rowToSuppression(row) };
+  const row = result[0];
+  if (!row) throw new Error('marketing_unsubscribes upsert returned no row');
+  return { wasNew: row.was_new, suppression: rowToSuppression(row) };
+}
+
+export function makeDrizzleMarketingUnsubscribesRepo(
+  tenantId: string,
+): MarketingUnsubscribesRepo {
+  const ctx = asTenantContext(tenantId);
+
+  return {
+    async upsert(txUnknown, input: NewSuppressionInput) {
+      return executeSuppressionUpsert(txUnknown as TenantTx, input);
+    },
+
+    async upsertStandalone(input: NewSuppressionInput) {
+      // Bug #10 (code-review, 2026-07-11) — the batch webhook path
+      // (applyBatchWebhookEvent) has no caller tx; open our own tenant-scoped
+      // tx so multi-batch broadcasts suppress recipients too (FR-027/FR-030).
+      return runInTenant(ctx, (tx) => executeSuppressionUpsert(tx, input));
     },
 
     async findByEmailLower(

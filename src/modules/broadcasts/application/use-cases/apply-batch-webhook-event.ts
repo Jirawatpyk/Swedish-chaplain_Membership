@@ -51,6 +51,26 @@ import type {
 } from '../ports/batch-manifests-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
+import type { MarketingUnsubscribeReason } from '../../domain/marketing-unsubscribe';
+import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
+import { asBroadcastId } from '../../domain/broadcast';
+
+/**
+ * Bug #10 (code-review) — map a batch webhook event to the suppression reason
+ * it triggers, or null when it does not suppress. Only HARD bounces suppress
+ * (soft bounces are transient — Resend retries). No nested ternary
+ * (CLAUDE.md forbids them).
+ */
+function suppressionReasonFor(
+  eventType: BatchWebhookEventType,
+  bounceType: 'hard' | 'soft' | undefined,
+): MarketingUnsubscribeReason | null {
+  if (eventType === 'unsubscribed') return 'recipient_initiated';
+  if (eventType === 'complained') return 'complaint';
+  if (eventType === 'bounced' && bounceType === 'hard') return 'hard_bounce';
+  return null;
+}
 
 export type BatchWebhookEventType =
   | 'delivered'
@@ -76,6 +96,9 @@ export interface ApplyBatchWebhookEventDeps {
   readonly batchManifests: BatchManifestsPort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  // Bug #10 (code-review) — the batch path must ALSO suppress hard-bounce /
+  // complaint / unsubscribe recipients (the MVP path already does).
+  readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
 }
 
 export interface ApplyBatchWebhookEventInput {
@@ -85,6 +108,14 @@ export interface ApplyBatchWebhookEventInput {
   readonly broadcastId: string;
   readonly eventType: BatchWebhookEventType;
   readonly recipientEmailHashed: string;
+  /**
+   * Plaintext lowercased recipient email — required for the suppression write
+   * (marketing_unsubscribes is keyed on email_lower). NOT logged/audited raw
+   * (audits use `recipientEmailHashed`).
+   */
+  readonly recipientEmailLower: string;
+  /** Present on `bounced` events — only `hard` bounces suppress. */
+  readonly bounceType?: 'hard' | 'soft';
   readonly resendEventId: string;
   readonly requestId?: string | null;
 }
@@ -208,6 +239,61 @@ export async function applyBatchWebhookEvent(
     },
     requestId: input.requestId ?? null,
   });
+
+  // Bug #10 fix (code-review, 2026-07-11) — recipient-level suppression on the
+  // MULTI-BATCH path. The MVP `processWebhookEvent` suppresses hard-bounce /
+  // complaint / unsubscribe; this parallel path previously only COUNTED them,
+  // leaving multi-batch recipients re-emailable by the next broadcast
+  // (FR-027/FR-030 violation). We reach here only for a genuinely-new event
+  // (the `duplicate` short-circuit above provides idempotency), so a single
+  // suppression upsert per event is correct. `upsertStandalone` opens its own
+  // tenant tx (this path has no caller tx). Best-effort: a suppression-write
+  // failure MUST NOT 500 the webhook (the counter already committed; Svix would
+  // otherwise retry) — log it for ops.
+  const suppressionReason = suppressionReasonFor(input.eventType, input.bounceType);
+  if (suppressionReason !== null && deps.marketingUnsubscribes.upsertStandalone) {
+    try {
+      const sup = await deps.marketingUnsubscribes.upsertStandalone({
+        tenantId: input.tenantId,
+        emailLower: unsafeBrandEmailLower(
+          input.recipientEmailLower.toLowerCase().trim(),
+        ),
+        memberId: null,
+        reason: suppressionReason,
+        reasonText: null,
+        sourceBroadcastId: asBroadcastId(input.broadcastId),
+        sourceTokenHash: null,
+      });
+      if (sup.wasNew) {
+        await safeAuditEmit(deps.audit, null, {
+          tenantId: input.tenantId,
+          eventType: 'broadcast_suppression_applied',
+          actorUserId: 'system:resend-webhook',
+          summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId}: ${suppressionReason} suppressed recipient`,
+          payload: {
+            broadcastId: input.broadcastId,
+            batchManifestId: input.batchManifestId,
+            batchIndex: input.batchIndex,
+            reason: suppressionReason,
+            recipientEmailHashed: input.recipientEmailHashed,
+            resendEventId: input.resendEventId,
+          },
+          requestId: input.requestId ?? null,
+        });
+      }
+    } catch (e) {
+      logger.error(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: input.tenantId,
+          broadcastId: input.broadcastId,
+          batchManifestId: input.batchManifestId,
+          reason: suppressionReason,
+        },
+        'broadcasts.batch.suppression_upsert_failed',
+      );
+    }
+  }
 
   return ok(undefined);
 }

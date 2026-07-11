@@ -225,6 +225,12 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
                 broadcastTemplates.name,
                 broadcastTemplates.locale,
               ],
+              // Bug #14 fix: the unique index is now PARTIAL
+              // (WHERE deleted_at IS NULL); the ON CONFLICT arbiter MUST
+              // carry the same predicate to match it, otherwise a name that
+              // collides only with a SOFT-DELETED row would (correctly) NOT
+              // conflict — freeing the name for reuse.
+              where: sql`${broadcastTemplates.deletedAt} IS NULL`,
             })
             .returning();
           if (inserted.length === 0) {

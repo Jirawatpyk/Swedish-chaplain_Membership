@@ -197,6 +197,19 @@ export async function saveDraft(
             broadcastId: input.draftId,
           });
         }
+        // Bug #9 fix (2026-07-10): enforce per-member draft ownership. RLS
+        // scopes to the tenant, NOT the individual member, and SweCham runs
+        // ~95 members in one tenant — without this check a member could
+        // overwrite a sibling's private draft by supplying its id. Mirror
+        // the DELETE / GET / snapshot siblings (which all enforce
+        // `requestedByMemberId === memberId`) and return not_found so the
+        // route maps to 404 rather than leaking the draft's existence.
+        if (existing.requestedByMemberId !== input.memberId) {
+          return err({
+            kind: 'broadcast_not_found',
+            broadcastId: input.draftId,
+          });
+        }
         if (existing.status !== 'draft') {
           return err({
             kind: 'broadcast_immutable_after_submit',

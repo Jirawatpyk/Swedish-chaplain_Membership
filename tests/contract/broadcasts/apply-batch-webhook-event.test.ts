@@ -16,6 +16,7 @@ import type { BatchWebhookEventType } from '@/modules/broadcasts/application/use
 interface StubDeps {
   readonly emits: Array<{ eventType: string; payload?: Record<string, unknown> }>;
   readonly increments: Array<{ field: string }>;
+  readonly suppressions: Array<{ reason: string; emailLower: string }>;
   readonly deps: unknown;
 }
 
@@ -23,14 +24,17 @@ function makeStubDeps(
   opts: {
     incrementFails?: 'not_found' | 'storage_error';
     duplicate?: boolean;
+    suppressionWasNew?: boolean;
   } = {},
 ): StubDeps {
   const emits: Array<{ eventType: string; payload?: Record<string, unknown> }> = [];
   const increments: Array<{ field: string }> = [];
+  const suppressions: Array<{ reason: string; emailLower: string }> = [];
 
   return {
     emits,
     increments,
+    suppressions,
     deps: {
       batchManifests: {
         async incrementCounter(
@@ -58,6 +62,16 @@ function makeStubDeps(
         },
       },
       clock: { now: () => new Date('2026-06-15T05:00:00Z') },
+      // Bug #10 (code-review) — batch path suppresses recipients.
+      marketingUnsubscribes: {
+        async upsertStandalone(input: { reason: string; emailLower: string }) {
+          suppressions.push({ reason: input.reason, emailLower: input.emailLower });
+          return {
+            wasNew: opts.suppressionWasNew ?? true,
+            suppression: {} as unknown,
+          };
+        },
+      },
     },
   };
 }
@@ -66,8 +80,9 @@ const baseInput = {
   tenantId: 'test-tenant',
   batchManifestId: 'batch-1',
   batchIndex: 0,
-  broadcastId: 'broadcast-1',
+  broadcastId: '11111111-1111-1111-1111-111111111111',
   recipientEmailHashed: 'hash123',
+  recipientEmailLower: 'recipient@example.com',
   resendEventId: 'evt-1',
 };
 
@@ -173,5 +188,81 @@ describe('applyBatchWebhookEvent contract (Phase 3F.5)', () => {
     expect((result.error as { kind: string }).kind).toBe('apply_batch_webhook.server_error');
     // server_error path doesn't emit any audit
     expect(emits).toHaveLength(0);
+  });
+
+  // Bug #10 (code-review) — the batch path must ALSO suppress recipients, not
+  // just count them (previously multi-batch unsubscribers/bouncers stayed
+  // re-emailable, violating FR-027/FR-030).
+  it('unsubscribed → suppresses recipient (recipient_initiated) + suppression audit', async () => {
+    const { deps, suppressions, emits } = makeStubDeps();
+    const result = await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'unsubscribed',
+    });
+    expect(result.ok).toBe(true);
+    expect(suppressions).toEqual([
+      { reason: 'recipient_initiated', emailLower: 'recipient@example.com' },
+    ]);
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBe(true);
+  });
+
+  it('complained → suppresses recipient (complaint)', async () => {
+    const { deps, suppressions } = makeStubDeps();
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'complained',
+    });
+    expect(suppressions.map((s) => s.reason)).toEqual(['complaint']);
+  });
+
+  it('bounced + bounceType hard → suppresses recipient (hard_bounce)', async () => {
+    const { deps, suppressions } = makeStubDeps();
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'bounced',
+      bounceType: 'hard',
+    });
+    expect(suppressions.map((s) => s.reason)).toEqual(['hard_bounce']);
+  });
+
+  it('bounced + bounceType soft → does NOT suppress (transient)', async () => {
+    const { deps, suppressions } = makeStubDeps();
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'bounced',
+      bounceType: 'soft',
+    });
+    expect(suppressions).toHaveLength(0);
+  });
+
+  it('delivered → does NOT suppress', async () => {
+    const { deps, suppressions } = makeStubDeps();
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'delivered',
+    });
+    expect(suppressions).toHaveLength(0);
+  });
+
+  it('duplicate (replayed) unsubscribed → does NOT re-suppress (idempotency short-circuit)', async () => {
+    const { deps, suppressions } = makeStubDeps({ duplicate: true });
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'unsubscribed',
+    });
+    expect(suppressions).toHaveLength(0);
+  });
+
+  it('suppression on an already-suppressed recipient (wasNew=false) → no duplicate suppression audit', async () => {
+    const { deps, emits } = makeStubDeps({ suppressionWasNew: false });
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'complained',
+    });
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBe(false);
   });
 });

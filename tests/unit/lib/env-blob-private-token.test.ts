@@ -198,3 +198,74 @@ describe('env.ts — EXPORT_DOWNLOAD_TOKEN_SECRET distinctness (F9 #13)', () => 
     await expect(import('@/lib/env')).resolves.toBeDefined();
   });
 });
+
+describe('env.ts — AUTH_COOKIE_SIGNING_SECRET distinctness (bug #12)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('rejects UNSUBSCRIBE_TOKEN_SECRET reused as AUTH_COOKIE_SIGNING_SECRET (the documented invariant)', async () => {
+    const shared = 's'.repeat(48);
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: shared,
+      UNSUBSCRIBE_TOKEN_SECRET: shared,
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects RENEWAL_LINK_TOKEN_SECRET_PRIMARY reused as AUTH_COOKIE_SIGNING_SECRET', async () => {
+    const shared = 't'.repeat(48);
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: shared,
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('rejects RENEWAL_LINK_TOKEN_SECRET_FALLBACK reused as AUTH_COOKIE_SIGNING_SECRET', async () => {
+    const shared = 'w'.repeat(48);
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: shared,
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_FALLBACK: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+
+  it('accepts all-distinct auth + token secrets', async () => {
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: 'r'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_FALLBACK: 'f'.repeat(48),
+    });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
+  });
+
+  it('ALLOWS renewal primary == fallback when both differ from AUTH (valid pre-rotation state — must NOT over-enforce)', async () => {
+    const sharedRenewal = 'r'.repeat(48);
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: 'u'.repeat(48),
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: sharedRenewal,
+      RENEWAL_LINK_TOKEN_SECRET_FALLBACK: sharedRenewal,
+    });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
+  });
+
+  it('rejects UNSUBSCRIBE_TOKEN_SECRET reused as RENEWAL_LINK_TOKEN_SECRET_PRIMARY (pairwise gap the AUTH/EXPORT gates missed)', async () => {
+    const shared = 'x'.repeat(48);
+    stubEnv({
+      AUTH_COOKIE_SIGNING_SECRET: 'a'.repeat(48),
+      UNSUBSCRIBE_TOKEN_SECRET: shared,
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: shared,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/DISTINCT/);
+  });
+});

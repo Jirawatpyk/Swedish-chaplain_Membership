@@ -29,12 +29,10 @@ import { logger } from '@/lib/logger';
 import {
   WebhookSignatureError,
   type VerifiedBroadcastEvent,
+  type WebhookEventStatus,
   type WebhookVerifierPort,
 } from '../../application/ports/webhook-verifier-port';
-import {
-  isBroadcastDeliveryStatus,
-  type BroadcastDeliveryStatus,
-} from '../../domain/value-objects/delivery-status';
+import { isBroadcastDeliveryStatus } from '../../domain/value-objects/delivery-status';
 
 const TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
 
@@ -55,7 +53,13 @@ const EVENT_TYPE_TO_DELIVERY_STATUS = {
   'email.bounced': 'bounced',
   'email.delivery_delayed': 'soft_bounced',
   'email.complained': 'complained',
-} as const satisfies Record<string, BroadcastDeliveryStatus>;
+  // Bug #10 fix (2026-07-10): recognise `email.unsubscribed` so it passes
+  // the verifier gate instead of throwing `unknown_event_type` upstream of
+  // the route's per-batch counter routing (which maps it to
+  // `unsubscribed_count`). It is NOT a `broadcast_deliveries` enum value —
+  // the MVP path handles it as a suppression signal without a delivery row.
+  'email.unsubscribed': 'unsubscribed',
+} as const satisfies Record<string, WebhookEventStatus>;
 
 type ResendEventType = keyof typeof EVENT_TYPE_TO_DELIVERY_STATUS;
 
@@ -220,9 +224,11 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
         `Unhandled Resend webhook event type: ${parsed.type}`,
       );
     }
-    const status: BroadcastDeliveryStatus =
+    const status: WebhookEventStatus =
       EVENT_TYPE_TO_DELIVERY_STATUS[parsed.type];
-    if (!isBroadcastDeliveryStatus(status)) {
+    // 'unsubscribed' is a valid webhook status superset value (bug #10) but
+    // NOT a broadcast_deliveries enum value — allow it explicitly.
+    if (status !== 'unsubscribed' && !isBroadcastDeliveryStatus(status)) {
       throw new WebhookSignatureError(
         'malformed',
         `Unhandled Resend webhook event type: ${parsed.type}`,

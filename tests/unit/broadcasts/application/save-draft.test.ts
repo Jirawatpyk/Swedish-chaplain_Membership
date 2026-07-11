@@ -506,4 +506,37 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
     const patch = broadcastsRepo.updates[0]!.patch as { fromName: string };
     expect(patch.fromName).toBe('Acme Co via Test Chamber');
   });
+
+  // ---- Bug #9: cross-member draft-hijack (IDOR) ---------------------
+  it('#9 IDOR: updating a draft owned by a DIFFERENT member -> broadcast_not_found (no overwrite)', async () => {
+    const { audit, broadcastsRepo, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      existingDraft: {
+        broadcastId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' as never,
+        status: 'draft',
+      },
+    });
+    // The draft belongs to member 'm-victim'; attacker 'm-1' (baseInput)
+    // supplies its id. RLS is tenant-scoped only, so findByIdInTx still
+    // returns the row — the owner guard is the sole defence.
+    const repo = broadcastsRepo as unknown as {
+      findByIdInTx: BroadcastsRepo['findByIdInTx'];
+    };
+    const originalFind = repo.findByIdInTx;
+    repo.findByIdInTx = async (tx, t, bid) => {
+      const row = await originalFind(tx, t, bid);
+      return row === null ? null : { ...row, requestedByMemberId: 'm-victim' };
+    };
+
+    const result = await saveDraft(deps, {
+      ...baseInput, // memberId: 'm-1' (attacker)
+      draftId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('broadcast_not_found');
+    // The victim's draft was NOT overwritten and nothing was audited.
+    expect(broadcastsRepo.updates).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
 });

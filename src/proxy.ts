@@ -26,6 +26,40 @@ export const NONCE_HEADER = 'x-nonce';
 export const TENANT_SLUG_HEADER = 'x-tenant-slug';
 
 /**
+ * True when `pathname` is an F7 (E-Blast) surface that the
+ * `FEATURE_F7_BROADCASTS` kill-switch must cover. Extracted as a pure,
+ * exported predicate so the exact path set is unit-testable (bug #15) — a
+ * missed prefix silently leaves an F7 state-changing route writable while the
+ * feature is supposedly dark.
+ */
+export function matchesF7KillSwitchPath(pathname: string): boolean {
+  return (
+    pathname.startsWith('/api/broadcasts') ||
+    pathname.startsWith('/api/admin/broadcasts') ||
+    // Bug #15 fix (2026-07-10): the member "acknowledge broadcasts terms" API
+    // lives under /api/portal/broadcasts, NOT /api/broadcasts, so it slipped
+    // the kill-switch and stayed writable with F7 disabled.
+    pathname.startsWith('/api/portal/broadcasts') ||
+    // Code-review follow-up (2026-07-11): the member snapshot-template write
+    // route lives under /api/member/broadcasts and self-gates only on the
+    // F7.1a-US7 sub-flag; cover it with the master F7 kill-switch too.
+    pathname.startsWith('/api/member/broadcasts') ||
+    pathname.startsWith('/api/webhooks/resend-broadcasts') ||
+    // Bug #15 fix: the admin "clear broadcasts halt" API is nested under
+    // /api/admin/members/<id>/…, so neither /api/admin/broadcasts nor the
+    // /admin/broadcasts page-regex matched it — an admin could still mutate
+    // broadcasts_halted_until_admin_review while F7 was frozen.
+    /^\/api\/admin\/members\/[^/]+\/broadcasts-halt-clear(?:\/|$)/.test(
+      pathname,
+    ) ||
+    /^\/unsubscribe(?:\/|$)/.test(pathname) ||
+    /^\/portal\/broadcasts(?:\/|$)/.test(pathname) ||
+    /^\/admin\/broadcasts(?:\/|$)/.test(pathname) ||
+    /^\/portal\/benefits\/e-blasts(?:\/|$)/.test(pathname)
+  );
+}
+
+/**
  * Main Next.js Proxy handler (T043, research.md § 4 / § 5, plan.md § Constraints).
  *
  * **Next.js 16 rename**: what was previously `middleware.ts` is now
@@ -325,14 +359,7 @@ export function proxy(request: NextRequest): NextResponse {
   //     (dark ship); flip ON in Vercel env after Phase 5 ship gate.
   //     Distinct error code `feature_disabled` separates "not yet
   //     activated" from F3/F4's `read_only_mode` maintenance semantics.
-  const isF7Path =
-    nextUrl.pathname.startsWith('/api/broadcasts') ||
-    nextUrl.pathname.startsWith('/api/admin/broadcasts') ||
-    nextUrl.pathname.startsWith('/api/webhooks/resend-broadcasts') ||
-    /^\/unsubscribe(?:\/|$)/.test(nextUrl.pathname) ||
-    /^\/portal\/broadcasts(?:\/|$)/.test(nextUrl.pathname) ||
-    /^\/admin\/broadcasts(?:\/|$)/.test(nextUrl.pathname) ||
-    /^\/portal\/benefits\/e-blasts(?:\/|$)/.test(nextUrl.pathname);
+  const isF7Path = matchesF7KillSwitchPath(nextUrl.pathname);
   if (!env.features.f7Broadcasts && isF7Path) {
     return build503(
       'feature_disabled',
