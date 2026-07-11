@@ -53,6 +53,16 @@ export const F5_HANDLED_EVENT_TYPES = [
   'payment_intent.canceled',
   'charge.refunded',
   'charge.dispute.created',
+  /**
+   * PR-A Task A.10 (PCI-1, 2026-07-11) — Stripe's refund-lifecycle
+   * event, fired as a `Refund` object transitions between
+   * `pending | succeeded | failed | canceled | requires_action`. The
+   * verifier's `refund` arm (`stripe-webhook-verifier.ts`) projects
+   * `refundStatus` (added to `VerifiedStripeEvent['dataObject']` in
+   * A.9) from this event's `status` field. `processRefundUpdated`
+   * (A.11) subscribes here to finalize a `pending` refund row.
+   */
+  'charge.refund.updated',
 ] as const;
 export type F5HandledEventType = (typeof F5_HANDLED_EVENT_TYPES)[number];
 

@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Stripe from 'stripe';
 import { stripeWebhookVerifier } from '@/modules/payments/infrastructure/stripe/stripe-webhook-verifier';
 import { WebhookSignatureError } from '@/modules/payments/infrastructure/stripe/errors';
+import { F5_HANDLED_EVENT_TYPES_SET } from '@/modules/payments/application/ports/webhook-verifier-port';
 import { logger } from '@/lib/logger';
 
 const ENDPOINT_SECRET = 'whsec_test_group_e3_fixture_secret';
@@ -481,5 +482,102 @@ describe('stripeWebhookVerifier — dispute charge extraction (PCI-2, #6)', () =
     expect(serialized).not.toContain('4242');
     expect(serialized).not.toContain('payment_method_details');
     expect(serialized).not.toContain('visa');
+  });
+});
+
+// Task A.10 (PCI-1, 2026-07-11) — `charge.refund.updated` envelope
+// projection. Mirrors the dispute arm's defensive `charge` extraction
+// (string vs expanded Charge object) above: a Stripe Refund's `charge`
+// field is normally a `ch_…` string but Stripe CAN return it EXPANDED.
+// The refund arm is a positive allow-list — ONLY `id` (re_…),
+// `refundStatus` (from the Refund's `status`), `latestChargeId`
+// (defensive), and `amountSatang` (via the shared `projectAmountSafely`)
+// may reach the envelope. `F5_HANDLED_EVENT_TYPES_SET` must also carry
+// the new event type so the route's revalidate-path allow-list + the
+// use-case dispatcher both recognize it.
+describe('stripeWebhookVerifier — refund envelope (PCI-1, A.10)', () => {
+  it('subscribes charge.refund.updated in F5_HANDLED_EVENT_TYPES_SET', () => {
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('charge.refund.updated')).toBe(true);
+  });
+
+  it('string charge: projects id/refundStatus/latestChargeId/amountSatang, nothing else', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_string_charge',
+      type: 'charge.refund.updated',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_x',
+          object: 'refund',
+          status: 'succeeded',
+          charge: 'ch_x',
+          amount: 50_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.id).toBe('re_x');
+    expect(envelope.dataObject.refundStatus).toBe('succeeded');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    expect(envelope.dataObject.amountSatang).toBe(50_000n);
+    // Allow-list hygiene — the refund arm must not leak any other key.
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    for (const k of Object.keys(envelope.dataObject)) {
+      expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund envelope`).toBe(true);
+    }
+  });
+
+  it('expanded Charge object: latestChargeId === the id field, and NO card field reaches the envelope', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_expanded_charge',
+      type: 'charge.refund.updated',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_x',
+          object: 'refund',
+          status: 'pending',
+          charge: {
+            id: 'ch_x',
+            object: 'charge',
+            payment_method_details: {
+              card: { last4: '4242', brand: 'visa' },
+            },
+          },
+          amount: 25_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.id).toBe('re_x');
+    expect(envelope.dataObject.refundStatus).toBe('pending');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    expect(envelope.dataObject.amountSatang).toBe(25_000n);
+    // PCI-1: negative-assert at the serialized-JSON level so a future
+    // field addition to the expanded Charge object is also caught, not
+    // merely the one field this fixture happens to include.
+    // (BigInt replacer: `amountSatang` is a branded bigint, which
+    // `JSON.stringify` cannot serialize natively.)
+    const serialized = JSON.stringify(envelope, (_k, v) =>
+      typeof v === 'bigint' ? v.toString() : v,
+    );
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('visa');
+    expect(serialized).not.toContain('destination_details');
   });
 });
