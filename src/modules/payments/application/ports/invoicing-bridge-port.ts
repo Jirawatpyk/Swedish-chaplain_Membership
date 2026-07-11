@@ -289,11 +289,15 @@ export interface InvoicingBridgePort {
 }
 
 /**
- * Post-CN invoice status. The F5 caller derives this from the refund
- * arithmetic (`refundedAmountSatang === payment.amountSatang` →
- * `'credited'` else `'partially_credited'`) — `payment.amountSatang`
- * equals `invoice.totalSatang` under F5's "one PaymentIntent covers
- * the whole invoice" invariant, so re-reading the invoice for the
- * status would be a redundant DB roundtrip.
+ * Post-CN invoice status. F5 reads this F4-authoritative value via
+ * `getInvoiceStatus` (tx-threaded, see that method's docstring) AFTER the
+ * credit note is issued — F4 owns the `credited`/`partially_credited`
+ * boundary, including cases where a pre-existing MANUAL F4 credit note
+ * already partially credited the invoice (tax#5). The refund-arithmetic
+ * projection (`refundedAmountSatang === payment.amountSatang` → `'credited'`)
+ * is used ONLY as a fallback when the `getInvoiceStatus` read errors, so an
+ * already-succeeded refund is never failed over a status-read hiccup. Do NOT
+ * remove `getInvoiceStatus` in favour of the arithmetic projection alone —
+ * that reintroduces tax#5.
  */
 export type CreditedInvoiceStatus = 'partially_credited' | 'credited';

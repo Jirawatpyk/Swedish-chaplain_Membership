@@ -257,12 +257,17 @@ export const invoicingBridge: InvoicingBridgePort = {
    * OUTSIDE its own DB tx (Phase B/external) — F4 manages its own
    * atomicity via the wrapped use-case's internal `withTx`.
    *
-   * Returns only the new CN id + canonical document number — the F5
-   * caller derives the post-transition invoice status arithmetically
-   * (`refundedAmount === payment.amountSatang` → `'credited'`),
-   * avoiding a redundant DB roundtrip. F4 errors are summarised into
-   * the stable `{ code, detail }` shape (no PII leak — see
-   * `summariseF4Error` docstring).
+   * Returns only the new CN id + canonical document number. The F5 caller
+   * (`_finalize-succeeded-refund.ts`) separately reads the post-transition
+   * invoice status via `getInvoiceStatus` (F4-authoritative, tax#5) after
+   * this call returns — it does NOT derive the status arithmetically from
+   * the refund amount as a primary source; that projection is now only a
+   * fallback when the `getInvoiceStatus` read errors. Do NOT drop the
+   * `getInvoiceStatus` call as "redundant" — it is what makes the reported
+   * invoice status correct when a MANUAL F4 credit note already partially
+   * credited the invoice. F4 errors are summarised into the stable
+   * `{ code, detail }` shape (no PII leak — see `summariseF4Error`
+   * docstring).
    */
   async issueCreditNoteFromRefund(input) {
     const cn = await f4IssueCreditNoteFromRefund({
