@@ -24,10 +24,10 @@ function renderChart(items: MonthBarItem[], selectedKey: string | null = null) {
 }
 
 const ITEMS: MonthBarItem[] = [
-  { key: 'overdue', label: 'Overdue', count: 2, barPercent: 12, interactive: true, band: 't-0' },
-  { key: '2026-07', label: 'July 2026', count: 17, barPercent: 100, interactive: true, band: 't-7' },
-  { key: '2026-08', label: 'August 2026', count: 0, barPercent: 0, interactive: false, band: 't-14' },
-  { key: 'later', label: 'July 2027 or later', count: 1, barPercent: 4, interactive: true, band: 't-90' },
+  { key: 'overdue', label: 'Overdue', shortLabel: 'Overdue', count: 2, barPercent: 12, interactive: true, band: 't-0' },
+  { key: '2026-07', label: 'July 2026', shortLabel: 'Jul 26', count: 17, barPercent: 100, interactive: true, band: 't-7' },
+  { key: '2026-08', label: 'August 2026', shortLabel: 'Aug 26', count: 0, barPercent: 0, interactive: false, band: 't-14' },
+  { key: 'later', label: 'July 2027 or later', shortLabel: 'Jul 27+', count: 1, barPercent: 4, interactive: true, band: 't-90' },
 ];
 
 describe('MonthBarChart', () => {
@@ -48,10 +48,15 @@ describe('MonthBarChart', () => {
     expect(href).not.toContain('cursor=');
   });
 
-  it('a zero bucket is NOT a link and is aria-disabled', () => {
+  it('a zero bucket is a non-interactive image (not a link), labelled "no members"', () => {
     renderChart(ITEMS);
+    // Not a link — nothing to filter to.
     expect(screen.queryByRole('link', { name: /August 2026/ })).toBeNull();
-    expect(screen.getByText('August 2026').closest('[aria-disabled="true"]')).not.toBeNull();
+    // Rendered as role="img" with the full label as its accessible name; the
+    // visible content is the compact short label.
+    const zero = screen.getByRole('img', { name: /August 2026/ });
+    expect(zero).toBeInTheDocument();
+    expect(zero).toHaveTextContent('Aug 26');
   });
 
   it('the selected bucket carries aria-current', () => {

@@ -2904,6 +2904,8 @@
         "subtitle": "{count, plural, one {# öppen förnyelse} other {# öppna förnyelser}}",
         "overdue": "Försenade",
         "later": "{month} eller senare",
+        "overdueShort": "Förs.",
+        "laterShort": "{month}+",
         "listAriaLabel": "Förnyelser per månad",
         "bucketAriaLabel": "{label}: {count, plural, one {# medlem} other {# medlemmar}}",
         "zeroBucketAriaLabel": "{label}: inga medlemmar",

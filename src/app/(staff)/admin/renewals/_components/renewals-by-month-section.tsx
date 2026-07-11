@@ -25,6 +25,7 @@ import {
 } from '@/modules/renewals';
 import {
   formatMonthKeyLabel,
+  formatMonthKeyShort,
   bandForBucketIndex,
   type MonthBarItem,
 } from '@/components/renewals/month-bucket-label';
@@ -81,15 +82,24 @@ export async function RenewalsByMonthSection({
   // Resolve labels in Presentation (Constitution III — VM carries none).
   const laterStartKey = addMonthsToYm(bkkYearMonth(nowIso), 12);
   const items: MonthBarItem[] = summary.buckets.map((b, i) => {
+    // Full label = the accessible name (aria-label); short label = the compact
+    // axis label under each column (abbreviated month + BE-aware 2-digit year).
     const label =
       b.key === 'overdue'
         ? t('overdue')
         : b.key === 'later'
           ? t('later', { month: formatMonthKeyLabel(laterStartKey, locale) })
           : formatMonthKeyLabel(b.key, locale);
+    const shortLabel =
+      b.key === 'overdue'
+        ? t('overdueShort')
+        : b.key === 'later'
+          ? t('laterShort', { month: formatMonthKeyShort(laterStartKey, locale) })
+          : formatMonthKeyShort(b.key, locale);
     return {
       key: b.key,
       label,
+      shortLabel,
       count: b.count,
       barPercent: barWidthPercent(b.count, summary.maxCount),
       interactive: b.count > 0,
@@ -175,12 +185,15 @@ export function RenewalsByMonthSectionSkeleton() {
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-4 w-64" />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className="flex items-stretch gap-1 px-0.5 pb-1">
           {Array.from({ length: 14 }).map((_, i) => (
-            <div key={i} className="flex min-h-11 items-center gap-3 px-2">
-              <Skeleton className="h-4 w-40 shrink-0" />
-              <Skeleton className="h-4 flex-1" />
-              <Skeleton className="h-4 w-8 shrink-0" />
+            <div key={i} className="flex flex-1 flex-col items-center gap-1 py-1">
+              <div className="flex h-32 w-full items-end justify-center border-b border-border">
+                <Skeleton className="h-24 w-10" />
+              </div>
+              <div className="flex h-8 items-start">
+                <Skeleton className="h-3 w-8" />
+              </div>
             </div>
           ))}
         </div>

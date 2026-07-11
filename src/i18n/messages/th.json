@@ -2904,6 +2904,8 @@
         "subtitle": "{count, plural, other {# รายการต่ออายุที่เปิดอยู่}}",
         "overdue": "เกินกำหนด",
         "later": "{month} เป็นต้นไป",
+        "overdueShort": "เกินกำหนด",
+        "laterShort": "{month}+",
         "listAriaLabel": "การต่ออายุรายเดือน",
         "bucketAriaLabel": "{label}: {count, plural, other {# สมาชิก}}",
         "zeroBucketAriaLabel": "{label}: ไม่มีสมาชิก",

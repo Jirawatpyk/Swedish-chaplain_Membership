@@ -2904,6 +2904,8 @@
         "subtitle": "{count, plural, one {# open renewal} other {# open renewals}}",
         "overdue": "Overdue",
         "later": "{month} or later",
+        "overdueShort": "Overdue",
+        "laterShort": "{month}+",
         "listAriaLabel": "Renewals by month",
         "bucketAriaLabel": "{label}: {count, plural, one {# member} other {# members}}",
         "zeroBucketAriaLabel": "{label}: no members",
