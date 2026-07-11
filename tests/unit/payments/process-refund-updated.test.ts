@@ -104,6 +104,10 @@ function makeDeps(): ProcessRefundUpdatedDeps {
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({ creditNoteId: 'cn_test_1', creditNoteNumber: 'CN-2026-0001' }),
       ),
+      // tax#5 (B.2) — the shared finaliser reads the F4-authoritative invoice
+      // status on the succeeded path. The webhook outcome does not surface it,
+      // so the value is inert here; must be present or the real finaliser throws.
+      getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
     } as unknown as ProcessRefundUpdatedDeps['invoicingBridge'],
     audit: {
       emit: vi.fn(async () => undefined),

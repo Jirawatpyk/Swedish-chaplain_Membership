@@ -167,6 +167,10 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({ creditNoteId: cnId, creditNoteNumber: 'TC-2026-SWEEP1' }),
       ),
+      // tax#5 (B.2) — the shared finaliser reads the F4-authoritative invoice
+      // status on the succeeded path. The sweep outcome does not surface it, so
+      // the value is inert here; must be present or the real finaliser throws.
+      getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
     } as unknown as SweepStalePendingRefundsDeps['invoicingBridge'];
   }
 

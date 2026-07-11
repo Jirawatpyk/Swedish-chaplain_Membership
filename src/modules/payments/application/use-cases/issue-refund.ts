@@ -742,9 +742,9 @@ async function issueRefundBody(
     },
     invoice: {
       id: prepared.payment.invoiceId,
-      // tax#5: authoritative F4 read arrives in B.2; A.9 keeps the
-      // projection returned by the shared helper (== the pre-refactor
-      // arithmetic value).
+      // tax#5 (B.2): F4-AUTHORITATIVE — the shared helper sourced this from
+      // F4's post-CN invoice status (`getInvoiceStatus`), not the F5 payment
+      // arithmetic, so a pre-existing manual F4 credit note is reflected.
       status: finalizeResult.value.invoiceStatus,
     },
   });

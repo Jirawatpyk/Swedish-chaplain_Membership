@@ -144,6 +144,11 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
       getInvoiceCreditedTotal: vi.fn(async () =>
         ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(TOTAL_SATANG) }),
       ),
+      // tax#5 (B.2) — the shared finaliser reads F4's authoritative post-CN
+      // invoice status. The F4 CN chain is stubbed here (no real invoice-status
+      // flip), so stub the status too: partial refunds → `partially_credited`;
+      // the exhausting (full) refund overrides to `credited` before r4 below.
+      getInvoiceStatus: vi.fn(async () => ok('partially_credited' as const)),
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({
           // F4 credit_notes.credit_note_id is uuid; satisfy the
@@ -464,6 +469,11 @@ describe('issueRefund — multi-partial + race (T102)', () => {
 
     // ---- Exhausting refund — 2,850,000 satang → cumulative = TOTAL → 'refunded' ----
     rebindBridgeForNextRefund(deps, cnIds[2]!, 'TC-2026-100003');
+    // tax#5 (B.2) — this refund fully credits the invoice; F4 flips it to
+    // `credited`, and the finaliser reports THAT authoritative status.
+    deps.invoicingBridge.getInvoiceStatus = vi.fn(async () =>
+      ok('credited' as const),
+    );
     const r4 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,

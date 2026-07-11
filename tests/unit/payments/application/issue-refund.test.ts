@@ -582,6 +582,33 @@ describe('issueRefund (T108) — happy paths', () => {
     expect(statusReadArgs.externalTx).toBeDefined();
   });
 
+  it('tax#5 — F4 status read error falls back to the payment projection; refund still succeeds', async () => {
+    // A transient F4 read failure (Neon down / tx aborted) MUST NOT fail an
+    // already-succeeded refund (the CN + Stripe refund already committed). The
+    // finaliser falls back to the payment-derived projection for the display
+    // hint; the DB invoice status stays F4-authoritative regardless.
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      ok({ creditNoteId: 'cn_fb', creditNoteNumber: 'TC-2026-000009' }),
+    );
+    asMock(deps.invoicingBridge.getInvoiceStatus).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+
+    // Full refund → payment refunded → fallback projection = 'credited'.
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(5_350_000n) }));
+
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'succeeded') {
+      expect(r.value.refund.status).toBe('succeeded');
+      expect(r.value.payment.status).toBe('refunded');
+      // Fallback to the payment-derived projection when F4 read errors.
+      expect(r.value.invoice.status).toBe('credited');
+    } else {
+      throw new Error('expected kind=succeeded');
+    }
+  });
+
   it('exhausting partial — sumBefore + amount === total → refunded', async () => {
     const deps = makeDeps();
     asMock(deps.paymentsRepo.lockForUpdate).mockResolvedValueOnce(

@@ -368,4 +368,61 @@ export const invoicingBridge: InvoicingBridgePort = {
       return err({ code: 'invalid_total' });
     }
   },
+
+  /**
+   * B.2 (tax#5) — F4-authoritative invoice status read for the shared refund
+   * finaliser. Wraps F4's `getInvoice` (via `makeGetInvoiceDeps`, whose repo
+   * runs inside `runInTenant` → tenant-scoped, never the pool-global `db`). No
+   * `actor` is threaded — internal reconciliation read, so the underlying
+   * cross-tenant-probe audit stays dormant. Threads `externalTx` (B.1 lesson)
+   * so the read shares the finaliser's pooled connection instead of opening a
+   * nested `runInTenant` while row locks are held. See the port docstring for
+   * the money-safety rationale (a status read hiccup NEVER fails an
+   * already-succeeded refund — the caller falls back to its payment-derived
+   * projection on any error).
+   */
+  async getInvoiceStatus(input) {
+    const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
+    let result: Awaited<ReturnType<typeof f4GetInvoice>>;
+    try {
+      result = await f4GetInvoice(deps, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape('getInvoiceStatus_read_threw');
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceStatus_read_threw',
+      );
+      return err({ code: 'read_failed' });
+    }
+    if (!result.ok) {
+      // Without an `actor` the only reachable F4 error is `not_found`
+      // (the member-mismatch `forbidden` guard requires a member actor).
+      return err({ code: 'not_found' });
+    }
+    const status = result.value.status;
+    if (status === 'credited' || status === 'partially_credited') {
+      return ok(status);
+    }
+    // Post-CN F4 always lands on `credited`/`partially_credited` (its
+    // `applyCreditNoteRollup` set exactly one). Anything else here (paid /
+    // void / issued / draft) is a data anomaly — surface it (log + typed
+    // `unexpected_status`) so the caller falls back to its payment-derived
+    // projection rather than propagate a wrong tax status.
+    logger.error(
+      {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        status,
+      },
+      'invoicing-bridge.getInvoiceStatus_unexpected',
+    );
+    return err({ code: 'unexpected_status' });
+  },
 };

@@ -44,11 +44,16 @@
  * the system-wide lock-acquisition order is refund-row → payment-row (A.11
  * report deadlock analysis).
  *
- * Invoice status (tax#5): a projection of `paymentNextStatus`
- * (`refunded → credited`, else `partially_credited`) — NOT a new F5
- * refund-sum arithmetic. Task B.2 replaces this with the
- * F4-authoritative `credited_total` read so A1/A2/A5 all report the
- * same value even when a manual F4 credit note already exists.
+ * Invoice status (tax#5, B.2): sourced from F4 — the authoritative
+ * tax-document system — via `invoicingBridge.getInvoiceStatus` AFTER the
+ * credit note is issued, NOT a projection of the F5 payment status. F4 owns
+ * the `credited`/`partially_credited` boundary (its `applyCreditNoteRollup`),
+ * so all three callers (admin A.9 / webhook A.11 / sweep A.14) report the same
+ * value even when a MANUAL F4 credit note already partially credited the
+ * invoice (the case the old payment-based projection got wrong). If the F4
+ * status read errors, we fall back to the payment-derived projection — a
+ * refund that already succeeded (CN + Stripe both committed) is never failed
+ * over a status READ hiccup; the DB invoice status stays F4-authoritative.
  *
  * Pure Application — no framework / ORM imports. Operates within the
  * caller's `tx`; the F4 CN bridge manages its own transaction.
@@ -156,7 +161,13 @@ export interface FinalizeSucceededRefundDeps {
   // wider `Pick` is satisfied by both callers' full repos.
   readonly paymentsRepo: Pick<PaymentsRepo, 'updateStatus' | 'lockForUpdate'>;
   readonly refundsRepo: Pick<RefundsRepo, 'updateStatus' | 'getRefundContextForUpdate'>;
-  readonly invoicingBridge: Pick<InvoicingBridgePort, 'issueCreditNoteFromRefund'>;
+  // B.2 (tax#5) — `getInvoiceStatus` reads F4's authoritative post-CN invoice
+  // status (see the payment-flip / return sections). Both callers pass their
+  // full `InvoicingBridgePort`, so the wider `Pick` is satisfied.
+  readonly invoicingBridge: Pick<
+    InvoicingBridgePort,
+    'issueCreditNoteFromRefund' | 'getInvoiceStatus'
+  >;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
@@ -192,6 +203,33 @@ export async function finalizeSucceededRefund(
     return err({ code: cnResult.error.code, detail: cnResult.error.detail });
   }
 
+  // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) ---------------
+  // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
+  // flipped the invoice to `credited`/`partially_credited`). Read that
+  // authoritative status HERE — threading the caller's `tx` (B.1 lesson: no
+  // nested pooled connection while row locks are held; the finalise tx is READ
+  // COMMITTED so it sees F4's just-committed flip). We source the status from
+  // F4 instead of projecting the F5 payment status because the payment status
+  // is blind to a pre-existing MANUAL F4 credit note (see `resolveInvoiceStatus`).
+  const f4StatusResult = await deps.invoicingBridge.getInvoiceStatus({
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    externalTx: tx,
+  });
+  // Resolve the reported invoice status: F4's authoritative value when the read
+  // succeeded, else the payment-derived projection. The fallback keeps an
+  // already-succeeded refund from being failed over a transient F4 read hiccup;
+  // the DB invoice status is F4-authoritative regardless — this envelope field
+  // is a display hint consumed only by the admin caller (webhook/sweep ignore it).
+  const resolveInvoiceStatus = (
+    fallbackNextStatus: 'partially_refunded' | 'refunded',
+  ): 'partially_credited' | 'credited' =>
+    f4StatusResult.ok
+      ? f4StatusResult.value
+      : fallbackNextStatus === 'refunded'
+        ? 'credited'
+        : 'partially_credited';
+
   const completedAt = new Date(deps.clock.nowMs());
 
   // --- Step 2: REFUND-FLIP SECTION -----------------------------------------
@@ -226,8 +264,9 @@ export async function finalizeSucceededRefund(
       creditNoteId: cnResult.value.creditNoteId,
       creditNoteNumber: cnResult.value.creditNoteNumber,
       paymentNextStatus: reportedNextStatus,
-      invoiceStatus:
-        reportedNextStatus === 'refunded' ? 'credited' : 'partially_credited',
+      // tax#5 (B.2) — F4-authoritative (the sibling's CN already flipped the
+      // invoice); fall back to the payment projection only if the read errored.
+      invoiceStatus: resolveInvoiceStatus(reportedNextStatus),
       siblingWon: true,
     });
   }
@@ -303,11 +342,10 @@ export async function finalizeSucceededRefund(
     }
   }
 
-  // tax#5 (A.9): invoice status is a PROJECTION of the (resolved) payment
-  // status, NOT a second refund-sum arithmetic. B.2 swaps this for the
-  // F4-authoritative `credited_total` read.
-  const invoiceStatus: 'partially_credited' | 'credited' =
-    resolvedNextStatus === 'refunded' ? 'credited' : 'partially_credited';
+  // tax#5 (B.2): invoice status is sourced from F4 (authoritative) via the
+  // Step-1b read, NOT projected from the resolved payment status. Falls back to
+  // the payment projection only if the F4 read errored (see `resolveInvoiceStatus`).
+  const invoiceStatus = resolveInvoiceStatus(resolvedNextStatus);
 
   // --- Step 4: audit refund_succeeded (path-discriminated) -----------------
   await deps.audit.emit(tx, {

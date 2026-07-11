@@ -308,6 +308,98 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
   });
 });
 
+// B.2 (tax#5) — `getInvoiceStatus` wraps F4's `getInvoice` and returns the
+// invoice's AUTHORITATIVE post-CN status, narrowed to the credited pair. A
+// non-credited status (data anomaly) OR a read throw surfaces a typed error so
+// the finaliser falls back to its payment-derived projection rather than
+// propagate a wrong tax status.
+describe('invoicingBridge.getInvoiceStatus — F4-authoritative status read', () => {
+  let metricsSpy: ReturnType<typeof vi.spyOn>;
+  let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    metricsSpy = vi.spyOn(paymentsMetrics, 'f4BridgeUnknownErrorShape');
+    loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    f4Mock.getInvoice.mockReset();
+    f4Mock.makeGetInvoiceDeps.mockClear();
+  });
+
+  afterEach(() => {
+    metricsSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
+  });
+
+  it.each(['credited', 'partially_credited'] as const)(
+    'returns ok(%s) when F4 reports that credited status',
+    async (status) => {
+      f4Mock.getInvoice.mockResolvedValueOnce(ok({ id: invoiceId, status }));
+
+      const bridge = await loadBridge();
+      const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(status);
+    },
+  );
+
+  it('threads externalTx into makeGetInvoiceDeps (shared connection — B.1 lesson)', async () => {
+    const sentinelTx = Symbol('finalize-tx');
+    f4Mock.getInvoice.mockResolvedValueOnce(
+      ok({ id: invoiceId, status: 'credited' }),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({
+      tenantId,
+      invoiceId,
+      externalTx: sentinelTx,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, sentinelTx);
+  });
+
+  it('returns err({code:"not_found"}) when F4 getInvoice returns not_found', async () => {
+    f4Mock.getInvoice.mockResolvedValueOnce(err({ code: 'not_found' }));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('not_found');
+  });
+
+  it('returns err({code:"unexpected_status"}) + logs when F4 status is not a credited state', async () => {
+    // Post-CN F4 is always credited/partially_credited; a `paid` here is a data
+    // anomaly the caller must NOT report as a tax status.
+    f4Mock.getInvoice.mockResolvedValueOnce(ok({ id: invoiceId, status: 'paid' }));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('unexpected_status');
+    expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceStatus_unexpected');
+    expect((ctx as Record<string, unknown>)['status']).toBe('paid');
+  });
+
+  it('returns err({code:"read_failed"}) + counter + log when F4 getInvoice THROWS', async () => {
+    f4Mock.getInvoice.mockRejectedValueOnce(new Error('neon connection reset'));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('read_failed');
+    expect(metricsSpy).toHaveBeenCalledWith('getInvoiceStatus_read_threw');
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceStatus_read_threw');
+    expect((ctx as Record<string, unknown>)['errKind']).toBe('Error');
+  });
+});
+
 // LOCK (a) — the bridge MUST forward BOTH orthogonal axes (the 2-state flow flag
 // AND the reconciliation bit) verbatim into F4's getInvoiceForPayment. If a future
 // refactor drops either forward, the F4 stranded-funds guard silently re-arms or

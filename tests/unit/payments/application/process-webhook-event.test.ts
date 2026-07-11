@@ -162,6 +162,10 @@ function makeDeps(): ProcessWebhookEventDeps {
     issueCreditNoteFromRefund: vi.fn(async () =>
       ok({ creditNoteId: 'cn_webhook_1', creditNoteNumber: 'CN-2026-0007' }),
     ),
+    // tax#5 (B.2) — F4-authoritative invoice-status read used by the shared
+    // finaliser on the succeeded path. Present so the real finaliser never
+    // throws if a succeeded reconcile is exercised here.
+    getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
   };
   const audit = { emit: vi.fn(async () => undefined) };
   const clock = {
