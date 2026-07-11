@@ -210,7 +210,24 @@ export interface F5AuditPayloadByType {
     payment_id: string;
     invoice_id: string;
     refunded_amount_satang: string;
-    cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+    /**
+     * A.13 (stale-invoice) causes derive from the F4 invoice status via
+     * `causeForInvoiceStatus`. A.15 (bug #8 resume-race) adds
+     * `payment_terminal_failed_late_charge` — the ONLY cause where the
+     * invoice is still payable (`issued`): a late `payment_intent.succeeded`
+     * captured funds against a payment row that had already committed
+     * `failed`. Reuses THIS event type (10y money-trail) rather than
+     * minting a new enum (RR-6 recognition is marker-column-keyed, not
+     * audit-type-keyed — see `findAutoRefundByProcessorRefundId`); the
+     * `cause` discriminator + the distinct `late-charge-refund-` idempotency
+     * namespace keep the scenario unambiguous in audit-log queries.
+     */
+    cause:
+      | 'invoice_already_paid'
+      | 'invoice_voided'
+      | 'invoice_credited'
+      | 'invoice_unknown_status'
+      | 'payment_terminal_failed_late_charge';
     processor_refund_id: string;
   };
   payment_auto_refunded_concurrent_manual_mark: Record<string, unknown>;

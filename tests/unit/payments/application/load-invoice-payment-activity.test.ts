@@ -23,6 +23,7 @@ function makeStubRepo(override: Partial<PaymentsRepo> = {}): PaymentsRepo {
     insert: vi.fn(),
     updateStatus: vi.fn(),
     markAutoRefunded: vi.fn(),
+    attachAutoRefundMarkerOnFailed: vi.fn(),
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),

@@ -62,6 +62,16 @@ function makeDeps(): ConfirmPaymentDeps {
       completedAt: new Date('2026-05-12T07:00:00.000Z'),
       autoRefundProcessorRefundId: 're_test_auto',
     })),
+    // A.15 (#8) — status-preserving marker write on a terminal `failed`
+    // row. Default: guard hits (row was failed + marker NULL) → returns the
+    // still-`failed` row carrying the durable marker (status NOT flipped).
+    attachAutoRefundMarkerOnFailed: vi.fn(async () => ({
+      ...PENDING_PAYMENT,
+      status: 'failed' as const,
+      completedAt: new Date('2026-05-12T06:30:00.000Z'),
+      failureReasonCode: 'card_declined',
+      autoRefundProcessorRefundId: 're_test_auto',
+    })),
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(async () => []),
     nextAttemptSeq: vi.fn(),
@@ -117,6 +127,17 @@ function makeDeps(): ConfirmPaymentDeps {
     taxAtPayment: 'off' as const,
   };
 }
+
+// A.15 (#8 resume-race) — the row committed `failed` (post
+// `payment_intent.payment_failed`) then received a late
+// `payment_intent.succeeded`. Terminal `failed` carries a `completed_at`
+// (migration 0033 CHECK) + a failure reason.
+const FAILED_PAYMENT: Payment = {
+  ...PENDING_PAYMENT,
+  status: 'failed',
+  failureReasonCode: 'card_declined',
+  completedAt: new Date('2026-05-12T06:30:00Z'),
+};
 
 const INPUT = {
   tenantId: TENANT_ID,
@@ -454,6 +475,184 @@ describe('confirmPayment (T057)', () => {
     expect(result.value.kind).toBe('already_succeeded');
     expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
     expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+  });
+
+  // ===================================================================
+  // A.15 (#8 resume-race) — failed → succeeded late-charge reconcile.
+  // ===================================================================
+
+  it('A.15 (#8) — failed→succeeded late charge auto-refunds + forensic audit + durable marker, row stays failed (F-9)', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Reuses the `auto_refunded_stale_invoice` outcome kind (dispatcher
+    // already handles it; sub-decision 1).
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    // 1) The captured funds ARE auto-refunded (distinct idempotency
+    //    namespace + the new cause on the metadata).
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledTimes(1);
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `late-charge-refund-${FAILED_PAYMENT.id}`,
+        metadata: expect.objectContaining({
+          cause: 'payment_terminal_failed_late_charge',
+        }),
+      }),
+    );
+
+    // 2) The durable marker is stamped via the STATUS-PRESERVING write —
+    //    NOT markAutoRefunded (which would flip to auto_refunded; F-9
+    //    forbids that edge) and NOT updateStatus (no succeeded flip).
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paymentId: FAILED_PAYMENT.id,
+        tenantId: TENANT_ID,
+        processorRefundId: 're_test_auto',
+      }),
+    );
+    expect(deps.paymentsRepo.markAutoRefunded).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+
+    // 3) The invoice is NOT flipped paid (it stays payable).
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+
+    // 4) The forensic 10y money-trail carries the new cause + the SAME
+    //    `re_…` id as the marker (so a later charge.refund.updated can
+    //    correlate the two via findAutoRefundByProcessorRefundId).
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const forensic = auditCalls.find(
+      (c) => c[1].eventType === 'payment_auto_refunded_stale_invoice',
+    );
+    expect(forensic).toBeDefined();
+    expect(forensic?.[1].payload.cause).toBe('payment_terminal_failed_late_charge');
+    expect(forensic?.[1].payload.processor_refund_id).toBe('re_test_auto');
+    expect(forensic?.[1].retentionYears).toBe(10);
+  });
+
+  it('A.15 (#8) — succeeded event with NO captured charge is NOT refunded (defensive markProcessed + warn)', async () => {
+    const warn = vi.fn();
+    const deps = { ...makeDeps(), logger: { warn } };
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.processorGateway.retrievePaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: PAYMENT_INTENT_ID,
+        status: 'succeeded',
+        latestChargeId: null,
+        livemode: false,
+        lastPaymentErrorCode: null,
+        card: null,
+      }),
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('already_succeeded');
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      'confirm_payment.late_charge_no_captured_charge',
+      expect.objectContaining({ paymentId: FAILED_PAYMENT.id }),
+    );
+  });
+
+  it('A.15 (#8) — late-charge createRefund failure (<48h) → processor_unavailable (Stripe retries)', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).not.toHaveBeenCalled();
+  });
+
+  it('A.15 (#8) — late-charge give-up after 48h → auto_refund_given_up + out_of_band audit', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    const eventTs = INPUT.eventCreatedAtUnixSeconds;
+    deps.clock.nowMs = () => (eventTs + 49 * 60 * 60) * 1000;
+
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_given_up');
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const giveUp = auditCalls.find(
+      (c) =>
+        c[1]?.eventType === 'out_of_band_refund_detected' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Auto-refund giving up after '),
+    );
+    expect(giveUp).toBeDefined();
+    // PCI-clean: forensic uses the pi_ charge id, never card metadata.
+    expect(giveUp?.[1].payload).toMatchObject({
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+  });
+
+  it('A.15 (#8) — late-charge retrievePaymentIntent failure → processor_unavailable (no refund attempted)', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.processorGateway.retrievePaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('processor_unavailable');
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+  });
+
+  // Regression: EVERY OTHER prior state that reaches the terminal_state /
+  // illegal_transition branches is UNTOUCHED by the A.15 failed-gate —
+  // succeeded→succeeded and canceled/refunded/auto_refunded→succeeded MUST
+  // NOT trigger a late-charge auto-refund. (Coordinator-required.)
+  it('A.15 (#8) — succeeded→succeeded and canceled/refunded/auto_refunded→succeeded are UNTOUCHED (no refund, no marker)', async () => {
+    for (const status of ['succeeded', 'canceled', 'refunded', 'auto_refunded'] as const) {
+      const deps = makeDeps();
+      (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        { ...PENDING_PAYMENT, status, completedAt: new Date('2026-05-12T06:30:00Z') },
+      );
+      const result = await confirmPayment(deps, INPUT);
+      expect(result.ok, `status=${status}`).toBe(true);
+      if (!result.ok) return;
+      // succeeded→succeeded is `illegal_transition` (succeeded is NOT
+      // terminal in the table); canceled/refunded/auto_refunded are
+      // `terminal_state`. Both land on `already_succeeded` no-op.
+      expect(result.value.kind, `status=${status}`).toBe('already_succeeded');
+      expect(
+        deps.processorGateway.createRefund,
+        `status=${status} must not refund`,
+      ).not.toHaveBeenCalled();
+      expect(
+        deps.paymentsRepo.attachAutoRefundMarkerOnFailed,
+        `status=${status} must not stamp marker`,
+      ).not.toHaveBeenCalled();
+      expect(
+        deps.invoicingBridge.markPaidFromProcessor,
+        `status=${status} must not pay invoice`,
+      ).not.toHaveBeenCalled();
+    }
   });
 
   it('illegal transition (partially_refunded → succeeded) — R4 I-3: ack + no-op (NOT err) to break Stripe retry loop', async () => {

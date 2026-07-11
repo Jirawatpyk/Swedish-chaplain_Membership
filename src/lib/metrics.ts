@@ -903,6 +903,23 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments.late_charge_auto_refunded.count{tenant}` — A.15 (#8
+   * resume-race) guard-rail anomaly. Fires when a late
+   * `payment_intent.succeeded` captures funds against a payment row that had
+   * already committed `failed` (invoice still payable), and the system
+   * auto-refunds the captured charge while leaving the row `failed` (F-9).
+   * DISTINCT from `autoRefundedStaleCount` so this rare bug-path is not
+   * conflated with the routine stale-invoice flow — any sustained non-zero
+   * rate signals a Stripe fail-then-succeed race worth investigating.
+   */
+  lateChargeAutoRefundedCount(tenantId: string): void {
+    counter(
+      'payments_late_charge_auto_refunded_count',
+      'Auto-refunds of a late captured charge on a terminal-failed payment (bug #8 resume-race)',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
    * `refunds.initiate.count{tenant, method, partial:bool}` — refund volume.
    */
   refundInitiateCount(tenantId: string, method: 'card' | 'promptpay', partial: boolean): void {

@@ -16,7 +16,7 @@
  * III). The `toDomain` helper owns the card-metadata null triage
  * (promptpay → null; card+pending+all-NULL → null; otherwise full VO).
  */
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
@@ -357,6 +357,40 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       // null. Unlike `updateStatus`, there is no throw-on-zero fallback:
       // this method is ALWAYS the guarded form (the pending→auto_refunded
       // edge is only ever driven from a Phase-A-observed pending row).
+      return updated ? toDomain(updated as PaymentRow) : null;
+    },
+
+    /**
+     * A.15 (#8 resume-race) — status-PRESERVING durable marker write on a
+     * terminal `failed` row. See the port docstring for the full contract
+     * + F-9 rationale. Threads the caller's `tx` (never the pool-global
+     * `db`) so the marker commits atomically with the caller's forensic
+     * audit + markProcessed under the same RLS context.
+     *
+     * Guard `status = 'failed' AND auto_refund_processor_refund_id IS NULL`:
+     * `status` is left untouched (no `failed → auto_refunded` edge — F-9),
+     * `completed_at` is untouched (the failed row already satisfies migration
+     * 0033's `payments_completed_at_iff_not_pending`), and the `IS NULL`
+     * predicate makes a Stripe retry a no-op. Zero rows matched → `null`
+     * (concurrent status change OR marker already present).
+     */
+    async attachAutoRefundMarkerOnFailed(txUnknown, input): Promise<Payment | null> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(payments)
+        .set({
+          autoRefundProcessorRefundId: input.processorRefundId,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(payments.tenantId, input.tenantId),
+            eq(payments.id, input.paymentId),
+            eq(payments.status, 'failed'),
+            isNull(payments.autoRefundProcessorRefundId),
+          ),
+        )
+        .returning();
       return updated ? toDomain(updated as PaymentRow) : null;
     },
 

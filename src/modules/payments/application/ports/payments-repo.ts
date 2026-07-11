@@ -155,6 +155,49 @@ export interface PaymentsRepo {
   ): Promise<Payment | null>;
 
   /**
+   * A.15 (#8 resume-race) — durably stamp `auto_refund_processor_refund_id`
+   * on a payment row that is ALREADY terminal `failed`, WITHOUT changing its
+   * status (architect decision F-9: NO `failed → auto_refunded` edge).
+   *
+   * Used by the confirm-payment `failed → succeeded` late-charge reconcile
+   * tail (Phase B): a late `payment_intent.succeeded` captured funds against
+   * a payment that had already committed `failed`; after Stripe accepts the
+   * auto-refund, this write records the `re_…` id on the STILL-`failed` row
+   * so the auto-refund's own later `charge.refund.updated` webhook is
+   * recognised via `findAutoRefundByProcessorRefundId` (A.6/A.11) instead of
+   * firing a false out-of-band alert (RR-6).
+   *
+   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND status = 'failed'
+   * AND auto_refund_processor_refund_id IS NULL` (status-preserving —
+   * `status` is NOT touched, so F-9 holds; `completed_at` is untouched and
+   * already satisfies migration 0033's `payments_completed_at_iff_not_pending`
+   * because the row is non-pending). The `IS NULL` predicate makes a Stripe
+   * retry idempotent (the same `re_…` id from the idempotency key does not
+   * overwrite an existing marker; the partial-unique index
+   * `payments_auto_refund_processor_refund_id_uniq` is the DB backstop).
+   *
+   * Zero rows matched — a concurrent writer changed the row off `failed`
+   * OR a marker was already stamped — returns `null` (mirrors
+   * `markAutoRefunded`'s guard-miss contract; the caller warns + reconciles,
+   * since the Stripe refund DID happen and the audit is the durable trail).
+   * Migration 0240's CHECKs are status-agnostic for this column (no CHECK
+   * ties `auto_refund_processor_refund_id` to status), so writing it on a
+   * `failed` row is valid.
+   *
+   * Runs inside the caller's webhook-dispatch tx (thread `tx`) so the marker
+   * write + the `payment_auto_refunded_stale_invoice` forensic audit +
+   * `markProcessed` commit atomically.
+   */
+  attachAutoRefundMarkerOnFailed(
+    tx: unknown,
+    input: {
+      readonly paymentId: PaymentId;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+    },
+  ): Promise<Payment | null>;
+
+  /**
    * Resume lookup: find the single pending payment for an (invoice, actor)
    * tuple. Returns null when no resumable attempt exists (idempotency key
    * for `POST /api/payments/initiate` resume per payments-api.md § 1).
