@@ -161,6 +161,7 @@ Deterministic versioned pattern detector for Thai national ID, Swedish personnum
 
 **Status**: Backlog — DEFERRED 2026-07-11 after a build-then-review cycle proved the naive fix introduces a compliance regression. Re-spec as a proper feature when promoted.
 **Trigger to promote**: a tenant approaches the 10,000-recipient split threshold. The drift is **UNREACHABLE** below it — the `split-large-broadcasts` cron only fires for `estimated_recipient_count > 10,000`, so it is dormant for SweCham (~131 members) and every sub-10k tenant.
+**The F7.1a US1 flags are ON in prod (SweCham), so the feature flag is NOT the dormancy guard — the recipient count is.** The dormancy holds on two count-gates the flags don't cover: (a) the eligible scan `estimated_recipient_count > 10,000`, and (b) a resolve-time re-check `resolvedCount <= 10,000 → skip` (`split-large-broadcasts/route.ts`). Both crons run every ~5 min but find nothing to split while the tenant's real audience (members + contacts + event attendees ≈ a few hundred) stays far under 10k — idle ticks, no drift. Dormancy therefore rests solely on membership scale; onboarding a >10k tenant (or SweCham growing toward it) is the promote trigger, not any flag flip.
 **Current mitigation (shipped, observable-only)**: `broadcasts_recipient_set_drift_count{tenant}` counter (PR #183) + the GROW-tail `logger.warn` `broadcasts.batch.recipient_set_grew_tail_excluded` (PR #180). No auto-heal — the dispatch cron re-resolves the segment every tick (which keeps suppression FRESH; see below).
 
 ### Problem
