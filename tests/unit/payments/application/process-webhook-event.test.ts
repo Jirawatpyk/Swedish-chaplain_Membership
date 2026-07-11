@@ -85,12 +85,18 @@ function makeDeps(): ProcessWebhookEventDeps {
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(async () => []),
     nextAttemptSeq: vi.fn(),
+    // A.11 — durable auto-refund lookup used by processRefundUpdated when
+    // no in-app refund row matches; default `null` → out-of-band path.
+    findAutoRefundByProcessorRefundId: vi.fn(async () => null),
   };
   const refundsRepo = {
     insert: vi.fn(),
-    updateStatus: vi.fn(),
+    updateStatus: vi.fn(async () => ({})),
     findByProcessorRefundId: vi.fn(async () => null),
     sumSucceededForPayment: vi.fn(),
+    // A.11 — `charge.refund.updated` dispatch (processRefundUpdated) locks
+    // the refund row by processor id; default `null` → out-of-band path.
+    lockForUpdateByProcessorRefundId: vi.fn(async () => null),
     // F5R3 SB-1 (2026-05-16) — webhook recovery now reads succeeded
     // sum to compute parent payment's next status when flipping a
     // pending refund row.
@@ -151,6 +157,11 @@ function makeDeps(): ProcessWebhookEventDeps {
       }),
     ),
     markPaidFromProcessor: vi.fn(async () => ok(undefined)),
+    // A.11 — F4 credit-note bridge used by the shared finaliser on the
+    // `charge.refund.updated(succeeded)` path.
+    issueCreditNoteFromRefund: vi.fn(async () =>
+      ok({ creditNoteId: 'cn_webhook_1', creditNoteNumber: 'CN-2026-0007' }),
+    ),
   };
   const audit = { emit: vi.fn(async () => undefined) };
   const clock = {
@@ -329,6 +340,124 @@ describe('processWebhookEvent (T056)', () => {
     });
     const result = await processWebhookEvent(deps, makeInput(event));
     expect(result.ok).toBe(true);
+  });
+
+  // A.11 — charge.refund.updated dispatch branch (processRefundUpdated).
+  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band; no invoiceId)', async () => {
+    const deps = makeDeps();
+    // Thread a logger so the dispatcher's `deps.logger ? {logger} : {}`
+    // spread propagates the structured logger into processRefundUpdated.
+    (deps as { logger?: unknown }).logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_unknown_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // out_of_band carries no invoiceId → the dispatcher omits it.
+    expect('invoiceId' in result.value).toBe(false);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
+    ).toBe(true);
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('charge.refund.updated with an already-terminal refund → processed + forwards invoiceId', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_async_1',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_async_1',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'succeeded',
+      processorRefundId: 're_async_1',
+      failureReasonCode: null,
+      creditNoteId: 'cn_prev',
+      initiatedAt: new Date(),
+      completedAt: new Date(),
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // already_finalized carries invoiceId → dispatcher forwards it for
+    // surgical revalidatePath (mirrors the charge.refunded I3 contract).
+    if (result.value.kind === 'processed') {
+      expect(result.value.invoiceId).toBe('inv_async_1');
+    }
+  });
+
+  it('charge.refund.updated with a bare dataObject (no charge/status/amount) → processed (?? fallbacks)', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_bare_1',
+        type: 'refund',
+        // latestChargeId / refundStatus / amountSatang omitted → the
+        // dispatcher's `?? null` / `?? 0n` fallbacks fire (null status
+        // classifies as pending → out_of_band with the "unknown" charge).
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('charge.refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, no fall-through)', async () => {
+    const deps = makeDeps();
+    // Let the step-6 idempotency tx commit, then throw on the DISPATCH tx so
+    // the failure lands in processRefundUpdated's catch → dispatch_threw.
+    rejectSecondTx(deps, new Error('neon reset'));
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_boom_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.kind).toBe('dispatch_threw');
+    expect(result.error.eventType).toBe('charge.refund.updated');
+    // detail is the Error class name only (no message — PCI SAQ-A).
+    expect(result.error.detail).toBe('Error');
   });
 
   it('charge.dispute.created — emits dispute_created audit', async () => {

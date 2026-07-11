@@ -30,14 +30,19 @@
  *   3. Flip the payment row to `paymentNextStatus`.
  *   4. Emit `refund_succeeded` with the caller-supplied `path`.
  *
- * Sequencing note (A.11 hand-off): the payment-flip section and the
- * refund-flip section are kept clearly separated so A.11 can INSERT the
- * self-contained payment `FOR UPDATE` read + SB-1 parent-payment
- * recovery (RR-5 / H-c) and the `lockForUpdateByProcessorRefundId`
- * refund read ahead of the respective flips — a clean insert, not a
- * rewrite. Those DB reads are NOT built here (A.9 keeps behaviour
- * identical to today's admin path; the caller still computes
- * `paymentNextStatus` from its Phase A snapshot).
+ * DUAL-MODE payment flip (A.11 built): the caller discriminates via the
+ * OPTIONAL `paymentNextStatus`:
+ *   - ADMIN mode (`issueRefund`) PROVIDES it (computed under its Phase A
+ *     payment lock) → the simple flip runs, byte-identical to pre-A.11.
+ *   - WEBHOOK mode (`processRefundUpdated`) OMITS it → the helper self-locks
+ *     the payment `FOR UPDATE` FIRST, reads the refunds aggregate under that
+ *     lock (SB-1 ordering), derives the next status, and flips with the
+ *     `expectedCurrentStatus` race-guard + SB-1 parent-payment recovery
+ *     (ported verbatim from `process-charge-refunded.ts`; RR-5 / H-c so
+ *     A.12 deleting that block loses nothing). See the payment-flip section.
+ * The refund row is locked by the WEBHOOK caller before this helper runs, so
+ * the system-wide lock-acquisition order is refund-row → payment-row (A.11
+ * report deadlock analysis).
  *
  * Invoice status (tax#5): a projection of `paymentNextStatus`
  * (`refunded → credited`, else `partially_credited`) — NOT a new F5
@@ -50,7 +55,14 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { Satang } from '@/lib/money';
-import type { AuditPort, ClockPort, InvoicingBridgePort, PaymentsRepo, RefundsRepo } from '../ports';
+import type {
+  AuditPort,
+  ClockPort,
+  InvoicingBridgePort,
+  LoggerPort,
+  PaymentsRepo,
+  RefundsRepo,
+} from '../ports';
 import { asPaymentId } from '../../domain/payment';
 import { retentionFor } from '../ports/audit-port';
 
@@ -72,8 +84,25 @@ export interface FinalizeSucceededRefundInput {
   readonly reason: string;
   /** Stripe `re_…` id — re-affirmed on the refund row + carried in the audit. */
   readonly processorRefundId: string;
-  /** Computed by the caller from its Phase A snapshot (A.9). */
-  readonly paymentNextStatus: 'partially_refunded' | 'refunded';
+  /**
+   * A.11 DUAL-MODE discriminator for the payment flip:
+   *
+   *   ADMIN mode (A.9 `issueRefund`) — PROVIDED. The caller computed this
+   *   under its Phase A payment `FOR UPDATE` lock and passes it → the
+   *   helper does the simple payment flip, byte-identical to the pre-A.11
+   *   behaviour (no self-lock, no recovery).
+   *
+   *   WEBHOOK mode (A.11 `processRefundUpdated`) — OMITTED. The helper
+   *   self-locks the payment `FOR UPDATE`, reads the refunds aggregate
+   *   under that lock (SB-1 ordering — payment lock BEFORE the aggregate
+   *   read), derives the next status itself, and flips with the
+   *   `expectedCurrentStatus` race-guard + SB-1 parent-payment recovery
+   *   (ported verbatim from `process-charge-refunded.ts`; RR-5 / H-c, so
+   *   A.12 deleting that block does not lose the recovery). The refund-flip
+   *   `expectedCurrentStatus='pending'` guard already serialises so only
+   *   one writer reaches the payment flip per refund.
+   */
+  readonly paymentNextStatus?: 'partially_refunded' | 'refunded';
   readonly actorUserId: string;
   readonly requestId: string | null;
   readonly path: FinalizeSucceededRefundPath;
@@ -112,11 +141,23 @@ export interface FinalizeSucceededRefundError {
 }
 
 export interface FinalizeSucceededRefundDeps {
-  readonly paymentsRepo: Pick<PaymentsRepo, 'updateStatus'>;
-  readonly refundsRepo: Pick<RefundsRepo, 'updateStatus'>;
+  // A.11 — WEBHOOK mode self-reads the payment (`lockForUpdate`) + the
+  // refunds aggregate (`getRefundContextForUpdate`) for the SB-1 port;
+  // ADMIN mode never calls them (it pre-computes `paymentNextStatus`). The
+  // wider `Pick` is satisfied by both callers' full repos.
+  readonly paymentsRepo: Pick<PaymentsRepo, 'updateStatus' | 'lockForUpdate'>;
+  readonly refundsRepo: Pick<RefundsRepo, 'updateStatus' | 'getRefundContextForUpdate'>;
   readonly invoicingBridge: Pick<InvoicingBridgePort, 'issueCreditNoteFromRefund'>;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /**
+   * A.11 (SB-1 port) — optional structured logger for the WEBHOOK-mode
+   * parent-payment-recovery race warn (a concurrent writer advanced the
+   * parent before this call could). Optional so existing admin-path
+   * scaffolding still compiles; the webhook composition threads the real
+   * pino logger.
+   */
+  readonly logger?: LoggerPort;
 }
 
 export async function finalizeSucceededRefund(
@@ -144,16 +185,11 @@ export async function finalizeSucceededRefund(
 
   const completedAt = new Date(deps.clock.nowMs());
 
-  // tax#5 (A.9): invoice status is a PROJECTION of the payment status,
-  // NOT a second refund-sum arithmetic. B.2 swaps this for the
-  // F4-authoritative `credited_total` read.
-  const invoiceStatus: 'partially_credited' | 'credited' =
-    input.paymentNextStatus === 'refunded' ? 'credited' : 'partially_credited';
-
   // --- Step 2: REFUND-FLIP SECTION -----------------------------------------
-  // A.11 inserts `lockForUpdateByProcessorRefundId` (webhook consumer)
-  // ahead of this flip. The `expectedCurrentStatus='pending'` guard makes
-  // the flip race-safe: a `null` return means a sibling finalised first.
+  // A.11: the WEBHOOK caller has already locked this refund row FOR UPDATE
+  // (`lockForUpdateByProcessorRefundId`); the ADMIN caller reaches it via
+  // this UPDATE. The `expectedCurrentStatus='pending'` guard makes the flip
+  // race-safe: a `null` return means a sibling finalised first.
   const updatedRefund = await deps.refundsRepo.updateStatus(tx, {
     refundId: input.refundId,
     tenantId: input.tenantId,
@@ -170,24 +206,99 @@ export async function finalizeSucceededRefund(
     // The idempotent CN read above returned that sibling's CN. Return the
     // coherent finalized state as a benign no-op — do NOT flip the
     // payment again or emit a duplicate `refund_succeeded` audit.
+    //
+    // `paymentNextStatus`/`invoiceStatus` below are consumed ONLY by the
+    // ADMIN caller (which always provides `input.paymentNextStatus` and
+    // reads `invoiceStatus` into its envelope). The WEBHOOK caller returns
+    // `already_finalized` and ignores both, so the `?? 'refunded'` filler
+    // is an unconsumed, type-only default on that path.
+    const reportedNextStatus = input.paymentNextStatus ?? 'refunded';
     return ok({
       creditNoteId: cnResult.value.creditNoteId,
       creditNoteNumber: cnResult.value.creditNoteNumber,
-      paymentNextStatus: input.paymentNextStatus,
-      invoiceStatus,
+      paymentNextStatus: reportedNextStatus,
+      invoiceStatus:
+        reportedNextStatus === 'refunded' ? 'credited' : 'partially_credited',
       siblingWon: true,
     });
   }
 
-  // --- Step 3: PAYMENT-FLIP SECTION ----------------------------------------
-  // A.11 inserts the payment `FOR UPDATE` read + SB-1 parent-payment
-  // recovery ahead of this flip.
-  await deps.paymentsRepo.updateStatus(tx, {
-    paymentId: asPaymentId(input.paymentId),
-    tenantId: input.tenantId,
-    nextStatus: input.paymentNextStatus,
-    completedAt,
-  });
+  // --- Step 3: PAYMENT-FLIP SECTION (dual-mode) ----------------------------
+  const paymentId = asPaymentId(input.paymentId);
+  let resolvedNextStatus: 'partially_refunded' | 'refunded';
+
+  if (input.paymentNextStatus !== undefined) {
+    // ADMIN mode — caller pre-computed the next status under its Phase A
+    // payment lock. Byte-identical to the pre-A.11 flip (no self-lock, no
+    // recovery); the refund-flip guard above already serialised us in.
+    resolvedNextStatus = input.paymentNextStatus;
+    await deps.paymentsRepo.updateStatus(tx, {
+      paymentId,
+      tenantId: input.tenantId,
+      nextStatus: resolvedNextStatus,
+      completedAt,
+    });
+  } else {
+    // WEBHOOK mode (A.11 SB-1 port) — no caller pre-lock. Acquire the
+    // payment-row FOR UPDATE lock BEFORE the refunds aggregate read so
+    // `succeededSum` includes the just-flipped refund and a concurrent
+    // refund cannot skew the derived status (the `expectedCurrentStatus`
+    // guard below protects the row write, NOT a status derived from a stale
+    // sum). Lock-ordering invariant: the refund row is already FOR-UPDATE
+    // locked by the caller, so acquisition order across the system is
+    // refund-row → payment-row (see A.11 report deadlock analysis).
+    const parent = await deps.paymentsRepo.lockForUpdate(
+      tx,
+      paymentId,
+      input.tenantId,
+    );
+    const ctx = await deps.refundsRepo.getRefundContextForUpdate(
+      tx,
+      input.tenantId,
+      paymentId,
+    );
+    const isFullyRefunded =
+      parent != null && ctx.succeededSumSatang >= parent.amountSatang;
+    resolvedNextStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
+
+    // SB-1 parent-payment recovery — only advance from a live succeeded /
+    // partially_refunded parent, and only when the status actually changes.
+    if (
+      parent != null &&
+      (parent.status === 'succeeded' ||
+        parent.status === 'partially_refunded') &&
+      parent.status !== resolvedNextStatus
+    ) {
+      const updatedPayment = await deps.paymentsRepo.updateStatus(tx, {
+        paymentId,
+        tenantId: input.tenantId,
+        nextStatus: resolvedNextStatus,
+        expectedCurrentStatus: parent.status,
+        completedAt,
+      });
+      if (updatedPayment === null) {
+        // expectedCurrentStatus race — a concurrent writer advanced the
+        // parent before us; the refund-row flip already committed and the
+        // parent status was set by someone else. Silent no-op (idempotent).
+        deps.logger?.warn(
+          'finalize_succeeded_refund.parent_status_recovery_race',
+          {
+            tenantId: input.tenantId,
+            paymentId: input.paymentId,
+            refundId: input.refundId,
+            expectedStatus: parent.status,
+            attemptedNextStatus: resolvedNextStatus,
+          },
+        );
+      }
+    }
+  }
+
+  // tax#5 (A.9): invoice status is a PROJECTION of the (resolved) payment
+  // status, NOT a second refund-sum arithmetic. B.2 swaps this for the
+  // F4-authoritative `credited_total` read.
+  const invoiceStatus: 'partially_credited' | 'credited' =
+    resolvedNextStatus === 'refunded' ? 'credited' : 'partially_credited';
 
   // --- Step 4: audit refund_succeeded (path-discriminated) -----------------
   await deps.audit.emit(tx, {
@@ -205,7 +316,7 @@ export async function finalizeSucceededRefund(
       credit_note_id: cnResult.value.creditNoteId,
       credit_note_number: cnResult.value.creditNoteNumber,
       amount_satang: input.amountSatang.toString(),
-      payment_next_status: input.paymentNextStatus,
+      payment_next_status: resolvedNextStatus,
       invoice_next_status: invoiceStatus,
     },
     retentionYears: retentionFor('refund_succeeded'),
@@ -214,7 +325,7 @@ export async function finalizeSucceededRefund(
   return ok({
     creditNoteId: cnResult.value.creditNoteId,
     creditNoteNumber: cnResult.value.creditNoteNumber,
-    paymentNextStatus: input.paymentNextStatus,
+    paymentNextStatus: resolvedNextStatus,
     invoiceStatus,
     siblingWon: false,
   });

@@ -48,6 +48,7 @@ import { confirmPayment } from './confirm-payment';
 import { failPayment } from './fail-payment';
 import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
+import { processRefundUpdated } from './process-refund-updated';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -667,6 +668,63 @@ async function processWebhookEventBody(
         dispatched: envelope.type,
         ...(refundResult.value.invoiceId !== undefined && {
           invoiceId: refundResult.value.invoiceId,
+        }),
+      };
+      break;
+    }
+
+    case 'charge.refund.updated': {
+      // A.11 — async refund-lifecycle reconciliation. Mirrors the
+      // charge.refunded branch shape: the sub-use-case's `dispatch_failed`
+      // Result maps to this branch's `dispatch_threw` error variant, and it
+      // folds `markProcessed` into its own withTx. `dataObject.id` is the
+      // Stripe Refund id (`re_…`), `latestChargeId` the parent charge, and
+      // `refundStatus` the projected Refund `status` (verifier A.10).
+      const refundUpdatedResult = await processRefundUpdated(
+        {
+          paymentsRepo: deps.paymentsRepo,
+          refundsRepo: deps.refundsRepo,
+          processorEventsRepo: deps.processorEventsRepo,
+          invoicingBridge: deps.invoicingBridge,
+          audit: deps.audit,
+          clock: deps.clock,
+          ...(deps.logger ? { logger: deps.logger } : {}),
+        },
+        {
+          tenantId,
+          requestId: input.requestId,
+          eventId: event.id,
+          processorRefundId: dataObject.id,
+          chargeId: dataObject.latestChargeId ?? null,
+          refundStatus: dataObject.refundStatus ?? null,
+          amountSatang: dataObject.amountSatang ?? 0n,
+          /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
+           * livemode value at a time. Cross-livemode coverage lives in the
+           * contract tests for /api/webhooks/stripe. */
+          processorEnv: event.livemode ? 'live' : 'test',
+          /* v8 ignore stop */
+        },
+      );
+      if (!refundUpdatedResult.ok) {
+        return err<ProcessWebhookEventError>({
+          code: 'dispatch_failed',
+          kind: 'dispatch_threw',
+          eventType: event.type,
+          // Class name only — Stripe/Postgres error text can carry partial
+          // keys / row data (PCI SAQ-A). Route logs the full error downstream.
+          detail: formatDispatchErrorDetail(refundUpdatedResult.error.cause),
+          // A thrown-error class doesn't carry permanent/transient semantics;
+          // transient lets Stripe retry (the A.14 sweep is the backstop).
+          permanence: 'transient',
+        });
+      }
+      // A.11 outcomes that derive an invoice id forward it for surgical
+      // revalidation; `out_of_band` (no DB refund/auto-refund) does not.
+      outcome = {
+        kind: 'processed',
+        dispatched: envelope.type,
+        ...('invoiceId' in refundUpdatedResult.value && {
+          invoiceId: refundUpdatedResult.value.invoiceId,
         }),
       };
       break;
