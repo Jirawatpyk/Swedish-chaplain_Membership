@@ -279,6 +279,7 @@ export {
   systemClock,
 } from './infrastructure/insights-deps';
 
-// COMP-1 / GDPR Art.17 — directory footprint erasure (row + public logo blob),
-// called by the members erasure cascade via its DirectoryErasurePort adapter.
-export { eraseMemberDirectoryFootprint } from './infrastructure/directory-erasure';
+// COMP-1 / GDPR Art.17 — member insights-footprint erasure (directory listing +
+// public logo blob + the member's own GDPR export artefacts), called by the
+// members erasure cascade via its DirectoryErasurePort adapter.
+export { eraseMemberInsightsFootprint } from './infrastructure/directory-erasure';
