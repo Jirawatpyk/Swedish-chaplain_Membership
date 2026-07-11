@@ -268,7 +268,8 @@ export interface PaymentsRepo {
   }>;
 
   /**
-   * H-8 — member-facing refund-notification signal.
+   * H-8 — member-facing refund-notification signal (member-portal
+   * display lookup, keyed by invoiceId).
    *
    * Returns the latest `payment_auto_refunded_stale_invoice` audit
    * payload's `processor_refund_id` for `invoiceId`, or null when no
@@ -282,6 +283,16 @@ export interface PaymentsRepo {
    * (`requested_by_customer`) which doesn't disambiguate auto-stale
    * vs manual refunds — the audit row is the only deterministic
    * business-cause signal until a `reason_kind` enum lands (post-MVP).
+   *
+   * PERMANENT — this is the member-portal display lookup and has a
+   * live caller (`src/app/(member)/portal/invoices/[invoiceId]/page.tsx`).
+   * It is a distinct lookup from `findAutoRefundByProcessorRefundId`
+   * below, not a duplicate pending removal: different key (invoiceId
+   * vs processorRefundId) and different purpose (display vs the
+   * reconcile-path money decision). Because it reads the append-only
+   * audit log directly, it also stays the more-complete forensic
+   * source, covering rare cases where the durable
+   * `auto_refund_processor_refund_id` marker was never stamped.
    */
   findStaleInvoiceAutoRefund(
     invoiceId: string,
@@ -289,10 +300,8 @@ export interface PaymentsRepo {
 
   /**
    * A.6 — durable auto-refund lookup (migration 0240
-   * `auto_refund_processor_refund_id` column), replacing the
-   * `audit_log`-based `findStaleInvoiceAutoRefund` above for callers
-   * that can run inside their own tx (`findStaleInvoiceAutoRefund` is
-   * kept for now — A.17 removes it once its last caller migrates).
+   * `auto_refund_processor_refund_id` column) for the webhook
+   * reconcile path, keyed by `processorRefundId`.
    *
    * Reads the payments row carrying
    * `auto_refund_processor_refund_id = processorRefundId` and returns
@@ -300,9 +309,12 @@ export interface PaymentsRepo {
    * reconcile path needs to locate the auto-refunded payment/invoice
    * without depending on append-only `audit_log` JSON payload shape.
    *
-   * Takes an explicit `tx` (unlike `findStaleInvoiceAutoRefund`) so
-   * callers can run this inside the same tx as their other webhook
-   * reconciliation reads/writes.
+   * Takes an explicit `tx` so callers can run this inside the same tx
+   * as their other webhook reconciliation reads/writes.
+   *
+   * This is a separate, permanent lookup from `findStaleInvoiceAutoRefund`
+   * above (different key, different purpose — see that method's
+   * docstring) — it is not a replacement that supersedes it.
    */
   findAutoRefundByProcessorRefundId(
     tx: unknown,

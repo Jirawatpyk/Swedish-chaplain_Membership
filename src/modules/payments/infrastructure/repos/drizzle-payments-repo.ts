@@ -543,9 +543,16 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
 
     /**
      * H-8 — read the most-recent auto-refund audit row for this
-     * invoice. Tenant scoping comes from the factory-bound `ctx`
-     * (RLS+FORCE) — defence-in-depth WHERE on `tenant_id` mirrors
+     * invoice (member-portal display lookup, keyed by invoiceId).
+     * Tenant scoping comes from the factory-bound `ctx` (RLS+FORCE) —
+     * defence-in-depth WHERE on `tenant_id` mirrors
      * `lockForUpdateByPaymentIntentId` (line 188).
+     *
+     * PERMANENT — retained for its live caller (member-portal invoice
+     * detail page). See the port docstring
+     * (`src/modules/payments/application/ports/payments-repo.ts`) for
+     * why this is not superseded by `findAutoRefundByProcessorRefundId`
+     * below.
      */
     async findStaleInvoiceAutoRefund(
       invoiceId: string,
@@ -569,11 +576,12 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     },
 
     /**
-     * A.6 — durable auto-refund lookup (migration 0240 column). See
-     * the port docstring for why this is the intended long-term
-     * replacement for `findStaleInvoiceAutoRefund` above (kept until
-     * A.17 removes its last caller). Explicit `tx` param — unlike
-     * `findStaleInvoiceAutoRefund`, callers run this inside their own
+     * A.6 — durable auto-refund lookup (migration 0240 column) for
+     * the webhook reconcile path, keyed by `processorRefundId`. See
+     * the port docstring for why this is a separate, permanent lookup
+     * from `findStaleInvoiceAutoRefund` above rather than a
+     * replacement for it (different key, different purpose). Explicit
+     * `tx` param — callers run this inside their own
      * webhook-reconciliation tx. Defence-in-depth `tenant_id =` WHERE
      * mirrors the rest of this file; RLS is the primary backstop.
      */
