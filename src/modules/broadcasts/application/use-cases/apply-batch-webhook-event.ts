@@ -116,8 +116,83 @@ export interface ApplyBatchWebhookEventInput {
   readonly recipientEmailLower: string;
   /** Present on `bounced` events — only `hard` bounces suppress. */
   readonly bounceType?: 'hard' | 'soft';
+  /**
+   * Resend diagnostic (SMTP 550 text / complaint note), stored as the
+   * suppression `reason_text` — parity with the MVP path (bug #7 review).
+   */
+  readonly errorMessage?: string;
   readonly resendEventId: string;
   readonly requestId?: string | null;
+}
+
+/**
+ * Bug #10 recipient suppression (hard-bounce / complaint / unsubscribe) for the
+ * multi-batch path — recoverable equivalent of the MVP `processWebhookEvent`
+ * suppression. Runs BEFORE the counter's idempotency-ledger commit and FAILS
+ * LOUD (returns server_error) on a transient upsert error: the ledger row is
+ * not yet written, so a Svix retry re-runs both the (idempotent) suppression
+ * and the counter. Ordering it after the ledger commit would make a dropped
+ * suppression unrecoverable (the replay short-circuits on `duplicate`). The
+ * suppression upsert is idempotent (ON CONFLICT), so a replay is a no-op with
+ * `wasNew=false` (no duplicate audit). Audit is best-effort (safeAuditEmit).
+ */
+async function suppressBatchRecipient(
+  deps: ApplyBatchWebhookEventDeps,
+  input: ApplyBatchWebhookEventInput,
+): Promise<Result<void, ApplyBatchWebhookEventError>> {
+  const suppressionReason = suppressionReasonFor(input.eventType, input.bounceType);
+  if (suppressionReason === null || !deps.marketingUnsubscribes.upsertStandalone) {
+    return ok(undefined);
+  }
+  let sup;
+  try {
+    sup = await deps.marketingUnsubscribes.upsertStandalone({
+      tenantId: input.tenantId,
+      emailLower: unsafeBrandEmailLower(
+        input.recipientEmailLower.toLowerCase().trim(),
+      ),
+      memberId: null,
+      reason: suppressionReason,
+      reasonText: input.errorMessage ?? null,
+      sourceBroadcastId: asBroadcastId(input.broadcastId),
+      sourceTokenHash: null,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        broadcastId: input.broadcastId,
+        batchManifestId: input.batchManifestId,
+        reason: suppressionReason,
+      },
+      'broadcasts.batch.suppression_upsert_failed',
+    );
+    // Fail loud so the route 5xx's and Svix retries — the FR-027 write MUST
+    // NOT be silently dropped (the counter ledger is still unwritten here).
+    return err({
+      kind: 'apply_batch_webhook.server_error',
+      message: e instanceof Error ? e.message : 'suppression upsert failed',
+    });
+  }
+  if (sup.wasNew) {
+    await safeAuditEmit(deps.audit, null, {
+      tenantId: input.tenantId,
+      eventType: 'broadcast_suppression_applied',
+      actorUserId: 'system:resend-webhook',
+      summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId}: ${suppressionReason} suppressed recipient`,
+      payload: {
+        broadcastId: input.broadcastId,
+        batchManifestId: input.batchManifestId,
+        batchIndex: input.batchIndex,
+        reason: suppressionReason,
+        recipientEmailHashed: input.recipientEmailHashed,
+        resendEventId: input.resendEventId,
+      },
+      requestId: input.requestId ?? null,
+    });
+  }
+  return ok(undefined);
 }
 
 export async function applyBatchWebhookEvent(
@@ -129,6 +204,14 @@ export async function applyBatchWebhookEvent(
   // is responsible for tenant resolution + has the slug from the
   // bypass-RLS lookup.
   const counterField = EVENT_TO_COUNTER[input.eventType];
+
+  // Bug #10 (code-review): suppress the recipient BEFORE the counter's
+  // idempotency-ledger commit, and fail loud on error, so a transient
+  // suppression-write failure is recovered by the Svix retry (both writes
+  // re-run idempotently). Doing it after the ledger commit made a dropped
+  // suppression permanently unrecoverable (replay short-circuits on duplicate).
+  const suppressed = await suppressBatchRecipient(deps, input);
+  if (!suppressed.ok) return suppressed;
 
   const result = await deps.batchManifests.incrementCounter(
     input.tenantId as never, // TenantSlug brand — caller-validated
@@ -239,61 +322,6 @@ export async function applyBatchWebhookEvent(
     },
     requestId: input.requestId ?? null,
   });
-
-  // Bug #10 fix (code-review, 2026-07-11) — recipient-level suppression on the
-  // MULTI-BATCH path. The MVP `processWebhookEvent` suppresses hard-bounce /
-  // complaint / unsubscribe; this parallel path previously only COUNTED them,
-  // leaving multi-batch recipients re-emailable by the next broadcast
-  // (FR-027/FR-030 violation). We reach here only for a genuinely-new event
-  // (the `duplicate` short-circuit above provides idempotency), so a single
-  // suppression upsert per event is correct. `upsertStandalone` opens its own
-  // tenant tx (this path has no caller tx). Best-effort: a suppression-write
-  // failure MUST NOT 500 the webhook (the counter already committed; Svix would
-  // otherwise retry) — log it for ops.
-  const suppressionReason = suppressionReasonFor(input.eventType, input.bounceType);
-  if (suppressionReason !== null && deps.marketingUnsubscribes.upsertStandalone) {
-    try {
-      const sup = await deps.marketingUnsubscribes.upsertStandalone({
-        tenantId: input.tenantId,
-        emailLower: unsafeBrandEmailLower(
-          input.recipientEmailLower.toLowerCase().trim(),
-        ),
-        memberId: null,
-        reason: suppressionReason,
-        reasonText: null,
-        sourceBroadcastId: asBroadcastId(input.broadcastId),
-        sourceTokenHash: null,
-      });
-      if (sup.wasNew) {
-        await safeAuditEmit(deps.audit, null, {
-          tenantId: input.tenantId,
-          eventType: 'broadcast_suppression_applied',
-          actorUserId: 'system:resend-webhook',
-          summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId}: ${suppressionReason} suppressed recipient`,
-          payload: {
-            broadcastId: input.broadcastId,
-            batchManifestId: input.batchManifestId,
-            batchIndex: input.batchIndex,
-            reason: suppressionReason,
-            recipientEmailHashed: input.recipientEmailHashed,
-            resendEventId: input.resendEventId,
-          },
-          requestId: input.requestId ?? null,
-        });
-      }
-    } catch (e) {
-      logger.error(
-        {
-          err: e instanceof Error ? e.message : String(e),
-          tenantId: input.tenantId,
-          broadcastId: input.broadcastId,
-          batchManifestId: input.batchManifestId,
-          reason: suppressionReason,
-        },
-        'broadcasts.batch.suppression_upsert_failed',
-      );
-    }
-  }
 
   return ok(undefined);
 }

@@ -187,7 +187,13 @@ export async function dispatchBroadcastBatch(
     (sum, m) => sum + m.recipientCount,
     0,
   );
-  if (input.allRecipients.length > splitTimeCoverage) {
+  // GROW is a broadcast-level fact identical for every batch, but the dropped
+  // tail sits immediately past the LAST batch's range. Warn only from that
+  // last batch (`recipientRangeEnd + 1 === splitTimeCoverage`) so the log fires
+  // ONCE per broadcast, from the batch adjacent to the loss — not N× across
+  // every batch dispatch (re-review finding #12).
+  const isLastBatch = manifest.recipientRangeEnd + 1 === splitTimeCoverage;
+  if (input.allRecipients.length > splitTimeCoverage && isLastBatch) {
     logger.warn(
       {
         tenantId: tenantSlug,

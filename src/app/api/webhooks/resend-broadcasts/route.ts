@@ -431,6 +431,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ...(verified.data.bounceType !== undefined && {
           bounceType: verified.data.bounceType,
         }),
+        ...(verified.data.errorMessage !== undefined && {
+          errorMessage: verified.data.errorMessage,
+        }),
         resendEventId: verified.id,
         requestId,
       });

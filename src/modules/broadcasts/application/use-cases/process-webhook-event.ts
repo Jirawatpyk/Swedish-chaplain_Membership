@@ -173,6 +173,9 @@ export async function processWebhookEvent(
         if (!isHardBounce && !isComplaint) return false;
 
         const reason = isHardBounce ? 'hard_bounce' : 'complaint';
+        // Hash once — both audit emits below share the same value (re-review
+        // finding #15; the digest is deterministic per (tenant, email)).
+        const recipientEmailHashed = hashRecipient(tenantId, recipientLower.value);
         const suppressionInput: NewSuppressionInput = {
           tenantId,
           emailLower: recipientLower.value,
@@ -197,10 +200,7 @@ export async function processWebhookEvent(
               payload: {
                 broadcastId,
                 memberId: fresh.requestedByMemberId,
-                recipientEmailHashed: hashRecipient(
-                  tenantId,
-                  recipientLower.value,
-                ),
+                recipientEmailHashed,
               },
               requestId: input.requestId,
             }),
@@ -215,10 +215,7 @@ export async function processWebhookEvent(
             summary: `${isHardBounce ? 'Hard bounce' : 'Complaint'} suppressed recipient on broadcast ${broadcastId}`,
             payload: {
               broadcastId,
-              recipientEmailHashed: hashRecipient(
-                tenantId,
-                recipientLower.value,
-              ),
+              recipientEmailHashed,
               reason,
               // Preserve the hard-bounce audit's bounceType field so the
               // non-terminal switch can route through this same closure.

@@ -25,6 +25,7 @@ function makeStubDeps(
     incrementFails?: 'not_found' | 'storage_error';
     duplicate?: boolean;
     suppressionWasNew?: boolean;
+    suppressionThrows?: boolean;
   } = {},
 ): StubDeps {
   const emits: Array<{ eventType: string; payload?: Record<string, unknown> }> = [];
@@ -66,6 +67,9 @@ function makeStubDeps(
       marketingUnsubscribes: {
         async upsertStandalone(input: { reason: string; emailLower: string }) {
           suppressions.push({ reason: input.reason, emailLower: input.emailLower });
+          if (opts.suppressionThrows) {
+            throw new Error('simulated suppression upsert failure');
+          }
           return {
             wasNew: opts.suppressionWasNew ?? true,
             suppression: {} as unknown,
@@ -246,13 +250,83 @@ describe('applyBatchWebhookEvent contract (Phase 3F.5)', () => {
     expect(suppressions).toHaveLength(0);
   });
 
-  it('duplicate (replayed) unsubscribed → does NOT re-suppress (idempotency short-circuit)', async () => {
-    const { deps, suppressions } = makeStubDeps({ duplicate: true });
-    await applyBatchWebhookEvent(deps as never, {
+  // Bug #1-6 (re-review) — suppression runs BEFORE the counter's idempotency
+  // ledger commits, so a Svix replay DOES re-run the (idempotent) suppression
+  // upsert. That is intentional: it makes suppression RECOVERABLE — if the
+  // first attempt's upsert failed transiently, the ledger row was never
+  // written, so the retry re-runs both. On a genuine replay the ON CONFLICT
+  // makes the re-run a no-op (wasNew=false → no duplicate audit) and the
+  // counter short-circuits on `duplicate`.
+  it('duplicate (replayed) unsubscribed → re-runs idempotent suppression, no duplicate audit', async () => {
+    const { deps, suppressions, emits } = makeStubDeps({
+      duplicate: true,
+      suppressionWasNew: false, // row already exists from the first delivery
+    });
+    const result = await applyBatchWebhookEvent(deps as never, {
       ...baseInput,
       eventType: 'unsubscribed',
     });
-    expect(suppressions).toHaveLength(0);
+    expect(result.ok).toBe(true);
+    // The upsert is attempted again (idempotent), but produces no new row…
+    expect(suppressions).toHaveLength(1);
+    // …so no duplicate suppression audit, and no duplicate delivery audit.
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_suppression_applied'),
+    ).toBe(false);
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_delivery_recorded'),
+    ).toBe(false);
+  });
+
+  // Bug #1-6 (re-review, HIGH) — recoverability guarantee. A transient
+  // suppression-upsert failure MUST fail loud (server_error → webhook 5xx →
+  // Svix retries) and MUST NOT increment the counter (which would commit the
+  // idempotency ledger and make the retry short-circuit, permanently losing
+  // the FR-027/FR-030 write).
+  it('suppression upsert throws → server_error AND counter NOT incremented (recoverable)', async () => {
+    const { deps, increments, emits } = makeStubDeps({ suppressionThrows: true });
+    const result = await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'complained',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe(
+      'apply_batch_webhook.server_error',
+    );
+    // The counter must not have run — the ledger stays unwritten so the retry
+    // re-runs both the suppression and the increment.
+    expect(increments).toHaveLength(0);
+    // No delivery/suppression audit on the fail-loud path.
+    expect(emits).toHaveLength(0);
+  });
+
+  // Bug #7 (re-review) — the Resend diagnostic (SMTP 550 / complaint note) is
+  // threaded into the suppression `reason_text` for parity with the MVP path.
+  it('errorMessage threaded into suppression reason_text', async () => {
+    const captured: Array<{ reasonText: unknown }> = [];
+    const { deps } = makeStubDeps();
+    // Wrap the stub to capture reasonText (StubDeps only records reason+email).
+    const wrapped = deps as {
+      marketingUnsubscribes: {
+        upsertStandalone: (i: { reasonText: unknown }) => Promise<unknown>;
+      };
+    };
+    const orig = wrapped.marketingUnsubscribes.upsertStandalone;
+    wrapped.marketingUnsubscribes.upsertStandalone = async (i: {
+      reasonText: unknown;
+    }) => {
+      captured.push({ reasonText: i.reasonText });
+      return orig(i as never);
+    };
+    await applyBatchWebhookEvent(deps as never, {
+      ...baseInput,
+      eventType: 'bounced',
+      bounceType: 'hard',
+      errorMessage: 'smtp; 550 5.1.1 mailbox unavailable',
+    });
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.reasonText).toBe('smtp; 550 5.1.1 mailbox unavailable');
   });
 
   it('suppression on an already-suppressed recipient (wasNew=false) → no duplicate suppression audit', async () => {

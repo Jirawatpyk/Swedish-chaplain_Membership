@@ -58,6 +58,24 @@ function rowToSuppression(row: MarketingUnsubscribeRow): MarketingUnsubscribe {
  * upgrade takes the new reason's text (even NULL); equal strength keeps the
  * latest non-null text.
  */
+/**
+ * Suppression-reason strength rank as a SQL fragment (higher wins):
+ * complaint(4) > hard_bounce(3) > admin_added(2) > recipient_initiated(1).
+ * Extracted once (re-review finding #13) so the ladder is defined in a single
+ * place instead of being inlined 6× across the reason / reason_text CASE
+ * expressions below. `reasonRef` is a trusted, constant identifier fragment
+ * (`EXCLUDED.reason` or `marketing_unsubscribes.reason`) — never user input.
+ */
+function reasonRank(reasonRef: ReturnType<typeof sql>): ReturnType<typeof sql> {
+  return sql`(CASE ${reasonRef}
+                WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
+                WHEN 'admin_added' THEN 2 ELSE 1 END)`;
+}
+// Fresh fragments per call site (do not reuse one SQL object across positions).
+const newRank = (): ReturnType<typeof sql> => reasonRank(sql`EXCLUDED.reason`);
+const oldRank = (): ReturnType<typeof sql> =>
+  reasonRank(sql`marketing_unsubscribes.reason`);
+
 async function executeSuppressionUpsert(
   tx: TenantTx,
   input: NewSuppressionInput,
@@ -75,12 +93,7 @@ async function executeSuppressionUpsert(
            ${input.sourceBroadcastId}, ${input.sourceTokenHash})
         ON CONFLICT (tenant_id, email_lower) DO UPDATE
           SET reason = CASE
-                WHEN (CASE EXCLUDED.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
-                     >= (CASE marketing_unsubscribes.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                WHEN ${newRank()} >= ${oldRank()}
                 THEN EXCLUDED.reason
                 ELSE marketing_unsubscribes.reason
               END,
@@ -90,21 +103,11 @@ async function executeSuppressionUpsert(
                 -- would mislabel a stronger classification (e.g. a spam
                 -- complaint annotated with the prior hard-bounce SMTP
                 -- diagnostic) — code-review fix 2026-07-11.
-                WHEN (CASE EXCLUDED.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
-                     > (CASE marketing_unsubscribes.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                WHEN ${newRank()} > ${oldRank()}
                 THEN EXCLUDED.reason_text
                 -- EQUAL strength: latest non-null text wins, keep prior if the
                 -- new event carries none.
-                WHEN (CASE EXCLUDED.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
-                     = (CASE marketing_unsubscribes.reason
-                        WHEN 'complaint' THEN 4 WHEN 'hard_bounce' THEN 3
-                        WHEN 'admin_added' THEN 2 ELSE 1 END)
+                WHEN ${newRank()} = ${oldRank()}
                 THEN COALESCE(EXCLUDED.reason_text, marketing_unsubscribes.reason_text)
                 -- DOWNGRADE: keep the stronger prior reason + its text.
                 ELSE marketing_unsubscribes.reason_text

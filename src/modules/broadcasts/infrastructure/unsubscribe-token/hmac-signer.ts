@@ -83,10 +83,22 @@ interface RawPayload {
 const EMAIL_ENC_IV_BYTES = 12;
 const EMAIL_ENC_TAG_BYTES = 16;
 
+// Memoise the derived encryption key so the SHA-256 KDF runs once per process
+// instead of on every encrypt/decrypt (re-review finding #14). Keyed on the
+// secret value so a rotated `UNSUBSCRIBE_TOKEN_SECRET` (or a test that swaps
+// the env) recomputes rather than serving a stale key.
+let cachedEmailEncKey: { readonly secret: string; readonly key: Buffer } | null =
+  null;
+
 function emailEncKey(): Buffer {
-  return createHash('sha256')
-    .update(`unsub-email-enc:v1:${env.broadcasts.unsubscribeTokenSecret}`)
-    .digest();
+  const secret = env.broadcasts.unsubscribeTokenSecret;
+  if (cachedEmailEncKey === null || cachedEmailEncKey.secret !== secret) {
+    cachedEmailEncKey = {
+      secret,
+      key: createHash('sha256').update(`unsub-email-enc:v1:${secret}`).digest(),
+    };
+  }
+  return cachedEmailEncKey.key;
 }
 
 function encryptEmail(emailLower: string): string {
