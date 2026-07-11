@@ -120,6 +120,14 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
+    case 'f4_preflight_read_error':
+      // B.1 review Fix#1: the PRE-FLIGHT F4 credited-total read failed BEFORE
+      // any Stripe call — money did NOT move, the refund is safe to retry, and
+      // NO orphaned out-of-band refund exists. Still 502 (a transient F4 read
+      // failure), but a DISTINCT route code from `f4_bridge_error` so an
+      // on-call does NOT hunt a non-existent orphaned refund via the
+      // out-of-band-refund runbook. Retrying the same request is the fix.
+      return { status: 502, routeCode: 'f4_preflight_read_error' };
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure

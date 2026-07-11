@@ -366,36 +366,45 @@ export function makeDrizzleInvoiceRepo(
 ): InvoiceRepo {
   const ctx = asTenantContext(tenantId);
 
+  /**
+   * Run `fn` on the tenant-scoped connection: inline against a caller-supplied
+   * `externalTx` when present, else a fresh `runInTenant`. Shared by `withTx`
+   * (mutation paths — D-03 atomic bridge) and the tx-aware `findById` read
+   * (B.1 review Fix#2 — the F5 refund pre-flight threads its Phase A tx so the
+   * F4 credited-total read runs on the SAME pooled connection as the payment
+   * `FOR UPDATE`, instead of a nested `runInTenant` acquiring a 2nd pooled
+   * connection that can self-deadlock under concurrent refunds).
+   *
+   * Backend-dev review F-01 (Group E, 2026-04-24): runtime tenant-mismatch
+   * guard. If a future composer hands us tenantA's tx while this repo is bound
+   * to tenantB, the outer `SET LOCAL app.current_tenant=A` would still be in
+   * effect → F4 would read/write against tenantA's RLS namespace silently.
+   * Re-read `current_setting('app.current_tenant')` and refuse on disagreement
+   * (Constitution Principle I clause 3 — make the precondition explicit).
+   * Postgres has no true nested transactions, so we never open one when an
+   * `externalTx` is supplied; `SET LOCAL app.current_tenant` was already
+   * established on that connection by the outer `runInTenant`.
+   */
+  async function withTenantConn<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+    if (externalTx !== undefined) {
+      const externalTxTyped = externalTx as TenantTx;
+      const probe = (await externalTxTyped.execute(
+        sql`SELECT current_setting('app.current_tenant', TRUE) AS current_tenant`,
+      )) as unknown as Array<{ current_tenant: string | null }>;
+      const current_tenant = probe[0]?.current_tenant ?? null;
+      if (current_tenant !== ctx.slug) {
+        throw new Error(
+          `makeDrizzleInvoiceRepo: externalTx tenant mismatch — repo bound to "${ctx.slug}" but tx carries "${current_tenant ?? '(unset)'}". Refusing to read from or write to a different tenant's namespace.`,
+        );
+      }
+      return fn(externalTx);
+    }
+    return runInTenant(ctx, async (tx) => fn(tx));
+  }
+
   return {
     async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-      if (externalTx !== undefined) {
-        // D-03 tx-reuse path: run inline against the caller's tx.
-        // Do NOT open a nested `runInTenant` — Postgres does not
-        // support true nested transactions and `SET LOCAL
-        // app.current_tenant` has already been established on this
-        // connection by the outer `runInTenant`.
-        //
-        // Backend-dev review F-01 (Group E, 2026-04-24): runtime
-        // tenant-mismatch guard. If a future composer mistakenly
-        // hands us tenantA's tx while requesting tenantB writes, the
-        // outer `SET LOCAL app.current_tenant=A` would still be in
-        // effect → F4 writes against tenantA's RLS namespace silently.
-        // Re-read `current_setting('app.current_tenant')` and refuse
-        // if it disagrees with this repo's bound tenantId. Constitution
-        // Principle I clause 3 — make the precondition explicit.
-        const externalTxTyped = externalTx as TenantTx;
-        const probe = (await externalTxTyped.execute(
-          sql`SELECT current_setting('app.current_tenant', TRUE) AS current_tenant`,
-        )) as unknown as Array<{ current_tenant: string | null }>;
-        const current_tenant = probe[0]?.current_tenant ?? null;
-        if (current_tenant !== ctx.slug) {
-          throw new Error(
-            `makeDrizzleInvoiceRepo: externalTx tenant mismatch — repo bound to "${ctx.slug}" but tx carries "${current_tenant ?? '(unset)'}". Refusing to write to a different tenant's namespace.`,
-          );
-        }
-        return fn(externalTx);
-      }
-      return runInTenant(ctx, async (tx) => fn(tx));
+      return withTenantConn(fn);
     },
 
     async insertDraft(txUnknown, input): Promise<Invoice> {
@@ -513,7 +522,12 @@ export function makeDrizzleInvoiceRepo(
     },
 
     async findById(invoiceId: InvoiceId, tenantIdArg: string): Promise<Invoice | null> {
-      return runInTenant(ctx, async (tx) => {
+      // B.1 review Fix#2 — `withTenantConn` runs inline against a caller
+      // `externalTx` when the repo was built with one (F5 refund pre-flight),
+      // else opens its own `runInTenant` (unchanged for every existing caller
+      // — none pass `externalTx` to `makeGetInvoiceDeps` today).
+      return withTenantConn(async (txUnknown) => {
+        const tx = txUnknown as TenantTx;
         const [row] = await tx
           .select()
           .from(invoices)

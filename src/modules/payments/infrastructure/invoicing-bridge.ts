@@ -299,11 +299,34 @@ export const invoicingBridge: InvoicingBridgePort = {
    * refund). On any failure the caller refuses the refund BEFORE Stripe.
    */
   async getInvoiceCreditedTotal(input) {
-    const deps = makeGetInvoiceDeps(input.tenantId);
-    const result = await f4GetInvoice(deps, {
-      tenantId: input.tenantId,
-      invoiceId: input.invoiceId,
-    });
+    // Fix#2 — thread the caller's tx so the read runs on the SAME pooled
+    // connection as the payment `FOR UPDATE` lock (no nested `runInTenant`).
+    const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
+    // Minor#1 — the F4 read can THROW (Neon down / tx aborted / externalTx
+    // tenant-mismatch guard). Catch it so the refund pre-flight gets a graceful
+    // typed `read_failed` (→ the use-case's `f4_preflight_read_error` → 502)
+    // instead of the exception escaping Phase A → rollback → a raw 500. Still
+    // fail-safe (Stripe never called), just the intended code.
+    let result: Awaited<ReturnType<typeof f4GetInvoice>>;
+    try {
+      result = await f4GetInvoice(deps, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape(
+        'getInvoiceCreditedTotal_read_threw',
+      );
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceCreditedTotal_read_threw',
+      );
+      return err({ code: 'read_failed' });
+    }
     if (!result.ok) {
       // Without an `actor` the only reachable F4 error is `not_found`
       // (the member-mismatch `forbidden` guard requires a member actor).

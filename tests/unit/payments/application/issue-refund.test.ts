@@ -48,6 +48,10 @@ const TENANT_ID = 'tnt-test-1';
 const ACTOR_ID = 'user-admin-1';
 const CORR_ID = 'corr-rfnd-1';
 const NOW_MS = Date.parse('2026-05-15T03:14:22.456Z');
+// Single source of truth for the fixture payment amount so the invoice-cap
+// stub (getInvoiceCreditedTotal.totalSatang) is DERIVED from the payment
+// amount rather than an independently-drifting literal (B.1 review Minor#2).
+const PAYMENT_AMOUNT_SATANG = asSatang(5_350_000n);
 
 function makePayment(overrides: Partial<Payment> = {}): Payment {
   return {
@@ -57,7 +61,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     memberId: 'mbr-1',
     method: 'card',
     status: 'succeeded',
-    amountSatang: asSatang(5_350_000n),
+    amountSatang: PAYMENT_AMOUNT_SATANG,
     currency: 'THB',
     processorPaymentIntentId: 'pi_test_xxx',
     processorChargeId: 'ch_test_xxx',
@@ -172,7 +176,7 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     // the payment bound → every existing assertion (payment-cap only) is
     // preserved. Per-test overrides exercise the credit-based cap.
     getInvoiceCreditedTotal: vi.fn(async () =>
-      ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(5_350_000n) }),
+      ok({ creditedTotalSatang: asSatang(0n), totalSatang: PAYMENT_AMOUNT_SATANG }),
     ),
   };
   const audit = { emit: vi.fn(async () => undefined) };
@@ -354,6 +358,60 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       expect(r.error.kind).toBe('idempotency_conflict');
       expect(r.error.reason).toBe('duplicate_idempotency_key');
     }
+  });
+
+  it('f4_preflight_read_error — pre-flight F4 credited-total read fails: distinct code, money NOT moved', async () => {
+    // B.1 review Fix#1 — the PRE-FLIGHT credited-total read failure (money not
+    // yet moved, safe to retry, NO orphaned refund) MUST NOT reuse the
+    // post-Stripe `f4_bridge_error` code (which means "Stripe DID succeed; ops
+    // follow up via the out-of-band-refund runbook"). An on-call seeing
+    // `f4_bridge_error` for a pre-flight failure would hunt a NON-EXISTENT
+    // refund. The pre-flight path returns the distinct `f4_preflight_read_error`.
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      err({ code: 'not_found' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('f4_preflight_read_error');
+      // Explicitly NOT the post-Stripe code.
+      expect(r.error.code).not.toBe('f4_bridge_error');
+      if (r.error.code === 'f4_preflight_read_error') {
+        // Detail carries the bridge sub-code for ops triage.
+        expect(r.error.detail).toBe('invoice_credited_total_read_failed:not_found');
+      }
+    }
+    // Money-safety: rejected BEFORE Stripe — createRefund never called, and no
+    // pending refund row written (AS6 — pre-insert rejection).
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+    // No `refund_initiated` audit either (pre-insert).
+    const initiated = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'refund_initiated',
+    );
+    expect(initiated).toBeUndefined();
+  });
+
+  it('f4_preflight_read_error — bridge read_failed (Neon-down throw class) also maps to the pre-flight code', async () => {
+    // Minor#1 — when the bridge itself catches an F4 read THROW (Neon down) it
+    // returns `{ code: 'read_failed' }`; the use-case must still refuse pre-
+    // Stripe with the distinct pre-flight code (graceful 502, not a raw 500).
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('f4_preflight_read_error');
+      if (r.error.code === 'f4_preflight_read_error') {
+        expect(r.error.detail).toBe('invoice_credited_total_read_failed:read_failed');
+      }
+    }
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
   });
 
   it('f4_bridge_error — F4 issueCreditNoteFromRefund fails after Stripe success', async () => {

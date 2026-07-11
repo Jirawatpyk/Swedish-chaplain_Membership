@@ -3634,6 +3634,7 @@
         "refund_in_progress": "En annan återbetalning pågår för denna betalning. Försök igen om en stund.",
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
+        "f4_preflight_read_error": "Det gick inte att verifiera det återbetalningsbara saldot just nu. Inga pengar flyttades — försök igen.",
         "internal_error": "Ett oväntat fel uppstod. Försök igen."
       },
       "cmdk": {

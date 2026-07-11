@@ -3634,6 +3634,7 @@
         "refund_in_progress": "Another refund is in progress for this payment. Please retry shortly.",
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
+        "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
         "internal_error": "An unexpected error occurred. Please try again."
       },
       "cmdk": {

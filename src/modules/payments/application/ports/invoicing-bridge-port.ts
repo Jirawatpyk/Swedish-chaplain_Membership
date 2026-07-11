@@ -207,19 +207,32 @@ export interface InvoicingBridgePort {
    * could not be resolved in the actor tenant (a data-integrity anomaly — a
    * refundable payment always FK-references a live invoice). `invalid_total`
    * = the F4 money field failed `asSatang` (null `total` on a draft, or a
-   * negative value from a dropped CHECK / manual SQL). On EITHER error the
-   * caller refuses the refund rather than proceeding blind to Stripe.
+   * negative value from a dropped CHECK / manual SQL). `read_failed` (B.1
+   * review Minor#1) = the underlying F4 read THREW (e.g. Neon down / tx
+   * aborted / tenant-context mismatch) — the adapter catches it so the caller
+   * gets a graceful `Result.err` (→ 502) instead of an unhandled 500. On ANY
+   * error the caller refuses the refund rather than proceeding blind to Stripe.
+   *
+   * B.1 review Fix#2 — optional `externalTx`: when the caller is already
+   * inside a `runInTenant`-based tx (the F5 refund Phase A holds the payment
+   * `FOR UPDATE` on it), it threads that tx here so the F4 read runs on the
+   * SAME pooled connection instead of the adapter opening a 2nd `runInTenant`
+   * (a nested pooled-connection acquisition that can self-deadlock under
+   * concurrent refunds). The connection already carries `SET LOCAL
+   * app.current_tenant`, so the read stays tenant-scoped. Omit it for standalone
+   * reads (the adapter opens its own tenant-bound tx, unchanged behaviour).
    */
   getInvoiceCreditedTotal(input: {
     readonly tenantId: string;
     readonly invoiceId: string;
+    readonly externalTx?: unknown;
   }): Promise<
     Result<
       {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
       },
-      { readonly code: 'not_found' | 'invalid_total' }
+      { readonly code: 'not_found' | 'invalid_total' | 'read_failed' }
     >
   >;
 }

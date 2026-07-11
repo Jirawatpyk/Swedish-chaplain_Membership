@@ -52,7 +52,13 @@ export type F5RouteErrorCode =
   // + simplify Q3). Distinct from `processor_unavailable` so monitoring
   // can route F4 alerts to the F4 on-call channel instead of paging the
   // payments team for a CN-PDF / Blob / sequence-allocator issue.
-  | 'f4_bridge_error';
+  | 'f4_bridge_error'
+  // B.1 review Fix#1 — the PRE-FLIGHT F4 credited-total read failed BEFORE any
+  // Stripe call. Money did NOT move, the refund is safe to retry, and NO
+  // orphaned refund exists. DISTINCT from `f4_bridge_error` (Stripe DID
+  // succeed → out-of-band-refund runbook) so on-call does not chase a
+  // non-existent refund. Both currently map to 502.
+  | 'f4_preflight_read_error';
 
 interface Bilingual {
   readonly message: string;
@@ -156,6 +162,10 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   f4_bridge_error: {
     message: 'Credit-note issuance failed. Operations have been notified.',
     messageThai: 'การออกใบลดหนี้ล้มเหลว ทีมงานได้รับแจ้งแล้วและจะติดต่อกลับโดยเร็ว',
+  },
+  f4_preflight_read_error: {
+    message: 'Could not verify the refundable balance right now. No money was moved — please retry.',
+    messageThai: 'ไม่สามารถตรวจสอบยอดที่คืนได้ในขณะนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองใหม่อีกครั้ง',
   },
 };
 

@@ -139,6 +139,16 @@ export type IssueRefundError =
       readonly kind: 'retryable' | 'idempotency_conflict' | 'permanent';
       readonly reason: string;
     }
+  /**
+   * B.1 review Fix#1 (2026-07-12) — the PRE-FLIGHT F4 credited-total read
+   * failed (`getInvoiceCreditedTotal` errored). Money did NOT move — the
+   * refund is rejected BEFORE any Stripe `createRefund` call, so it is safe to
+   * retry and NO orphaned Stripe refund exists. DISTINCT from
+   * `f4_bridge_error` (which means Stripe DID succeed but the POST-Stripe F4
+   * credit-note bridge failed → the out-of-band-refund runbook). Keeping the
+   * two apart stops an on-call from hunting a non-existent orphaned refund.
+   */
+  | { readonly code: 'f4_preflight_read_error'; readonly detail: string }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   | { readonly code: 'tenant_settings_missing' };
 
@@ -340,15 +350,29 @@ async function issueRefundBody(
     // (never proceed blind to Stripe). This runs INSIDE the FOR UPDATE window,
     // BEFORE the pending-row insert, so a rejected refund writes no row and no
     // `refund_initiated` audit (AS6).
+    //
+    // B.1 review Fix#2 — thread THIS Phase A tx into the F4 read (externalTx)
+    // so the credited-total read runs on the SAME pooled connection that holds
+    // the payment `FOR UPDATE` lock, instead of `makeGetInvoiceDeps` opening a
+    // 2nd `runInTenant` (a second pooled connection acquired while connection
+    // #1 is still held → self-deadlock risk on pool acquisition under
+    // concurrent refunds). Mirrors the mutation bridge `markPaidFromProcessor`
+    // (which already threads its caller tx to avoid the nested connection).
+    // The tenant context (`SET LOCAL app.current_tenant`) is already set on
+    // this connection by `paymentsRepo.withTx` (= `runInTenant`), so the F4
+    // read stays correctly tenant-scoped on it.
     const invoiceCredited = await deps.invoicingBridge.getInvoiceCreditedTotal({
       tenantId: input.tenantId,
       invoiceId: payment.invoiceId,
+      externalTx: tx,
     });
     if (!invoiceCredited.ok) {
+      // Fix#1 — DISTINCT pre-flight code (money did NOT move; safe to retry;
+      // no out-of-band refund exists), NOT the post-Stripe `f4_bridge_error`.
       return {
         kind: 'rejected',
         error: {
-          code: 'f4_bridge_error',
+          code: 'f4_preflight_read_error',
           detail: `invoice_credited_total_read_failed:${invoiceCredited.error.code}`,
         },
       } as const;

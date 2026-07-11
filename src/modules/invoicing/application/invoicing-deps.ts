@@ -316,9 +316,24 @@ export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraft
   };
 }
 
-export function makeGetInvoiceDeps(tenantId: string): GetInvoiceDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param externalTx - optional caller-owned Drizzle tx handle (B.1 review
+ *   Fix#2). When supplied, the invoice repo's tenant-scoped reads run inline
+ *   against this tx instead of opening their own `runInTenant`. Used by the
+ *   F5 → F4 invoicing-bridge `getInvoiceCreditedTotal` so the refund
+ *   pre-flight's F4 read shares the SAME pooled connection as the payment
+ *   `FOR UPDATE` lock (avoids a nested pool acquisition / self-deadlock).
+ *   Callers that supply `externalTx` MUST already be inside a `runInTenant`
+ *   session for the same tenant so `SET LOCAL app.current_tenant` is in effect
+ *   (the repo re-checks this and refuses on mismatch).
+ */
+export function makeGetInvoiceDeps(
+  tenantId: string,
+  externalTx?: unknown,
+): GetInvoiceDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     // Wire audit so cross-tenant probes emit when actor context is
     // supplied. Detail-page callers SHOULD pass actor; background
     // reads (sweeper, reconciliation) can omit it safely.
