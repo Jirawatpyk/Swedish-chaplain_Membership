@@ -181,6 +181,47 @@ export interface InvoicingBridgePort {
       { readonly code: string; readonly detail: string }
     >
   >;
+
+  /**
+   * B.1 (#4) — read the invoice's F4-authoritative credited + total amounts
+   * so the F5 refund pre-flight (`issueRefund` Phase A) can cap the
+   * refundable at the invoice's UN-credited headroom (`total − credited`)
+   * IN ADDITION to the payment-based cap (`payment.amount − Σ F5 succeeded
+   * refunds`). The effective remaining is `min(payment-based, invoice-credit-
+   * based)`.
+   *
+   * Without this cap a refund that clears the payment-based limit but exceeds
+   * `invoice.total − invoice.creditedTotal` (e.g. a manual F4 credit note was
+   * already issued against the invoice) would move money at Stripe that F4
+   * then REFUSES as an over-credit credit note → an orphaned Stripe refund
+   * with no CN (bug #4). The caller REJECTS such a refund BEFORE any
+   * `createRefund` call.
+   *
+   * Tenant-scoped read: the adapter wraps F4's `getInvoice` via
+   * `makeGetInvoiceDeps(tenantId)`, whose repo runs inside `runInTenant`
+   * (Principle I — never the pool-global `db`). No actor is threaded — this
+   * is an internal reconciliation read (like the webhook payability path), so
+   * it emits no cross-tenant-probe audit.
+   *
+   * Returns the two branded amounts on success. `not_found` = the invoice
+   * could not be resolved in the actor tenant (a data-integrity anomaly — a
+   * refundable payment always FK-references a live invoice). `invalid_total`
+   * = the F4 money field failed `asSatang` (null `total` on a draft, or a
+   * negative value from a dropped CHECK / manual SQL). On EITHER error the
+   * caller refuses the refund rather than proceeding blind to Stripe.
+   */
+  getInvoiceCreditedTotal(input: {
+    readonly tenantId: string;
+    readonly invoiceId: string;
+  }): Promise<
+    Result<
+      {
+        readonly creditedTotalSatang: Satang;
+        readonly totalSatang: Satang;
+      },
+      { readonly code: 'not_found' | 'invalid_total' }
+    >
+  >;
 }
 
 /**

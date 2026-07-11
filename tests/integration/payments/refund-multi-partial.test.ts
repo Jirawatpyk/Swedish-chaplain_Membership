@@ -137,6 +137,13 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
     invoicingBridge: {
       getInvoiceForPayment: vi.fn(),
       markPaidFromProcessor: vi.fn(),
+      // B.1 (#4) — the refund pre-flight reads the invoice credited/total.
+      // Stub: credited=0 + total===payment.amount (TOTAL_SATANG) so the
+      // invoice-credit cap never binds tighter than the payment-based cap —
+      // the multi-partial + FR-011b assertions below stay on the payment path.
+      getInvoiceCreditedTotal: vi.fn(async () =>
+        ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(TOTAL_SATANG) }),
+      ),
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({
           // F4 credit_notes.credit_note_id is uuid; satisfy the

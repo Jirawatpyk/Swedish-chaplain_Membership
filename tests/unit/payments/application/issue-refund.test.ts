@@ -166,6 +166,14 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
         creditNoteNumber: 'TC-2026-000001',
       }),
     ),
+    // B.1 (#4) — refund pre-flight now reads the invoice's F4 credited/total
+    // to cap at `min(payment-based, invoice-credit-based)`. Default: credited=0
+    // + total===payment.amount so the invoice bound never binds tighter than
+    // the payment bound → every existing assertion (payment-cap only) is
+    // preserved. Per-test overrides exercise the credit-based cap.
+    getInvoiceCreditedTotal: vi.fn(async () =>
+      ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(5_350_000n) }),
+    ),
   };
   const audit = { emit: vi.fn(async () => undefined) };
   const clock = { nowIso: () => new Date(NOW_MS).toISOString(), nowMs: () => NOW_MS };

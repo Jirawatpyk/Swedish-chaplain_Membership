@@ -23,6 +23,7 @@ import { asSatang, type Satang } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
+  getInvoice as f4GetInvoice,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
   issueCreditNoteFromRefund as f4IssueCreditNoteFromRefund,
   makeGetInvoiceDeps,
@@ -284,5 +285,64 @@ export const invoicingBridge: InvoicingBridgePort = {
       creditNoteId: cn.value.creditNoteId,
       creditNoteNumber: cn.value.documentNumber.raw,
     });
+  },
+
+  /**
+   * B.1 (#4) — F5 refund-pre-flight read of the invoice's F4-authoritative
+   * credited + total. Wraps F4's `getInvoice` (via `makeGetInvoiceDeps`,
+   * whose repo runs inside `runInTenant` → tenant-scoped, never pool-global
+   * `db`). No `actor` is threaded — this is an internal reconciliation read,
+   * so the underlying cross-tenant-probe audit stays dormant.
+   *
+   * See the port docstring for the money-safety rationale (prevent an over-
+   * refund that F4 would reject as an over-credit CN → orphaned Stripe
+   * refund). On any failure the caller refuses the refund BEFORE Stripe.
+   */
+  async getInvoiceCreditedTotal(input) {
+    const deps = makeGetInvoiceDeps(input.tenantId);
+    const result = await f4GetInvoice(deps, {
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+    });
+    if (!result.ok) {
+      // Without an `actor` the only reachable F4 error is `not_found`
+      // (the member-mismatch `forbidden` guard requires a member actor).
+      return err({ code: 'not_found' });
+    }
+    const inv = result.value;
+    // A refundable payment's invoice is always issued/paid → `total` is
+    // non-null. A null (draft) total is a data anomaly — surface it rather
+    // than fabricating a 0 headroom that could mask an over-refund.
+    if (inv.total === null) {
+      logger.error(
+        { tenantId: input.tenantId, invoiceId: input.invoiceId },
+        'invoicing-bridge.getInvoiceCreditedTotal_null_total',
+      );
+      return err({ code: 'invalid_total' });
+    }
+    try {
+      return ok({
+        // F5R3 H-5 — brand at the Money VO escape point. `asSatang` throws on
+        // negative (dropped CHECK / OOB SQL) → the catch converts to a typed
+        // `invalid_total` instead of a raw 500 through the tracer.
+        creditedTotalSatang: asSatang(inv.creditedTotal.satang),
+        totalSatang: asSatang(inv.total.satang),
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape(
+        'getInvoiceCreditedTotal_brand_failed',
+      );
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          rawTotalSatang: String(inv.total.satang),
+          rawCreditedTotalSatang: String(inv.creditedTotal.satang),
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceCreditedTotal_brand_failed',
+      );
+      return err({ code: 'invalid_total' });
+    }
   },
 };

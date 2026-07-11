@@ -330,10 +330,36 @@ async function issueRefundBody(
       return { kind: 'rejected', error: { code: 'refund_in_progress' } } as const;
     }
 
+    // B.1 (#4) — fetch the invoice's F4-authoritative credited + total so the
+    // pre-flight caps the refundable at the invoice's un-credited headroom
+    // (`total − credited`) IN ADDITION to the payment-based cap. A refund that
+    // passes the payment cap but exceeds this headroom (e.g. a manual F4 credit
+    // note already reduced it) would move money at Stripe that F4 then refuses
+    // as an over-credit CN → an orphaned Stripe refund. The invoiceId comes
+    // from the locked payment row. On a read failure we REFUSE the refund
+    // (never proceed blind to Stripe). This runs INSIDE the FOR UPDATE window,
+    // BEFORE the pending-row insert, so a rejected refund writes no row and no
+    // `refund_initiated` audit (AS6).
+    const invoiceCredited = await deps.invoicingBridge.getInvoiceCreditedTotal({
+      tenantId: input.tenantId,
+      invoiceId: payment.invoiceId,
+    });
+    if (!invoiceCredited.ok) {
+      return {
+        kind: 'rejected',
+        error: {
+          code: 'f4_bridge_error',
+          detail: `invoice_credited_total_read_failed:${invoiceCredited.error.code}`,
+        },
+      } as const;
+    }
+
     const invariant = checkRefundNotExceedingRemainder({
       paymentAmountSatang: payment.amountSatang,
       succeededSumSatang: ctx.succeededSumSatang,
       newRefundSatang: input.amountSatang,
+      invoiceCreditedTotalSatang: invoiceCredited.value.creditedTotalSatang,
+      invoiceTotalSatang: invoiceCredited.value.totalSatang,
     });
     if (!invariant.ok) {
       return {
