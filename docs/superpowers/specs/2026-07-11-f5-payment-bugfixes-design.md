@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-11
 **Author:** Claude (adversarial bug-hunt → design)
-**Status:** Approved (design), pending implementation plan
+**Status:** Approved (design v1) + 5 specialist reviews folded in as **v2 consolidation** (see end section — it SUPERSEDES v1 detail where they conflict), pending implementation plan
 **Base branch:** `origin/main` (2be6a0fe) — F5 is shipped to production
 **Worktree:** `.claude/worktrees/f5-refund-lifecycle`
 
@@ -258,3 +258,160 @@ Mechanical, low-risk:
 - Refactoring unrelated to these bugs.
 - F11 multi-tenant Connect changes.
 - Backfilling historical stuck rows (runbook/ops task, not code).
+
+---
+
+# v2 — Specialist review consolidation (SUPERSEDES v1 detail where conflicting)
+
+Five project specialists reviewed design v1: **chamber-os-architect, reliability-guardian,
+thai-tax-compliance-auditor, drizzle-migration-reviewer, pci-saqa-guardian**. All returned
+**APPROVE-WITH-CHANGES** (no hard block). Three independent reviewers (tax, reliability,
+architect) converged on the SAME critical fault: the async model turns A1/A2/A5 into three
+uncoordinated credit-note issuers. The core direction (`charge.refund.updated` as
+source-of-truth, `auto_refunded` terminal state, Key-fact #1 CHECK-compat) is **confirmed
+correct** and must not be re-litigated.
+
+## CRITICAL-1 — Credit-note issuance must be idempotent per `refundId` (tax#1 + reliability-B1 + architect-F1)
+
+The async model adds CN issuers at A1 (sync card), A2 (webhook), A5 (sweep). CN is issued
+in the F4 bridge tx **before** the F5 refund-row flip, so `expectedCurrentStatus='pending'`
+guards only the flip, not the CN. A `charge.refund.updated(succeeded)` arriving during A1's
+multi-second F4 CN render → **two credit notes, two §87 sequence numbers, double invoice
+crediting**. Partial refunds are NOT caught by F4's remainder-guard (2×50% both fit). The
+DB has no backstop: `credit_notes.source_refund_id` is a **non-unique** partial index
+(migration 0038).
+
+**Required fix (closes A1/A2/A5 with one DB-enforced guard):**
+1. **Migration** (F4 table): partial UNIQUE index
+   `credit_notes (tenant_id, source_refund_id) WHERE source_refund_id IS NOT NULL`.
+   Sequence alloc + CN insert share one tx → the losing insert rolls the §87 sequence back
+   cleanly (no gap); only an orphan PDF/Blob remains (acceptable ops residue).
+2. `issueCreditNoteFromRefund` (F4 bridge): under the invoice lock, **read existing CN by
+   `sourceRefundId` first → return it (ok) if present**; treat a unique-violation as
+   "sibling already credited this refund" → reconcile to no-op.
+3. Extract **shared `finalizeSucceededRefund`** helper used by A1 Phase B **and** A2 **and**
+   A5; ALL pass `expectedCurrentStatus='pending'` on the refund `updateStatus`
+   (fixes `issue-refund.ts:474` which currently omits it).
+4. Integration test (live Neon): concurrent A1-succeeded + `charge.refund.updated(succeeded)`
+   on a **partial** refund → exactly ONE CN, `credited_total` correct, no §87 gap.
+
+## CRITICAL-2 — Failed auto-refund must not be silently suppressed (reliability-B2)
+
+A4's `auto_refunded` (no `refunds` row) + A4b blanket OOB-suppression **hides a FAILED
+auto-refund** (PromptPay auto-refund can go pending→failed): payment reads `auto_refunded`
+("refunded") while the customer never got the money, and the only signal (`charge.refund.updated(failed)`)
+is suppressed.
+
+**Required fix:**
+- A4b branches on incoming refund **status**: suppress the OOB alert only for
+  `succeeded`/`pending`; **`failed`/`canceled` → raise a dedicated alert** (audit
+  `auto_refund_failed_needs_manual_reconcile` + metric that pages ops).
+- **Durable marker = a new column on `payments`** (e.g. `auto_refund_processor_refund_id`)
+  written **atomically** with the `auto_refunded` flip — NOT the best-effort null-tx
+  audit_log row. The A4b lookup reads this column, not `audit_log`.
+- (Supersedes v1 A4b's `findAutoRefundByProcessorRefundId` over audit_log.)
+
+## HIGH
+
+- **H-a (architect-F2 / reliability-H5):** if any audit_log lookup is retained, it MUST match
+  **both** `payment_auto_refunded_stale_invoice` AND `payment_auto_refunded_concurrent_manual_mark`.
+  (Preferred: the `payments` column above removes this fragility entirely.)
+- **H-b (reliability-H1):** `refundsRepo.updateStatus` currently **throws** on an
+  `expectedCurrentStatus` zero-match; change it to **return `null`** (mirror
+  `drizzle-payments-repo.ts`) so A2's "idempotent no-op" is real (else false 500s + Stripe retry).
+- **H-c (reliability-H2 / architect-F3):** add `lockForUpdateByProcessorRefundId(tx, tenantId, reId)`
+  (`.for('update')`); `processRefundUpdated` uses it, and must **port SB-1's exact lock
+  ordering** (payment `FOR UPDATE` **before** the refunds aggregate read) from
+  `process-charge-refunded.ts:295-341`.
+- **H-d (reliability-H3):** VERIFY Stripe behaviour — does a **born-`succeeded`** refund emit
+  `charge.refund.updated` at all? If not, a sync-card Phase-B double-fault has no webhook to
+  reconcile → relies on A5 sweep only. Confirm A5 is a guaranteed backstop; consider a
+  shorter sweep cadence for pending refunds. Document the finding in the plan.
+- **H-e (reliability-H4):** the `charge.refund.updated` subscription is **load-bearing ops**
+  — if not enabled, every async refund hangs. Add metric `refund_pending_awaiting_processor`
+  + alert (>0 for > threshold) + an explicit go-live checklist gate.
+- **PCI-1 (pci-F1):** thread the new `refundStatus` through **all three** projection layers
+  (verifier `project()` refund branch → `VerifiedStripeEvent.dataObject` type → route
+  re-projection `route.ts:559-598`) + add `'charge.refund.updated'` to `F5_HANDLED_EVENT_TYPES`.
+  The refund branch is an explicit allow-list `{ id, status, charge-id, amount→satang }` only.
+- **PCI-2 (pci-F2):** dispute charge-id extraction MUST be defensive `string | object.id | null`
+  (mirror `extractLatestChargeId`), never `raw['charge']` verbatim (a Charge object can be
+  expanded with card data → 10-y audit PCI leak).
+- **PCI-3 (pci-F5):** A5 needs a NEW `retrieveRefund` **port + gateway** method — explicit
+  allow-list `{ id, status, charge-id, payment_intent-id, amount→satang }`, `connectOptions`
+  Connect-scoped, log allow-list only; add a PCI negative-assert test (no `destination_details`/card).
+
+## MED
+
+- **M-a (migration-F3):** flip `pending → auto_refunded` MUST set `completed_at`
+  (`payments_completed_at_iff_not_pending`); prove with a live-Neon integration test
+  (unit mocks miss it). A4 flip must be **guarded** (`expectedCurrentStatus='pending'`) and
+  **atomic** with `markProcessed` in one tx (reliability-M1).
+- **M-b (migration-F1):** for F5 an audit-event type touches **7 places**, not 4:
+  (1) `F5AuditEventType` union, (2) `F5_AUDIT_RETENTION_YEARS` map, (3) `F5AuditPayloadByType`
+  interface (2+3 are compile-forced), (4) migration `ALTER TYPE audit_event_type ADD VALUE`
+  (idempotent DO-block), (5) `auditEventTypeEnum` pgEnum tuple in `auth/.../schema.ts`,
+  (6) **i18n labels** `audit.eventType.<value>` in en/th/sv (`audit-event-label-coverage.test`
+  fails otherwise), (7) do **NOT** add the migration to `F5_MIGRATIONS` in
+  `check-audit-event-count.ts` (breaks the prose-count `check:audit-events`). F5 has **no**
+  hardcoded `.length).toBe(N)` count test (that's F2/F8).
+- **M-c (migration-F2 / architect-F9):** MINIMIZE new enum values — A2's succeeded-finalize
+  should emit the existing `refund_succeeded` with a new discriminated `path` arm (there is
+  already a `webhook_recovery` arm) rather than a brand-new `refund_reconciled_via_webhook`.
+  Any genuinely-new reconcile audit must (a) use a covered prefix (`refund_…`, never
+  `stale_auto_refund_…` which escapes the parity-test prefix filter) and (b) inherit
+  **10-year** retention like `refund_succeeded` (RD §87/3), not the 5-y default.
+- **M-d (migration-F4/F5):** ship **two** migration files — `0240_payments_auto_refunded_status`
+  (DROP+ADD `payments_status_enum` + `payments_card_metadata_iff_card`, `DROP … IF EXISTS`)
+  and `0241_*` audit-enum ADD VALUE (idempotent DO-block). Reserve 0240/0241; **re-check
+  `git ls-tree origin/main drizzle/migrations | tail` for collision immediately before commit**
+  (parallel branches in flight). Plus the CRITICAL-1 `credit_notes` unique-index migration.
+- **M-e (tax#2):** cross-fiscal-year CN numbering — CN number uses the invoice's FY but
+  `issueDate = settle date`; async widens the window (refund 31 Dec → settle 2 Jan; SweCham =
+  calendar FY). Add a boundary integration test + **document** the chosen behaviour.
+- **M-f (architect-F5):** PR-A and PR-C are **NOT independent** — both edit the verifier +
+  route re-projection. Land the PR-C re-projection fix (#5/#6) **first**, then PR-A builds on
+  the corrected single projection; add a `check:*`-style assertion that the route re-projection
+  is a **superset of the verifier envelope keys** (kills the drop-field bug class permanently).
+  → **Revised PR order: PR-C (route/verifier) → PR-A (lifecycle, incl. refund branch) → PR-B (pre-flight).**
+- **M-g (architect-F4 / F-4):** mandatory **cross-tenant integration test** for
+  `processRefundUpdated` (Principle I Review-Gate blocker); every new read stays inside
+  `runInTenant` threading `tx` (no pool-global `db`).
+- **M-h (architect-F6):** inventory every `PaymentStatus` consumer before adding `auto_refunded`
+  — **F9 insights revenue/refund aggregation must classify `auto_refunded` as NON-revenue**
+  (captured then returned, invoice never paid; mirrors the F9 credit-note revenue lesson),
+  plus status badges + EN/TH/SV i18n labels.
+- **M-i (reliability-M3/M4):** A5 sweep — bound Stripe-`retrieveRefund` latency vs Vercel
+  timeout (cap rows / shorter per-call timeout); a refund Stripe reports still-`pending` past
+  N days → escalation alert (not silent skip forever).
+
+## LOW
+
+- **L-a (architect-F7):** A.5 should use a narrow `attachProcessorRefundId(tx, {...})` repo
+  method (touches only `processor_refund_id`, keeps `pending`), not the general `updateStatus`.
+- **L-b (pci-F7):** bound the route raw-fallback `asSatang(BigInt(amountVal))` in try/catch
+  (prod-unreachable; cosmetic).
+
+## #8 (resume-race) — confirmed approach
+
+Option **(i)** (reconcile at the settlement boundary) is endorsed by architect + reliability;
+Option (ii) (gate resume) would block a **legitimate** retry (a failed PI sits at
+`requires_payment_method`, the correct retry state). Implement (i): on a genuine
+`failed → succeeded` late event (a real captured charge on a row already `failed`), emit a
+forensic audit + auto-refund the captured funds; leave the row `failed` (do NOT add a
+`failed → auto_refunded` edge). Trigger ONLY on `failed → succeeded`, never on the
+`succeeded → succeeded` retry no-op. Verify-first with a failed-before-succeeded replay test.
+
+## Endorsed — do NOT re-open
+
+- Key-fact #1 biconditional (all 5 confirm): persist `processor_refund_id` on a `pending`
+  refund with `credit_note_id` NULL → **no refunds CHECK migration**; A.5 must touch ONLY
+  `processor_refund_id` (keep `completed_at` + `failure_reason_code` NULL).
+- `auto_refunded` as a distinct terminal state OUTSIDE `SUCCEEDED_LINEAGE` (reusing `refunded`
+  is wrong). Outside `payments_one_active_per_invoice`; inside `pi_uniq` (UPDATE, no dup).
+- A3's "dead code today" claim is true; but A3 must **retain** the amount-mismatch sanity
+  check and **port** SB-1 parent-payment recovery to `processRefundUpdated` (do not delete).
+- Stale-invoice auto-refund issues **no** credit note = tax-correct (no §86/4 receipt was
+  ever issued on the stale path, so §86/10 would be forbidden).
+- **PR-B is MANDATORY** (tax#5): report `invoice.status` from F4's `credited_total_satang`
+  (authoritative), and pre-flight `remaining = min(payment-based, invoice-credit-based)`.
