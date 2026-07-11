@@ -20,6 +20,7 @@ import {
   ActivityFeed,
   type ActivityFeedEntry,
 } from '@/components/dashboard/activity-feed';
+import { activityTimeLabels } from '@/components/dashboard/activity-time';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
 import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
@@ -224,28 +225,61 @@ export default async function StaffHomePage() {
 
   // Live-filter insights against current dismissals (T028) so a just-dismissed
   // insight disappears on refresh without waiting for the ~5-min cron recompute.
-  const liveInsights = await listSmartInsights(tenant, makeListSmartInsightsDeps(tenant.slug));
-  const topInsights = liveInsights.ok ? liveInsights.value : metrics.topInsights;
+  // Default to the snapshot's own (compute-time-filtered) insights and only
+  // override when the live read succeeds. listSmartInsights degrades to
+  // err('unavailable') on a snapshot-read blip; the try/catch is belt-and-
+  // suspenders so an unexpected throw can't collapse the already-computed
+  // dashboard (parity with the allSettled widget isolation above).
+  let topInsights = metrics.topInsights;
+  try {
+    const liveInsights = await listSmartInsights(tenant, makeListSmartInsightsDeps(tenant.slug));
+    if (liveInsights.ok) topInsights = liveInsights.value;
+  } catch (e) {
+    logger.warn(
+      { tenantId: tenant.slug, errKind: errKind(e) },
+      'insights.dashboard.live_insights_rejected',
+    );
+  }
   const insightLines: readonly InsightLine[] = topInsights.map((insight) => ({
     key: insight.key,
     text: t(`insights.${insight.key}`, { count: insight.count }),
     ...(insight.scopeRef !== undefined ? { scopeRef: insight.scopeRef } : {}),
   }));
 
-  const timeFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
   const tEvents = await getTranslations('admin.dashboard.activity.events');
   // Fallback to the timeline `audit.eventType` catalogue (EN/TH/SV) for codes
   // the feed namespace lacks → localised label instead of humanised English.
   const tEventsFallback = await getTranslations('audit.eventType');
-  const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => ({
-    id: item.id,
-    // Localised action label (FR-034) — resolved per-locale from the audit
-    // event type, NOT the raw English summary (which would leak to TH/SV).
-    // Falls back to the timeline catalogue, then a humanised token.
-    label: resolveEventLabel(tEvents, item.eventType, tEventsFallback),
-    occurredAt: item.occurredAt,
-    timeLabel: timeFmt.format(new Date(item.occurredAt)),
-  }));
+  const activityItems: readonly ActivityFeedEntry[] = feed.map((item) => {
+    // Relative visible label ("5 minutes ago", FR-003) + exact tenant-tz tooltip.
+    // The absolute label MUST carry the tenant timezone (the Vercel runtime is
+    // UTC), or Bangkok events render 7h behind / on the wrong day — parity with
+    // the `asOf` header above.
+    const { relative, absolute } = activityTimeLabels(
+      item.occurredAt,
+      locale,
+      env.tenant.timezone,
+    );
+    return {
+      id: item.id,
+      // Actor display name (FR-003), resolved PDPA-safe in the use-case; omitted
+      // for system:*/anonymous events (rendered without an actor prefix).
+      ...(item.actorLabel ? { actor: item.actorLabel } : {}),
+      // Related-record link (FR-003) — the audit viewer filtered to this event's
+      // target record. Omitted for events with no user target (payload-only
+      // entity). targetUserId is a uuid column so it passes the viewer's guard.
+      ...(item.targetUserId
+        ? { href: `/admin/audit?targetRef=${encodeURIComponent(item.targetUserId)}` }
+        : {}),
+      // Localised action label (FR-034) — resolved per-locale from the audit
+      // event type, NOT the raw English summary (which would leak to TH/SV).
+      // Falls back to the timeline catalogue, then a humanised token.
+      label: resolveEventLabel(tEvents, item.eventType, tEventsFallback),
+      occurredAt: item.occurredAt,
+      timeLabel: relative,
+      absoluteLabel: absolute,
+    };
+  });
 
   // FR-001a trend charts — display-ready points (visible to all staff; the
   // empty state shows only when a tenant genuinely has no paid revenue yet).

@@ -127,6 +127,17 @@ export interface DirectoryRepo {
     logoUrl: string | null,
   ): Promise<{ readonly memberNotFound: boolean }>;
 
+  /**
+   * Hard-delete the member's directory listing row (COMP-1 / GDPR Art.17 /
+   * PDPA §33). The row holds member-authored PII (description/website/industry/
+   * location) that erasure must remove — the read-path `erased_at IS NULL`
+   * guard only suppresses future publication, it does not delete the data.
+   * Idempotent: deleting a non-existent row is a no-op. The public logo BLOB is
+   * removed separately (blob storage is not transactional) — see
+   * `eraseMemberDirectoryFootprint`.
+   */
+  deleteForMemberInTx(tx: TenantTx, memberId: string): Promise<void>;
+
   /** Staff search across all members + listing status (FR-024). */
   search(
     ctx: TenantContext,

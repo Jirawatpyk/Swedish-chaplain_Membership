@@ -24,6 +24,7 @@ import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
 import { buildAuditPaginationLinks } from './_lib/pagination-links';
+import { isValidTargetRef, isValidEventTypeFilter } from '@/lib/audit-filter-validation';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -105,11 +106,19 @@ export default async function AuditLogPage({
   // Latest/Newer/Older links carry the orientation.
   const dir = str(params.dir);
 
-  // A malformed `from`/`to` (tampered URL) must surface as the invalid-range
-  // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card. Guard
-  // the format up front and render the same invalid-range UI the use-case uses.
+  // A malformed `from`/`to` (tampered URL) must surface as the invalid-filter
+  // state, NOT throw inside js-joda (`tenantDayParse`) → generic error card.
+  // Likewise a non-UUID `targetRef` (uuid column) or an unknown `eventType`
+  // (enum column) — member number / name / typo / stale bookmark / tampered URL
+  // — would throw a 22P02 invalid-cast error → uncaught 500. Guard all up front
+  // and render the same graceful UI.
   const tz = env.tenant.timezone;
-  if ((from !== '' && !isYmd(from)) || (to !== '' && !isYmd(to))) {
+  if (
+    (from !== '' && !isYmd(from)) ||
+    (to !== '' && !isYmd(to)) ||
+    !isValidTargetRef(targetRef) ||
+    !isValidEventTypeFilter(eventType, ALL_AUDIT_EVENT_TYPES)
+  ) {
     return (
       <TableContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />

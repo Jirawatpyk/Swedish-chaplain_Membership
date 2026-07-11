@@ -44,6 +44,7 @@ import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { OutboxCancelPort } from '../ports/outbox-cancel-port';
 import type { EventRegistrationErasurePort } from '../ports/event-registration-erasure-port';
+import type { DirectoryErasurePort } from '../ports/directory-erasure-port';
 import type { BroadcastsAudienceDerivationPort } from '../ports/broadcasts-audience-derivation-port';
 import type {
   SubprocessorErasurePort,
@@ -166,6 +167,15 @@ export type EraseMemberDeps = {
   // allCascadesClean=false → member_erased withheld → the US2d reconciler
   // re-drives.
   eventRegistrationErasure: EventRegistrationErasurePort;
+  // COMP-1 / F9 — insights directory footprint erasure (post-commit best-effort).
+  // Hard-deletes the member's directory_listings row (member-authored PII:
+  // description/website/industry/location) AND the PUBLIC logo blob (a
+  // publicly-fetchable artefact). The read-path `erased_at IS NULL` guard only
+  // suppresses future publication — it does NOT remove the stored data or the
+  // uploaded blob. Re-drive-safe + idempotent (blob-before-row); a 'failed'
+  // outcome (or a throw) flips allCascadesClean=false → member_erased withheld
+  // → the US2d reconciler re-drives.
+  directoryErasure: DirectoryErasurePort;
   // COMP-1 US3-C — sub-processor erasure propagation (GDPR Art.17 / PDPA §33).
   // `broadcastsAudienceDerivation` reads the member's (Resend audience, email)
   // pairs INSIDE the atomic scrub tx (FAIL-LOUD), while the emails are still
@@ -932,6 +942,27 @@ export async function eraseMember(
       memberId,
       { actorUserId: meta.actorUserId, requestId: meta.requestId },
     );
+    if (r.outcome !== 'ok') {
+      allCascadesClean = false;
+    }
+  } catch {
+    allCascadesClean = false;
+  }
+
+  // COMP-1 / F9 — erase the member's insights DIRECTORY footprint: the
+  // directory_listings row (member-authored PII) + the PUBLIC logo blob (a
+  // publicly-fetchable artefact). The directory read paths only gate
+  // `erased_at IS NULL` (suppressing FUTURE publication) — without this cascade
+  // the PII + the orphaned public blob survive Art.17/§33 erasure forever.
+  // Order-independent of the F1/F6/F7/F8 cascades; the adapter is best-effort +
+  // re-drive-safe (blob-before-row). A 'failed' outcome (or a defensive-catch
+  // throw) flips allCascadesClean=false → member_erased withheld → the US2d
+  // reconciler re-drives. The adapter owns the cascade-detail log.
+  try {
+    const r = await deps.directoryErasure.eraseForMember(deps.tenant, memberId, {
+      actorUserId: meta.actorUserId,
+      requestId: meta.requestId,
+    });
     if (r.outcome !== 'ok') {
       allCascadesClean = false;
     }

@@ -10,13 +10,22 @@ import { ActivityFeedRefresh } from './activity-feed-refresh';
 
 export interface ActivityFeedEntry {
   readonly id: string;
+  /** Actor display name (FR-003), PDPA-safe (name only). Omitted for
+   *  `system:*`/anonymous events, which render without an actor prefix. */
+  readonly actor?: string;
   /** Localised event-type label (resolved per-locale in the page, FR-034) —
    *  not the raw English audit summary, so TH/SV users see translated text. */
   readonly label: string;
+  /** Link to the event's related record (FR-003) — the audit viewer filtered to
+   *  the target. Omitted for events with no user target (rendered as plain text). */
+  readonly href?: string;
   /** ISO 8601 for the `<time dateTime>` attribute. */
   readonly occurredAt: string;
-  /** Locale-formatted display label. */
+  /** Visible relative label ("5 minutes ago"), locale-aware (FR-003). */
   readonly timeLabel: string;
+  /** Exact date+time in the tenant timezone — shown as the `<time>` tooltip so
+   *  the relative label stays glanceable without losing the precise instant. */
+  readonly absoluteLabel?: string;
 }
 
 export function ActivityFeed({
@@ -45,9 +54,27 @@ export function ActivityFeed({
           <ul className="grid gap-2 text-body">
             {items.map((item) => (
               <li key={item.id} className="flex items-baseline justify-between gap-3">
-                <span>{item.label}</span>
+                <span className="min-w-0 truncate">
+                  {item.actor ? (
+                    <>
+                      <span className="font-medium">{item.actor}</span>
+                      <span className="text-muted-foreground"> · </span>
+                    </>
+                  ) : null}
+                  {item.href ? (
+                    <a
+                      href={item.href}
+                      className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {item.label}
+                    </a>
+                  ) : (
+                    item.label
+                  )}
+                </span>
                 <time
                   dateTime={item.occurredAt}
+                  {...(item.absoluteLabel ? { title: item.absoluteLabel } : {})}
                   className="shrink-0 text-caption text-muted-foreground tabular-nums"
                 >
                   {item.timeLabel}

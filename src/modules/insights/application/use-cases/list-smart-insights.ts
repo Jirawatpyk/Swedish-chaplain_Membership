@@ -12,7 +12,7 @@
  * `runInTenant`; no ORM/framework imports beyond the shared `@/lib/db` helper.
  */
 import { runInTenant } from '@/lib/db';
-import { ok, type Result } from '@/lib/result';
+import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
@@ -32,8 +32,21 @@ export interface ListSmartInsightsDeps {
 export async function listSmartInsights(
   ctx: TenantContext,
   deps: ListSmartInsightsDeps,
-): Promise<Result<readonly SmartInsight[], never>> {
-  const cached = await deps.snapshotRepo.read(ctx);
+): Promise<Result<readonly SmartInsight[], 'unavailable'>> {
+  // The snapshot read must be INSIDE the try — a transient Neon blip here would
+  // otherwise throw out of this use-case and (via the bare await in the staff
+  // dashboard page) tear down the whole already-computed dashboard. Degrade to
+  // an error Result the page falls back from (to its own snapshot topInsights).
+  let cached;
+  try {
+    cached = await deps.snapshotRepo.read(ctx);
+  } catch (e) {
+    logger.warn(
+      { tenantId: ctx.slug, errKind: errKind(e) },
+      'insights.list_smart_insights.read_failed',
+    );
+    return err('unavailable');
+  }
   if (!cached) return ok([]);
   const candidates = cached.metrics.topInsights;
   if (candidates.length === 0) return ok([]);

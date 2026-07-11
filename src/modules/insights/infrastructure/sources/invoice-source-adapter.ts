@@ -24,6 +24,47 @@ import { monthKeyOf } from '../../domain/trend-window';
 
 const PAGE = 100;
 
+// Statuses that represent realised paid revenue. A paid invoice that later
+// receives a credit note is flipped paid → 'partially_credited' / 'credited'
+// (issue-credit-note), so an exact `status:'paid'` filter would drop the whole
+// invoice from the revenue figures. We include all three and NET the credited
+// portion so a partial credit reduces revenue by exactly the credited amount,
+// not by the entire invoice. ReadonlySet<string> (not the narrow literal union)
+// so `.has(inv.status)` type-checks against the wider InvoiceStatus.
+const PAID_REVENUE_STATUSES: ReadonlySet<string> = new Set([
+  'paid',
+  'partially_credited',
+  'credited',
+]);
+
+/**
+ * Net-of-VAT realised revenue for one invoice.
+ *
+ * "Revenue" (รายได้) EXCLUDES output VAT (ภาษีขาย) — VAT is a liability to the
+ * Revenue Department, not income (Thai accounting; the KPI is labelled
+ * "รายได้/Revenue"). So we take the net-of-credit gross (`total −
+ * creditedTotal`) and scale it by the invoice's OWN ex-VAT ratio
+ * (`subtotal / total`), rather than summing the VAT-inclusive `total`.
+ *
+ * - No credit: `total × subtotal / total == subtotal` (exact — the ex-VAT base).
+ * - Partial credit: proportional ex-VAT of the surviving amount.
+ * - Zero-rated invoice (`subtotal == total`): the ratio is 1, so ex-VAT == gross.
+ *
+ * Multiply before divide to preserve satang precision; BigInt division truncates
+ * (sub-satang, negligible for a dashboard KPI). This is a MANAGEMENT figure, not
+ * a tax document — do not reconcile it against ภ.พ.30.
+ */
+const netPaidRevenueSatang = (inv: {
+  subtotal: { satang: bigint } | null;
+  total: { satang: bigint } | null;
+  creditedTotal: { satang: bigint } | null;
+}): bigint => {
+  const total = inv.total?.satang ?? 0n;
+  if (total <= 0n) return 0n;
+  const netOfCredit = total - (inv.creditedTotal?.satang ?? 0n);
+  return (netOfCredit * (inv.subtotal?.satang ?? 0n)) / total;
+};
+
 export const invoiceSourceAdapter: InvoiceSource = {
   async getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint> {
     // Resolve the CURRENT fiscal year the way F4 tags invoices at issue time
@@ -40,9 +81,11 @@ export const invoiceSourceAdapter: InvoiceSource = {
     let cursor: string | null = null;
     let total = 0n;
     do {
+      // `status:'all'` (not 'paid') so credit-note-flipped invoices are still
+      // returned; the paid-revenue status filter + credit netting happen below.
       const result = await listInvoices(deps, {
         tenantId: ctx.slug,
-        status: 'paid',
+        status: 'all',
         fiscalYear,
         pageSize: PAGE,
         cursor,
@@ -50,7 +93,8 @@ export const invoiceSourceAdapter: InvoiceSource = {
       });
       if (!result.ok) throw new Error('InvoiceSource: paid-revenue list failed');
       for (const inv of result.value.rows) {
-        total += inv.total?.satang ?? 0n;
+        if (!PAID_REVENUE_STATUSES.has(inv.status)) continue;
+        total += netPaidRevenueSatang(inv);
       }
       cursor = result.value.nextCursor;
     } while (cursor !== null);
@@ -88,25 +132,31 @@ export const invoiceSourceAdapter: InvoiceSource = {
     // spanning fiscal years — intentionally a different basis from the YTD KPI
     // (`getYtdPaidRevenueSatang`, which filters by issue-date fiscal year). The
     // trend answers "revenue realised per month", the KPI "this fiscal year".
+    // Credit notes are NETTED against the invoice's original settle month
+    // (`total − creditedTotal`); attributing the reversal to the credit-note
+    // month instead would need a separate credit_notes source (follow-on).
     const window = new Set(monthKeys);
     const buckets: Record<string, bigint> = {};
     const deps = makeListInvoicesDeps(ctx.slug);
     let cursor: string | null = null;
     do {
+      // `status:'all'` (not 'paid') so credit-note-flipped invoices are still
+      // returned; the paid-revenue status filter + credit netting happen below.
       const result = await listInvoices(deps, {
         tenantId: ctx.slug,
-        status: 'paid',
+        status: 'all',
         pageSize: PAGE,
         cursor,
         includeDrafts: false,
       });
       if (!result.ok) throw new Error('InvoiceSource: monthly-revenue list failed');
       for (const inv of result.value.rows) {
+        if (!PAID_REVENUE_STATUSES.has(inv.status)) continue;
         const settled = inv.paidAt ?? inv.issueDate;
         if (!settled) continue;
         const key = monthKeyOf(new Date(settled), timeZone);
         if (!window.has(key)) continue; // outside the 12-month window
-        buckets[key] = (buckets[key] ?? 0n) + (inv.total?.satang ?? 0n);
+        buckets[key] = (buckets[key] ?? 0n) + netPaidRevenueSatang(inv);
       }
       cursor = result.value.nextCursor;
     } while (cursor !== null);

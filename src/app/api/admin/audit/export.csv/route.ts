@@ -18,12 +18,13 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
 import { tenantDayStartUtc, tenantDayEndUtc, isYmd } from '@/lib/tenant-day-range';
+import { isValidTargetRef, isValidEventTypeFilter } from '@/lib/audit-filter-validation';
 import { toCsvField } from '@/lib/csv';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
-import { rateLimiter } from '@/modules/auth';
+import { rateLimiter, ALL_AUDIT_EVENT_TYPES } from '@/modules/auth';
 import { auditExport, makeAuditQueryDeps, type AuditQueryInput } from '@/modules/insights';
 
 export const runtime = 'nodejs';
@@ -84,10 +85,17 @@ export async function GET(request: NextRequest): Promise<Response> {
   const from = str(url.searchParams.get('from'));
   const to = str(url.searchParams.get('to'));
 
-  // Guard the date format BEFORE js-joda conversion — a malformed `from`/`to`
-  // (tampered URL) would otherwise throw outside the try/catch below → bodyless
-  // 500 + no log. A bad date is a client error → 400 invalid_range.
-  if ((from !== '' && !isYmd(from)) || (to !== '' && !isYmd(to))) {
+  // Guard the filter values BEFORE the query — a malformed `from`/`to` (js-joda
+  // throw outside the try/catch → bodyless 500), a non-UUID `targetRef` (uuid
+  // column), or an unknown `eventType` (enum column) all reach Postgres as an
+  // invalid cast; the latter two are caught below but return 500 server_error
+  // instead of the correct client error. All are client errors → 400.
+  if (
+    (from !== '' && !isYmd(from)) ||
+    (to !== '' && !isYmd(to)) ||
+    !isValidTargetRef(targetRef) ||
+    !isValidEventTypeFilter(eventType, ALL_AUDIT_EVENT_TYPES)
+  ) {
     return NextResponse.json({ error: { code: 'invalid_range' } }, { status: 400 });
   }
 

@@ -33,6 +33,10 @@ vi.mock('@/lib/logger', () => ({
 }));
 vi.mock('@/modules/auth', () => ({
   rateLimiter: { check: (...a: unknown[]) => rateLimiterCheckMock(...a) },
+  // The route now validates `eventType` against this set before dispatch
+  // (guards the enum column from a 22P02 cast). The tests don't filter by
+  // eventType, so a small representative set suffices.
+  ALL_AUDIT_EVENT_TYPES: ['role_changed', 'sign_in', 'payment_succeeded'],
 }));
 vi.mock('@/modules/insights', () => ({
   auditExport: (...a: unknown[]) => auditExportMock(...a),

@@ -191,7 +191,11 @@ export function makeListSmartInsightsDeps(tenantId: string): ListSmartInsightsDe
 
 /** US1 (T029/T031) — `activityFeedQuery` (live recent-audit feed) deps. */
 export function makeActivityFeedDeps(): ActivityFeedDeps {
-  return { activitySource: activityFeedSourceAdapter };
+  return {
+    activitySource: activityFeedSourceAdapter,
+    // FR-003 actor resolution — same PDPA-safe reader the US2 audit viewer uses.
+    actorDirectory: actorDirectoryAdapter,
+  };
 }
 
 /**

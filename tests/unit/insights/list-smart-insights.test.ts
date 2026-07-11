@@ -93,6 +93,21 @@ describe('listSmartInsights', () => {
     if (r.ok) expect(r.value).toHaveLength(2);
   });
 
+  it('returns err(unavailable) when the snapshot read itself throws — never propagates a throw', async () => {
+    // A transient Neon blip on the snapshot read must NOT propagate out and tear
+    // down the already-computed dashboard; the use-case degrades to an error
+    // Result the page can fall back from (to its own snapshot topInsights).
+    const deps: ListSmartInsightsDeps = {
+      snapshotRepo: { read: vi.fn().mockRejectedValue(new Error('neon blip')) },
+      dismissalRepo: { isDismissedInTx: vi.fn() },
+      clock: { now: () => new Date('2026-06-15T05:00:00.000Z') },
+      tenantTimezone: 'Asia/Bangkok',
+    };
+    const r = await listSmartInsights(ctx, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('unavailable');
+  });
+
   it('falls back to cached insights when the live dismissal check throws', async () => {
     const snap = snapshotWith([{ key: 'at_risk_followup', count: 3 }]);
     const r = await listSmartInsights(

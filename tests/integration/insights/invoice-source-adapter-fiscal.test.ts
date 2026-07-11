@@ -7,7 +7,9 @@
  * This closes the live-wiring gap (pr-test-analyzer review): a real
  * tenant_invoice_settings row with fiscalYearStartMonth=4 + real invoices tagged
  * by fiscal year, asserting the KPI sums only the current fiscal year's paid
- * invoices and excludes a calendar-same-year-but-prior-fiscal-year one.
+ * invoices and excludes a calendar-same-year-but-prior-fiscal-year one. Also
+ * covers credit-note NETTING at the DB level: a partially-credited invoice must
+ * net (total − creditedTotal) into the KPI, not drop out entirely.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -38,7 +40,13 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
     primary_contact_name: 'n', primary_contact_email: 't@e.com',
   };
 
-  function paidInvoice(seq: number, fiscalYear: number, issueYmd: string, totalSatang: bigint) {
+  function paidInvoice(
+    seq: number,
+    fiscalYear: number,
+    issueYmd: string,
+    totalSatang: bigint,
+    opts?: { status?: 'paid' | 'partially_credited' | 'credited'; creditedTotalSatang?: bigint },
+  ) {
     return {
       tenantId: tenant.ctx.slug,
       invoiceId: randomUUID(),
@@ -46,7 +54,7 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
       planYear: 2026,
       planId,
       draftByUserId: admin.userId,
-      status: 'paid' as const,
+      status: (opts?.status ?? 'paid') as 'paid' | 'partially_credited' | 'credited',
       pdfDocKind: 'invoice',
       fiscalYear,
       sequenceNumber: seq,
@@ -57,7 +65,7 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
       vatRateSnapshot: '0.0000',
       vatSatang: 0n,
       totalSatang,
-      creditedTotalSatang: 0n,
+      creditedTotalSatang: opts?.creditedTotalSatang ?? 0n,
       proRatePolicySnapshot: 'monthly' as const,
       netDaysSnapshot: 30,
       tenantIdentitySnapshot: SNAP_TENANT,
@@ -101,6 +109,12 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
         paidInvoice(1, 2025, '2026-02-15', 100_000n),
         // FY2026 (Apr 2026 .. Mar 2027) — a Jun-2026 paid invoice belongs here.
         paidInvoice(2, 2026, '2026-06-15', 50_000n),
+        // FY2026 — a paid invoice later PARTIALLY CREDITED (80k total, 30k
+        // credited). It must NET to 50k, not drop out of the KPI entirely.
+        paidInvoice(3, 2026, '2026-06-20', 80_000n, {
+          status: 'partially_credited',
+          creditedTotalSatang: 30_000n,
+        }),
       ]);
     });
   }, 180_000);
@@ -121,12 +135,14 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
     expect(total).toBe(100_000n);
   });
 
-  it('Jun-2026 (after the April start) → windows by FY2026, excludes the FY2025 invoice', async () => {
-    // deriveFiscalYear('2026-06-15…', startMonth=4) = 2026 → only the 50k invoice.
+  it('Jun-2026 (after the April start) → windows by FY2026, nets the partially-credited invoice', async () => {
+    // deriveFiscalYear('2026-06-15…', startMonth=4) = 2026 → the 50k paid invoice
+    // PLUS the partially-credited one netting to 50k (80k − 30k) = 100k. The
+    // FY2025 invoice is excluded; the credited invoice is NOT dropped.
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       tenant.ctx,
       '2026-06-15T00:00:00.000Z',
     );
-    expect(total).toBe(50_000n);
+    expect(total).toBe(100_000n);
   });
 });

@@ -12,6 +12,8 @@
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { redactSummaryForRole } from '../audit-redaction';
+import { isResolvableActor } from './audit-query';
+import type { ActorDirectory } from '../ports/actor-directory';
 import type {
   ActivityFeedItem,
   ActivityFeedSource,
@@ -27,6 +29,8 @@ export interface ActivityFeedMeta {
 
 export interface ActivityFeedDeps {
   readonly activitySource: ActivityFeedSource;
+  /** Resolves actor UUIDs → display names (FR-003 actor), PDPA-safe (name only). */
+  readonly actorDirectory: ActorDirectory;
 }
 
 export type ActivityFeedError = 'forbidden';
@@ -45,6 +49,23 @@ export async function activityFeedQuery(
   if (meta.actorRole === 'member') return err('forbidden');
   const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
   const items = await deps.activitySource.recent(ctx, limit);
+
+  // Resolve the actor display name (FR-003 "actor") in ONE batch, PDPA-safe
+  // (display name only, never email — see ActorDirectory). Only UUID-shaped ids
+  // are resolvable; `system:*`/anonymous sentinels are left null (the feed
+  // renders those rows without an actor rather than a raw sentinel/UUID).
+  const resolvableIds = [
+    ...new Set(items.map((it) => it.actorUserId).filter(isResolvableActor)),
+  ];
+  const identities =
+    resolvableIds.length > 0 ? await deps.actorDirectory.labelsFor(resolvableIds) : new Map();
+  // `identities` only ever contains resolvable (UUID) ids, so a system:*/
+  // anonymous id simply misses the map → null (no need to re-check resolvable).
+  const withActor: readonly ActivityFeedItem[] = items.map((it) => ({
+    ...it,
+    actorLabel: identities.get(it.actorUserId)?.displayName ?? null,
+  }));
+
   // Redact third-party email/phone from the free-text summary for the manager
   // projection (staff-review R001 + F9 #9) — shares redactSummaryForRole with
   // the US2 audit viewer; F1 user-management events embed the target email in
@@ -52,7 +73,9 @@ export async function activityFeedQuery(
   // has member-directory read scope, so they are not out-of-scope PII). Admin:
   // full feed.
   if (meta.actorRole === 'manager') {
-    return ok(items.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })));
+    return ok(
+      withActor.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })),
+    );
   }
-  return ok(items);
+  return ok(withActor);
 }
