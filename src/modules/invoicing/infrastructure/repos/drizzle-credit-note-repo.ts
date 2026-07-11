@@ -232,6 +232,55 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
       return rowToCreditNote(inserted as CreditNoteRow, joinRow.memberId);
     },
 
+    async findBySourceRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      sourceRefundId: string,
+    ): Promise<CreditNote | null> {
+      // CRITICAL-1 (F5 idempotency) — transaction-scoped reverse lookup on the
+      // partial unique index `credit_notes_source_refund_id_uniq`. Threads the
+      // caller's `tx` (never the pool-global `db`) so RLS is enforced on the
+      // same connection under the invoice lock / fresh reconcile tx (Principle
+      // I). At most one row (partial unique index); `limit(1)` is belt-and-
+      // suspenders. LEFT JOIN mirrors `findById` so an orphan CN (invoice hard-
+      // deleted — FK-prevented in practice) is dropped rather than 500-ing.
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select({
+          creditNote: creditNotes,
+          originalInvoiceMemberId: invoices.memberId,
+          originalInvoiceId: invoices.invoiceId,
+        })
+        .from(creditNotes)
+        .leftJoin(
+          invoices,
+          and(
+            eq(invoices.tenantId, creditNotes.tenantId),
+            eq(invoices.invoiceId, creditNotes.originalInvoiceId),
+          ),
+        )
+        .where(
+          and(
+            eq(creditNotes.tenantId, tenantIdArg),
+            eq(creditNotes.sourceRefundId, sourceRefundId),
+          ),
+        )
+        .limit(1);
+      const result = rows[0] ?? null;
+      if (!result) return null;
+      if (!result.originalInvoiceId) {
+        logger.error(
+          { tenantId: tenantIdArg, sourceRefundId },
+          'drizzle-credit-note-repo: findBySourceRefundId — CN row has no matching invoice (orphan)',
+        );
+        return null;
+      }
+      return rowToCreditNote(
+        result.creditNote as CreditNoteRow,
+        result.originalInvoiceMemberId,
+      );
+    },
+
     async findById(creditNoteId: CreditNoteId, tenantIdArg: string): Promise<CreditNote | null> {
       const result = await runInTenant(ctx, async (tx) => {
         const rows = await tx

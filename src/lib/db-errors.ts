@@ -100,6 +100,39 @@ export function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
+ * True when the thrown value is a Postgres unique_violation (23505) raised by a
+ * SPECIFIC named constraint / index. Walks the `.cause` chain (Drizzle 0.45+
+ * wraps the PostgresError) checking the driver-exposed `constraint_name`, then
+ * falls back to matching the constraint name inside the joined message text
+ * (some wrap layers keep the index name in the message but drop
+ * `constraint_name`). Use this to react to ONE constraint while letting every
+ * OTHER 23505 surface through its normal path.
+ *
+ * Example (CRITICAL-1): idempotent credit-note issuance reconciles ONLY on a
+ * violation of `credit_notes_source_refund_id_uniq`; a 23505 on any other index
+ * (e.g. a PK collision) still maps to `concurrent_state_change`.
+ *
+ * The `sawUnique` guard prevents a false positive on a NON-23505 error whose
+ * message happens to contain the constraint name.
+ */
+export function isUniqueViolationOnConstraint(
+  error: unknown,
+  constraintName: string,
+): boolean {
+  let cur: unknown = error;
+  let sawUnique = false;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur) && cur.code === '23505') {
+      sawUnique = true;
+      const cn = (cur as { constraint_name?: unknown }).constraint_name;
+      if (typeof cn === 'string' && cn === constraintName) return true;
+    }
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return sawUnique && errorChainMessage(error).includes(constraintName);
+}
+
+/**
  * Format a storage error for `storage_error.detail` payloads on
  * `Result.err` returns. Lifted from `drizzle-image-allowlist-repo.ts` +
  * `drizzle-broadcast-templates-repo.ts` 2026-05-21 (review finding

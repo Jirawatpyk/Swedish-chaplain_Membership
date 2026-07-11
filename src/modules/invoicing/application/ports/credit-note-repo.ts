@@ -49,6 +49,23 @@ export interface CreditNoteRepo {
     },
   ): Promise<CreditNote>;
 
+  /**
+   * CRITICAL-1 (F5 idempotency) — find the credit note (if any) already issued
+   * for a given `(tenant_id, source_refund_id)`. Transaction-scoped so it
+   * participates in the caller's invoice `FOR UPDATE` lock (closing the RR-2
+   * TOCTOU window) AND so a fresh-tx reconcile after a lost unique-index race
+   * runs with `app.current_tenant` set on the reconcile connection (Principle I
+   * — never the pool-global `db`). Returns `null` when no CN exists for this
+   * refund yet. Only meaningful for refund-origin CNs (`source_refund_id` NOT
+   * NULL); the partial unique index `credit_notes_source_refund_id_uniq`
+   * guarantees at most one match.
+   */
+  findBySourceRefundId(
+    tx: unknown,
+    tenantId: string,
+    sourceRefundId: string,
+  ): Promise<CreditNote | null>;
+
   /** Detail lookup (no tx — used by admin detail page + PDF route). */
   findById(creditNoteId: CreditNoteId, tenantId: string): Promise<CreditNote | null>;
 

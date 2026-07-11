@@ -78,6 +78,7 @@ import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/p
 import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
+import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
@@ -232,6 +233,60 @@ class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
   override readonly name = 'IssueCreditNoteInternalError';
 }
 
+/**
+ * CRITICAL-1 (F5) — the partial unique index (migration 0242) that makes
+ * credit-note issuance idempotent per refund. A duplicate CN insert for the
+ * same `(tenant_id, source_refund_id)` raises Postgres 23505 on this index.
+ */
+const SOURCE_REFUND_UNIQUE_CONSTRAINT = 'credit_notes_source_refund_id_uniq';
+
+/**
+ * CRITICAL-1 / RR-2 — thrown when the CN insert LOSES a concurrent race on the
+ * `source_refund_id` partial unique index (23505). A winning racer already
+ * committed a CN for this `(tenant_id, source_refund_id)`. The current tx is
+ * now POISONED — any further query in it errors "current transaction is aborted"
+ * — so we throw to force `withTx` ROLLBACK (which also returns the §87
+ * counter-row UPDATE to the pool → no gap), then reconcile the winner's CN in a
+ * FRESH tx from the outer catch. Carries the `sourceRefundId` so the reconcile
+ * can re-read the sibling. Only reachable when `input.sourceRefundId` is set
+ * (the index is partial: `WHERE source_refund_id IS NOT NULL`).
+ *
+ * NOT a `TxAbort` subclass: the outer catch handles it distinctly (fresh-tx
+ * reconcile → idempotent success), whereas every `IssueCreditNoteInternalError`
+ * maps straight to a typed `err`.
+ */
+class CreditNoteRefundRaceError extends Error {
+  override readonly name = 'CreditNoteRefundRaceError';
+  constructor(readonly sourceRefundId: string) {
+    super('credit-note source_refund_id unique race — reconcile in a fresh tx');
+  }
+}
+
+/**
+ * CRITICAL-1 / RR-2 — fresh-tx reconcile helper. After a losing racer's CN
+ * insert hit the `source_refund_id` unique index, its transaction is poisoned
+ * and cannot be queried, so the sibling CN MUST be re-read in a brand-new tx.
+ * Opens a fresh tenant tx via the invoice repo's `withTx` (→ `runInTenant` →
+ * `db.transaction`, a genuinely new connection with `app.current_tenant` SET —
+ * never the pool-global `db`, Principle I) and reads the sibling via the same
+ * tenant-filtered `findBySourceRefundId`. Returns `null` only if the sibling is
+ * genuinely absent (winner rolled back AFTER our violation) — the caller maps
+ * that to `concurrent_state_change`.
+ *
+ * `deps` is passed explicitly (the use-case is dependency-injected; there is no
+ * module-level repo) — this is the injected shape of the brief's
+ * `reconcileExistingCreditNote(tenantId, sourceRefundId)` helper.
+ */
+async function reconcileExistingCreditNote(
+  deps: IssueCreditNoteDeps,
+  tenantId: string,
+  sourceRefundId: string,
+): Promise<CreditNote | null> {
+  return deps.invoiceRepo.withTx((tx) =>
+    deps.creditNoteRepo.findBySourceRefundId(tx, tenantId, sourceRefundId),
+  );
+}
+
 export interface IssueCreditNoteDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly creditNoteRepo: CreditNoteRepo;
@@ -305,6 +360,34 @@ export async function issueCreditNote(
         });
         return err({ code: 'invoice_not_found' });
       }
+
+      // CRITICAL-1 (F5 idempotency, source_refund_id) — a refund-origin CN
+      // (`sourceRefundId` set) is idempotent per `(tenant_id, source_refund_id)`:
+      // if one already exists, return it WITHOUT allocating a new §87 number,
+      // rendering a new PDF, or re-running the rollup / audit / outbox. Runs
+      // UNDER the invoice `FOR UPDATE` lock (closes the RR-2 TOCTOU window) and
+      // BEFORE the status gate, so a fully-credited parent (`status='credited'`
+      // after a prior FULL refund CN — NOT in {paid, partially_credited}) still
+      // returns the sibling CN rather than failing `invalid_status`. Gated on
+      // `sourceRefundId !== undefined` so F4-manual issuance (no
+      // `source_refund_id`; the partial unique index excludes NULLs) is
+      // byte-for-byte unchanged. Threads `tx` (never the pool-global `db`).
+      if (input.sourceRefundId !== undefined) {
+        const existing = await deps.creditNoteRepo.findBySourceRefundId(
+          tx,
+          input.tenantId,
+          input.sourceRefundId,
+        );
+        if (existing) {
+          return ok({
+            creditNote: existing,
+            // Repeat is a pure read — no new email enqueued, no F8 cascade.
+            emailDelivery: 'not_requested',
+            membershipCancellationRequested: false,
+          });
+        }
+      }
+
       if (lockedStatus !== 'paid' && lockedStatus !== 'partially_credited') {
         return err({ code: 'invalid_status', status: lockedStatus });
       }
@@ -681,6 +764,20 @@ export async function issueCreditNote(
             : {}),
         });
       } catch (e) {
+        // CRITICAL-1 (F5) — a LOST race on the `source_refund_id` partial
+        // unique index (migration 0242) means a sibling CN already exists for
+        // this refund. Signal the outer catch to reconcile it in a FRESH tx
+        // (this tx is now poisoned; we cannot SELECT the sibling here — RR-2).
+        // Only possible when `sourceRefundId` is set. Every OTHER insert error
+        // — the (tenant, fiscal_year, sequence_number) unique that the
+        // allocator FOR UPDATE lock already prevents, or an FK/CHECK/snapshot
+        // rejection — stays the pre-existing typed `concurrent_state_change`.
+        if (
+          input.sourceRefundId !== undefined &&
+          isUniqueViolationOnConstraint(e, SOURCE_REFUND_UNIQUE_CONSTRAINT)
+        ) {
+          throw new CreditNoteRefundRaceError(input.sourceRefundId);
+        }
         // Unique-constraint on (tenant, fiscal_year, sequence_number) is
         // prevented by the allocator FOR UPDATE lock; any insert error
         // here means the DB rejected snapshot/FK/check constraints —
@@ -1024,6 +1121,37 @@ export async function issueCreditNote(
       return ok({ creditNote: cn, emailDelivery, membershipCancellationRequested });
     });
   } catch (e) {
+    // CRITICAL-1 / RR-2 — the CN insert lost the `source_refund_id` unique
+    // race; the withTx above already ROLLED BACK (§87 counter-row UPDATE
+    // returned to the pool → no gap). Re-read the WINNING sibling CN in a
+    // FRESH tx and return it as an idempotent success — no new §87 number, no
+    // new PDF, no rollup/audit/outbox side effects.
+    if (e instanceof CreditNoteRefundRaceError) {
+      const reconciled = await reconcileExistingCreditNote(
+        deps,
+        input.tenantId,
+        e.sourceRefundId,
+      );
+      if (reconciled) {
+        return ok({
+          creditNote: reconciled,
+          emailDelivery: 'not_requested',
+          membershipCancellationRequested: false,
+        });
+      }
+      // Extremely unlikely: the sibling vanished between the 23505 and the
+      // fresh read (the winner rolled back AFTER our violation). Surface as
+      // `concurrent_state_change` so the caller can retry cleanly.
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          sourceRefundId: e.sourceRefundId,
+        },
+        'issueCreditNote: source_refund_id race but sibling CN absent on fresh-tx reconcile',
+      );
+      return err({ code: 'concurrent_state_change' });
+    }
     if (e instanceof IssueCreditNoteInternalError) {
       logger.warn(
         {
