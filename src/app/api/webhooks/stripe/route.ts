@@ -49,6 +49,7 @@ import {
   makeProcessWebhookEventDeps,
   SYSTEM_ACTOR_STRIPE_WEBHOOK,
   type ProcessWebhookEventError,
+  type VerifiedStripeEvent,
 } from '@/modules/payments';
 import {
   resolveTenantByProcessorAccountId,
@@ -267,6 +268,124 @@ export function extractLatestChargeId(
     return typeof id === 'string' ? id : undefined;
   }
   return undefined;
+}
+
+/**
+ * Task C.4 / M-f — pure re-projection of the verifier's `dataObject`
+ * into the allow-list shape forwarded to `processWebhookEvent`.
+ *
+ * Extracted verbatim (behaviour-preserving) from the POST handler,
+ * where this rebuild used to be inlined. That inlining is how Bugs
+ * #5 (`amountProjectionFailed` dropped) and #6 (`disputeId` dropped)
+ * happened: the envelope is projected TWICE — once by the verifier's
+ * own `project()`, and again here by copying a fixed allow-list of
+ * known keys, which silently drops anything the allow-list forgot.
+ * C.1/C.2 already closed those two specific gaps; this extraction
+ * plus `tests/unit/payments/webhook-reprojection-superset.test.ts`
+ * closes the whole BUG CLASS — the test builds a synthetic verifier
+ * envelope with every optional `VerifiedStripeEvent['dataObject']`
+ * key set and asserts each survives this function, so a future key
+ * (e.g. PR-A's `refundStatus`) added to the verifier but forgotten
+ * here fails CI instead of silently dropping in production.
+ *
+ * PCI SAQ-A: still an allow-list projection — only id-like cross-ref
+ * fields + amount/error-code scalars are copied, never the wide
+ * Stripe object.
+ */
+export function reprojectDataObject(
+  rawDataObject: Record<string, unknown> | undefined,
+): VerifiedStripeEvent['dataObject'] {
+  // Project narrow allow-list fields. PCI SAQ-A: only the cross-ref
+  // ids the dispatcher needs are passed downstream. The verifier
+  // path's `dataObject` is already projected — re-projecting here is
+  // a no-op for known keys + drops anything unexpected.
+  // R3 I-2 / R5 S007: handle expanded `latest_charge` (Charge object) AND
+  // string-id forms via `extractLatestChargeId`. See helper docblock.
+  const latestCharge = extractLatestChargeId(rawDataObject);
+  const refundsNode = rawDataObject?.['refunds'] as
+    | { data?: Array<Record<string, unknown>> }
+    | undefined;
+  const refundIdsFromVerifier = rawDataObject?.['refundIds'] as
+    | readonly string[]
+    | undefined;
+  // F5R2-M5 — narrow `last_payment_error` extraction so the wide
+  // `Record<string, unknown>` object is NOT bound in the route's
+  // local scope. PCI SAQ-A risk: future logger/response-body additions
+  // could accidentally include the full Stripe error object (which
+  // can carry card_brand, card_last4, decline reason text). Extract
+  // ONLY the `code` string here; downstream consumers see a single
+  // `lastPaymentErrorCode` field instead of the wide envelope.
+  const lastPaymentErrorRawCode = (
+    rawDataObject?.['last_payment_error'] as Record<string, unknown> | undefined
+  )?.['code'];
+  const lastPaymentErrorCodeFromVerifier = rawDataObject?.[
+    'lastPaymentErrorCode'
+  ] as string | undefined;
+  const amountVal =
+    rawDataObject?.['amount'] ?? rawDataObject?.['amountSatang'];
+
+  return {
+    id: String(rawDataObject?.['id'] ?? ''),
+    type: String(
+      rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
+    ),
+    // F5R1-IMP5 docstring — `latestChargeId` is absent from the
+    // envelope when `extractLatestChargeId` returns undefined,
+    // which covers BOTH "field missing" AND "field present but
+    // not a string/object-with-id" (verifier's defensive null
+    // projection for object-form charges). Downstream consumers
+    // MUST NOT trust this field — `confirmPayment` + `failPayment`
+    // both re-fetch the PI via `retrievePaymentIntent` for card
+    // metadata. Documented here so a future consumer doesn't
+    // start trusting the envelope without re-verifying via the
+    // gateway.
+    ...(latestCharge !== undefined && {
+      latestChargeId: latestCharge,
+    }),
+    // Bug #6 fix (Task C.2) — the verifier sets `disputeId` on the
+    // `charge.dispute.created` branch (see stripe-webhook-verifier.ts
+    // `project()`'s dispute arm), but this re-projection previously
+    // rebuilt `dataObject` from an allow-list that omitted it,
+    // silently dropping it before `processWebhookEvent` could audit
+    // the real dispute id — the `dispute_created` audit row recorded
+    // `dispute_id: null` in production. PCI SAQ-A: this is an id-like
+    // string only, never card/charge metadata.
+    ...(rawDataObject?.['disputeId']
+      ? { disputeId: String(rawDataObject['disputeId']) }
+      : {}),
+    ...(refundIdsFromVerifier !== undefined
+      ? { refundIds: refundIdsFromVerifier }
+      : Array.isArray(refundsNode?.data)
+        ? {
+            refundIds: refundsNode!.data!
+              .map((r) => String((r as Record<string, unknown>)['id'] ?? ''))
+              .filter(Boolean),
+          }
+        : {}),
+    ...(typeof lastPaymentErrorCodeFromVerifier === 'string'
+      ? { lastPaymentErrorCode: lastPaymentErrorCodeFromVerifier }
+      : typeof lastPaymentErrorRawCode === 'string'
+        ? { lastPaymentErrorCode: lastPaymentErrorRawCode }
+        : {}),
+    // F5R3 H-5 (2026-05-16) — brand at Stripe→Application boundary.
+    ...(typeof amountVal === 'number' && {
+      amountSatang: asSatang(BigInt(amountVal)),
+    }),
+    ...(typeof amountVal === 'bigint' && {
+      amountSatang: asSatang(amountVal),
+    }),
+    // Bug #5 fix — preserve the verifier-set `amountProjectionFailed`
+    // flag through this re-projection. In production `rawEvent` IS
+    // the verifier's already-projected envelope (see comment above
+    // this block), so `rawDataObject['amountProjectionFailed']` is
+    // the flag `stripe-webhook-verifier.ts` `project()` set. Without
+    // this copy, the H-4 dead-letter guard in
+    // `process-charge-refunded.ts` never fires in prod because the
+    // route silently dropped the flag on its way to the use-case.
+    ...(rawDataObject?.['amountProjectionFailed'] === true
+      ? { amountProjectionFailed: true }
+      : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -516,36 +635,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     ((rawAny['data'] as Record<string, unknown> | undefined)?.['object'] as
       | Record<string, unknown>
       | undefined);
-  // Project narrow allow-list fields. PCI SAQ-A: only the cross-ref
-  // ids the dispatcher needs are passed downstream. The verifier
-  // path's `dataObject` is already projected — re-projecting here is
-  // a no-op for known keys + drops anything unexpected.
-  // R3 I-2 / R5 S007: handle expanded `latest_charge` (Charge object) AND
-  // string-id forms via `extractLatestChargeId`. See helper docblock.
-  const latestCharge = extractLatestChargeId(rawDataObject);
-  const refundsNode = rawDataObject?.['refunds'] as
-    | { data?: Array<Record<string, unknown>> }
-    | undefined;
-  const refundIdsFromVerifier = rawDataObject?.['refundIds'] as
-    | readonly string[]
-    | undefined;
-  // F5R2-M5 — narrow `last_payment_error` extraction so the wide
-  // `Record<string, unknown>` object is NOT bound in the route's
-  // local scope. PCI SAQ-A risk: future logger/response-body additions
-  // could accidentally include the full Stripe error object (which
-  // can carry card_brand, card_last4, decline reason text). Extract
-  // ONLY the `code` string here; downstream consumers see a single
-  // `lastPaymentErrorCode` field instead of the wide envelope.
-  const lastPaymentErrorRawCode = (
-    rawDataObject?.['last_payment_error'] as Record<string, unknown> | undefined
-  )?.['code'];
-  const lastPaymentErrorCodeFromVerifier = rawDataObject?.[
-    'lastPaymentErrorCode'
-  ] as string | undefined;
-  const amountVal =
-    rawDataObject?.['amount'] ?? rawDataObject?.['amountSatang'];
 
-  const verifiedEvent: import('@/modules/payments').VerifiedStripeEvent = {
+  const verifiedEvent: VerifiedStripeEvent = {
     id: evId,
     type: evType,
     apiVersion: evApiVersion,
@@ -556,68 +647,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       typeof rawAny['createdAtUnixSeconds'] === 'number'
         ? (rawAny['createdAtUnixSeconds'] as number)
         : Number(rawAny['created'] ?? 0),
-    dataObject: {
-      id: String(rawDataObject?.['id'] ?? ''),
-      type: String(
-        rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
-      ),
-      // F5R1-IMP5 docstring — `latestChargeId` is absent from the
-      // envelope when `extractLatestChargeId` returns undefined,
-      // which covers BOTH "field missing" AND "field present but
-      // not a string/object-with-id" (verifier's defensive null
-      // projection for object-form charges). Downstream consumers
-      // MUST NOT trust this field — `confirmPayment` + `failPayment`
-      // both re-fetch the PI via `retrievePaymentIntent` for card
-      // metadata. Documented here so a future consumer doesn't
-      // start trusting the envelope without re-verifying via the
-      // gateway.
-      ...(latestCharge !== undefined && {
-        latestChargeId: latestCharge,
-      }),
-      // Bug #6 fix (Task C.2) — the verifier sets `disputeId` on the
-      // `charge.dispute.created` branch (see stripe-webhook-verifier.ts
-      // `project()`'s dispute arm), but this re-projection previously
-      // rebuilt `dataObject` from an allow-list that omitted it,
-      // silently dropping it before `processWebhookEvent` could audit
-      // the real dispute id — the `dispute_created` audit row recorded
-      // `dispute_id: null` in production. PCI SAQ-A: this is an id-like
-      // string only, never card/charge metadata.
-      ...(rawDataObject?.['disputeId']
-        ? { disputeId: String(rawDataObject['disputeId']) }
-        : {}),
-      ...(refundIdsFromVerifier !== undefined
-        ? { refundIds: refundIdsFromVerifier }
-        : Array.isArray(refundsNode?.data)
-          ? {
-              refundIds: refundsNode!.data!
-                .map((r) => String((r as Record<string, unknown>)['id'] ?? ''))
-                .filter(Boolean),
-            }
-          : {}),
-      ...(typeof lastPaymentErrorCodeFromVerifier === 'string'
-        ? { lastPaymentErrorCode: lastPaymentErrorCodeFromVerifier }
-        : typeof lastPaymentErrorRawCode === 'string'
-          ? { lastPaymentErrorCode: lastPaymentErrorRawCode }
-          : {}),
-      // F5R3 H-5 (2026-05-16) — brand at Stripe→Application boundary.
-      ...(typeof amountVal === 'number' && {
-        amountSatang: asSatang(BigInt(amountVal)),
-      }),
-      ...(typeof amountVal === 'bigint' && {
-        amountSatang: asSatang(amountVal),
-      }),
-      // Bug #5 fix — preserve the verifier-set `amountProjectionFailed`
-      // flag through this re-projection. In production `rawEvent` IS
-      // the verifier's already-projected envelope (see comment above
-      // this block), so `rawDataObject['amountProjectionFailed']` is
-      // the flag `stripe-webhook-verifier.ts` `project()` set. Without
-      // this copy, the H-4 dead-letter guard in
-      // `process-charge-refunded.ts` never fires in prod because the
-      // route silently dropped the flag on its way to the use-case.
-      ...(rawDataObject?.['amountProjectionFailed'] === true
-        ? { amountProjectionFailed: true }
-        : {}),
-    },
+    dataObject: reprojectDataObject(rawDataObject),
   };
 
   try {
