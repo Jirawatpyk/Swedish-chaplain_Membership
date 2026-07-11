@@ -20,6 +20,7 @@ export function MonthFilterChip({ monthLabel }: { readonly monthLabel: string })
     const next = new URLSearchParams(params.toString());
     next.delete('month');
     next.delete('cursor');
+    next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
     const qs = next.toString();
     router.push(qs ? `/admin/renewals?${qs}` : '/admin/renewals');
     // Return focus to the chart region (its row link unmounts on clear).

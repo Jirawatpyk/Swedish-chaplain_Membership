@@ -155,14 +155,23 @@ export default async function RenewalsPipelinePage({
   // pipeline month bounds — computed ONCE so they reconcile exactly.
   //
   // #6 fix-wave — prefer a `nowIso` carried in the URL over minting a fresh
-  // instant. Without this, a month bucket with >50 rows that straddles a
-  // BKK month rollover mid-pagination would recompute `overdue`/`later`
-  // bounds on "Next 50" and could miss/dup rows across the session. A
-  // present `nowIso` anchors the whole pagination session to one instant;
-  // normal (non-paginated) navigation still mints fresh each request. A
-  // stale bookmarked `nowIso` safe-degrades (validated by `Date.parse`).
+  // instant, but ONLY mid-pagination. Without this, a month bucket with >50
+  // rows that straddles a BKK month rollover would recompute `overdue`/`later`
+  // bounds on "Next 50" and could miss/dup rows across the session.
+  //
+  // CRITICAL fix (wave-1 review): the app emits `nowIso` ONLY alongside
+  // `cursor` (on a month-lens "Next 50" link), so the read is GATED on
+  // `cursor` being present. This closes a param-leak: sibling nav builders
+  // (tab / tier / month bar / ✕ chip) all delete `cursor`, so any of them
+  // drops the guard back to a fresh `new Date()` — `nowIso` can never ride
+  // along inert and silently FREEZE the chart's overdue/later boundaries at
+  // a stale T0 for the rest of the session. Belt-and-suspenders with the
+  // `next.delete('nowIso')` added to those four nav builders. A stale
+  // bookmarked `?nowIso&cursor` safe-degrades (validated by `Date.parse`).
   const nowIso =
-    typeof query.nowIso === 'string' && !Number.isNaN(Date.parse(query.nowIso))
+    typeof query.nowIso === 'string' &&
+    typeof query.cursor === 'string' &&
+    !Number.isNaN(Date.parse(query.nowIso))
       ? query.nowIso
       : new Date().toISOString();
   const month = parseMonthParam(query.month);

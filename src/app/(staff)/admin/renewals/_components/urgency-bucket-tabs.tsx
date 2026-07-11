@@ -63,6 +63,7 @@ export function UrgencyBucketTabs({
     next.set('urgency', value);
     next.delete('month'); // mutually-exclusive lens — exit the month lens
     next.delete('cursor'); // reset pagination on tab switch
+    next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
     router.push(`${pathname}?${next.toString()}`);
   }
 

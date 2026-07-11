@@ -389,13 +389,20 @@ describe('countCyclesByExpiryMonth — integration', () => {
       );
 
       // Tenant A's aggregation AFTER the foreign seed — RLS must keep it
-      // byte-for-byte unchanged; the foreign cycle must never leak in.
+      // unchanged; the foreign cycle must never leak in. Assert ORDER-
+      // INDEPENDENTLY (the aggregation has no ORDER BY after GROUP BY, so
+      // `months[]` element order is Postgres-implementation-defined — a whole-
+      // object `toEqual` would be array-order-flaky). Compare the numeric total
+      // before/after AND the specific 2026-07 bucket (where the foreign cycle
+      // WOULD land if RLS leaked) via a Map lookup, never by array index.
       const after = await deps.cyclesRepo.countCyclesByExpiryMonth(tenant.ctx.slug, {
         nowIso: NOW_ISO,
         timezone: 'Asia/Bangkok',
       });
       expect(totalOf(after)).toBe(beforeTotal);
-      expect(after).toEqual(before);
+      const julyOf = (agg: typeof before): number =>
+        new Map(agg.months.map((m) => [m.month, m.count])).get('2026-07') ?? 0;
+      expect(julyOf(after)).toBe(julyOf(before));
 
       // Positive control: the OTHER tenant's own view DOES see its cycle,
       // proving the seed landed and the isolation assertion above isn't

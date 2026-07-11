@@ -40,6 +40,7 @@ export function MonthBarChart({
     next.delete('urgency'); // mutually-exclusive lens
     next.delete('tier'); // whole-tenant lens — clear tier so the dropdown can't lie
     next.delete('cursor'); // reset pagination
+    next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
     return `/admin/renewals?${next.toString()}`;
   }
 
