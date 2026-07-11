@@ -404,6 +404,51 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     expect(res.status).toBe(200);
   });
 
+  // Bug #5 fix — the verifier-set `amountProjectionFailed` flag must
+  // survive the route's `dataObject` re-projection so the downstream
+  // H-4 dead-letter guard (process-charge-refunded.ts) can gate on it.
+  // In production `rawEvent` IS the verifier's already-projected
+  // envelope (stripe-webhook-verifier.ts `project()`), which is a flat
+  // object carrying a top-level `dataObject` — simulated here via the
+  // `dataObject` override (read by the route BEFORE its `data.object`
+  // fallback). PCI SAQ-A: only a boolean flag is copied, no card/amount
+  // data.
+  it('amountProjectionFailed on a charge.refunded verifier envelope reaches processWebhookEvent unchanged', async () => {
+    const event = makeStripeEvent({
+      id: 'evt_test_amount_projection_004',
+      type: 'charge.refunded',
+      dataObject: {
+        id: 'ch_test_004',
+        type: 'charge',
+        amountProjectionFailed: true,
+      },
+    });
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { outcome: 'processed' },
+    });
+
+    const rawBody = JSON.stringify(event);
+    const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makeWebhookRequest(rawBody, { 'stripe-signature': 't=1,v1=valid' }),
+    ) as Response;
+    expect(res.status).toBe(200);
+
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = processWebhookEventMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const verifiedEvent = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    const dataObject = verifiedEvent?.['dataObject'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(dataObject?.['amountProjectionFailed']).toBe(true);
+  });
+
   // (h) Unknown event type → 200, acknowledged_only
   it('(h) unknown event type → 200, acknowledged_only', async () => {
     const event = makeStripeEvent({

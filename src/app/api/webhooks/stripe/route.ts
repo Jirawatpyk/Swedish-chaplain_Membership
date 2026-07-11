@@ -595,6 +595,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(typeof amountVal === 'bigint' && {
         amountSatang: asSatang(amountVal),
       }),
+      // Bug #5 fix — preserve the verifier-set `amountProjectionFailed`
+      // flag through this re-projection. In production `rawEvent` IS
+      // the verifier's already-projected envelope (see comment above
+      // this block), so `rawDataObject['amountProjectionFailed']` is
+      // the flag `stripe-webhook-verifier.ts` `project()` set. Without
+      // this copy, the H-4 dead-letter guard in
+      // `process-charge-refunded.ts` never fires in prod because the
+      // route silently dropped the flag on its way to the use-case.
+      ...(rawDataObject?.['amountProjectionFailed'] === true
+        ? { amountProjectionFailed: true }
+        : {}),
     },
   };
 
