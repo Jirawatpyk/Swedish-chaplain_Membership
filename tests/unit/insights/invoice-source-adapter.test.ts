@@ -8,9 +8,12 @@
  * its status flipped paid → partially_credited / credited, so an exact
  * `status:'paid'` filter would drop the ENTIRE invoice from the revenue figures.
  * Both the YTD KPI and the monthly trend must instead include the
- * paid/partially_credited/credited statuses and NET the credited portion
- * (`total − creditedTotal`), so a partial credit reduces revenue by exactly the
- * credited amount, not by the whole invoice.
+ * paid/partially_credited/credited statuses and NET the credited portion.
+ *
+ * F9 revenue is NET-OF-VAT — the figure is labelled "รายได้/Revenue", and
+ * revenue excludes output VAT (ภาษีขาย, a liability to the RD, not income). So
+ * each invoice contributes its ex-VAT amount (`subtotal`), scaled proportionally
+ * by any credit — NOT the VAT-inclusive `total`.
  *
  * The invoicing barrel is mocked; `@/lib/fiscal-year` (deriveFiscalYear) is the
  * REAL pure helper so the derivation is exercised end-to-end.
@@ -34,9 +37,11 @@ const { asTenantContext } = await import('@/modules/tenants');
 
 const ctx = asTenantContext('tenant-a');
 
-// A fully-paid invoice with no credit note contributes its full total.
+// A fully-paid, ZERO-VAT invoice (subtotal == total) with no credit → its ex-VAT
+// revenue equals `satang`.
 const paidRow = (satang: bigint) => ({
   status: 'paid',
+  subtotal: { satang },
   total: { satang },
   creditedTotal: { satang: 0n },
 });
@@ -94,31 +99,15 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — fiscal-year windowing
   });
 });
 
-describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting', () => {
-  it('nets the credited portion instead of dropping the whole invoice', async () => {
+describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — net-of-VAT', () => {
+  it('excludes output VAT — a 7% invoice contributes its ex-VAT subtotal, not the gross total', async () => {
     getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
     listInvoicesMock.mockResolvedValue({
       ok: true,
       value: {
         rows: [
-          // Fully paid, no credit → full 100,000.
-          { status: 'paid', total: { satang: 100_000n }, creditedTotal: { satang: 0n } },
-          // Partially credited 20,000 → nets to 80,000 (NOT dropped, NOT 100,000).
-          {
-            status: 'partially_credited',
-            total: { satang: 100_000n },
-            creditedTotal: { satang: 20_000n },
-          },
-          // Fully credited → nets to 0.
-          {
-            status: 'credited',
-            total: { satang: 50_000n },
-            creditedTotal: { satang: 50_000n },
-          },
-          // Issued (unpaid) → excluded from paid revenue.
-          { status: 'issued', total: { satang: 999n }, creditedTotal: { satang: 0n } },
-          // Void → excluded.
-          { status: 'void', total: { satang: 777n }, creditedTotal: { satang: 0n } },
+          // 100,000 ex-VAT + 7,000 VAT = 107,000 gross → revenue is 100,000.
+          { status: 'paid', subtotal: { satang: 100_000n }, total: { satang: 107_000n }, creditedTotal: { satang: 0n } },
         ],
         nextCursor: null,
       },
@@ -129,7 +118,48 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting',
       '2026-02-15T00:00:00.000Z',
     );
 
-    // 100,000 + (100,000 − 20,000) + (50,000 − 50,000) = 180,000.
+    expect(total).toBe(100_000n); // ex-VAT, NOT the 107,000 gross
+  });
+});
+
+describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting', () => {
+  it('nets the credited portion (ex-VAT) instead of dropping the whole invoice', async () => {
+    getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          // Fully paid, no credit → ex-VAT 100,000 (gross 107,000).
+          { status: 'paid', subtotal: { satang: 100_000n }, total: { satang: 107_000n }, creditedTotal: { satang: 0n } },
+          // Partially credited (gross 21,400 of 107,000) → ex-VAT nets to 80,000.
+          {
+            status: 'partially_credited',
+            subtotal: { satang: 100_000n },
+            total: { satang: 107_000n },
+            creditedTotal: { satang: 21_400n },
+          },
+          // Fully credited → nets to 0.
+          {
+            status: 'credited',
+            subtotal: { satang: 50_000n },
+            total: { satang: 53_500n },
+            creditedTotal: { satang: 53_500n },
+          },
+          // Issued (unpaid) → excluded from paid revenue.
+          { status: 'issued', subtotal: { satang: 999n }, total: { satang: 1_069n }, creditedTotal: { satang: 0n } },
+          // Void → excluded.
+          { status: 'void', subtotal: { satang: 777n }, total: { satang: 831n }, creditedTotal: { satang: 0n } },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-02-15T00:00:00.000Z',
+    );
+
+    // 100,000 + (100,000 − 20,000) + 0 = 180,000 (ex-VAT).
     expect(total).toBe(180_000n);
     expect(listInvoicesMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -139,7 +169,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting',
 });
 
 describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netting', () => {
-  it('buckets net (total − credited) by settle month across paid + credited statuses', async () => {
+  it('buckets net-of-VAT revenue by settle month across paid + credited statuses', async () => {
     listInvoicesMock.mockResolvedValue({
       ok: true,
       value: {
@@ -147,28 +177,32 @@ describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netti
           {
             status: 'paid',
             paidAt: '2026-03-15T05:00:00.000Z',
-            total: { satang: 500_000n },
+            subtotal: { satang: 500_000n },
+            total: { satang: 535_000n },
             creditedTotal: { satang: 0n },
           },
           {
             status: 'partially_credited',
             paidAt: '2026-03-20T05:00:00.000Z',
-            total: { satang: 100_000n },
-            creditedTotal: { satang: 10_000n },
+            subtotal: { satang: 100_000n },
+            total: { satang: 107_000n },
+            creditedTotal: { satang: 10_700n },
           },
           // Unpaid — must not appear in a "revenue realised" trend.
           {
             status: 'issued',
             paidAt: null,
             issueDate: '2026-03-01',
-            total: { satang: 999n },
+            subtotal: { satang: 999n },
+            total: { satang: 1_069n },
             creditedTotal: { satang: 0n },
           },
           // Void — excluded.
           {
             status: 'void',
             paidAt: '2026-03-10T05:00:00.000Z',
-            total: { satang: 200_000n },
+            subtotal: { satang: 200_000n },
+            total: { satang: 214_000n },
             creditedTotal: { satang: 0n },
           },
         ],
@@ -182,7 +216,7 @@ describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netti
       'Asia/Bangkok',
     );
 
-    // 500,000 + (100,000 − 10,000) = 590,000.
+    // 500,000 + (100,000 − 10,000) = 590,000 (ex-VAT).
     expect(buckets['2026-03']).toBe(590_000n);
     expect(listInvoicesMock).toHaveBeenCalledWith(
       expect.anything(),
