@@ -9,7 +9,7 @@
 import type { PaymentId } from '../../domain/payment';
 // Single source of truth — Domain owns the status enum so a future
 // `'voided'` addition (post-MVP) cannot drift between Domain + Port.
-import type { RefundStatus } from '../../domain/refund';
+import type { Refund, RefundStatus } from '../../domain/refund';
 import type { Satang } from '@/lib/money';
 export type { RefundStatus };
 
@@ -80,6 +80,50 @@ export interface RefundsRepo {
     tenantId: string,
     processorRefundId: string,
   ): Promise<RefundRow | null>;
+
+  /**
+   * A.6 — narrow write: set ONLY `processor_refund_id`, leaving
+   * `status` and `completed_at` untouched (a refund row is inserted
+   * `status='pending'` before Stripe assigns a refund id; this method
+   * durably records that id as soon as the processor accepts the
+   * request, ahead of the eventual succeeded/failed outcome).
+   *
+   * CHECK-safe by design: `refunds_succeeded_iff_complete` is the
+   * biconditional `(status='succeeded') = (processor_refund_id IS NOT
+   * NULL AND credit_note_id IS NOT NULL)`. With `status` still
+   * `'pending'` the LHS is `false`; `credit_note_id` remains NULL so
+   * the RHS is also `false` — `false = false` satisfies the
+   * constraint regardless of `processor_refund_id`.
+   *
+   * Throws on zero-match — `refundId` is expected to already exist
+   * (the row is inserted via `insert` before this is ever called).
+   */
+  attachProcessorRefundId(
+    tx: unknown,
+    input: {
+      readonly refundId: string;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+    },
+  ): Promise<void>;
+
+  /**
+   * A.6 — `SELECT … WHERE tenant_id = ? AND processor_refund_id = ?
+   * FOR UPDATE`. Serialises concurrent writers reconciling the same
+   * Stripe refund (e.g. a `refund.updated` webhook racing the
+   * stale-pending sweep or `issueRefund` Phase B).
+   *
+   * Returns the full Domain `Refund` aggregate (NOT the port's slim
+   * `RefundRow`) — the webhook reconcile use-case needs every
+   * state-machine-relevant field (`reason`, `failureReasonCode`,
+   * `creditNoteId`, timestamps) to decide the next transition, not
+   * just the aggregate-context subset `RefundRow` carries.
+   */
+  lockForUpdateByProcessorRefundId(
+    tx: unknown,
+    tenantId: string,
+    processorRefundId: string,
+  ): Promise<Refund | null>;
 
   /**
    * Combined aggregate snapshot for a (tenant, payment) tuple,

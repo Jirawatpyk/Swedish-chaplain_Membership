@@ -26,7 +26,7 @@ import type {
   RefundStatus,
 } from '../../application/ports/refunds-repo';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
-import { REFUND_STATUSES } from '../../domain/refund';
+import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
 import { refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -61,6 +61,29 @@ function toDomain(row: RefundRow): DomainRefundRow {
     amountSatang: toBigintSatang(row.amountSatang, row.id),
     status: assertRefundStatus(row.status, row.id),
     processorRefundId: row.processorRefundId,
+  };
+}
+
+// A.6 — full Domain `Refund` aggregate mapping (distinct from the
+// port's slim `RefundRow` DTO above). Used by
+// `lockForUpdateByProcessorRefundId`, whose caller (the webhook
+// reconcile use-case) needs every state-machine-relevant field.
+function toRefundDomain(row: RefundRow): Refund {
+  return {
+    id: asRefundId(row.id),
+    tenantId: row.tenantId,
+    paymentId: asPaymentId(row.paymentId),
+    invoiceId: row.invoiceId,
+    amountSatang: toBigintSatang(row.amountSatang, row.id),
+    reason: row.reason,
+    status: assertRefundStatus(row.status, row.id),
+    processorRefundId: row.processorRefundId,
+    failureReasonCode: row.failureReasonCode,
+    creditNoteId: row.creditNoteId,
+    initiatedAt: row.initiatedAt,
+    completedAt: row.completedAt,
+    initiatorUserId: row.initiatorUserId,
+    correlationId: row.correlationId,
   };
 }
 
@@ -195,6 +218,50 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         )
         .limit(1);
       return row ? toDomain(row as RefundRow) : null;
+    },
+
+    async attachProcessorRefundId(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // Narrow write — ONLY `processor_refund_id` changes; `status`
+      // and `completed_at` are untouched, which is why this method
+      // does not accept `nextStatus`/`completedAt` inputs the way
+      // `updateStatus` does. See the port docstring for the
+      // CHECK-safety argument (refunds_succeeded_iff_complete stays
+      // false=false while status remains 'pending').
+      const [updated] = await tx
+        .update(refunds)
+        .set({ processorRefundId: input.processorRefundId, updatedAt: sql`now()` })
+        .where(and(eq(refunds.tenantId, input.tenantId), eq(refunds.id, input.refundId)))
+        .returning({ id: refunds.id });
+      if (!updated) {
+        logger.warn(
+          { tenantId: input.tenantId, refundId: input.refundId },
+          'drizzle-refunds-repo.attachProcessorRefundId.zero_rows',
+        );
+        throw new Error(
+          `drizzle-refunds-repo: attachProcessorRefundId matched zero rows for ${input.refundId}`,
+        );
+      }
+    },
+
+    async lockForUpdateByProcessorRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      processorRefundId: string,
+    ): Promise<Refund | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select()
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.processorRefundId, processorRefundId),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      return row ? toRefundDomain(row as RefundRow) : null;
     },
 
     async listPendingOlderThan(

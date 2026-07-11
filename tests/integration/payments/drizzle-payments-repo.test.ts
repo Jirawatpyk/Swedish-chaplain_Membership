@@ -83,7 +83,11 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     bMemberId = randomUUID();
     // F5R3 H-9 (2026-05-16) — bumped 5 → 6 to seed the
     // expectedCurrentStatus-mismatch SQL-guard test below.
+    // Task A.6 (2026-07-11) — bumped 6 → 8 to seed the two
+    // findAutoRefundByProcessorRefundId tests below.
     aInvoiceIds = [
+      randomUUID(),
+      randomUUID(),
       randomUUID(),
       randomUUID(),
       randomUUID(),
@@ -610,5 +614,114 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(verified, 'seeded payment row must still exist').not.toBeNull();
     expect(verified!.status).toBe('succeeded');
     expect(verified!.processorChargeId).toBe('ch_test_h9_oob');
+  });
+
+  // ===========================================================================
+  // Task A.6 — findAutoRefundByProcessorRefundId (durable A4b lookup,
+  // migration 0240 `auto_refund_processor_refund_id` column). Replaces
+  // the audit_log-based `findStaleInvoiceAutoRefund` above for callers
+  // that can run inside their own tx. The orphaned method above is
+  // NOT deleted here (A.17 removes it) — this task only adds the new
+  // durable-column read.
+  // ===========================================================================
+
+  it('A.6: findAutoRefundByProcessorRefundId reads the durable auto-refund marker; null before it is set', async () => {
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const pi = `pi_test_${randomUUID().slice(0, 8)}`;
+    const autoRefundProcessorRefundId = `re_auto_${randomUUID().slice(0, 8)}`;
+
+    await repo.withTx(async (tx) => {
+      await repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: pi,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-a6-auto-refund',
+      });
+    });
+
+    // Before the marker is set → null.
+    const before = await repo.withTx((tx) =>
+      repo.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(before).toBeNull();
+
+    // Set the durable marker directly (migration 0240 column). The
+    // WRITE side (auto-refund sweep painting this column) lands in a
+    // later task (A.13) — this task builds only the READ contract, so
+    // the test seeds the column via a raw Drizzle UPDATE.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx
+        .update(payments)
+        .set({ autoRefundProcessorRefundId })
+        .where(eq(payments.id, paymentId));
+    });
+
+    const after = await repo.withTx((tx) =>
+      repo.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(after).not.toBeNull();
+    expect(after?.paymentId).toBe(paymentId);
+    expect(after?.invoiceId).toBe(invoiceId);
+  });
+
+  it('A.6 cross-tenant: findAutoRefundByProcessorRefundId — tenant B sees ZERO of tenant A auto-refund markers', async () => {
+    const invoiceId = nextInvoice();
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const autoRefundProcessorRefundId = `re_auto_xtenant_${randomUUID().slice(0, 8)}`;
+
+    await repoA.withTx(async (tx) => {
+      await repoA.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: asSatang(1_000_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-a6-xtenant',
+      });
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx
+        .update(payments)
+        .set({ autoRefundProcessorRefundId })
+        .where(eq(payments.id, paymentId));
+    });
+
+    // Tenant B's repo, explicitly passing tenant A's tenantId as the
+    // app-layer filter (probing whether the DB-layer RLS backstop
+    // independently blocks it, per Constitution Principle I clause 3).
+    const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
+    const crossTenant = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(crossTenant).toBeNull();
   });
 });

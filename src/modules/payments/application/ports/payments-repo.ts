@@ -198,6 +198,29 @@ export interface PaymentsRepo {
   findStaleInvoiceAutoRefund(
     invoiceId: string,
   ): Promise<{ readonly processorRefundId: string | null } | null>;
+
+  /**
+   * A.6 — durable auto-refund lookup (migration 0240
+   * `auto_refund_processor_refund_id` column), replacing the
+   * `audit_log`-based `findStaleInvoiceAutoRefund` above for callers
+   * that can run inside their own tx (`findStaleInvoiceAutoRefund` is
+   * kept for now — A.17 removes it once its last caller migrates).
+   *
+   * Reads the payments row carrying
+   * `auto_refund_processor_refund_id = processorRefundId` and returns
+   * its `(paymentId, invoiceId)` — the association the webhook
+   * reconcile path needs to locate the auto-refunded payment/invoice
+   * without depending on append-only `audit_log` JSON payload shape.
+   *
+   * Takes an explicit `tx` (unlike `findStaleInvoiceAutoRefund`) so
+   * callers can run this inside the same tx as their other webhook
+   * reconciliation reads/writes.
+   */
+  findAutoRefundByProcessorRefundId(
+    tx: unknown,
+    tenantId: string,
+    processorRefundId: string,
+  ): Promise<{ readonly paymentId: PaymentId; readonly invoiceId: string } | null>;
 }
 
 /**

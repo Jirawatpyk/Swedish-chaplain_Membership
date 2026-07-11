@@ -492,5 +492,33 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
         return { processorRefundId: rows[0]!.processor_refund_id };
       });
     },
+
+    /**
+     * A.6 — durable auto-refund lookup (migration 0240 column). See
+     * the port docstring for why this is the intended long-term
+     * replacement for `findStaleInvoiceAutoRefund` above (kept until
+     * A.17 removes its last caller). Explicit `tx` param — unlike
+     * `findStaleInvoiceAutoRefund`, callers run this inside their own
+     * webhook-reconciliation tx. Defence-in-depth `tenant_id =` WHERE
+     * mirrors the rest of this file; RLS is the primary backstop.
+     */
+    async findAutoRefundByProcessorRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      processorRefundId: string,
+    ): Promise<{ readonly paymentId: PaymentId; readonly invoiceId: string } | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({ id: payments.id, invoiceId: payments.invoiceId })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.tenantId, tenantIdArg),
+            eq(payments.autoRefundProcessorRefundId, processorRefundId),
+          ),
+        )
+        .limit(1);
+      return row ? { paymentId: asPaymentId(row.id), invoiceId: row.invoiceId } : null;
+    },
   };
 }

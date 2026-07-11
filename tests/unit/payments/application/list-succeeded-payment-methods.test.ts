@@ -30,6 +30,7 @@ function makeStubRepo(
     listSucceededMethodByInvoiceIds: vi.fn().mockResolvedValue(new Map()),
     listInvoiceActivity: vi.fn(),
     findStaleInvoiceAutoRefund: vi.fn().mockResolvedValue(null),
+    findAutoRefundByProcessorRefundId: vi.fn().mockResolvedValue(null),
     ...override,
   };
 }

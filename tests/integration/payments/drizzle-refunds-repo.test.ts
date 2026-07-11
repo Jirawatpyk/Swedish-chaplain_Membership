@@ -20,13 +20,14 @@
  * Mocking policy: this file hits live Postgres. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { asSatang } from '@/lib/money';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { makeDrizzleRefundsRepo } from '@/modules/payments/infrastructure/repos/drizzle-refunds-repo';
 import {
+  refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';
@@ -414,5 +415,191 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         }),
       ).rejects.toThrow(/matched zero rows/);
     });
+  });
+
+  // ===========================================================================
+  // Task A.6 — attachProcessorRefundId / lockForUpdateByProcessorRefundId.
+  // Placed last (own describe-independent `it`s, but still inside the
+  // outer describe) so new inserts here do not perturb the earlier
+  // cumulative-partition assertions (`getRefundContextForUpdate`
+  // aggregates test above already ran and captured its expected
+  // counts by file-declaration order).
+  // ===========================================================================
+
+  it('A.6: attachProcessorRefundId sets ONLY processor_refund_id, keeps pending/completed_at=NULL (CHECK-safe biconditional)', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const processorRefundId = `re_attach_${randomUUID().slice(0, 8)}`;
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(10_000n),
+        reason: 'attach-id test',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-attach-1',
+        initiatedAt: new Date(),
+      });
+
+      await repo.attachProcessorRefundId(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        processorRefundId,
+      });
+
+      // Port-level round-trip.
+      const reloaded = await repo.findByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        processorRefundId,
+      );
+      expect(reloaded).not.toBeNull();
+      expect(reloaded?.id).toBe(refundId);
+      expect(reloaded?.status).toBe('pending');
+      expect(reloaded?.processorRefundId).toBe(processorRefundId);
+
+      // Raw-row check that `completed_at` truly stayed NULL — the
+      // `refunds_succeeded_iff_complete` + `refunds_completed_at_iff_not_pending`
+      // CHECK constraints would have rejected the UPDATE outright if
+      // the narrow write path leaked a status/completed_at change.
+      const [raw] = await tx.select().from(refunds).where(eq(refunds.id, refundId));
+      expect(raw?.status).toBe('pending');
+      expect(raw?.completedAt).toBeNull();
+      expect(raw?.creditNoteId).toBeNull();
+      expect(raw?.processorRefundId).toBe(processorRefundId);
+    });
+  });
+
+  it('A.6: attachProcessorRefundId throws on zero-match for an unknown refundId', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await expect(
+        repo.attachProcessorRefundId(tx, {
+          refundId: makeRefundUlid(), // never inserted
+          tenantId: tenantA.ctx.slug,
+          processorRefundId: `re_unknown_${randomUUID().slice(0, 8)}`,
+        }),
+      ).rejects.toThrow(/matched zero rows/);
+    });
+  });
+
+  it('A.6: lockForUpdateByProcessorRefundId returns the full Domain Refund under FOR UPDATE', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const initiatedAt = new Date();
+    const processorRefundId = `re_lock_${randomUUID().slice(0, 8)}`;
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(20_000n),
+        reason: 'lock test',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-lock-1',
+        initiatedAt,
+      });
+      await repo.attachProcessorRefundId(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        processorRefundId,
+      });
+
+      const locked = await repo.lockForUpdateByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        processorRefundId,
+      );
+      expect(locked).not.toBeNull();
+      expect(locked?.id).toBe(refundId);
+      expect(locked?.tenantId).toBe(tenantA.ctx.slug);
+      expect(locked?.paymentId).toBe(paymentIdA);
+      expect(locked?.invoiceId).toBe(invoiceId);
+      expect(locked?.amountSatang).toBe(20_000n);
+      expect(locked?.reason).toBe('lock test');
+      expect(locked?.status).toBe('pending');
+      expect(locked?.processorRefundId).toBe(processorRefundId);
+      expect(locked?.failureReasonCode).toBeNull();
+      expect(locked?.creditNoteId).toBeNull();
+      expect(locked?.initiatedAt).toBeInstanceOf(Date);
+      expect(locked?.completedAt).toBeNull();
+      expect(locked?.initiatorUserId).toBe(user.userId);
+      expect(locked?.correlationId).toBe('corr-lock-1');
+    });
+  });
+
+  it('A.6: lockForUpdateByProcessorRefundId returns null for an unknown processorRefundId', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      const result = await repo.lockForUpdateByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        're_does_not_exist_lock',
+      );
+      expect(result).toBeNull();
+    });
+  });
+
+  it('A.6 cross-tenant: attachProcessorRefundId + lockForUpdateByProcessorRefundId see ZERO of tenant A refunds', async () => {
+    // Seed a fresh tenant A refund with a known processorRefundId to probe.
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const processorRefundId = `re_xtenant_${randomUUID().slice(0, 8)}`;
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(15_000n),
+        reason: 'cross-tenant probe target',
+        status: 'pending',
+        processorRefundId,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-xtenant-1',
+        initiatedAt: new Date(),
+      });
+    });
+
+    const repoB = makeDrizzleRefundsRepo(tenantB.ctx.slug);
+
+    // lockForUpdateByProcessorRefundId — tenant B's session queries
+    // tenant A's processorRefundId (explicitly passing A's tenantId
+    // as the app-layer filter, probing whether the DB-layer RLS
+    // backstop independently blocks it) → null.
+    const lockedFromB = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.lockForUpdateByProcessorRefundId(tx, tenantA.ctx.slug, processorRefundId),
+    );
+    expect(lockedFromB).toBeNull();
+
+    // attachProcessorRefundId — same cross-tenant probe direction —
+    // must throw (zero-match under RLS), and must NOT mutate tenant
+    // A's row.
+    await expect(
+      runInTenant(tenantB.ctx, (tx) =>
+        repoB.attachProcessorRefundId(tx, {
+          refundId,
+          tenantId: tenantA.ctx.slug,
+          processorRefundId: `re_rogue_overwrite_${randomUUID().slice(0, 8)}`,
+        }),
+      ),
+    ).rejects.toThrow();
+
+    // Verify tenant A's row is unchanged (still carries the ORIGINAL
+    // processorRefundId, not the rogue overwrite attempt).
+    const stillA = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findByProcessorRefundId(tx, tenantA.ctx.slug, processorRefundId),
+    );
+    expect(stillA).not.toBeNull();
+    expect(stillA?.id).toBe(refundId);
   });
 });
