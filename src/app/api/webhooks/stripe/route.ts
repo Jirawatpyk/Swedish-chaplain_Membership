@@ -574,6 +574,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(latestCharge !== undefined && {
         latestChargeId: latestCharge,
       }),
+      // Bug #6 fix (Task C.2) — the verifier sets `disputeId` on the
+      // `charge.dispute.created` branch (see stripe-webhook-verifier.ts
+      // `project()`'s dispute arm), but this re-projection previously
+      // rebuilt `dataObject` from an allow-list that omitted it,
+      // silently dropping it before `processWebhookEvent` could audit
+      // the real dispute id — the `dispute_created` audit row recorded
+      // `dispute_id: null` in production. PCI SAQ-A: this is an id-like
+      // string only, never card/charge metadata.
+      ...(rawDataObject?.['disputeId']
+        ? { disputeId: String(rawDataObject['disputeId']) }
+        : {}),
       ...(refundIdsFromVerifier !== undefined
         ? { refundIds: refundIdsFromVerifier }
         : Array.isArray(refundsNode?.data)

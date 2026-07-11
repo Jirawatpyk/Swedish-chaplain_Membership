@@ -404,3 +404,82 @@ describe('stripeWebhookVerifier — C-1 fallback coverage (H-4 flag + M-6 log)',
     expect(loggerErrorSpy).not.toHaveBeenCalled();
   });
 });
+
+// Task C.2 (#6, PCI-2, 2026-07-11) — dispute `charge` field defensive
+// extraction. A Stripe Dispute's `charge` property is normally a
+// `ch_…` string but Stripe CAN return it EXPANDED (a full Charge
+// object carrying `payment_method_details.card.last4/brand`) — the
+// same shape hazard the `payment_intent.latest_charge` branch above
+// already guards against. Before this fix the dispute branch of
+// `project()` never read `raw['charge']` at all, so `latestChargeId`
+// stayed `undefined` and the dispute_created audit recorded the
+// DISPUTE id (dp_…) as `charge_id` instead of the real charge id.
+// The expanded-object case ALSO pins the PCI-2 requirement: only the
+// `id` may be extracted — `payment_method_details`/`card`/`last4`
+// must never reach the envelope (which feeds a 10-year-retained
+// audit row per RD §87 / GDPR Art. 6(1)(c)).
+describe('stripeWebhookVerifier — dispute charge extraction (PCI-2, #6)', () => {
+  it('string charge: latestChargeId === the real ch_ id, disputeId === the dp_ id', () => {
+    const body = JSON.stringify({
+      id: 'evt_dp_string_charge',
+      type: 'charge.dispute.created',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'dp_x',
+          object: 'dispute',
+          charge: 'ch_x',
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.disputeId).toBe('dp_x');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+  });
+
+  it('expanded Charge object: latestChargeId === the id field, and NO card field reaches the envelope', () => {
+    const body = JSON.stringify({
+      id: 'evt_dp_expanded_charge',
+      type: 'charge.dispute.created',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'dp_x',
+          object: 'dispute',
+          charge: {
+            id: 'ch_x',
+            object: 'charge',
+            payment_method_details: {
+              card: { last4: '4242', brand: 'visa' },
+            },
+          },
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.disputeId).toBe('dp_x');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    // PCI-2: negative-assert at the serialized-JSON level so a future
+    // field addition to the expanded Charge object (not just `last4`)
+    // is also caught, not merely the one field this fixture happens
+    // to include.
+    const serialized = JSON.stringify(envelope);
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('visa');
+  });
+});

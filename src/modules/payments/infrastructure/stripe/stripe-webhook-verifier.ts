@@ -157,6 +157,29 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     }
   } else if (objectType === 'dispute') {
     disputeId = rawId;
+    // Task C.2 #6 / PCI-2 (2026-07-11) — a Dispute's `charge` field is
+    // normally a `ch_…` string, but Stripe CAN return it EXPANDED (a
+    // full Charge object carrying `payment_method_details.card.last4/
+    // brand`) — the same shape hazard `latest_charge` above already
+    // guards against. Mirror that defensive extraction: pull ONLY the
+    // `id`, never copy `raw['charge']` verbatim into the envelope —
+    // that would leak card data into the `dispute_created` audit row
+    // (10-year retention, RD §87 / GDPR Art. 6(1)(c)). Before this fix
+    // `latestChargeId` was never set on the dispute branch at all, so
+    // the audit's `charge_id` fell back to the DISPUTE id (dp_…)
+    // instead of the real charge id.
+    const ch = raw['charge'];
+    if (typeof ch === 'string') {
+      latestChargeId = ch;
+    } else if (
+      ch !== null &&
+      typeof ch === 'object' &&
+      typeof (ch as Record<string, unknown>)['id'] === 'string'
+    ) {
+      latestChargeId = (ch as Record<string, unknown>)['id'] as string;
+    } else {
+      latestChargeId = null;
+    }
     if (typeof raw['amount'] === 'number') {
       projectAmountSafely('dispute', raw['amount'] as number);
     }

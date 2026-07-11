@@ -449,6 +449,53 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     expect(dataObject?.['amountProjectionFailed']).toBe(true);
   });
 
+  // Bug #6 fix (Task C.2, PCI-2) — the verifier-set `disputeId` field
+  // must survive the route's `dataObject` re-projection so the
+  // `dispute_created` audit records the real dispute id (previously
+  // dropped entirely, landing as `dispute_id: null`). `latestChargeId`
+  // must ALSO survive so the audit's `charge_id` becomes the real
+  // ch_… id rather than the dispute's own dp_… id. Simulated verifier
+  // envelope shape (top-level `dataObject`, matching the real
+  // `project()` output for a `charge.dispute.created` event — see
+  // `stripe-webhook-verifier.ts` dispute arm).
+  it('disputeId + latestChargeId on a charge.dispute.created verifier envelope reach processWebhookEvent unchanged', async () => {
+    const event = makeStripeEvent({
+      id: 'evt_test_dispute_006',
+      type: 'charge.dispute.created',
+      dataObject: {
+        id: 'dp_test_006',
+        type: 'dispute',
+        disputeId: 'dp_test_006',
+        latestChargeId: 'ch_test_006',
+      },
+    });
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { outcome: 'processed' },
+    });
+
+    const rawBody = JSON.stringify(event);
+    const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makeWebhookRequest(rawBody, { 'stripe-signature': 't=1,v1=valid' }),
+    ) as Response;
+    expect(res.status).toBe(200);
+
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = processWebhookEventMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const verifiedEvent = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    const dataObject = verifiedEvent?.['dataObject'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(dataObject?.['disputeId']).toBe('dp_test_006');
+    expect(dataObject?.['latestChargeId']).toBe('ch_test_006');
+  });
+
   // (h) Unknown event type → 200, acknowledged_only
   it('(h) unknown event type → 200, acknowledged_only', async () => {
     const event = makeStripeEvent({

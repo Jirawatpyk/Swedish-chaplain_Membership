@@ -684,7 +684,12 @@ async function processWebhookEventBody(
             summary: `Dispute created on charge ${dataObject.id}`,
             payload: {
               dispute_id: dataObject.disputeId ?? null,
-              charge_id: dataObject.id,
+              // Bug #6 fix (Task C.2) — `dataObject.id` on a dispute
+              // event is the DISPUTE's own id (dp_…), not the charge
+              // it disputes. `latestChargeId` is the real ch_… id,
+              // defensively extracted from `raw['charge']` by the
+              // verifier (mirrors `extractLatestChargeId`).
+              charge_id: dataObject.latestChargeId ?? null,
               // F5R3v3 H-4 (2026-05-16) — when the verifier flagged
               // amount projection as failed, write a 'projection_failed'
               // sentinel rather than the misleading '0' default. This
