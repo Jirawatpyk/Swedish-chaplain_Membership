@@ -436,4 +436,129 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
     expect(inv?.status).toBe('partially_credited');
     expect(BigInt((inv?.credited ?? 0n) as unknown as string)).toBe(REFUND_AMOUNT);
   }, 90_000);
+
+  /**
+   * Seed the EXACT state a finalise-under-contention loser meets: a PENDING
+   * refund whose F4 credit note is ALREADY committed for its
+   * `source_refund_id`. F4 books the CN in its OWN tx (committed + durable);
+   * a finalise whose outer tx then rolls back before flipping the refund row
+   * leaves precisely this pair — a live CN + a still-`pending` refund. Returns
+   * the refund id, its Stripe `re_` id, the paid-invoice's payment id, and the
+   * pre-booked credit note id.
+   */
+  async function seedPendingRefundWithCommittedCn(): Promise<{
+    refundId: string;
+    reId: string;
+    paymentId: PaymentId;
+    creditNoteId: string;
+  }> {
+    const { invoiceId, paymentId } = await seedPaidInvoice();
+    const refundId = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
+    const reId = `re_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+
+    // 1) A pending refund row carrying the Stripe re_ id — the FK target the
+    //    CN's `source_refund_id` will point at.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await makeDrizzleRefundsRepo(tenant.ctx.slug).insert(tx, {
+        id: refundId,
+        tenantId: tenant.ctx.slug,
+        paymentId,
+        invoiceId,
+        amountSatang: asSatang(REFUND_AMOUNT),
+        reason: 'finalize-under-contention seed',
+        status: 'pending',
+        processorRefundId: reId,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-cc-guard-seed',
+        initiatedAt: new Date(),
+      });
+    });
+
+    // 2) Book the REAL F4 credit note via the SAME bridge the finaliser calls.
+    //    Burns ONE §87 number + inserts ONE CN and does NOT touch the refund
+    //    row's status (that is the finaliser's step 2), so the refund stays
+    //    `pending` with a live CN — the contention-loser state.
+    const cn = await invoicingBridge.issueCreditNoteFromRefund({
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      refundId,
+      amountSatang: asSatang(REFUND_AMOUNT),
+      reason: 'finalize-under-contention seed',
+      actorUserId: user.userId,
+      requestId: 'req-cc-guard-seed',
+    });
+    if (!cn.ok) {
+      throw new Error(`seed credit note failed: ${JSON.stringify(cn.error)}`);
+    }
+    return { refundId, reId, paymentId, creditNoteId: cn.value.creditNoteId };
+  }
+
+  it('deterministic guard: webhook reaches CN-issue with a CN already committed for source_refund_id → reuses it, no double-book, §87 unchanged', async () => {
+    const { refundId, reId, paymentId, creditNoteId: seededCnId } =
+      await seedPendingRefundWithCommittedCn();
+
+    // Post-seed baseline: exactly ONE CN, and the §87 counter has ALREADY
+    // advanced for the seed CN. From here the finalise-under-contention guard
+    // MUST NOT burn a second number or insert a second row.
+    expect(await cnCountForRefund(refundId)).toBe(1);
+    const seqAfterSeed = await readCreditNoteSeq();
+
+    // The async `charge.refund.updated(succeeded)` webhook finalises the
+    // still-`pending` refund. `finalizeSucceededRefund` step 1 calls
+    // `issueCreditNoteFromRefund`, which — DETERMINISTICALLY, every run —
+    // finds the committed CN via the `(tenant_id, source_refund_id)`
+    // idempotency read (backed by the `credit_notes_source_refund_id_uniq`
+    // partial unique index) and returns it WITHOUT allocating a new §87 number
+    // or inserting a second row. This is the exact finalise-time double-book
+    // guard the genuine race test above only *sometimes* exercises (it can
+    // resolve `out_of_band` and never reach the CN-issue point); here the
+    // webhook is GUARANTEED to reach it against a live CN + pending row, so
+    // "exactly one CN" is a proven backstop, not a "only one writer tried"
+    // artefact.
+    const settle = await processRefundUpdated(webhookDeps(), {
+      tenantId: tenant.ctx.slug,
+      requestId: 'req-cc-guard-webhook',
+      eventId: `evt_${randomUUID().slice(0, 12)}`,
+      processorRefundId: reId,
+      chargeId: 'ch_x',
+      refundStatus: 'succeeded',
+      amountSatang: REFUND_AMOUNT,
+      processorEnv: 'test',
+    });
+
+    expect(settle.ok).toBe(true);
+    if (!settle.ok) {
+      throw new Error(`webhook finalise failed: ${JSON.stringify(settle.error)}`);
+    }
+    // The refund WAS pending, so this is a genuine reconcile — but the CN it
+    // reports is the SEEDED one (idempotent reuse), which is the guard firing.
+    expect(settle.value.kind).toBe('reconciled_succeeded');
+    if (settle.value.kind === 'reconciled_succeeded') {
+      expect(settle.value.creditNoteId).toBe(seededCnId);
+    }
+
+    // GUARD PROOF (all DB-direct reads):
+    // 1) still EXACTLY ONE credit note for the refund — no double-book.
+    expect(await cnCountForRefund(refundId)).toBe(1);
+    // 2) the §87 credit-note counter did NOT advance — the finaliser reused
+    //    the existing number rather than burning a fresh one.
+    expect((await readCreditNoteSeq()) - seqAfterSeed).toBe(0);
+    // 3) exactly ONE succeeded refund (the finalise flipped it, not a dup).
+    expect(await succeededRefundCount(paymentId)).toBe(1);
+
+    // The refund flipped succeeded and points at the SEEDED CN (not a new one).
+    const refundRows = (await db.execute(sql`
+      SELECT status, credit_note_id FROM refunds
+      WHERE tenant_id = ${tenant.ctx.slug} AND id = ${refundId}
+    `)) as unknown as Array<{ status: string; credit_note_id: string | null }>;
+    expect(refundRows[0]?.status).toBe('succeeded');
+    expect(refundRows[0]?.credit_note_id).toBe(seededCnId);
+
+    // The finalise completed end-to-end: the payment flipped partially_refunded.
+    const [pay] = await db
+      .select({ status: payments.status })
+      .from(payments)
+      .where(and(eq(payments.tenantId, tenant.ctx.slug), eq(payments.id, paymentId)));
+    expect(pay?.status).toBe('partially_refunded');
+  }, 90_000);
 });

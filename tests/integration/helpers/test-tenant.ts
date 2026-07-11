@@ -117,6 +117,21 @@ export async function createTestTenant(
     // block below for CN cleanup — payments.refunds.creditNoteId back-ref
     // must be cleared before F4 deletes the CN row). processorEvents has
     // no outbound FK; tenantPaymentSettings is keyed by tenant_id only.
+    //
+    // KNOWN LEAK (A.18 review #4, intentionally NOT auto-fixed): a SETTLED
+    // refund + its live CN form a CIRCULAR pair of ON DELETE RESTRICT FKs
+    // (credit_notes.source_refund_id → refunds.id AND refunds.credit_note_id →
+    // credit_notes.id), so `delete(refunds)` below RESTRICT-throws and the
+    // throw is swallowed by the test's afterAll `.catch(() => {})`, leaking
+    // that tenant's rows. The cycle CANNOT be broken by nulling either FK
+    // column: refunds.credit_note_id is pinned by the
+    // `refunds_succeeded_iff_complete` CHECK and credit_notes.source_refund_id
+    // by the credit_notes immutability trigger (extended in migration 0227).
+    // Breaking it would require globally DISABLE-ing that immutability trigger
+    // inside cleanup — which risks concurrent suites (immutability-assertion
+    // tests + a shared-Neon ACCESS EXCLUSIVE lock). Left as harmless pollution
+    // (tenant-scoped, throwaway UUID slugs); a disposable Neon branch is the
+    // right long-term fix (same note as audit_log below).
     // F7 cleanup — delete in FK order: deliveries → broadcasts (logical FK,
     // composite PK on broadcasts so no SQL FK constraint); marketing
     // unsubscribes + segment definitions are independent. broadcasts has

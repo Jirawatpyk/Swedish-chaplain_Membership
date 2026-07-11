@@ -282,6 +282,13 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
     ).toBe(0);
   }, 60_000);
 
+  // ORDER-COUPLED: this positive control MUTATES tenant A's refund
+  // (pending → failed), so it MUST run AFTER the negative isolation test above
+  // (which asserts A's refund is still `pending`). vitest executes `it` blocks
+  // in file order within a describe, so the ordering holds; do NOT reorder
+  // these two, add an `it` between them that reads A's refund status, or run
+  // them with a randomised sequencer — the negative test would then observe
+  // A's refund already `failed` and misreport a false isolation leak.
   it("positive control: the SAME re_ id resolves under tenant A → reconciled_failed (proves isolation, not a dead id)", async () => {
     const bridgeA = neverCalledBridge();
     const result = await processRefundUpdated(makeDeps(tenantA.ctx.slug, bridgeA), {

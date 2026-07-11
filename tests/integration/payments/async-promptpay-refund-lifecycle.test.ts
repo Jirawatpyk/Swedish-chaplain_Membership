@@ -454,8 +454,13 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       correlationId: 'corr-async-fail',
       requestId: 'req-async-fail',
     });
+    // Assert the pending mapping EXPLICITLY before narrowing (mirror the
+    // SUCCEEDED variant): a mis-mapped non-pending kind must fail loudly here,
+    // not silently `return` past every downstream assertion.
     expect(refundResult.ok).toBe(true);
-    if (!refundResult.ok || refundResult.value.kind !== 'pending') return;
+    if (!refundResult.ok) return;
+    expect(refundResult.value.kind).toBe('pending');
+    if (refundResult.value.kind !== 'pending') return;
     const refundId = refundResult.value.refund.id;
     expect((await refundRow(refundId)).status).toBe('pending');
 
