@@ -339,6 +339,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_disputed',
         type: 'dispute',
         disputeId: 'dp_test_1',
+        latestChargeId: 'ch_real_charge_1',
         amountSatang: asSatang(5_350_000n),
       },
     });
@@ -346,6 +347,13 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.ok).toBe(true);
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     expect(auditCalls.some((c) => c[1].eventType === 'dispute_created')).toBe(true);
+    // Bug #6 follow-up (Task C.2 review) — the prose `summary` must cite the
+    // real charge id (`latestChargeId`), not the dispute's own `dp_…` id
+    // that `dataObject.id` carries on a dispute event. Mirrors the fix
+    // already applied to the structured `payload.charge_id` field.
+    const disputeCall = auditCalls.find((c) => c[1].eventType === 'dispute_created');
+    expect(disputeCall?.[1].summary).toContain('ch_real_charge_1');
+    expect(disputeCall?.[1].summary).not.toContain('dp_test_1');
   });
 
   it('unknown event type — updateOutcome acknowledged_only, markProcessed, no dispatch', async () => {

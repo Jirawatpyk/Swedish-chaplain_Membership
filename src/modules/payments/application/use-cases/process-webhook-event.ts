@@ -681,7 +681,13 @@ async function processWebhookEventBody(
             requestId: input.requestId,
             eventType: 'dispute_created',
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-            summary: `Dispute created on charge ${dataObject.id}`,
+            // Bug #6 follow-up (Task C.2 review) — same bug class as the
+            // `payload.charge_id` fix directly below: `dataObject.id` on a
+            // dispute event is the DISPUTE's own id (dp_…), not the charge
+            // it disputes. Cite `latestChargeId` (the real ch_… id) in the
+            // prose summary too, matching the `?? null` fallback style used
+            // for the structured field.
+            summary: `Dispute created on charge ${dataObject.latestChargeId ?? 'unknown'}`,
             payload: {
               dispute_id: dataObject.disputeId ?? null,
               // Bug #6 fix (Task C.2) — `dataObject.id` on a dispute
