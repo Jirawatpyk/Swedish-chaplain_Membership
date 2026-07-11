@@ -20,6 +20,7 @@ import { asIdempotencyKey } from '@/modules/broadcasts/domain/value-objects/idem
 import { dispatchBroadcastBatch } from '@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch';
 import type { BatchManifest } from '@/modules/broadcasts/application/ports/batch-manifests-port';
 import type { TenantSlug } from '@/modules/tenants';
+import { broadcastsF71aMetrics } from '@/lib/metrics/broadcasts-f71a';
 
 // Phase 3F.11.10 (Round 3 test-analyzer Gap 1) — mock the pino logger
 // so audit-throw cases can verify `logger.error` was called with the
@@ -257,6 +258,10 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     // of failing the whole broadcast on routine churn.
     const manifest = makeManifest({ recipientCount: 3, recipientRangeEnd: 2 });
     const { deps, gatewayCalls } = makeStubDeps({ manifest });
+    // #11 — the GROW path must also bump the drift counter (once), not just log.
+    const driftSpy = vi
+      .spyOn(broadcastsF71aMetrics, 'recipientSetDriftCount')
+      .mockImplementation(() => {});
 
     const result = await dispatchBroadcastBatch(deps as never, {
       tenantId: tenant,
@@ -279,6 +284,9 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
       'createBroadcast',
       'sendBroadcast',
     ]);
+    // #11 — drift counter incremented exactly once for the excluded tail.
+    expect(driftSpy).toHaveBeenCalledTimes(1);
+    expect(driftSpy).toHaveBeenCalledWith(tenant.slug);
   });
 
   it('persist providerBroadcastId fails after gateway sent → forensic audit emitted, but ok returned', async () => {

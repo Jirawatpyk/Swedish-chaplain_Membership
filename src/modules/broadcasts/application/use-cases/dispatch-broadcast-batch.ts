@@ -35,6 +35,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsF71aMetrics } from '@/lib/metrics/broadcasts-f71a';
 import { safeAuditEmit } from './_safe-audit-emit';
 import { resendDashboardName } from '../format/resend-dashboard-name';
 import type { TenantContext } from '@/modules/tenants';
@@ -206,6 +207,9 @@ export async function dispatchBroadcastBatch(
       },
       'broadcasts.batch.recipient_set_grew_tail_excluded',
     );
+    // #11 — surface drift as a counter (not just a log) so ops can alert/trend.
+    // Emitted once per broadcast (gated on isLastBatch), matching the warn.
+    broadcastsF71aMetrics.recipientSetDriftCount(tenantSlug);
   }
 
   // 3. Slice recipients for this batch from the full list. The
