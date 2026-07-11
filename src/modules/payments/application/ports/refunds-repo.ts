@@ -109,9 +109,18 @@ export interface RefundsRepo {
 
   /**
    * A.6 — `SELECT … WHERE tenant_id = ? AND processor_refund_id = ?
-   * FOR UPDATE`. Serialises concurrent writers reconciling the same
+   * FOR NO KEY UPDATE`. Serialises concurrent writers reconciling the same
    * Stripe refund (e.g. a `refund.updated` webhook racing the
    * stale-pending sweep or `issueRefund` Phase B).
+   *
+   * A.18 — the strength is `FOR NO KEY UPDATE`, NOT `FOR UPDATE`. The caller
+   * holds this lock across `finalizeSucceededRefund`, whose F4 credit-note
+   * bridge INSERTs `credit_notes.source_refund_id → refunds.id` from a
+   * SEPARATE connection; that FK check needs `FOR KEY SHARE` on this row.
+   * `FOR UPDATE` conflicts with `FOR KEY SHARE` → an undetectable
+   * cross-connection hang; `FOR NO KEY UPDATE` does not (and still serialises
+   * concurrent reconcilers). Safe because the reconciler only mutates
+   * non-key columns. See the adapter for the full rationale + repro.
    *
    * Returns the full Domain `Refund` aggregate (NOT the port's slim
    * `RefundRow`) — the webhook reconcile use-case needs every

@@ -259,7 +259,23 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
             eq(refunds.processorRefundId, processorRefundId),
           ),
         )
-        .for('update')
+        // A.18 fix — `FOR NO KEY UPDATE`, NOT `FOR UPDATE`. Both webhook
+        // callers (`processRefundUpdated`, `sweepStalePendingRefunds`) hold this
+        // lock across `finalizeSucceededRefund`, whose F4 bridge
+        // (`issueCreditNoteFromRefund`) runs in a SEPARATE tx/connection and
+        // INSERTs a `credit_notes` row with `source_refund_id → refunds.id`.
+        // That FK check acquires `FOR KEY SHARE` on THIS row — which conflicts
+        // with `FOR UPDATE` but NOT with `FOR NO KEY UPDATE`. Under `FOR UPDATE`
+        // the CN insert blocked on the lock held by the caller's own idle-in-tx
+        // connection: an undetectable cross-connection hang (Postgres deadlock
+        // detection can't see it — the lock holder isn't waiting on a DB lock),
+        // so the async refund never got a credit note. `FOR NO KEY UPDATE` still
+        // conflicts with itself + `FOR UPDATE` + `FOR SHARE` + DELETE, so
+        // concurrent reconcilers still serialise (the intended guarantee); it is
+        // the correct strength because the reconciler mutates only non-key
+        // columns (status / credit_note_id / processor_refund_id / completed_at),
+        // never the PK. (Live-Neon repro: A.18 diagnostic; see task report.)
+        .for('no key update')
         .limit(1);
       return row ? toRefundDomain(row as RefundRow) : null;
     },
