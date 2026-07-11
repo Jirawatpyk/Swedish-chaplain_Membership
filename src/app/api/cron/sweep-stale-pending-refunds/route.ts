@@ -54,6 +54,12 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// A.14 — the Stripe-aware sweep issues N external `retrieveRefund` calls
+// per tenant. Pin an explicit function budget (default is far lower) so the
+// use-case's total-elapsed budget guard (SWEEP_TOTAL_BUDGET_MS=45s) sits
+// safely under it. Keep in lockstep with the cron-job.org request timeout
+// for this job (docs/runbooks/cron-jobs.md).
+export const maxDuration = 60;
 
 const DEFAULT_OLDER_THAN_HOURS = 24;
 
@@ -106,6 +112,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   let totalSwept = 0;
   let totalSkipped = 0;
+  let totalEscalated = 0;
   let tenantsOk = 0;
   let tenantsErrored = 0;
 
@@ -120,6 +127,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       if (result.ok) {
         totalSwept += result.value.sweptCount;
         totalSkipped += result.value.skippedCount;
+        totalEscalated += result.value.escalatedCount;
         tenantsOk += 1;
         if (result.value.sweptCount > 0) {
           logger.warn(
@@ -164,6 +172,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       tenantsErrored,
       totalSwept,
       totalSkipped,
+      totalEscalated,
       olderThanHours,
     },
     'cron.sweep_stale_pending_refunds.completed',
@@ -177,6 +186,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       tenantsErrored,
       totalSwept,
       totalSkipped,
+      totalEscalated,
       olderThanHours,
     },
     { status: 200 },

@@ -1228,6 +1228,25 @@ export const paymentsMetrics = {
       count,
     );
   },
+
+  /**
+   * `payments_stale_pending_refund_escalated_total{tenant}` — counter
+   * incremented (A.14 / M-i) by the Stripe-aware stale-pending-refund
+   * sweep for each stale refund it could NOT terminalise this run because
+   * Stripe still reports the refund `pending`/`requires_action` OR the row
+   * has no `processor_refund_id` to reconcile against — AND the row has
+   * aged past the escalation threshold. This is an operational SIGNAL for
+   * manual reconciliation (Stripe dashboard), NOT a state change: the
+   * refund row stays `pending`. A sustained non-zero rate means a refund
+   * has been stuck beyond the async settlement window and ops must
+   * intervene. Fires alongside a structured `logger.warn`.
+   */
+  stalePendingRefundEscalated(tenantId: string): void {
+    counter(
+      'payments_stale_pending_refund_escalated_total',
+      'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
+    ).add(1, { tenant: tenantId });
+  },
 } as const;
 
 // --- F7 broadcasts metrics (Phase 6 / US4 + Phase 9 anchor) ---------------------

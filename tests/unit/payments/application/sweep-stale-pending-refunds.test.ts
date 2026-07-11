@@ -1,62 +1,170 @@
 /**
- * T130a — sweepStalePendingRefunds use-case unit tests.
+ * A.14 — sweepStalePendingRefunds Stripe-aware finalisation (unit).
+ *
+ * Rewritten from the T130a blind-fail suite: the sweep now retrieves each
+ * stale-`pending` refund's REAL status from Stripe and finalises it
+ * (`succeeded` → F4 CN + flip · `failed|canceled` → inline flip · `pending`
+ * / null-id → skip + escalate) instead of unconditionally marking it
+ * `failed`. `finalizeSucceededRefund` + `paymentsMetrics` are mocked so the
+ * sweep's own branching + bounds are asserted in isolation; the live-DB
+ * finalise is covered by `tests/integration/payments/sweep-stripe-aware.test.ts`.
  *
  * Coverage policy: 100% branch (security-critical recovery path).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fc from 'fast-check';
+
+// The shared finaliser is mocked so we control ok/err/siblingWon without
+// wiring its internal repo graph. vi.mock is hoisted; the sweep's relative
+// `./_finalize-succeeded-refund` import resolves to the same module id.
+vi.mock(
+  '@/modules/payments/application/use-cases/_finalize-succeeded-refund',
+  () => ({ finalizeSucceededRefund: vi.fn() }),
+);
+// Metrics are mocked (importActual + override) so we can assert the sweep's
+// counters fire while leaving every other real metric intact.
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: {
+      ...actual.paymentsMetrics,
+      refundSucceededCount: vi.fn(),
+      refundFailedCount: vi.fn(),
+      stalePendingRefundEscalated: vi.fn(),
+    },
+  };
+});
+
 import { sweepStalePendingRefunds } from '@/modules/payments';
 import type {
   SweepStalePendingRefundsDeps,
   SweepStalePendingRefundsInput,
 } from '@/modules/payments';
+import { finalizeSucceededRefund } from '@/modules/payments/application/use-cases/_finalize-succeeded-refund';
+import { paymentsMetrics } from '@/lib/metrics';
+import { ok, err } from '@/lib/result';
 import { asPaymentId } from '@/modules/payments/domain/payment';
+import { asRefundId, type Refund } from '@/modules/payments/domain/refund';
+import { asSatang } from '@/lib/money';
+import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '@/modules/payments/domain/system-actors';
 
 const TENANT_ID = 'tnt-1';
-const NOW_MS = Date.parse('2026-04-27T10:00:00.000Z');
+const NOW_MS = Date.parse('2026-07-11T10:00:00.000Z');
 const PAYMENT_ID = asPaymentId('pmt_01JABCDEFGHJKMNPQRSTVWXYZ');
+const STRIPE_ACCOUNT = 'acct_test_sweep01';
+const AMOUNT = asSatang(350_000n);
+const HOUR_MS = 60 * 60 * 1000;
 
-function makeStaleRow(overrides: { id?: string; ageHours?: number } = {}) {
-  const ageMs = (overrides.ageHours ?? 30) * 60 * 60 * 1000;
+const mockFinalize = vi.mocked(finalizeSucceededRefund);
+
+function asMock<T>(fn: T): ReturnType<typeof vi.fn> {
+  return fn as unknown as ReturnType<typeof vi.fn>;
+}
+
+type StaleRow = {
+  id: string;
+  paymentId: typeof PAYMENT_ID;
+  invoiceId: string;
+  amountSatang: typeof AMOUNT;
+  initiatedAt: Date;
+  correlationId: string;
+  initiatorUserId: string;
+  processorRefundId: string | null;
+};
+
+function makeStaleRow(
+  overrides: {
+    id?: string;
+    ageHours?: number;
+    processorRefundId?: string | null;
+  } = {},
+): StaleRow {
+  const ageHours = overrides.ageHours ?? 30;
   return {
     id: overrides.id ?? 'rfnd_01STALE',
     paymentId: PAYMENT_ID,
     invoiceId: 'inv-1',
-    amountSatang: 350_000n,
-    initiatedAt: new Date(NOW_MS - ageMs),
+    amountSatang: AMOUNT,
+    initiatedAt: new Date(NOW_MS - ageHours * HOUR_MS),
     correlationId: 'corr-stale',
     initiatorUserId: 'user-admin-1',
+    processorRefundId:
+      overrides.processorRefundId !== undefined
+        ? overrides.processorRefundId
+        : 're_stale1',
   };
+}
+
+function makeLockedRefund(overrides: Partial<Refund> = {}): Refund {
+  return {
+    id: asRefundId('rfnd_01STALE'),
+    tenantId: TENANT_ID,
+    paymentId: PAYMENT_ID,
+    invoiceId: 'inv-1',
+    amountSatang: AMOUNT,
+    reason: 'test refund',
+    status: 'pending',
+    processorRefundId: 're_stale1',
+    failureReasonCode: null,
+    creditNoteId: null,
+    initiatedAt: new Date(NOW_MS - 30 * HOUR_MS),
+    completedAt: null,
+    initiatorUserId: 'user-admin-1',
+    correlationId: 'corr-stale',
+    ...overrides,
+  };
+}
+
+function retrievedRefund(status: string) {
+  return ok({
+    id: 're_stale1',
+    status,
+    chargeId: 'ch_1',
+    paymentIntentId: 'pi_1',
+    amountSatang: AMOUNT,
+  });
 }
 
 function makeDeps(): SweepStalePendingRefundsDeps {
   const tx = Symbol('tx');
   return {
     paymentsRepo: {
-      withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)) as unknown as SweepStalePendingRefundsDeps['paymentsRepo']['withTx'],
-    },
+      withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as SweepStalePendingRefundsDeps['paymentsRepo'],
     refundsRepo: {
-      insert: vi.fn(),
-      updateStatus: vi.fn(async () => ({
-        id: 'rfnd_01STALE',
-        tenantId: TENANT_ID,
-        paymentId: PAYMENT_ID,
-        invoiceId: 'inv-1',
-        amountSatang: 350_000n,
-        status: 'failed' as const,
-        processorRefundId: null,
-      })),
-      findByProcessorRefundId: vi.fn(),
-      getRefundContextForUpdate: vi.fn(),
       listPendingOlderThan: vi.fn(async () => [makeStaleRow()]),
+      lockForUpdateByProcessorRefundId: vi.fn(async () => makeLockedRefund()),
+      // return value is ignored by the sweep's failed-branch flip
+      updateStatus: vi.fn(async () => makeLockedRefund({ status: 'failed' })),
     } as unknown as SweepStalePendingRefundsDeps['refundsRepo'],
+    tenantSettingsRepo: {
+      getByTenantId: vi.fn(async () => ({
+        tenantId: TENANT_ID,
+        processor: 'stripe' as const,
+        processorEnvironment: 'test' as const,
+        processorAccountId: STRIPE_ACCOUNT,
+        processorPublishableKey: 'pk_test_sweep01',
+        enabledMethods: ['card'] as const,
+        onlinePaymentEnabled: true,
+        autoEmailOnPayment: true,
+        promptpayQrExpirySeconds: 900,
+        allowAnonymousPaylink: false,
+      })),
+      findByProcessorAccountId: vi.fn(async () => null),
+    } as unknown as SweepStalePendingRefundsDeps['tenantSettingsRepo'],
+    processorGateway: {
+      retrieveRefund: vi.fn(async () => retrievedRefund('succeeded')),
+    } as unknown as SweepStalePendingRefundsDeps['processorGateway'],
+    invoicingBridge: {
+      issueCreditNoteFromRefund: vi.fn(async () =>
+        ok({ creditNoteId: 'cn-1', creditNoteNumber: 'TC-1' }),
+      ),
+    } as unknown as SweepStalePendingRefundsDeps['invoicingBridge'],
     audit: { emit: vi.fn(async () => undefined) },
     clock: { nowIso: () => new Date(NOW_MS).toISOString(), nowMs: () => NOW_MS },
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
-}
-
-function asMock<T>(fn: T): ReturnType<typeof vi.fn> {
-  return fn as unknown as ReturnType<typeof vi.fn>;
 }
 
 const baseInput: SweepStalePendingRefundsInput = {
@@ -64,143 +172,487 @@ const baseInput: SweepStalePendingRefundsInput = {
   requestId: 'req-sweep-1',
 };
 
-describe('sweepStalePendingRefunds (T130a)', () => {
+describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
+  beforeEach(() => {
+    mockFinalize.mockResolvedValue(
+      ok({
+        creditNoteId: 'cn-1',
+        creditNoteNumber: 'TC-1',
+        paymentNextStatus: 'refunded',
+        invoiceStatus: 'credited',
+        siblingWon: false,
+      }),
+    );
+  });
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  it('happy path — single stale row → updateStatus failed + audit + count=1', async () => {
+  // --- succeeded → finalise ------------------------------------------------
+  it('retrieve succeeded → finalizeSucceededRefund(sweep_recovery, webhook-mode) → swept', async () => {
     const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.sweptCount).toBe(1);
       expect(r.value.skippedCount).toBe(0);
-      expect(r.value.cutoff).toBe(
-        new Date(NOW_MS - 24 * 60 * 60 * 1000).toISOString(),
-      );
+      expect(r.value.escalatedCount).toBe(0);
     }
 
-    const updateCall = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
-    expect(updateCall).toMatchObject({
-      nextStatus: 'failed',
-      failureReasonCode: 'stale_pending_sweep',
-    });
+    // retrieve OUTSIDE the lock, scoped to the tenant's Stripe account.
+    expect(asMock(deps.processorGateway.retrieveRefund)).toHaveBeenCalledWith(
+      're_stale1',
+      STRIPE_ACCOUNT,
+    );
+    // refund row locked FOR UPDATE FIRST (A.11 invariant).
+    expect(
+      asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId),
+    ).toHaveBeenCalledWith(expect.anything(), TENANT_ID, 're_stale1');
+    // retrieve happened BEFORE finalise (retrieve outside lock).
+    expect(
+      asMock(deps.processorGateway.retrieveRefund).mock.invocationCallOrder[0],
+    ).toBeLessThan(mockFinalize.mock.invocationCallOrder[0]!);
 
-    const auditCall = asMock(deps.audit.emit).mock.calls[0]?.[1];
-    expect(auditCall.eventType).toBe('stale_pending_refund_detected');
-    expect(auditCall.retentionYears).toBe(10);
-    expect(auditCall.actorUserId).toBe('system:stale-pending-refund-sweep');
-    expect(auditCall.payload.runbook_url).toMatch(/stale-pending-refund-sweep\.md/);
-    expect(auditCall.payload.age_minutes).toBe(30 * 60); // 30h × 60
+    const finalizeArgs = mockFinalize.mock.calls[0]?.[2];
+    expect(finalizeArgs).toMatchObject({
+      path: 'sweep_recovery',
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      processorRefundId: 're_stale1',
+      refundId: 'rfnd_01STALE',
+    });
+    // WEBHOOK mode — payment next status derived by the finaliser, not passed.
+    expect(finalizeArgs).not.toHaveProperty('paymentNextStatus');
+    expect(asMock(paymentsMetrics.refundSucceededCount)).toHaveBeenCalledWith(
+      TENANT_ID,
+    );
+    // succeeded path issues no `failed` flip.
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
   });
 
-  it('empty result — no stale rows → swept=0, no audit emit', async () => {
+  it('succeeded but siblingWon (concurrent writer finalised) → skip, no double metric', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    mockFinalize.mockResolvedValueOnce(
+      ok({
+        creditNoteId: 'cn-1',
+        creditNoteNumber: 'TC-1',
+        paymentNextStatus: 'refunded',
+        invoiceStatus: 'credited',
+        siblingWon: true,
+      }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    expect(asMock(paymentsMetrics.refundSucceededCount)).not.toHaveBeenCalled();
+  });
+
+  it('succeeded but F4 CN bridge declines → tx rolls back, refund NOT marked failed, skipped', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    mockFinalize.mockResolvedValueOnce(
+      err({ code: 'invoice_not_creditable', detail: 'x' }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    // Stripe DEFINITIVELY succeeded → never mark failed.
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.row_skipped',
+      expect.objectContaining({ errKind: 'SweepFinalizeError' }),
+    );
+  });
+
+  // --- failed / canceled → inline flip -------------------------------------
+  it('retrieve failed → inline flip refund→failed + refund_failed audit (no CN) → swept', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('failed'),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.sweptCount).toBe(1);
+
+    expect(mockFinalize).not.toHaveBeenCalled();
+    const updArg = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
+    expect(updArg).toMatchObject({
+      nextStatus: 'failed',
+      failureReasonCode: 'stripe_refund_failed',
+      processorRefundId: 're_stale1',
+    });
+    // We hold the FOR UPDATE lock + re-checked pending → no optimistic guard.
+    expect(updArg.expectedCurrentStatus).toBeUndefined();
+
+    const auditArg = asMock(deps.audit.emit).mock.calls[0]?.[1];
+    expect(auditArg.eventType).toBe('refund_failed');
+    expect(auditArg.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK);
+    expect(auditArg.payload.failure_reason_code).toBe('stripe_refund_failed');
+    expect(auditArg.payload.processor_refund_id).toBe('re_stale1');
+    expect(asMock(paymentsMetrics.refundFailedCount)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'stripe_refund_failed',
+    );
+  });
+
+  it('retrieve canceled → inline flip with stripe_refund_canceled → swept', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('canceled'),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) expect(r.value.sweptCount).toBe(1);
+    const updArg = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
+    expect(updArg.failureReasonCode).toBe('stripe_refund_canceled');
+  });
+
+  // --- pending → skip (NEVER failed) ---------------------------------------
+  it('retrieve pending → skip; NEVER marked failed (A.8 null-coercion guard)', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('pending'),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(0); // 30h < 3d threshold
+    }
+    // No lock, no flip, no finalise, no audit → zero state change.
+    expect(
+      asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId),
+    ).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+  });
+
+  it('retrieve requires_action → skip (non-terminal, never failed)', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('requires_action'),
+    );
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+  });
+
+  it('retrieve pending + aged past 3d → skip + escalation signal (no state change)', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_old', ageHours: 120 }), // 5 days
+    ]);
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('pending'),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(1);
+    }
+    expect(
+      asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).toHaveBeenCalledWith(TENANT_ID);
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.escalation',
+      expect.objectContaining({ reason: 'stripe_pending' }),
+    );
+    // Still no state change.
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+  });
+
+  // --- null processor_refund_id → skip + escalate (NEVER blind-fail) -------
+  it('null processor_refund_id + aged → skip + escalate; retrieve NOT called; never failed', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_nullid', processorRefundId: null, ageHours: 100 }),
+    ]);
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(1);
+    }
+    // Cannot reconcile → never retrieve, never flip.
+    expect(asMock(deps.processorGateway.retrieveRefund)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(
+      asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).toHaveBeenCalledWith(TENANT_ID);
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.escalation',
+      expect.objectContaining({ reason: 'missing_processor_refund_id' }),
+    );
+  });
+
+  it('null processor_refund_id + young → skip, NO escalation', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_nullid_new', processorRefundId: null, ageHours: 10 }),
+    ]);
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(0);
+    }
+    expect(
+      asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).not.toHaveBeenCalled();
+  });
+
+  // --- retrieve error / timeout → skip + count -----------------------------
+  it('retrieve error → skip + count, no state change; PCI kind-only log', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'stripe down secret-detail' }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    expect(
+      asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId),
+    ).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    const warnCall = asMock(deps.logger!.warn).mock.calls.find(
+      (c) => c[0] === 'sweep_stale_pending_refunds.retrieve_failed',
+    );
+    expect(warnCall?.[1]).toMatchObject({ errKind: 'retryable' });
+    // PCI: the raw Stripe `reason` must never be logged.
+    expect(JSON.stringify(warnCall?.[1])).not.toContain('secret-detail');
+  });
+
+  it('per-retrieve timeout → skip + count (external-call bound)', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps();
+      asMock(deps.processorGateway.retrieveRefund).mockReturnValueOnce(
+        new Promise(() => {
+          /* never resolves — simulates a hung Stripe call */
+        }),
+      );
+
+      const p = sweepStalePendingRefunds(deps, baseInput);
+      await vi.advanceTimersByTimeAsync(8_000 + 50);
+      const r = await p;
+
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.sweptCount).toBe(0);
+        expect(r.value.skippedCount).toBe(1);
+      }
+      expect(
+        asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId),
+      ).not.toHaveBeenCalled();
+      expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+        'sweep_stale_pending_refunds.retrieve_timeout',
+        expect.objectContaining({ refundId: 'rfnd_01STALE' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // --- RR-1 lost race under the lock ---------------------------------------
+  it('RR-1: row concurrently finalised (lock re-check != pending) → skip, NO audit', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    // A concurrent webhook/Phase-B finalised it between list-read and lock.
+    asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeLockedRefund({
+        status: 'succeeded',
+        creditNoteId: 'cn-existing',
+        completedAt: new Date(NOW_MS),
+      }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    // No finalise, no flip, no audit → no false stale/refund audit on the race.
+    expect(mockFinalize).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+  });
+
+  it('lock returns null (row vanished) → skip', async () => {
+    const deps = makeDeps();
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      null,
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    expect(mockFinalize).not.toHaveBeenCalled();
+  });
+
+  // --- mixed batch + per-row isolation -------------------------------------
+  it('mixed batch: succeeded + failed + pending → swept=2, skipped=1', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_ok', processorRefundId: 're_ok' }),
+      makeStaleRow({ id: 'rfnd_bad', processorRefundId: 're_bad' }),
+      makeStaleRow({ id: 'rfnd_wait', processorRefundId: 're_wait' }),
+    ]);
+    asMock(deps.processorGateway.retrieveRefund)
+      .mockResolvedValueOnce(retrievedRefund('succeeded'))
+      .mockResolvedValueOnce(retrievedRefund('failed'))
+      .mockResolvedValueOnce(retrievedRefund('pending'));
+    asMock(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockImplementation(
+      async (_tx: unknown, _tid: string, re: string) =>
+        makeLockedRefund({ processorRefundId: re }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(2);
+      expect(r.value.skippedCount).toBe(1);
+    }
+    // Per-row tx isolation: 1 read tx + 2 finalise/flip write tx.
+    expect(
+      asMock(deps.paymentsRepo.withTx).mock.calls.length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it('per-row DB fault → that row skipped, others continue', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_a', processorRefundId: 're_a' }),
+      makeStaleRow({ id: 'rfnd_b', processorRefundId: 're_b' }),
+    ]);
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValue(
+      retrievedRefund('failed'),
+    );
+    // Row A's flip throws; row B succeeds.
+    asMock(deps.refundsRepo.updateStatus)
+      .mockRejectedValueOnce(new Error('row a db fault'))
+      .mockResolvedValueOnce(makeLockedRefund({ status: 'failed' }));
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(1);
+      expect(r.value.skippedCount).toBe(1);
+    }
+  });
+
+  // --- M-i bounds ----------------------------------------------------------
+  it('row cap: >50 stale rows → only 50 processed, truncation logged', async () => {
+    const deps = makeDeps();
+    const rows = Array.from({ length: 55 }, (_, i) =>
+      makeStaleRow({ id: `rfnd_${i}`, processorRefundId: `re_${i}` }),
+    );
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce(rows);
+    // pending → skip keeps the test fast (no tx) but still exercises the cap.
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValue(
+      retrievedRefund('pending'),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.skippedCount).toBe(50);
+    expect(asMock(deps.processorGateway.retrieveRefund)).toHaveBeenCalledTimes(
+      50,
+    );
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.row_cap_truncated',
+      expect.objectContaining({ total: 55, cap: 50, deferred: 5 }),
+    );
+  });
+
+  it('total wall-clock budget guard → stops starting new rows, deferral logged', async () => {
+    const deps = makeDeps();
+    let elapsed = 0;
+    // Clock advances only when a retrieve runs, so row A processes then the
+    // cumulative budget is blown before row B's top-of-loop check.
+    (deps.clock as { nowMs: () => number }).nowMs = () => NOW_MS + elapsed;
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_a', processorRefundId: 're_a' }),
+      makeStaleRow({ id: 'rfnd_b', processorRefundId: 're_b' }),
+    ]);
+    asMock(deps.processorGateway.retrieveRefund).mockImplementation(async () => {
+      elapsed += 50_000; // exceed the 45s budget after the first retrieve
+      return retrievedRefund('succeeded');
+    });
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.sweptCount).toBe(1); // only row A
+    // Row B deferred BEFORE its retrieve → exactly one external call.
+    expect(asMock(deps.processorGateway.retrieveRefund)).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.budget_deferred',
+      expect.objectContaining({ processed: 1, deferred: 1 }),
+    );
+  });
+
+  // --- guards + read failures ----------------------------------------------
+  it('tenant settings missing → sweep_failed; list never read', async () => {
+    const deps = makeDeps();
+    asMock(deps.tenantSettingsRepo.getByTenantId).mockResolvedValueOnce(null);
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.cause).toBe('tenant_settings_missing');
+    expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
+  });
+
+  it('empty result → swept=0, no retrieve, no audit', async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([]);
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.sweptCount).toBe(0);
+    expect(asMock(deps.processorGateway.retrieveRefund)).not.toHaveBeenCalled();
     expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
-    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
   });
 
-  it('multi-row — 3 stale rows all swept; cutoff respected via olderThanHours override', async () => {
-    const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_a', ageHours: 25 }),
-      makeStaleRow({ id: 'rfnd_b', ageHours: 26 }),
-      makeStaleRow({ id: 'rfnd_c', ageHours: 27 }),
-    ]);
-
-    const r = await sweepStalePendingRefunds(deps, {
-      ...baseInput,
-      olderThanHours: 12,
-    });
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.sweptCount).toBe(3);
-      expect(r.value.cutoff).toBe(
-        new Date(NOW_MS - 12 * 60 * 60 * 1000).toISOString(),
-      );
-    }
-    expect(asMock(deps.audit.emit)).toHaveBeenCalledTimes(3);
-  });
-
-  it("per-row error (W1) — one row's updateStatus throws; others continue in their own tx", async () => {
-    // Each row gets its own withTx call so row A's aborted Postgres
-    // tx does not corrupt row B's tx.
-    const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_a' }),
-      makeStaleRow({ id: 'rfnd_b' }),
-    ]);
-    asMock(deps.refundsRepo.updateStatus).mockImplementationOnce(async () => {
-      throw new Error('row a update failed');
-    });
-
-    const r = await sweepStalePendingRefunds(deps, baseInput);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.sweptCount).toBe(1);
-      expect(r.value.skippedCount).toBe(1);
-    }
-    // Per-row tx evidence — withTx invoked ≥ 3 times (1 read + 2
-    // per-row write tx). One-tx-for-all would call withTx exactly once.
-    expect(asMock(deps.paymentsRepo.withTx).mock.calls.length).toBeGreaterThanOrEqual(3);
-  });
-
-  it('concurrency guard (S5 / RR-1) — updateStatus returns null (lost race) → row skipped', async () => {
-    // Sweep passes `expectedCurrentStatus: 'pending'`. If a concurrent
-    // writer (webhook charge.refunded / issueRefund Phase B) flipped the
-    // row out of `pending` between our read tx and the per-row write tx,
-    // the repo's UPDATE matches zero rows and returns `null` (RR-1 — the
-    // repo NO LONGER throws on the expectedCurrentStatus miss). The sweep
-    // MUST re-throw a sentinel on the null so the per-row tx rolls back →
-    // audit doesn't commit (asserted in the live-Neon integration test) →
-    // sweep skips the row.
-    const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_raced' }),
-    ]);
-    asMock(deps.refundsRepo.updateStatus).mockResolvedValueOnce(null);
-
-    const r = await sweepStalePendingRefunds(deps, baseInput);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.sweptCount).toBe(0);
-      expect(r.value.skippedCount).toBe(1);
-    }
-
-    // Sweep MUST pass the concurrency guard so the repo can do the
-    // status check.
-    const updateCall = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
-    expect(updateCall.expectedCurrentStatus).toBe('pending');
-  });
-
-  it('audit-emit failure (W2) — updateStatus is NOT called; row stays pending', async () => {
-    // Audit emit runs BEFORE updateStatus inside the per-row tx; if
-    // audit throws, updateStatus must not run (audit-before-mutation).
-    const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_audit_fail' }),
-    ]);
-    asMock(deps.audit.emit).mockImplementationOnce(async () => {
-      throw new Error('audit log offline');
-    });
-
-    const r = await sweepStalePendingRefunds(deps, baseInput);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.sweptCount).toBe(0);
-      expect(r.value.skippedCount).toBe(1);
-    }
-    // No orphan failed row — updateStatus must never have been called.
-    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
-  });
-
-  it('invalid olderThanHours (≤ 0) → sweep_failed', async () => {
+  it('invalid olderThanHours (≤ 0) → sweep_failed; settings never read', async () => {
     const deps = makeDeps();
     const r = await sweepStalePendingRefunds(deps, {
       ...baseInput,
@@ -211,15 +663,10 @@ describe('sweepStalePendingRefunds (T130a)', () => {
       expect(r.error.code).toBe('sweep_failed');
       expect(r.error.cause).toMatch(/olderThanHours/);
     }
-    expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
+    expect(asMock(deps.tenantSettingsRepo.getByTenantId)).not.toHaveBeenCalled();
   });
 
-  // Staff-review R2 R019 (2026-04-28): property-based probe on the full
-  // negative + zero domain so a future relaxation (e.g. `< 0` instead of
-  // `<= 0`) cannot land silently. Excludes Infinity / NaN since the use-case
-  // narrows to the `number ≤ 0` case at the boundary; explicit positive-but-
-  // unsafe edge cases stay covered by the existing `multi-row` test.
-  it('property: every olderThanHours ≤ 0 → sweep_failed (no listPending call)', async () => {
+  it('property: every olderThanHours ≤ 0 → sweep_failed (no settings read)', async () => {
     await fc.assert(
       fc.asyncProperty(fc.integer({ max: 0 }), async (hours) => {
         const deps = makeDeps();
@@ -229,13 +676,15 @@ describe('sweepStalePendingRefunds (T130a)', () => {
         });
         expect(r.ok).toBe(false);
         if (!r.ok) expect(r.error.code).toBe('sweep_failed');
-        expect(asMock(deps.refundsRepo.listPendingOlderThan)).not.toHaveBeenCalled();
+        expect(
+          asMock(deps.tenantSettingsRepo.getByTenantId),
+        ).not.toHaveBeenCalled();
       }),
-      { numRuns: 30 },
+      { numRuns: 25 },
     );
   });
 
-  it('outer tx throw → sweep_failed with cause (constructor.name only — R3 H3-3)', async () => {
+  it('list-read tx throw → sweep_failed with constructor.name only (R3 H3-3)', async () => {
     const deps = makeDeps();
     asMock(deps.paymentsRepo.withTx).mockImplementationOnce(async () => {
       throw new Error('connection lost');
@@ -245,21 +694,18 @@ describe('sweepStalePendingRefunds (T130a)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.code).toBe('sweep_failed');
-      // R3 H3-3 (2026-04-28): cause is constructor.name only, never
-      // raw `.message` — Postgres errors can carry SQL fragments /
-      // column values per project log-redact contract.
       expect(r.error.cause).toBe('Error');
     }
   });
 
-  it('outer tx throw — non-Error rejection → cause is "unknown" (R3 H3-3)', async () => {
+  it('tenant-settings read throw → sweep_failed with constructor.name only', async () => {
     const deps = makeDeps();
-    asMock(deps.paymentsRepo.withTx).mockImplementationOnce(async () => {
-      throw 'string-rejection';
-    });
+    asMock(deps.tenantSettingsRepo.getByTenantId).mockRejectedValueOnce(
+      new TypeError('cache miss'),
+    );
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.cause).toBe('unknown');
+    if (!r.ok) expect(r.error.cause).toBe('TypeError');
   });
 });

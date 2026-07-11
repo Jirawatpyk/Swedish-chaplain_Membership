@@ -67,12 +67,21 @@ import { asPaymentId } from '../../domain/payment';
 import { retentionFor } from '../ports/audit-port';
 
 /**
- * The two triggers that flow through the shared finaliser. Matches the
- * `refund_succeeded` audit `path` discriminator (`audit-port.ts`).
+ * The triggers that flow through the shared finaliser. Matches the
+ * `refund_succeeded` audit `path` discriminator (`audit-port.ts`):
+ *   - `admin_initiated`       — `issueRefund` (Stripe returned succeeded
+ *                               synchronously; ADMIN mode).
+ *   - `webhook_refund_updated`— `processRefundUpdated` (async
+ *                               `charge.refund.updated(succeeded)`; WEBHOOK mode).
+ *   - `sweep_recovery`        — A.14 Stripe-aware stale-pending sweep
+ *                               (`retrieveRefund` reported succeeded on a
+ *                               stuck-`pending` row the webhook never
+ *                               resolved; WEBHOOK mode).
  */
 export type FinalizeSucceededRefundPath =
   | 'admin_initiated'
-  | 'webhook_refund_updated';
+  | 'webhook_refund_updated'
+  | 'sweep_recovery';
 
 export interface FinalizeSucceededRefundInput {
   readonly refundId: string;

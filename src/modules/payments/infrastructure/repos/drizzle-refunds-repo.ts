@@ -277,6 +277,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         readonly initiatedAt: Date;
         readonly correlationId: string;
         readonly initiatorUserId: string;
+        readonly processorRefundId: string | null;
       }>
     > {
       const tx = txUnknown as TenantTx;
@@ -289,6 +290,9 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
           initiatedAt: refunds.initiatedAt,
           correlationId: refunds.correlationId,
           initiatorUserId: refunds.initiatorUserId,
+          // A.14 — Stripe `re_…` id (nullable) so the sweep can
+          // `retrieveRefund` the real outcome instead of blind-failing.
+          processorRefundId: refunds.processorRefundId,
         })
         .from(refunds)
         .where(
@@ -316,6 +320,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         initiatedAt: r.initiatedAt,
         correlationId: r.correlationId,
         initiatorUserId: r.initiatorUserId,
+        processorRefundId: r.processorRefundId,
       }));
     },
 

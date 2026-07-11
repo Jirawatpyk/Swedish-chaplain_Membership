@@ -304,6 +304,38 @@ export interface F5AuditPayloadByType {
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
         invoice_next_status: 'partially_credited' | 'credited';
+      }
+    | {
+        /**
+         * F5 refund-lifecycle bugfix (2026-07-11, Task A.14) — the
+         * Stripe-aware stale-pending-refund sweep's `retrieveRefund`
+         * reported `succeeded`, so the sweep finalised a stuck-`pending`
+         * refund row via the shared `finalizeSucceededRefund(…, path:
+         * 'sweep_recovery')`. Carries the SAME full state-transition record
+         * as `admin_initiated`/`webhook_refund_updated` (F4 CN minted +
+         * payment/invoice status advanced) because all three flow through
+         * the shared finaliser; the `path` discriminator distinguishes the
+         * TRIGGER — here a scheduled recovery sweep that reconciled a row
+         * the async `charge.refund.updated` webhook never resolved (the
+         * Postgres double-fault / webhook-giveup scenario) — for
+         * unambiguous audit-log forensics ("webhook was lost → sweep
+         * recovered"). The `actor_user_id` is the seeded Stripe-webhook
+         * system UUID (the F4 credit-note `issued_by_user_id` FK requires a
+         * real `users` row; the sweep reuses the existing webhook actor
+         * rather than adding a new seeded actor — see
+         * `sweep-stale-pending-refunds.ts`). TS-only — no enum change
+         * (reuses the `refund_succeeded` value).
+         */
+        path: 'sweep_recovery';
+        refund_id: string;
+        payment_id: string;
+        invoice_id: string;
+        processor_refund_id: string;
+        credit_note_id: string;
+        credit_note_number: string;
+        amount_satang: string;
+        payment_next_status: 'partially_refunded' | 'refunded';
+        invoice_next_status: 'partially_credited' | 'credited';
       };
   refund_failed: {
     refund_id: string;

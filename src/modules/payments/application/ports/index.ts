@@ -15,6 +15,7 @@ export type {
   CreatedPaymentIntent,
   RetrievedPaymentIntent,
   CreatedRefund,
+  RetrievedRefund,
 } from './processor-gateway-port';
 export type {
   WebhookVerifierPort,

@@ -309,6 +309,14 @@ export function makeSweepStalePendingRefundsDeps(
   return {
     refundsRepo: makeDrizzleRefundsRepo(tenantId),
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    // A.14 — Stripe-aware sweep: resolve the tenant's Connect account +
+    // read the real refund status from Stripe, then finalise via the F4
+    // credit-note bridge (idempotent) instead of blind-failing. The cron
+    // route runs in a request context so the settings repo's
+    // `unstable_cache` read is valid here.
+    tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
+    processorGateway: stripeGateway,
+    invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
     // R2 M-2 (2026-04-27): logger threaded through DI per Constitution

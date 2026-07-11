@@ -170,6 +170,15 @@ export interface RefundsRepo {
    * Returns the minimum fields the sweep + audit emit need; the row
    * is updated in a separate `updateStatus` call inside the same
    * tx as the audit emit for atomicity.
+   *
+   * A.14 — `processorRefundId` (the Stripe `re_…` id, nullable) is
+   * surfaced so the Stripe-aware sweep can `retrieveRefund` the real
+   * outcome and finalise the row instead of blind-failing it. It is
+   * NULL only in the rare window where `issueRefund` inserted the
+   * pending row + Stripe accepted the refund but the `attachProcessorRefundId`
+   * tx crashed before persisting the id — those rows cannot be
+   * reconciled against Stripe and are skipped by the sweep (never
+   * blind-failed — a real refund may exist).
    */
   listPendingOlderThan(
     tx: unknown,
@@ -184,6 +193,7 @@ export interface RefundsRepo {
       readonly initiatedAt: Date;
       readonly correlationId: string;
       readonly initiatorUserId: string;
+      readonly processorRefundId: string | null;
     }>
   >;
 }
