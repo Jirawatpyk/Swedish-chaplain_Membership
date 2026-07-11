@@ -2899,6 +2899,25 @@
         "grace": "Grace",
         "lapsed": "Lapsed"
       },
+      "byMonth": {
+        "title": "Renewals by month",
+        "subtitle": "{count, plural, one {# open renewal} other {# open renewals}}",
+        "overdue": "Overdue",
+        "later": "{month} or later",
+        "overdueShort": "Overdue",
+        "laterShort": "{month}+",
+        "listAriaLabel": "Renewals by month",
+        "chartScrollAriaLabel": "Renewals by month chart, scrollable",
+        "bucketAriaLabel": "{label}: {count, plural, one {# member} other {# members}}",
+        "zeroBucketAriaLabel": "{label}: no members",
+        "clearFilter": "Clear month filter",
+        "filterChip": "Renewing in {month}",
+        "filterChipOverdue": "Overdue renewals",
+        "filterChipLater": "Renewing {month} or later",
+        "emptyTitle": "No upcoming renewals",
+        "emptyDescription": "No members have an upcoming renewal to plan for yet.",
+        "loadFailed": "Couldn't load the renewals-by-month overview. Please try again."
+      },
       "table": {
         "columns": {
           "tier": "Tier",
@@ -2922,6 +2941,12 @@
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
+        "noRowsInMonth": "No members renew in {month}.",
+        "srResultCountMonth": "{count, plural, one {Showing # member renewing in {month}} other {Showing # members renewing in {month}}}",
+        "noRowsOverdue": "No overdue renewals.",
+        "noRowsLater": "No members renew {month} or later.",
+        "srResultCountOverdue": "{count, plural, one {Showing # overdue member} other {Showing # overdue members}}",
+        "srResultCountLater": "{count, plural, one {Showing # member renewing {month} or later} other {Showing # members renewing {month} or later}}",
         "unknownCompany": "(Unknown company)",
         "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
         "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}",

@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { UrgencyBucket } from '@/modules/renewals/client';
+import { VARIANT_CLASSES } from '@/components/renewals/urgency-pill';
 
 const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   't-90',
@@ -41,7 +42,7 @@ type DashToUnderscore<S extends string> = S extends `${infer A}-${infer B}`
 type UrgencyI18nKey = DashToUnderscore<(typeof TAB_ORDER)[number]>;
 
 export interface UrgencyBucketTabsProps {
-  readonly current: UrgencyBucket;
+  readonly current: UrgencyBucket | null;
   readonly counts: Readonly<Record<UrgencyBucket, number>>;
   readonly lapsedCount: number;
 }
@@ -60,7 +61,9 @@ export function UrgencyBucketTabs({
     if (!TAB_ORDER.includes(value as UrgencyBucket)) return;
     const next = new URLSearchParams(params.toString());
     next.set('urgency', value);
+    next.delete('month'); // mutually-exclusive lens — exit the month lens
     next.delete('cursor'); // reset pagination on tab switch
+    next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
     router.push(`${pathname}?${next.toString()}`);
   }
 
@@ -96,7 +99,7 @@ export function UrgencyBucketTabs({
       tabIndex={0}
       className="w-full overflow-x-auto overflow-y-hidden py-0.5 focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
     >
-      <Tabs value={current} onValueChange={handleChange}>
+      <Tabs value={current ?? ''} onValueChange={handleChange}>
         {/* `gap-1` separates adjacent triggers — without it the count
             badge of one tab visually butts against the next tab's
             label, producing the unreadable "T-90 0T-60 0T-14 0" run.
@@ -104,11 +107,11 @@ export function UrgencyBucketTabs({
             because shadcn assumes each trigger is a single short word;
             pairs of <label, badge> need explicit breathing room. */}
         {/* Phase 6 review-round 2 Cmt7 — arrow-key navigation provided by
-            shadcn `<Tabs>` automatically (Radix Tabs primitive). No need
-            to duplicate the manual `tablist` arrow handler used by
-            `at-risk-widget.tsx` (custom `<div role="tablist">`-based
-            tabs); both surfaces meet the same WCAG outcome via
-            different implementations. */}
+            shadcn `<Tabs>` automatically (Base UI Tabs primitive,
+            `@base-ui/react/tabs`). No need to duplicate the manual
+            `tablist` arrow handler used by `at-risk-widget.tsx` (custom
+            `<div role="tablist">`-based tabs); both surfaces meet the
+            same WCAG outcome via different implementations. */}
         <TabsList className="min-w-max gap-1" aria-label={t('aria_label')}>
           {TAB_ORDER.map((bucket) => {
           const count =
@@ -134,7 +137,10 @@ export function UrgencyBucketTabs({
             >
               <span>{label}</span>
               <span
-                className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
+                className={cn(
+                  'ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs font-medium ring-1 ring-inset tabular-nums',
+                  VARIANT_CLASSES[bucket],
+                )}
                 aria-hidden
               >
                 {count}

@@ -3,11 +3,12 @@
  * `loadPipeline` use-case.
  *
  * Phase 3.5 S-06 added `withActiveSpan('admin_pipeline_load', ...)`
- * wrapping the repo composite query with 7 attributes:
+ * wrapping the repo composite query with 8 attributes:
  *   - 4 upfront: tenant.id, tier_filter, urgency_filter, page_limit
- *   - 3 post-repo: total_in_window_bucket (Round 9 W-R8-4),
+ *   - 4 post-repo: total_in_window_bucket (Round 9 W-R8-4),
  *                  lapsed_count_bucket  (Round 9 W-R8-4),
- *                  page_size
+ *                  page_size,
+ *                  month_filter         (T4 telemetry-lens fix)
  *
  * Without this test a refactor that drops a `setAttribute` call would
  * remain GREEN. SLO alerting on SC-003 (p95<500ms) depends on these
@@ -90,7 +91,7 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
     recordExceptionMock.mockClear();
   });
 
-  it('sets all 7 attributes on the span (4 upfront + 3 post-repo)', async () => {
+  it('sets all 8 attributes on the span (4 upfront + 4 post-repo)', async () => {
     const deps = fakeDeps({
       rows: [],
       nextCursor: null,
@@ -102,11 +103,11 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       urgency: 't-30',
     });
     // Round 10 I3 — fakeTracer now applies opts.attributes via
-    // setAttribute, so all 7 attributes are visible to the mock:
+    // setAttribute, so all 8 attributes are visible to the mock:
     // 4 upfront (tenant.id, tier_filter, urgency_filter, page_limit)
-    // + 3 post-repo (total_in_window_bucket, lapsed_count_bucket,
-    // page_size).
-    expect(setAttributeMock).toHaveBeenCalledTimes(7);
+    // + 4 post-repo (total_in_window_bucket, lapsed_count_bucket,
+    // page_size, month_filter).
+    expect(setAttributeMock).toHaveBeenCalledTimes(8);
     // 4 upfront attrs.
     expect(setAttributeMock).toHaveBeenCalledWith('tenant.id', 'tenantA');
     expect(setAttributeMock).toHaveBeenCalledWith(
@@ -118,7 +119,7 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       't-30',
     );
     expect(setAttributeMock).toHaveBeenCalledWith('renewals.page_limit', 50);
-    // 3 post-repo attrs.
+    // 4 post-repo attrs.
     expect(setAttributeMock).toHaveBeenCalledWith(
       'renewals.total_in_window_bucket',
       expect.any(String),
@@ -128,6 +129,12 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       expect.any(String),
     );
     expect(setAttributeMock).toHaveBeenCalledWith('renewals.page_size', 0);
+    // T4 telemetry-lens fix — no month lens here (nowIso undefined →
+    // monthFilter null → `monthFilter ?? 'none'` yields 'none').
+    expect(setAttributeMock).toHaveBeenCalledWith(
+      'renewals.month_filter',
+      'none',
+    );
   });
 
   // Round 10 I4 — error-path coverage. If the repo throws, the span

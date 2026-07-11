@@ -28,6 +28,7 @@ import type {
   UrgencyBucket,
 } from '../ports/renewal-cycle-repo';
 import { TIER_BUCKETS } from '../../domain/value-objects/tier-bucket';
+import { parseMonthParam } from '../../domain/renewal-month-bucket';
 
 const URGENCY_BUCKETS: ReadonlyArray<UrgencyBucket> = [
   't-90',
@@ -46,6 +47,10 @@ export const loadPipelineInputSchema = z.object({
   urgency: z
     .enum(URGENCY_BUCKETS as readonly [UrgencyBucket, ...UrgencyBucket[]])
     .optional(),
+  // Renewals-by-month lens. Kept loose (raw string) so an invalid value is
+  // treated as ABSENT (→ urgency still applies), not a hard 400.
+  month: z.string().optional(),
+  nowIso: z.string().datetime().optional(),
   cursor: z.string().nullable().optional(),
   limit: z.number().int().min(1).max(200).optional(),
 });
@@ -75,6 +80,12 @@ export async function loadPipeline(
     };
   }
   const input = parsed.data;
+  // F6 — validate month precedence in the use-case (not SQL). A present +
+  // VALID month wins and urgency is ignored; an invalid month string is
+  // treated as absent so a valid urgency still applies. The month path needs
+  // `nowIso` for the BKK boundaries; without it, fall back to urgency.
+  const monthFilter =
+    input.nowIso !== undefined ? parseMonthParam(input.month) : null;
   // Phase 3.5 S-06 — wrap the composite-query repo call in an OTel
   // span so the SLO alerting on SC-003 (p95<500ms) has a named hop in
   // Vercel Observability traces. Auto-instrumented Drizzle child
@@ -92,7 +103,14 @@ export async function loadPipeline(
     async (span) => {
       const r = await deps.cyclesRepo.loadPipelinePage(input.tenantId, {
         ...(input.tier !== undefined ? { tier: input.tier } : {}),
-        ...(input.urgency !== undefined ? { urgency: input.urgency } : {}),
+        // Mutually-exclusive lenses: month wins, else urgency. The guard
+        // `monthFilter !== null && input.nowIso !== undefined` lets TS
+        // narrow both to `string` inside this branch — no `as string`.
+        ...(monthFilter !== null && input.nowIso !== undefined
+          ? { monthFilter, nowIso: input.nowIso }
+          : input.urgency !== undefined
+            ? { urgency: input.urgency }
+            : {}),
         ...(input.cursor !== undefined && input.cursor !== null
           ? { cursor: input.cursor }
           : {}),
@@ -114,6 +132,13 @@ export async function loadPipeline(
         bucketCount(r.summary.lapsedCount),
       );
       span.setAttribute('renewals.page_size', r.rows.length);
+      // T4 fix-wave — under the month lens the urgency filter above is
+      // reported as 'all' even though it was dropped in favour of the
+      // month lens (mutually-exclusive), which hid which lens actually ran.
+      // Surface the month filter explicitly so an APM operator can tell.
+      // Does NOT carry an exact member count (bucketed counts above cover
+      // that; this is just the lens key, e.g. '2026-07' / 'overdue' / 'later').
+      span.setAttribute('renewals.month_filter', monthFilter ?? 'none');
 
       // W0-09: § 23.1.1 pipeline.row_count gauge = rows returned for the CURRENT
       // page (bounded ≤ page-size 50), matching the instrument name + doc. MUST be

@@ -55,6 +55,13 @@ import {
   type CycleStatus,
 } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+import {
+  foldRawMonths,
+  bkkYearMonth,
+  addMonthsToYm,
+  bkkMonthStartInstant,
+} from '../../domain/renewal-month-bucket';
+import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket';
 
 // ---------------------------------------------------------------------------
 // Row → Domain translation
@@ -381,6 +388,48 @@ const MEMBER_NOT_ERASED_SQL = sql`NOT EXISTS (
     AND m.member_id = ${renewalCycles.memberId}
     AND m.erased_at IS NOT NULL
 )`;
+
+/**
+ * Renewals-by-month planning set — the SINGLE predicate shared by the
+ * `countCyclesByExpiryMonth` aggregation AND the month-filtered pipeline
+ * rows, so `sum(all buckets) === count(this) === rows-per-bucket`
+ * (reconciliation invariant). `OPEN_CYCLE_STATUSES` = the module's canonical
+ * "an upcoming renewal that will actually happen" set; it deliberately
+ * EXCLUDES `lapsed` (terminal — surfaced by the Lapsed tab) and
+ * `pending_admin_reactivation` (a reopened money-hold). `MEMBER_NOT_ERASED_SQL`
+ * (COMP-1 H4) is non-negotiable — dropping it would re-admit a GDPR-erased
+ * member and break reconciliation with the month-filtered pipeline.
+ */
+const MONTH_PLANNING_MEMBER_SQL: SQL = and(
+  inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+  MEMBER_NOT_ERASED_SQL,
+)!;
+
+/** BKK wall-clock `'YYYY-MM'` bucket key for a cycle's `expires_at`. */
+const EXPIRY_MONTH_SQL = sql<string>`to_char(${renewalCycles.expiresAt} AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM')`;
+
+/**
+ * Half-open `expires_at` bound for a `?month` bucket, in BKK. Used by the
+ * month-filtered pipeline rows (Task 5) so the row set matches the bucket's
+ * counted set exactly. Bounds are BKK month-start instants bound as ISO 8601
+ * UTC strings (matching the `sql\`${expiresAt} <= ${nowIso}\`` string-bind
+ * pattern used elsewhere in this repo — postgres.js cannot serialize a raw
+ * `Date` interpolated into a `sql` fragment). No `to_char` in the WHERE, so
+ * the `expires_at` index stays usable.
+ */
+function monthBoundPredicate(key: string, nowIso: string): SQL {
+  const currentYm = bkkYearMonth(nowIso);
+  if (key === 'overdue') {
+    return sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(currentYm).toISOString()}`;
+  }
+  if (key === 'later') {
+    return sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(addMonthsToYm(currentYm, 12)).toISOString()}`;
+  }
+  return and(
+    sql`${renewalCycles.expiresAt} >= ${bkkMonthStartInstant(key).toISOString()}`,
+    sql`${renewalCycles.expiresAt} < ${bkkMonthStartInstant(addMonthsToYm(key, 1)).toISOString()}`,
+  )!;
+}
 
 const URGENCY_CASE_SQL = sql<UrgencyBucket>`
   CASE
@@ -1156,10 +1205,27 @@ export function makeDrizzleRenewalCycleRepo(
         }
         const lapsedCount = lapsedCountRows[0]?.count ?? 0;
 
-        // Page query: filter + cursor + ORDER BY (expires_at, cycle_id) ASC + limit+1
-        const pageFilters = baseFilters.slice();
-        if (opts.urgency && opts.urgency !== 'lapsed') {
-          pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
+        // Page query filters. Two mutually-exclusive shapes:
+        //  - MONTH lens (opts.monthFilter present): REBUILD from
+        //    MONTH_PLANNING_MEMBER_SQL — NOT baseFilters.slice(). baseFilters
+        //    carries `status NOT IN (cancelled,completed)` (keeps lapsed) AND
+        //    the 90-day ceiling; the month bounds ARE the window and lapsed
+        //    must not leak into an `overdue` click. Tier is intentionally
+        //    ignored (the chart aggregation is whole-tenant). Summary +
+        //    lapsedCount above stay on `baseFilters` → urgency badges are
+        //    unchanged by a month filter (F3, "two independent lenses").
+        //  - URGENCY lens (default): unchanged — slice baseFilters + urgency.
+        let pageFilters: SQL[];
+        if (opts.monthFilter && opts.nowIso) {
+          pageFilters = [
+            MONTH_PLANNING_MEMBER_SQL,
+            monthBoundPredicate(opts.monthFilter, opts.nowIso),
+          ];
+        } else {
+          pageFilters = baseFilters.slice();
+          if (opts.urgency && opts.urgency !== 'lapsed') {
+            pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
+          }
         }
         if (cursor) {
           pageFilters.push(
@@ -1263,6 +1329,30 @@ export function makeDrizzleRenewalCycleRepo(
           nextCursor,
           summary,
         };
+      });
+    },
+
+    /**
+     * Renewals-by-month aggregation (Task 2). Groups the shared
+     * `MONTH_PLANNING_MEMBER_SQL` planning set by BKK wall-clock month,
+     * then folds into overdue / 12-month window / later via the pure
+     * Domain `foldRawMonths` helper.
+     */
+    async countCyclesByExpiryMonth(
+      _tenantId: string,
+      opts: { nowIso: string; timezone: 'Asia/Bangkok' },
+    ): Promise<RenewalMonthAggregation> {
+      // Threads `tx` from runInTenant — RLS auto-scopes; NEVER global db.
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            month: EXPIRY_MONTH_SQL.as('month'),
+            count: sql<number>`count(*)::int`,
+          })
+          .from(renewalCycles)
+          .where(MONTH_PLANNING_MEMBER_SQL)
+          .groupBy(EXPIRY_MONTH_SQL);
+        return foldRawMonths(rows, opts.nowIso);
       });
     },
 

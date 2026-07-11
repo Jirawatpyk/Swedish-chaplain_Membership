@@ -70,9 +70,18 @@ import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
+  /** When set, the empty state reads "No members renew in {month}" (month lens). */
+  readonly monthLabel?: string;
+  /**
+   * Discriminates the month-lens empty copy — `overdue`/`later` get
+   * dedicated grammatical strings instead of composing `monthLabel` into
+   * the generic "renew in {month}" frame (deferred fix-wave-2 #4). Absent
+   * (undefined) preserves the pre-existing `monthLabel`-only behaviour.
+   */
+  readonly monthKind?: 'overdue' | 'later' | 'month';
 }
 
-export function PipelineTable({ rows }: PipelineTableProps) {
+export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
@@ -216,8 +225,25 @@ export function PipelineTable({ rows }: PipelineTableProps) {
               colSpan={columns.length}
               className="text-center text-muted-foreground py-8"
             >
-              <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
-              <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+              {monthKind === 'overdue' ? (
+                <p className="text-sm font-medium text-foreground">
+                  {t('noRowsOverdue')}
+                </p>
+              ) : monthKind === 'later' && monthLabel !== undefined ? (
+                <p className="text-sm font-medium text-foreground">
+                  {t('noRowsLater', { month: monthLabel })}
+                </p>
+              ) : (monthKind === 'month' || monthKind === undefined) &&
+                monthLabel !== undefined ? (
+                <p className="text-sm font-medium text-foreground">
+                  {t('noRowsInMonth', { month: monthLabel })}
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
+                  <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+                </>
+              )}
             </TableCell>
           </TableRow>
         ) : (

@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { UrgencyBucket } from '@/modules/renewals/client';
 
-const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
+export const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
   't-90':
     'bg-slate-50 text-slate-700 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700',
   't-60':
