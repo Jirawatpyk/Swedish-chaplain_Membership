@@ -379,6 +379,27 @@ export async function issueCreditNote(
           input.sourceRefundId,
         );
         if (existing) {
+          // A.7 review fix #2 — `findBySourceRefundId` is keyed on
+          // `(tenant_id, source_refund_id)` ONLY; it cannot itself verify the
+          // sibling CN belongs to the invoice under lock. Today a refund row
+          // binds `refundId` + `invoiceId` 1:1 (both callers derive them from
+          // the SAME refund row), so this is unreachable — but a future
+          // mis-wired caller passing a `sourceRefundId` that does not belong
+          // to `invoiceId` must fail LOUD and TYPED, never silently return a
+          // credit note for the WRONG invoice.
+          if (existing.originalInvoiceId !== invoiceId) {
+            logger.error(
+              {
+                tenantId: input.tenantId,
+                invoiceId,
+                sourceRefundId: input.sourceRefundId,
+                existingCreditNoteId: existing.creditNoteId,
+                existingOriginalInvoiceId: existing.originalInvoiceId,
+              },
+              'issueCreditNote: source_refund_id idempotency read matched a CN belonging to a DIFFERENT invoice — rejecting',
+            );
+            return err({ code: 'concurrent_state_change' });
+          }
           return ok({
             creditNote: existing,
             // Repeat is a pure read — no new email enqueued, no F8 cascade.
@@ -1127,11 +1148,34 @@ export async function issueCreditNote(
     // FRESH tx and return it as an idempotent success — no new §87 number, no
     // new PDF, no rollup/audit/outbox side effects.
     if (e instanceof CreditNoteRefundRaceError) {
-      const reconciled = await reconcileExistingCreditNote(
-        deps,
-        input.tenantId,
-        e.sourceRefundId,
-      );
+      // A.7 review fix #1 — the fresh-tx reconcile read itself must not
+      // escape as a throw. This is a RARE compound-failure path (a real
+      // 23505 race AND a transient failure on the fresh-tx read), and no
+      // data is at risk: the DB backstop already blocked the duplicate
+      // insert and `withTx`'s rollback already returned the §87
+      // counter-row UPDATE to the pool (no gap). Falling through to the
+      // SAME `concurrent_state_change` terminal the "sibling absent"
+      // branch below already uses keeps this retry-safe and typed instead
+      // of surfacing an HTTP 500.
+      let reconciled: CreditNote | null;
+      try {
+        reconciled = await reconcileExistingCreditNote(
+          deps,
+          input.tenantId,
+          e.sourceRefundId,
+        );
+      } catch (reconcileErr) {
+        logger.error(
+          {
+            err: reconcileErr,
+            tenantId: input.tenantId,
+            invoiceId: input.invoiceId,
+            sourceRefundId: e.sourceRefundId,
+          },
+          'issueCreditNote: fresh-tx reconcile read failed (transient) after source_refund_id race — returning concurrent_state_change',
+        );
+        return err({ code: 'concurrent_state_change' });
+      }
       if (reconciled) {
         return ok({
           creditNote: reconciled,

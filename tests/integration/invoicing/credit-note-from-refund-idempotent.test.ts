@@ -560,4 +560,81 @@ describe('CRITICAL-1 — idempotent credit-note issuance per source_refund_id (A
     expect(await readCreditNoteSeq(tenant)).toBe(seqAfterWinner);
     expect(await countCreditNotesForRefund(tenant, refundId)).toBe(1);
   }, 90_000);
+
+  it('A.7 review fix #1 — a TRANSIENT failure on the fresh-tx reconcile read returns a typed err, not a throw', async () => {
+    // Same TOCTOU-miss setup as the previous test (under-lock read misses →
+    // the REAL insert collides on `credit_notes_source_refund_id_uniq` → 23505
+    // → CreditNoteRefundRaceError → outer catch), but this time the SECOND
+    // findBySourceRefundId call (the fresh-tx reconcile read) throws a
+    // transient error instead of succeeding. `issueCreditNote` MUST catch it
+    // and resolve to a typed `concurrent_state_change` err — a compound
+    // 23505-race-plus-reconcile-failure must never escape as an unhandled
+    // throw (→ HTTP 500). No data is at risk: the DB backstop already
+    // blocked the duplicate insert and the failed tx already rolled the §87
+    // counter back to the pool.
+    const { invoiceId, refundId } = await seedPaidInvoiceWithRefund(
+      tenant,
+      user,
+      planId,
+      53_500n,
+    );
+
+    // 1) Create the winning sibling CN normally (partial, so the invoice
+    //    stays partially_credited and the racer clears the status gate).
+    const winner = await issueCreditNoteFromRefund({
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      refundId,
+      amountSatang: asSatang(53_500n),
+      reason: 'winner',
+      actorUserId: user.userId,
+    });
+    expect(winner.ok).toBe(true);
+    if (!winner.ok) return;
+
+    const seqAfterWinner = await readCreditNoteSeq(tenant);
+
+    // 2) Deps whose under-lock read MISSES once (returns null, forcing the
+    //    real insert to collide), then THROWS on the fresh-tx reconcile read.
+    const deps = makeIssueCreditNoteDeps(tenant.ctx.slug);
+    const realRepo = deps.creditNoteRepo;
+    let findCalls = 0;
+    const findStub = vi.fn(async (_tx: unknown, _tid: string, _srid: string) => {
+      findCalls += 1;
+      if (findCalls === 1) return null; // simulate TOCTOU miss under the lock
+      // Simulate a transient DB failure on the fresh-tx reconcile read —
+      // never reaches the real repo.
+      throw new Error('simulated transient DB failure on fresh-tx reconcile read');
+    });
+    const stubbedRepo = { ...realRepo, findBySourceRefundId: findStub };
+
+    const raced = await issueCreditNote(
+      { ...deps, creditNoteRepo: stubbedRepo },
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        invoiceId,
+        creditTotalSatang: asSatang(53_500n),
+        reason: 'racer',
+        sourceRefundId: refundId,
+        membershipEffect: 'keep',
+      },
+    );
+
+    // Typed err, NOT an unhandled throw — proves the reconcile-read
+    // try/catch works. Before the fix this `await` REJECTS instead of
+    // resolving.
+    expect(raced.ok).toBe(false);
+    if (raced.ok) return;
+    expect(raced.error.code).toBe('concurrent_state_change');
+
+    // findBySourceRefundId called twice: under-lock miss + the throwing
+    // fresh-tx reconcile attempt.
+    expect(findCalls).toBe(2);
+
+    // The failed allocate rolled back → §87 counter UNCHANGED (no gap); the
+    // winner's CN is still the only row for this refund.
+    expect(await readCreditNoteSeq(tenant)).toBe(seqAfterWinner);
+    expect(await countCreditNotesForRefund(tenant, refundId)).toBe(1);
+  }, 90_000);
 });
