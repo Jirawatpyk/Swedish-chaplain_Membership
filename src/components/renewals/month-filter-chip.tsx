@@ -11,7 +11,14 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-export function MonthFilterChip({ monthLabel }: { readonly monthLabel: string }) {
+export interface MonthFilterChipProps {
+  /** Discriminates the dedicated overdue/later/concrete-month chip copy. */
+  readonly monthKind: 'overdue' | 'later' | 'month';
+  /** Bare month text — omitted for `overdue` (no month to show). */
+  readonly monthLabel?: string;
+}
+
+export function MonthFilterChip({ monthKind, monthLabel }: MonthFilterChipProps) {
   const t = useTranslations('admin.renewals.byMonth');
   const router = useRouter();
   const params = useSearchParams();
@@ -25,13 +32,33 @@ export function MonthFilterChip({ monthLabel }: { readonly monthLabel: string })
     router.push(qs ? `/admin/renewals?${qs}` : '/admin/renewals');
     // Return focus to the chart region (its row link unmounts on clear).
     requestAnimationFrame(() => {
-      document.getElementById('renewals-by-month')?.focus();
+      // Best-effort focus-restore: if the section re-rendered into its
+      // error branch before this callback runs (narrow paint race),
+      // `#renewals-by-month` won't exist — fall back to the layout's
+      // `#main-content` landmark (focusable via tabIndex=-1, same
+      // fallback pattern used by the broadcast dialogs' final-focus
+      // resolver) so focus doesn't silently drop to <body> (WCAG 2.4.3).
+      const region = document.getElementById('renewals-by-month');
+      if (region) {
+        region.focus();
+      } else {
+        document.getElementById('main-content')?.focus?.();
+      }
     });
   }
 
+  const chipText =
+    monthKind === 'overdue'
+      ? t('filterChipOverdue')
+      : monthKind === 'later' && monthLabel !== undefined
+        ? t('filterChipLater', { month: monthLabel })
+        : monthLabel !== undefined
+          ? t('filterChip', { month: monthLabel })
+          : '';
+
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-sm">
-      <span>{t('filterChip', { month: monthLabel })}</span>
+      <span>{chipText}</span>
       <button
         type="button"
         onClick={clear}

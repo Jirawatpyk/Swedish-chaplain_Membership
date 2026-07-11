@@ -97,10 +97,26 @@ export async function RenewalsByMonthSection({
     };
   });
 
-  const selectedLabel =
+  // Deferred fix-wave-2 #4 — the chip needs a discriminator + a BARE month
+  // label (no "Renewing in …" frame), derived directly from `selectedMonth`
+  // + `nowIso` rather than reused from `items[].label` (those are the
+  // chart-bar labels, e.g. "Overdue" / "{month} or later", which stay
+  // exactly as-is). `laterStartKey` is the SAME BKK+12 key computed above
+  // for the chart bars, so the chip and chart read identically.
+  const selectedMonthKind: 'overdue' | 'later' | 'month' | undefined =
     selectedMonth === null
-      ? null
-      : (items.find((i) => i.key === selectedMonth)?.label ?? null);
+      ? undefined
+      : selectedMonth === 'overdue'
+        ? 'overdue'
+        : selectedMonth === 'later'
+          ? 'later'
+          : 'month';
+  const selectedMonthLabel =
+    selectedMonthKind === undefined || selectedMonthKind === 'overdue'
+      ? undefined
+      : selectedMonthKind === 'later'
+        ? formatMonthKeyLabel(laterStartKey, locale)
+        : formatMonthKeyLabel(selectedMonth as string, locale);
 
   return (
     <Card>
@@ -120,8 +136,13 @@ export async function RenewalsByMonthSection({
                 {t('subtitle', { count: summary.totalCount })}
               </p>
             </div>
-            {selectedLabel !== null ? (
-              <MonthFilterChip monthLabel={selectedLabel} />
+            {selectedMonthKind !== undefined ? (
+              <MonthFilterChip
+                monthKind={selectedMonthKind}
+                {...(selectedMonthLabel !== undefined
+                  ? { monthLabel: selectedMonthLabel }
+                  : {})}
+              />
             ) : null}
           </div>
 
@@ -146,8 +167,14 @@ export function RenewalsByMonthSectionSkeleton() {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3">
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-4 w-64" />
+        {/* Deferred fix-wave-2 T9(a) — wrap in `space-y-1` to mirror the real
+            header's `space-y-1` (below); without it the outer `gap-3` gave
+            the title+subtitle pair ~8px more vertical space than the real
+            render, producing CLS on hydration. */}
+        <div className="space-y-1">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </div>
         <div className="flex flex-col gap-1">
           {Array.from({ length: 14 }).map((_, i) => (
             <div key={i} className="flex min-h-11 items-center gap-3 px-2">

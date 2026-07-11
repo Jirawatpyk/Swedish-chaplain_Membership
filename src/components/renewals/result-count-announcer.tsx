@@ -36,26 +36,40 @@ export interface ResultCountAnnouncerProps {
     | 'lapsed';
   /** When set, announces the month lens instead of the urgency bucket. */
   readonly monthLabel?: string;
+  /**
+   * Discriminates the month-lens announcement — `overdue`/`later` get
+   * dedicated grammatical strings instead of composing `monthLabel` into
+   * the generic "renewing in {month}" frame (deferred fix-wave-2 #4).
+   * Absent (undefined) preserves the pre-existing `monthLabel`-only
+   * behaviour.
+   */
+  readonly monthKind?: 'overdue' | 'later' | 'month';
 }
 
 export function ResultCountAnnouncer({
   count,
   urgencyKey,
   monthLabel,
+  monthKind,
 }: ResultCountAnnouncerProps) {
   const tTable = useTranslations('admin.renewals.table');
   const tBuckets = useTranslations('admin.renewals.urgencyBuckets');
   return (
     <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-      {monthLabel !== undefined
-        ? tTable('srResultCountMonth', { count, month: monthLabel })
-        : urgencyKey !== undefined
-          ? tTable('srResultCount', {
-              count,
-              // URL param uses hyphens (`t-90`); i18n keys use snake (`t_90`).
-              urgency: tBuckets(urgencyKey.replace('-', '_')),
-            })
-          : ''}
+      {monthKind === 'overdue'
+        ? tTable('srResultCountOverdue', { count })
+        : monthKind === 'later' && monthLabel !== undefined
+          ? tTable('srResultCountLater', { count, month: monthLabel })
+          : (monthKind === 'month' || monthKind === undefined) &&
+              monthLabel !== undefined
+            ? tTable('srResultCountMonth', { count, month: monthLabel })
+            : urgencyKey !== undefined
+              ? tTable('srResultCount', {
+                  count,
+                  // URL param uses hyphens (`t-90`); i18n keys use snake (`t_90`).
+                  urgency: tBuckets(urgencyKey.replace('-', '_')),
+                })
+              : ''}
     </div>
   );
 }

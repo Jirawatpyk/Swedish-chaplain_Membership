@@ -21,6 +21,14 @@ describe('formatMonthKeyLabel', () => {
     // 2026-12 must render December, not November.
     expect(formatMonthKeyLabel('2026-12', 'en')).toContain('December');
   });
+
+  it('renders SV month + Gregorian year (no BE offset)', () => {
+    // Swedish uses the Gregorian calendar — unlike th-TH, sv-SE never gets
+    // the `-u-ca-buddhist` variant, so the year must render unmodified.
+    const label = formatMonthKeyLabel('2027-07', 'sv');
+    expect(label).toContain('juli');
+    expect(label).toContain('2027');
+  });
 });
 
 describe('bandForBucketIndex', () => {

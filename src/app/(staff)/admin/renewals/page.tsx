@@ -273,25 +273,29 @@ export default async function RenewalsPipelinePage({
       ? `/admin/renewals?${paginationParams.toString()}`
       : null;
 
-  // Localized label for the active month lens (BE-aware). `overdue`/`later`
-  // reuse the byMonth strings; a `YYYY-MM` renders the localized month+year.
-  // The `later` label uses the same BKK+12 start-key as the chart section, so
-  // both surfaces read identically.
-  const tByMonth = await getTranslations('admin.renewals.byMonth');
+  // Renewals-by-month lens — dedicated-copy fix-wave-2 #4: `monthKind`
+  // discriminates overdue / later / a concrete month so the table empty
+  // copy, SR announcer, and filter chip can select grammatical dedicated
+  // strings instead of composing the bucket label into a "Renewing in …"
+  // month frame (which produced "Renewing in Overdue"). `monthLabel` is now
+  // the BARE month text (no frame): `overdue` needs none, `later` uses the
+  // same BKK+12 start-key as the chart section (so both surfaces read
+  // identically), `month` is the localized month+year.
   const locale = await getLocale();
-  const monthLabel =
+  const monthKind: 'overdue' | 'later' | 'month' | undefined =
     month === null
       ? undefined
       : month === 'overdue'
-        ? tByMonth('overdue')
+        ? 'overdue'
         : month === 'later'
-          ? tByMonth('later', {
-              month: formatMonthKeyLabel(
-                addMonthsToYm(bkkYearMonth(nowIso), 12),
-                locale,
-              ),
-            })
-          : formatMonthKeyLabel(month, locale);
+          ? 'later'
+          : 'month';
+  const monthLabel =
+    monthKind === undefined || monthKind === 'overdue'
+      ? undefined
+      : monthKind === 'later'
+        ? formatMonthKeyLabel(addMonthsToYm(bkkYearMonth(nowIso), 12), locale)
+        : formatMonthKeyLabel(month as string, locale);
   // `RenewalsEmptyState` replaces the entire pipeline shell (tabs +
   // filter + table) with a full-card "no renewals due" illustration,
   // so it must only fire when NO filter is active. A tier filter OR the
@@ -359,7 +363,10 @@ export default async function RenewalsPipelinePage({
               <ResultCountAnnouncer
                 count={rows.length}
                 {...(monthLensActive
-                  ? { monthLabel: monthLabel as string }
+                  ? {
+                      monthKind: monthKind as 'overdue' | 'later' | 'month',
+                      ...(monthLabel !== undefined ? { monthLabel } : {}),
+                    }
                   : { urgencyKey: urgency })}
               />
               {urgency === 'lapsed' ? (
@@ -367,6 +374,7 @@ export default async function RenewalsPipelinePage({
               ) : (
                 <PipelineTable
                   rows={rows}
+                  {...(monthKind !== undefined ? { monthKind } : {})}
                   {...(monthLabel !== undefined ? { monthLabel } : {})}
                 />
               )}

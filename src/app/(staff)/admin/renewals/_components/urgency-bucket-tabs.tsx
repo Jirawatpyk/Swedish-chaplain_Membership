@@ -107,11 +107,11 @@ export function UrgencyBucketTabs({
             because shadcn assumes each trigger is a single short word;
             pairs of <label, badge> need explicit breathing room. */}
         {/* Phase 6 review-round 2 Cmt7 — arrow-key navigation provided by
-            shadcn `<Tabs>` automatically (Radix Tabs primitive). No need
-            to duplicate the manual `tablist` arrow handler used by
-            `at-risk-widget.tsx` (custom `<div role="tablist">`-based
-            tabs); both surfaces meet the same WCAG outcome via
-            different implementations. */}
+            shadcn `<Tabs>` automatically (Base UI Tabs primitive,
+            `@base-ui/react/tabs`). No need to duplicate the manual
+            `tablist` arrow handler used by `at-risk-widget.tsx` (custom
+            `<div role="tablist">`-based tabs); both surfaces meet the
+            same WCAG outcome via different implementations. */}
         <TabsList className="min-w-max gap-1" aria-label={t('aria_label')}>
           {TAB_ORDER.map((bucket) => {
           const count =
