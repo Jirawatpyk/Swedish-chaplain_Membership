@@ -2907,6 +2907,7 @@
         "overdueShort": "Overdue",
         "laterShort": "{month}+",
         "listAriaLabel": "Renewals by month",
+        "chartScrollAriaLabel": "Renewals by month chart, scrollable",
         "bucketAriaLabel": "{label}: {count, plural, one {# member} other {# members}}",
         "zeroBucketAriaLabel": "{label}: no members",
         "clearFilter": "Clear month filter",

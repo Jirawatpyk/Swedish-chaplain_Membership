@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bandForBucketIndex,
   formatMonthKeyLabel,
+  formatMonthKeyShort,
 } from '@/components/renewals/month-bucket-label';
 
 describe('formatMonthKeyLabel', () => {
@@ -28,6 +29,28 @@ describe('formatMonthKeyLabel', () => {
     const label = formatMonthKeyLabel('2027-07', 'sv');
     expect(label).toContain('juli');
     expect(label).toContain('2027');
+  });
+});
+
+describe('formatMonthKeyShort (compact axis label)', () => {
+  it('renders EN abbreviated month + 2-digit Gregorian year', () => {
+    const label = formatMonthKeyShort('2027-07', 'en'); // "Jul 27"
+    expect(label).toMatch(/Jul/);
+    expect(label).toContain('27');
+  });
+
+  it('renders TH 2-digit BUDDHIST-ERA year (69 for BE 2569, never the Gregorian 26)', () => {
+    // Same off-by-543 ship-blocker guard as formatMonthKeyLabel, for the
+    // year:'2-digit' branch: "ธ.ค. 69", not "ธ.ค. 26".
+    const label = formatMonthKeyShort('2026-12', 'th');
+    expect(label).toContain('69'); // BE 2569
+    expect(label).not.toContain('26'); // not the Gregorian 2-digit year
+  });
+
+  it('rolls the TH BE year across the Gregorian year boundary (2027-01 → 70)', () => {
+    const label = formatMonthKeyShort('2027-01', 'th');
+    expect(label).toContain('70'); // BE 2570
+    expect(label).not.toContain('27');
   });
 });
 

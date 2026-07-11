@@ -2907,6 +2907,7 @@
         "overdueShort": "เกินกำหนด",
         "laterShort": "{month}+",
         "listAriaLabel": "การต่ออายุรายเดือน",
+        "chartScrollAriaLabel": "แผนภูมิการต่ออายุรายเดือน เลื่อนแนวนอนได้",
         "bucketAriaLabel": "{label}: {count, plural, other {# สมาชิก}}",
         "zeroBucketAriaLabel": "{label}: ไม่มีสมาชิก",
         "clearFilter": "ล้างตัวกรองเดือน",

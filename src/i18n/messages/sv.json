@@ -2907,6 +2907,7 @@
         "overdueShort": "Förs.",
         "laterShort": "{month}+",
         "listAriaLabel": "Förnyelser per månad",
+        "chartScrollAriaLabel": "Diagram över förnyelser per månad, rullbart",
         "bucketAriaLabel": "{label}: {count, plural, one {# medlem} other {# medlemmar}}",
         "zeroBucketAriaLabel": "{label}: inga medlemmar",
         "clearFilter": "Rensa månadsfilter",

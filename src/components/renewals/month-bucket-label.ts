@@ -9,7 +9,14 @@
  * keeps the month stable across runtimes.
  */
 import { formatLocalisedDate } from '@/lib/format-date-localised';
-import type { UrgencyBucket } from '@/modules/renewals/client';
+
+/**
+ * The 4 coarse colour bands this chart assigns by column position — a strict
+ * subset of `UrgencyBucket` (the pill's full 8-state set is never used on the
+ * chart; `bandForBucketIndex` only ever returns these four). Typing `band` as
+ * this narrower union keeps the chart's fill map from declaring dead entries.
+ */
+export type ChartBand = 't-0' | 't-7' | 't-14' | 't-90';
 
 /** A single rendered bar (server-resolved, serialisable to the client chart). */
 export interface MonthBarItem {
@@ -21,13 +28,13 @@ export interface MonthBarItem {
   readonly count: number;
   readonly barPercent: number;
   readonly interactive: boolean;
-  readonly band: UrgencyBucket;
+  readonly band: ChartBand;
 }
 
 /** Bucket-array position → representative urgency bucket, so the bar band reuses the pill palette.
  *  Order is [overdue, m0, m1, m2, m3…m11, later]:
  *  overdue→red(t-0) · current month→orange(t-7) · next 1-2 months→amber(t-14) · rest→slate(t-90). */
-export function bandForBucketIndex(index: number): UrgencyBucket {
+export function bandForBucketIndex(index: number): ChartBand {
   if (index === 0) return 't-0';
   if (index === 1) return 't-7';
   if (index === 2 || index === 3) return 't-14';

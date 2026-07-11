@@ -82,18 +82,21 @@ export async function RenewalsByMonthSection({
   // Resolve labels in Presentation (Constitution III — VM carries none).
   const laterStartKey = addMonthsToYm(bkkYearMonth(nowIso), 12);
   const items: MonthBarItem[] = summary.buckets.map((b, i) => {
-    // Full label = the accessible name (aria-label); short label = the compact
-    // axis label under each column (abbreviated month + BE-aware 2-digit year).
+    // Compute the bucket kind ONCE, then branch on it for both the full label
+    // (accessible name) and the compact axis short label — so the two can never
+    // diverge on which case applies (mirrors the `selectedMonthKind` idiom below).
+    const kind: 'overdue' | 'later' | 'month' =
+      b.key === 'overdue' ? 'overdue' : b.key === 'later' ? 'later' : 'month';
     const label =
-      b.key === 'overdue'
+      kind === 'overdue'
         ? t('overdue')
-        : b.key === 'later'
+        : kind === 'later'
           ? t('later', { month: formatMonthKeyLabel(laterStartKey, locale) })
           : formatMonthKeyLabel(b.key, locale);
     const shortLabel =
-      b.key === 'overdue'
+      kind === 'overdue'
         ? t('overdueShort')
-        : b.key === 'later'
+        : kind === 'later'
           ? t('laterShort', { month: formatMonthKeyShort(laterStartKey, locale) })
           : formatMonthKeyShort(b.key, locale);
     return {
@@ -185,17 +188,22 @@ export function RenewalsByMonthSectionSkeleton() {
           <Skeleton className="h-5 w-48" />
           <Skeleton className="h-4 w-64" />
         </div>
-        <div className="flex items-stretch gap-1 px-0.5 pb-1">
-          {Array.from({ length: 14 }).map((_, i) => (
-            <div key={i} className="flex flex-1 flex-col items-center gap-1 py-1">
-              <div className="flex h-32 w-full items-end justify-center border-b border-border">
-                <Skeleton className="h-24 w-10" />
+        {/* Mirror the real chart's scroll region + per-column `min-w-11` +
+            `overflow-x-auto` so the 14-column strip does not resize/gain a
+            scrollbar on hydration (CLS 0). */}
+        <div className="overflow-x-auto">
+          <div className="flex items-stretch gap-1 px-0.5 pb-1">
+            {Array.from({ length: 14 }).map((_, i) => (
+              <div key={i} className="flex min-w-11 flex-1 flex-col items-center gap-1 py-1">
+                <div className="flex h-32 w-full items-end justify-center border-b border-border">
+                  <Skeleton className="h-24 w-10" />
+                </div>
+                <div className="flex h-8 items-start">
+                  <Skeleton className="h-3 w-8" />
+                </div>
               </div>
-              <div className="flex h-8 items-start">
-                <Skeleton className="h-3 w-8" />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>
