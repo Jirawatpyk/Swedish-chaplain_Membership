@@ -52,19 +52,27 @@ export interface RefundsRepo {
       readonly creditNoteId?: string | null;
       readonly completedAt: Date;
       /**
-       * Optional optimistic-concurrency guard (S5). When set, the
+       * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
        * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
-       * Zero rows matched → repo throws → caller's tx rolls back.
+       * Zero rows matched → repo returns `null` (NOT throw) so the caller
+       * can distinguish a lost race from a genuine error. When omitted,
+       * the adapter throws on zero-match (preserves throw-on-zero
+       * semantics for callers that re-check under their own lock).
        *
        * Used by `sweepStalePendingRefunds` to ensure the sweep does
        * not flip a row that has been concurrently finalised to
-       * `succeeded` by a different writer (e.g. a future webhook
-       * `charge.refunded` branch wired to the real adapter — the
-       * F5 webhook gap noted in `infrastructure/di.ts`).
+       * `succeeded`/`failed` by a different writer (e.g. the webhook
+       * `charge.refunded` branch or issueRefund's Phase B).
+       *
+       * CONTRACT (mirrors `payments-repo.updateStatus` H-4): every
+       * caller passing `expectedCurrentStatus` MUST handle the `null`
+       * return branch. The sweep re-throws a sentinel on `null` so its
+       * per-row tx rolls back and no `stale_pending_refund_detected`
+       * audit commits.
        */
       readonly expectedCurrentStatus?: RefundStatus;
     },
-  ): Promise<RefundRow>;
+  ): Promise<RefundRow | null>;
 
   /** Look up an existing refund by Stripe refund id (dedupe webhook re-delivery). */
   findByProcessorRefundId(

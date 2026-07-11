@@ -47,6 +47,25 @@ import { retentionFor } from '../ports/audit-port';
 const STALE_PENDING_RUNBOOK_URL = 'docs/runbooks/stale-pending-refund-sweep.md';
 const SWEEP_ACTOR_USER_ID = 'system:stale-pending-refund-sweep';
 
+/**
+ * RR-1 / H-b — sentinel thrown when `refundsRepo.updateStatus` returns
+ * `null` (the row was concurrently finalised out of `pending` between
+ * this sweep's list-read and its per-row flip). Since the repo now
+ * returns `null` on an `expectedCurrentStatus` miss instead of throwing,
+ * the sweep must re-throw INSIDE the per-row `withTx` so the tx rolls
+ * back and the pre-flip `stale_pending_refund_detected` audit does NOT
+ * commit — the existing per-row `try/catch` then counts the row as
+ * `skippedCount`. Named so the row-skip log's `errKind`
+ * (constructor.name only — no `.message`) distinguishes a benign
+ * lost-race from a genuine DB fault.
+ */
+class StalePendingRaceSkip extends Error {
+  constructor(refundId: string) {
+    super(`stale-pending refund ${refundId} finalised concurrently`);
+    this.name = 'StalePendingRaceSkip';
+  }
+}
+
 export interface SweepStalePendingRefundsInput {
   readonly tenantId: string;
   readonly olderThanHours?: number; // default 24
@@ -155,18 +174,24 @@ export async function sweepStalePendingRefunds(
           },
           retentionYears: retentionFor('stale_pending_refund_detected'),
         });
-        await deps.refundsRepo.updateStatus(tx, {
+        const updated = await deps.refundsRepo.updateStatus(tx, {
           refundId: row.id,
           tenantId: input.tenantId,
           nextStatus: 'failed',
           failureReasonCode: 'stale_pending_sweep',
           completedAt: failedAt,
-          // Concurrency guard — if a different writer (future webhook
-          // charge.refunded → real adapter) finalised this row between
-          // our read tx and now, zero rows match → per-row tx rolls
-          // back → row keeps its newer terminal state, no audit commits.
+          // Concurrency guard — if a different writer (webhook
+          // charge.refunded / issueRefund Phase B) finalised this row
+          // between our read tx and now, zero rows match. The repo
+          // returns `null` (RR-1) instead of throwing, so we MUST
+          // re-throw here (StalePendingRaceSkip) to roll the per-row tx
+          // back — otherwise the pre-flip `stale_pending_refund_detected`
+          // audit above would falsely commit for a row we did NOT flip.
           expectedCurrentStatus: 'pending',
         });
+        if (updated === null) {
+          throw new StalePendingRaceSkip(row.id);
+        }
       });
       sweptCount += 1;
     } catch (cause) {

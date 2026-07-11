@@ -109,7 +109,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       return toDomain(inserted as RefundRow);
     },
 
-    async updateStatus(txUnknown, input): Promise<DomainRefundRow> {
+    async updateStatus(txUnknown, input): Promise<DomainRefundRow | null> {
       const tx = txUnknown as TenantTx;
       // Typed partial-row so column-name keys are checked against
       // Drizzle's inferred shape (catches typos like `creditNote_id`
@@ -134,11 +134,17 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         eq(refunds.tenantId, input.tenantId),
         eq(refunds.id, input.refundId),
       ];
-      // Optimistic concurrency guard — sweep passes
-      // `expectedCurrentStatus: 'pending'` so a row already finalised
-      // by a different writer (delayed webhook charge.refunded) is
-      // NOT overwritten. Zero rows returned → throw below → caller's
-      // tx rolls back, no audit row commits.
+      // Optimistic concurrency guard (RR-1 / H-b) — when the caller
+      // passes `expectedCurrentStatus` (e.g. the sweep's `'pending'`),
+      // append a `status = expected` predicate so a row already
+      // finalised by a different writer (delayed webhook charge.refunded
+      // / issueRefund Phase B) matches ZERO rows. In that case the
+      // adapter returns `null` (mirrors `drizzle-payments-repo.updateStatus`)
+      // and the caller decides the recovery path — the sweep re-throws a
+      // sentinel so its per-row tx rolls back and NO
+      // `stale_pending_refund_detected` audit commits. When
+      // `expectedCurrentStatus` is omitted, throw-on-zero is preserved
+      // for callers that re-check under their own lock.
       if (input.expectedCurrentStatus !== undefined) {
         whereClauses.push(eq(refunds.status, input.expectedCurrentStatus));
       }
@@ -148,7 +154,15 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         .where(and(...whereClauses))
         .returning();
       if (!updated) {
-        // I4: structured pino warn before throw.
+        if (input.expectedCurrentStatus !== undefined) {
+          // Optimistic-concurrency race — the row is no longer in the
+          // expected status. Return null so the caller resolves it
+          // (idempotent skip / forensic audit / retry). No warn: this
+          // is an expected, benign lost-race outcome, not a fault.
+          return null;
+        }
+        // I4: structured pino warn before throw (unexpected zero-match
+        // on a plain update — a genuine invariant breach worth alerting).
         logger.warn(
           {
             tenantId: input.tenantId,

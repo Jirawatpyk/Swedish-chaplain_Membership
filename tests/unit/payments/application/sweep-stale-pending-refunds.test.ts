@@ -151,21 +151,20 @@ describe('sweepStalePendingRefunds (T130a)', () => {
     expect(asMock(deps.paymentsRepo.withTx).mock.calls.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('concurrency guard (S5) — row finalised between read+write → zero rows matched → skipped', async () => {
+  it('concurrency guard (S5 / RR-1) — updateStatus returns null (lost race) → row skipped', async () => {
     // Sweep passes `expectedCurrentStatus: 'pending'`. If a concurrent
-    // writer (future webhook charge.refunded → real adapter) flipped
-    // the row to `succeeded` between our read tx and the per-row
-    // write tx, repo's UPDATE matches zero rows and throws → per-row
-    // tx rolls back → audit doesn't commit → sweep skips the row.
+    // writer (webhook charge.refunded / issueRefund Phase B) flipped the
+    // row out of `pending` between our read tx and the per-row write tx,
+    // the repo's UPDATE matches zero rows and returns `null` (RR-1 — the
+    // repo NO LONGER throws on the expectedCurrentStatus miss). The sweep
+    // MUST re-throw a sentinel on the null so the per-row tx rolls back →
+    // audit doesn't commit (asserted in the live-Neon integration test) →
+    // sweep skips the row.
     const deps = makeDeps();
     asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
       makeStaleRow({ id: 'rfnd_raced' }),
     ]);
-    asMock(deps.refundsRepo.updateStatus).mockImplementationOnce(async () => {
-      throw new Error(
-        'drizzle-refunds-repo: updateStatus matched zero rows for rfnd_raced',
-      );
-    });
+    asMock(deps.refundsRepo.updateStatus).mockResolvedValueOnce(null);
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok).toBe(true);

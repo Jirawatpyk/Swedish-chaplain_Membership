@@ -287,4 +287,123 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
       expect(result.value.skippedCount).toBe(0);
     }
   }, 30_000);
+
+  // RR-1 / H-b regression — the stale-pending sweep MUST NOT commit a
+  // `stale_pending_refund_detected` audit when it loses the optimistic
+  // race. Before RR-1, `refundsRepo.updateStatus` THREW on a zero-match
+  // and the throw rolled the per-row tx back (audit + flip together).
+  // The repo now returns `null` on the `expectedCurrentStatus` miss, so
+  // the sweep must EXPLICITLY throw a sentinel on the null return to
+  // preserve the rollback — otherwise a lost race would falsely commit
+  // a `stale_pending_refund_detected` audit for a refund that was in
+  // fact concurrently succeeded (a NEW production bug).
+  it('RR-1: pending refund concurrently finalized to succeeded → NO stale audit, counted skipped', async () => {
+    // Seed a fresh stale pending refund (30h old) + a placeholder F4
+    // credit note so the concurrent writer can flip it to 'succeeded'.
+    const raceRefundId = `rfnd_${randomUUID().replace(/-/g, '').slice(0, 26)}`;
+    const creditNoteId = randomUUID();
+    const staleInitiated = new Date(Date.now() - 30 * HOUR_MS);
+    const seq = Math.floor(Math.random() * 1_000_000);
+
+    const realRepo = makeDrizzleRefundsRepo(tenant.ctx.slug);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO credit_notes (
+          tenant_id, credit_note_id, original_invoice_id,
+          fiscal_year, sequence_number, document_number,
+          issue_date, issued_by_user_id, reason,
+          credit_amount_satang, vat_satang, total_satang,
+          tenant_identity_snapshot, member_identity_snapshot,
+          pdf_blob_key, pdf_sha256, pdf_template_version,
+          created_at, updated_at
+        ) VALUES (
+          ${tenant.ctx.slug}, ${creditNoteId}, ${invoiceId},
+          2026, ${seq}, ${`TC-2026-RR1-${randomUUID().slice(0, 6)}`},
+          '2026-04-15', ${user.userId}, 'RR-1 sweep test',
+          1, 0, 1,
+          '{}'::jsonb, '{}'::jsonb,
+          'placeholder', ${'a'.repeat(64)}, 1,
+          NOW(), NOW()
+        )
+      `);
+      await realRepo.insert(tx, {
+        id: raceRefundId,
+        tenantId: tenant.ctx.slug,
+        paymentId,
+        invoiceId,
+        amountSatang: asSatang(120_000n),
+        reason: 'raced 30h',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-raced',
+        initiatedAt: staleInitiated,
+      });
+    });
+
+    // Racing wrapper: after the sweep's list-read returns the pending
+    // row, a concurrent writer finalises it to 'succeeded' in a
+    // SEPARATE committed tx — BEFORE the sweep's per-row flip runs. This
+    // reproduces the delayed-webhook / issueRefund-Phase-B race that the
+    // `expectedCurrentStatus: 'pending'` guard defends against.
+    let flipped = false;
+    const racingRepo = {
+      ...realRepo,
+      listPendingOlderThan: async (tx: unknown, tid: string, cutoff: Date) => {
+        const rows = await realRepo.listPendingOlderThan(tx, tid, cutoff);
+        if (!flipped) {
+          flipped = true;
+          await runInTenant(tenant.ctx, async (tx2) => {
+            await realRepo.updateStatus(tx2, {
+              refundId: raceRefundId,
+              tenantId: tenant.ctx.slug,
+              nextStatus: 'succeeded',
+              processorRefundId: `re_race_${randomUUID().slice(0, 8)}`,
+              creditNoteId,
+              completedAt: new Date(),
+            });
+          });
+        }
+        return rows;
+      },
+    };
+
+    const result = await sweepStalePendingRefunds(
+      {
+        refundsRepo: racingRepo,
+        paymentsRepo: makeDrizzlePaymentsRepo(tenant.ctx.slug),
+        audit: f5AuditAdapter,
+        clock: systemClock,
+      },
+      { tenantId: tenant.ctx.slug, requestId: 'req-sweep-race' },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The only stale-pending row is the raced one; it lost the race
+      // and must be skipped, not swept.
+      expect(result.value.sweptCount).toBe(0);
+      expect(result.value.skippedCount).toBe(1);
+    }
+
+    // INVARIANT: no `stale_pending_refund_detected` audit for the raced
+    // refund — the sentinel throw rolled the per-row tx back.
+    const audits = (await db.execute(sql`
+      SELECT COUNT(*)::int AS c
+      FROM audit_log
+      WHERE tenant_id = ${tenant.ctx.slug}
+        AND event_type = 'stale_pending_refund_detected'
+        AND payload->>'refund_id' = ${raceRefundId}
+    `)) as unknown as Array<{ c: number }>;
+    expect(Number(audits[0]?.c ?? 0)).toBe(0);
+
+    // The row keeps its concurrently-set terminal state — the sweep did
+    // NOT clobber 'succeeded' to 'failed'.
+    const rowStatus = (await db.execute(sql`
+      SELECT status
+      FROM refunds
+      WHERE tenant_id = ${tenant.ctx.slug} AND id = ${raceRefundId}
+    `)) as unknown as Array<{ status: string }>;
+    expect(rowStatus[0]?.status).toBe('succeeded');
+  }, 60_000);
 });

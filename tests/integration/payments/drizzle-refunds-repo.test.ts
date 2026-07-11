@@ -20,6 +20,7 @@
  * Mocking policy: this file hits live Postgres. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { asSatang } from '@/lib/money';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -234,6 +235,9 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         correlationId: 'corr-rfnd-fail',
         initiatedAt,
       });
+      // No `expectedCurrentStatus` here → repo returns the updated row
+      // (never null; throws on zero-match). Non-null-assert for the
+      // widened `RefundRow | null` return type (RR-1).
       const updated = await repo.updateStatus(tx, {
         refundId,
         tenantId: tenantA.ctx.slug,
@@ -241,10 +245,11 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         failureReasonCode: 'retryable',
         completedAt: failedAt,
       });
-      expect(updated.status).toBe('failed');
+      expect(updated).not.toBeNull();
+      expect(updated?.status).toBe('failed');
       // Failed rows do not carry a processor_refund_id (CHECK
       // constraint allows NULL only for non-succeeded statuses).
-      expect(updated.processorRefundId).toBeNull();
+      expect(updated?.processorRefundId).toBeNull();
     });
   });
 
@@ -306,5 +311,108 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     expect(ctxFromB.pendingCount).toBe(0);
     expect(ctxFromB.succeededSumSatang).toBe(0n);
     expect(ctxFromB.nextSeq).toBe(1);
+  });
+
+  // --- RR-1 / H-b: optimistic-concurrency guard returns null on miss ------
+  // Placed LAST so the succeeded row seeded here does not perturb the
+  // cumulative-partition assertions in the aggregates test above.
+
+  it('updateStatus with expectedCurrentStatus:pending on an already-succeeded row returns null (RR-1 / H-b)', async () => {
+    // RR-1: the optimistic-concurrency guard must return `null` (not
+    // throw) when a concurrent writer already finalised the row, so
+    // callers can distinguish "lost the race" from a genuine error.
+    // Mirrors `drizzle-payments-repo.updateStatus` (payments-repo.ts).
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const initiatedAt = new Date();
+    const completedAt = new Date(initiatedAt.getTime() + 5_000);
+
+    // Seed a placeholder F4 credit note so the refund can reach
+    // 'succeeded' — CHECK `refunds_succeeded_ids` requires BOTH
+    // processor_refund_id AND credit_note_id NOT NULL (migration 0034).
+    const creditNoteId = randomUUID();
+    const seq = Math.floor(Math.random() * 1_000_000);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO credit_notes (
+          tenant_id, credit_note_id, original_invoice_id,
+          fiscal_year, sequence_number, document_number,
+          issue_date, issued_by_user_id, reason,
+          credit_amount_satang, vat_satang, total_satang,
+          tenant_identity_snapshot, member_identity_snapshot,
+          pdf_blob_key, pdf_sha256, pdf_template_version,
+          created_at, updated_at
+        ) VALUES (
+          ${tenantA.ctx.slug}, ${creditNoteId}, ${invoiceId},
+          2026, ${seq}, ${`TC-2026-RR1-${randomUUID().slice(0, 6)}`},
+          '2026-04-15', ${user.userId}, 'RR-1 test',
+          1, 0, 1,
+          '{}'::jsonb, '{}'::jsonb,
+          'placeholder', ${'a'.repeat(64)}, 1,
+          NOW(), NOW()
+        )
+      `);
+    });
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(75_000n),
+        reason: 'RR-1 race target',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-rr1',
+        initiatedAt,
+      });
+
+      // A concurrent writer (webhook charge.refunded / issueRefund
+      // Phase B) finalises the row to 'succeeded'.
+      const finalised = await repo.updateStatus(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'succeeded',
+        processorRefundId: `re_rr1_${randomUUID().slice(0, 8)}`,
+        creditNoteId,
+        completedAt,
+      });
+      expect(finalised).not.toBeNull();
+      expect(finalised?.status).toBe('succeeded');
+
+      // A late sweep flip arrives with the optimistic guard. The row is
+      // no longer 'pending' → zero rows match → repo returns `null`
+      // rather than throwing (which would falsely commit a
+      // stale_pending_refund_detected audit — see RR-1 sweep fix).
+      const raced = await repo.updateStatus(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'failed',
+        failureReasonCode: 'stale_pending_sweep',
+        completedAt: new Date(completedAt.getTime() + 5_000),
+        expectedCurrentStatus: 'pending',
+      });
+      expect(raced).toBeNull();
+    });
+  });
+
+  it('updateStatus WITHOUT expectedCurrentStatus still THROWS on zero-match (unknown refund)', async () => {
+    // Backward-compat guard: the throw-on-zero path is preserved for
+    // callers that re-check under their own lock and do not pass the
+    // optimistic guard.
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await expect(
+        repo.updateStatus(tx, {
+          refundId: makeRefundUlid(), // never inserted
+          tenantId: tenantA.ctx.slug,
+          nextStatus: 'failed',
+          failureReasonCode: 'retryable',
+          completedAt: new Date(),
+        }),
+      ).rejects.toThrow(/matched zero rows/);
+    });
   });
 });
