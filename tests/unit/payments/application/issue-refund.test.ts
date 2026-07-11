@@ -178,6 +178,11 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     getInvoiceCreditedTotal: vi.fn(async () =>
       ok({ creditedTotalSatang: asSatang(0n), totalSatang: PAYMENT_AMOUNT_SATANG }),
     ),
+    // tax#5 (B.2) — the shared finaliser now reads the invoice's
+    // F4-AUTHORITATIVE post-CN status (not a projection of the F5 payment
+    // status). Default: `partially_credited` (matches the partial-refund
+    // happy paths). Full-refund / manual-CN tests override per scenario.
+    getInvoiceStatus: vi.fn(async () => ok('partially_credited' as const)),
   };
   const audit = { emit: vi.fn(async () => undefined) };
   const clock = { nowIso: () => new Date(NOW_MS).toISOString(), nowMs: () => NOW_MS };
@@ -520,6 +525,11 @@ describe('issueRefund (T108) — happy paths', () => {
         creditNoteNumber: 'TC-2026-000002',
       }),
     );
+    // tax#5 (B.2) — F4 flips a fully-refunded invoice to `credited`; the
+    // finaliser reports THAT authoritative status.
+    asMock(deps.invoicingBridge.getInvoiceStatus).mockResolvedValueOnce(
+      ok('credited' as const),
+    );
 
     const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(5_350_000n) }));
     expect(r.ok).toBe(true);
@@ -530,6 +540,46 @@ describe('issueRefund (T108) — happy paths', () => {
     } else {
       throw new Error('expected kind=succeeded');
     }
+  });
+
+  it('tax#5 — reports F4-AUTHORITATIVE invoice status over F5 payment arithmetic (pre-existing manual CN)', async () => {
+    // The bug this fixes: a PARTIAL F5 refund leaves the payment
+    // `partially_refunded`, so the old F5 payment-based projection derives
+    // `partially_credited`. But when the invoice already carries a MANUAL F4
+    // credit note that — together with this refund's CN — FULLY credits the
+    // invoice, F4's authoritative status is `credited`. The finaliser MUST
+    // report F4's status, not the F5 arithmetic.
+    const deps = makeDeps();
+    // F4 (the tax-document system of record) says the invoice is fully credited.
+    asMock(deps.invoicingBridge.getInvoiceStatus).mockResolvedValueOnce(
+      ok('credited' as const),
+    );
+
+    // A partial refund (350,000 of 5,350,000) → payment stays partially_refunded.
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
+
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'succeeded') {
+      // F5 payment arithmetic (partial refund) says partially_refunded …
+      expect(r.value.payment.status).toBe('partially_refunded');
+      // … but the invoice status is sourced from F4 (authoritative): credited.
+      // The old arithmetic projection (payment→partially_refunded ⇒
+      // partially_credited) would fail this assertion.
+      expect(r.value.invoice.status).toBe('credited');
+    } else {
+      throw new Error('expected kind=succeeded');
+    }
+    // The finaliser sourced the status from F4 — the read was tenant-tx-threaded.
+    expect(asMock(deps.invoicingBridge.getInvoiceStatus)).toHaveBeenCalledTimes(1);
+    const statusReadArgs = asMock(deps.invoicingBridge.getInvoiceStatus).mock.calls[0]?.[0] as {
+      tenantId: string;
+      invoiceId: string;
+      externalTx: unknown;
+    };
+    expect(statusReadArgs.tenantId).toBe(TENANT_ID);
+    expect(statusReadArgs.invoiceId).toBe('inv-1');
+    // B.1 lesson — the read threads the finalize tx (no nested pooled connection).
+    expect(statusReadArgs.externalTx).toBeDefined();
   });
 
   it('exhausting partial — sumBefore + amount === total → refunded', async () => {
