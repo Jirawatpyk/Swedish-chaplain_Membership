@@ -157,6 +157,46 @@ Deterministic versioned pattern detector for Thai national ID, Swedish personnum
 
 ---
 
+## Post-Ship Deferral — Recipient-Set Drift Auto-Heal (US1 large-broadcast path)
+
+**Status**: Backlog — DEFERRED 2026-07-11 after a build-then-review cycle proved the naive fix introduces a compliance regression. Re-spec as a proper feature when promoted.
+**Trigger to promote**: a tenant approaches the 10,000-recipient split threshold. The drift is **UNREACHABLE** below it — the `split-large-broadcasts` cron only fires for `estimated_recipient_count > 10,000`, so it is dormant for SweCham (~131 members) and every sub-10k tenant.
+**The F7.1a US1 flags are ON in prod (SweCham), so the feature flag is NOT the dormancy guard — the recipient count is.** The dormancy holds on two count-gates the flags don't cover: (a) the eligible scan `estimated_recipient_count > 10,000`, and (b) a resolve-time re-check `resolvedCount <= 10,000 → skip` (`split-large-broadcasts/route.ts`). Both crons run every ~5 min but find nothing to split while the tenant's real audience (members + contacts + event attendees ≈ a few hundred) stays far under 10k — idle ticks, no drift. Dormancy therefore rests solely on membership scale; onboarding a >10k tenant (or SweCham growing toward it) is the promote trigger, not any flag flip.
+**Current mitigation (shipped, observable-only)**: `broadcasts_recipient_set_drift_count{tenant}` counter (PR #183) + the GROW-tail `logger.warn` `broadcasts.batch.recipient_set_grew_tail_excluded` (PR #180). No auto-heal — the dispatch cron re-resolves the segment every tick (which keeps suppression FRESH; see below).
+
+### Problem
+
+`split-large-broadcasts` (writes `broadcast_batch_manifest` ranges from a resolved count) and `dispatch-batches` (re-resolves the recipient list and slices it by those ranges) run on separate cron ticks. Any churn in between (unsubscribe, hard-bounce suppression, member archival, new member) drifts the dispatch-time set from the split-time ranges:
+- **GROW** → recipients past the last batch's range are silently excluded (now logged + metered).
+- **SHRINK** → the straddling batch's slice fails its `recipientSlice.length !== recipientCount` guard → that batch stays `pending` and retries (loud).
+- **REORDER** → an index shift can mis-send (wrong recipient inside a batch's window) without tripping the length guard.
+
+### Why the naive "freeze a private-Blob snapshot" fix was REJECTED
+
+Implemented on branch `eblast-followups` (2026-07-11) then **reverted** after an xhigh adversarial review (4 finder dimensions → per-finding verify, 15 findings). Freezing the split-time list to a private Blob and replaying it verbatim at dispatch:
+
+1. **GDPR Art. 21 / PDPA suppression regression (the blocker)** — replaying the frozen list SKIPS the per-tick dispatch-time `resolveSegmentRecipients` suppression re-check, so a recipient who unsubscribes / is archived between split and dispatch is still emailed. The current re-resolution re-checks `marketing_unsubscribes` on EVERY tick (the split→dispatch window is minutes, and multi-tick for >10k). This is worse than the drift it heals.
+2. Deleting the snapshot on `partially_sent` (retry-eligible, **not** terminal) re-introduces drift on the FR-008b manual-retry path — the one path where inter-tick churn is maximal.
+3. Collapsing transient Blob read errors to `null` forces re-resolution → drift on a partial re-dispatch.
+4. Orphan-recovery (a crash between the manifest-commit tx and the snapshot PUT) strands the broadcast on the fallback path forever.
+5. **PII lifecycle gaps** — no snapshot delete on `cancel` or COMP-1 member erasure; no prune backstop, so a single best-effort delete failure leaks up to 50k recipient emails in Blob indefinitely (the port doc's claimed "TTL sweep" did not exist).
+6. The private-Blob env token guard is gated on `FEATURE_F9_DASHBOARD`, not the F7.1a US1 flags.
+
+### Correct design (for re-spec)
+
+- Persist the split-time list to a **private** Blob to freeze **ORDER only** (for range alignment) — NOT to bypass suppression.
+- Re-apply suppression + member-liveness **fresh at dispatch time** by filtering the per-batch `recipientSlice` against the current `marketing_unsubscribes` set at the `addContactsToAudience` step — NOT before slicing (which would desync the manifest ranges, the exact drift this heals).
+- Snapshot-first ordering OR orphan-recovery backfill (guarded by a count-match) to close the crash window.
+- `getSnapshot` **rethrows** transient store errors (fail-safe: skip the broadcast this tick, retry next); only a genuine not-found → `null` → re-resolve.
+- Full PII lifecycle: delete on ALL terminal transitions (sent / partially_sent-after-retry-exhausted / cancelled / failed) + accept-partial + COMP-1 erasure redaction (sentinel-replace lines in-place — do NOT shift ranges) + a prune-cron backstop.
+- Extend the private-Blob token boot guard (`src/lib/env.ts`) to fire for the F7.1a US1 flags, not only `FEATURE_F9_DASHBOARD`.
+
+### Reference
+
+Full review + the 15 findings are archived in the 2026-07-11 session notes. Shipped mitigation: PR #180 (bug-hunt + GROW warn) and PR #183 (`broadcasts_recipient_set_drift_count` metric + optional-port-methods guard).
+
+---
+
 ## Reusable artefacts from current F7.1 work
 
 When F7.1b is promoted, these can be lifted directly:
