@@ -36,6 +36,21 @@ describe('activityTimeLabels — degrades on an unparseable instant (never throw
   });
 });
 
+describe('activityTimeLabels — the >30-day relative fallback honours the tenant timezone', () => {
+  // 2026-05-31T20:00Z is 2026-06-01 03:00 in Asia/Bangkok, viewed >30 days later:
+  // formatRelativeTime falls back to an absolute date, which must be the tenant-tz
+  // calendar day (Jun 1), not the UTC one (May 31).
+  it('renders the Bangkok calendar day, not the UTC one', () => {
+    const now = new Date('2026-07-15T00:00:00.000Z');
+    const iso = '2026-05-31T20:00:00.000Z';
+    const bkk = activityTimeLabels(iso, 'en', 'Asia/Bangkok', now).relative;
+    const utc = activityTimeLabels(iso, 'en', 'UTC', now).relative;
+    expect(bkk).not.toBe(utc);
+    expect(bkk).toMatch(/Jun/); // 1 Jun (Bangkok)
+    expect(utc).toMatch(/May/); // 31 May (UTC)
+  });
+});
+
 describe('activityTimeLabels — visible label is relative (bug 7)', () => {
   it('produces a relative label distinct from the absolute one', () => {
     const now = new Date('2026-07-11T00:05:00.000Z');

@@ -41,12 +41,16 @@ const THRESHOLDS: Array<[number, Unit, number]> = [
  * Format an ISO 8601 timestamp as a relative string ("5 minutes ago")
  * when recent (< 30 days), or as an absolute short date when older.
  *
- * `now` is injectable for deterministic tests.
+ * `now` is injectable for deterministic tests. `timeZone` (optional) is applied
+ * ONLY to the >30-day absolute-date fallback — the relative branches are
+ * tz-agnostic. Pass the tenant timezone so an old event near the tenant's
+ * midnight boundary shows the correct calendar day, not the UTC runtime day.
  */
 export function formatRelativeTime(
   iso: string,
   locale: string,
   now: Date = new Date(),
+  timeZone?: string,
 ): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
@@ -77,6 +81,7 @@ export function formatRelativeTime(
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      ...(timeZone ? { timeZone } : {}),
     }).format(date);
   } catch {
     return iso.slice(0, 10);

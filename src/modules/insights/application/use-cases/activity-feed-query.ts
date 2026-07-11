@@ -59,11 +59,11 @@ export async function activityFeedQuery(
   ];
   const identities =
     resolvableIds.length > 0 ? await deps.actorDirectory.labelsFor(resolvableIds) : new Map();
-  const actorLabelFor = (actorUserId: string): string | null =>
-    isResolvableActor(actorUserId) ? identities.get(actorUserId)?.displayName ?? null : null;
+  // `identities` only ever contains resolvable (UUID) ids, so a system:*/
+  // anonymous id simply misses the map → null (no need to re-check resolvable).
   const withActor: readonly ActivityFeedItem[] = items.map((it) => ({
     ...it,
-    actorLabel: actorLabelFor(it.actorUserId),
+    actorLabel: identities.get(it.actorUserId)?.displayName ?? null,
   }));
 
   // Redact third-party email/phone from the free-text summary for the manager

@@ -26,7 +26,9 @@ export function activityTimeLabels(
   timeZone: string,
   now: Date = new Date(),
 ): ActivityTimeLabels {
-  const relative = formatRelativeTime(iso, locale, now);
+  // Thread the tenant tz so the >30-day absolute-date fallback (inside
+  // formatRelativeTime) renders the tenant's calendar day, not the UTC one.
+  const relative = formatRelativeTime(iso, locale, now, timeZone);
   // Guard an unparseable instant: `Intl.DateTimeFormat.format(Invalid Date)`
   // throws a RangeError. `occurredAt` is a DB-controlled ISO string so this is
   // not expected, but the caller maps this outside the page's allSettled guard
