@@ -38,4 +38,35 @@ describe('<PipelineTable> empty state', () => {
     expect(screen.getByText('No members in this bucket.')).toBeDefined();
     expect(screen.getByText(/Switch to another urgency tab/)).toBeDefined();
   });
+
+  // Deferred fix-wave-2 #4 — dedicated overdue/later empty copy. The bug
+  // being pinned: the pre-fix code composed the bucket label into the
+  // generic "No members renew in {month}." frame, yielding
+  // "No members renew in Overdue." / a doubled "…or later or later".
+  it('renders dedicated overdue empty copy when monthKind="overdue"', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={EMPTY_ROWS} monthKind="overdue" />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('No overdue renewals.')).toBeDefined();
+  });
+
+  it('renders dedicated later empty copy with a SINGLE "or later" when monthKind="later"', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable
+          rows={EMPTY_ROWS}
+          monthKind="later"
+          monthLabel="August 2028"
+        />
+      </NextIntlClientProvider>,
+    );
+    // Exact string — proves the copy is NOT doubled
+    // ("…August 2028 or later or later").
+    expect(
+      screen.getByText('No members renew August 2028 or later.'),
+    ).toBeDefined();
+    expect(screen.queryByText(/or later or later/)).toBeNull();
+  });
 });
