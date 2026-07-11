@@ -1,14 +1,14 @@
 /**
  * `directoryErasureAdapter` — F3 member erasure → F9 directory footprint erase
  * (COMP-1 / GDPR Art.17). Bridges to the insights barrel
- * `eraseMemberDirectoryFootprint`; a throw must translate to `outcome: 'failed'`
+ * `eraseMemberInsightsFootprint`; a throw must translate to `outcome: 'failed'`
  * (+ a hygienic log), never propagate — so the erasure cascade records the
  * directory cascade as incomplete and the US2d reconciler re-drives.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const footprintMock = vi.hoisted(() => vi.fn());
-vi.mock('@/modules/insights', () => ({ eraseMemberDirectoryFootprint: footprintMock }));
+vi.mock('@/modules/insights', () => ({ eraseMemberInsightsFootprint: footprintMock }));
 const loggerError = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/logger', () => ({
   logger: { error: loggerError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() },

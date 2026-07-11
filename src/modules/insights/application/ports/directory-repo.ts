@@ -134,7 +134,7 @@ export interface DirectoryRepo {
    * guard only suppresses future publication, it does not delete the data.
    * Idempotent: deleting a non-existent row is a no-op. The public logo BLOB is
    * removed separately (blob storage is not transactional) — see
-   * `eraseMemberDirectoryFootprint`.
+   * `eraseMemberInsightsFootprint`.
    */
   deleteForMemberInTx(tx: TenantTx, memberId: string): Promise<void>;
 

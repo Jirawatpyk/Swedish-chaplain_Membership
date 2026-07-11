@@ -5,7 +5,7 @@
  * The single allowed F3 → F9 crossing point for the directory cascade: erases
  * the member's `directory_listings` row (member-authored PII) AND the public
  * logo blob (a publicly-fetchable artefact). Both are insights-owned, so the
- * adapter delegates to the insights barrel (`eraseMemberDirectoryFootprint`).
+ * adapter delegates to the insights barrel (`eraseMemberInsightsFootprint`).
  *
  * Best-effort / never-throws: a `'failed'` outcome flips the erasure cascade's
  * `allCascadesClean` flag → `member_erased` is withheld → the US2d reconciler

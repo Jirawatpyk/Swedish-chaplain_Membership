@@ -1,6 +1,7 @@
 /**
  * `DirectoryErasurePort` adapter — bridges F3 member erasure → F9
- * `eraseMemberDirectoryFootprint` (COMP-1 / GDPR Art. 17 / PDPA §33).
+ * `eraseMemberInsightsFootprint` (directory listing + logo blob + the member's
+ * own GDPR export artefacts; COMP-1 / GDPR Art. 17 / PDPA §33).
  *
  * Single allowed F3 → F9 crossing point for the directory cascade. Imports F9's
  * public barrel (`@/modules/insights`) — Constitution Principle III barrel-guard
@@ -14,7 +15,7 @@
  * `member_erased` withheld → the US2d reconciler re-drives (idempotent +
  * re-drive-safe by construction).
  */
-import { eraseMemberDirectoryFootprint } from '@/modules/insights';
+import { eraseMemberInsightsFootprint } from '@/modules/insights';
 import { logger } from '@/lib/logger';
 import type { DirectoryErasurePort } from '../../application/ports/directory-erasure-port';
 
@@ -32,7 +33,7 @@ export const noopDirectoryErasureAdapter: DirectoryErasurePort = {
 export const directoryErasureAdapter: DirectoryErasurePort = {
   async eraseForMember(tenant, memberId, meta) {
     try {
-      await eraseMemberDirectoryFootprint(tenant, memberId as string);
+      await eraseMemberInsightsFootprint(tenant, memberId as string);
       return { outcome: 'ok' };
     } catch (e) {
       logger.error(
