@@ -22,6 +22,13 @@ import { getEnumParity } from '../helpers/assert-enum-parity';
 const F5_PREFIXES = [
   'payment_',
   'refund_',
+  // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11) —
+  // `auto_refund_failed_needs_manual_reconcile` is F5-owned but does NOT start
+  // with `refund_`/`payment_`; without this prefix the parity check would flag
+  // it as TS-missing-from-SQL (its key lives in F5_AUDIT_RETENTION_YEARS, but
+  // the scope filter would exclude the pg_enum value). Refunds are exclusively
+  // F5, so `auto_refund_` cannot collide with another feature's namespace.
+  'auto_refund_',
   'out_of_band_refund_',
   'stale_pending_',
   'dispute_',

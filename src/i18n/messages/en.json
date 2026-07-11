@@ -5480,6 +5480,7 @@
       "payment_acknowledged_terminal_state": "Payment already in final state",
       "dispute_created": "Payment dispute opened",
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",
+      "auto_refund_failed_needs_manual_reconcile": "Auto-refund failed — needs manual reconciliation",
       "webhook_dispatch_permanent_failure": "Webhook processing permanently failed",
       "registration_cross_tenant_probe": "Cross-tenant probe (event registrations)",
       "event_buyer_pii_redacted": "Event buyer PII redacted",

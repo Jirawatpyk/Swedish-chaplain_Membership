@@ -5480,6 +5480,7 @@
       "payment_acknowledged_terminal_state": "Betalning redan i slutläge",
       "dispute_created": "Betalningstvist öppnad",
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",
+      "auto_refund_failed_needs_manual_reconcile": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
       "webhook_dispatch_permanent_failure": "Webhook-bearbetning permanent misslyckad",
       "registration_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (evenemangsregistreringar)",
       "event_buyer_pii_redacted": "Personuppgifter för biljettköpare maskerade",

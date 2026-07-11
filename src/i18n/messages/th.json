@@ -5480,6 +5480,7 @@
       "payment_acknowledged_terminal_state": "การชำระเงินอยู่ในสถานะสิ้นสุดแล้ว",
       "dispute_created": "เกิดข้อโต้แย้งการชำระเงิน",
       "refund_amount_mismatch_detected": "ตรวจพบยอดคืนเงินไม่ตรงกัน",
+      "auto_refund_failed_needs_manual_reconcile": "การคืนเงินอัตโนมัติล้มเหลว — ต้องกระทบยอดด้วยตนเอง",
       "webhook_dispatch_permanent_failure": "ประมวลผล webhook ล้มเหลวถาวร",
       "registration_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (การลงทะเบียนกิจกรรม)",
       "event_buyer_pii_redacted": "ปกปิดข้อมูลส่วนบุคคลของผู้ซื้อบัตรกิจกรรม",

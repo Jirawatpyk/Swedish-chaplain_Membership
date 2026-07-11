@@ -120,7 +120,17 @@ export type F5AuditEventType =
   // process-webhook-event.ts:156 docstring promise that pre-R2 was
   // unfulfilled (only pino-logged, which rolls off in 30d). 5y
   // forensic compliance retention.
-  | 'webhook_dispatch_permanent_failure';
+  | 'webhook_dispatch_permanent_failure'
+  // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, CRITICAL-2) —
+  // emitted by `processRefundUpdated` / the confirm-payment stale-refund tail
+  // when a `charge.refund.updated(failed|canceled)` arrives for a payment
+  // auto-refunded on a stale invoice: Stripe reports the refund did NOT reach
+  // the customer, yet the payment shows `auto_refunded`, so ops is paged for
+  // manual reconciliation via the runbook. 10y retention (money-not-returned
+  // forensic, Thai RD §87/3 tax-document-adjacent). NOTE: this value does NOT
+  // match the `refund_`/`payment_` F5 prefixes — the parity test's
+  // `F5_PREFIXES` is extended with `auto_refund_` so it stays in scope.
+  | 'auto_refund_failed_needs_manual_reconcile';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -271,6 +281,29 @@ export interface F5AuditPayloadByType {
          *     correct without our help.
          */
         parent_payment_status_recovered_to: 'partially_refunded' | 'refunded' | null;
+      }
+    | {
+        /**
+         * F5 refund-lifecycle bugfix (2026-07-11, Task A.3) — webhook
+         * `charge.refund.updated(succeeded)` finalises a `pending` refund
+         * row via the shared `finalizeSucceededRefund(…, path:
+         * 'webhook_refund_updated')`. Carries the SAME full state-transition
+         * record as `admin_initiated` (F4 CN minted + payment/invoice status
+         * advanced) because both flow through the shared finaliser; the
+         * `path` discriminator distinguishes the trigger (async Stripe
+         * webhook vs. admin-initiated) for unambiguous audit-log queries.
+         * TS-only — no enum change (reuses the `refund_succeeded` value).
+         */
+        path: 'webhook_refund_updated';
+        refund_id: string;
+        payment_id: string;
+        invoice_id: string;
+        processor_refund_id: string;
+        credit_note_id: string;
+        credit_note_number: string;
+        amount_satang: string;
+        payment_next_status: 'partially_refunded' | 'refunded';
+        invoice_next_status: 'partially_credited' | 'credited';
       };
   refund_failed: {
     refund_id: string;
@@ -353,6 +386,20 @@ export interface F5AuditPayloadByType {
     readonly stripe_event_type: string;
     readonly dispatch_failure_kind: string;
     readonly dispatch_failure_detail: string;
+  };
+  // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, RR-8 allow-list) —
+  // CRITICAL-2 failed-auto-refund forensic. ID-refs + refund status + satang
+  // amount ONLY; NO card metadata, NO raw Stripe event, NO error.message
+  // (constructor-name only, elsewhere) — keeps SAQ-A intact. Both
+  // `auto_refund_processor_refund_id` (`re_…`) and the internal refund id are
+  // non-card identifiers.
+  auto_refund_failed_needs_manual_reconcile: {
+    readonly payment_id: string;
+    readonly invoice_id: string;
+    readonly auto_refund_processor_refund_id: string;
+    readonly refund_status: string;
+    readonly amount_satang: string;
+    readonly runbook_url: string;
   };
 }
 
@@ -454,6 +501,10 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // F5R2 — operational/audit class events; 5y per Constitution VIII.
   refund_amount_mismatch_detected: 5,
   webhook_dispatch_permanent_failure: 5,
+  // F5 refund-lifecycle bugfix (migration 0241) — money-not-returned forensic.
+  // 10y (tax-document-adjacent, Thai RD §87/3), NOT the 5y default; mirrors
+  // refund_succeeded's 10y class.
+  auto_refund_failed_needs_manual_reconcile: 10,
 };
 
 /**
