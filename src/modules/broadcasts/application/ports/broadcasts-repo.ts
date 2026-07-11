@@ -256,6 +256,32 @@ export interface BroadcastsRepo {
   }>;
 
   /**
+   * Bug #4 — TOCTOU-safe quota re-check. Acquires a per-(tenant, member,
+   * quota-year) `pg_advisory_xact_lock` (held to caller-tx end) then returns
+   * the SAME reservation/consumption counts as `countForMemberQuota`, read
+   * WITHIN the caller's `tx`. The pre-tx `computeQuotaCounter` read is a
+   * stale snapshot; without this, two concurrent submits at `remaining = 1`
+   * both pass it and over-subscribe (which then trips the `over_subscription`
+   * invariant → the quota endpoint + every further submit 500 — a member
+   * self-lockout). The advisory lock serialises the racing submits so the
+   * loser re-reads the fresh count and is cleanly quota-blocked.
+   *
+   * OPTIONAL so the ~13 BroadcastsRepo test fixtures need not stub it; when
+   * absent the caller skips the re-check (single-threaded tests never race).
+   * Lock namespace `broadcasts-quota:` is DISJOINT from the per-broadcast
+   * `broadcasts:` lock and from F4 `invoicing:` / F5 `payments:`.
+   */
+  recheckMemberQuotaUnderLock?(
+    tx: unknown,
+    tenantId: TenantSlug,
+    memberId: MemberId,
+    quotaYear: number,
+  ): Promise<{
+    readonly submittedOrApproved: number;
+    readonly sent: number;
+  }>;
+
+  /**
    * Look up a broadcast by its Resend broadcast id — used by the
    * webhook handler to resolve the tenant before re-binding RLS.
    * Bypasses RLS at the adapter (`swecham_super` role) — the route
@@ -589,4 +615,30 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastIds: ReadonlyArray<BroadcastId>,
   ): Promise<ReadonlySet<BroadcastId>>;
+
+  /**
+   * Bug #16 — for a set of broadcast ids, return a map of the ones that STILL
+   * have a live row → the SET of EVERY Resend audience id that row references:
+   * `broadcasts.resend_audience_id` (the F7 MVP single-audience path) UNION
+   * every `broadcast_batch_manifests.provider_audience_id` for that broadcast
+   * (the F7.1a US1 split/multi-batch path). Ids whose broadcast row is gone are
+   * simply absent from the map; a live row with no referenced audience maps to
+   * an empty set.
+   *
+   * Used by `reclaim-orphaned-audiences` to delete a dangling Resend audience
+   * whose broadcast row references it NOWHERE (the crash-before-attach
+   * duplicate: dispatch created A1, crashed before persisting it, the next tick
+   * minted A2 and persisted THAT — A1 is referenced by no row). The set MUST
+   * include the per-batch audiences, otherwise a live split broadcast's in-use
+   * batch audiences (stored only in the manifests, NOT in
+   * broadcasts.resend_audience_id which stays NULL on the split path) would be
+   * misclassified as orphans and deleted.
+   *
+   * OPTIONAL so the ~13 BroadcastsRepo test fixtures need not stub it; when
+   * absent, reclaim falls back to the legacy existence-only check.
+   */
+  referencedAudienceIdsForBroadcasts?(
+    tenantId: TenantSlug,
+    broadcastIds: ReadonlyArray<BroadcastId>,
+  ): Promise<ReadonlyMap<BroadcastId, ReadonlySet<string>>>;
 }

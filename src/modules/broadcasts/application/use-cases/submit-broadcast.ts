@@ -120,6 +120,12 @@ export type SubmitBroadcastError =
       readonly count: number;
       readonly cap: number;
     }
+  // Bug #3 (2026-07-10): a supplied `draftId` that resolves to a draft owned
+  // by a DIFFERENT member (same tenant — RLS is tenant-scoped, not
+  // member-scoped) is rejected as not-found so the route maps to 404 without
+  // leaking the draft's existence (anti-enumeration, mirrors the DELETE/GET
+  // siblings).
+  | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
   | { readonly kind: 'submit.server_error'; readonly message: string };
 
 export interface SubmitBroadcastDeps {
@@ -579,6 +585,35 @@ export async function submitBroadcast(
 
   try {
     return await deps.broadcastsRepo.withTx(async (tx) => {
+      // ---- Bug #4 fix: TOCTOU-safe quota re-check under a per-member lock --
+      // The pre-tx computeQuotaCounter read (line ~333) is a stale snapshot.
+      // Two concurrent submits at remaining=1 both pass it and over-subscribe
+      // (which then trips the over_subscription invariant → quota GET + every
+      // further submit 500 — a self-lockout). Serialise per (member, quota-
+      // year): the advisory xact lock blocks the second submit until the
+      // first commits, then we re-verify the fresh count inside THIS tx.
+      if (deps.broadcastsRepo.recheckMemberQuotaUnderLock) {
+        const fresh = await deps.broadcastsRepo.recheckMemberQuotaUnderLock(
+          tx,
+          deps.tenant.slug,
+          asMemberId(input.memberId),
+          quota.value.quotaYear,
+        );
+        const cap = quota.value.counter.cap;
+        if (fresh.sent + fresh.submittedOrApproved >= cap) {
+          // Nothing inserted yet — returning err from the withTx callback
+          // commits an empty tx and releases the lock. The pre-tx path
+          // already audits the common-case quota block; this rare race-loser
+          // returns the same typed 422 without over-subscribing.
+          return err({
+            kind: 'broadcast_quota_blocked',
+            used: fresh.sent,
+            reserved: fresh.submittedOrApproved,
+            cap,
+          });
+        }
+      }
+
       let broadcast: Broadcast;
       const existing =
         input.draftId === undefined
@@ -588,6 +623,19 @@ export async function submitBroadcast(
               deps.tenant.slug,
               broadcastId,
             );
+
+      // ---- Bug #3 fix: per-member draft ownership --------------------------
+      // RLS scopes to the tenant, not the individual member. Without this a
+      // member could hijack a sibling's private draft by supplying its id
+      // (overwrite its content + flip it to `submitted` still owned by the
+      // victim). Reject as not-found (→ 404, anti-enumeration) — mirror the
+      // DELETE / GET / snapshot siblings that enforce the same ownership.
+      if (existing !== null && existing.requestedByMemberId !== input.memberId) {
+        return err({
+          kind: 'broadcast_not_found',
+          broadcastId: broadcastId as string,
+        });
+      }
 
       if (existing === null) {
         // Create row directly (no separate draft step)

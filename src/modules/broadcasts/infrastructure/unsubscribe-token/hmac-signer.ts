@@ -11,15 +11,34 @@
  * Tokens are valid forever (FR-030 + GDPR Art. 21 right-to-object). The
  * `iat` field is informational only — used for log forensics, not expiry.
  *
- * Token shape carries `tenantId + broadcastId + emailLower + lang` so the
- * verifier can return the email + locale without a DB lookup. The URL is
- * private to the recipient (per-recipient body); the HMAC defeats forgery
- * + tampering.
+ * Token shape carries `tenantId + broadcastId + <encrypted email> + lang`
+ * so the verifier can return the email + locale without a DB lookup, while
+ * keeping the recipient's plaintext email OUT of the URL.
+ *
+ * Bug #8 fix (2026-07-10): the email is stored as `emlEnc` — an
+ * AES-256-GCM ciphertext keyed from `UNSUBSCRIBE_TOKEN_SECRET` (domain-
+ * separated from the HMAC use of the same secret) — NOT as plaintext.
+ * A reader of a CDN/proxy/mail-scanner access log can no longer base64url-
+ * decode the token to recover the recipient's email (PDPA §32 / GDPR
+ * Art. 5(1)(c) data minimisation; privacy checklist CHK024). The HMAC
+ * still defeats forgery/tampering; the AES key stays server-side, so the
+ * token is self-contained (no DB lookup, so no dependency on a delivery
+ * row existing at unsubscribe time) yet opaque to log readers. Legacy
+ * `v1` tokens that carry a plaintext `eml` claim (issued before this fix)
+ * remain honoured — unsubscribe links are valid forever (FR-030) so we
+ * MUST NOT break already-delivered emails.
  *
  * Pure Infrastructure — only `node:crypto` + `@/lib/env` imports. No
  * framework / ORM / Application-port imports.
  */
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
@@ -41,9 +60,75 @@ interface RawPayload {
   readonly v: 1;
   readonly tid: string;
   readonly bid: string;
-  readonly eml: string;
+  /**
+   * Legacy plaintext email claim — issued by tokens created before the
+   * bug #8 fix. Still honoured on verify (tokens are valid forever) but
+   * NEVER written by new `sign()` calls.
+   */
+  readonly eml?: string;
+  /**
+   * AES-256-GCM(email) — base64url(iv[12] ‖ authTag[16] ‖ ciphertext).
+   * The email is opaque to anyone without `UNSUBSCRIBE_TOKEN_SECRET`.
+   */
+  readonly emlEnc?: string;
   readonly lang?: 'en' | 'th' | 'sv';
   readonly iat: number;
+}
+
+// --- Email encryption (bug #8) --------------------------------------------
+// AES-256-GCM keyed by a SHA-256 digest of the token secret with a fixed
+// domain-separation label, so the encryption key is independent of the raw
+// HMAC key derived from the same secret. IV is random per token (the token
+// is minted once per (recipient, broadcast) so determinism is not required).
+const EMAIL_ENC_IV_BYTES = 12;
+const EMAIL_ENC_TAG_BYTES = 16;
+
+// Memoise the derived encryption key so the SHA-256 KDF runs once per process
+// instead of on every encrypt/decrypt (re-review finding #14). Keyed on the
+// secret value so a rotated `UNSUBSCRIBE_TOKEN_SECRET` (or a test that swaps
+// the env) recomputes rather than serving a stale key.
+let cachedEmailEncKey: { readonly secret: string; readonly key: Buffer } | null =
+  null;
+
+function emailEncKey(): Buffer {
+  const secret = env.broadcasts.unsubscribeTokenSecret;
+  if (cachedEmailEncKey === null || cachedEmailEncKey.secret !== secret) {
+    cachedEmailEncKey = {
+      secret,
+      key: createHash('sha256').update(`unsub-email-enc:v1:${secret}`).digest(),
+    };
+  }
+  return cachedEmailEncKey.key;
+}
+
+function encryptEmail(emailLower: string): string {
+  const iv = randomBytes(EMAIL_ENC_IV_BYTES);
+  const cipher = createCipheriv('aes-256-gcm', emailEncKey(), iv);
+  const ct = Buffer.concat([cipher.update(emailLower, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return base64urlEncode(Buffer.concat([iv, tag, ct]));
+}
+
+function decryptEmail(encoded: string): string | null {
+  const buf = base64urlDecode(encoded);
+  if (buf === null || buf.length <= EMAIL_ENC_IV_BYTES + EMAIL_ENC_TAG_BYTES) {
+    return null;
+  }
+  const iv = buf.subarray(0, EMAIL_ENC_IV_BYTES);
+  const tag = buf.subarray(
+    EMAIL_ENC_IV_BYTES,
+    EMAIL_ENC_IV_BYTES + EMAIL_ENC_TAG_BYTES,
+  );
+  const ct = buf.subarray(EMAIL_ENC_IV_BYTES + EMAIL_ENC_TAG_BYTES);
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', emailEncKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ct), decipher.final()]).toString(
+      'utf8',
+    );
+  } catch {
+    return null;
+  }
 }
 
 function base64urlEncode(buf: Buffer): string {
@@ -102,7 +187,7 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
       v: 1,
       tid: payload.tenantId,
       bid: payload.broadcastId,
-      eml: payload.emailLower,
+      emlEnc: encryptEmail(payload.emailLower),
       ...(payload.lang ? { lang: payload.lang } : {}),
       iat: Math.floor(Date.now() / 1000),
     };
@@ -152,7 +237,17 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
     if (typeof r.bid !== 'string' || r.bid.length === 0) {
       return err({ kind: 'token.invalid_payload', reason: 'missing_bid' });
     }
-    if (typeof r.eml !== 'string' || r.eml.length === 0) {
+    // Bug #8: prefer the encrypted `emlEnc` claim; fall back to a legacy
+    // plaintext `eml` claim for tokens minted before the fix (still valid
+    // forever per FR-030). A tampered/wrong-key ciphertext returns null →
+    // treated as a missing email (fail closed).
+    let emailPlain: string | null = null;
+    if (typeof r.emlEnc === 'string' && r.emlEnc.length > 0) {
+      emailPlain = decryptEmail(r.emlEnc);
+    } else if (typeof r.eml === 'string' && r.eml.length > 0) {
+      emailPlain = r.eml;
+    }
+    if (emailPlain === null || emailPlain.length === 0) {
       return err({ kind: 'token.invalid_payload', reason: 'missing_eml' });
     }
     const bidParsed = asBroadcastId(r.bid as string);
@@ -164,7 +259,7 @@ export const unsubscribeTokenSigner: UnsubscribeTokenPort = {
     const result: UnsubscribeTokenPayload = {
       tenantId: unsafeBrandTenantSlug(r.tid as string),
       broadcastId: bidParsed as BroadcastId,
-      emailLower: unsafeBrandEmailLower((r.eml as string).toLowerCase()),
+      emailLower: unsafeBrandEmailLower(emailPlain.toLowerCase()),
       ...(lang ? { lang } : {}),
     };
     return ok(result);

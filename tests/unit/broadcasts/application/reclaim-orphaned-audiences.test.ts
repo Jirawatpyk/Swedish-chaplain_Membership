@@ -72,6 +72,16 @@ const UUID_H = '88888888-8888-8888-8888-888888888888';
 function makeRepo(opts: {
   existing: ReadonlySet<BroadcastId>;
   shouldThrow?: boolean;
+  /**
+   * Bug #16 — when provided, the repo stubs the newer
+   * `referencedAudienceIdsForBroadcasts` method (map of live broadcastId → the
+   * SET of every audience id that row references: broadcasts.resend_audience_id
+   * UNION all batch_manifests.provider_audience_id) so reclaim can detect
+   * crash-before-attach orphans (audience referenced nowhere) WITHOUT deleting a
+   * live split broadcast's in-use per-batch audiences. When omitted, the method
+   * is absent and reclaim falls back to the legacy existence check.
+   */
+  referencedMap?: ReadonlyMap<BroadcastId, ReadonlySet<string>>;
 }): {
   port: BroadcastsRepo;
   existingCalls: Array<{ tenantId: string; ids: ReadonlyArray<BroadcastId> }>;
@@ -115,6 +125,18 @@ function makeRepo(opts: {
       return opts.existing;
     },
   };
+
+  // Bug #16 — attach the newer method ONLY when the test opts into it, so the
+  // legacy tests exercise the existence-only fallback unchanged.
+  if (opts.referencedMap !== undefined) {
+    port.referencedAudienceIdsForBroadcasts = async (tenantId, ids) => {
+      existingCalls.push({ tenantId, ids });
+      if (opts.shouldThrow) {
+        throw new Error('Neon: referencedAudienceIdsForBroadcasts connection lost');
+      }
+      return opts.referencedMap!;
+    };
+  }
 
   return { port, existingCalls };
 }
@@ -208,6 +230,102 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
       expect(result.value).toMatchObject({ orphaned: 0, deleted: 0 });
     }
     // deleteAudience must NOT have been called for a live broadcast
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  // ---- Bug #16: crash-before-attach orphan (row exists, references another
+  //      audience) — the existence-only check kept these forever. ----------
+  it('#16: row references THIS audience nowhere (stale duplicate) → the stale audience IS reclaimed', async () => {
+    // Dispatch created audience A1 ("aud-a1"), crashed before attachAudienceId,
+    // the next tick minted A2 ("aud-a2") and persisted THAT. Reclaim scans A1.
+    const gateway = makeGateway({
+      audiences: [
+        { id: 'aud-a1', name: `broadcast-${TENANT_SLUG}-${UUID_B}`, createdAt: PAST_GRACE_DATE },
+      ],
+    });
+    const repo = makeRepo({
+      existing: new Set([asBroadcastId(UUID_B)]), // row DOES exist...
+      referencedMap: new Map([[asBroadcastId(UUID_B), new Set(['aud-a2'])]]), // ...references A2, not A1
+    });
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toMatchObject({ orphaned: 1, deleted: 1 });
+    // The dangling A1 IS deleted (old row-existence check kept it forever).
+    expect(gateway.deleteCalls).toEqual(['aud-a1']);
+  });
+
+  it('#16: row references NO audience (empty set) → the audience IS reclaimed', async () => {
+    const gateway = makeGateway({
+      audiences: [
+        { id: 'aud-null', name: `broadcast-${TENANT_SLUG}-${UUID_C}`, createdAt: PAST_GRACE_DATE },
+      ],
+    });
+    const repo = makeRepo({
+      existing: new Set([asBroadcastId(UUID_C)]),
+      referencedMap: new Map<BroadcastId, ReadonlySet<string>>([[asBroadcastId(UUID_C), new Set()]]),
+    });
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toMatchObject({ orphaned: 1, deleted: 1 });
+    expect(gateway.deleteCalls).toEqual(['aud-null']);
+  });
+
+  it('#16: row references THIS audience (healthy MVP) → NOT reclaimed', async () => {
+    const gateway = makeGateway({
+      audiences: [
+        { id: 'aud-h', name: `broadcast-${TENANT_SLUG}-${UUID_D}`, createdAt: PAST_GRACE_DATE },
+      ],
+    });
+    const repo = makeRepo({
+      existing: new Set([asBroadcastId(UUID_D)]),
+      referencedMap: new Map([[asBroadcastId(UUID_D), new Set(['aud-h'])]]),
+    });
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toMatchObject({ orphaned: 0, deleted: 0 });
+    expect(gateway.deleteCalls).toHaveLength(0);
+  });
+
+  // Code-review regression guard: a LIVE multi-batch (US1 split) broadcast
+  // stores its per-batch audience ids ONLY in batch_manifests.provider_audience_id
+  // (broadcasts.resend_audience_id stays NULL). Those in-use batch audiences MUST
+  // be in the referenced set and MUST NOT be deleted.
+  it('#16: live multi-batch broadcast — per-batch audiences (in manifests) are NOT reclaimed', async () => {
+    const gateway = makeGateway({
+      audiences: [
+        { id: 'aud-batch0', name: `broadcast-${TENANT_SLUG}-${UUID_E}-batch-0`, createdAt: PAST_GRACE_DATE },
+        { id: 'aud-batch1', name: `broadcast-${TENANT_SLUG}-${UUID_E}-batch-1`, createdAt: PAST_GRACE_DATE },
+      ],
+    });
+    const repo = makeRepo({
+      existing: new Set([asBroadcastId(UUID_E)]),
+      // broadcasts.resend_audience_id NULL; both batch audiences referenced via manifests.
+      referencedMap: new Map([[asBroadcastId(UUID_E), new Set(['aud-batch0', 'aud-batch1'])]]),
+    });
+
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toMatchObject({ orphaned: 0, deleted: 0 });
+    // Neither in-use batch audience is deleted (the pre-fix bug deleted both).
     expect(gateway.deleteCalls).toHaveLength(0);
   });
 

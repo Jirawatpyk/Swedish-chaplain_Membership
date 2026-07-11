@@ -64,6 +64,19 @@ export interface MarketingUnsubscribesRepo {
     input: NewSuppressionInput,
   ): Promise<UpsertSuppressionResult>;
 
+  /**
+   * Bug #10 (code-review) — idempotent suppression upsert that opens its OWN
+   * tenant-scoped tx (no caller tx required). Used by the multi-batch webhook
+   * path (`applyBatchWebhookEvent`), which — unlike the MVP `processWebhookEvent`
+   * — has no surrounding `withTx`. Runs the identical ON CONFLICT precedence
+   * SQL as `upsert`. Same `{wasNew}` semantics for audit gating.
+   *
+   * OPTIONAL so the many partial MarketingUnsubscribesRepo test fixtures need
+   * not stub it; the production Drizzle adapter always implements it and the
+   * batch webhook path guards on its presence.
+   */
+  upsertStandalone?(input: NewSuppressionInput): Promise<UpsertSuppressionResult>;
+
   findByEmailLower(
     tenantId: string,
     emailLower: EmailLower,

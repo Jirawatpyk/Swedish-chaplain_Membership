@@ -123,5 +123,42 @@ describe('image-source-allowlist (Domain VO) — T067 (F7.1a US2)', () => {
       );
       expect(out).toEqual([{ src: 'https://ok.example.com/y.png' }]);
     });
+
+    // Bug #2 regression: a literal '>' inside a quoted attribute value that
+    // PRECEDES src must not truncate the tag before the extractor reaches
+    // src. DOMPurify serialisation does NOT escape '>' inside attribute
+    // values, so an author-controlled alt="a>b" previously made the allowlist
+    // validator see zero image sources and pass a non-allowlisted src.
+    it("extracts src when a preceding attr value contains '>' (allowlist-bypass regression)", () => {
+      const out = extractImgSources(
+        '<img alt="a>b" src="http://tracker.evil/pixel.png">',
+      );
+      expect(out).toEqual([
+        { src: 'http://tracker.evil/pixel.png', alt: 'a>b' },
+      ]);
+    });
+
+    it("extracts src when a single-quoted preceding attr value contains '>'", () => {
+      const out = extractImgSources(
+        "<img alt='x>y' src='http://tracker.evil/p.png'>",
+      );
+      expect(out[0]?.src).toBe('http://tracker.evil/p.png');
+    });
+
+    it("extracts src when a following attr value contains '>'", () => {
+      const out = extractImgSources(
+        '<img src="http://tracker.evil/q.png" title="1 > 0">',
+      );
+      expect(out[0]?.src).toBe('http://tracker.evil/q.png');
+    });
+
+    it("extracts every img even when the first carries a '>'-bearing attr", () => {
+      const out = extractImgSources(
+        '<img alt="a>b" src="http://one.evil/1.png"><img src="https://two.example.com/2.png">',
+      );
+      expect(out).toHaveLength(2);
+      expect(out[0]?.src).toBe('http://one.evil/1.png');
+      expect(out[1]?.src).toBe('https://two.example.com/2.png');
+    });
   });
 });

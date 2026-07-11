@@ -51,6 +51,26 @@ import type {
 } from '../ports/batch-manifests-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
+import type { MarketingUnsubscribeReason } from '../../domain/marketing-unsubscribe';
+import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
+import { asBroadcastId } from '../../domain/broadcast';
+
+/**
+ * Bug #10 (code-review) — map a batch webhook event to the suppression reason
+ * it triggers, or null when it does not suppress. Only HARD bounces suppress
+ * (soft bounces are transient — Resend retries). No nested ternary
+ * (CLAUDE.md forbids them).
+ */
+function suppressionReasonFor(
+  eventType: BatchWebhookEventType,
+  bounceType: 'hard' | 'soft' | undefined,
+): MarketingUnsubscribeReason | null {
+  if (eventType === 'unsubscribed') return 'recipient_initiated';
+  if (eventType === 'complained') return 'complaint';
+  if (eventType === 'bounced' && bounceType === 'hard') return 'hard_bounce';
+  return null;
+}
 
 export type BatchWebhookEventType =
   | 'delivered'
@@ -76,6 +96,9 @@ export interface ApplyBatchWebhookEventDeps {
   readonly batchManifests: BatchManifestsPort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  // Bug #10 (code-review) — the batch path must ALSO suppress hard-bounce /
+  // complaint / unsubscribe recipients (the MVP path already does).
+  readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
 }
 
 export interface ApplyBatchWebhookEventInput {
@@ -85,8 +108,91 @@ export interface ApplyBatchWebhookEventInput {
   readonly broadcastId: string;
   readonly eventType: BatchWebhookEventType;
   readonly recipientEmailHashed: string;
+  /**
+   * Plaintext lowercased recipient email — required for the suppression write
+   * (marketing_unsubscribes is keyed on email_lower). NOT logged/audited raw
+   * (audits use `recipientEmailHashed`).
+   */
+  readonly recipientEmailLower: string;
+  /** Present on `bounced` events — only `hard` bounces suppress. */
+  readonly bounceType?: 'hard' | 'soft';
+  /**
+   * Resend diagnostic (SMTP 550 text / complaint note), stored as the
+   * suppression `reason_text` — parity with the MVP path (bug #7 review).
+   */
+  readonly errorMessage?: string;
   readonly resendEventId: string;
   readonly requestId?: string | null;
+}
+
+/**
+ * Bug #10 recipient suppression (hard-bounce / complaint / unsubscribe) for the
+ * multi-batch path — recoverable equivalent of the MVP `processWebhookEvent`
+ * suppression. Runs BEFORE the counter's idempotency-ledger commit and FAILS
+ * LOUD (returns server_error) on a transient upsert error: the ledger row is
+ * not yet written, so a Svix retry re-runs both the (idempotent) suppression
+ * and the counter. Ordering it after the ledger commit would make a dropped
+ * suppression unrecoverable (the replay short-circuits on `duplicate`). The
+ * suppression upsert is idempotent (ON CONFLICT), so a replay is a no-op with
+ * `wasNew=false` (no duplicate audit). Audit is best-effort (safeAuditEmit).
+ */
+async function suppressBatchRecipient(
+  deps: ApplyBatchWebhookEventDeps,
+  input: ApplyBatchWebhookEventInput,
+): Promise<Result<void, ApplyBatchWebhookEventError>> {
+  const suppressionReason = suppressionReasonFor(input.eventType, input.bounceType);
+  if (suppressionReason === null || !deps.marketingUnsubscribes.upsertStandalone) {
+    return ok(undefined);
+  }
+  let sup;
+  try {
+    sup = await deps.marketingUnsubscribes.upsertStandalone({
+      tenantId: input.tenantId,
+      emailLower: unsafeBrandEmailLower(
+        input.recipientEmailLower.toLowerCase().trim(),
+      ),
+      memberId: null,
+      reason: suppressionReason,
+      reasonText: input.errorMessage ?? null,
+      sourceBroadcastId: asBroadcastId(input.broadcastId),
+      sourceTokenHash: null,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        broadcastId: input.broadcastId,
+        batchManifestId: input.batchManifestId,
+        reason: suppressionReason,
+      },
+      'broadcasts.batch.suppression_upsert_failed',
+    );
+    // Fail loud so the route 5xx's and Svix retries — the FR-027 write MUST
+    // NOT be silently dropped (the counter ledger is still unwritten here).
+    return err({
+      kind: 'apply_batch_webhook.server_error',
+      message: e instanceof Error ? e.message : 'suppression upsert failed',
+    });
+  }
+  if (sup.wasNew) {
+    await safeAuditEmit(deps.audit, null, {
+      tenantId: input.tenantId,
+      eventType: 'broadcast_suppression_applied',
+      actorUserId: 'system:resend-webhook',
+      summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId}: ${suppressionReason} suppressed recipient`,
+      payload: {
+        broadcastId: input.broadcastId,
+        batchManifestId: input.batchManifestId,
+        batchIndex: input.batchIndex,
+        reason: suppressionReason,
+        recipientEmailHashed: input.recipientEmailHashed,
+        resendEventId: input.resendEventId,
+      },
+      requestId: input.requestId ?? null,
+    });
+  }
+  return ok(undefined);
 }
 
 export async function applyBatchWebhookEvent(
@@ -98,6 +204,14 @@ export async function applyBatchWebhookEvent(
   // is responsible for tenant resolution + has the slug from the
   // bypass-RLS lookup.
   const counterField = EVENT_TO_COUNTER[input.eventType];
+
+  // Bug #10 (code-review): suppress the recipient BEFORE the counter's
+  // idempotency-ledger commit, and fail loud on error, so a transient
+  // suppression-write failure is recovered by the Svix retry (both writes
+  // re-run idempotently). Doing it after the ledger commit made a dropped
+  // suppression permanently unrecoverable (replay short-circuits on duplicate).
+  const suppressed = await suppressBatchRecipient(deps, input);
+  if (!suppressed.ok) return suppressed;
 
   const result = await deps.batchManifests.incrementCounter(
     input.tenantId as never, // TenantSlug brand — caller-validated

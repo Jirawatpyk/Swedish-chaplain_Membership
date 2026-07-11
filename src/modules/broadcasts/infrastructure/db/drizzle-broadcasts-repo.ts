@@ -300,6 +300,50 @@ function decodeCursor(
   }
 }
 
+/**
+ * Shared two-bucket member-quota count, run on a caller-supplied tx. Reserved
+ * = `submitted` ∪ `approved`; consumed (`sent`) = `sent` ∪
+ * `partial_delivery_accepted`, year-fenced on `quota_year_consumed` (Design D1
+ * / FR-008c). Extracted (code-review) so `countForMemberQuota` (own runInTenant)
+ * and `recheckMemberQuotaUnderLock` (bug #4 under-lock recheck) read via ONE
+ * definition — a future bucket-set change (as the D1 amendment already made
+ * once) can't drift the pre-tx check from the TOCTOU recheck.
+ */
+async function countMemberQuotaBucketsOnTx(
+  tx: TenantTx,
+  tenantIdArg: TenantSlug,
+  memberId: string,
+  quotaYear: number,
+): Promise<{ readonly submittedOrApproved: number; readonly sent: number }> {
+  const [submittedOrApprovedRows, sentRows] = await Promise.all([
+    tx
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(broadcasts)
+      .where(
+        and(
+          eq(broadcasts.tenantId, tenantIdArg),
+          eq(broadcasts.requestedByMemberId, memberId),
+          sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
+        ),
+      ),
+    tx
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(broadcasts)
+      .where(
+        and(
+          eq(broadcasts.tenantId, tenantIdArg),
+          eq(broadcasts.requestedByMemberId, memberId),
+          inArray(broadcasts.status, ['sent', 'partial_delivery_accepted']),
+          eq(broadcasts.quotaYearConsumed, quotaYear),
+        ),
+      ),
+  ]);
+  return {
+    submittedOrApproved: submittedOrApprovedRows[0]?.count ?? 0,
+    sent: sentRows[0]?.count ?? 0,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -796,50 +840,36 @@ export function makeDrizzleBroadcastsRepo(
       // for caller stability even though it now covers two states.
       readonly sent: number;
     }> {
-      return runInTenant(ctx, async (tx) => {
-        const [submittedOrApprovedRows, sentRows] = await Promise.all([
-          tx
-            .select({ count: sql<number>`COUNT(*)::int` })
-            .from(broadcasts)
-            .where(
-              and(
-                eq(broadcasts.tenantId, tenantIdArg),
-                eq(broadcasts.requestedByMemberId, memberId),
-                // Design D1 (2026-06-21): reserved = submitted ∪ approved.
-                // failed_to_dispatch is TERMINAL (no re-trigger route), so
-                // counting it as reserved permanently locked the member out of
-                // their E-Blast benefit. FR-003 already requires release on
-                // failed_to_dispatch; spec.md AS2 (superseded) is amended to match.
-                sql`${broadcasts.status}::text IN ('submitted', 'approved')`,
-              ),
-            ),
-          tx
-            .select({ count: sql<number>`COUNT(*)::int` })
-            .from(broadcasts)
-            .where(
-              and(
-                eq(broadcasts.tenantId, tenantIdArg),
-                eq(broadcasts.requestedByMemberId, memberId),
-                // Consumed-quota bucket = BOTH terminal states that stamp
-                // `quota_year_consumed`. The schema CHECK
-                // `broadcasts_quota_year_only_on_sent` enforces a non-null
-                // `quota_year_consumed` for `sent` AND
-                // `partial_delivery_accepted` (FR-008c) — `acceptPartial`
-                // sets it identically to the webhook `sent` path. Counting
-                // only `sent` UNDERCOUNTS the member's consumed quota, so a
-                // member at cap via a partial-accepted broadcast would be
-                // wrongly allowed to send again. The year fence below scopes
-                // the count to the current quota year (FR-006/FR-007).
-                inArray(broadcasts.status, ['sent', 'partial_delivery_accepted']),
-                eq(broadcasts.quotaYearConsumed, quotaYear),
-              ),
-            ),
-        ]);
-        return {
-          submittedOrApproved: submittedOrApprovedRows[0]?.count ?? 0,
-          sent: sentRows[0]?.count ?? 0,
-        };
-      });
+      // Two-bucket count shared with recheckMemberQuotaUnderLock — see
+      // countMemberQuotaBucketsOnTx for the Design D1 / FR-008c bucket rules.
+      return runInTenant(ctx, (tx) =>
+        countMemberQuotaBucketsOnTx(tx, tenantIdArg, memberId, quotaYear),
+      );
+    },
+
+    async recheckMemberQuotaUnderLock(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      memberId: string,
+      quotaYear: number,
+    ): Promise<{
+      readonly submittedOrApproved: number;
+      readonly sent: number;
+    }> {
+      const tx = txUnknown as TenantTx;
+      // Bug #4 fix (2026-07-10): serialise concurrent submits per
+      // (tenant, member, quota-year). The advisory xact lock is held until
+      // the caller's tx ends, so a second concurrent submit blocks here
+      // until the first commits (reserving its slot); it then re-reads the
+      // fresh counts below and is correctly quota-blocked. Namespace
+      // `broadcasts-quota:` is DISJOINT from the per-broadcast `broadcasts:`
+      // lock (lockForUpdate) and from F4 `invoicing:` / F5 `payments:`.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-quota:' || ${tenantIdArg} || ':' || ${memberId} || ':' || ${quotaYear}::text, 0))`,
+      );
+      // Same two-bucket count as countForMemberQuota — shared definition so the
+      // pre-tx check and this under-lock recheck can never diverge.
+      return countMemberQuotaBucketsOnTx(tx, tenantIdArg, memberId, quotaYear);
     },
 
     async findByResendBroadcastIdBypassRls(
@@ -1462,6 +1492,52 @@ export function makeDrizzleBroadcastsRepo(
             )}])
         `)) as unknown as Array<{ broadcast_id: string }>;
         return new Set(rows.map((r) => asBroadcastId(r.broadcast_id)));
+      });
+    },
+
+    async referencedAudienceIdsForBroadcasts(tenantIdArg, broadcastIds) {
+      // Bug #16 — for each LIVE broadcast row, the SET of every Resend audience
+      // id it references: broadcasts.resend_audience_id (MVP single-audience)
+      // UNION every broadcast_batch_manifests.provider_audience_id (F7.1a US1
+      // split). Absent ids (row gone) are not keyed. Including the per-batch
+      // audiences is load-bearing: on the split path broadcasts.resend_audience_id
+      // stays NULL, so without the manifests join a live split broadcast's
+      // in-use batch audiences would be misclassified as orphans and deleted.
+      if (broadcastIds.length === 0) {
+        return new Map<BroadcastId, ReadonlySet<string>>();
+      }
+      const idArray = sql.join(
+        broadcastIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      );
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT b.broadcast_id AS broadcast_id,
+                 b.resend_audience_id AS row_audience_id,
+                 m.provider_audience_id AS batch_audience_id
+          FROM broadcasts b
+          LEFT JOIN broadcast_batch_manifests m
+            ON m.tenant_id = b.tenant_id
+           AND m.broadcast_id = b.broadcast_id
+          WHERE b.tenant_id = ${tenantIdArg}
+            AND b.broadcast_id = ANY(ARRAY[${idArray}])
+        `)) as unknown as Array<{
+          broadcast_id: string;
+          row_audience_id: string | null;
+          batch_audience_id: string | null;
+        }>;
+        const map = new Map<BroadcastId, Set<string>>();
+        for (const r of rows) {
+          const key = asBroadcastId(r.broadcast_id);
+          // Every live row that appears gets an entry (empty set if it
+          // references no audience yet) — the LEFT JOIN guarantees at least
+          // one row per existing broadcast even with zero manifests.
+          const set = map.get(key) ?? new Set<string>();
+          if (r.row_audience_id !== null) set.add(r.row_audience_id);
+          if (r.batch_audience_id !== null) set.add(r.batch_audience_id);
+          map.set(key, set);
+        }
+        return map;
       });
     },
   };

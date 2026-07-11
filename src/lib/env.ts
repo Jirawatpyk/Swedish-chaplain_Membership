@@ -786,6 +786,61 @@ if (raw.EXPORT_DOWNLOAD_TOKEN_SECRET) {
   }
 }
 
+// Bug #12 fix (2026-07-10): AUTH_COOKIE_SIGNING_SECRET MUST be DISTINCT from
+// the token-signing secrets whose schema docstring already requires it — most
+// notably UNSUBSCRIBE_TOKEN_SECRET ("MUST be distinct from
+// AUTH_COOKIE_SIGNING_SECRET") — plus the renewal-link secrets. The per-field
+// zod schema only enforces length (≥32); the EXPORT gate above covers the F9
+// export secret; this covers the always-present AUTH pairing that was
+// documented-but-unenforced, so an operator who copy-pastes one value into
+// both surfaces fails loud at boot instead of silently coupling session-cookie
+// signing to unsubscribe-token forgery. (We intentionally do NOT require the
+// renewal primary ≠ fallback here — a shared value there is a valid
+// pre-rotation state, and dev environments legitimately use it.)
+if (raw.AUTH_COOKIE_SIGNING_SECRET) {
+  const authCollisions = (
+    [
+      ['UNSUBSCRIBE_TOKEN_SECRET', raw.UNSUBSCRIBE_TOKEN_SECRET],
+      ['RENEWAL_LINK_TOKEN_SECRET_PRIMARY', raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY],
+      ['RENEWAL_LINK_TOKEN_SECRET_FALLBACK', raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK],
+    ] as const
+  ).filter(([, value]) => value === raw.AUTH_COOKIE_SIGNING_SECRET);
+  if (authCollisions.length > 0) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        `  - AUTH_COOKIE_SIGNING_SECRET must be DISTINCT from ${authCollisions
+          .map(([name]) => name)
+          .join(', ')}. Reusing the session-cookie secret for a token surface ` +
+        'means a leak or rotation of one compromises the other (e.g. forging ' +
+        'unsubscribe tokens to suppress arbitrary addresses). Generate a ' +
+        'separate value: openssl rand -base64 48.',
+    );
+  }
+}
+
+// Code-review follow-up (2026-07-11): close the pairwise gap the AUTH/EXPORT
+// gates leave — UNSUBSCRIBE_TOKEN_SECRET vs the renewal-link secrets. The
+// RENEWAL_LINK_TOKEN_SECRET_PRIMARY docstring states it MUST be distinct from
+// UNSUBSCRIBE_TOKEN_SECRET, yet neither prior gate compared that pair. (We
+// still do NOT compare RENEWAL primary vs fallback — a shared value there is a
+// valid pre-rotation state used in dev.)
+if (raw.UNSUBSCRIBE_TOKEN_SECRET) {
+  const unsubCollisions = (
+    [
+      ['RENEWAL_LINK_TOKEN_SECRET_PRIMARY', raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY],
+      ['RENEWAL_LINK_TOKEN_SECRET_FALLBACK', raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK],
+    ] as const
+  ).filter(([, value]) => value === raw.UNSUBSCRIBE_TOKEN_SECRET);
+  if (unsubCollisions.length > 0) {
+    throw new Error(
+      'Environment validation failed (src/lib/env.ts):\n' +
+        `  - UNSUBSCRIBE_TOKEN_SECRET must be DISTINCT from ${unsubCollisions
+          .map(([name]) => name)
+          .join(', ')}. Generate a separate value: openssl rand -base64 48.`,
+    );
+  }
+}
+
 // F9 (#8): in PRODUCTION the private-export Blob store MUST be a dedicated
 // PRIVATE store — never the public BLOB_READ_WRITE_TOKEN store (which backs F4
 // invoice PDFs + F9 logos). GDPR export archives + Directory E-Books carry full

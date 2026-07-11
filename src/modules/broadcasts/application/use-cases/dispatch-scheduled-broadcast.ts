@@ -496,8 +496,38 @@ export async function dispatchScheduledBroadcast(
   );
 
   if (!resolvedResult.ok) {
-    // Audience evaporated post-suppression — transition to
-    // failed_to_dispatch + emit audit + Slice E member notification.
+    // Bug #13 fix (2026-07-10): distinguish the TWO resolve failures.
+    // `resolveSegmentRecipients` returns either `broadcast_empty_segment_blocked`
+    // OR `broadcast_audience_too_large`. The segment is re-resolved here because
+    // it can change since submit (e.g. membership grew past the 5,000 hard cap
+    // via a bulk import). Hard-coding 'audience_post_suppression_empty' for
+    // EVERY error mislabelled the failure_reason, the audit payload, AND the
+    // AS2 member-notification email as "empty audience" when the true cause was
+    // "too large". Mirror submit-broadcast.ts's switch on error.kind.
+    if (resolvedResult.error.kind === 'broadcast_audience_too_large') {
+      await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        'audience_too_large',
+        'broadcast_failed_to_dispatch',
+        {
+          broadcastId: input.broadcastId,
+          reason: 'audience_too_large',
+          count: resolvedResult.error.count,
+          cap: resolvedResult.error.cap,
+          failedAt: now.toISOString(),
+        },
+        'audience_too_large',
+        broadcast,
+      );
+      return err({
+        kind: 'broadcast_failed_to_dispatch',
+        reason: 'audience_too_large',
+      });
+    }
+    // Empty audience post-suppression — transition to failed_to_dispatch +
+    // emit audit + Slice E member notification.
     await failDispatchAndAudit(
       deps,
       input,

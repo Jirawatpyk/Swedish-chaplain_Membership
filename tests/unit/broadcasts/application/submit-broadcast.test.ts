@@ -1118,6 +1118,85 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     });
   });
 
+  // ---- Bug #3: cross-member draft-hijack (IDOR) on submit -----------
+  it('#3 IDOR: submit with a draftId owned by a DIFFERENT member -> broadcast_not_found (no hijack)', async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+    });
+    const draftId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const repo = deps.broadcastsRepo as unknown as {
+      findByIdInTx: BroadcastsRepo['findByIdInTx'];
+      updateDraft: BroadcastsRepo['updateDraft'];
+      applyTransition: BroadcastsRepo['applyTransition'];
+    };
+    // Draft owned by 'm-victim'; the attacker is baseInput.memberId 'm-1'.
+    // RLS is tenant-scoped only, so findByIdInTx still returns the row —
+    // the owner guard is the sole defence against hijack.
+    repo.findByIdInTx = async (_tx, _t, broadcastIdArg) => ({
+      tenantId: tenant.slug,
+      broadcastId: broadcastIdArg,
+      requestedByMemberId: 'm-victim',
+      requestedByMemberPlanIdSnapshot: 'p',
+      submittedByUserId: 'u-victim',
+      actorRole: 'member_self_service',
+      subject: 'victim private draft',
+      bodyHtml: '<p>victim</p>',
+      bodySource: 'victim',
+      fromName: 'Victim via Test Chamber',
+      replyToEmail: 'victim@example.com',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      estimatedRecipientCount: 0,
+      status: 'draft',
+      submittedAt: null,
+      approvedAt: null,
+      approvedByUserId: null,
+      rejectedAt: null,
+      rejectedByUserId: null,
+      rejectionReason: null,
+      scheduledFor: null,
+      sendingStartedAt: null,
+      sentAt: null,
+      cancelledAt: null,
+      cancelledByUserId: null,
+      cancellationReason: null,
+      failedToDispatchAt: null,
+      failureReason: null,
+      quotaYearConsumed: null,
+      quotaConsumedAt: null,
+      resendAudienceId: null,
+      resendBroadcastId: null,
+      retentionYears: 5,
+      manualRetryCount: 0,
+      partialDeliveryAcceptedAt: null,
+      partialDeliveryAcceptedByUserId: null,
+      startedFromTemplateId: null,
+      templateNameSnapshot: null,
+      templateProvenance: null,
+      createdAt: FROZEN_NOW,
+      updatedAt: FROZEN_NOW,
+    });
+    let mutated = false;
+    repo.updateDraft = async () => {
+      mutated = true;
+      throw new Error('must not overwrite victim draft');
+    };
+    repo.applyTransition = async () => {
+      mutated = true;
+      throw new Error('must not transition victim draft');
+    };
+
+    const result = await submitBroadcast(deps, { ...baseInput, draftId });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('broadcast_not_found');
+    // The victim's draft was neither overwritten nor submitted.
+    expect(mutated).toBe(false);
+  });
+
   it('existing-draft + custom segment: updateDraft preserves customRecipientEmails', async () => {
     const updates: Array<{ patch: Record<string, unknown> }> = [];
     const { deps } = makeDeps({

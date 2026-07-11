@@ -226,15 +226,18 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect(emits.some((e) => e.eventType === 'broadcast_failed_to_dispatch')).toBe(true);
   });
 
-  it('recipient slice length mismatch → server_error WITHOUT gateway call', async () => {
-    // manifest declares recipientCount=10 but allRecipients only has 3
+  it('bug #6: audience SHRANK since split (resolved 3 < coverage 10) → per-batch slice length check fails, no gateway call', async () => {
+    // Single manifest covers 10 but only 3 recipients resolve now. The slice
+    // comes up short → the per-batch recipientSlice length check aborts THIS
+    // batch (server_error). There is NO whole-broadcast drift-fail (the earlier
+    // fix over-corrected routine churn by failing every batch).
     const manifest = makeManifest({ recipientCount: 10, recipientRangeEnd: 9 });
     const { deps, gatewayCalls } = makeStubDeps({ manifest });
 
     const result = await dispatchBroadcastBatch(deps as never, {
       tenantId: tenant,
       batchManifestId: 'batch-id-1',
-      allRecipients, // only 3 recipients — slice length 3 ≠ manifest.recipientCount 10
+      allRecipients, // only 3 recipients — slice length 3 != recipientCount 10
       broadcastContent,
     });
 
@@ -243,8 +246,39 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect((result.error as { kind: string }).kind).toBe(
       'dispatch_broadcast_batch.server_error',
     );
-    // Critical: NO gateway calls — the recipient-slice guard fires before any Resend interaction
+    // NO gateway calls — the slice guard fires before any Resend interaction.
     expect(gatewayCalls).toEqual([]);
+  });
+
+  it('bug #6: audience GREW since split (resolved 4 > coverage 3) → dispatches the covered set (tail logged, NOT silently reported-sent)', async () => {
+    // The critical case: with the OLD code the extra tail recipient was silently
+    // dropped while the broadcast rolled up to a clean 'sent'. The revised guard
+    // LOGS the excluded tail (observable) and dispatches the covered set instead
+    // of failing the whole broadcast on routine churn.
+    const manifest = makeManifest({ recipientCount: 3, recipientRangeEnd: 2 });
+    const { deps, gatewayCalls } = makeStubDeps({ manifest });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients: [
+        { emailLower: 'a@example.com' },
+        { emailLower: 'b@example.com' },
+        { emailLower: 'c@example.com' },
+        { emailLower: 'd@example.com' }, // added between split + dispatch
+      ],
+      broadcastContent,
+    });
+
+    // Covered set (3) dispatches normally to Resend; the tail 'd' is excluded
+    // but logged (broadcasts.batch.recipient_set_grew_tail_excluded).
+    expect(result.ok).toBe(true);
+    expect(gatewayCalls).toEqual([
+      'createAudience',
+      'addContactsToAudience',
+      'createBroadcast',
+      'sendBroadcast',
+    ]);
   });
 
   it('persist providerBroadcastId fails after gateway sent → forensic audit emitted, but ok returned', async () => {

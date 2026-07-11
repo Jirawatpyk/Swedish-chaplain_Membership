@@ -166,6 +166,48 @@ export async function dispatchBroadcastBatch(
     });
   }
 
+  // 2b. Bug #6 fix (2026-07-10, revised after code-review) — recipient-set
+  //     drift observability. The split cron and the dispatch cron resolve
+  //     recipients INDEPENDENTLY at different ticks, so the audience can drift
+  //     between them. Do NOT fail the whole broadcast on drift: routine
+  //     unsubscribe/bounce/membership churn in the inter-tick window is expected
+  //     and would strand EVERY batch (the same allRecipients is fed to all of
+  //     them). Two cases:
+  //       - GROW (resolved > split coverage): recipients past the last batch's
+  //         range are in NO manifest and would be dropped SILENTLY while the
+  //         broadcast rolls up to a clean 'sent'. That silent loss is the actual
+  //         bug — surface it (log) and dispatch the covered set.
+  //       - SHRINK (resolved < coverage): the straddling batch's slice comes up
+  //         short and is caught per-batch by the recipientSlice length check
+  //         below (only that batch fails; earlier batches still send). No
+  //         whole-broadcast abort.
+  //     The full auto-heal (snapshot the resolved set at split time, or re-split
+  //     the drifted tail) remains the follow-up.
+  const splitTimeCoverage = allManifests.reduce(
+    (sum, m) => sum + m.recipientCount,
+    0,
+  );
+  // GROW is a broadcast-level fact identical for every batch, but the dropped
+  // tail sits immediately past the LAST batch's range. Warn only from that
+  // last batch (`recipientRangeEnd + 1 === splitTimeCoverage`) so the log fires
+  // ONCE per broadcast, from the batch adjacent to the loss — not N× across
+  // every batch dispatch (re-review finding #12).
+  const isLastBatch = manifest.recipientRangeEnd + 1 === splitTimeCoverage;
+  if (input.allRecipients.length > splitTimeCoverage && isLastBatch) {
+    logger.warn(
+      {
+        tenantId: tenantSlug,
+        broadcastId: input.broadcastContent.broadcastId,
+        batchManifestId: manifest.id,
+        batchIndex: manifest.batchIndex,
+        resolvedCount: input.allRecipients.length,
+        splitTimeCoverage,
+        excludedTail: input.allRecipients.length - splitTimeCoverage,
+      },
+      'broadcasts.batch.recipient_set_grew_tail_excluded',
+    );
+  }
+
   // 3. Slice recipients for this batch from the full list. The
   //    [start, end+1) window matches Domain `computeBatchRanges`
   //    semantics (inclusive start, inclusive end).

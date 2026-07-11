@@ -600,11 +600,14 @@ export const broadcastTemplates = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex('broadcast_templates_tenant_name_locale_uniq').on(
-      table.tenantId,
-      table.name,
-      table.locale,
-    ),
+    // Bug #14 fix (2026-07-10): PARTIAL unique index — a soft-deleted
+    // template must NOT keep its (tenant, name, locale) key occupied, else
+    // the name is permanently unusable (create() 409s forever for a name
+    // that appears in no list surface). Matches the sibling MRU index below,
+    // which already scopes to live rows. Migration 0239 rebuilds this index.
+    uniqueIndex('broadcast_templates_tenant_name_locale_uniq')
+      .on(table.tenantId, table.name, table.locale)
+      .where(sql`deleted_at IS NULL`),
     check(
       'broadcast_templates_name_length_check',
       sql`length(${table.name}) > 0 AND length(${table.name}) <= 100`,

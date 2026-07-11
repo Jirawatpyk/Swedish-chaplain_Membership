@@ -1674,6 +1674,13 @@
 			"when": 1798536700000,
 			"tag": "0238_renewal_rolling_anchor",
 			"breakpoints": true
+		},
+		{
+			"idx": 242,
+			"version": "7",
+			"when": 1798536800000,
+			"tag": "0239_broadcast_templates_partial_uniq",
+			"breakpoints": true
 		}
 	]
 }
