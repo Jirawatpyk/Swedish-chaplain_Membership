@@ -22,6 +22,10 @@ const LEGAL: ReadonlyArray<readonly [PaymentStatus, PaymentStatus]> = [
   ['pending', 'succeeded'],
   ['pending', 'failed'],
   ['pending', 'canceled'],
+  // A.4 — stale-invoice auto-refund path (a later task) flips a
+  // still-pending payment straight to `auto_refunded` without ever
+  // passing through `succeeded`.
+  ['pending', 'auto_refunded'],
   ['succeeded', 'partially_refunded'],
   ['succeeded', 'refunded'],
   ['partially_refunded', 'partially_refunded'],
@@ -59,6 +63,24 @@ describe('payment-status-transitions — error kinds', () => {
     const r = canTransition('refunded', 'partially_refunded');
     if (r.ok) throw new Error('unreachable');
     expect(r.error.kind).toBe('terminal_state');
+  });
+
+  // A.4 — `auto_refunded` is a NEW terminal status (migration 0240),
+  // legal ONLY from `pending`. Never in the succeeded-lineage (see
+  // one-succeeded-payment-per-invoice.test.ts).
+  it('allows pending → auto_refunded (stale-invoice auto-refund path)', () => {
+    const r = canTransition('pending', 'auto_refunded');
+    expect(r.ok).toBe(true);
+  });
+
+  it('returns terminal_state for transitions out of auto_refunded', () => {
+    const r = canTransition('auto_refunded', 'succeeded');
+    if (r.ok) throw new Error('unreachable');
+    expect(r.error.kind).toBe('terminal_state');
+  });
+
+  it('isTerminalPaymentStatus(auto_refunded) === true', () => {
+    expect(isTerminalPaymentStatus('auto_refunded')).toBe(true);
   });
 
   it('returns illegal_transition with from+to when source has successors', () => {

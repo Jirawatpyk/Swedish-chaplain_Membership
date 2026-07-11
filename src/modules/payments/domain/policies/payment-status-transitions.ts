@@ -8,12 +8,14 @@
  *
  * Transition table (source → destination):
  *
- *   pending              → succeeded | failed | canceled
+ *   pending              → succeeded | failed | canceled | auto_refunded
  *   succeeded            → partially_refunded | refunded
  *   partially_refunded   → partially_refunded | refunded
  *   failed               → (terminal — no transitions out)
  *   canceled             → (terminal)
  *   refunded             → (terminal)
+ *   auto_refunded        → (terminal — stale-invoice auto-refund,
+ *                            migration 0240; reachable ONLY from pending)
  *
  * Refund-specific nuance: moving from `succeeded` or `partially_refunded`
  * to `refunded` requires the cumulative refund sum to equal the payment
@@ -48,12 +50,13 @@ import {
 export type TransitionError = StateMachineError<PaymentStatus>;
 
 const TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> = {
-  pending: ['succeeded', 'failed', 'canceled'],
+  pending: ['succeeded', 'failed', 'canceled', 'auto_refunded'],
   succeeded: ['partially_refunded', 'refunded'],
   partially_refunded: ['partially_refunded', 'refunded'],
   failed: [],
   canceled: [],
   refunded: [],
+  auto_refunded: [],
 };
 
 const _stateMachine = makeStateMachine<PaymentStatus>(TRANSITIONS);
