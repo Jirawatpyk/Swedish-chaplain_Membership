@@ -2,7 +2,8 @@
  * T122 (Phase 7) — Integration: stale-invoice auto-refund against
  * live Neon.
  *
- * Spec authority: F5 spec.md US5, FR-011b, plan.md § 4.1.
+ * Spec authority: F5 spec.md US5, FR-011b, plan.md § 4.1 + PR-A Task A.13
+ * (#3 / CRITICAL-2).
  *
  * Scenario: Stripe `payment_intent.succeeded` arrives for a payment
  * tied to an invoice already in a non-payable state (status='paid' /
@@ -11,19 +12,26 @@
  *   - Trigger `processorGateway.createRefund` (idempotency-keyed).
  *   - Emit `payment_auto_refunded_stale_invoice` audit row.
  *   - NOT call `invoicingBridge.markPaidFromProcessor`.
+ *   - A.13 — TERMINALISE the payment (`pending → auto_refunded`) WITH a
+ *     `completed_at` AND durably stamp `auto_refund_processor_refund_id`
+ *     (the Stripe `re_…` id) so the later `charge.refund.updated`
+ *     webhook (A.11) recognises the auto-refund instead of firing a
+ *     false out-of-band alert. Pre-fix the row stayed `pending` forever.
+ *   - NOT create a `refunds` row and NOT mint an F4 credit note (tax#4 —
+ *     a stale-invoice auto-refund is a payment-level reversal).
  *
- * Integration value-add over the unit tests
- * (`tests/unit/payments/application/confirm-payment.test.ts`):
- *   - Audit row lands in the live `audit_log` table with
- *     `event_type='payment_auto_refunded_stale_invoice'` + correct
- *     `tenant_id` + `retention_years=10`.
- *   - Real RLS policy on the audit table allows the system actor write
- *     (Constitution Principle I sub-clause #4).
- *   - F5 `payments` row state transitions correctly under live
- *     Postgres (status not flipped to 'succeeded' on stale path).
+ * End-to-end (A.13 WRITE ↔ A.11 READ): once the payment carries the
+ * durable marker, a later `charge.refund.updated` for that `re_…` id →
+ *   - `succeeded` → `processRefundUpdated` matches the marker via
+ *     `findAutoRefundByProcessorRefundId` → `auto_refund_recognized`,
+ *     NO false `out_of_band_refund_detected` alert.
+ *   - `failed`    → `auto_refund_failed` + the 10y forensic
+ *     `auto_refund_failed_needs_manual_reconcile` audit (CRITICAL-2,
+ *     money-not-returned; NEVER suppressed).
  *
  * Mocking policy:
- *   - LIVE Neon for `paymentsRepo` + `audit` (drizzle adapters).
+ *   - LIVE Neon for `paymentsRepo` + `refundsRepo` +
+ *     `processorEventsRepo` + `audit` (drizzle adapters).
  *   - MOCKED `processorGateway` (createRefund + retrievePaymentIntent)
  *     and `invoicingBridge` (getInvoiceForPayment) at the port boundary
  *     — the gateway HTTP layer is covered by `stripe-gateway-mock.test.ts`,
@@ -32,17 +40,21 @@
  *     would create excessive seed surface without new coverage value.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
 import { ok } from '@/lib/result';
 import { confirmPayment } from '@/modules/payments';
+import { processRefundUpdated } from '@/modules/payments/application/use-cases/process-refund-updated';
 import { systemClock } from '@/modules/payments/application/ports/clock-port';
 import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
+import { makeDrizzleRefundsRepo } from '@/modules/payments/infrastructure/repos/drizzle-refunds-repo';
+import { makeDrizzleProcessorEventsRepo } from '@/modules/payments/infrastructure/repos/drizzle-processor-events-repo';
 import {
   payments,
+  refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';
@@ -77,30 +89,37 @@ interface PaymentSeed {
   readonly invoiceId: string;
   readonly paymentId: PaymentId;
   readonly paymentIntentId: string;
+  /** Deterministic Stripe refund id the mocked gateway returns for this seed. */
+  readonly refundId: string;
 }
 
-describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => {
+function makeSeed(label: string): PaymentSeed {
+  return {
+    invoiceId: randomUUID(),
+    paymentId: asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`),
+    paymentIntentId: `pi_test_stale_${label}_${randomUUID().slice(0, 8)}`,
+    refundId: `re_test_${label}_${randomUUID().slice(0, 8)}`,
+  };
+}
+
+describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)', () => {
   let tenant: TestTenant;
   let user: TestUser;
   let memberId: string;
   let paidSeed: PaymentSeed;
   let voidSeed: PaymentSeed;
+  let recognizeSeed: PaymentSeed;
+  let failSeed: PaymentSeed;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
 
     memberId = randomUUID();
-    paidSeed = {
-      invoiceId: randomUUID(),
-      paymentId: asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`),
-      paymentIntentId: `pi_test_stale_paid_${randomUUID().slice(0, 8)}`,
-    };
-    voidSeed = {
-      invoiceId: randomUUID(),
-      paymentId: asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`),
-      paymentIntentId: `pi_test_stale_void_${randomUUID().slice(0, 8)}`,
-    };
+    paidSeed = makeSeed('paid');
+    voidSeed = makeSeed('void');
+    recognizeSeed = makeSeed('recognize');
+    failSeed = makeSeed('fail');
 
     const settings: NewTenantPaymentSettingsRow = {
       tenantId: tenant.ctx.slug,
@@ -165,9 +184,9 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
         documentType: 'invoice',
         fiscalYear: 2026,
       });
-      // Two parallel invoice+payment chains: one will be tested as
-      // status='paid', the other as status='void'.
-      for (const seed of [paidSeed, voidSeed]) {
+      // Four parallel invoice+payment chains: paid/void exercise the pure
+      // A.13 flip; recognize/fail exercise the end-to-end A.13→A.11 hop.
+      for (const seed of [paidSeed, voidSeed, recognizeSeed, failSeed]) {
         await tx.insert(invoices).values({
           tenantId: tenant.ctx.slug,
           invoiceId: seed.invoiceId,
@@ -222,9 +241,11 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
         }),
       ),
       cancelPaymentIntent: vi.fn(),
+      // Deterministic refund id per seed so the durable-marker assertion
+      // (A.13) can pin the exact `re_…` id written to the payments row.
       createRefund: vi.fn(async () =>
         ok({
-          id: `re_test_${randomUUID().slice(0, 8)}`,
+          id: seed.refundId,
           status: 'succeeded' as const,
           amountSatang: 5_350_000n,
         }),
@@ -288,7 +309,42 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     );
   }
 
-  it('paid invoice → auto_refunded + concurrent_manual_mark audit row in DB + payment NOT flipped to succeeded (R3 CRIT-A)', async () => {
+  /**
+   * A.11 driver — dispatch a `charge.refund.updated` reconciliation for a
+   * given Stripe refund id against the LIVE repos. The auto-refund NOT-FOUND
+   * path never touches the invoicing bridge, so it is a never-called stub.
+   * `markProcessed` on a not-seeded event id is a harmless no-op UPDATE.
+   */
+  async function runProcessRefundUpdated(
+    processorRefundId: string,
+    refundStatus: 'succeeded' | 'failed',
+  ) {
+    return processRefundUpdated(
+      {
+        paymentsRepo: makeDrizzlePaymentsRepo(tenant.ctx.slug),
+        refundsRepo: makeDrizzleRefundsRepo(tenant.ctx.slug),
+        processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+        invoicingBridge: {
+          getInvoiceForPayment: vi.fn(),
+          markPaidFromProcessor: vi.fn(),
+        } as unknown as Parameters<typeof processRefundUpdated>[0]['invoicingBridge'],
+        audit: f5AuditAdapter,
+        clock: systemClock,
+      },
+      {
+        tenantId: tenant.ctx.slug,
+        requestId: 'req-refund-updated',
+        eventId: `evt_test_${randomUUID().slice(0, 12)}`,
+        processorRefundId,
+        chargeId: 'ch_test_stale',
+        refundStatus,
+        amountSatang: 5_350_000n,
+        processorEnv: 'test',
+      },
+    );
+  }
+
+  it('paid invoice → payment flips pending→auto_refunded WITH completed_at + durable marker + concurrent_manual_mark audit; NO refunds row (A.13, R3 CRIT-A)', async () => {
     const mocks = makeMocks(paidSeed, 'paid');
     const result = await runConfirmPayment(paidSeed, mocks);
 
@@ -299,17 +355,13 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
     expect(mocks.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
 
     // Idempotency key contract: `auto-refund-${payment.id}` so Stripe
-    // retries are deduped server-side (confirm-payment.ts:251).
+    // retries are deduped server-side (confirm-payment.ts).
     expect(mocks.processorGateway.createRefund).toHaveBeenCalledWith(
       expect.objectContaining({
         idempotencyKey: `auto-refund-${paidSeed.paymentId}`,
       }),
     );
 
-    // Audit row landed in the live audit_log table with the correct
-    // event type + tenant_id. (Retention years is enforced at write
-    // time via RETENTION_YEARS map in audit-port — not a persisted
-    // column on audit_log; see drizzle-payments-audit.ts.)
     // R3 CRIT-A (2026-04-28): cause=`invoice_already_paid` →
     // event type `payment_auto_refunded_concurrent_manual_mark` per
     // spec.md edge case (admin-marks-paid-mid-flight race).
@@ -324,11 +376,15 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
       );
     expect(rows.length).toBeGreaterThanOrEqual(1);
 
-    // Payment row NOT flipped to 'succeeded' — stale path leaves the
-    // pending row alone (the auto-refund is recorded against the PI
-    // directly; the row's terminal status is set elsewhere).
+    // A.13 — the payment row is TERMINALISED as `auto_refunded` (no longer
+    // stuck `pending`), carries the Stripe `re_…` id in the durable marker
+    // column, and has `completed_at` set (migration 0033 CHECK).
     const paymentRow = await db
-      .select({ status: payments.status })
+      .select({
+        status: payments.status,
+        completedAt: payments.completedAt,
+        autoRefundProcessorRefundId: payments.autoRefundProcessorRefundId,
+      })
       .from(payments)
       .where(
         and(
@@ -336,10 +392,24 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
           eq(payments.id, paidSeed.paymentId),
         ),
       );
-    expect(paymentRow[0]?.status).not.toBe('succeeded');
+    expect(paymentRow[0]?.status).toBe('auto_refunded');
+    expect(paymentRow[0]?.completedAt).not.toBeNull();
+    expect(paymentRow[0]?.autoRefundProcessorRefundId).toBe(paidSeed.refundId);
+
+    // tax#4 — NO refunds aggregate row for this stale-invoice reversal.
+    const refundRows = await db
+      .select({ id: refunds.id })
+      .from(refunds)
+      .where(
+        and(
+          eq(refunds.tenantId, tenant.ctx.slug),
+          eq(refunds.invoiceId, paidSeed.invoiceId),
+        ),
+      );
+    expect(refundRows.length).toBe(0);
   }, 30_000);
 
-  it('void invoice → same auto_refunded_stale_invoice path (cause=invoice_voided)', async () => {
+  it('void invoice → same auto_refunded flip (cause=invoice_voided) + durable marker', async () => {
     const mocks = makeMocks(voidSeed, 'void');
     const result = await runConfirmPayment(voidSeed, mocks);
 
@@ -353,5 +423,79 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
         idempotencyKey: `auto-refund-${voidSeed.paymentId}`,
       }),
     );
+
+    const paymentRow = await db
+      .select({
+        status: payments.status,
+        autoRefundProcessorRefundId: payments.autoRefundProcessorRefundId,
+      })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.tenantId, tenant.ctx.slug),
+          eq(payments.id, voidSeed.paymentId),
+        ),
+      );
+    expect(paymentRow[0]?.status).toBe('auto_refunded');
+    expect(paymentRow[0]?.autoRefundProcessorRefundId).toBe(voidSeed.refundId);
+  }, 30_000);
+
+  it('A.13→A.11 end-to-end: later charge.refund.updated(succeeded) → auto_refund_recognized, NO false out-of-band alert', async () => {
+    // 1) Auto-refund the stale-invoice payment → durable marker written.
+    const mocks = makeMocks(recognizeSeed, 'void');
+    const confirmResult = await runConfirmPayment(recognizeSeed, mocks);
+    expect(confirmResult.ok).toBe(true);
+
+    // 2) A later Stripe `charge.refund.updated(succeeded)` for that `re_…`
+    //    id → the durable marker is recognised; no false OOB alert.
+    const result = await runProcessRefundUpdated(recognizeSeed.refundId, 'succeeded');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_recognized');
+    if (result.value.kind !== 'auto_refund_recognized') return;
+    expect(result.value.invoiceId).toBe(recognizeSeed.invoiceId);
+
+    // NO false `out_of_band_refund_detected` audit for this refund id — the
+    // money-trail was already recorded at auto-refund time (A.13). Narrow
+    // by the payload marker so a genuine OOB for a different refund in the
+    // shared suite cannot false-fail this assertion.
+    const oobRows = await db.execute(sql`
+      SELECT id FROM audit_log
+       WHERE tenant_id = ${tenant.ctx.slug}
+         AND event_type = 'out_of_band_refund_detected'
+         AND payload->>'processor_refund_id' = ${recognizeSeed.refundId}
+    `);
+    expect(Array.from(oobRows as unknown as Iterable<unknown>).length).toBe(0);
+  }, 30_000);
+
+  it('A.13→A.11 end-to-end: later charge.refund.updated(failed) → auto_refund_failed + 10y auto_refund_failed_needs_manual_reconcile audit (CRITICAL-2)', async () => {
+    // 1) Auto-refund the stale-invoice payment → durable marker written.
+    const mocks = makeMocks(failSeed, 'void');
+    const confirmResult = await runConfirmPayment(failSeed, mocks);
+    expect(confirmResult.ok).toBe(true);
+
+    // 2) Stripe later reports the auto-refund FAILED for that `re_…` id →
+    //    the payment reads `auto_refunded` but the money did NOT reach the
+    //    customer → emit the never-suppressed 10y forensic.
+    const result = await runProcessRefundUpdated(failSeed.refundId, 'failed');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_failed');
+    if (result.value.kind !== 'auto_refund_failed') return;
+    expect(result.value.invoiceId).toBe(failSeed.invoiceId);
+
+    // The 10y CRITICAL-2 forensic landed in the live audit_log, carrying
+    // the durable marker + the failed refund status.
+    const forensic = await db.execute(sql`
+      SELECT payload FROM audit_log
+       WHERE tenant_id = ${tenant.ctx.slug}
+         AND event_type = 'auto_refund_failed_needs_manual_reconcile'
+         AND payload->>'auto_refund_processor_refund_id' = ${failSeed.refundId}
+    `);
+    const forensicRows = Array.from(
+      forensic as unknown as Iterable<{ payload: Record<string, unknown> }>,
+    );
+    expect(forensicRows.length).toBeGreaterThanOrEqual(1);
+    expect(forensicRows[0]!.payload['refund_status']).toBe('failed');
   }, 30_000);
 });

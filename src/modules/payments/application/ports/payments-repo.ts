@@ -110,6 +110,51 @@ export interface PaymentsRepo {
   ): Promise<Payment | null>;
 
   /**
+   * A.13 (#3 / CRITICAL-2) — terminalise a stuck-pending payment as
+   * `auto_refunded` + durably record the Stripe refund id, in ONE guarded
+   * UPDATE.
+   *
+   * Used by the confirm-payment stale-invoice auto-refund tail (Phase B):
+   * after Stripe accepts the FULL refund of a payment whose invoice is no
+   * longer payable (voided / credited / paid out-of-band), this write
+   *   1. flips the row `pending → auto_refunded` (a TERMINAL state — A.4;
+   *      NOT in the succeeded lineage, so `one_succeeded_per_invoice` is
+   *      untouched and the member may retry payment on the same invoice);
+   *   2. stamps `auto_refund_processor_refund_id = processorRefundId` (the
+   *      `re_…` id) so a later `charge.refund.updated` webhook recognises
+   *      the auto-refund via `findAutoRefundByProcessorRefundId` (A.6/A.11)
+   *      instead of firing a false out-of-band alert;
+   *   3. sets `completed_at` — migration 0033's CHECK
+   *      `payments_completed_at_iff_not_pending` requires it on any
+   *      non-pending status (the flip is rejected by live Postgres without
+   *      it).
+   *
+   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND status = 'pending'`
+   * (`expectedCurrentStatus='pending'` semantics). Zero rows matched — a
+   * concurrent writer already terminalised the row between the caller's
+   * Phase-A lock release and this write — returns `null` (mirrors
+   * `updateStatus`'s `expectedCurrentStatus` null-return contract; the
+   * caller decides the recovery path). Card metadata is left untouched:
+   * migration 0240 relaxed `payments_card_metadata_iff_card` to permit
+   * `method='card' + status='auto_refunded' + NULL card metadata`, so a
+   * stuck-pending card payment (which never captured `card_*`) terminalises
+   * without a Stripe re-fetch.
+   *
+   * Runs inside the caller's webhook-dispatch tx (thread `tx`) so the flip
+   * + the `payment_auto_refunded_*` audit + `markProcessed` commit
+   * atomically.
+   */
+  markAutoRefunded(
+    tx: unknown,
+    input: {
+      readonly paymentId: PaymentId;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+      readonly completedAt: Date;
+    },
+  ): Promise<Payment | null>;
+
+  /**
    * Resume lookup: find the single pending payment for an (invoice, actor)
    * tuple. Returns null when no resumable attempt exists (idempotency key
    * for `POST /api/payments/initiate` resume per payments-api.md § 1).

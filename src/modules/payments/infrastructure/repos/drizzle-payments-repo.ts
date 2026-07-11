@@ -319,6 +319,47 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return toDomain(updated as PaymentRow);
     },
 
+    /**
+     * A.13 (#3 / CRITICAL-2) — flip a stuck-pending payment to the
+     * terminal `auto_refunded` status + durable marker, guarded on the
+     * row still being `pending`. See the port docstring for the full
+     * contract. Threads the caller's `tx` (never the pool-global `db`)
+     * so the flip commits atomically with the caller's audit +
+     * markProcessed under the same RLS context.
+     *
+     * The `WHERE status = 'pending'` predicate is the
+     * `expectedCurrentStatus`-style guard: zero rows matched → a
+     * concurrent writer already terminalised the row → return `null`
+     * (mirrors `updateStatus`'s null-return). `completed_at` is set to
+     * satisfy `payments_completed_at_iff_not_pending` (migration 0033);
+     * card metadata is deliberately left NULL-safe (migration 0240
+     * relaxed the card CHECK for `auto_refunded`).
+     */
+    async markAutoRefunded(txUnknown, input): Promise<Payment | null> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(payments)
+        .set({
+          status: 'auto_refunded',
+          completedAt: input.completedAt,
+          autoRefundProcessorRefundId: input.processorRefundId,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(payments.tenantId, input.tenantId),
+            eq(payments.id, input.paymentId),
+            eq(payments.status, 'pending'),
+          ),
+        )
+        .returning();
+      // Guard miss (row already terminalised by a concurrent writer) →
+      // null. Unlike `updateStatus`, there is no throw-on-zero fallback:
+      // this method is ALWAYS the guarded form (the pending→auto_refunded
+      // edge is only ever driven from a Phase-A-observed pending row).
+      return updated ? toDomain(updated as PaymentRow) : null;
+    },
+
     async findPendingByInvoiceAndActor(
       tenantIdArg: string,
       invoiceId: string,

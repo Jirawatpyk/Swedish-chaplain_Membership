@@ -53,6 +53,15 @@ function makeDeps(): ConfirmPaymentDeps {
     lockForUpdateByPaymentIntentId: vi.fn(async () => PENDING_PAYMENT),
     insert: vi.fn(),
     updateStatus: vi.fn(async () => ({ ...PENDING_PAYMENT, status: 'succeeded' as const })),
+    // A.13 (#3 / CRITICAL-2) — stale auto-refund terminalises the row.
+    // Default: guard hits (row was pending) → returns the flipped payment
+    // carrying the durable marker + completed_at.
+    markAutoRefunded: vi.fn(async () => ({
+      ...PENDING_PAYMENT,
+      status: 'auto_refunded' as const,
+      completedAt: new Date('2026-05-12T07:00:00.000Z'),
+      autoRefundProcessorRefundId: 're_test_auto',
+    })),
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(async () => []),
     nextAttemptSeq: vi.fn(),
@@ -226,6 +235,84 @@ describe('confirmPayment (T057)', () => {
       ),
     ).toBe(true);
     expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+  });
+
+  // A.13 (#3 / CRITICAL-2) — the stale auto-refund must TERMINALISE the
+  // payment (pending → auto_refunded) + durably record the Stripe refund
+  // id so the later `charge.refund.updated` webhook recognises the
+  // auto-refund instead of firing a false out-of-band alert. Pre-fix the
+  // payment stayed `pending` forever (stuck row) and the durable marker
+  // was never written.
+  it('A.13 — stale auto-refund flips pending → auto_refunded + durable marker (NOT succeeded, no CN)', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    // The row is terminalised via the DEDICATED markAutoRefunded write —
+    // carrying the `re_…` id from the Stripe refund + a completed_at
+    // (migration 0033 CHECK `payments_completed_at_iff_not_pending`).
+    expect(deps.paymentsRepo.markAutoRefunded).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.markAutoRefunded).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paymentId: PENDING_PAYMENT.id,
+        tenantId: TENANT_ID,
+        processorRefundId: 're_test_auto',
+        completedAt: expect.any(Date),
+      }),
+    );
+
+    // NOT the succeeded flip (auto_refunded is excluded from the
+    // succeeded lineage) and NO F4 credit note (tax#4 — a stale-invoice
+    // auto-refund is a payment-level reversal, not a refund-with-CN).
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+
+    // The audit carries the SAME `re_…` id as the durable marker, so a
+    // later webhook can correlate the two.
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const autoRefundAudit = auditCalls.find(
+      (c) => c[1].eventType === 'payment_auto_refunded_stale_invoice',
+    );
+    expect(autoRefundAudit?.[1].payload.processor_refund_id).toBe('re_test_auto');
+  });
+
+  // A.13 — guard-miss branch: a concurrent writer terminalised the row
+  // between Phase A (saw pending) and the Phase B flip. markAutoRefunded
+  // returns null; the use-case STILL emits the money-trail audit +
+  // markProcessed (Stripe DID refund) and returns the stale outcome.
+  it('A.13 — markAutoRefunded guard miss (concurrent terminalisation) still audits + acks', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.paymentsRepo.markAutoRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+    // Forensic money-trail audit still fires (Stripe accepted the refund).
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'payment_auto_refunded_stale_invoice'),
+    ).toBe(true);
   });
 
   it('stale invoice (void) — cause=invoice_voided', async () => {
