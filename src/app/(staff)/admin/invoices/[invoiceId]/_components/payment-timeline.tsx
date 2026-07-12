@@ -24,7 +24,9 @@ import {
   BanknoteIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
+  Loader2Icon,
   RefreshCcwIcon,
+  RotateCcwIcon,
   XCircleIcon,
   XOctagonIcon,
 } from 'lucide-react';
@@ -51,14 +53,23 @@ import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { CopyChargeIdButton } from './copy-charge-id-button';
+import { RefundPendingAnnouncer } from './refund-pending-announcer';
 
 type SyntheticEventType =
   | 'payment_initiated'
   | 'payment_succeeded'
   | 'payment_failed'
   | 'payment_canceled'
+  // Stale-invoice / late-charge auto-refund (migration 0240). Terminal
+  // state reached only from `pending`; writes NO `refunds` row, so the
+  // timeline must surface it from the payment itself (Gap C).
+  | 'auto_refunded'
   | 'invoice_paid'
   | 'refund_initiated'
+  // Async refund still settling at the processor (completedAt === null /
+  // status === 'pending'). Distinct warning-tone affordance so a pending
+  // refund is not read as a completed one (Gap B).
+  | 'refund_pending'
   | 'refund_succeeded'
   | 'refund_failed';
 
@@ -109,11 +120,19 @@ const EVENT_VISUAL: Record<
   },
   payment_failed: { icon: XCircleIcon, cls: 'text-destructive' },
   payment_canceled: { icon: XOctagonIcon, cls: 'text-muted-foreground' },
+  // Auto-refund: benign auto-resolution (money returned) — neutral tone,
+  // reverse-arrow icon, visually distinct from the amber pending row.
+  auto_refunded: { icon: RotateCcwIcon, cls: 'text-muted-foreground' },
   invoice_paid: {
     icon: CheckCircle2Icon,
     cls: 'text-success',
   },
   refund_initiated: { icon: RefreshCcwIcon, cls: 'text-foreground' },
+  // Settling/awaiting — amber warning tone + spinner (reduced-motion safe).
+  refund_pending: {
+    icon: Loader2Icon,
+    cls: 'text-warning motion-safe:animate-spin',
+  },
   refund_succeeded: {
     icon: ArrowDownToLineIcon,
     cls: 'text-success',
@@ -162,7 +181,13 @@ export function buildEvents(
       if (p.status === 'succeeded') terminalType = 'payment_succeeded';
       else if (p.status === 'failed') terminalType = 'payment_failed';
       else if (p.status === 'canceled') terminalType = 'payment_canceled';
-      // 'pending' / 'processing' / 'requires_action' carry no terminal event.
+      // Gap C — the stale-invoice / late-charge auto-refund (migration 0240)
+      // flips `pending → auto_refunded` and writes NO refunds row, so its
+      // terminal event has to come from the payment. Excluded from the
+      // succeeded lineage below (`hasSucceeded`), so no invoice_paid row.
+      else if (p.status === 'auto_refunded') terminalType = 'auto_refunded';
+      // 'partially_refunded' / 'refunded' surface via their refund rows;
+      // 'pending' has no completedAt.
       if (terminalType !== null) {
         events.push({
           id: `${p.id}-${terminalType}`,
@@ -207,6 +232,20 @@ export function buildEvents(
         id: `${r.refundId}-${terminalType}`,
         type: terminalType,
         timestamp: r.completedAt,
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
+        subjectId: r.refundId,
+      });
+    } else if (r.status === 'pending') {
+      // Gap B — async refund accepted by Stripe but not yet settled
+      // (completedAt === null). Emit a distinct settling marker alongside
+      // the neutral refund_initiated row. Timestamped at initiation (the
+      // settling window opens then); pushed AFTER refund_initiated so the
+      // stable sort keeps init → settling order at equal timestamps.
+      // Attributed to the processor/system — it is awaiting the webhook.
+      events.push({
+        id: `${r.refundId}-refund_pending`,
+        type: 'refund_pending',
+        timestamp: r.initiatedAt,
         actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY,
         subjectId: r.refundId,
       });
@@ -287,6 +326,9 @@ export async function PaymentTimeline({
     invoicePaymentRecordedByUserId,
   );
 
+  // Gap B — drive the polite live-region announcer off refund status.
+  const hasPendingRefund = activity.refunds.some((r) => r.status === 'pending');
+
   // Resolve unique non-system actor user ids → email for display.
   const userIds = Array.from(
     new Set(
@@ -356,6 +398,13 @@ export async function PaymentTimeline({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {/* Gap B — polite, delta-scoped live announcement for the pending
+            state. The Card itself stays `role="region"` only (announcing
+            the whole timeline on every soft-nav remount is noisy); this
+            small client wrapper announces just the short settling line. */}
+        {hasPendingRefund && (
+          <RefundPendingAnnouncer message={tEvents('refund_pending')} />
+        )}
         {/* processor charge id chip + copy + dashboard link.
             Hidden when no succeeded payment exists. */}
         {processorRef && dashboardUrl && latestSucceeded && (
@@ -475,6 +524,13 @@ export async function PaymentTimeline({
                       {formatTimestamp(event.timestamp, userLocale)} ·{' '}
                       {resolveActor(event.actorUserId)}
                     </div>
+                    {/* Gap B — reassure the admin the credit note is not
+                        missing; it is booked once the async refund settles. */}
+                    {event.type === 'refund_pending' && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t('refundPendingHint')}
+                      </p>
+                    )}
                   </div>
                 </li>
               );

@@ -3590,7 +3590,9 @@
       "title": "Utfärda återbetalning",
       "button": {
         "label": "Utfärda återbetalning",
-        "ariaLabel": "Utfärda en återbetalning för denna faktura"
+        "ariaLabel": "Utfärda en återbetalning för denna faktura",
+        "settlingLabel": "Återbetalning behandlas…",
+        "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar."
       },
       "dialog": {
         "title": "Utfärda återbetalning?",
@@ -3637,7 +3639,7 @@
         "payment_not_found": "Betalning hittades inte.",
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
-        "refund_in_progress": "En annan återbetalning pågår för denna betalning. Försök igen om en stund.",
+        "refund_in_progress": "En återbetalning behandlas redan för den här betalningen — ingen åtgärd behövs. Den slutförs av sig själv när betalningsleverantören bekräftar.",
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
         "f4_preflight_read_error": "Det gick inte att verifiera det återbetalningsbara saldot just nu. Inga pengar flyttades — försök igen.",
@@ -3676,11 +3678,14 @@
           "payment_succeeded": "Betalning genomförd",
           "payment_failed": "Betalning misslyckades",
           "payment_canceled": "Betalning avbruten",
+          "auto_refunded": "Betalning automatiskt återbetald",
           "invoice_paid": "Faktura markerad som betald",
           "refund_initiated": "Återbetalning påbörjad",
+          "refund_pending": "Återbetalning behandlas — inväntar bekräftelse från betalningsleverantören",
           "refund_succeeded": "Återbetalning genomförd",
           "refund_failed": "Återbetalning misslyckades"
         },
+        "refundPendingHint": "En kreditnota utfärdas när återbetalningen har genomförts.",
         "chargeId": {
           "label": "Transaktions-id",
           "copyAction": "Kopiera transaktions-id",

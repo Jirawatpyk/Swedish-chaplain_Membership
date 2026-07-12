@@ -46,6 +46,15 @@ type Props = {
   readonly receiptDocumentNumberRaw?: string | null;
   /** Invoice document number — shown alongside receipt for context. */
   readonly invoiceDocumentNumber?: string | null;
+  /**
+   * Gap E (2026-07-12) — a NON-terminal (pending/async) refund already
+   * exists for this payment. `computeRemainingRefundable` intentionally
+   * does NOT subtract pending amounts (a pending refund can still FAIL and
+   * re-open the balance), so the button is gated on pending-EXISTENCE
+   * instead: while true, the trigger is disabled and shows a "settling"
+   * affordance. A later failure clears the flag and re-enables it.
+   */
+  readonly pendingRefundExists?: boolean;
 };
 
 export function RefundDialog({
@@ -56,6 +65,7 @@ export function RefundDialog({
   currencyCode,
   receiptDocumentNumberRaw,
   invoiceDocumentNumber,
+  pendingRefundExists = false,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tDialog = useTranslations('admin.refund.dialog');
@@ -63,8 +73,11 @@ export function RefundDialog({
   const searchParams = useSearchParams();
   // Auto-open when ?refund=1 query param is present (T118 cmdk
   // selection path: command palette navigates to
-  // /admin/invoices/[id]?refund=1 → dialog opens automatically).
-  const [open, setOpen] = useState(searchParams.get('refund') === '1');
+  // /admin/invoices/[id]?refund=1 → dialog opens automatically). Never
+  // auto-open while a refund is settling (Gap E — the trigger is disabled).
+  const [open, setOpen] = useState(
+    !pendingRefundExists && searchParams.get('refund') === '1',
+  );
 
   // On close: clear the `?refund=1` query param so a refresh / shared
   // link does not reopen the dialog. `router.replace` keeps history
@@ -83,6 +96,26 @@ export function RefundDialog({
     },
     [searchParams, router, invoiceId],
   );
+
+  // Gap E — a refund is settling: disable the trigger + surface a "settling"
+  // affordance instead of the active dialog. Hooks above run unconditionally
+  // (rules-of-hooks); the branch is a prop-driven render fork.
+  if (pendingRefundExists) {
+    return (
+      <div className="flex flex-col items-start gap-1 sm:items-end">
+        <Button
+          variant="destructive-outline"
+          disabled
+          data-testid="refund-dialog-trigger"
+        >
+          {t('button.settlingLabel')}
+        </Button>
+        <p className="max-w-xs text-xs text-muted-foreground">
+          {t('button.settlingHint')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>

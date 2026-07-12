@@ -10,7 +10,7 @@
  * announcement without re-announcing the whole (Server-rendered) timeline.
  */
 import { describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider, useTranslations } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { RefundPendingAnnouncer } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-pending-announcer';
@@ -51,18 +51,17 @@ describe('admin payment-timeline new i18n keys (Gap B/C)', () => {
 });
 
 describe('RefundPendingAnnouncer (Gap B a11y)', () => {
-  it('announces the pending message in a polite live region after mount', async () => {
+  it('announces the pending message in a polite live region after mount', () => {
     render(
       <RefundPendingAnnouncer message="Refund settling — awaiting processor confirmation" />,
     );
     // The message is set in an effect so the live region MUTATES after mount
-    // (screen readers announce subsequent mutations, not initial content).
-    await waitFor(() =>
-      expect(
-        screen.getByText('Refund settling — awaiting processor confirmation'),
-      ).toBeInTheDocument(),
-    );
+    // (screen readers announce subsequent mutations, not initial content);
+    // RTL's `render` flushes that effect inside `act`, so it is present now.
     const region = screen.getByRole('status');
     expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(region).toHaveTextContent(
+      'Refund settling — awaiting processor confirmation',
+    );
   });
 });

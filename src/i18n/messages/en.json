@@ -3590,7 +3590,9 @@
       "title": "Issue refund",
       "button": {
         "label": "Issue refund",
-        "ariaLabel": "Issue a refund for this invoice"
+        "ariaLabel": "Issue a refund for this invoice",
+        "settlingLabel": "Refund settling…",
+        "settlingHint": "A refund is settling — no action needed until it completes."
       },
       "dialog": {
         "title": "Issue refund?",
@@ -3637,7 +3639,7 @@
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
-        "refund_in_progress": "Another refund is in progress for this payment. Please retry shortly.",
+        "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
         "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
@@ -3676,11 +3678,14 @@
           "payment_succeeded": "Payment succeeded",
           "payment_failed": "Payment failed",
           "payment_canceled": "Payment canceled",
+          "auto_refunded": "Payment auto-refunded",
           "invoice_paid": "Invoice marked paid",
           "refund_initiated": "Refund initiated",
+          "refund_pending": "Refund settling — awaiting processor confirmation",
           "refund_succeeded": "Refund completed",
           "refund_failed": "Refund failed"
         },
+        "refundPendingHint": "A credit note will be issued once the refund settles.",
         "chargeId": {
           "label": "Charge id",
           "copyAction": "Copy charge id",

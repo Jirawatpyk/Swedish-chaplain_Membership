@@ -381,6 +381,7 @@ export default async function InvoiceDetailPage({
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
+    pendingRefundExists: boolean;
   } | null = null;
   if (
     isAdmin &&
@@ -393,9 +394,19 @@ export default async function InvoiceDetailPage({
     if (activity.ok) {
       const remaining = computeRemainingRefundable(activity.value);
       if (remaining) {
+        // Gap E (2026-07-12) — gate the Issue-refund action on a NON-terminal
+        // (pending/async) refund for THIS payment. Pending amounts are NOT
+        // subtracted from `remaining` (a pending refund can still FAIL, after
+        // which the balance must be refundable again); the button is disabled
+        // on pending-EXISTENCE instead, so a later failure re-enables it.
+        const pendingRefundExists = activity.value.refunds.some(
+          (r) =>
+            r.paymentId === remaining.paymentId && r.status === 'pending',
+        );
         refundButtonProps = {
           paymentId: remaining.paymentId,
           remainingRefundableSatang: remaining.remainingSatang,
+          pendingRefundExists,
         };
       }
     }
@@ -552,6 +563,9 @@ export default async function InvoiceDetailPage({
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
                   invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
+                  // Gap E — disable + show "settling" while a pending async
+                  // refund exists for this payment.
+                  pendingRefundExists={refundButtonProps.pendingRefundExists}
                 />
               </Suspense>
             )}
