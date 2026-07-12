@@ -22,10 +22,13 @@ export interface MemberIdentityView {
    * membership tax invoice is issued regardless of whether the buyer carries a
    * TIN (the buyer TIN is mandatory only for a VAT-registrant buyer's own
    * input-VAT claim — the seller chamber is never at fault), so the PDF simply
-   * omits the TIN line. See the doc-kind gate in `issue-invoice.ts` (the only
-   * TIN-based gate left is EVENT + no-TIN → §105 paid-issue path). This field
-   * is carried on the snapshot for reference/observability but no invoicing
-   * use-case reads it to block issuance.
+   * omits the TIN line. See the doc-kind gate in `issue-invoice.ts` (whose only
+   * issue-time TIN-presence gate is EVENT + no-TIN → §105 paid-issue path; a
+   * separate `invalid_tax_id_format` *format* check and the §86/10 credit-note
+   * rules are distinct guards, not company-scope issuance blocks). This field
+   * is carried on the `MemberIdentityView` (a sibling of `snapshot`, not inside
+   * the `MemberIdentitySnapshot` VO) for reference/observability but no
+   * invoicing use-case reads it to block issuance.
    */
   readonly memberTypeScope: 'company' | 'individual' | 'both' | null;
   /**

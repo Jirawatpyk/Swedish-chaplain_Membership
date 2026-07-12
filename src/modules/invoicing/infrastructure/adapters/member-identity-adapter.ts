@@ -39,8 +39,9 @@ export const memberIdentityAdapter: MemberIdentityPort = {
     // individual) onto the identity snapshot for reference. NOTE: issue-invoice
     // does NOT gate on it — the former company `tax_id_required` block was
     // removed 2026-06-12 (a §86/4 membership invoice issues regardless of TIN;
-    // see member-identity-port.ts `memberTypeScope`). The join is retained for
-    // the snapshot field only.
+    // see member-identity-port.ts `memberTypeScope`). The join is retained only
+    // to populate the view's `memberTypeScope` field (a sibling of `snapshot`,
+    // not part of the `MemberIdentitySnapshot` VO).
     // Cross-module raw SQL — same posture this adapter already takes when it
     // reads the F3 `members` table from the invoicing module (RLS still scopes
     // both tables via the per-tenant `tx`); the F2 plans barrel exposes no
