@@ -131,6 +131,12 @@ export async function PATCH(
   // Stays null for the linked path (changeContactEmail returns a verification
   // output, not a Contact) → section 2 re-reads for that case only.
   let emailUpdatedContact: Parameters<typeof serialiseContact>[0] | null = null;
+  // True once section 1 has COMMITTED an email change (either path). Section 2
+  // uses it to surface a partial save: if the non-email field update then fails
+  // we must not return a bare error that hides the already-committed email (a
+  // fresh-key retry would re-emit the email audit) — see the partial-save
+  // branch below.
+  let emailChangeCommitted = false;
 
   // 1) Email change first (if present) — atomic with session revocation
   //    when a linked user exists; falls back to in-tx email-only update
@@ -237,6 +243,8 @@ export async function PATCH(
             );
         }
       }
+      // Linked email change committed (session revoke + verify/revert emails).
+      emailChangeCommitted = true;
     } else {
       // No linked user — the email is a plain contact field (not a login
       // identity), so update it in place. The FR-012a atomic flow above is
@@ -295,6 +303,7 @@ export async function PATCH(
       // skip rememberIdempotentResponse, letting a fresh-key retry duplicate
       // the append-only contact_updated audit row.
       emailUpdatedContact = emailUpdate.value;
+      emailChangeCommitted = true;
     }
   }
 
@@ -338,6 +347,39 @@ export async function PATCH(
       body,
     });
     return NextResponse.json(body, { status: 200 });
+  }
+
+  // Partial save: section 1 (email) COMMITTED but section 2 (non-email fields)
+  // failed. The two use-cases have separate audit + tx boundaries, so we can't
+  // roll the email back here. Returning the bare section-2 error would hide the
+  // committed email from the admin AND a fresh-key retry would re-emit the email
+  // audit. Instead respond 200 with the email-updated contact plus a top-level
+  // `field_update_failed` marker (existing success consumers read the contact
+  // fields and ignore it) so the client can prompt a retry of just the fields.
+  if (hasNonEmail && emailChangeCommitted) {
+    // The unlinked path already holds the committed contact; the linked path
+    // re-reads once (a re-read failure degrades to the normal error below).
+    let committed = emailUpdatedContact;
+    if (committed === null) {
+      const reread = await deps.contactRepo.findById(
+        tenant,
+        parsed.data.contactId as ContactId,
+      );
+      if (reread.ok) committed = reread.value;
+    }
+    if (committed !== null) {
+      const body = {
+        ...serialiseContact(committed),
+        field_update_failed: result.error.type,
+      };
+      // Persist the 200 so a fresh-key retry replays it rather than re-running
+      // (and re-auditing) the committed email change.
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+        status: 200,
+        body,
+      });
+      return NextResponse.json(body, { status: 200 });
+    }
   }
 
   switch (result.error.type) {

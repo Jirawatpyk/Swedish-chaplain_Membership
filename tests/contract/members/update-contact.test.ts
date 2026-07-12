@@ -19,6 +19,11 @@ const requireAdminContextMock = vi.fn();
 const updateContactFieldsMock = vi.fn();
 const changeContactEmailMock = vi.fn();
 const updateUnlinkedContactEmailMock = vi.fn();
+// Hoisted so the partial-save test can assert the 200 was persisted for replay
+// (a fresh-key retry must NOT re-emit the committed email audit).
+const rememberIdempotentResponseMock = vi.hoisted(() =>
+  vi.fn(async () => undefined),
+);
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -68,7 +73,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
-  rememberIdempotentResponse: vi.fn(async () => undefined),
+  rememberIdempotentResponse: rememberIdempotentResponseMock,
   hashRequestBody: vi.fn(() => 'hash'),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -343,5 +348,86 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  // --- Partial-save marker (finding 6/8) -------------------------------------
+  // A combined PATCH runs email (section 1) then non-email fields (section 2)
+  // as two txns. When section 1 commits but section 2 fails, return 200 with
+  // the email-updated contact + a `field_update_failed` marker so the admin
+  // knows the email persisted (and a retry replays via rememberIdempotentResponse
+  // rather than re-emitting the email audit).
+
+  it('200 + field_update_failed when unlinked email commits but field update fails', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubContact)); // unlinked
+    updateUnlinkedContactEmailMock.mockResolvedValueOnce(
+      ok({ ...stubContact, email: 'new@example.com' }),
+    );
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(
+      makeRequest({ email: 'new@example.com', first_name: 'Alicia' }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The committed email is reflected; the marker names the failed section.
+    expect(body.email).toBe('new@example.com');
+    expect(body.field_update_failed).toBe('server_error');
+    // The unlinked path returns the use-case value in hand — no re-read.
+    expect(contactRepoFindByIdMock).toHaveBeenCalledTimes(1);
+    // Persist the 200 so a fresh-key retry replays it (no duplicate email audit).
+    expect(rememberIdempotentResponseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('200 + field_update_failed when linked email commits but field update fails (re-reads)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock
+      .mockResolvedValueOnce(ok(stubLinkedContact)) // section 1 lookup → linked
+      .mockResolvedValueOnce(
+        ok({ ...stubLinkedContact, email: 'alice@new.example' }),
+      ); // partial-save re-read for the response shape
+    changeContactEmailMock.mockResolvedValueOnce(
+      ok({
+        contactId,
+        userId: 'user-123',
+        oldEmail: 'alice@old.example',
+        newEmail: 'alice@new.example',
+        verificationOutboxRowId: 'outbox-v',
+        revertOutboxRowId: 'outbox-r',
+        sessionsRevoked: 1,
+      }),
+    );
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(
+      makeRequest({ email: 'alice@new.example', first_name: 'Alicia', locale: 'th' }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.email).toBe('alice@new.example');
+    expect(body.field_update_failed).toBe('server_error');
+    expect(rememberIdempotentResponseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('field-only update that fails still returns the error (no partial-save marker)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ first_name: 'Alicia' }), {
+      params: routeParams(),
+    });
+    // No email changed → the section-2 error is returned as-is (unaffected).
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('server_error');
+    expect(body.field_update_failed).toBeUndefined();
   });
 });

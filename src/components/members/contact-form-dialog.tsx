@@ -69,6 +69,13 @@ export type ContactInitial = {
    * linked → read-only (sign-in email, changed via the member Edit page).
    */
   readonly linkedUserId: string | null;
+  /**
+   * Whether this is the member's PRIMARY contact. The member Edit page only
+   * changes the PRIMARY contact's sign-in email, so a linked SECONDARY contact
+   * has no edit path there — its email is editable here (routed through the
+   * PATCH linked branch → changeContactEmail / FR-012a).
+   */
+  readonly isPrimary: boolean;
 };
 
 type Props = {
@@ -99,11 +106,15 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Email is editable on ADD, and on EDIT only for an UNLINKED contact
-  // (imported members). A portal-LINKED contact's email is a sign-in identity
-  // → read-only here (changed via the member Edit page / FR-012a). Stable for a
-  // mounted dialog (mode + linkedUserId never change under it).
-  const emailEditable = mode === 'add' || !contact?.linkedUserId;
+  // Email is editable on ADD, on EDIT for an UNLINKED contact (imported
+  // members), and on EDIT for a linked SECONDARY contact — the member Edit page
+  // only changes the PRIMARY contact's sign-in email, so a linked secondary has
+  // no other edit path (the PATCH linked branch routes it through the FR-012a
+  // atomic change-contact-email flow). Only a linked PRIMARY contact's email is
+  // read-only here (a sign-in identity, changed via the member Edit page).
+  // Stable for a mounted dialog (mode + linkedUserId + isPrimary never change).
+  const emailEditable =
+    mode === 'add' || !contact?.linkedUserId || !contact?.isPrimary;
 
   const schema = useMemo(() => {
     const phone = z
@@ -252,8 +263,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           patch.role_title = values.role_title.trim() || null;
         if (values.preferred_language !== c.preferredLanguage)
           patch.preferred_language = values.preferred_language;
-        if (emailEditable && values.email.trim() !== c.email)
+        if (emailEditable && values.email.trim() !== c.email) {
           patch.email = values.email.trim();
+          // `locale` is consumed by changeContactEmail (linked SECONDARY path)
+          // to send the verification email in the contact's language; the route
+          // defaults to 'en' if absent and strips it on the unlinked in-place
+          // path, so sending it always is harmless.
+          patch.locale = values.preferred_language;
+        }
 
         if (Object.keys(patch).length === 0) {
           setOpen(false);
@@ -275,7 +292,20 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           await handleError(res);
           return;
         }
-        toast.success(tA('editSuccess'));
+        // A 200 may carry a `field_update_failed` marker (finding 6/8): the
+        // route runs the email change and the non-email fields as two txns, so
+        // the email can commit while the fields fail. Warn — rather than a plain
+        // success toast — so the admin knows the email saved and only the other
+        // fields need a retry (retrying replays the same idempotency key → no
+        // duplicate email audit).
+        const body = (await res.json().catch(() => ({}))) as {
+          field_update_failed?: string;
+        };
+        if (body.field_update_failed) {
+          toast.warning(t('partialSave'));
+        } else {
+          toast.success(tA('editSuccess'));
+        }
       }
       setOpen(false);
       router.refresh();

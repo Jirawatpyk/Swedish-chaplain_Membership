@@ -1401,6 +1401,7 @@
         "emailEditNote": "Den här kontakten är kopplad till ett portalkonto, så e-postadressen är en inloggningsidentitet. Ändra den på medlemmens redigeringssida (ett verifieringsmejl skickas).",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
+        "partialSave": "E-postadressen uppdaterades, men de övriga ändringarna kunde inte sparas. Försök igen med dem.",
         "submit": "Spara",
         "submitting": "Sparar…",
         "cancel": "Avbryt"

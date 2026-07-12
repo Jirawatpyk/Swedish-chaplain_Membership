@@ -1401,6 +1401,7 @@
         "emailEditNote": "This contact is linked to a portal account, so this email is a sign-in identity. To change it, use the member's Edit page (it sends a verification email).",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
+        "partialSave": "Email updated, but the other changes couldn't be saved. Please retry them.",
         "submit": "Save",
         "submitting": "Saving…",
         "cancel": "Cancel"

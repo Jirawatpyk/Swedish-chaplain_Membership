@@ -18,13 +18,22 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
+const toastWarning = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: (...a: unknown[]) => toastError(...a), info: vi.fn() },
+  toast: {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    error: (...a: unknown[]) => toastError(...a),
+    warning: (...a: unknown[]) => toastWarning(...a),
+    info: vi.fn(),
+  },
 }));
 
 beforeEach(() => {
   vi.useRealTimers();
   toastError.mockClear();
+  toastSuccess.mockClear();
+  toastWarning.mockClear();
 });
 
 function openAddDialog() {
@@ -46,6 +55,10 @@ function openEditDialog(overrides: Partial<ContactInitial> = {}) {
     roleTitle: null,
     preferredLanguage: 'en',
     linkedUserId: null,
+    // Default PRIMARY — a linked PRIMARY contact keeps the read-only email
+    // (sign-in identity changed on the member Edit page). Tests that need the
+    // editable linked-SECONDARY path override `isPrimary: false`.
+    isPrimary: true,
     ...overrides,
   };
   render(
@@ -66,13 +79,56 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     expect(document.querySelector('#cf-email-note')).toBeNull();
   });
 
-  it('LINKED contact: email is read-only (focusable, not disabled) with a note', () => {
-    openEditDialog({ linkedUserId: 'user-1' });
+  it('LINKED PRIMARY contact: email is read-only (focusable, not disabled) with a note', () => {
+    openEditDialog({ linkedUserId: 'user-1', isPrimary: true });
     const email = document.querySelector('#cf-email') as HTMLInputElement;
     // read-only (not disabled) so screen readers still reach it + announce the note.
     expect(email.readOnly).toBe(true);
     expect(email.disabled).toBe(false);
     expect(document.querySelector('#cf-email-note')).not.toBeNull();
+  });
+
+  it('LINKED SECONDARY contact: email field is editable (no dead-end), no note', () => {
+    // A linked SECONDARY contact has no path to change its email on the member
+    // Edit page (that form only edits the PRIMARY). The PATCH route handles a
+    // linked contact's email via changeContactEmail (FR-012a) for ANY linked
+    // contact, so the dialog must let the admin edit it here.
+    openEditDialog({ linkedUserId: 'user-1', isPrimary: false });
+    const email = document.querySelector('#cf-email') as HTMLInputElement;
+    expect(email.readOnly).toBe(false);
+    expect(email.disabled).toBe(false);
+    expect(document.querySelector('#cf-email-note')).toBeNull();
+  });
+
+  it('LINKED SECONDARY contact: a changed email PATCHes `email` AND `locale`', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openEditDialog({
+      linkedUserId: 'user-1',
+      isPrimary: false,
+      email: 'sec@old.example',
+      preferredLanguage: 'th',
+    });
+
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'sec@new.example' },
+    });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
+    );
+    expect(body.email).toBe('sec@new.example');
+    // `locale` steers changeContactEmail's verification email to the contact's
+    // language (the route defaults to 'en' if absent).
+    expect(body.locale).toBe('th');
+
+    vi.unstubAllGlobals();
   });
 
   it('UNLINKED contact: submitting a changed email PATCHes the `email` field', async () => {
@@ -138,6 +194,27 @@ describe('ContactFormDialog — edit-mode email editability', () => {
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.first_name).toBe('Bobby');
     expect('email' in body).toBe(false);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('partial save: a `field_update_failed` marker on a 200 shows a warning, not success', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ field_update_failed: 'server_error' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openEditDialog({ linkedUserId: null, email: 'alice@old.example' });
+
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'alice@new.example' },
+    });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    // The plain success toast must NOT also fire — the admin needs the retry cue.
+    expect(toastSuccess).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });
