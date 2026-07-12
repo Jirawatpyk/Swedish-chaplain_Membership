@@ -2249,6 +2249,12 @@
             "body": "Det automatiska kvittomejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Betalningsposten påverkas inte.",
             "resend": "Skicka kvittomejl igen"
           }
+        },
+        "autoRefundFailed": {
+          "title": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
+          "body": "En automatisk återbetalning för denna fakturas onlinebetalning slutfördes inte hos betalningsleverantören, så medlen har inte återförts till medlemmen. Stäm av detta manuellt.",
+          "ref": "Betalningsleverantörens återbetalningsreferens: {ref}",
+          "runbook": "Följ avstämningsrunboken: {path}"
         }
       },
       "issue": {
@@ -4738,6 +4744,9 @@
           "autoRefundHeading": "Vi har återbetalat din betalning",
           "autoRefundBody": "Vi har återbetalat din betalning eftersom denna faktura annullerades. Återbetalningen visas på ditt kort eller bankutdrag inom 5–10 arbetsdagar.",
           "autoRefundContact": "Om du inte ser återbetalningen efter 10 arbetsdagar, kontakta din kammaradministratör med referensen nedan.",
+          "autoRefundFailedHeading": "Vi stämmer av din betalning",
+          "autoRefundFailedBody": "Din betalning har registrerats och en återbetalning håller på att stämmas av av vårt team. Vi återkommer så snart det är löst.",
+          "autoRefundFailedContact": "Om du har frågor under tiden, kontakta din kammaradministratör med referensen nedan.",
           "autoRefundRef": "Återbetalningsreferens: {ref}"
         }
       }

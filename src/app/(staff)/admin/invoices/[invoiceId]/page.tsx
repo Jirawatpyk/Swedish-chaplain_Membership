@@ -92,11 +92,21 @@ import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { EmailFailureAlert } from '../_components/email-failure-alert';
+import { AutoRefundFailedAlert } from '../_components/auto-refund-failed-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
 import { computeRemainingRefundable } from '@/modules/payments';
+// F5 UX D2 — tenant-scoped audit read for the failed-auto-refund alert. Same
+// documented escape-hatch as the tenant-settings / credit-note reads above:
+// a tenant-scoped infra read (RLS+FORCE), no Application use-case needed.
+import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
+
+// F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
+// path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
+// stamps into its payload). Surfaced to the admin so they can follow it.
+const OOB_RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -299,6 +309,21 @@ export default async function InvoiceDetailPage({
             !isPaidCombined,
     }));
   })();
+
+  // F5 UX D2 — surface a permanently-failed auto-refund (a
+  // `auto_refund_failed_needs_manual_reconcile` forensic exists → the stale-
+  // invoice auto-refund did NOT return the money; funds stuck pending manual
+  // reconciliation). Reuses the SAME tenant-scoped audit read as the member
+  // banner (`findStaleInvoiceAutoRefund`, which now also reports `failed`).
+  // Drafts never auto-refund, so skip the read for them; best-effort so a repo
+  // failure hides the alert rather than 500-ing the page (mirrors the void
+  // banner's graceful-degrade on the member surface).
+  const autoRefundStatus = isDraft
+    ? null
+    : await makeDrizzlePaymentsRepo(tenantCtx.slug)
+        .findStaleInvoiceAutoRefund(invoiceId)
+        .catch(() => null);
+  const autoRefundFailed = autoRefundStatus?.failed === true;
 
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
@@ -641,6 +666,15 @@ export default async function InvoiceDetailPage({
                 canResend={b.canResend}
               />
             ))}
+          {/* F5 UX D2 — failed stale-invoice auto-refund (money not returned);
+              admins only. Ranks with the email-failure banners as a top-of-card
+              red flag so an admin cannot miss stuck funds. */}
+          {isAdmin && autoRefundFailed && (
+            <AutoRefundFailedAlert
+              processorRefundId={autoRefundStatus?.processorRefundId ?? null}
+              runbookUrl={OOB_RUNBOOK_URL}
+            />
+          )}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>

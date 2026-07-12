@@ -2249,6 +2249,12 @@
             "body": "The automatic receipt email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The payment record itself is unaffected.",
             "resend": "Resend receipt email"
           }
+        },
+        "autoRefundFailed": {
+          "title": "Auto-refund failed — needs manual reconciliation",
+          "body": "An automatic refund for this invoice's online payment did not complete at the payment provider, so the funds have not been returned to the member. Reconcile this manually.",
+          "ref": "Processor refund reference: {ref}",
+          "runbook": "Follow the reconciliation runbook: {path}"
         }
       },
       "issue": {
@@ -4738,6 +4744,9 @@
           "autoRefundHeading": "Your payment has been refunded",
           "autoRefundBody": "We've returned your payment because this invoice was voided. The refund will appear on your card or bank statement within 5–10 business days.",
           "autoRefundContact": "If you don't see the refund after 10 business days, please contact your chamber administrator with the reference below.",
+          "autoRefundFailedHeading": "We're reconciling your payment",
+          "autoRefundFailedBody": "Your payment was recorded, and a refund is being reconciled by our team. We'll follow up with you as soon as it's resolved.",
+          "autoRefundFailedContact": "If you have any questions in the meantime, please contact your chamber administrator with the reference below.",
           "autoRefundRef": "Refund reference: {ref}"
         }
       }

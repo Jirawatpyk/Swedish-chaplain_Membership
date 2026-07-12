@@ -481,17 +481,33 @@ export default async function PortalInvoiceDetailPage({
             // even if a tenant's --accent token drifts close to
             // --destructive — the border guarantees visual separation
             // from the void block above without relying on bg contrast.
+            //
+            // F5 UX D1 — branch on `autoRefund.failed`. When the
+            // auto-refund FAILED at the processor (money NOT returned,
+            // manual reconciliation required) we must NOT assert
+            // completion: switch to the calm support-path copy (mirrors
+            // the `receiptFailed` reassurance below — "recorded, being
+            // reconciled, we'll follow up") instead of the definitive
+            // "your payment has been refunded". The not-failed path keeps
+            // the existing definitive copy (its "within 5–10 business
+            // days" hedge covers the still-settling case, which is not
+            // reliably distinguishable from succeeded — see the port
+            // docstring; do NOT over-engineer that distinction).
             <section
               aria-labelledby="invoice-auto-refund-heading"
               data-testid="portal-invoice-auto-refund-notice"
               className="mt-4 rounded-md border border-border border-l-4 border-l-primary bg-card p-3"
             >
               <h3 id="invoice-auto-refund-heading" className="text-sm font-medium text-foreground">
-                {t('void.autoRefundHeading')}
+                {t(autoRefund.failed ? 'void.autoRefundFailedHeading' : 'void.autoRefundHeading')}
               </h3>
               <div role="status" aria-live="polite">
-                <p className="mt-1 text-sm text-muted-foreground">{t('void.autoRefundBody')}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{t('void.autoRefundContact')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t(autoRefund.failed ? 'void.autoRefundFailedBody' : 'void.autoRefundBody')}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t(autoRefund.failed ? 'void.autoRefundFailedContact' : 'void.autoRefundContact')}
+                </p>
                 {autoRefund.processorRefundId && (
                   <p
                     className="mt-2 font-mono text-xs text-muted-foreground"

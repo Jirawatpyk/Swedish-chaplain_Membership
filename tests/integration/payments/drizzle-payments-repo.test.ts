@@ -499,6 +499,45 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(after).not.toBeNull();
     expect(after!.processorRefundId).toBe(probeRefundId);
 
+    // (2b) F5 UX D1/D2 — with ONLY the initiation marker, the auto-refund is
+    //      still settling (no CRITICAL-2 failure forensic yet) → failed=false.
+    //      The member banner keys "refunded" vs "reconciling" copy on this;
+    //      the admin alert keys its destructive card on `failed`.
+    expect(after!.failed).toBe(false);
+
+    // (2c) Append the CRITICAL-2 failure forensic
+    //      (`auto_refund_failed_needs_manual_reconcile`) for the SAME invoice —
+    //      the auto-refund did NOT return the money. `findStaleInvoiceAutoRefund`
+    //      must now report failed=true (a failure audit exists for this invoice).
+    const failPayload = JSON.stringify({
+      payment_id: makeUlid(),
+      invoice_id: probeInvoiceId,
+      auto_refund_processor_refund_id: probeRefundId,
+      refund_status: 'failed',
+      amount_satang: '1000000',
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload,
+           tenant_id, retention_years)
+        VALUES
+          ('auto_refund_failed_needs_manual_reconcile'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000',
+           'H-8 D1/D2 failure probe',
+           ${`h8-fail-${probeInvoiceId}`},
+           ${failPayload}::jsonb,
+           ${tenantA.ctx.slug},
+           10)
+      `);
+    });
+
+    const afterFail = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(afterFail).not.toBeNull();
+    expect(afterFail!.processorRefundId).toBe(probeRefundId);
+    expect(afterFail!.failed).toBe(true);
+
     // (3) Tenant B repo asking about tenant A's invoice → null. The
     //     factory-bound tenantId predicate means this would be null
     //     even without RLS, so this assertion alone proves only the

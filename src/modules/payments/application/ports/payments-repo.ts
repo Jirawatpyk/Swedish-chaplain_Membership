@@ -278,6 +278,18 @@ export interface PaymentsRepo {
    * the member can quote it to their bank. Tenant scoping comes from
    * the factory-bound `ctx` (RLS+FORCE) — caller does not pass tenantId.
    *
+   * F5 UX D1/D2 — also reports `failed`: whether a
+   * `auto_refund_failed_needs_manual_reconcile` forensic (CRITICAL-2,
+   * emitted by `processRefundUpdated` when Stripe settles the
+   * auto-refund `failed`/`canceled`) exists for this invoice. That
+   * marks the money-NOT-returned outcome. The member banner branches
+   * "refunded" vs "being reconciled" on it (never asserting completion
+   * on a failure); the admin invoice detail renders a destructive
+   * "needs manual reconciliation" alert when it is true. The
+   * initiation marker (`payment_auto_refunded_stale_invoice`) always
+   * exists whenever `failed` is true, so a non-null return covers both
+   * surfaces regardless of invoice status.
+   *
    * Authoritative source: `audit_log` (append-only). The F5
    * `refunds.reason` column carries the Stripe enum
    * (`requested_by_customer`) which doesn't disambiguate auto-stale
@@ -296,7 +308,10 @@ export interface PaymentsRepo {
    */
   findStaleInvoiceAutoRefund(
     invoiceId: string,
-  ): Promise<{ readonly processorRefundId: string | null } | null>;
+  ): Promise<{
+    readonly processorRefundId: string | null;
+    readonly failed: boolean;
+  } | null>;
 
   /**
    * A.6 — durable auto-refund lookup (migration 0240

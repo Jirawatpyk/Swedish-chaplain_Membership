@@ -548,6 +548,16 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
      * defence-in-depth WHERE on `tenant_id` mirrors
      * `lockForUpdateByPaymentIntentId` (line 188).
      *
+     * F5 UX D1/D2 — the `failed` column is a correlated `EXISTS` over
+     * the CRITICAL-2 forensic (`auto_refund_failed_needs_manual_reconcile`,
+     * emitted by `processRefundUpdated` when Stripe settles the
+     * auto-refund `failed`/`canceled` — money NOT returned). Keyed on
+     * `invoice_id`, mirroring the initiation-marker lookup; the void →
+     * single-auto-refund money-path means "a failure forensic exists
+     * for this invoice" is the decisive outcome signal. The member
+     * banner uses it to avoid a false "refunded" assurance; the admin
+     * invoice detail uses it to raise a manual-reconciliation alert.
+     *
      * PERMANENT — retained for its live caller (member-portal invoice
      * detail page). See the port docstring
      * (`src/modules/payments/application/ports/payments-repo.ts`) for
@@ -556,22 +566,44 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
      */
     async findStaleInvoiceAutoRefund(
       invoiceId: string,
-    ): Promise<{ readonly processorRefundId: string | null } | null> {
+    ): Promise<{
+      readonly processorRefundId: string | null;
+      readonly failed: boolean;
+    } | null> {
       return runInTenant(ctx, async (tx) => {
         const result = await tx.execute(sql`
-          SELECT payload->>'processor_refund_id' AS processor_refund_id
-            FROM audit_log
-           WHERE tenant_id = ${tenantId}
-             AND event_type = 'payment_auto_refunded_stale_invoice'
-             AND payload->>'invoice_id' = ${invoiceId}
-           ORDER BY timestamp DESC
-           LIMIT 1
+          SELECT init.processor_refund_id AS processor_refund_id,
+                 EXISTS (
+                   SELECT 1
+                     FROM audit_log fail
+                    WHERE fail.tenant_id = ${tenantId}
+                      AND fail.event_type = 'auto_refund_failed_needs_manual_reconcile'
+                      AND fail.payload->>'invoice_id' = ${invoiceId}
+                 ) AS failed
+            FROM (
+              SELECT payload->>'processor_refund_id' AS processor_refund_id
+                FROM audit_log
+               WHERE tenant_id = ${tenantId}
+                 AND event_type = 'payment_auto_refunded_stale_invoice'
+                 AND payload->>'invoice_id' = ${invoiceId}
+               ORDER BY timestamp DESC
+               LIMIT 1
+            ) AS init
         `);
         const rows = Array.from(
-          result as unknown as Iterable<{ processor_refund_id: string | null }>,
+          result as unknown as Iterable<{
+            processor_refund_id: string | null;
+            failed: boolean;
+          }>,
         );
         if (rows.length === 0) return null;
-        return { processorRefundId: rows[0]!.processor_refund_id };
+        return {
+          processorRefundId: rows[0]!.processor_refund_id,
+          // postgres.js parses `bool` → JS boolean; `=== true` guards
+          // against any driver-level surprise (fails toward "not failed"
+          // only if the DB genuinely reports false).
+          failed: rows[0]!.failed === true,
+        };
       });
     },
 
