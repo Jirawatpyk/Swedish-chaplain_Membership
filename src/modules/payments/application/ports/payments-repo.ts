@@ -156,39 +156,45 @@ export interface PaymentsRepo {
 
   /**
    * A.15 (#8 resume-race) — durably stamp `auto_refund_processor_refund_id`
-   * on a payment row that is ALREADY terminal `failed`, WITHOUT changing its
-   * status (architect decision F-9: NO `failed → auto_refunded` edge).
+   * on a payment row WITHOUT changing its status, guarding ONLY on the marker
+   * being absent (status-agnostic; architect decision F-9: NO
+   * `failed → auto_refunded` edge, and by extension no forced edge for ANY
+   * concurrently-terminalised status).
    *
-   * Used by the confirm-payment `failed → succeeded` late-charge reconcile
-   * tail (Phase B): a late `payment_intent.succeeded` captured funds against
-   * a payment that had already committed `failed`; after Stripe accepts the
-   * auto-refund, this write records the `re_…` id on the STILL-`failed` row
-   * so the auto-refund's own later `charge.refund.updated` webhook is
-   * recognised via `findAutoRefundByProcessorRefundId` (A.6/A.11) instead of
-   * firing a false out-of-band alert (RR-6).
+   * Two callers, both in the confirm-payment auto-refund tail (Phase B), both
+   * needing to record the `re_…` id on a NON-`pending` row that
+   * `markAutoRefunded` (guard `status='pending'`) could not flip, so the
+   * auto-refund's own later `charge.refund.updated` / `charge.refunded`
+   * webhook is recognised via `findAutoRefundByProcessorRefundId` (A.6/A.11)
+   * instead of firing a false out-of-band alert (RR-6):
+   *   - sub-case (ii) — the Phase-A-locked row was ALREADY terminal `failed`
+   *     (late captured charge routed through the stale Step-3 path), and the
+   *     `failed → succeeded` late-charge reconcile tail;
+   *   - sub-case (i) — the row was `pending` at Phase A but a concurrent
+   *     writer terminalised it to a DIFFERENT status (e.g. an admin mark-paid
+   *     flip / a late `payment_intent.succeeded`) in the window between Phase
+   *     A's lock release and this write.
    *
-   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND status = 'failed'
-   * AND auto_refund_processor_refund_id IS NULL` (status-preserving —
-   * `status` is NOT touched, so F-9 holds; `completed_at` is untouched and
-   * already satisfies migration 0033's `payments_completed_at_iff_not_pending`
-   * because the row is non-pending). The `IS NULL` predicate makes a Stripe
-   * retry idempotent (the same `re_…` id from the idempotency key does not
-   * overwrite an existing marker; the partial-unique index
+   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND
+   * auto_refund_processor_refund_id IS NULL` (status-preserving — `status` is
+   * NOT touched, so F-9 holds; `completed_at` is untouched — every terminal
+   * status the callers reach here already satisfies migration 0033's
+   * `payments_completed_at_iff_not_pending`). The `IS NULL` predicate makes a
+   * Stripe retry idempotent (the same `re_…` id from the idempotency key does
+   * not overwrite an existing marker; the partial-unique index
    * `payments_auto_refund_processor_refund_id_uniq` is the DB backstop).
    *
-   * Zero rows matched — a concurrent writer changed the row off `failed`
-   * OR a marker was already stamped — returns `null` (mirrors
-   * `markAutoRefunded`'s guard-miss contract; the caller warns + reconciles,
-   * since the Stripe refund DID happen and the audit is the durable trail).
-   * Migration 0240's CHECKs are status-agnostic for this column (no CHECK
-   * ties `auto_refund_processor_refund_id` to status), so writing it on a
-   * `failed` row is valid.
+   * Zero rows matched — a marker was already stamped (Stripe retry / a prior
+   * attempt) — returns `null` (mirrors `markAutoRefunded`'s guard-miss
+   * contract; the caller warns, since the Stripe refund DID happen and the
+   * audit is the durable trail). Migration 0240's CHECKs are status-agnostic
+   * for this column (no CHECK ties `auto_refund_processor_refund_id` to
+   * status), so writing it on any non-`pending` row is valid.
    *
    * Runs inside the caller's webhook-dispatch tx (thread `tx`) so the marker
-   * write + the `payment_auto_refunded_stale_invoice` forensic audit +
-   * `markProcessed` commit atomically.
+   * write + the forensic auto-refund audit + `markProcessed` commit atomically.
    */
-  attachAutoRefundMarkerOnFailed(
+  attachAutoRefundMarkerIfAbsent(
     tx: unknown,
     input: {
       readonly paymentId: PaymentId;

@@ -404,7 +404,7 @@ describe('confirmPayment failed-row + non-payable invoice stale Step-3 marker �
     expect(invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
 
     // THE FIX: the still-`failed` row now carries the durable `re_…` marker
-    // (stamped via attachAutoRefundMarkerOnFailed — markAutoRefunded's
+    // (stamped via attachAutoRefundMarkerIfAbsent — markAutoRefunded's
     // status='pending' guard could never match). Row STAYS `failed` (F-9).
     const afterRow = await db
       .select({

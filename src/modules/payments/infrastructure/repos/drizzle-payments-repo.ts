@@ -361,20 +361,22 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
     },
 
     /**
-     * A.15 (#8 resume-race) — status-PRESERVING durable marker write on a
-     * terminal `failed` row. See the port docstring for the full contract
-     * + F-9 rationale. Threads the caller's `tx` (never the pool-global
-     * `db`) so the marker commits atomically with the caller's forensic
-     * audit + markProcessed under the same RLS context.
+     * A.15 (#8 resume-race) — status-PRESERVING, status-AGNOSTIC durable
+     * marker write. See the port docstring for the full contract + F-9
+     * rationale + the two guard-miss sub-cases it serves. Threads the
+     * caller's `tx` (never the pool-global `db`) so the marker commits
+     * atomically with the caller's forensic audit + markProcessed under the
+     * same RLS context.
      *
-     * Guard `status = 'failed' AND auto_refund_processor_refund_id IS NULL`:
-     * `status` is left untouched (no `failed → auto_refunded` edge — F-9),
-     * `completed_at` is untouched (the failed row already satisfies migration
-     * 0033's `payments_completed_at_iff_not_pending`), and the `IS NULL`
-     * predicate makes a Stripe retry a no-op. Zero rows matched → `null`
-     * (concurrent status change OR marker already present).
+     * Guard `auto_refund_processor_refund_id IS NULL` ONLY (no `status`
+     * coupling): `status` is left untouched (no forced status edge — F-9),
+     * `completed_at` is untouched (every non-`pending` row the callers reach
+     * here already satisfies migration 0033's
+     * `payments_completed_at_iff_not_pending`), and the `IS NULL` predicate
+     * makes a Stripe retry a no-op. Zero rows matched → `null` (marker
+     * already present).
      */
-    async attachAutoRefundMarkerOnFailed(txUnknown, input): Promise<Payment | null> {
+    async attachAutoRefundMarkerIfAbsent(txUnknown, input): Promise<Payment | null> {
       const tx = txUnknown as TenantTx;
       const [updated] = await tx
         .update(payments)
@@ -386,7 +388,6 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
           and(
             eq(payments.tenantId, input.tenantId),
             eq(payments.id, input.paymentId),
-            eq(payments.status, 'failed'),
             isNull(payments.autoRefundProcessorRefundId),
           ),
         )

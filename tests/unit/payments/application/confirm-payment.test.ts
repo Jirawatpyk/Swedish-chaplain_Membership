@@ -62,10 +62,12 @@ function makeDeps(): ConfirmPaymentDeps {
       completedAt: new Date('2026-05-12T07:00:00.000Z'),
       autoRefundProcessorRefundId: 're_test_auto',
     })),
-    // A.15 (#8) — status-preserving marker write on a terminal `failed`
-    // row. Default: guard hits (row was failed + marker NULL) → returns the
-    // still-`failed` row carrying the durable marker (status NOT flipped).
-    attachAutoRefundMarkerOnFailed: vi.fn(async () => ({
+    // A.15 (#8) — status-agnostic, status-preserving marker write. Default:
+    // guard hits (marker NULL) → returns the row carrying the durable marker
+    // (status NOT flipped). Shape a `failed` row by default (the most common
+    // caller); sub-case (i) tests that need a different concurrent status
+    // override the return per-test.
+    attachAutoRefundMarkerIfAbsent: vi.fn(async () => ({
       ...PENDING_PAYMENT,
       status: 'failed' as const,
       completedAt: new Date('2026-05-12T06:30:00.000Z'),
@@ -309,11 +311,14 @@ describe('confirmPayment (T057)', () => {
     expect(autoRefundAudit?.[1].payload.processor_refund_id).toBe('re_test_auto');
   });
 
-  // A.13 — guard-miss branch: a concurrent writer terminalised the row
-  // between Phase A (saw pending) and the Phase B flip. markAutoRefunded
-  // returns null; the use-case STILL emits the money-trail audit +
-  // markProcessed (Stripe DID refund) and returns the stale outcome.
-  it('A.13 — markAutoRefunded guard miss (concurrent terminalisation) still audits + acks', async () => {
+  // A.13 — guard-miss sub-case (i): a concurrent writer terminalised the row
+  // (Phase A saw `pending`) to a DIFFERENT status between Phase A and the
+  // Phase B flip. markAutoRefunded returns null; the use-case STILL emits the
+  // money-trail audit + markProcessed (Stripe DID refund) AND now stamps the
+  // status-agnostic recognition marker (runbook §1.1 sub-case (i), CLOSED) so
+  // the auto-refund's later webhook is recognised instead of firing a false
+  // OOB. Returns the stale outcome.
+  it('A.13 — markAutoRefunded guard miss (sub-case i) stamps the status-agnostic marker + still audits + acks', async () => {
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ok({
@@ -324,11 +329,36 @@ describe('confirmPayment (T057)', () => {
         tenantId: TENANT_ID,
       }),
     );
+    // markAutoRefunded's `status='pending'` guard missed (row raced off
+    // `pending`). The Phase-A-locked payment.status stays `pending` (the
+    // default PENDING_PAYMENT) → the else branch (sub-case i) runs.
     (deps.paymentsRepo.markAutoRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    // The concurrent writer flipped the row to `succeeded`; the status-agnostic
+    // marker-attach still lands (marker was absent).
+    (deps.paymentsRepo.attachAutoRefundMarkerIfAbsent as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...PENDING_PAYMENT,
+      status: 'succeeded' as const,
+      completedAt: new Date('2026-05-12T07:00:00.000Z'),
+      autoRefundProcessorRefundId: 're_test_auto',
+    });
     const result = await confirmPayment(deps, INPUT);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    // THE FIX: the else branch now stamps the status-agnostic marker so a later
+    // charge.refund.updated / charge.refunded recognises the auto-refund on the
+    // concurrently-succeeded row instead of raising a false OOB (guard-miss i).
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paymentId: PENDING_PAYMENT.id,
+        tenantId: TENANT_ID,
+        processorRefundId: 're_test_auto',
+      }),
+    );
+
     // Forensic money-trail audit still fires (Stripe accepted the refund).
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     expect(
@@ -340,9 +370,9 @@ describe('confirmPayment (T057)', () => {
   // (a late captured charge on a NON-payable invoice routes through Step 3,
   // which runs before the transition check and never inspects payment.status).
   // markAutoRefunded's `status='pending'` guard cannot match → fall back to
-  // the A.15 status-preserving marker so A.11 recognises the refund instead of
-  // firing a false OOB. Distinct from sub-case (i) above (pending row raced to
-  // a different terminal status → runbook warn, no marker).
+  // the A.15 status-agnostic marker so A.11 recognises the refund instead of
+  // firing a false OOB. Sibling to sub-case (i) above (pending row raced to a
+  // different terminal status → SAME status-agnostic marker, symmetric fix).
   it('guard-miss (ii) — failed row in stale Step-3 stamps the A.15 marker (auto_refund_recognized, not false OOB)', async () => {
     const deps = makeDeps();
     // Locked row is terminal `failed`.
@@ -375,8 +405,8 @@ describe('confirmPayment (T057)', () => {
 
     // THE FIX: the A.15 status-preserving marker is stamped so A.11 recognises
     // the refund; the row is NOT flipped to auto_refunded (F-9).
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledTimes(1);
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledWith(
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         paymentId: FAILED_PAYMENT.id,
@@ -564,8 +594,8 @@ describe('confirmPayment (T057)', () => {
     // 2) The durable marker is stamped via the STATUS-PRESERVING write —
     //    NOT markAutoRefunded (which would flip to auto_refunded; F-9
     //    forbids that edge) and NOT updateStatus (no succeeded flip).
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledTimes(1);
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledWith(
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         paymentId: FAILED_PAYMENT.id,
@@ -613,7 +643,7 @@ describe('confirmPayment (T057)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('already_succeeded');
     expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       'confirm_payment.late_charge_no_captured_charge',
       expect.objectContaining({ paymentId: FAILED_PAYMENT.id }),
@@ -632,7 +662,7 @@ describe('confirmPayment (T057)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('processor_unavailable');
-    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).not.toHaveBeenCalled();
   });
 
   it('A.15 (#8) — late-charge give-up after 48h → auto_refund_given_up + out_of_band audit', async () => {
@@ -705,7 +735,7 @@ describe('confirmPayment (T057)', () => {
         `status=${status} must not refund`,
       ).not.toHaveBeenCalled();
       expect(
-        deps.paymentsRepo.attachAutoRefundMarkerOnFailed,
+        deps.paymentsRepo.attachAutoRefundMarkerIfAbsent,
         `status=${status} must not stamp marker`,
       ).not.toHaveBeenCalled();
       expect(

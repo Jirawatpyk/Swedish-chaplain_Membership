@@ -25,7 +25,7 @@ function makeStubRepo(
     insert: vi.fn(),
     updateStatus: vi.fn(),
     markAutoRefunded: vi.fn(),
-    attachAutoRefundMarkerOnFailed: vi.fn(),
+    attachAutoRefundMarkerIfAbsent: vi.fn(),
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),

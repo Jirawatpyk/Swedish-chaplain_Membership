@@ -1144,7 +1144,7 @@ export const paymentsMetrics = {
 
   /**
    * A.15 (#8 late-charge) — fires when the failed→succeeded late-charge
-   * reconcile's Phase B catch swallows (the attachAutoRefundMarkerOnFailed +
+   * reconcile's Phase B catch swallows (the attachAutoRefundMarkerIfAbsent +
    * audit + markProcessed tx threw AFTER the Stripe refund committed).
    * DISTINCT from `confirmPaymentStaleRefundPhaseBMarkFailed` (the Step-3
    * stale-invoice variant) so SRE can tell the two Phase B failure paths
