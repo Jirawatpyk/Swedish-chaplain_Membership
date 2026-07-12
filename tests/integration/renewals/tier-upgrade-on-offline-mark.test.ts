@@ -305,7 +305,10 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
               paymentDate: input.paymentDate,
             });
           }
-          return { ok: true, value: { invoiceId, paidAt } };
+          return {
+            ok: true,
+            value: { invoiceId, paidAt, emailDispatch: 'sent' as const },
+          };
         },
       },
     };

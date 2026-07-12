@@ -156,17 +156,27 @@ export function PaymentForm({
       // (read from the response); fall back to the legacy "paid" copy otherwise.
       const body = (await res.json().catch(() => ({}))) as {
         receipt_document_number_raw?: string | null;
+        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+        email_dispatch?: string;
       };
       const rc =
         typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
           ? body.receipt_document_number_raw
           : null;
+      // Cluster 5 (Finding 1) — the receipt was NOT emailed because the member
+      // has no contact email on file. The payment still SUCCEEDED; append a
+      // non-blocking warning line so the admin knows to deliver it manually.
+      const noEmailWarning =
+        body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
       if (rc) {
-        toast.success(t('successReceipt', { number: rc }));
+        toast.success(
+          t('successReceipt', { number: rc }),
+          noEmailWarning ? { description: noEmailWarning } : undefined,
+        );
       } else {
-        toast.success(t('success'), {
-          description: documentNumber ? t('successDetail', { number: documentNumber }) : undefined,
-        });
+        const detail = documentNumber ? t('successDetail', { number: documentNumber }) : null;
+        const description = [detail, noEmailWarning].filter(Boolean).join(' ') || undefined;
+        toast.success(t('success'), description ? { description } : undefined);
       }
       if (onSuccess) {
         // Dialog overlay wrapper — close first, then refresh so the

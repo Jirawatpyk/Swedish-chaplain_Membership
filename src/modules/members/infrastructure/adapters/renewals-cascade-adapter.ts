@@ -10,14 +10,18 @@
  */
 import {
   cancelInFlightCyclesForMember,
+  restoreCycleForMember,
   makeRenewalsDeps,
 } from '@/modules/renewals';
+import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { randomUUID } from 'node:crypto';
+import { drizzleMemberRepo } from '../db/drizzle-member-repo';
 import type {
   RenewalsCascadePort,
   RenewalsCascadeResult,
+  RenewalsRestoreResult,
   SystemCancellationReason,
 } from '../../application/ports/renewals-cascade-port';
 
@@ -34,6 +38,11 @@ export const noopRenewalsCascadeAdapter: RenewalsCascadePort = {
       cancelledCount: 0,
       skippedConcurrentCount: 0,
     };
+  },
+  async restoreForMember(): Promise<RenewalsRestoreResult> {
+    // Test no-op: report the idempotent "nothing to do" outcome so callers
+    // that assert on the restore outcome see a benign value.
+    return { outcome: 'skipped_active_exists' };
   },
 };
 
@@ -164,6 +173,108 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         'members.archive.renewals_cascade_threw',
       );
       return { outcome: 'cascade_failed' };
+    }
+  },
+
+  /**
+   * Cluster 4 (2026-07-12) — F3 undelete → F8 cycle restore.
+   *
+   * Reads the member's registration_date (the fallback anchor) + current
+   * plan from F3's OWN member repo (a relative same-module import — NOT a
+   * cross-module barrel crossing) inside a short `runInTenant` read tx, then
+   * hands them to F8's `restoreCycleForMember` (which opens its own tx to read
+   * the member's PAID-THROUGH frontier, create the cycle anchored there, and
+   * emit the `renewal_cycle_created` audit atomically).
+   *
+   * The two-tx split mirrors the create-member onboarding bridge (F3
+   * supplies the anchor; F8 creates the cycle) and is safe for this
+   * POST-COMMIT best-effort path: `createCycleInTx`'s in-tx idempotency
+   * guard + the active-cycle unique index prevent duplicates even under a
+   * concurrent re-create. Every branch returns a typed
+   * `RenewalsRestoreResult` (never throws) so the F3 caller can log + emit
+   * a metric without failing the undelete.
+   */
+  async restoreForMember(tenant, memberId, opts): Promise<RenewalsRestoreResult> {
+    try {
+      // Resolve the member's registration_date + current plan_id. Absent /
+      // cross-tenant (RLS) / read error → skip (best-effort no-op).
+      const memberResult = await runInTenant(tenant, (tx) =>
+        // `memberId` is already branded `MemberId` (the port param type) — no
+        // re-brand cast needed (Cluster 4 review-fix, FIX 5).
+        drizzleMemberRepo.findByIdInTx(tx, memberId),
+      );
+      if (!memberResult.ok) {
+        logger.warn(
+          {
+            tenantId: tenant.slug,
+            memberId: memberId as string,
+            repoErrorCode: memberResult.error.code,
+            cascade: 'f8_undelete_cycle_restore',
+          },
+          'members.undelete.renewals_restore_member_absent',
+        );
+        return { outcome: 'skipped_member_absent' };
+      }
+
+      const deps = makeRenewalsDeps(tenant.slug);
+      const result = await restoreCycleForMember(deps, {
+        tenant,
+        memberId,
+        planId: memberResult.value.planId,
+        // registration_date is a non-null Date on the member aggregate;
+        // ISO 8601 UTC anchor (createCycleInTx advances it to the current
+        // membership period).
+        registrationDateIso: memberResult.value.registrationDate.toISOString(),
+        initiatedByUserId: opts.initiatedByUserId,
+        requestId: opts.requestId,
+        // Mint a fresh correlation id for the restore audit row — distinct
+        // from the F3 undelete row's request id (mirrors the cancel adapter).
+        correlationId: randomUUID(),
+      });
+
+      if (!result.ok) {
+        logger.error(
+          {
+            err: result.error.kind,
+            errName:
+              result.error.kind === 'restore.server_error'
+                ? result.error.errName
+                : undefined,
+            errMessage:
+              result.error.kind === 'restore.server_error'
+                ? result.error.message
+                : undefined,
+            planId:
+              result.error.kind === 'restore.plan_not_resolvable'
+                ? result.error.planId
+                : undefined,
+            tenantId: tenant.slug,
+            memberId: memberId as string,
+            cascade: 'f8_undelete_cycle_restore',
+          },
+          'members.undelete.renewals_restore_failed',
+        );
+        return { outcome: 'restore_failed' };
+      }
+
+      return result.value.outcome === 'restored'
+        ? { outcome: 'restored', cycleId: result.value.cycleId }
+        : { outcome: 'skipped_active_exists' };
+    } catch (e) {
+      // Defence-in-depth: `restoreCycleForMember` never throws, but the
+      // member read / deps construction could. Treat any throw as a
+      // best-effort failure so the undelete still succeeds.
+      logger.error(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          errName: e instanceof Error ? e.name : undefined,
+          tenantId: tenant.slug,
+          memberId: memberId as string,
+          cascade: 'f8_undelete_cycle_restore',
+        },
+        'members.undelete.renewals_restore_threw',
+      );
+      return { outcome: 'restore_failed' };
     }
   },
 };

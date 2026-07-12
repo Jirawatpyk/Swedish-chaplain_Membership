@@ -30,6 +30,7 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
 import {
@@ -257,10 +258,22 @@ export interface RecordPaymentDeps {
   >;
 }
 
+/**
+ * Cluster 5 (Finding 1) — the paid invoice PLUS an observable auto-email
+ * dispatch outcome. `Invoice & { emailDispatch }` (not a wrapper object) so
+ * every existing consumer that reads the value structurally as an `Invoice`
+ * (the pay route, the F5 webhook bridge, the F8 offline bridge, ~30 tests)
+ * keeps working; `markPaidFromProcessor` still returns `Result<Invoice>`
+ * because the subtype is assignable and the extra field narrows away.
+ */
+export type RecordPaymentSuccess = Invoice & {
+  readonly emailDispatch: EmailDispatchOutcome;
+};
+
 export async function recordPayment(
   deps: RecordPaymentDeps,
   input: RecordPaymentInput,
-): Promise<Result<Invoice, RecordPaymentError>> {
+): Promise<Result<RecordPaymentSuccess, RecordPaymentError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
 
   // R17-03 — Load settings BEFORE the withTx. The settings repo opens its
@@ -312,7 +325,23 @@ export async function recordPayment(
     if (lockedStatus === 'paid') {
       const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) return err({ code: 'invoice_not_found' });
-      return ok(loaded);
+      // Cluster 5 (Finding 1 + review) — a replay does NOT re-attempt the email
+      // (the original payment already owned that decision). Report the outcome
+      // the original attempt would have had so a double-submit toast stays
+      // truthful (and keeps warning on a no-email member). Mirrors the fresh
+      // path's arm precedence EXACTLY: auto-email off → 'disabled'; else no
+      // recipient → 'skipped_no_email'; else F5-suppressed → 'disabled'; else
+      // → 'sent'. Without the suppress arm a suppressed original replayed as
+      // 'sent' (dishonest). Unreachable via the admin pay route today (it never
+      // sets suppressReceiptEmail) but honest for any future caller.
+      const replayEmailDispatch: EmailDispatchOutcome = !settings.autoEmailEnabled
+        ? 'disabled'
+        : !loaded.memberIdentitySnapshot?.primary_contact_email
+          ? 'skipped_no_email'
+          : input.suppressReceiptEmail
+            ? 'disabled'
+            : 'sent';
+      return ok({ ...loaded, emailDispatch: replayEmailDispatch });
     }
 
     if (lockedStatus !== 'issued') {
@@ -963,6 +992,11 @@ export async function recordPayment(
     // tenant has disabled `auto_email_on_payment`. Status flip + audit +
     // outbox-skip log row still run — only the dispatcher enqueue is
     // gated. Spec.md:433: "MAY suppress" (optional override).
+    //
+    // Cluster 5 (Finding 1) — capture WHICH arm fired into an observable
+    // dispatch outcome (returned to the pay route so the admin toast can warn
+    // on a silent no-email skip). This does NOT change whether an email sends.
+    let emailDispatch: EmailDispatchOutcome;
     if (
       settings.autoEmailEnabled &&
       recipientEmail &&
@@ -994,6 +1028,7 @@ export async function recordPayment(
         dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
         ...(privacyFooterKind ? { privacyFooterKind } : {}),
       });
+      emailDispatch = 'sent';
     } else if (
       settings.autoEmailEnabled &&
       recipientEmail &&
@@ -1012,6 +1047,8 @@ export async function recordPayment(
         },
         'recordPayment: receipt-email outbox enqueue suppressed by F5 caller',
       );
+      // F5 tenant setting / per-payment suppression — intentionally not sent.
+      emailDispatch = 'disabled';
     } else if (settings.autoEmailEnabled && !recipientEmail) {
       // Skip-with-warn: snapshot is missing the required field. This
       // is a Domain-invariant violation upstream (likely a legacy or
@@ -1028,6 +1065,13 @@ export async function recordPayment(
         },
         'recordPayment: invoice snapshot missing primary_contact_email — auto-email receipt skipped',
       );
+      // Cluster 5 (Finding 1) — the case the admin must act on: receipt was
+      // NOT emailed because the member has no contact email on file.
+      emailDispatch = 'skipped_no_email';
+    } else {
+      // Auto-email is OFF for this tenant (`settings.autoEmailEnabled` false) —
+      // no email is expected, so no warning.
+      emailDispatch = 'disabled';
     }
 
     // F8 Phase 2 Wave A (T008) — fire registered on-paid callbacks
@@ -1097,7 +1141,9 @@ export async function recordPayment(
 
     // `applyPayment` returns the refreshed row via RETURNING — no need
     // for a second findByIdInTx round-trip.
-    return ok(updated);
+    // Cluster 5 (Finding 1) — thread the auto-email outcome alongside the paid
+    // invoice (subtype of `Invoice`, so no consumer breaks).
+    return ok({ ...updated, emailDispatch });
   });
   } catch (e) {
     if (e instanceof RecordPaymentInternalError) {

@@ -191,6 +191,7 @@ describe('063 at-risk scorer convergence — e-blast axis + tier bucket', () => 
         planYear: 2026,
         status: 'active',
         createdAt: new Date(NOW_MS - 365 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6)
         lastActivityAt: new Date(NOW_MS - 30 * MS_PER_DAY),
       });
       await tx.insert(contacts).values({

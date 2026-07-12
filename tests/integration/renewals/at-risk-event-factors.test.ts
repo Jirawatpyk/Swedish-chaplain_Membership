@@ -147,6 +147,7 @@ describe('BUG-1 — at-risk F6 event-attendance factors wired (single + batch)',
         planId: opts.planIdOverride ?? planId,
         planYear: 2026,
         createdAt: new Date(NOW_MS - 400 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6)
         lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY), // >365d → +5
       });
       await tx.insert(contacts).values({

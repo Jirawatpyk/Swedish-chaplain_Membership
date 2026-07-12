@@ -64,7 +64,69 @@ export interface RenewalsCascadePort {
       readonly requestId: string | null;
     },
   ): Promise<RenewalsCascadeResult>;
+
+  /**
+   * Cluster 4 (2026-07-12) — the SYMMETRIC counterpart of
+   * `cancelInFlightForMember`. Called by F3's `undelete-member` use-case
+   * (POST-COMMIT best-effort) when a member is restored
+   * (`status='archived' → 'active'`).
+   *
+   * `cancelInFlightForMember` cancels the in-flight cycle on archive, so an
+   * un-deleted member would otherwise have NO active cycle and silently drop
+   * out of the renewal pipeline. This method idempotently RE-CREATES one
+   * active cycle for the member via the F8 `createCycleInTx` +
+   * `anchorToCurrentPeriod` path, anchored at the member's PAID-THROUGH
+   * frontier (MAX period_to over completed/anchored cycles), falling back to
+   * the registration anniversary when the member has no paid history. Anchoring
+   * at the frontier (not the anniversary) prevents re-creating a cycle that
+   * OVERLAPS an already-paid period → a double-bill (Cluster 4 review-fix). It
+   * does NOT un-cancel the exact old cancelled cycle — that window may be
+   * long-expired by undelete time; the fresh cycle carries correct, non-expired
+   * dates. Reuses the existing `renewal_cycle_created` audit event (no new
+   * `audit_event_type`).
+   *
+   * IDEMPOTENT — the F8 `findActiveForMemberInTx` in-tx guard no-ops when an
+   * active cycle already exists (`outcome: 'skipped_active_exists'`), and the
+   * `renewal_cycles_active_member_uniq` partial index is the concurrency
+   * backstop. Best-effort: a failure returns a typed non-`restored` outcome;
+   * the F3 caller logs + emits a metric and does NOT fail the undelete.
+   *
+   * `initiatedByUserId` records the F3 admin who undeleted the member
+   * (audit `actor_user_id`); the `renewal_cycle_created` `actor_role` is
+   * `'system'` (system-initiated side-effect of the undelete).
+   */
+  restoreForMember(
+    tenant: TenantContext,
+    memberId: MemberId,
+    opts: {
+      readonly initiatedByUserId: string | null;
+      readonly requestId: string | null;
+    },
+  ): Promise<RenewalsRestoreResult>;
 }
+
+/**
+ * Outcome of `restoreForMember`. Best-effort — the F3 undelete caller
+ * branches on this for observability (a `restore_failed` means the member
+ * has no active cycle and needs an operator follow-up), never to fail the
+ * undelete.
+ *
+ *   - `'restored'`              → a fresh active cycle was created.
+ *   - `'skipped_active_exists'` → the member already held an active cycle
+ *                                 (idempotent replay / concurrent create) —
+ *                                 no duplicate created.
+ *   - `'skipped_member_absent'` → the member could not be read (absent /
+ *                                 cross-tenant via RLS / read error). No-op.
+ *   - `'restore_failed'`        → the F8 restore use-case errored (plan
+ *                                 unresolvable, or an unexpected throw). The
+ *                                 member is left WITHOUT an active cycle;
+ *                                 ops must re-attempt (e.g. admin renew).
+ */
+export type RenewalsRestoreResult =
+  | { readonly outcome: 'restored'; readonly cycleId: string }
+  | { readonly outcome: 'skipped_active_exists' }
+  | { readonly outcome: 'skipped_member_absent' }
+  | { readonly outcome: 'restore_failed' };
 
 /**
  * Discriminated union over the F3 ↔ F8 cascade outcome. Mirrors F7's

@@ -53,6 +53,12 @@ export const CANCEL_CYCLE_ERROR_CODES = [
  * message + a deep-link to the orphan invoice. `no_session` + `forbidden`
  * mirror the cancel list (reachable auth failures with actionable copy).
  *
+ * Cluster 5 (Finding 2) — `plan_not_found` / `settings_missing` /
+ * `member_archived` / `member_not_found` are the PERMANENT F4 rejects the
+ * route now emits (from `f4_permanent_failure`). Each has its own actionable
+ * copy so a freshly-imported member (plan-year/settings not yet seeded) no
+ * longer sees the misleading transient "please try again".
+ *
  * Keep in sync with every code the route can emit:
  *   - pre-switch guards (mark-paid-offline/route.ts): `feature_disabled`,
  *     `invalid_body`
@@ -64,6 +70,11 @@ export const MARK_PAID_OFFLINE_ERROR_CODES = [
   'cycle_not_payable',
   'f4_orphan_invoice',
   'f4_failure',
+  // Cluster 5 (Finding 2) — permanent F4 rejects (actionable, not "retry").
+  'plan_not_found',
+  'settings_missing',
+  'member_archived',
+  'member_not_found',
   'invalid_body',
   'no_session',
   'forbidden',

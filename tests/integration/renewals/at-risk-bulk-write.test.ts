@@ -76,6 +76,7 @@ async function seedMembers(
         planYear: 2026,
         // Backdate so all members clear FR-035 min-tenure gate.
         createdAt: new Date(NOW_MS - 60 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6), else min-tenure-skipped
         // >365d for FR-029 line 7 → +5 score.
         lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY),
       });

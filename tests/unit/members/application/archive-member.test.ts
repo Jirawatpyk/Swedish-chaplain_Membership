@@ -221,6 +221,11 @@ function makeDeps(overrides: Partial<{
           skippedConcurrentCount: 0,
         }) as const,
     ),
+    // Cluster 4 — archive never calls restore, but the port method is
+    // REQUIRED; no-op stub keeps the deps typecheck-clean.
+    restoreForMember: vi.fn(
+      async () => ({ outcome: 'skipped_active_exists' as const }) as const,
+    ),
   };
   return {
     tenant,

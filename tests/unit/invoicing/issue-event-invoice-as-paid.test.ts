@@ -784,6 +784,9 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const deps = makeDeps(makeEventDraft(), makeSettings(), null);
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    // Cluster 5 (Finding 1 — event follow-up) — a buyer WITH an email +
+    // auto-email ON reports 'sent' (an outbox row was enqueued).
+    if (r.ok) expect(r.value.emailDispatch).toBe('sent');
 
     // ONE render — the combined ใบกำกับภาษี/ใบเสร็จรับเงิน with the as-paid
     // date pin (issue = due = payment date) and the Model-B annotation.
@@ -973,6 +976,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Cluster 5 (Finding 1 — event follow-up) — the skip is now OBSERVABLE to
+    // the route + toast: auto-email ON but no buyer email → 'skipped_no_email'
+    // (the §86/4 receipt still issued; only the outbox email was skipped).
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
     expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
     skipMetric.mockRestore();
     const warnArgs = vi.mocked(logger.warn).mock.calls[0]?.[0] as
@@ -987,6 +994,9 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok).toBe(true);
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Cluster 5 (Finding 1 — event follow-up) — auto-email intentionally OFF →
+    // 'disabled' (NOT a skip warning; the operator chose not to email).
+    if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
     expect(deps.audit.emit).toHaveBeenCalledTimes(2);
   });
 
@@ -1382,6 +1392,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     const r = await issueEventInvoiceAsPaid(deps, input);
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Cluster 5 (Finding 1 — event follow-up) — the skip is now OBSERVABLE to
+    // the route + toast: auto-email ON but no buyer email → 'skipped_no_email'
+    // (the §86/4 receipt still issued; only the outbox email was skipped).
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
     expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
     skipMetric.mockRestore();
   });

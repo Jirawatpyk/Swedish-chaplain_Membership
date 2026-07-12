@@ -87,6 +87,7 @@ import { env } from '@/lib/env';
 import { tierBucketDowngradePredicateSql } from './tier-bucket-ordinal-sql';
 import {
   computeAtRiskScore,
+  ENGAGEMENT_OBSERVATION_MIN_DAYS,
   type AtRiskFactors,
   type AtRiskScoreResult,
 } from '../../domain/at-risk-score';
@@ -131,6 +132,7 @@ export function makeDrizzleAtRiskScorer(
       const memberRows = await tx
         .select({
           createdAt: members.createdAt,
+          registrationDate: members.registrationDate,
           lastActivityAt: members.lastActivityAt,
           planId: members.planId,
           planYear: members.planYear,
@@ -164,13 +166,45 @@ export function makeDrizzleAtRiskScorer(
       const aggRow = invoiceAgg[0];
 
       const nowMs = Date.now();
+      // Tenure = real membership age → registration_date (the true membership
+      // start), NOT created_at. For an imported member created_at is the import
+      // instant, so a decade-long member would read as ~0-day tenure and be
+      // mis-handled by the FR-035 min-tenure gate. registration_date is a
+      // `date` col (notNull, defaultNow) → parse to a Date; fall back to
+      // created_at defensively. MUST match the batch scorer
+      // (drizzle-member-renewal-flags-repo.ts) to avoid single/batch drift.
+      // Two-tier anchor (MUST mirror the batch scorer's fallback): use
+      // registration_date when it parses, else fall back to created_at. A
+      // present-but-unparseable registration_date must still fall back (not
+      // yield undefined tenure), so single == batch for the same member.
+      let tenureAnchorMs: number | undefined;
+      if (memberRow?.registrationDate != null) {
+        const t = new Date(
+          memberRow.registrationDate as string | Date,
+        ).getTime();
+        if (!Number.isNaN(t)) tenureAnchorMs = t;
+      }
+      if (tenureAnchorMs === undefined && memberRow?.createdAt != null) {
+        tenureAnchorMs = memberRow.createdAt.getTime();
+      }
       const tenureDays =
+        tenureAnchorMs !== undefined
+          ? Math.floor((nowMs - tenureAnchorMs) / (24 * 60 * 60 * 1000))
+          : undefined;
+      // In-system observation window = now - created_at (when we STARTED
+      // observing this member's in-system benefit usage). Distinct from tenure:
+      // an imported member has LONG tenure but a SHORT observation window. Gates
+      // the engagement factors (G5) so a never-onboarded member's pre-import
+      // zero usage is treated as "no data yet" (skip), not "disengaged".
+      const inSystemDays =
         memberRow?.createdAt != null
           ? Math.floor(
-              (nowMs - memberRow.createdAt.getTime()) /
-                (24 * 60 * 60 * 1000),
+              (nowMs - memberRow.createdAt.getTime()) / (24 * 60 * 60 * 1000),
             )
           : undefined;
+      const engagementObserved =
+        inSystemDays !== undefined &&
+        inSystemDays >= ENGAGEMENT_OBSERVATION_MIN_DAYS;
       const daysSinceContactUpdate =
         memberRow?.lastActivityAt != null
           ? Math.floor(
@@ -466,6 +500,19 @@ export function makeDrizzleAtRiskScorer(
           culturalTicketQuotaPctUsed =
             (culturalUsed / culturalEntitlement) * 100;
         }
+      }
+
+      // G5 — gate the engagement factors on the in-system observation window.
+      // A member we have NOT observed in-system for a full quota year has no
+      // meaningful usage history yet (e.g. an imported member never onboarded),
+      // so their 0 usage is "no data yet" → undefined (Domain skips it), NOT
+      // "disengaged". Mirrors the payment factor's undefined-when-absent
+      // handling; MUST match the batch scorer to avoid single/batch drift.
+      if (!engagementObserved) {
+        eBlastQuotaPctUsed = undefined;
+        eventsAttendedLast12Months = undefined;
+        eventsAttendedLast3Months = undefined;
+        culturalTicketQuotaPctUsed = undefined;
       }
 
       const factors: AtRiskFactors = {

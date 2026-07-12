@@ -510,6 +510,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const rows = await txDb.execute<{
         member_id: string;
         created_at: Date;
+        registration_date: Date | string;
         last_activity_at: Date | null;
         prior_band: string | null;
         overdue_count: string;
@@ -525,6 +526,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         SELECT
           m.member_id,
           m.created_at,
+          m.registration_date,
           m.last_activity_at,
           m.risk_score_band AS prior_band,
           COALESCE(inv.overdue_count, 0)::text AS overdue_count,
@@ -717,6 +719,11 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         return {
           memberId: r.member_id,
           memberCreatedAt: toIso(r.created_at) ?? new Date().toISOString(),
+          // G6 — real membership age anchor (registration_date), distinct from
+          // memberCreatedAt (import instant). The batch use-case derives tenure
+          // from this; kept separate so it can also compute the in-system
+          // observation window (G5) from memberCreatedAt.
+          memberRegistrationDateIso: toIso(r.registration_date),
           lastActivityAtIso: toIso(r.last_activity_at),
           priorRiskBand: (r.prior_band as RiskBand | null) ?? null,
           invoicesOverdueCount: Number.parseInt(r.overdue_count, 10) || 0,

@@ -1,8 +1,17 @@
 /**
- * Resend-bounced-invite use case — F3 spec § Edge Cases.
+ * Resend-invite use case — F3 spec § Edge Cases + Cluster 3 re-invite fix.
  *
- * When an invitation email bounces (`contacts.invite_bounced_at` is set),
- * the admin clicks "Re-send invite" to reissue the invitation email.
+ * Re-sends a portal invitation that has reached a dead-end. Two triggers:
+ *   - BOUNCED: the invitation email bounced (`contacts.invite_bounced_at`
+ *     is set), the original F3 § Edge Cases path.
+ *   - LAPSED (Cluster 3, 2026-07-12): the invite expired unaccepted
+ *     (`invitations.consumed_at` still NULL, `expires_at < now`) so the
+ *     linked user is still `pending`. No bounce flag is required — the
+ *     `invite_bounced_at` guard was removed so an expired-but-pending
+ *     contact can also be re-invited.
+ *
+ * In both cases the admin clicks "Re-send invitation" and this mints a
+ * fresh token for the still-`pending` linked user.
  *
  * Two-phase design (mirrors the reviewed `invitePortal` precedent):
  *
@@ -79,7 +88,11 @@ export type ResendBouncedInviteError =
   | { readonly code: 'not_found' }
   | {
       readonly code: 'not_eligible';
-      readonly reason: 'no_linked_user' | 'not_bounced' | 'already_active';
+      // Cluster 3 (2026-07-12): `not_bounced` was dropped — the bounce-state
+      // guard is gone (a lapsed-but-pending invite is re-sendable without a
+      // bounce), so this use-case never produces that reason. Only the two
+      // reachable reasons remain.
+      readonly reason: 'no_linked_user' | 'already_active';
     }
   | { readonly code: 'server_error'; readonly cause?: unknown };
 
@@ -121,12 +134,14 @@ export async function resendBouncedInvite(
   }
   const userId = contact.linkedUserId;
 
-  // 3. Must be in bounced state.
-  if (!contact.inviteBouncedAt) {
-    return err({ code: 'not_eligible', reason: 'not_bounced' });
-  }
+  // Cluster 3 (2026-07-12): NO `invite_bounced_at` requirement. This
+  // use-case now re-sends a BOUNCED *or* an EXPIRED-BUT-STILL-PENDING
+  // invitation — both are dead-ends the admin must be able to recover
+  // from. Eligibility is gated purely by "linked + still pending" below.
+  // Phase 2's `clearInviteBouncedInTx` is a harmless no-op when the flag
+  // is already null (the lapsed-but-not-bounced case).
 
-  // 4. Linked user must still be pending. Fast pre-check that avoids
+  // 3. Linked user must still be pending. Fast pre-check that avoids
   //    opening an owner-role tx for an obviously-ineligible user; the
   //    F1 reissue use-case re-checks this authoritatively in-tx (TOCTOU
   //    lock) and returns `not_pending` on a redeem race.

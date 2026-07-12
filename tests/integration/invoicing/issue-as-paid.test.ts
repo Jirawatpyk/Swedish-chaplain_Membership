@@ -851,6 +851,55 @@ describe('issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)
     expect(ctx.event_type).toBe('invoice_paid');
     expect(ctx.privacy_footer_kind).toBeNull();
   }, 60_000);
+
+  it('A3 (Cluster 5 / Finding 1 — event follow-up) — TIN buyer with NO contact email → §86/4 receipt STILL issued + numbered + persisted, ZERO outbox rows, emailDispatch="skipped_no_email"', async () => {
+    // A fresh registration + a no-email TIN draft (the §86/4 buyer email is
+    // supplementary — the draft schema accepts `''`). This is the exact
+    // imported-buyer gap Finding 1 makes observable on the EVENT path:
+    // auto-email stays ON (tenant setting), so the enqueue is SKIPPED while
+    // the receipt is fully issued.
+    const { registrationId: regNoEmail } = await seedUcEventWithRegistration(tenant, {
+      attendeeEmail: 'sim.noemail@as-paid.test',
+    });
+    const draftNoEmail = await createUcDraft(tenant, user, regNoEmail, {
+      amountOverrideSatang: 53500, // 535.00 THB inclusive
+      buyer: { ...UC_BUYER_TIN, primary_contact_email: '' },
+    });
+    const reqId = `int-aspaid-uc-a3-${draftNoEmail}`;
+    const res = await issueEventInvoiceAsPaid(makeUseCaseDeps(tenant.ctx.slug, { nowIso: UC_NOW_ISO }), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: reqId,
+      invoiceId: draftNoEmail,
+      paymentDate: UC_PAYMENT_DATE,
+      paymentMethod: 'cash',
+      paymentReference: 'SIM-DOOR-A3',
+    });
+    expect(res.ok, res.ok ? 'ok' : `as-paid err: ${JSON.stringify(res)}`).toBe(true);
+    if (!res.ok) throw new Error('as-paid failed');
+    // The observable outcome — the ONLY behavioural change of this follow-up.
+    expect(res.value.emailDispatch).toBe('skipped_no_email');
+
+    // The §86/4 receipt is NOT skipped: the paid row exists, is combined-doc-
+    // kind, and carries its §87 invoice-stream document number.
+    const row = await readInvoiceRowOwner(tenant.ctx.slug, draftNoEmail);
+    expect(row!.status).toBe('paid');
+    expect(row!.pdfDocKind).toBe('receipt_combined');
+    expect(row!.documentNumber).toBeTruthy();
+    expect(row!.sequenceNumber).not.toBeNull();
+
+    // Both lifecycle audits still committed with the row (issuance is durable).
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, reqId)));
+    expect(audits.filter((a) => a.eventType === 'invoice_issued')).toHaveLength(1);
+    expect(audits.filter((a) => a.eventType === 'invoice_paid')).toHaveLength(1);
+
+    // No auto-email outbox row was enqueued for the no-email buyer.
+    const outboxRows = await outboxRowsForInvoice(tenant.ctx.slug, draftNoEmail);
+    expect(outboxRows).toHaveLength(0);
+  }, 60_000);
 });
 
 // -----------------------------------------------------------------------------

@@ -173,6 +173,33 @@ export async function POST(
             correlationId: ctx.correlationId,
             details: { current_status: result.error.currentStatus },
           });
+        case 'f4_permanent_failure': {
+          // Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry never helps).
+          // Unlike `f4_failure` (whose free-text reason is scrubbed), `reason`
+          // here is a CLOSED safe union of known discriminators, so it is safe
+          // to surface directly as the error code → the client renders distinct,
+          // actionable copy ("add the plan-year", "restore the member", …).
+          logger.warn(
+            {
+              correlationId: ctx.correlationId,
+              cycleId,
+              tenantId: tenantCtx.slug,
+              f4Reason: result.error.reason,
+            },
+            'mark-paid-offline: permanent F4 reject (actionable — retry will not help)',
+          );
+          const permanentStatus =
+            result.error.reason === 'member_not_found'
+              ? 404
+              : result.error.reason === 'member_archived'
+                ? 409
+                : 422;
+          return errorResponse({
+            status: permanentStatus,
+            code: result.error.reason,
+            correlationId: ctx.correlationId,
+          });
+        }
         case 'f4_failure':
           // Round 5 W-02 — log the F4 internal `reason` server-side
           // for ops triage but do NOT echo it to the client. F4's
@@ -256,6 +283,11 @@ export async function POST(
       cycle_status: result.value.cycleStatus,
       invoice_id: result.value.invoiceId,
       new_expires_at: result.value.newExpiresAt,
+      // Cluster 5 (Finding 1) parity — the payment-time §86/4 receipt
+      // auto-email outcome. `'skipped_no_email'` → the admin toast warns the
+      // receipt was issued but not emailed (member has no contact email on
+      // file). Snake_case matching `invoice_id` / `new_expires_at`.
+      email_dispatch: result.value.emailDispatch,
     };
     // RRA task 7 fix — include true period start for reanchored toast.
     if (result.value.outcome === 'reanchored') {

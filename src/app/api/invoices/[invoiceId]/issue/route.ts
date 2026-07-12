@@ -96,5 +96,11 @@ export async function POST(
     });
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseInvoice(result.value), { status: 200 });
+  // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the
+  // issue dialog can warn the admin when the invoice was NOT emailed (buyer has
+  // no contact email on file). The issuance itself still succeeded.
+  return NextResponse.json(
+    { ...serialiseInvoice(result.value), email_dispatch: result.value.emailDispatch },
+    { status: 200 },
+  );
 }

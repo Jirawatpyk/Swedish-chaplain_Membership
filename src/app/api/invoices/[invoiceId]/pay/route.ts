@@ -117,5 +117,11 @@ export async function POST(
       : 422;
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseInvoice(result.value));
+  // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the
+  // pay dialog can warn the admin when the receipt was NOT emailed (member has
+  // no contact email on file). The payment itself still succeeded.
+  return NextResponse.json({
+    ...serialiseInvoice(result.value),
+    email_dispatch: result.value.emailDispatch,
+  });
 }

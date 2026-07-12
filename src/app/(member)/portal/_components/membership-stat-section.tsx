@@ -1,9 +1,18 @@
 import { getTranslations } from 'next-intl/server';
+import { env } from '@/lib/env';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveMembershipStat } from '../_lib/dashboard-stats';
 import { loadDashboardRenewalCycle } from './dashboard-reads';
+
+/**
+ * Chamber support/contact address for the lapsed-membership reactivation
+ * mailto. Single source of truth is `SUPPORT_EMAIL` (env, defaulted to the
+ * SweCham address) — the same value backs `invoices-summary-card.tsx`; override
+ * per deployment / tenant-config at multi-tenant onboarding.
+ */
+const SUPPORT_CONTACT_EMAIL = env.supportEmail;
 
 /**
  * 057 portal redesign §4.1 — Membership stat card section.
@@ -66,11 +75,18 @@ export async function MembershipStatSection({
   // the card already shows isn't duplicated. Conditionally spread for
   // exactOptionalPropertyTypes.
   //
-  // `lapsed` is intentionally EXCLUDED: /portal/renewal/[memberId] resolves the
-  // member's cycle via findActiveForMember, which rejects terminal cycles
-  // (lapsed/cancelled/completed) → the page redirect('/portal'), a dead-end for
-  // exactly the lapsed cohort. A lapsed member needs admin reactivation; there
-  // is no self-serve path yet, so we don't offer a button that no-ops.
+  // `lapsed` deliberately does NOT link to /portal/renewal/[memberId]: that
+  // page resolves the member's cycle via findActiveForMember, which rejects
+  // terminal cycles (lapsed/cancelled/completed) → the page redirect('/portal'),
+  // a dead-end for exactly the lapsed cohort. Renewal of a lapsed member is
+  // ADMIN-driven (adminRenewLapsedMember); there is no member self-serve path.
+  //
+  // Cluster 4 (2026-07-12) — instead of the prior dead "Renew to restore"
+  // promise (a button that no-op'd), the lapsed card now surfaces a real next
+  // step: a mailto contact-support CTA so the member can ask the chamber to
+  // reactivate. Mirrors the portal's existing contact-admin affordance
+  // (invoices-summary-card.tsx). Subject line is i18n-driven so members email
+  // in their own language.
   const renewable = stat.kind === 'overdue' || stat.kind === 'due';
   const actionProps = renewable
     ? {
@@ -79,7 +95,16 @@ export async function MembershipStatSection({
           label: t('renewNow'),
         },
       }
-    : {};
+    : stat.kind === 'lapsed'
+      ? {
+          action: {
+            href: `mailto:${SUPPORT_CONTACT_EMAIL}?subject=${encodeURIComponent(
+              t('lapsedMailSubject'),
+            )}`,
+            label: t('contactToRenew'),
+          },
+        }
+      : {};
 
   return (
     <StatCard

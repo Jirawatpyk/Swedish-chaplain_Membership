@@ -97,6 +97,7 @@ async function seedBulkMembers(
       planId: string;
       planYear: number;
       createdAt: Date;
+      registrationDate: string;
       lastActivityAt: Date;
     }> = [];
     const contactRows: Array<{
@@ -143,6 +144,7 @@ async function seedBulkMembers(
         // and the SC-005 SLO measurement misses the bulkSetRiskScores +
         // bulkEmitInTx code paths entirely.
         createdAt: new Date(NOW_MS - 60 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6), else min-tenure-skipped
         // Aged contact-update so FR-029 line 7 (>365d) is exercised on
         // a non-trivial subset; pick 400d to cross the threshold.
         lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY),

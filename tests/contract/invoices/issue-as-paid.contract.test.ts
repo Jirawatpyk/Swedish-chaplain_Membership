@@ -640,6 +640,24 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
   // 200 — happy path
   // -------------------------------------------------------------------------
 
+  it('200 — echoes the email_dispatch outcome so a skipped receipt email surfaces to the client', async () => {
+    issueEventInvoiceAsPaidMock.mockResolvedValueOnce(
+      ok({ ...STUB_PAID_INVOICE, emailDispatch: 'skipped_no_email' as const }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(
+      makePostRequest({ paymentDate: PAST_PAYMENT_DATE }),
+      routeParams,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    // Pins the route's `email_dispatch` echo — a drift that drops it would
+    // otherwise pass (STUB has no emailDispatch → undefined → key omitted).
+    expect(body).toHaveProperty('email_dispatch', 'skipped_no_email');
+  });
+
   it('200 happy — serialised paid invoice; paymentMethod defaults to other when omitted', async () => {
     issueEventInvoiceAsPaidMock.mockResolvedValueOnce(ok(STUB_PAID_INVOICE));
 

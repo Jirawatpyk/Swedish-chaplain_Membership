@@ -325,7 +325,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         }
         return {
           ok: true,
-          value: { invoiceId: fakeInvoiceId, paidAt: fakePaidAt },
+          value: {
+            invoiceId: fakeInvoiceId,
+            paidAt: fakePaidAt,
+            emailDispatch: 'sent' as const,
+          },
         };
       });
 
@@ -513,7 +517,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
           }
           return {
             ok: true,
-            value: { invoiceId: seededInvoiceLoopId, paidAt },
+            value: {
+              invoiceId: seededInvoiceLoopId,
+              paidAt,
+              emailDispatch: 'sent' as const,
+            },
           };
         });
     }
@@ -788,7 +796,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
           }
           return {
             ok: true,
-            value: { invoiceId: seededInvoiceFirstPayId, paidAt },
+            value: {
+              invoiceId: seededInvoiceFirstPayId,
+              paidAt,
+              emailDispatch: 'sent' as const,
+            },
           };
         });
 

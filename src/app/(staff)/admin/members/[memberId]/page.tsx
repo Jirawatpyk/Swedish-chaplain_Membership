@@ -285,9 +285,17 @@ type PendingInvitation = {
    * snapshot-style consistency requirement.
    */
   readonly daysUntilExpiry: number;
+  /**
+   * Cluster 3 (2026-07-12) — true when `expiresAt <= now` at page-render
+   * time. An expired-but-unconsumed invitation now surfaces (the repo
+   * dropped its `expires_at > NOW()` filter) so the UI can show an
+   * "Invitation expired" badge + a re-invite affordance instead of a
+   * false "Portal linked" dead-end.
+   */
+  readonly expired: boolean;
 };
 
-function ContactBlock({
+export function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
@@ -359,8 +367,9 @@ function ContactBlock({
             )}
             {/* C6 round-10 ui-design-specialist — inline pending-
                 invitation badge replaces "Portal linked" when the
-                user row exists but `consumed_at` is NULL. */}
-            {pendingInvitation && daysUntilExpiry !== null && (
+                user row exists but `consumed_at` is NULL. Cluster 3
+                (2026-07-12) splits this into a live vs expired variant. */}
+            {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
               <Badge
                 variant="outline"
                 className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
@@ -385,12 +394,36 @@ function ContactBlock({
                 </span>
               </Badge>
             )}
+            {/* Cluster 3 (2026-07-12) — an invitation that expired
+                unaccepted (still consumed_at IS NULL, past expires_at).
+                Destructive styling signals the dead-end; the sibling
+                "Re-send invitation" button (below) is the recovery. */}
+            {pendingInvitation && pendingInvitation.expired && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
+                aria-label={t('pendingInvitations.expiredAria')}
+              >
+                <MailWarningIcon
+                  aria-hidden="true"
+                  className="size-3"
+                />
+                <span>{t('pendingInvitations.expired')}</span>
+              </Badge>
+            )}
             {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
                 Shown when invite_bounced_at is set (the invitation email
-                bounced and was never delivered). Sits alongside the
-                pending-invitation badge or alone when the pending row
-                has since expired. */}
-            {contact.inviteBouncedAt && (
+                bounced and was never delivered). Sits alongside a LIVE
+                pending-invitation badge.
+
+                Cluster 3 review (2026-07-12) — suppressed when the pending
+                invite has ALSO expired: the red "Invitation expired" badge
+                above already signals the dead-end and the shared "Re-send
+                invitation" button below is the single recovery, so showing
+                a second near-identical red "Invite bounced" badge for the
+                same root cause is redundant (a11y double-badge finding). */}
+            {contact.inviteBouncedAt &&
+              !(pendingInvitation && pendingInvitation.expired) && (
               <Badge
                 variant="outline"
                 className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
@@ -415,13 +448,18 @@ function ContactBlock({
             {canInvite && (
               <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
             )}
-            {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
-                invitation bounced AND the contact still has a linked (pending)
-                user. The button calls the resend-invite route, which re-issues
-                the invitation email (owner role) then clears the bounce flag. */}
-            {contact.inviteBouncedAt && contact.linkedUserId && (
-              <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-            )}
+            {/* F3 spec § Edge Cases + Cluster 3 — "Re-send invitation" button.
+                Shown when the contact has a linked (pending) user AND the
+                invitation is in a dead-end: it either BOUNCED
+                (`inviteBouncedAt`) OR expired unaccepted
+                (`pendingInvitation.expired`). The route re-issues the
+                invitation email (owner role) for the still-pending user; the
+                in-tx `status==='pending'` re-check keeps it safe. */}
+            {contact.linkedUserId &&
+              (contact.inviteBouncedAt ||
+                (pendingInvitation && pendingInvitation.expired)) && (
+                <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+              )}
             {/* DV-11 — re-send verification email when the linked contact's
                 email is still unverified (e.g. mid email-change).
                 Fix 6: outer {canWrite && (…)} block already guards this
@@ -614,6 +652,9 @@ export default async function MemberDetailPage({
                     0,
                     Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
                   ),
+                  // Cluster 3 — expired-unaccepted invite (drives the
+                  // "Invitation expired" badge + re-invite affordance).
+                  expired: row.expiresAt.getTime() <= nowMs,
                 },
               ]),
             );
@@ -720,6 +761,13 @@ export default async function MemberDetailPage({
   // additionally require status !== 'archived'; the GDPR-export section keeps its
   // own admin-only + !isErased gate).
   const canModify = canWrite && !isErased;
+  // Cluster 4 (2026-07-12) — the "Renew / reactivate" affordance (lapsed
+  // comeback) must be HIDDEN for archived members. `adminRenewLapsedMember`
+  // rejects an archived member server-side (`member_archived`, 068 cluster C):
+  // an archived member must be RESTORED first (the Archive/Undelete affordance
+  // handles that), then renewed. Same status gate the Archive/Edit/add-contact
+  // affordances already use (`canModify && status !== 'archived'`).
+  const canRenew = canModify && member.status !== 'archived';
 
   const legalEntityLabel = resolveLegalEntityTypeLabel(
     member.legalEntityType,
@@ -1067,7 +1115,7 @@ export default async function MemberDetailPage({
                 in). Own Suspense boundary so the F8/F9 reads never block
                 the company/contacts paint. */}
             <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
             </Suspense>
 
             {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
@@ -1083,9 +1131,10 @@ export default async function MemberDetailPage({
           /* Benefits not available: Renewal & Health renders full-width.
              `canRenew` is passed explicitly (was defaulting to false) so the
              Renew action no longer depends on the F9 dashboard flag — same
-             `canModify` gate as the 2-col branch above. */
+             `canRenew` gate (canModify && status !== 'archived') as the 2-col
+             branch above (Cluster 4: never renew an archived member). */
           <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
+            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
           </Suspense>
         )}
 

@@ -1068,6 +1068,8 @@
           "rowLabel": "Inbjuden {date}",
           "expiresAt": "Går ut {date}",
           "expiresInDays": "{days, plural, =0 {Går ut idag} one {Går ut om # dag} other {Går ut om # dagar}}",
+          "expired": "Inbjudan har gått ut",
+          "expiredAria": "Portalinbjudan gick ut utan att accepteras — skicka igen för att återställa",
           "empty": "Inga väntande inbjudningar.",
           "loadError": "Kunde inte läsa in väntande inbjudningar."
         },
@@ -1079,7 +1081,6 @@
           "resendSuccess": "Inbjudan skickad på nytt.",
           "errors": {
             "notFound": "Kontakten hittades inte.",
-            "notBounced": "Denna inbjudan har inte studsat.",
             "alreadyActive": "Den här användaren har redan accepterat sin inbjudan.",
             "noLinkedUser": "Inget portalkonto är kopplat till denna kontakt.",
             "serverError": "Något gick fel. Försök igen."
@@ -2113,6 +2114,10 @@
         },
         "errors": {
           "create_failed": "Kunde inte skapa utkast",
+          "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret under Paket innan du skapar fakturan.",
+          "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem först.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
+          "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
         },
@@ -2328,6 +2333,7 @@
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
         "successWithNumber": "Faktura {number} utfärdad",
+        "successNoEmailWarning": "Ingen e-postadress finns registrerad — fakturan skickades inte. Leverera den till köparen manuellt.",
         "cancel": "Avbryt",
         "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
         "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå som en giltig skattefaktura med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
@@ -2338,14 +2344,22 @@
           "refreshAction": "Uppdatera",
           "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
+          "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du utfärdar.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
+          "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
+          "no_buyer_snapshot": "Det här utkastet saknar köparuppgifter — ta bort det och skapa ett nytt med köparen ifylld.",
+          "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",
+          "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
           "codeFallback": "Felkod: {code}",
-          "unknown": "Ett okänt fel inträffade. Försök igen."
+          "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten."
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
       },
       "issueAsPaid": {
         "success": "Betalningen registrerades — kvitto utfärdat",
+        "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till köparen manuellt.",
         "draftRemains": "Fakturautkastet skapades ändå och visas i fakturalistan.",
         "retry": "Försök igen",
         "errors": {
@@ -2392,6 +2406,7 @@
         "success": "Betalning registrerad",
         "successDetail": "Faktura {number} är nu betald.",
         "successReceipt": "Skattekvitto {number} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
+        "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
         "cancel": "Tillbaka",
         "cancelDialog": "Avbryt",
         "errors": {
@@ -3279,12 +3294,17 @@
           "submitting": "Registrerar…",
           "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
           "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
+          "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
           "viewOrphanInvoice": "Visa faktura",
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
             "cycle_not_payable": "Denna cykel kan inte längre markeras som betald i sitt nuvarande tillstånd.",
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
+            "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret innan du markerar som betald.",
+            "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du markerar som betald.",
+            "member_archived": "Den här medlemmen är arkiverad — återställ medlemmen innan du markerar som betald.",
+            "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
             "invalid_body": "Kontrollera betalningsuppgifterna och försök igen.",
             "no_session": "Din session har gått ut. Logga in igen.",
             "forbidden": "Du har inte behörighet att utföra denna åtgärd.",
@@ -4537,7 +4557,9 @@
         "daysRemainingSub": "Förnyas om {days} dagar",
         "overdueSub": "Försenad med {days} dagar",
         "lapsedValue": "Medlemskap upphört",
-        "lapsedSub": "Ditt medlemskap har upphört. Förnya för att återställa dina förmåner.",
+        "lapsedSub": "Ditt medlemskap har upphört. Kontakta oss för att återaktivera det och återställa dina förmåner.",
+        "contactToRenew": "Kontakta oss för att återaktivera",
+        "lapsedMailSubject": "Begäran om återaktivering av medlemskap",
         "renewNow": "Förnya nu",
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",

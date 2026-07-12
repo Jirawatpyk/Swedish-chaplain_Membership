@@ -29,10 +29,47 @@ export type IssueErrorRouting =
 /** Stale-write 409 → inline "already issued — refresh". */
 const CONCURRENT_CODES: ReadonlySet<string> = new Set(['invoice_already_issued']);
 
-/** Codes with dedicated, operator-actionable inline copy (existing keys). */
+/**
+ * Codes with dedicated, operator-actionable inline copy.
+ *
+ * Cluster 5 (Finding 4) — the irreversible §86/4 issue path previously dumped a
+ * raw "Error code: <code>" for almost every reject. The REACHABLE business
+ * rejects now get actionable copy: `settings_missing` → "configure invoice
+ * settings first"; `member_archived` → "restore the member"; `member_not_found`;
+ * `no_buyer_snapshot` / `invalid_lines` → recreate the draft. The zero-rate
+ * fail-closed codes stay on `codeFallback` (the form fail-closes on them BEFORE
+ * POST, so they are crafted-request-only, i.e. genuinely unexpected here).
+ */
 const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   'event_no_tin_requires_paid_issue',
   'registration_refunded',
+  'settings_missing',
+  'member_archived',
+  'member_not_found',
+  'no_buyer_snapshot',
+  'invalid_lines',
+  // §87 sequential numbers exhausted is a PERMANENT condition until the fiscal
+  // year rolls — "please try again" (the transient copy) fails every retry, so
+  // route it to dedicated `errors.overflow` copy ("...exhausted. Contact
+  // support."), matching the issue-as-paid dialog. (final-review Finding.)
+  'overflow',
+]);
+
+/**
+ * Cluster 5 (Finding 4) — infrastructure faults (the tx already rolled back, so
+ * NOTHING was issued and no §87 number was burned). Surface a single generic
+ * "temporary problem — nothing was issued, please try again" instead of a raw
+ * code. `registration_lookup_failed` (064 S1 — the issuance-time
+ * event-registration re-read faulted, a transient DB read fault where a retry
+ * helps) belongs here: without it the §86/4 dialog dumped a raw "Error code:
+ * registration_lookup_failed" instead of the retry copy. NB: `overflow` (§87
+ * exhaustion) is NOT here — it is a permanent condition, so it lives in
+ * DEDICATED_MESSAGE_CODES → `errors.overflow` (final-review Finding).
+ */
+const TRANSIENT_RETRY_CODES: ReadonlySet<string> = new Set([
+  'pdf_render_failed',
+  'blob_upload_failed',
+  'registration_lookup_failed',
 ]);
 
 export function routeIssueError(
@@ -41,6 +78,9 @@ export function routeIssueError(
   if (code && CONCURRENT_CODES.has(code)) return { kind: 'concurrent' };
   if (code && DEDICATED_MESSAGE_CODES.has(code)) {
     return { kind: 'failure', messageKey: `errors.${code}` };
+  }
+  if (code && TRANSIENT_RETRY_CODES.has(code)) {
+    return { kind: 'failure', messageKey: 'errors.temporary' };
   }
   if (code) return { kind: 'failure', messageKey: 'errors.codeFallback', codeArg: code };
   return { kind: 'failure', messageKey: 'errors.unknown' };

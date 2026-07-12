@@ -67,7 +67,11 @@ import {
 // shapes); type-only for the rest keeps cross-module coupling minimal
 // (Constitution Principle III).
 import { asInvoiceId } from '@/modules/invoicing';
-import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
+import type {
+  F4InvoicePaidEvent,
+  InvoiceId,
+  EmailDispatchOutcome,
+} from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 
 export const markPaidOfflineInputSchema = z.object({
@@ -84,12 +88,23 @@ export const markPaidOfflineInputSchema = z.object({
 
 export type MarkPaidOfflineInput = z.infer<typeof markPaidOfflineInputSchema>;
 
+/**
+ * Cluster 5 (Finding 1) parity — the payment-time auto-email outcome for the
+ * §86/4 renewal receipt, threaded up from the F4 bridge (which reads it off
+ * `recordPayment`'s `Invoice & { emailDispatch }`). The route echoes it as
+ * `email_dispatch` so the admin toast can warn "receipt not emailed" when a
+ * bare imported member has no contact email on file — the SAME silent-skip
+ * gap G10 closed on the three invoice paths. Present on BOTH outcome variants
+ * because the receipt is issued regardless of whether the cycle completes or
+ * re-anchors.
+ */
 export type MarkPaidOfflineOutput =
   | {
       readonly outcome: 'completed';
       readonly cycleStatus: 'completed';
       readonly invoiceId: string;
       readonly newExpiresAt: string;
+      readonly emailDispatch: EmailDispatchOutcome;
     }
   | {
       readonly outcome: 'reanchored';
@@ -102,12 +117,36 @@ export type MarkPaidOfflineOutput =
        * renewal period boundary.
        */
       readonly newPeriodFrom: string;
+      readonly emailDispatch: EmailDispatchOutcome;
     };
+
+/**
+ * Cluster 5 (Finding 2) — F4 bridge rejects that will NEVER succeed on retry
+ * (the underlying member/plan/settings data must be fixed first). These are a
+ * CLOSED set of known enum discriminators — unlike the free-text
+ * `f4_failure.reason` (which the route scrubs from the HTTP body), each of
+ * these is safe to echo to the client as a distinct, operator-actionable code.
+ */
+export type MarkPaidOfflinePermanentReason =
+  | 'plan_not_found'
+  | 'settings_missing'
+  | 'member_archived'
+  | 'member_not_found';
 
 export type MarkPaidOfflineError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'cycle_not_found' }
   | { readonly kind: 'cycle_not_payable'; readonly currentStatus: string }
+  /**
+   * Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry will not help). Kept
+   * distinct from `f4_failure` (transient/infra faults → "please try again")
+   * so the route can surface actionable copy: "add the plan-year", "restore the
+   * member", "configure invoice settings first".
+   */
+  | {
+      readonly kind: 'f4_permanent_failure';
+      readonly reason: MarkPaidOfflinePermanentReason;
+    }
   | { readonly kind: 'f4_failure'; readonly stage: string; readonly reason: string }
   // K1-C7: explicit server_error variant — Application throws are
   // forbidden by Principle III. Surface as Result so the route handler
@@ -125,6 +164,26 @@ export type MarkPaidOfflineError =
       readonly orphanInvoiceId: string;
       readonly reason: string;
     };
+
+/**
+ * Cluster 5 (Finding 2) — the F4 bridge `reason` codes that are PERMANENT
+ * (retry never helps). Sourced from `CreateInvoiceDraftError` + `IssueInvoiceError`
+ * (the two pre-payment bridge steps): `plan_not_found` / `member_not_found` /
+ * `member_archived` / `settings_missing`. Any other reason (PDF/blob faults,
+ * overflow, races) stays transient → the generic "please try again".
+ */
+const PERMANENT_F4_REASONS: ReadonlySet<string> = new Set([
+  'plan_not_found',
+  'settings_missing',
+  'member_archived',
+  'member_not_found',
+]);
+
+function isPermanentF4Reason(
+  reason: string,
+): reason is MarkPaidOfflinePermanentReason {
+  return PERMANENT_F4_REASONS.has(reason);
+}
 
 // Cycles in these statuses can be marked paid offline. Lapsed cycles
 // require the explicit reactivation flow (US3+); cancelled and completed
@@ -538,6 +597,20 @@ export async function markPaidOffline(
             reason: bridgeResult.error.reason,
           });
         }
+        // Cluster 5 (Finding 2) — the failure is at step 1 (create draft) or
+        // step 2 (issue), BEFORE any §87 number was burned, so there is no
+        // orphan. Branch on the underlying F4 code (`reason`): a known PERMANENT
+        // reject gets a distinct, actionable route code; everything else stays
+        // the transient `f4_failure` ("please try again"). Retrying a
+        // permanent reject (plan-year not in the catalogue, member archived,
+        // settings unconfigured, member missing) will NEVER succeed until the
+        // data is fixed — telling the admin to retry sends them in circles.
+        if (isPermanentF4Reason(bridgeResult.error.reason)) {
+          return err({
+            kind: 'f4_permanent_failure' as const,
+            reason: bridgeResult.error.reason,
+          });
+        }
         return err({
           kind: 'f4_failure' as const,
           stage: bridgeResult.error.kind,
@@ -577,6 +650,8 @@ export async function markPaidOffline(
           newExpiresAt: reanchored.cycle.periodTo,
           // RRA task 7 fix — true period start (first of month) after re-anchor.
           newPeriodFrom: reanchored.cycle.periodFrom,
+          // Cluster 5 (Finding 1) parity — surface the receipt auto-email skip.
+          emailDispatch: bridgeResult.value.emailDispatch,
         });
       }
       return ok({
@@ -584,6 +659,8 @@ export async function markPaidOffline(
         cycleStatus: 'completed' as const,
         invoiceId: bridgeResult.value.invoiceId,
         newExpiresAt,
+        // Cluster 5 (Finding 1) parity — surface the receipt auto-email skip.
+        emailDispatch: bridgeResult.value.emailDispatch,
       });
     });
 

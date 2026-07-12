@@ -40,6 +40,7 @@ import {
   makeRecordPaymentDeps,
   type F4InvoicePaidEvent,
   type CreateInvoiceDraftInput,
+  type EmailDispatchOutcome,
 } from '@/modules/invoicing';
 
 export type F4OfflinePaymentMethod = 'bank_transfer' | 'cash' | 'cheque';
@@ -99,6 +100,17 @@ export interface IssueAndMarkPaidResult {
   readonly invoiceId: string;
   /** ISO 8601 UTC. */
   readonly paidAt: string;
+  /**
+   * Cluster 5 (Finding 1) parity — the payment-time auto-email outcome
+   * `recordPayment` computed for the §86/4 renewal receipt. The bridge sets
+   * `autoEmailOnIssue: false` on the DRAFT (no email at issue) but does NOT
+   * suppress the payment-time receipt email, so `recordPayment` attempts it
+   * and reports `'skipped_no_email'` when the member has no contact email on
+   * file (the imported-member case). Surfacing it here lets the F8 use-case →
+   * route → admin toast warn that the receipt was issued but not emailed —
+   * closing the SAME silent-skip gap G10 fixed on the three invoice paths.
+   */
+  readonly emailDispatch: EmailDispatchOutcome;
 }
 
 export type F4BridgeError =
@@ -253,9 +265,17 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
     const paidAtIso =
       paidAtField instanceof Date ? paidAtField.toISOString() : String(paidAtField);
 
+    // Cluster 5 (Finding 1) parity — `recordPayment` returns
+    // `Invoice & { emailDispatch }`; read the outcome off the value the same
+    // way `paidAt` is read above and thread it up so the F8 use-case → route →
+    // admin toast can warn when the receipt was NOT emailed (no email on file).
+    const emailDispatch = (paid.value as { emailDispatch: EmailDispatchOutcome })
+      .emailDispatch;
+
     return ok({
       invoiceId,
       paidAt: paidAtIso,
+      emailDispatch,
     });
   },
 };

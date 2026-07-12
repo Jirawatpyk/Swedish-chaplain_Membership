@@ -1376,6 +1376,46 @@ export function makeDrizzleRenewalCycleRepo(
     },
 
     /**
+     * Cluster 4 review-fix (money BLOCKER) — the member's PAID-THROUGH
+     * frontier: `MAX(period_to)` over cycles that represent SETTLED / paid
+     * coverage (`status = 'completed' OR anchored_at IS NOT NULL` — the same
+     * "paid" predicate `countSettledCyclesForMemberInTx` uses). Status is not
+     * otherwise filtered: a paid cycle later CANCELLED by the archive cascade
+     * still counts (its `anchored_at` survives the cancel), while an unpaid
+     * cancelled/lapsed cycle is excluded because it satisfies neither positive
+     * predicate. Returns null when the member has no paid coverage. In-tx so
+     * the restore reads a consistent snapshot with `createCycleInTx`. See the
+     * port doc for the double-bill rationale.
+     */
+    async findMaxPaidThroughForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<string | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          maxPeriodTo: sql<
+            Date | string | null
+          >`max(${renewalCycles.periodTo})`,
+        })
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.memberId, memberId),
+            or(
+              eq(renewalCycles.status, 'completed'),
+              isNotNull(renewalCycles.anchoredAt),
+            ),
+          ),
+        );
+      const raw = rows[0]?.maxPeriodTo ?? null;
+      // `MAX(timestamptz)` comes back as a Date from postgres.js (like the
+      // other timestamptz columns); coerce defensively for a string too.
+      return raw === null ? null : new Date(raw).toISOString();
+    },
+
+    /**
      * F2 fix (final-review, 2026-07-09) — count of the member's cycles,
      * EXCLUDING `excludeCycleId` (the caller's current open cycle), that
      * represent a SETTLED renewal: status 'completed' OR

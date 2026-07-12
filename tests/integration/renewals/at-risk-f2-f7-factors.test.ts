@@ -128,6 +128,7 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         planYear: 2026,
         // Backdate so member clears FR-035 min-tenure gate.
         createdAt: new Date(NOW_MS - 365 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6)
         lastActivityAt: new Date(NOW_MS - 30 * MS_PER_DAY),
       });
       await tx.insert(contacts).values({
@@ -209,6 +210,7 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         planId,
         planYear: 2026,
         createdAt: new Date(NOW_MS - 365 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6)
         lastActivityAt: new Date(NOW_MS - 30 * MS_PER_DAY),
       });
       await tx.insert(contacts).values({
@@ -291,6 +293,7 @@ describe('F8 at-risk Round 7 factors — F2 tier-downgrade + F7 e-blast quota', 
         planId,
         planYear: 2026,
         createdAt: new Date(NOW_MS - 365 * MS_PER_DAY),
+        registrationDate: '2019-01-01', // real membership age → tenure anchor (G6)
         lastActivityAt: new Date(NOW_MS - 30 * MS_PER_DAY),
       });
       await tx.insert(contacts).values({

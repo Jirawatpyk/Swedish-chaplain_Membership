@@ -25,6 +25,7 @@
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
+import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { EmailOutboxPort, F4OutboxEventType } from '../ports/email-outbox-port';
 
 export interface EnqueueInvoiceAutoEmailArgs {
@@ -47,7 +48,7 @@ export async function enqueueInvoiceAutoEmail(
   outbox: EmailOutboxPort,
   tx: unknown,
   args: EnqueueInvoiceAutoEmailArgs,
-): Promise<void> {
+): Promise<EmailDispatchOutcome> {
   const recipientEmail = (args.recipientEmail ?? '').trim();
   if (recipientEmail === '') {
     invoicingMetrics.autoEmailSkipped(args.invoiceSubject, 'no_recipient');
@@ -60,7 +61,9 @@ export async function enqueueInvoiceAutoEmail(
       },
       args.skipLogMessage,
     );
-    return;
+    // Cluster 5 (Finding 1) — make the otherwise-silent skip observable to the
+    // caller so the issuance route + admin toast can warn "no email on file".
+    return 'skipped_no_email';
   }
   await outbox.enqueue(tx, {
     tenantId: args.tenantId,
@@ -71,4 +74,5 @@ export async function enqueueInvoiceAutoEmail(
     pdfTemplateVersion: args.pdfTemplateVersion,
     ...(args.privacyFooterKind ? { privacyFooterKind: args.privacyFooterKind } : {}),
   });
+  return 'sent';
 }

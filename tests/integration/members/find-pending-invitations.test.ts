@@ -5,16 +5,20 @@
  *
  * Covers the 4 minimal cases the inline-badge UI relies on:
  *   1. Happy path — a contact with a pending invitation surfaces.
- *   2. Expired invitation — `expires_at <= NOW()` filtered out.
+ *   2. Expired-unaccepted invitation — Cluster 3 (2026-07-12): now
+ *      SURFACES (`consumed_at IS NULL`, `expires_at` in the past) so the
+ *      UI can offer a re-invite instead of a false "Portal linked" badge.
  *   3. Consumed invitation — `consumed_at IS NOT NULL` filtered out.
  *   4. Removed contact — `contacts.removed_at IS NOT NULL` filtered out.
  *
- * Plus 2 additional asserts the round-10 critique highlighted:
- *   5. Multiple pending invitations sort soonest-to-expire first
- *      (`expiresAt ASC`). Migration 0017 hides `created_at` from
- *      chamber_app so `expires_at` is the only stable sort key
- *      available — soonest-to-expire is the most actionable order
- *      for admins reviewing the badge cluster.
+ * Plus 3 additional asserts:
+ *   4b. Cluster 3 review (2026-07-12) — an ALREADY-ACTIVE user's lingering
+ *      unconsumed+expired invite is excluded by the `NOT EXISTS` active-user
+ *      anti-join (a consumed invite anywhere = they activated).
+ *   5. DISTINCT ON (contact_id) returns exactly ONE row per contact — the
+ *      latest-expiry unconsumed invite (`ORDER BY contact_id, expires_at
+ *      DESC`). Cross-contact order is not meaningful (the caller keys a Map
+ *      by contactId), so the multi-invite case is asserted set-wise.
  *   6. Tenant isolation — invitations linked to contacts in another
  *      tenant don't leak via the cross-schema join.
  *
@@ -194,15 +198,56 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
     expect(result.value[0]?.expiresAt).toBeInstanceOf(Date);
   });
 
-  it('expired invitation does NOT surface', async () => {
+  it('Cluster 3 — expired-unaccepted invitation DOES surface (consumed_at IS NULL)', async () => {
     const invitedUser = await createActiveTestUser('member');
-    const { memberId } = await seedMemberWithContact(tenant, {
+    const { memberId, contactId } = await seedMemberWithContact(tenant, {
       linkedUserId: invitedUser.userId,
     });
-    // 1 day past
+    // Expired 1 day ago, never consumed → the Cluster 3 re-invite fix now
+    // surfaces this so the member-detail UI can show "Invitation expired"
+    // + a re-invite affordance (was previously filtered out by
+    // `expires_at > NOW()`, which produced a dead-end "Portal linked").
     await seedInvitation(invitedUser.userId, adminUser.userId, {
       createdAt: new Date(Date.now() - 8 * 86_400_000),
       expiresAt: new Date(Date.now() - 86_400_000),
+    });
+
+    const deps = buildMembersDeps(tenant.ctx);
+    const result = await deps.memberRepo.findPendingInvitationsForMember(
+      tenant.ctx,
+      memberId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.contactId).toBe(contactId);
+    // The past expiry is returned as-is; the caller derives `expired`.
+    expect(result.value[0]?.expiresAt.getTime()).toBeLessThan(Date.now());
+  });
+
+  it('Cluster 3 review — ACTIVE user with a lingering unconsumed+expired invite does NOT surface (anti-join)', async () => {
+    // `reissueInvitation` mints a NEW invitation row WITHOUT invalidating the
+    // old one (two-live-tokens posture). So a user who invited → expired →
+    // re-sent → REDEEMED still owns the ORIGINAL unconsumed+expired row. The
+    // active-user anti-join must exclude the whole contact — a consumed invite
+    // ANYWHERE means the user activated, so no false "Invitation expired" badge
+    // is due. Without the `NOT EXISTS` guard the stale inv#1 surfaces (RED).
+    const invitedUser = await createActiveTestUser('member'); // users.status='active'
+    const { memberId } = await seedMemberWithContact(tenant, {
+      linkedUserId: invitedUser.userId,
+    });
+    // inv#1 — the stale ORIGINAL: unconsumed, expired 1 day ago.
+    await seedInvitation(invitedUser.userId, adminUser.userId, {
+      createdAt: new Date(Date.now() - 8 * 86_400_000),
+      expiresAt: new Date(Date.now() - 86_400_000),
+      consumedAt: null,
+    });
+    // inv#2 — the re-issued invite the user actually REDEEMED (consumed).
+    await seedInvitation(invitedUser.userId, adminUser.userId, {
+      createdAt: new Date(Date.now() - 2 * 86_400_000),
+      expiresAt: new Date(Date.now() + 5 * 86_400_000),
+      consumedAt: new Date(),
     });
 
     const deps = buildMembersDeps(tenant.ctx);
@@ -276,19 +321,19 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
     expect(result.value).toHaveLength(0);
   });
 
-  it('multiple pending invitations sort soonest-to-expire first (expiresAt ASC)', async () => {
-    // Two contacts, each with their own pending invitation, one
-    // expiring sooner than the other. The repo sorts by `expires_at
-    // ASC` (migration 0017 hides `created_at` from chamber_app, so
-    // soonest-to-expire is the only stable secondary sort key
-    // available).
+  it('returns exactly ONE row per contact (DISTINCT ON) — the latest-expiry unconsumed invite', async () => {
+    // Cluster 3 review (2026-07-12): the query is now `SELECT DISTINCT ON
+    // (contact_id) … ORDER BY contact_id, expires_at DESC`, so each contact
+    // yields exactly one row — the freshest (latest-expiry) unconsumed invite.
+    // Cross-contact order is NOT meaningful (the caller keys a Map by
+    // contactId), so this asserts set-wise, not positionally.
     const userA = await createActiveTestUser('member');
     const userB = await createActiveTestUser('member');
     const { memberId, contactId: contactA } = await seedMemberWithContact(
       tenant,
       { linkedUserId: userA.userId },
     );
-    // Seed a SECOND contact for the same member
+    // Seed a SECOND contact for the same member.
     const contactB = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(contacts).values({
@@ -307,11 +352,19 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
         removedAt: null,
       });
     });
-    // First invitation expires in 7 days
+    // contactA (userA) has TWO unconsumed invites — a re-issue left the old
+    // one live alongside the fresh one. DISTINCT ON DESC must return the LATER
+    // expiry (7 days), not the stale 3-day row.
+    const laterExpiry = new Date(Date.now() + 7 * 86_400_000);
     await seedInvitation(userA.userId, adminUser.userId, {
-      expiresAt: new Date(Date.now() + 7 * 86_400_000),
+      createdAt: new Date(Date.now() - 4 * 86_400_000),
+      expiresAt: new Date(Date.now() + 3 * 86_400_000),
     });
-    // Second invitation expires in 2 days (sooner → should appear first)
+    await seedInvitation(userA.userId, adminUser.userId, {
+      createdAt: new Date(Date.now() - 1 * 86_400_000),
+      expiresAt: laterExpiry,
+    });
+    // contactB (userB) has a single invite (2 days).
     await seedInvitation(userB.userId, adminUser.userId, {
       expiresAt: new Date(Date.now() + 2 * 86_400_000),
     });
@@ -324,9 +377,17 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // One row per contact — no duplicate for contactA's two invites.
     expect(result.value).toHaveLength(2);
-    expect(result.value[0]?.contactId).toBe(contactB); // expires sooner
-    expect(result.value[1]?.contactId).toBe(contactA); // expires later
+    // Key by string — the output `contactId` is a branded `ContactId`, the
+    // seed vars are plain UUID strings.
+    const byId = new Map(
+      result.value.map((r) => [r.contactId as string, r]),
+    );
+    expect(byId.has(contactA)).toBe(true);
+    expect(byId.has(contactB)).toBe(true);
+    // contactA's row carries the LATER expiry (freshest invite won).
+    expect(byId.get(contactA)?.expiresAt.getTime()).toBe(laterExpiry.getTime());
   });
 
   it('tenant isolation — invitations for contacts in another tenant do not leak', async () => {

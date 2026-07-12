@@ -100,6 +100,7 @@ import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
+import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 
 export const issueEventInvoiceAsPaidSchema = z.object({
   tenantId: z.string().min(1),
@@ -207,10 +208,24 @@ export interface IssueEventInvoiceAsPaidDeps {
   >;
 }
 
+/**
+ * Cluster 5 (Finding 1 — event follow-up) — the paid event invoice PLUS an
+ * observable auto-email dispatch outcome, mirroring `IssueInvoiceSuccess` /
+ * `RecordPaymentSuccess`. `Invoice & { emailDispatch }` (an intersection, not a
+ * wrapper object) so every existing consumer that reads the value structurally
+ * as an `Invoice` (the route's `serialiseInvoice`, tests) keeps working; only
+ * callers that WANT the dispatch signal read the extra field. Makes the
+ * otherwise-silent "buyer has no contact email → receipt not emailed" skip
+ * visible so the admin toast can warn the operator to deliver it manually.
+ */
+export type IssueEventInvoiceAsPaidSuccess = Invoice & {
+  readonly emailDispatch: EmailDispatchOutcome;
+};
+
 export async function issueEventInvoiceAsPaid(
   deps: IssueEventInvoiceAsPaidDeps,
   input: IssueEventInvoiceAsPaidInput,
-): Promise<Result<Invoice, IssueEventInvoiceAsPaidError>> {
+): Promise<Result<IssueEventInvoiceAsPaidSuccess, IssueEventInvoiceAsPaidError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
 
   // Issuance-latency histogram (T113 parity) — a successful as-paid issuance
@@ -728,13 +743,23 @@ export async function issueEventInvoiceAsPaid(
       // Empty-recipient guard (issueInvoice Task-14 A): a non-member buyer
       // snapshot may carry '' — trim + skip + warn (ids only, NO email/PII)
       // + metric so ops can alert on the otherwise-silent skip.
+      // Cluster 5 (Finding 1 — event follow-up) — observable dispatch outcome,
+      // mirroring issueInvoice. This path has NO F5-style suppress flag (see
+      // the L block header), so the arm precedence is the simple two-outcome
+      // one: `'disabled'` when the tenant `autoEmailEnabled` toggle is OFF;
+      // otherwise the helper reports 'sent' vs 'skipped_no_email' (empty buyer
+      // email). Threaded into the returned Invoice subtype so the issue-as-paid
+      // route + event-fee-form toast can warn the admin the §86/4 receipt was
+      // NOT emailed (the receipt is still issued + numbered + persisted — only
+      // the outbox email was skipped).
+      let emailDispatch: EmailDispatchOutcome = 'disabled';
       if (settings.autoEmailEnabled) {
         // Shared helper (wave-4 S15) — trim + empty-recipient skip (warn +
         // metric, ids only) else ONE outbox row; the non-member buyer gets
         // the §87/3 PDPA transparency footer (recordPayment/issueInvoice
         // Task-14 B parity). An enqueue THROW still hard-fails the whole
         // issuance via tx rollback.
-        await enqueueInvoiceAutoEmail(deps.outbox, tx, {
+        emailDispatch = await enqueueInvoiceAutoEmail(deps.outbox, tx, {
           tenantId: input.tenantId,
           invoiceId,
           invoiceSubject: 'event',
@@ -781,7 +806,10 @@ export async function issueEventInvoiceAsPaid(
       // (rolled-back attempts never record; they produced no §87 number).
       invoicingMetrics.issueCount();
       invoicingMetrics.issueDurationMs(performance.now() - issueStartedAt);
-      return ok(paid);
+      // Cluster 5 (Finding 1 — event follow-up) — thread the auto-email outcome
+      // alongside the paid invoice (a structural subtype of `Invoice`, so no
+      // existing consumer breaks).
+      return ok({ ...paid, emailDispatch });
     });
   } catch (e) {
     // Orphan-blob mitigation (reliability L-1 + review Important #1): ANY

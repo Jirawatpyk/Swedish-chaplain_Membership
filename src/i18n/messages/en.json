@@ -1068,6 +1068,8 @@
           "rowLabel": "Invited {date}",
           "expiresAt": "Expires {date}",
           "expiresInDays": "{days, plural, =0 {Expires today} one {Expires in # day} other {Expires in # days}}",
+          "expired": "Invitation expired",
+          "expiredAria": "Portal invitation expired unaccepted — re-send to recover",
           "empty": "No pending invitations.",
           "loadError": "Could not load pending invitations."
         },
@@ -1079,7 +1081,6 @@
           "resendSuccess": "Invitation re-sent.",
           "errors": {
             "notFound": "Contact not found.",
-            "notBounced": "This invitation has not bounced.",
             "alreadyActive": "This user has already accepted their invitation.",
             "noLinkedUser": "No portal account is linked to this contact.",
             "serverError": "Something went wrong. Please try again."
@@ -2113,6 +2114,10 @@
         },
         "errors": {
           "create_failed": "Could not create draft",
+          "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year in Plans before creating the invoice.",
+          "settings_missing": "Invoice settings haven't been configured for this organisation yet — set them up first.",
+          "member_archived": "This member is archived and can't be invoiced — restore the member first.",
+          "member_not_found": "This member could not be found — they may have been removed.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again."
         },
@@ -2328,6 +2333,7 @@
         "issuing": "Issuing…",
         "success": "Invoice issued",
         "successWithNumber": "Invoice {number} issued",
+        "successNoEmailWarning": "No email on file — the invoice was not sent. Deliver it to the buyer manually.",
         "cancel": "Cancel",
         "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
         "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues as a valid tax invoice with name and address, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
@@ -2338,14 +2344,22 @@
           "refreshAction": "Refresh",
           "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
+          "settings_missing": "Invoice settings haven't been configured for this organisation yet — configure them before issuing.",
+          "member_archived": "This member is archived and can't be invoiced — restore the member first.",
+          "member_not_found": "This member could not be found — they may have been removed.",
+          "no_buyer_snapshot": "This draft has no buyer details — delete it and recreate it with the buyer filled in.",
+          "invalid_lines": "This draft's line items are invalid — delete it and recreate it.",
+          "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
-          "unknown": "An unknown error occurred. Please try again."
+          "unknown": "An unknown error occurred. Please try again.",
+          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support."
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
       },
       "issueAsPaid": {
         "success": "Payment recorded — receipt issued",
+        "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the buyer manually.",
         "draftRemains": "The draft invoice was still created and is visible in the invoice list.",
         "retry": "Retry issuing",
         "errors": {
@@ -2392,6 +2406,7 @@
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
         "successReceipt": "Tax receipt {number} issued",
+        "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
         "cancel": "Back to invoice",
         "cancelDialog": "Cancel",
         "errors": {
@@ -3279,12 +3294,17 @@
           "submitting": "Recording…",
           "successToast": "Offline payment recorded — the cycle is now completed.",
           "successReanchored": "Payment recorded — membership period now starts {date}.",
+          "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
           "viewOrphanInvoice": "View invoice",
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
+            "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year before marking paid.",
+            "settings_missing": "Invoice settings haven't been configured for this organisation yet — set them up before marking paid.",
+            "member_archived": "This member is archived — restore the member before marking paid.",
+            "member_not_found": "This member could not be found — they may have been removed.",
             "invalid_body": "Please check the payment details and try again.",
             "no_session": "Your session has expired. Please sign in again.",
             "forbidden": "You don't have permission to perform this action.",
@@ -4537,7 +4557,9 @@
         "daysRemainingSub": "Renews in {days} days",
         "overdueSub": "Overdue by {days} days",
         "lapsedValue": "Membership lapsed",
-        "lapsedSub": "Your membership has ended. Renew to restore your benefits.",
+        "lapsedSub": "Your membership has ended. Contact us to reactivate it and restore your benefits.",
+        "contactToRenew": "Contact us to reactivate",
+        "lapsedMailSubject": "Membership reactivation request",
         "renewNow": "Renew now",
         "errorValue": "Status unavailable",
         "errorSub": "We couldn't load your membership status. Please try again.",
