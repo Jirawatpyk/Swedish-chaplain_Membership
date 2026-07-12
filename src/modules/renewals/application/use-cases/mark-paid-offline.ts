@@ -67,7 +67,11 @@ import {
 // shapes); type-only for the rest keeps cross-module coupling minimal
 // (Constitution Principle III).
 import { asInvoiceId } from '@/modules/invoicing';
-import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
+import type {
+  F4InvoicePaidEvent,
+  InvoiceId,
+  EmailDispatchOutcome,
+} from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 
 export const markPaidOfflineInputSchema = z.object({
@@ -84,12 +88,23 @@ export const markPaidOfflineInputSchema = z.object({
 
 export type MarkPaidOfflineInput = z.infer<typeof markPaidOfflineInputSchema>;
 
+/**
+ * Cluster 5 (Finding 1) parity — the payment-time auto-email outcome for the
+ * §86/4 renewal receipt, threaded up from the F4 bridge (which reads it off
+ * `recordPayment`'s `Invoice & { emailDispatch }`). The route echoes it as
+ * `email_dispatch` so the admin toast can warn "receipt not emailed" when a
+ * bare imported member has no contact email on file — the SAME silent-skip
+ * gap G10 closed on the three invoice paths. Present on BOTH outcome variants
+ * because the receipt is issued regardless of whether the cycle completes or
+ * re-anchors.
+ */
 export type MarkPaidOfflineOutput =
   | {
       readonly outcome: 'completed';
       readonly cycleStatus: 'completed';
       readonly invoiceId: string;
       readonly newExpiresAt: string;
+      readonly emailDispatch: EmailDispatchOutcome;
     }
   | {
       readonly outcome: 'reanchored';
@@ -102,6 +117,7 @@ export type MarkPaidOfflineOutput =
        * renewal period boundary.
        */
       readonly newPeriodFrom: string;
+      readonly emailDispatch: EmailDispatchOutcome;
     };
 
 /**
@@ -634,6 +650,8 @@ export async function markPaidOffline(
           newExpiresAt: reanchored.cycle.periodTo,
           // RRA task 7 fix — true period start (first of month) after re-anchor.
           newPeriodFrom: reanchored.cycle.periodFrom,
+          // Cluster 5 (Finding 1) parity — surface the receipt auto-email skip.
+          emailDispatch: bridgeResult.value.emailDispatch,
         });
       }
       return ok({
@@ -641,6 +659,8 @@ export async function markPaidOffline(
         cycleStatus: 'completed' as const,
         invoiceId: bridgeResult.value.invoiceId,
         newExpiresAt,
+        // Cluster 5 (Finding 1) parity — surface the receipt auto-email skip.
+        emailDispatch: bridgeResult.value.emailDispatch,
       });
     });
 

@@ -3294,6 +3294,7 @@
           "submitting": "Recording…",
           "successToast": "Offline payment recorded — the cycle is now completed.",
           "successReanchored": "Payment recorded — membership period now starts {date}.",
+          "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
           "viewOrphanInvoice": "View invoice",
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",

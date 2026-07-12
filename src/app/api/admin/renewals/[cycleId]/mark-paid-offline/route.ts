@@ -283,6 +283,11 @@ export async function POST(
       cycle_status: result.value.cycleStatus,
       invoice_id: result.value.invoiceId,
       new_expires_at: result.value.newExpiresAt,
+      // Cluster 5 (Finding 1) parity — the payment-time §86/4 receipt
+      // auto-email outcome. `'skipped_no_email'` → the admin toast warns the
+      // receipt was issued but not emailed (member has no contact email on
+      // file). Snake_case matching `invoice_id` / `new_expires_at`.
+      email_dispatch: result.value.emailDispatch,
     };
     // RRA task 7 fix — include true period start for reanchored toast.
     if (result.value.outcome === 'reanchored') {

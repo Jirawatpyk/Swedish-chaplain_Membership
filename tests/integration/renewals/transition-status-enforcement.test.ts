@@ -223,7 +223,10 @@ describe('F8 transitionStatus enforcement — integration (Task 0.3 / G5b)', () 
             paymentDate: input.paymentDate,
           });
         }
-        return { ok: true, value: { invoiceId, paidAt } };
+        return {
+          ok: true,
+          value: { invoiceId, paidAt, emailDispatch: 'sent' as const },
+        };
       });
     const r = await markPaidOffline(deps, {
       tenantId: tenant.ctx.slug,

@@ -237,8 +237,23 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
           // toast's `{date}` is the TRUE period start (first of month)
           // after re-anchor.
           const dataObj = data as
-            | { outcome?: string; new_period_from?: string }
+            | {
+                outcome?: string;
+                new_period_from?: string;
+                email_dispatch?: string;
+              }
             | null;
+          // Cluster 5 (Finding 1) parity — the §86/4 renewal receipt was
+          // issued but the payment-time auto-email was SKIPPED (member has no
+          // contact email on file). Append a non-blocking warning line so the
+          // admin knows to deliver it manually — mirroring the three invoice
+          // forms (issue-invoice / payment / event-fee), which surface the
+          // same `successNoEmailWarning` as a description on their success
+          // toast. Only warns on 'skipped_no_email' (never 'sent'/'disabled').
+          const noEmailWarning =
+            dataObj?.email_dispatch === 'skipped_no_email'
+              ? t('markPaidOffline.successNoEmailWarning')
+              : null;
           if (dataObj?.outcome === 'reanchored' && dataObj.new_period_from) {
             toast.success(
               t('markPaidOffline.successReanchored', {
@@ -247,9 +262,13 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
                   'dateMedium',
                 ),
               }),
+              noEmailWarning ? { description: noEmailWarning } : undefined,
             );
           } else {
-            toast.success(t('markPaidOffline.successToast'));
+            toast.success(
+              t('markPaidOffline.successToast'),
+              noEmailWarning ? { description: noEmailWarning } : undefined,
+            );
           }
           setMarkPaidOpen(false);
           resetMarkPaidFields();

@@ -3294,6 +3294,7 @@
           "submitting": "Registrerar…",
           "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
           "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
+          "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
           "viewOrphanInvoice": "Visa faktura",
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",

@@ -12,6 +12,7 @@ import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type { ThbDecimal } from '@/lib/money';
+import type { EmailDispatchOutcome } from '@/modules/invoicing';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 
 const VALID_UUID = '00000000-0000-0000-0000-0000000000c4';
@@ -124,6 +125,11 @@ function fakeDeps(
       readonly paymentDate: string | null;
     }) => Promise<void>;
   }) => Promise<unknown>,
+  // Cluster 5 (Finding 1) parity — the observable auto-email outcome the F4
+  // bridge now carries back on the success value. Defaults to 'sent' (member
+  // WITH a contact email — the common case) so every pre-existing test stays
+  // byte-identical; the no-email-skip tests pass 'skipped_no_email'.
+  emailDispatch: EmailDispatchOutcome = 'sent',
 ): FakeDepsResult {
   const emitMock = vi.fn(async () => {});
   const emitInTxMock = vi.fn(async () => {});
@@ -158,7 +164,10 @@ function fakeDeps(
       paymentDate: input.paymentDate,
     };
     if (input.onPaid) await input.onPaid(evt);
-    return { ok: true, value: { invoiceId: 'inv-1', paidAt: evt.paidAt } };
+    return {
+      ok: true,
+      value: { invoiceId: 'inv-1', paidAt: evt.paidAt, emailDispatch },
+    };
   };
   const bridgeMock = vi.fn(bridgeImpl ?? defaultBridge);
   // 068-f8-completion — next-cycle wiring. `findByInvoiceIdInTx` resolves
@@ -351,6 +360,10 @@ describe('markPaidOffline (T059) — happy path', () => {
       expect(r.value.cycleStatus).toBe('completed');
       expect(r.value.invoiceId).toBe('inv-1');
       expect(r.value.newExpiresAt).toBe('2028-06-01T00:00:00.000Z');
+      // Cluster 5 (Finding 1) parity — the auto-email outcome the F4 bridge
+      // computed at payment is surfaced on the Output. Default member has an
+      // email on file → 'sent' (no warning).
+      expect(r.value.emailDispatch).toBe('sent');
     }
     expect(transitionMock).toHaveBeenCalledTimes(1);
     expect(transitionMock.mock.calls[0]![3]).toEqual(
@@ -366,6 +379,21 @@ describe('markPaidOffline (T059) — happy path', () => {
       expect.objectContaining({ type: 'renewal_cycle_completed_offline' }),
       expect.any(Object),
     );
+  });
+
+  // Cluster 5 (Finding 1) parity — G10 for the 4th money path. When the F4
+  // bridge issues the §86/4 receipt but the payment-time auto-email is
+  // SKIPPED (imported member with no contact email on file), the outcome must
+  // reach the Output so the route + admin toast can warn "receipt not emailed".
+  it('propagates a skipped_no_email auto-email outcome through the completed Output', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle, undefined, 'skipped_no_email');
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.outcome).toBe('completed');
+      expect(r.value.emailDispatch).toBe('skipped_no_email');
+    }
   });
 
   it('accepts both payable cycle statuses (upcoming + awaiting_payment)', async () => {
@@ -628,6 +656,27 @@ describe('markPaidOffline (Task 7 rolling-anchor) — first-payment re-anchor br
     );
     expect(emittedTypes).toContain('renewal_cycle_reanchored');
     expect(emittedTypes).not.toContain('renewal_cycle_completed_offline');
+  });
+
+  // Cluster 5 (Finding 1) parity — the auto-email outcome must also thread
+  // through the SECOND Output variant (reanchored), not just completed. A
+  // first-payment imported member with no email must still surface the skip.
+  it('propagates a skipped_no_email auto-email outcome through the reanchored Output', async () => {
+    const cycle = buildCycle({ anchoredAt: null });
+    const {
+      deps,
+      countCyclesForMemberInTxMock,
+      countSettledCyclesForMemberInTxMock,
+    } = fakeDeps(cycle, undefined, 'skipped_no_email');
+    countCyclesForMemberInTxMock.mockResolvedValue(1);
+    countSettledCyclesForMemberInTxMock.mockResolvedValue(0);
+
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.outcome).toBe('reanchored');
+      expect(r.value.emailDispatch).toBe('skipped_no_email');
+    }
   });
 
   it('creates NO next cycle on the re-anchor branch (createNextCycleOnPaidInTx no-ops)', async () => {
