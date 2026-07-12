@@ -35,6 +35,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { projectEngagementScore } from '@/modules/insights';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind, rootCause } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   Card,
@@ -65,8 +66,15 @@ export async function MemberRenewalHealthSection({
     memberId,
   });
   if (!renewalRes.ok) {
+    // errKind (class only, never raw error/PII) mirrors the timeline-preview
+    // path + the portal RecentActivitySection precedent so an operator can
+    // tell a Neon timeout from an RLS denial without reproducing.
     logger.warn(
-      { event: 'member_renewal_health_read_err', memberId },
+      {
+        event: 'member_renewal_health_read_err',
+        memberId,
+        errKind: errKind(rootCause(renewalRes.error)),
+      },
       '[Pass A] renewal-health read failed — rendering unavailable state',
     );
   }
