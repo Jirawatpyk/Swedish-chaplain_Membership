@@ -549,6 +549,12 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
      * defence-in-depth WHERE on `tenant_id` mirrors
      * `lockForUpdateByPaymentIntentId` (line 188).
      *
+     * M1 — the initiation subquery matches EITHER auto-refund init
+     * event (`payment_auto_refunded_stale_invoice` OR
+     * `payment_auto_refunded_concurrent_manual_mark`); both are emitted
+     * from the same confirm-payment.ts block with identical payload
+     * keys, so both must surface the admin alert + CF-2 resolve action.
+     *
      * F5 UX D1/D2 — the `failed` column is a correlated `EXISTS` over
      * the CRITICAL-2 forensic (`auto_refund_failed_needs_manual_reconcile`,
      * emitted by `processRefundUpdated` when Stripe settles the
@@ -594,10 +600,23 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
                       AND rec.payload->>'invoice_id' = ${invoiceId}
                  )) AS failed
             FROM (
+              -- M1 - BOTH auto-refund INITIATION events surface here. The
+              -- pending-row path emits payment_auto_refunded_stale_invoice;
+              -- the concurrent-manual-mark path (admin marked the invoice paid
+              -- while a member payment was in-flight) emits
+              -- payment_auto_refunded_concurrent_manual_mark. Both are emitted
+              -- from the SAME confirm-payment.ts block with identical payload
+              -- keys (invoice_id / processor_refund_id), so either qualifies as
+              -- the initiation marker whose refund the admin alert + CF-2
+              -- resolve action act on. Keying on only the first left a failed
+              -- concurrent-manual-mark auto-refund off the admin alert.
               SELECT payload->>'processor_refund_id' AS processor_refund_id
                 FROM audit_log
                WHERE tenant_id = ${tenantId}
-                 AND event_type = 'payment_auto_refunded_stale_invoice'
+                 AND event_type IN (
+                   'payment_auto_refunded_stale_invoice',
+                   'payment_auto_refunded_concurrent_manual_mark'
+                 )
                  AND payload->>'invoice_id' = ${invoiceId}
                ORDER BY timestamp DESC
                LIMIT 1

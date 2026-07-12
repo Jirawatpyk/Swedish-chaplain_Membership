@@ -277,10 +277,15 @@ export interface PaymentsRepo {
    * H-8 — member-facing refund-notification signal (member-portal
    * display lookup, keyed by invoiceId).
    *
-   * Returns the latest `payment_auto_refunded_stale_invoice` audit
-   * payload's `processor_refund_id` for `invoiceId`, or null when no
-   * matching audit row exists. The portal invoice detail page renders
-   * a refund-confirmation sub-section + the truncated refund ref so
+   * Returns the latest auto-refund initiation audit payload's
+   * `processor_refund_id` for `invoiceId`, or null when no matching
+   * audit row exists. M1 — BOTH initiation events qualify:
+   * `payment_auto_refunded_stale_invoice` (pending-row path) AND
+   * `payment_auto_refunded_concurrent_manual_mark` (admin marked the
+   * invoice paid while a member payment was in-flight). Both are
+   * emitted from the same confirm-payment.ts block with identical
+   * payload keys. The portal invoice detail page renders a
+   * refund-confirmation sub-section + the truncated refund ref so
    * the member can quote it to their bank. Tenant scoping comes from
    * the factory-bound `ctx` (RLS+FORCE) — caller does not pass tenantId.
    *
@@ -291,9 +296,10 @@ export interface PaymentsRepo {
    * marks the money-NOT-returned outcome. The member banner branches
    * "refunded" vs "being reconciled" on it (never asserting completion
    * on a failure); the admin invoice detail renders a destructive
-   * "needs manual reconciliation" alert when it is true. The
-   * initiation marker (`payment_auto_refunded_stale_invoice`) always
-   * exists whenever `failed` is true, so a non-null return covers both
+   * "needs manual reconciliation" alert when it is true. An initiation
+   * marker (`payment_auto_refunded_stale_invoice` OR
+   * `payment_auto_refunded_concurrent_manual_mark`) always exists
+   * whenever `failed` is true, so a non-null return covers both
    * surfaces regardless of invoice status.
    *
    * CF-2 — `failed` is failure-AND-NOT-reconciled: it is true only if the
