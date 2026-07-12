@@ -56,6 +56,17 @@ interface SeedPendingCycleArgs {
   readonly tenant: TestTenant;
   readonly user: TestUser;
   readonly withInvoice: boolean;
+  /**
+   * UX-A Bug 1 — optionally stamp the async reject-with-refund marker
+   * (migration 0243) so the seeded cycle models an admin-rejected cycle whose
+   * F5 refund is still settling. A marked cycle is still
+   * `pending_admin_reactivation` but must be refused by `adminReactivateLapsedCycle`.
+   */
+  readonly marker?: {
+    readonly initiatedAt: Date;
+    readonly refundId: string;
+    readonly actorUserId: string;
+  };
 }
 
 interface SeededCycle {
@@ -71,7 +82,7 @@ interface SeededCycle {
 async function seedPendingCycle(
   args: SeedPendingCycleArgs,
 ): Promise<SeededCycle> {
-  const { tenant, user, withInvoice } = args;
+  const { tenant, user, withInvoice, marker } = args;
   const memberId = randomUUID();
   const cycleId = randomUUID();
   const invoiceId = withInvoice ? randomUUID() : null;
@@ -132,6 +143,13 @@ async function seedPendingCycle(
       frozenPlanCurrency: 'THB',
       enteredPendingAt: new Date('2026-04-15T00:00:00Z'),
       ...(invoiceId !== null ? { linkedInvoiceId: invoiceId } : {}),
+      ...(marker
+        ? {
+            rejectRefundInitiatedAt: marker.initiatedAt,
+            rejectRefundId: marker.refundId,
+            rejectActorUserId: marker.actorUserId,
+          }
+        : {}),
     }),
   );
   return { memberId, cycleId, invoiceId };
@@ -625,6 +643,63 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     );
     expect(row[0]?.status).toBe('cancelled');
     expect(row[0]?.closedReason).toBe('admin_rejected_with_refund');
+  });
+
+  it('reactivate refused on a marked (async reject-refund) cycle → reject_refund_in_progress, cycle stays pending (UX-A Bug 1)', async () => {
+    // UX-A Bug 1: an admin already rejected this cycle and an F5 refund is
+    // settling asynchronously, so the cycle carries the reject-refund marker
+    // (migration 0243) while it stays `pending_admin_reactivation`. Approving
+    // it would reactivate the member WHILE their money is being refunded — a
+    // stranded, non-self-healing state (reconcile cron is pending-only). The
+    // guard must refuse under the lock; the cycle must NOT transition.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const { cycleId } = await seedPendingCycle({
+      tenant: tenantA,
+      user,
+      withInvoice: true,
+      marker: {
+        initiatedAt: new Date('2026-04-20T00:00:00Z'),
+        refundId: `rfnd_${randomUUID().slice(0, 12)}`,
+        actorUserId: user.userId,
+      },
+    });
+
+    const before = await countAudit(tenantA, 'lapsed_member_admin_reactivated');
+
+    const r = await adminReactivateLapsedCycle(deps, {
+      tenantId: tenantA.ctx.slug,
+      cycleId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('reject_refund_in_progress');
+    }
+
+    // The cycle is untouched — still pending, marker intact, no reactivation.
+    const row = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+          closedAt: renewalCycles.closedAt,
+          rejectRefundInitiatedAt: renewalCycles.rejectRefundInitiatedAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row[0]?.status).toBe('pending_admin_reactivation');
+    expect(row[0]?.closedReason).toBeNull();
+    expect(row[0]?.closedAt).toBeNull();
+    expect(row[0]?.rejectRefundInitiatedAt).not.toBeNull();
+
+    // No reactivation audit was emitted (the transition never ran).
+    const after = await countAudit(tenantA, 'lapsed_member_admin_reactivated');
+    expect(after).toBe(before);
   });
 
   it('refund_failed: cycle stays pending_admin_reactivation (re-tryable, no orphan state) (NIT-2)', async () => {

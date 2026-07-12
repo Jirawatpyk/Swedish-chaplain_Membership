@@ -200,6 +200,20 @@ describe('POST /api/admin/renewals/[cycleId]/reactivate — contract', () => {
     expect(body.error.current_status).toBe('completed');
   });
 
+  it('409 reject_refund_in_progress (UX-A Bug 1)', async () => {
+    // A marked pending cycle (admin already rejected, async refund in flight)
+    // must not be approvable — the use-case returns reject_refund_in_progress
+    // and the route maps it to 409 Conflict.
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    adminReactivateLapsedCycleMock.mockResolvedValueOnce(
+      err({ kind: 'reject_refund_in_progress' }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.code).toBe('reject_refund_in_progress');
+  });
+
   it('500 server_error', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     adminReactivateLapsedCycleMock.mockResolvedValueOnce(

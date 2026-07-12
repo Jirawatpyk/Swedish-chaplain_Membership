@@ -126,6 +126,27 @@ describe('adminReactivateLapsedCycle (T136)', () => {
     expect(transitionMock).not.toHaveBeenCalled();
   });
 
+  it('reject_refund_in_progress — marked pending cycle refuses reactivation, no transition (UX-A Bug 1)', async () => {
+    // A cycle whose admin REJECT initiated an async F5 refund carries the
+    // reject-refund marker (`rejectRefundInitiatedAt`) while it stays
+    // `pending_admin_reactivation`. Approving it would reactivate the member
+    // WHILE their money is being refunded — a contradictory state the reconcile
+    // cron (pending-only) never converges. The guard must refuse under the lock
+    // (atomic CAS on the tx-bound re-read).
+    const cycle = buildCycle({
+      rejectRefundInitiatedAt: '2026-04-05T00:00:00Z',
+      rejectRefundId: 'rfnd_01H',
+      rejectActorUserId: 'admin-2',
+    });
+    const { deps, transitionMock, emitInTxMock } = fakeDeps({ cycle });
+    const r = await adminReactivateLapsedCycle(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('reject_refund_in_progress');
+    // No reactivation transition, no audit emit — the decision is already made.
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
   it('TransitionConflict — re-read returns user-friendly cycle_not_pending', async () => {
     const cycle = buildCycle();
     const reRead = buildCycle({ status: 'completed' });
