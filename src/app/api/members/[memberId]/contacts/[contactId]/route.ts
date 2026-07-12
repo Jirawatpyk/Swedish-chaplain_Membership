@@ -29,6 +29,7 @@ import {
   changeContactEmail,
   removeContact,
   updateContactFields,
+  updateUnlinkedContactEmail,
 } from '@/modules/members';
 import type { ContactId, MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -217,19 +218,57 @@ export async function PATCH(
         }
       }
     } else {
-      // No linked user — email change requires the FR-012a atomic
-      // transaction (session revocation + dual-channel email) which
-      // needs a linked user. Reject with a clear message.
-      return NextResponse.json(
-        {
-          error: {
-            code: 'not_supported',
-            message:
-              'Email change is only supported for contacts linked to a portal user. Ask the primary contact to add the new address as a secondary contact, then promote.',
-          },
-        },
-        { status: 409 },
+      // No linked user — the email is a plain contact field (not a login
+      // identity), so update it in place. The FR-012a atomic flow above is
+      // only needed when the address is also a portal login. (Imported
+      // members are never invited, so their contacts are always unlinked.)
+      const emailUpdate = await updateUnlinkedContactEmail(
+        parsed.data.memberId as MemberId,
+        parsed.data.contactId as ContactId,
+        emailValue,
+        { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+        deps,
       );
+      if (!emailUpdate.ok) {
+        switch (emailUpdate.error.type) {
+          case 'invalid_email':
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'validation_error',
+                  message: 'Invalid email address.',
+                  details: { field: 'email' },
+                },
+              },
+              { status: 400 },
+            );
+          case 'not_found':
+            return NextResponse.json(
+              { error: { code: 'not_found', message: 'Contact not found.' } },
+              { status: 404 },
+            );
+          case 'conflict':
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'conflict',
+                  message: 'Email already in use.',
+                  reason: emailUpdate.error.reason,
+                },
+              },
+              { status: 409 },
+            );
+          default:
+            logger.error(
+              { requestId: ctx.requestId, err: emailUpdate.error },
+              'update-unlinked-contact-email: unhandled',
+            );
+            return NextResponse.json(
+              { error: { code: 'server_error', message: 'Internal server error.' } },
+              { status: 500 },
+            );
+        }
+      }
     }
   }
 

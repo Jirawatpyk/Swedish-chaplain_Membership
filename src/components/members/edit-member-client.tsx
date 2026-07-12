@@ -117,9 +117,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     if (res.ok) return true;
     const body = await res.json().catch(() => ({}));
     const code = body?.error?.code;
-    if (res.status === 409 && code === 'not_supported') {
-      toast.error(t('errors.emailChangeNotSupported'));
-    } else if (res.status === 409 && code === 'conflict') {
+    if (res.status === 409 && code === 'conflict') {
       // Highlight the email input (parity with the create flow) on top of the
       // existing specific toast.
       setServerFieldError({
@@ -310,9 +308,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         savedSomething = true;
       }
 
-      // 3. Primary-contact email change — constrained path (succeeds only
-      //    when the contact is linked to a portal user; otherwise 409
-      //    not_supported, surfaced via handleContactResponse).
+      // 3. Primary-contact email change — routed server-side: a portal-linked
+      //    contact goes through the FR-012a atomic flow (verify/revert), an
+      //    unlinked contact (e.g. imported members) is updated in place.
       if (contactEmailChanged(values)) {
         const res = await patchContact({
           email: values.primary_contact.email.trim(),
