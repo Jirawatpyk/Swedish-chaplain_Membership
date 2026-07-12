@@ -426,9 +426,12 @@ export interface F5AuditPayloadByType {
   // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, RR-8 allow-list) —
   // CRITICAL-2 failed-auto-refund forensic. ID-refs + refund status + satang
   // amount ONLY; NO card metadata, NO raw Stripe event, NO error.message
-  // (constructor-name only, elsewhere) — keeps SAQ-A intact. Both
-  // `auto_refund_processor_refund_id` (`re_…`) and the internal refund id are
-  // non-card identifiers.
+  // (constructor-name only, elsewhere) — keeps SAQ-A intact.
+  // `auto_refund_processor_refund_id` (`re_…`) is the only refund identifier
+  // here (non-card) — there is no internal `refunds.id` field, because the
+  // stale-invoice auto-refund path never inserts a `refunds` table row (see
+  // `payment_auto_refunded_stale_invoice` / the durable
+  // `auto_refund_processor_refund_id` marker on `payments` instead).
   auto_refund_failed_needs_manual_reconcile: {
     readonly payment_id: string;
     readonly invoice_id: string;

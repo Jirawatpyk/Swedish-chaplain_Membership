@@ -56,7 +56,7 @@ export const payments = pgTable('payments', {
   invoiceId: text('invoice_id').notNull(), // uuid at DB; Drizzle reads as string
   memberId: text('member_id').notNull(),
   method: text('method').notNull(), // 'card' | 'promptpay' (CHECK at DB)
-  status: text('status').notNull(), // 6-state enum (CHECK at DB)
+  status: text('status').notNull(), // 7-state enum (CHECK at DB; migration 0240 added 'auto_refunded')
   amountSatang: bigint('amount_satang', { mode: 'bigint' }).notNull(),
   currency: text('currency').notNull().default('THB'),
   processorPaymentIntentId: text('processor_payment_intent_id').notNull(),

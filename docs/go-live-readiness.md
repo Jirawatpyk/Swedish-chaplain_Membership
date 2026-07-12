@@ -274,6 +274,13 @@ Flip on only after each feature's gates above pass:
 - [ ] **Resend audience count stays bounded post-deploy** — spot-check the Resend dashboard a few cron ticks after the first production broadcast: terminal broadcasts' audiences should be removed (`audience_deleted_at` stamped), not accumulating. A transient plan-segment-limit overflow surfaces as a `failed_to_dispatch` until the cron frees room (known behavior; the cron keeps the count bounded).
 - [ ] **COMP-1 GDPR erasure × cleanup interaction** is covered by `tests/integration/broadcasts/erasure-after-audience-cleanup.test.ts` (member-erasure of Resend contacts still resolves after the audience is cleaned up — the gateway is 404-tolerant). No operator action; noted for the security reviewer.
 
+### 6.7 F5 Refund Lifecycle — ship-day checklist
+Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0242, 2026-07-11+). See `docs/runbooks/f5-0242-preflight-credit-note-dupes.md`, `docs/runbooks/out-of-band-refund.md`, `docs/runbooks/stale-pending-refund-sweep.md`, `docs/runbooks/prod-data-wipe.md` for the full detail behind each bullet.
+- [ ] **RR-4 pre-flight query** — run the migration `0242` `credit_notes (tenant_id, source_refund_id)` duplicate-check query against **BOTH** the `dev` Neon branch **AND** prod, BEFORE deploy: `docs/runbooks/f5-0242-preflight-credit-note-dupes.md`. A pre-existing duplicate fails the non-concurrent `CREATE UNIQUE INDEX` and breaks the auto-migrate-on-deploy (`vercel-build`).
+- [ ] **Stripe `charge.refund.updated` delivery** — enable in the Stripe Dashboard endpoint config **only after** the `processRefundUpdated` handler is deployed (it is, on this branch — see § 6.2 above for the same gate in the general cron/webhook checklist). Enabling delivery before the handler ships means an early event lands on the default `acknowledged_only` 200-ack branch and is silently swallowed instead of finalising the pending refund.
+- [ ] **cron-job.org sweep timeout ≥60s** — confirm the per-job request timeout configured for the `sweep-stale-pending-refunds` job is **≥60s** (`docs/runbooks/stale-pending-refund-sweep.md`). The sweep's own total-elapsed budget (`35s` internal budget + ≤8s last Stripe retrieve + `finalizeSucceededRefund` headroom, see `SWEEP_TOTAL_BUDGET_MS` in `sweep-stale-pending-refunds.ts`) is sized against a `≤60s` caller timeout — a shorter cron timeout can abort the sweep mid-finalise.
+- [ ] **If prod was wiped**: run `pnpm seed:system-actors:prod` before resuming any Stripe traffic — the webhook system-actor rows (`…f5001`/`…f5002`) must exist or every refund webhook FK-throws (`docs/runbooks/prod-data-wipe.md`).
+
 ---
 
 ## 6b. Data provisioning order (Stage 3 prerequisite)

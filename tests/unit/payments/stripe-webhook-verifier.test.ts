@@ -57,6 +57,12 @@ describe('stripeWebhookVerifier — verify + project', () => {
     expect(envelope.type).toBe('payment_intent.succeeded');
     expect(envelope.dataObject.id).toBe('pi_test_e3');
     // Allow-list hygiene — no raw Stripe fields beyond the declared set.
+    // Kept in sync with the projector's full optional-field set in
+    // `project()` (stripe-webhook-verifier.ts) — `refundStatus` (A.10,
+    // `charge.refund.updated`) + `amountProjectionFailed` (F5R3v3 C-1/H-3/
+    // H-4) don't appear on THIS fixture's `payment_intent.succeeded` event,
+    // but belong in the positive allow-list so it stays complete rather
+    // than merely "not yet proven wrong" by this one event shape.
     const allowedKeys = new Set([
       'id',
       'type',
@@ -65,6 +71,8 @@ describe('stripeWebhookVerifier — verify + project', () => {
       'lastPaymentErrorCode',
       'disputeId',
       'amountSatang',
+      'refundStatus',
+      'amountProjectionFailed',
     ]);
     for (const k of Object.keys(envelope.dataObject)) {
       expect(allowedKeys.has(k), `disallowed key '${k}' leaked into envelope`).toBe(true);

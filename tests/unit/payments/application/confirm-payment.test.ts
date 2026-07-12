@@ -658,7 +658,11 @@ describe('confirmPayment (T057)', () => {
         c[1].summary.startsWith('Auto-refund giving up after '),
     );
     expect(giveUp).toBeDefined();
-    // PCI-clean: forensic uses the pi_ charge id, never card metadata.
+    // PCI-clean: forensic uses the ch_ charge id (retrieved.value.latestChargeId
+    // from the earlier retrievePaymentIntent call, 'ch_test_123' per the mock),
+    // never card metadata. NOTE: distinct from the sibling A.13 stale-invoice
+    // give-up path, which uses payment.processorPaymentIntentId (a pi_ id) —
+    // don't conflate the two "give up" branches when reading this test.
     expect(giveUp?.[1].payload).toMatchObject({
       runbook_url: 'docs/runbooks/out-of-band-refund.md',
     });

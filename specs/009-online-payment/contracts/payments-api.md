@@ -101,6 +101,7 @@ If a `pending` Payment already exists for the invoice + actor, the response IS t
 | 409 | `online_payment_disabled` | `tenant_payment_settings.online_payment_enabled = false` OR `FEATURE_F5_ONLINE_PAYMENT=false` |
 | 409 | `method_not_enabled` | requested method NOT in `tenant_payment_settings.enabled_methods` |
 | 422 | `tenant_settings_incomplete` | tenant's `processor_publishable_key` / `processor_account_id` / `enabled_methods` missing |
+| 422 | `invoice_data_corrupt` | F4 bridge detected a malformed invoice (e.g. negative `totalSatang`) and short-circuited before any Stripe call — no `payments` row inserted; client should not retry without operator intervention (F5R3v3 H-1) |
 | 429 | `rate_limited` | rate limit exceeded; `Retry-After` header included |
 | 502 | `processor_unavailable` | Stripe API call failed with retryable error after retries exhausted; no `payments` row inserted |
 | 500 | `internal_error` | unexpected; correlation_id helps support trace |
@@ -219,6 +220,25 @@ const InitiateRefundInput = z.object({
 }
 ```
 
+### Response — 202 Accepted (async — awaiting processor confirmation)
+
+An async Stripe refund (`pending` / `requires_action` at creation, e.g. some PromptPay/bank-debit rails) is NOT booked at creation time — no F4 credit note is created synchronously. The eventual `charge.refund.updated` webhook finalises it (§ contracts/stripe-webhook.md).
+
+```json
+{
+  "refund": {
+    "id": "rfnd_01J...",
+    "status": "pending",
+    "processorRefundId": "re_3R..."
+  },
+  "message": "Refund submitted — awaiting confirmation from the payment processor.",
+  "messageThai": "ส่งคำขอคืนเงินแล้ว — กำลังรอการยืนยันจากผู้ให้บริการชำระเงิน",
+  "correlationId": "01J..."
+}
+```
+
+`error.code` `refund_pending` is NOT an error — it is the internal use-case outcome discriminator that the route maps to this 202 response (surfaced here for symmetry with the error table below; it never appears in an `error` envelope).
+
 ### Response — 4xx errors
 
 | HTTP | `error.code` | When |
@@ -231,6 +251,8 @@ const InitiateRefundInput = z.object({
 | 409 | `refund_exceeds_remaining` | `amountSatang > remaining` (FR-011b pre-flight) |
 | 409 | `refund_in_progress` | another concurrent refund holds the row lock; client may retry |
 | 502 | `processor_unavailable` | Stripe `refunds.create` failed with retryable error after exhausted retries; `refunds` row inserted with `status='failed'` |
+| 502 | `f4_preflight_read_error` | the PRE-FLIGHT F4 credited-total read (`getInvoiceCreditedTotal`) failed BEFORE any Stripe call — money did NOT move, safe to retry, NO orphaned Stripe refund exists (DISTINCT from `f4_bridge_error` below — B.1 review Fix#1) |
+| 502 | `f4_bridge_error` | Stripe `refunds.create` DID succeed but the POST-Stripe F4 credit-note bridge failed — money moved; ops reconciles via `docs/runbooks/out-of-band-refund.md` |
 
 ### Side effects (success path)
 

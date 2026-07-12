@@ -16,6 +16,29 @@ Per Q2 / FR-011a, Chamber-OS **explicitly does not auto-reconcile** out-of-band 
 
 This is a **safety net**, not a normal operating mode. It exists because (a) admin training takes time, (b) emergencies happen (Stripe support sometimes processes refunds on the merchant's behalf), and (c) our refund flow may be temporarily unavailable.
 
+### 1.1 Known false-positive class — guard-miss on a `succeeded` row (auto-refund, NOT a real OOB)
+
+Some `out_of_band_refund_detected` alerts are **not** a real dashboard refund — they are a benign side-effect of a residual guard-miss in the stale-invoice auto-refund path (FR-011b). Recognise this class before chasing a phantom missing refund:
+
+- **Root cause**: when a stuck-`pending` payment on a stale invoice is auto-refunded, the use-case stamps a **durable marker** (`payments.auto_refund_processor_refund_id`) via `markAutoRefunded` (row was `pending`) or `attachAutoRefundMarkerOnFailed` (row was `failed`) so a later `charge.refund.updated` webhook can recognise the refund as "already known" instead of raising a false OOB alert.
+- **Sub-case (ii) — a `failed` row**: FIXED in commit `44b394a3` (guard-miss ii). The marker is now stamped even when the payment row was concurrently marked `failed` between the auto-refund decision and the marker write.
+- **Sub-case (i) — a `succeeded` row (residual, open)**: the concurrent-manual-mark race — an admin (or another webhook) flips the payment to `succeeded` in the narrow window between the auto-refund decision and the marker write — can still miss the marker on a `succeeded` row. No durable marker is stamped in this sub-case, so the auto-refund's later `charge.refund.updated(succeeded)` webhook does not recognise it and raises a normal `out_of_band_refund_detected` alert.
+- **How to recognise this class on-call**: map any `re_…` id on the alert back to `payments.auto_refund_processor_refund_id` (or the `payment_auto_refunded_stale_invoice` / `payment_auto_refunded_concurrent_manual_mark` audit rows for that payment). If it resolves to an auto-refund payment, **the refund IS correctly issued and audited** — do not treat this as a missing-refund incident. No F4 credit note is auto-created here either (same as any OOB alert); reconcile per § 2.3 Option A if the ledger needs a credit note, but there is no "lost" money to find.
+
+### 1.2 Known residual race — B.1 manual F4 credit note vs. F5 refund pre-flight (narrow window, low risk)
+
+A manual F4 credit note issued in the narrow window between the F5 refund pre-flight `getInvoiceCreditedTotal` read and the Stripe `createRefund` call can make the pre-flight's credited-total cap stale. Sequence:
+
+1. Admin A opens the refund dialog; F5 reads the invoice's currently-credited total (pre-flight cap check, FR-011b).
+2. Admin B issues a manual F4 credit note on the SAME invoice, in between A's read and A's Stripe call.
+3. F5 proceeds using the now-stale cap, calls Stripe `createRefund` — **money moves**.
+4. F5's post-refund F4 credit-note booking is then rejected by F4 as an over-credit (the invoice is already credited past the amount F5's stale cap allowed for).
+
+This is **much narrower** than the original #4 finding (which had no invoice-side check at all — this residual only exists in the sub-second window between the pre-flight read and the Stripe call). At SweCham's scale (low refund volume, few admin users) two credit actions landing on the same invoice within seconds of each other is very unlikely.
+
+- **Operational mitigation**: the operator reconciles the resulting stuck/orphaned refund via this runbook (§ 2–3) — Stripe DID move the money (this is the post-Stripe `f4_bridge_error` case, not the pre-flight `f4_preflight_read_error` case — see `specs/009-online-payment/contracts/payments-api.md` § 3), so treat it exactly like any other successfully-issued-but-not-yet-booked refund.
+- **Full close is out of scope for F5 MVP**: requires a cross-module F4↔F5 lock (e.g. a shared advisory lock namespace spanning both `invoicing:` and `payments:` for the invoice) so a manual F4 credit note and an F5 refund cannot interleave on the same invoice. Tracked as a follow-up, not a launch blocker given the narrow window + low volume.
+
 ---
 
 ## 2. Immediate actions (within 1 hour)
@@ -166,5 +189,8 @@ If the Stripe refund itself was a mistake:
 
 - `specs/009-online-payment/spec.md` — Q2 + FR-011a + FR-020 (`out_of_band_refund_detected` audit event)
 - `specs/009-online-payment/security.md` § T-06
+- `specs/009-online-payment/contracts/payments-api.md` § 3 — `f4_preflight_read_error` (pre-Stripe, money NOT moved, safe retry) vs `f4_bridge_error` (post-Stripe, money moved, this runbook applies) route error codes
 - F4 manual credit note: `src/modules/invoicing/application/issue-credit-note.ts`
 - Future post-MVP escape hatch: tracked in Q2 follow-up backlog
+- § 1.1 guard-miss false-OOB class: `44b394a3` (sub-case ii fix); `src/modules/payments/application/use-cases/confirm-payment.ts` (`markAutoRefunded` / `attachAutoRefundMarkerOnFailed`)
+- § 1.2 B.1 residual race: `src/modules/payments/application/use-cases/issue-refund.ts` (pre-flight `getInvoiceCreditedTotal` read vs. `createRefund` call)
