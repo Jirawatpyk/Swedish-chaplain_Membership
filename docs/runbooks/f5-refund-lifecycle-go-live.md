@@ -7,7 +7,8 @@ go-live, and either the fix or the reason it is safe to defer. Use this as the l
 checklist and as the "known limitations" reviewers + on-call should be aware of.
 
 **Compiled**: 2026-07-12 (adversarial discovery sweep: code markers + runbook residuals +
-ledger/go-live-readiness → reliability-guardian consolidation). 25 items.
+ledger/go-live-readiness → reliability-guardian consolidation). 26 items (M1 added at
+review-fix: concurrent-manual-mark auto-refund now surfaced on the admin alert + CF-2 resolve).
 
 **Status legend**: 🔴 go-live blocker · 🟡 confirm-at-ship (not a hard blocker) · ⚪ non-blocking / known-limitation
 
@@ -37,8 +38,9 @@ ledger/go-live-readiness → reliability-guardian consolidation). 25 items.
 |---|------|--------|
 | CF-1 | **Guard-miss sub-case (i)** — succeeded/non-`failed` row stamped no marker → false OOB on both webhooks | ✅ CLOSED — `attachAutoRefundMarkerOnFailed` generalised to `attachAutoRefundMarkerIfAbsent` (guards on `auto_refund_processor_refund_id IS NULL` only), called in the else branch; runbook §1.1 → CLOSED. |
 | CF-2 | **Failed-auto-refund forensic has no resolve/acknowledge event** — admin alert + member "reconciling" copy persist forever after out-of-band reconciliation | ✅ CLOSED — append-only `auto_refund_reconciled` event (10y, migration 0244) + admin-only `resolveFailedAutoRefund` use-case + `POST /api/refunds/resolve-auto-refund-failure` (RBAC `refund:write`) + a "Mark as reconciled" confirm action on `AutoRefundFailedAlert`. `findStaleInvoiceAutoRefund.failed` is now failure-AND-NOT-reconciled, so once the admin acknowledges, the alert clears + the member banner reverts to the "refunded" copy. Idempotent; refuses when no failure forensic exists. Runbook `out-of-band-refund.md` §1.1 → note the resolve action. |
-| CF-3 | a11y/UX polish nits — refund-dialog `?refund=1` URL strip, SV en-dash | ⏳ in progress — cosmetic; the renewals semantic-token migration + T9a chip labels are **pre-existing PR #181** items, not #185's. |
-| CF-4 | ~18 ledger MINOR cosmetic items (stale comments, doc drift) | ⏳ in progress — all triaged SAFE by the whole-branch review; e.g. `6x6`→`7x7` matrix comment. |
+| CF-3 | a11y/UX polish nits — refund-dialog `?refund=1` URL strip, SV en-dash | ✅ CLOSED — refund-dialog `?refund=1` URL strip (commit `10e3c4ec`) + SV en-dash / stale-timeline-count tidy (commit `1237a254`). The renewals semantic-token migration + T9a chip labels were **pre-existing PR #181** items, not #185's. |
+| CF-4 | ~18 ledger MINOR cosmetic items (stale comments, doc drift) | ✅ CLOSED — all triaged SAFE by the whole-branch review + swept in commit `1237a254`; e.g. `6x6`→`7x7` matrix comment. |
+| M1 | **`findStaleInvoiceAutoRefund` missed the concurrent-manual-mark auto-refund** — its init-subquery keyed only on `payment_auto_refunded_stale_invoice`, so a failed concurrent-manual-mark auto-refund (init event `payment_auto_refunded_concurrent_manual_mark`, now marker-stamped by CF-1) fired the CRITICAL-2 forensic + pages but never surfaced on the admin `AutoRefundFailedAlert` / CF-2 resolve action | ✅ CLOSED — init-subquery now matches `event_type IN ('payment_auto_refunded_stale_invoice','payment_auto_refunded_concurrent_manual_mark')`; both events carry identical payload keys and are emitted from the same confirm-payment.ts block, so both auto-refund paths now surface for the admin (alert + resolve). Member void banner is unaffected (void-scoped caller; concurrent-manual-mark invoices are typically `paid`). Live-Neon integration + direct cross-tenant negative (S1) added. |
 
 ## 4. Known limitations — accepted residuals (NOT fixed by design; safe to launch)
 
@@ -70,7 +72,7 @@ None blocks a safe go-live. Revisit criteria noted where relevant.
 
 ## Bottom line for go-live
 
-- **Code**: the 4 code-fixable deferrals are being closed on this branch (CF-1 + CF-2 done; CF-3/4 in progress). Nothing in §4/§5 needs code before launch.
+- **Code**: all code-fixable deferrals are CLOSED on this branch (CF-1–CF-4 + M1 done). Nothing in §4/§5 needs code before launch.
 - **Merge gate (§1)**: MG-1 (≥2 reviewers + security sign-off) and MG-2 (CI coverage) are the real blockers — both human/CI, not code.
 - **Ship-day (§2)**: OP-1, OP-2, OP-3 are 🔴 must-do at deploy in the stated order. OP-4/OP-5 are confirm-not-block.
 - **Known limitations (§4/§5)**: documented + accepted; none blocks a safe launch. Revisit KL-1 (B.1) and KL-5 (sweep fairness) if volume/tenancy grows.
