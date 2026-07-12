@@ -248,34 +248,39 @@ export async function processRefundUpdated(
           }
 
           // No in-app refund AND no auto-refund marker → genuine
-          // Dashboard-initiated refund (FR-011a). Emit the forensic +
-          // per-env counter; NO credit note (admin reconciles via runbook).
-          await deps.audit.emit(tx, {
+          // Dashboard-initiated refund (FR-011a). DEFER out-of-band detection
+          // to the `charge.refunded` handler (`processChargeRefunded`), which is
+          // the SOLE OOB detector. Emit NO forensic audit + NO paging metric
+          // here — only a benign PCI-clean defer log + `markProcessed`.
+          //
+          // Finding 4 (single-owner OOB detection) — Stripe delivers BOTH
+          // `charge.refunded` AND `charge.refund.updated` for the same refund.
+          // Pre-fix each handler independently emitted
+          // `out_of_band_refund_detected` + bumped `outOfBandRefundRejected`, so
+          // every genuine Dashboard OOB was double-counted (2 forensic rows + 2
+          // paging bumps per refund).
+          //
+          // Why deferring here NEVER misses an OOB: `charge.refunded` fires on
+          // the charge whenever `amount_refunded` changes — i.e. at EVERY
+          // refund's creation (partial + full + async-refund initiation), which
+          // necessarily precedes any `charge.refund.updated` status transition (a
+          // Refund object must exist before it can transition). Both event types
+          // are subscribed (see the webhook-verifier allow-list) and Stripe
+          // retries delivery for ~3 days, so `charge.refunded` is guaranteed to
+          // fire and be delivered for every refund that `charge.refund.updated`
+          // can observe. `processChargeRefunded` runs the SAME
+          // `findAutoRefundByProcessorRefundId` suppression (Finding 2), so
+          // app-initiated auto-refunds are excluded there too. Ordering is
+          // irrelevant: whichever event lands first, exactly ONE handler
+          // (`processChargeRefunded`) emits the audit + metric; this one logs +
+          // acks only. DO NOT re-add the emit here without first removing
+          // `charge.refunded` from the OOB path — that would restore the double.
+          deps.logger?.info('process_refund_updated.out_of_band_deferred', {
             tenantId: input.tenantId,
-            requestId: input.requestId,
-            eventType: 'out_of_band_refund_detected',
-            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-            summary: `Out-of-band refund detected via charge.refund.updated on charge ${input.chargeId ?? 'unknown'}`,
-            payload: {
-              processor_refund_id: input.processorRefundId,
-              // The `out_of_band_refund_detected` payload requires a string;
-              // the verifier defaults `latestChargeId` to null only when a
-              // Refund's `charge` field is unextractable (pathological). Use
-              // an explicit sentinel over a misleading value (mirrors the
-              // dispute branch's amountProjectionFailed philosophy).
-              processor_charge_id: input.chargeId ?? 'unknown',
-              amount_satang: input.amountSatang.toString(),
-              runbook_url: OOB_RUNBOOK_URL,
-            },
-            retentionYears: retentionFor('out_of_band_refund_detected'),
+            processorRefundId: input.processorRefundId,
+            chargeId: input.chargeId,
+            refundStatus: input.refundStatus,
           });
-          // Metric fires INSIDE the tx — same trade-off documented in
-          // `process-charge-refunded.ts`: OTel buffers until process-flush,
-          // so a tx rollback produces at most a tiny over-count window.
-          paymentsMetrics.outOfBandRefundRejected(
-            input.tenantId,
-            input.processorEnv,
-          );
           await deps.processorEventsRepo.markProcessed(tx, input.eventId);
           return { kind: 'out_of_band' };
         }

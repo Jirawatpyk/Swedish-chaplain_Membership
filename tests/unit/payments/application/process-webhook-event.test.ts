@@ -347,15 +347,12 @@ describe('processWebhookEvent (T056)', () => {
   });
 
   // A.11 — charge.refund.updated dispatch branch (processRefundUpdated).
-  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band; no invoiceId)', async () => {
+  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band DEFERRED; no invoiceId, no audit)', async () => {
     const deps = makeDeps();
     // Thread a logger so the dispatcher's `deps.logger ? {logger} : {}`
     // spread propagates the structured logger into processRefundUpdated.
-    (deps as { logger?: unknown }).logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    };
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    (deps as { logger?: unknown }).logger = logger;
     const event = makeEvent({
       type: 'charge.refund.updated',
       dataObject: {
@@ -372,10 +369,17 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.value.kind).toBe('processed');
     // out_of_band carries no invoiceId → the dispatcher omits it.
     expect('invoiceId' in result.value).toBe(false);
+    // Finding 4 — `charge.refund.updated` DEFERS OOB detection to the
+    // `charge.refunded` handler (single-owner). No `out_of_band_refund_detected`
+    // audit is emitted here; only a benign defer log + markProcessed.
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     expect(
       auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
-    ).toBe(true);
+    ).toBe(false);
+    expect(logger.info).toHaveBeenCalledWith(
+      'process_refund_updated.out_of_band_deferred',
+      expect.objectContaining({ processorRefundId: 're_async_unknown_1' }),
+    );
     expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
   });
 
@@ -429,7 +433,9 @@ describe('processWebhookEvent (T056)', () => {
         type: 'refund',
         // latestChargeId / refundStatus / amountSatang omitted → the
         // dispatcher's `?? null` / `?? 0n` fallbacks fire (null status
-        // classifies as pending → out_of_band with the "unknown" charge).
+        // classifies as pending → out_of_band). Post-Finding 4 the OOB path
+        // DEFERS (log + markProcessed, no audit), so this asserts only the
+        // processed outcome + ack — no "unknown"-charge audit sentinel exists.
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));

@@ -263,7 +263,12 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
     expect(
       await auditCount(tenantB.ctx.slug, 'refund_succeeded', refundA, 'refund_id'),
     ).toBe(0);
-    // The out-of-band forensic landed under tenant B (scoped correctly), NOT A.
+    // Finding 4 — `charge.refund.updated` DEFERS out-of-band detection to the
+    // `charge.refunded` handler (single-owner), so NO `out_of_band_refund_detected`
+    // forensic is emitted here under EITHER tenant. The isolation guarantee is
+    // unchanged (tenant B still resolves NOTHING of A's — it returns `out_of_band`,
+    // never calls the F4 bridge, and leaves A's refund untouched); only the
+    // audit-owner moved to `processChargeRefunded`.
     expect(
       await auditCount(
         tenantB.ctx.slug,
@@ -271,7 +276,7 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
         reA,
         'processor_refund_id',
       ),
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await auditCount(
         tenantA.ctx.slug,

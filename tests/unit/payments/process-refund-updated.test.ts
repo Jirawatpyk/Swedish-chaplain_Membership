@@ -250,34 +250,43 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     expect((evt.payload as { refund_status: string }).refund_status).toBe('canceled');
   });
 
-  it('not found + no auto-refund → out_of_band (out_of_band_refund_detected audit + metric); markProcessed', async () => {
+  it('Finding 4 — not found + no auto-refund → out_of_band DEFERRED to charge.refunded (benign log + markProcessed, NO audit, NO metric)', async () => {
     const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.kind).toBe('out_of_band');
 
-    const auditCalls = vi.mocked(deps.audit.emit).mock.calls;
-    expect(auditCalls).toHaveLength(1);
-    const evt = auditCalls[0]![1];
-    expect(evt.eventType).toBe('out_of_band_refund_detected');
-    expect(evt.payload).toEqual({
-      processor_refund_id: 're_test_1',
-      processor_charge_id: 'ch_test_1',
-      amount_satang: '50000',
-      runbook_url: OOB_RUNBOOK_URL,
-    });
-    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledWith(TENANT_ID, 'test');
+    // Single-owner OOB detection: the `charge.refunded` handler owns the
+    // forensic audit + paging metric. This handler must emit NEITHER — only a
+    // benign defer log + ack — so a genuine Dashboard OOB yields exactly ONE
+    // audit + ONE metric across both event types (no double-count).
+    expect(vi.mocked(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).not.toHaveBeenCalled();
+    // Benign PCI-clean defer log — id-refs + status only.
+    expect(vi.mocked(deps.logger!.info)).toHaveBeenCalledWith(
+      'process_refund_updated.out_of_band_deferred',
+      expect.objectContaining({
+        processorRefundId: 're_test_1',
+        chargeId: 'ch_test_1',
+        refundStatus: 'succeeded',
+      }),
+    );
+    // Still acked so Stripe stops re-delivering THIS event.
     expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
   });
 
-  it('not found + no auto-refund + null chargeId → out_of_band with "unknown" processor_charge_id sentinel', async () => {
+  it('Finding 4 — not found + no auto-refund + null chargeId → out_of_band deferred; defer log carries the raw null chargeId (no audit-payload sentinel needed)', async () => {
     const result = await processRefundUpdated(deps, makeInput({ chargeId: null }));
 
     expect(result.ok && result.value.kind).toBe('out_of_band');
-    const evt = vi.mocked(deps.audit.emit).mock.calls[0]![1];
-    // Payload type requires a string — null coerces to the "unknown" sentinel.
-    expect((evt.payload as { processor_charge_id: string }).processor_charge_id).toBe('unknown');
+    // No audit is emitted, so the former "unknown" processor_charge_id sentinel
+    // is no longer needed; the benign defer log carries the raw null chargeId.
+    expect(vi.mocked(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(vi.mocked(deps.logger!.info)).toHaveBeenCalledWith(
+      'process_refund_updated.out_of_band_deferred',
+      expect.objectContaining({ chargeId: null }),
+    );
   });
 
   // -------------------------------------------------------------------------
