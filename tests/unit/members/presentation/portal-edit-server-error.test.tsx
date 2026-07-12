@@ -75,4 +75,38 @@ describe('PortalEditForm — inline server field error', () => {
 
     vi.unstubAllGlobals();
   });
+
+  it('maps a 403 forbidden CODE to localized copy, never the raw server message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        error: {
+          code: 'forbidden',
+          // The use-case's raw reason — must NOT be toasted verbatim.
+          message: 'member self-update forbidden: field_not_whitelisted',
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalEditForm initialValues={INITIAL} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.change(container.querySelector('#firstName')!, {
+      target: { value: 'Janet' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    const arg = toastError.mock.calls[0]?.[0] as string;
+    expect(arg).toBe("You don't have permission to edit this profile.");
+    // The raw server message must never reach the user.
+    expect(arg).not.toContain('field_not_whitelisted');
+
+    vi.unstubAllGlobals();
+  });
 });

@@ -73,9 +73,17 @@ export function ArchiveMemberButton({ memberId, companyName }: Props) {
         startTransition(() => router.refresh());
       } else {
         const data = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string; message?: string };
+          error?: { code?: string };
         };
-        toast.error(data.error?.message ?? t('archiveError'));
+        // Map the server error CODE to localized copy — never render the
+        // server's raw English `error.message`.
+        const message =
+          data.error?.code === 'state_error'
+            ? t('archiveAlreadyArchived')
+            : data.error?.code === 'not_found'
+              ? t('archiveNotFound')
+              : t('archiveError');
+        toast.error(message);
       }
     } catch {
       toast.error(t('archiveError'));

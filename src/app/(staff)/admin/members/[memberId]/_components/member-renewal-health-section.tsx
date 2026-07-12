@@ -16,10 +16,13 @@
  *      precedent). Only fetched when the F9 dashboard flag is on, mirroring
  *      the prior `MemberEngagementSection` gating.
  *
- * Both reads degrade gracefully: a renewal-read failure renders the
- * empty-state copy; an engagement-read failure omits the engagement line.
- * Neither can crash the parent member-detail page. Isolated in its own
- * Suspense boundary at the call site.
+ * Both reads degrade gracefully: a renewal-read failure renders a DISTINCT
+ * "unavailable" state (via the card's `readFailed` prop) — NOT the empty
+ * state, which would claim the member has no cycle when in fact the read
+ * errored (Cluster 7 / G18, mirrors the portal precedent). An
+ * engagement-read failure omits the engagement line. Neither can crash the
+ * parent member-detail page. Isolated in its own Suspense boundary at the
+ * call site.
  */
 import {
   loadMemberRenewalStatus,
@@ -32,6 +35,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { projectEngagementScore } from '@/modules/insights';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind, rootCause } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   Card,
@@ -62,9 +66,16 @@ export async function MemberRenewalHealthSection({
     memberId,
   });
   if (!renewalRes.ok) {
+    // errKind (class only, never raw error/PII) mirrors the timeline-preview
+    // path + the portal RecentActivitySection precedent so an operator can
+    // tell a Neon timeout from an RLS denial without reproducing.
     logger.warn(
-      { event: 'member_renewal_health_read_err', memberId },
-      '[Pass A] renewal-health read failed — rendering empty state',
+      {
+        event: 'member_renewal_health_read_err',
+        memberId,
+        errKind: errKind(rootCause(renewalRes.error)),
+      },
+      '[Pass A] renewal-health read failed — rendering unavailable state',
     );
   }
   const cycle = renewalRes.ok ? renewalRes.value.cycle : null;
@@ -98,6 +109,10 @@ export async function MemberRenewalHealthSection({
   return (
     <RenewalHealthCard
       headingId="member-renewal-health-heading"
+      // Cluster 7 (G18) — a failed renewal read renders the card's distinct
+      // "unavailable" state (and suppresses the lapsed-comeback action),
+      // NOT the empty state.
+      readFailed={!renewalRes.ok}
       status={cycle?.status ?? null}
       expiryIso={cycle?.expiresAt ?? null}
       daysRemaining={

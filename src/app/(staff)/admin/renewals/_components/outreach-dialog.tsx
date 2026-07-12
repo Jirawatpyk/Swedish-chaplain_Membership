@@ -103,10 +103,12 @@ export function OutreachDialog({
           } catch {
             /* ignore */
           }
+          // next-intl's `t` has no `fallback` option — a missing key would
+          // render the raw dotted KEY PATH. Guard with `t.has` and fall back
+          // to the generic localized server_error copy for unmapped codes.
+          const key = `toast.error.${code}`;
           toast.error(t('toast.failure'), {
-            description: t(`toast.error.${code}`, {
-              fallback: t('toast.error.server_error'),
-            }),
+            description: t.has(key) ? t(key) : t('toast.error.server_error'),
           });
           return;
         }

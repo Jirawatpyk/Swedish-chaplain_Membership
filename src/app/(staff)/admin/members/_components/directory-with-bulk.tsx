@@ -80,9 +80,15 @@ export function DirectoryWithBulk({
         }
 
         const body = await res.json();
+        // Map the server error CODE to localized cell/toast copy — never
+        // forward the server's raw English `error.message` (it carried a
+        // dev-y "State transition failed: <code>" string). Unknown codes
+        // fall back to the generic localized "save failed" message.
+        const code = body.error?.code;
+        const key = typeof code === 'string' ? `errors.${code}` : null;
         return {
           ok: false,
-          error: body.error?.message ?? t('saveFailed'),
+          error: key && t.has(key) ? t(key) : t('saveFailed'),
         };
       } catch {
         return { ok: false, error: t('networkError') };

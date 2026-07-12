@@ -9,10 +9,21 @@
  * Accessibility: status + engagement band carry a visible TEXT label
  * (never colour-alone) per FR-035 / WCAG 1.4.1.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { RenewalHealthCard } from '@/components/members/renewal-health-card';
+
+// Stub the lapsed-comeback dialog to a plain button so the card test stays
+// isolated from Base UI Dialog + next/navigation + sonner internals. Cluster 7
+// (G18) asserts this trigger is SUPPRESSED when the renewal read failed.
+vi.mock('@/components/members/renew-lapsed-member-dialog', () => ({
+  RenewLapsedMemberDialog: ({ memberId }: { memberId: string }) => (
+    <button type="button" data-testid="renew-lapsed-trigger">
+      Renew member ({memberId})
+    </button>
+  ),
+}));
 
 const messages = {
   admin: {
@@ -21,6 +32,7 @@ const messages = {
         renewalHealth: {
           title: 'Renewal & Health',
           empty: 'No active renewal cycle',
+          readFailed: "We couldn't load this member's renewal status. Please try again.",
           status: 'Status',
           expiry: 'Expiry',
           daysRemaining: '{days} days remaining',
@@ -123,6 +135,72 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     // No engagement label rendered when score+band are both null.
     expect(screen.queryByText('Engagement')).not.toBeInTheDocument();
+  });
+
+  // Cluster 7 (G18) — a FAILED renewal read must render a distinct
+  // "unavailable" state, NOT the empty state (which lies — it says the member
+  // has no cycle when in fact the read errored), and must suppress the
+  // lapsed-comeback action (status is null only because the read failed).
+  it('renders the readFailed copy (NOT the empty state, dl, or renew action) when readFailed', () => {
+    renderCard({
+      readFailed: true,
+      // canRenew + memberId supplied and status null (isLapsed) — the action
+      // must STILL be suppressed because the read failed.
+      canRenew: true,
+      memberId: 'm1',
+      status: null,
+      expiryIso: null,
+      daysRemaining: null,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    expect(
+      screen.getByText("We couldn't load this member's renewal status. Please try again."),
+    ).toBeInTheDocument();
+    // NOT the empty-state copy.
+    expect(screen.queryByText('No active renewal cycle')).not.toBeInTheDocument();
+    // NOT the status <dl> (no status/expiry rows).
+    expect(screen.queryByText('Status')).not.toBeInTheDocument();
+    // NOT the renew-action trigger.
+    expect(screen.queryByTestId('renew-lapsed-trigger')).not.toBeInTheDocument();
+  });
+
+  it('still surfaces a loaded engagement score alongside the readFailed notice (final-review nit)', () => {
+    // Engagement is fetched independently of the renewal read, so a renewal-read
+    // blip must not drop an engagement score that DID load.
+    renderCard({
+      readFailed: true,
+      status: null,
+      expiryIso: null,
+      daysRemaining: null,
+      engagementScore: 82,
+      engagementBand: 'healthy',
+      viewHref: '/admin/renewals',
+    });
+    expect(
+      screen.getByText("We couldn't load this member's renewal status. Please try again."),
+    ).toBeInTheDocument();
+    // The loaded engagement value + band are still shown.
+    expect(screen.getByText('Engagement')).toBeInTheDocument();
+    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('Healthy')).toBeInTheDocument();
+  });
+
+  it('still renders the empty state when readFailed is false and status is null (regression guard)', () => {
+    renderCard({
+      readFailed: false,
+      status: null,
+      expiryIso: null,
+      daysRemaining: null,
+      engagementScore: null,
+      engagementBand: null,
+      viewHref: '/admin/renewals',
+    });
+    expect(screen.getByText('No active renewal cycle')).toBeInTheDocument();
+    expect(
+      screen.queryByText("We couldn't load this member's renewal status. Please try again."),
+    ).not.toBeInTheDocument();
   });
 
   // 056 fix #1 — the title is a real <h2> (not a CardTitle <div>) wired to the

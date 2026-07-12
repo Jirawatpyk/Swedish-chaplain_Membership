@@ -59,6 +59,12 @@ export function InvitePortalButton({ memberId, contactId }: Props) {
         case 'not_found':
           toast.error(t('errors.notFound'));
           break;
+        case 'contact_removed':
+          // Terminal client-state conflict (e.g. an erased member's contact).
+          // Distinct copy so the admin refreshes rather than seeing the
+          // generic "Something went wrong".
+          toast.error(t('errors.contactRemoved'));
+          break;
         case 'link_failed':
           // go-live #12-13 — the invite was rolled back; the admin can retry.
           toast.error(t('errors.linkFailed'));

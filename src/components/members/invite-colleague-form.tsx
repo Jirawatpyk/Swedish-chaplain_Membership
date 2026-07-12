@@ -102,18 +102,31 @@ export function InviteColleagueForm() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        if (data?.error?.code === 'email_taken') {
+        const code = data?.error?.code;
+        if (code === 'email_taken') {
           // Field-scoped — surface inline on the email input (+ focus) rather
           // than a transient toast (audit XF-01).
           form.setError('email', { type: 'server', message: t('emailTaken') });
           form.setFocus('email');
-        } else if (data?.error?.code === 'forbidden') {
+        } else if (code === 'invalid_email') {
+          // Field-scoped like email_taken — the server rejected the address,
+          // so highlight the email input (+ focus) with a LOCALISED message
+          // instead of toasting the server's raw "Invalid email address".
+          form.setError('email', { type: 'server', message: t('invalidEmail') });
+          form.setFocus('email');
+        } else if (code === 'forbidden') {
           toast.error(t('notPrimary'));
-        } else if (data?.error?.code === 'link_failed') {
+        } else if (code === 'link_failed') {
           // go-live #12-13 (follow-up) — the invite was rolled back; retry is safe.
           toast.error(t('linkFailed'));
+        } else if (code === 'validation_error') {
+          // The route returns `validation_error` with `details` but NO message,
+          // so the old `data.error.message` passthrough rendered `undefined`.
+          // Use a localized message.
+          toast.error(t('validationError'));
         } else {
-          toast.error(data?.error?.message ?? t('sendError'));
+          // Never toast the server's raw English — a generic localized message.
+          toast.error(t('sendError'));
         }
         return;
       }

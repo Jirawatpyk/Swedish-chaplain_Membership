@@ -131,7 +131,17 @@ export function PortalEditForm({ initialValues }: PortalEditFormProps) {
             }
           }
         }
-        toast.error(data?.error?.message ?? t('saveError'));
+        // Map the server error CODE to localized copy — never toast the
+        // server's raw English `error.message` (e.g. `forbidden` carries the
+        // use-case's raw reason). Everything else falls back to saveError.
+        const code = data?.error?.code;
+        const message =
+          code === 'forbidden'
+            ? t('forbiddenError')
+            : code === 'not_found'
+              ? t('notFoundError')
+              : t('saveError');
+        toast.error(message);
         return;
       }
 

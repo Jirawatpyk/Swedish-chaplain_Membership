@@ -174,8 +174,12 @@ export function EraseMemberButton({ memberId, companyName, memberNumberDisplay }
         resetState();
         startTransition(() => router.refresh());
       } else {
-        const data = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-        toast.error(data.error?.message ?? t('eraseError'));
+        const data = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
+        // Map the server error CODE to localized copy — never render the
+        // server's raw English `error.message`.
+        toast.error(
+          data.error?.code === 'not_found' ? t('eraseNotFound') : t('eraseError'),
+        );
       }
     } catch {
       toast.error(t('eraseError'));

@@ -369,11 +369,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 404 },
       );
     case 'state_error':
+      // The client maps `code` → localized copy; the message here is a
+      // generic non-leaky fallback (no member UUID / dev-y interpolation).
+      // The member id + domain code are preserved under `details` for
+      // observability (parity with the not_found / plan_not_found arms above
+      // and with the inline-edit route's sanitized state_error).
       return NextResponse.json(
         {
           error: {
             code: 'state_error',
-            message: `State transition failed for member ${result.error.memberId}.`,
+            message: 'Member state transition is not allowed.',
             details: { member_id: result.error.memberId, code: result.error.code },
           },
         },

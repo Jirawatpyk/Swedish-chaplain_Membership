@@ -15,11 +15,15 @@
  *     non-admins).
  *   - manager / member → redacted payload via timeline-list's role
  *     projection.
- *   - empty timeline → renders an "No recent activity yet" microcopy
+ *   - empty timeline → renders a "No recent activity yet" microcopy
  *     so the section doesn't ghost.
  *
- * Errors are caught + logged + downgraded to the empty-state render
- * so a timeline-fetch failure cannot crash the detail page.
+ * A FAILED read (use-case err OR a thrown fetch) is caught + logged
+ * (errKind only — never a raw error / PII) and rendered as a DISTINCT
+ * "activity unavailable" state, separate from the empty state — so an
+ * admin is never told "nothing happened" when the read actually errored
+ * (mirrors the portal precedent, D1 finding B2). A fetch failure still
+ * cannot crash the detail page.
  */
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
@@ -33,6 +37,7 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
+import { errKind, rootCause } from '@/lib/log-id';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { timelineList } from '@/modules/members';
@@ -63,8 +68,13 @@ export async function TimelinePreviewSection({
   const deps = buildMembersDeps(tenant);
 
   // Compose the timeline events under a try/catch so any infra failure
-  // surfaces as the empty-state copy rather than crashing the parent.
+  // surfaces as a distinct "unavailable" state rather than crashing the
+  // parent. `loadFailed` tracks whether the read errored — a failure must NOT
+  // fall open to the empty state (which would tell the admin nothing happened
+  // when the read actually failed; mirrors the portal precedent, D1 finding
+  // B2). Logs carry errKind only — never a raw error / PII.
   let events: TimelineItemProps[] = [];
+  let loadFailed = false;
   try {
     const result = await timelineList(
       { memberId, limit: PREVIEW_LIMIT },
@@ -75,18 +85,20 @@ export async function TimelinePreviewSection({
     if (result.ok) {
       events = result.value.events.map(toTimelineItemProps);
     } else {
+      loadFailed = true;
       logger.error(
-        { event: 'timeline_preview_use_case_err', err: result.error, memberId },
+        {
+          event: 'timeline_preview_use_case_err',
+          errKind: errKind(rootCause(result.error)),
+          memberId,
+        },
         '[F3] timeline preview — use-case returned err',
       );
     }
   } catch (e) {
+    loadFailed = true;
     logger.error(
-      {
-        event: 'timeline_preview_threw',
-        err: e instanceof Error ? e.message : String(e),
-        memberId,
-      },
+      { event: 'timeline_preview_threw', errKind: errKind(e), memberId },
       '[F3] timeline preview — fetch threw',
     );
   }
@@ -112,7 +124,13 @@ export async function TimelinePreviewSection({
         </Link>
       </CardHeader>
       <CardContent>
-        {events.length === 0 ? (
+        {loadFailed ? (
+          <div className="py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              {t('timelinePreview.loadFailed')}
+            </p>
+          </div>
+        ) : events.length === 0 ? (
           <div className="py-6 text-center">
             <p className="text-sm text-muted-foreground">
               {t('timelinePreview.empty')}

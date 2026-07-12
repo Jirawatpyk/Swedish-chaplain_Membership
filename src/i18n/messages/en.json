@@ -1009,11 +1009,13 @@
         "subtitleArchived": "{plan} · Year {year} · Archived",
         "timelinePreview": {
           "viewAll": "View all activity",
-          "empty": "No recent activity yet."
+          "empty": "No recent activity yet.",
+          "loadFailed": "We couldn't load recent activity. Please try again."
         },
         "renewalHealth": {
           "title": "Renewal & Health",
           "empty": "No active renewal cycle",
+          "readFailed": "We couldn't load this member's renewal status. Please try again.",
           "status": "Status",
           "expiry": "Expiry",
           "daysRemaining": "{days} days remaining",
@@ -1421,6 +1423,7 @@
           "invalidEmail": "The contact email is invalid.",
           "emailTaken": "This email already belongs to another account.",
           "notFound": "Contact not found.",
+          "contactRemoved": "This contact has been removed. Refresh the page.",
           "linkFailed": "Couldn't link the portal account. No invitation was sent — please try again.",
           "serverError": "Something went wrong. Please try again."
         }
@@ -1452,6 +1455,13 @@
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
+        "errors": {
+          "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
+          "not_found": "One or more selected members no longer exist. Refresh and try again.",
+          "plan_not_found": "The target plan no longer exists. Refresh and try again.",
+          "bulk_cap_exceeded": "Too many members selected for one batch. Reduce the selection and try again.",
+          "invalid_body": "That request wasn't valid. Refresh and try again."
+        },
         "unknownError": "Something went wrong.",
         "networkError": "Network error. Check your connection.",
         "progressLabel": "Bulk operation in progress",
@@ -1464,7 +1474,10 @@
         "saving": "Saving…",
         "saved": "Saved",
         "toggleStatus": "Toggle status (currently {current})",
-        "networkError": "Network error. Check your connection."
+        "networkError": "Network error. Check your connection.",
+        "errors": {
+          "state_error": "Couldn't change status — the member's current state doesn't allow it."
+        }
       },
       "archive": {
         "archiveCta": "Archive member",
@@ -1478,6 +1491,8 @@
         "archivingInProgress": "Archiving…",
         "archiveSuccess": "{companyName} archived.",
         "archiveError": "Could not archive. Please try again.",
+        "archiveAlreadyArchived": "This member is already archived. Refresh the page.",
+        "archiveNotFound": "Member not found. Refresh the page.",
         "bannerTitle": "Archived on {date}",
         "withinWindow": "{daysRemaining, plural, one {# day remaining} other {# days remaining}} in the 90-day undelete window.",
         "windowExpired": "Archived {daysSinceArchive} days ago — beyond the 90-day undelete window.",
@@ -1485,6 +1500,8 @@
         "undeleteCta": "Restore",
         "undeleteSuccess": "Member restored.",
         "undeleteError": "Could not restore. Please try again.",
+        "undeleteNotArchived": "This member isn't archived. Refresh the page.",
+        "undeleteNotFound": "Member not found. Refresh the page.",
         "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
       },
       "erase": {
@@ -1518,6 +1535,7 @@
         "eraseSuccess": "{companyName} erased.",
         "eraseSuccessPending": "{companyName} erasure started — completion pending.",
         "eraseError": "Could not erase. Please try again.",
+        "eraseNotFound": "Member not found. It may already have been erased. Refresh the page.",
         "bannerTitle": "Personal data erased on {date}",
         "bannerBody": "This member's personal data was erased (GDPR Art. 17 / PDPA §33). Permanent — cannot be undone.",
         "bannerPending": "Completion pending — the automated reconciler will finish the remaining steps."
@@ -3162,7 +3180,11 @@
             "error": {
               "server_error": "Server error. Please retry.",
               "invalid_input": "Invalid input.",
-              "member_not_found": "Member not found."
+              "member_not_found": "Member not found.",
+              "feature_disabled": "At-risk detection is temporarily unavailable. Try again later.",
+              "invalid_body": "That request wasn't valid. Please try again.",
+              "no_session": "Your session expired. Sign in again.",
+              "forbidden": "You don't have permission to do that."
             }
           }
         },
@@ -3199,7 +3221,11 @@
             "failure": "Could not record outreach",
             "error": {
               "server_error": "Server error. Please retry.",
-              "invalid_input": "Invalid input."
+              "invalid_input": "Invalid input.",
+              "feature_disabled": "At-risk detection is temporarily unavailable. Try again later.",
+              "invalid_body": "That request wasn't valid. Please try again.",
+              "no_session": "Your session expired. Sign in again.",
+              "forbidden": "You don't have permission to do that."
             }
           }
         }
@@ -5104,6 +5130,8 @@
       "saving": "Saving…",
       "saveSuccess": "Profile updated successfully.",
       "saveError": "Could not save changes. Please try again.",
+      "forbiddenError": "You don't have permission to edit this profile.",
+      "notFoundError": "This profile no longer exists. Refresh the page.",
       "noChanges": "No changes to save."
     },
     "invite": {
@@ -5125,6 +5153,8 @@
       "sendSuccess": "Invitation sent successfully.",
       "sendError": "Could not send invitation. Please try again.",
       "emailTaken": "This email is already registered.",
+      "invalidEmail": "Enter a valid email address.",
+      "validationError": "Please check the form and try again.",
       "linkFailed": "Couldn't complete the invitation. No invitation was sent — please try again."
     },
     "payment": {
