@@ -32,7 +32,10 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
-import { computeAtRiskScore as computeAtRiskScorePure } from '../../domain/at-risk-score';
+import {
+  computeAtRiskScore as computeAtRiskScorePure,
+  ENGAGEMENT_OBSERVATION_MIN_DAYS,
+} from '../../domain/at-risk-score';
 import type {
   AtRiskFactors,
   AtRiskScoreResult,
@@ -182,10 +185,31 @@ export async function recomputeAtRiskScoresBatch(
 
       for (const row of factorRows) {
         try {
-          const memberCreatedMs = new Date(row.memberCreatedAt).getTime();
+          // G6 — tenure from REAL membership age (registration_date), not the
+          // import instant (memberCreatedAt). An imported member joined years
+          // ago but was created_at=now; anchoring tenure on created_at would
+          // read ~0-day tenure and mis-fire the min-tenure gate. Fall back to
+          // created_at. MUST match the single scorer (drizzle-at-risk-scorer).
+          let tenureAnchorMs: number | undefined;
+          if (row.memberRegistrationDateIso !== null) {
+            const t = new Date(row.memberRegistrationDateIso).getTime();
+            if (!Number.isNaN(t)) tenureAnchorMs = t;
+          }
+          if (tenureAnchorMs === undefined) {
+            tenureAnchorMs = new Date(row.memberCreatedAt).getTime();
+          }
           const tenureDays = Math.floor(
-            (nowMs - memberCreatedMs) / MS_PER_DAY,
+            (nowMs - tenureAnchorMs) / MS_PER_DAY,
           );
+          // G5 — in-system observation window (from created_at = when we began
+          // observing). Below one quota year we have no meaningful engagement
+          // history, so the engagement factors are skipped (undefined) rather
+          // than scoring pre-import zero usage as disengagement.
+          const inSystemDays = Math.floor(
+            (nowMs - new Date(row.memberCreatedAt).getTime()) / MS_PER_DAY,
+          );
+          const engagementObserved =
+            inSystemDays >= ENGAGEMENT_OBSERVATION_MIN_DAYS;
           const daysSinceContactUpdate =
             row.lastActivityAtIso !== null
               ? Math.floor(
@@ -210,25 +234,29 @@ export async function recomputeAtRiskScoresBatch(
             ...(daysSinceLastPayment !== undefined
               ? { daysSinceLastPayment }
               : {}),
-            // F7 e-blast quota — null ⇒ plan has no quota; Domain skips
-            ...(row.eblastQuotaPctUsed !== null
+            // F7 e-blast quota — null ⇒ plan has no quota; Domain skips.
+            // G5 — also skipped until the in-system observation window reaches
+            // one quota year (engagementObserved), so a never-observed member's
+            // 0 usage is "no data yet", not disengagement.
+            ...(engagementObserved && row.eblastQuotaPctUsed !== null
               ? { eBlastQuotaPctUsed: row.eblastQuotaPctUsed }
               : {}),
-            // BUG-1 — F6 event-attendance factors. The CTE always computes
-            // them, but include them ONLY when F6 is available so a run with
-            // eventAttendeesAvailable=false does not let events fire (the
-            // Domain's own f6-active guard also skips them — gating here keeps
-            // the factor set honest and matches the single scorer).
-            ...(f6Available
+            // BUG-1 — F6 event-attendance factors. Include ONLY when F6 is
+            // available AND the member has a real observation window (G5) so a
+            // run with eventAttendeesAvailable=false, or a freshly-imported
+            // member, does not let events fire. Matches the single scorer.
+            ...(f6Available && engagementObserved
               ? {
                   eventsAttendedLast12Months: row.eventsAttendedLast12Months,
                   eventsAttendedLast3Months: row.eventsAttendedLast3Months,
                 }
               : {}),
-            // BUG-1 follow-up — F6 cultural factor. Gated on f6Available (like
-            // the event factors) AND null-checked (like eblast — null when the
-            // plan has no cultural entitlement).
-            ...(f6Available && row.culturalTicketQuotaPctUsed !== null
+            // BUG-1 follow-up — F6 cultural factor. Gated on f6Available + the
+            // G5 observation window + null-checked (null when the plan has no
+            // cultural entitlement).
+            ...(f6Available &&
+            engagementObserved &&
+            row.culturalTicketQuotaPctUsed !== null
               ? { culturalTicketQuotaPctUsed: row.culturalTicketQuotaPctUsed }
               : {}),
             // F2 tier-downgrade — direct boolean

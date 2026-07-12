@@ -80,6 +80,19 @@ export const F6_ACTIVE_MAX = 100 as const;
 export const F6_INACTIVE_MAX = 70 as const;
 
 /**
+ * Minimum in-system observation window (days) before the ENGAGEMENT factors
+ * (e-blast / event / cultural benefit usage) are trusted. A member we have not
+ * observed in-system for a full quota year has no meaningful usage history yet
+ * — e.g. an imported member (created_at = the import instant) who was never
+ * onboarded — so their 0 usage must be treated as "no data" (skip), not
+ * "disengaged". The scorers pass those factors as `undefined` below this
+ * threshold, exactly as the payment factor is skipped when there is no in-system
+ * payment. Distinct from `minTenureDays` (which gates on real membership age via
+ * registration_date); this gates on how long we have been OBSERVING the member.
+ */
+export const ENGAGEMENT_OBSERVATION_MIN_DAYS = 365;
+
+/**
  * Phase 6 review S1 — compile-time guard against silent FR-029 weight
  * drift. The F6-inactive max MUST equal the sum of the 5
  * F6-independent factor weights (e_blast 15 + invoices_overdue 25 +

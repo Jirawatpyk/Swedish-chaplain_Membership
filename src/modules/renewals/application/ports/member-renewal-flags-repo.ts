@@ -447,7 +447,9 @@ export interface BulkSetRiskScoreRow {
  */
 export interface AtRiskBatchFactorRow {
   readonly memberId: string;
-  readonly memberCreatedAt: string; // ISO 8601 UTC
+  readonly memberCreatedAt: string; // ISO 8601 UTC (import instant → observation-window anchor, G5)
+  /** Real membership start (registration_date) → tenure anchor (G6). Null only if unset. */
+  readonly memberRegistrationDateIso: string | null;
   readonly lastActivityAtIso: string | null; // ISO 8601 UTC or null
   readonly priorRiskBand: RiskBand | null;
   readonly invoicesOverdueCount: number;
