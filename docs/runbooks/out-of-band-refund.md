@@ -4,7 +4,7 @@
 **Severity**: HIGH (financial reconciliation drift)
 **Owner**: Chamber-OS maintainer + tenant admin (joint resolution)
 **Source spec**: F5 (`specs/009-online-payment/spec.md` Q2 / FR-011 / FR-011a)
-**Last updated**: 2026-04-23 (initial draft as part of F5 `/speckit.plan`)
+**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4))
 
 ---
 
@@ -24,6 +24,7 @@ Some `out_of_band_refund_detected` alerts are **not** a real dashboard refund �
 - **Sub-case (ii) — a `failed` row**: FIXED in commit `44b394a3` (guard-miss ii). The marker is now stamped even when the payment row was concurrently marked `failed` between the auto-refund decision and the marker write.
 - **Sub-case (i) — a `succeeded` row (residual, open)**: the concurrent-manual-mark race — an admin (or another webhook) flips the payment to `succeeded` in the narrow window between the auto-refund decision and the marker write — can still miss the marker on a `succeeded` row. No durable marker is stamped in this sub-case, so the auto-refund's later `charge.refund.updated(succeeded)` webhook does not recognise it and raises a normal `out_of_band_refund_detected` alert.
 - **How to recognise this class on-call**: map any `re_…` id on the alert back to `payments.auto_refund_processor_refund_id` (or the `payment_auto_refunded_stale_invoice` / `payment_auto_refunded_concurrent_manual_mark` audit rows for that payment). If it resolves to an auto-refund payment, **the refund IS correctly issued and audited** — do not treat this as a missing-refund incident. No F4 credit note is auto-created here either (same as any OOB alert); reconcile per § 2.3 Option A if the ledger needs a credit note, but there is no "lost" money to find.
+- **Both webhooks now consult the marker (F5 refund-lifecycle fix-wave, Finding 2)**: the `charge.refunded` handler now ALSO checks `payments.auto_refund_processor_refund_id` before raising OOB (previously only `charge.refund.updated` did). So a durably-marked auto-refund no longer raises a false OOB on EITHER webhook — sub-case (i) above (no marker stamped at all) is the only remaining false-OOB class.
 
 ### 1.2 Known residual race — B.1 manual F4 credit note vs. F5 refund pre-flight (narrow window, low risk)
 
@@ -42,6 +43,13 @@ This is **much narrower** than the original #4 finding (which had no invoice-sid
 ### 1.3 Known residual — F8 async-reject marker-commit crash window (narrow, money-safe)
 
 `adminRejectReactivation` (F8) stamps the async reject-with-refund marker (`reject_refund_initiated_at`/`reject_refund_id`/`reject_actor_user_id`) in a **separate transaction** from the F5 call that returns `refund_pending` — unavoidable, since F5 is an external Stripe call and cannot be atomic with an F8 write. If the process crashes in the narrow window between F5 returning `refund_pending` and that marker-commit landing, the cycle stays `pending_admin_reactivation` **without** the marker. The F8 reconcile cron (`reconcilePendingReactivations`) then has no way to distinguish it from an ordinary pending cycle, so its 30-day timeout eventually `lapsed`s it instead of converging it to `cancelled`/`admin_rejected_with_refund` — the wrong terminal LABEL, but money-safe (the refund itself already succeeded via F5 independently of the marker write). This is strictly better than the pre-F8-RP-2 baseline, where **every** async reject-with-refund lapsed (no marker existed at all); the 30-day timeout safety net still resolves the cycle either way. No operator action required — noted here for on-call context if a lapsed cycle is later found to have had a settled reject-refund.
+
+### 1.4 Redundant OOB audit + single-owner metric (by design — expect ≥1 audit row per refund)
+
+A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) is delivered by Stripe as BOTH `charge.refunded` and `charge.refund.updated`. Both handlers emit `out_of_band_refund_detected` **on purpose** — the 10-year money-trail forensic is written redundantly so it survives either webhook failing its whole retry window (no single point of failure for the forensic). Consequences for on-call:
+
+- **Expect up to one audit row per delivered webhook event** for the same refund. **Deduplicate on `processor_refund_id`** when counting distinct OOB refunds — the same group-by-`processor_refund_id` convention the webhook dispatcher already mandates. Two `out_of_band_refund_detected` rows with the same `processor_refund_id` are ONE incident, not two.
+- **The paging metric `out_of_band_refund_rejected_total` is single-owner** (emitted only by the `charge.refunded` handler, the universal detector that fires on every refund). So the metric counts each refund **once** and is NOT doubled for async refunds, even though the audit may appear as ≥1 row.
 
 ---
 
@@ -139,7 +147,7 @@ Reference: docs/runbooks/out-of-band-refund.md
 
 ### 3.2 Update the metric
 
-Verify `out_of_band_refund_rejected_total{tenant, processor_env}` incremented. If it's > 0 for two consecutive months, escalate per spec FR-021 — re-evaluate the Q2 design choice (currently "in-app only + reject"; alternative is "auto-reconcile both paths").
+Verify `out_of_band_refund_rejected_total{tenant, processor_env}` incremented (this metric is **single-owner** on the `charge.refunded` handler — it counts once per refund even though the `out_of_band_refund_detected` audit may appear as ≥1 row per refund; see § 1.4). If it's > 0 for two consecutive months, escalate per spec FR-021 — re-evaluate the Q2 design choice (currently "in-app only + reject"; alternative is "auto-reconcile both paths").
 
 ### 3.3 Document the incident
 
