@@ -569,6 +569,95 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     ).toBe(0);
   });
 
+  it('CF-2: findStaleInvoiceAutoRefund.failed flips FALSE after a auto_refund_reconciled event; findFailedAutoRefundForInvoice reports ids + reconcile state', async () => {
+    // Failed-auto-refund resolve/acknowledge (go-live CF-2). Once the admin
+    // reconciles out-of-band, an `auto_refund_reconciled` event is appended;
+    // `findStaleInvoiceAutoRefund.failed` must become failure-AND-not-reconciled
+    // so the admin alert clears + the member banner reverts to the "refunded"
+    // copy. `findFailedAutoRefundForInvoice` feeds the resolve use-case the
+    // (payment, refund) ids + whether a reconcile already exists (idempotency).
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const probeInvoiceId = randomUUID();
+    const probePaymentId = makeUlid();
+    const probeRefundId = `re_cf2_${randomUUID().slice(0, 8)}`;
+    const { sql: rawSql } = await import('drizzle-orm');
+
+    // (1) Seed the initiation marker + the CRITICAL-2 failure forensic.
+    const initPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      refunded_amount_satang: '1000000',
+      cause: 'invoice_voided',
+      processor_refund_id: probeRefundId,
+    });
+    const failPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      auto_refund_processor_refund_id: probeRefundId,
+      refund_status: 'failed',
+      amount_satang: '1000000',
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('payment_auto_refunded_stale_invoice'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 init',
+           ${`cf2-init-${probeInvoiceId}`}, ${initPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10),
+          ('auto_refund_failed_needs_manual_reconcile'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 fail',
+           ${`cf2-fail-${probeInvoiceId}`}, ${failPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+
+    // (2) Before reconcile: failed=true; the resolve read reports the ids + not-yet-reconciled.
+    const before = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(before?.failed).toBe(true);
+    const failBefore = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, probeInvoiceId),
+    );
+    expect(failBefore).not.toBeNull();
+    expect(failBefore!.paymentId).toBe(probePaymentId);
+    expect(failBefore!.processorRefundId).toBe(probeRefundId);
+    expect(failBefore!.alreadyReconciled).toBe(false);
+
+    // (3) Admin reconciles → append the append-only `auto_refund_reconciled` event.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('auto_refund_reconciled'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 reconcile',
+           ${`cf2-rec-${probeInvoiceId}`},
+           ${JSON.stringify({ invoice_id: probeInvoiceId, payment_id: probePaymentId, processor_refund_id: probeRefundId })}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+
+    // (4) After reconcile: `failed` flips FALSE (alert clears; member banner
+    //     reverts). The initiation marker still exists → non-null return keeps
+    //     the member "refunded" copy path (processorRefundId still surfaced).
+    const after = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(after?.failed).toBe(false);
+    expect(after?.processorRefundId).toBe(probeRefundId);
+    const failAfter = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, probeInvoiceId),
+    );
+    expect(failAfter!.alreadyReconciled).toBe(true);
+
+    // (5) Fresh invoice with NO failure forensic → null (the use-case refuses).
+    const freshInvoiceId = randomUUID();
+    const none = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, freshInvoiceId),
+    );
+    expect(none).toBeNull();
+  });
+
   // ===========================================================================
   // F5R3 H-9 (2026-05-16) — live-Neon coverage of the
   // `expectedCurrentStatus` defence-in-depth WHERE clause (R2-CRIT-1).
