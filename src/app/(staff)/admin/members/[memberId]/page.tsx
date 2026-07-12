@@ -761,6 +761,13 @@ export default async function MemberDetailPage({
   // additionally require status !== 'archived'; the GDPR-export section keeps its
   // own admin-only + !isErased gate).
   const canModify = canWrite && !isErased;
+  // Cluster 4 (2026-07-12) — the "Renew / reactivate" affordance (lapsed
+  // comeback) must be HIDDEN for archived members. `adminRenewLapsedMember`
+  // rejects an archived member server-side (`member_archived`, 068 cluster C):
+  // an archived member must be RESTORED first (the Archive/Undelete affordance
+  // handles that), then renewed. Same status gate the Archive/Edit/add-contact
+  // affordances already use (`canModify && status !== 'archived'`).
+  const canRenew = canModify && member.status !== 'archived';
 
   const legalEntityLabel = resolveLegalEntityTypeLabel(
     member.legalEntityType,
@@ -1108,7 +1115,7 @@ export default async function MemberDetailPage({
                 in). Own Suspense boundary so the F8/F9 reads never block
                 the company/contacts paint. */}
             <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
+              <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
             </Suspense>
 
             {/* Pass A · Section 2 — inline benefits quota preview (E-Blast /
@@ -1124,9 +1131,10 @@ export default async function MemberDetailPage({
           /* Benefits not available: Renewal & Health renders full-width.
              `canRenew` is passed explicitly (was defaulting to false) so the
              Renew action no longer depends on the F9 dashboard flag — same
-             `canModify` gate as the 2-col branch above. */
+             `canRenew` gate (canModify && status !== 'archived') as the 2-col
+             branch above (Cluster 4: never renew an archived member). */
           <Suspense fallback={<MemberRenewalHealthSkeleton />}>
-            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canModify} />
+            <MemberRenewalHealthSection tenant={tenant} memberId={member.memberId} canRenew={canRenew} />
           </Suspense>
         )}
 

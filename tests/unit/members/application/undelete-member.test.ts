@@ -25,6 +25,10 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+// Cluster 4 — the undelete post-commit restore step emits a metric.
+vi.mock('@/lib/metrics', () => ({
+  renewalsMetrics: { restoreOutcome: vi.fn() },
+}));
 
 import { undeleteMember, asMemberId } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
@@ -66,12 +70,14 @@ function makeMember(opts: {
 type StubbedDeps = UndeleteMemberDeps & {
   memberRepo: { [K in keyof UndeleteMemberDeps['memberRepo']]: ReturnType<typeof vi.fn> };
   audit: { [K in keyof UndeleteMemberDeps['audit']]: ReturnType<typeof vi.fn> };
+  renewalsCascade: { restoreForMember: ReturnType<typeof vi.fn> };
 };
 
 function makeDeps(overrides: Partial<{
   findByIdResult: unknown;
   updateStatusResult: unknown;
   auditResult: unknown;
+  restoreOutcome: unknown;
   now: Date;
 }> = {}): StubbedDeps {
   const now = overrides.now ?? new Date();
@@ -98,7 +104,18 @@ function makeDeps(overrides: Partial<{
     recordInTx: vi.fn().mockResolvedValue(overrides.auditResult ?? ok(undefined)),
   };
   const clock = { now: () => now };
-  return { tenant, memberRepo, audit, clock } as unknown as StubbedDeps;
+  const renewalsCascade = {
+    restoreForMember: vi.fn().mockResolvedValue(
+      overrides.restoreOutcome ?? { outcome: 'restored', cycleId: 'cyc-1' },
+    ),
+  };
+  return {
+    tenant,
+    memberRepo,
+    audit,
+    clock,
+    renewalsCascade,
+  } as unknown as StubbedDeps;
 }
 
 describe('undeleteMember use case (R009)', () => {
@@ -122,6 +139,52 @@ describe('undeleteMember use case (R009)', () => {
         payload: expect.objectContaining({ member_id: memberId }),
       }),
     );
+    // Cluster 4 — restore cascade invoked POST-COMMIT so the restored
+    // member re-enters the renewal pipeline (mirrors archive's cancel).
+    expect(deps.renewalsCascade.restoreForMember).toHaveBeenCalledWith(
+      tenant,
+      memberId,
+      { initiatedByUserId: 'admin-1', requestId: 'req-1' },
+    );
+  });
+
+  it('Cluster 4 — restore failure is best-effort: undelete still succeeds', async () => {
+    const deps = makeDeps({ restoreOutcome: { outcome: 'restore_failed' } });
+    const result = await undeleteMember(
+      memberId,
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      deps,
+    );
+    // The member row is already restored durably; a failed cycle-restore
+    // must NOT fail the undelete.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.status).toBe('active');
+  });
+
+  it('Cluster 4 — restore adapter throw is swallowed: undelete still succeeds', async () => {
+    const deps = makeDeps();
+    deps.renewalsCascade.restoreForMember.mockRejectedValueOnce(
+      new Error('adapter mis-wire'),
+    );
+    const result = await undeleteMember(
+      memberId,
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('Cluster 4 — restore is NOT called when undelete state_error is thrown', async () => {
+    const deps = makeDeps({
+      findByIdResult: ok(makeMember({ status: 'active', archivedAt: null })),
+    });
+    await undeleteMember(
+      memberId,
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      deps,
+    );
+    expect(deps.renewalsCascade.restoreForMember).not.toHaveBeenCalled();
   });
 
   it('returns not_found when member repo reports repo.not_found', async () => {

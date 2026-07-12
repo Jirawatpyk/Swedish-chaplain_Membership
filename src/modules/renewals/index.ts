@@ -822,6 +822,22 @@ export {
   type RenewalsCascadeReason,
 } from './application/use-cases/cancel-in-flight-cycles-for-member';
 
+// --- Cluster 4 (2026-07-12) — F3 undelete → F8 cycle RESTORE ---------------
+// Symmetric counterpart of `cancelInFlightCyclesForMember`. Idempotently
+// re-creates ONE active renewal cycle for an un-deleted member (anchored to
+// the current membership period via `createCycleInTx` + `anchorToCurrentPeriod`)
+// so the member re-appears in the renewal pipeline. Invoked from F3's
+// `undelete-member` use-case via the `RenewalsCascadePort` adapter at
+// `src/modules/members/infrastructure/adapters/renewals-cascade-adapter.ts`.
+// Reuses the existing `renewal_cycle_created` audit event — no new pgEnum value.
+export {
+  restoreCycleForMember,
+  type RestoreCycleForMemberDeps,
+  type RestoreCycleForMemberInput,
+  type RestoreCycleForMemberOutput,
+  type RestoreCycleForMemberError,
+} from './application/use-cases/restore-cycle-for-member';
+
 // --- Phase 9 retrofit (PR #25) — prune-consumed-tokens weekly cron --------
 // Closes the doc-vs-code drift discovered post-merge between
 // `docs/runbooks/cron-jobs.md` (which documented the F8 token-prune

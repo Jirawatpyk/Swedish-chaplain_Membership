@@ -236,6 +236,27 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     expectCta(await renderMembership(), false);
   });
 
+  it('lapsed → renders a contact-support mailto affordance (Cluster 4 — real next step, not a dead renew promise)', async () => {
+    const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'lapsed', expiresAt: past }));
+    const html = await renderMembership();
+    noMissing(html);
+    // A real mailto CTA (not the /portal/renewal dead-end) with the localized
+    // "Contact us to renew" label.
+    expect(html).toContain('href="mailto:info@swecham.se');
+    expect(html).toContain(en.portal.dashboard.membership.contactToRenew);
+    // And NOT the self-serve renewal href (there is no member self-serve path).
+    expect(html).not.toContain(`href="${RENEW_HREF}"`);
+  });
+
+  it('due → NO contact-support mailto (renewable via the in-portal flow)', async () => {
+    const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: soon }));
+    const html = await renderMembership();
+    noMissing(html);
+    expect(html).not.toContain('mailto:info@swecham.se');
+  });
+
   it('active → NO renew-now CTA (not due yet)', async () => {
     renewalRead.mockResolvedValue(
       cycle({ status: 'completed', expiresAt: '2030-12-31T00:00:00.000Z' }),

@@ -2880,6 +2880,42 @@ export const renewalsMetrics = {
   },
 
   /**
+   * Cluster 4 (2026-07-12) — F3 undelete → F8 cycle-restore outcome counter.
+   *
+   * The symmetric counterpart of `cascadeOutcome` for the RESTORE side.
+   * Undeleting a member re-creates the renewal cycle the archive cascade
+   * cancelled (`restoreForMember` on the `RenewalsCascadePort`). A DEDICATED
+   * counter (not a reused `cascadeOutcome` label) so dashboards do not
+   * conflate a restore failure with an archival-cancel failure — the two
+   * are operationally distinct incident classes.
+   *
+   * `kind` is bounded:
+   *   - `'restored'`              — a fresh active cycle was created.
+   *   - `'skipped_active_exists'` — idempotent no-op (member already had one).
+   *   - `'skipped_member_absent'` — member unreadable (absent / RLS / read err).
+   *   - `'restore_failed'`        — the restore errored; the member is left
+   *                                 WITHOUT an active cycle. ANY sustained
+   *                                 non-zero rate should page — it is exactly
+   *                                 the "member silently dropped from the
+   *                                 renewal pipeline" bug class this fix closes.
+   */
+  restoreOutcome(
+    tenantId: string,
+    kind:
+      | 'restored'
+      | 'skipped_active_exists'
+      | 'skipped_member_absent'
+      | 'restore_failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_restore_outcome_total',
+        'F8 F3-undelete cycle-restore outcome per member-undelete event',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
    * Phase 9 verify-fix close-on-review — coordinator READ_ONLY_MODE
    * skip counter. The 4 coordinator routes return 200 + skipped on
    * `env.flags.readOnlyMode === true` to avoid cron-job.org retry-

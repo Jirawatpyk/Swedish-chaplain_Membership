@@ -37,7 +37,10 @@ export type StubbedEraseDeps = EraseMemberDeps & {
   };
   sessions: { revokeAllForInTx: ReturnType<typeof vi.fn> };
   broadcastsCascade: { cancelInFlightForMember: ReturnType<typeof vi.fn> };
-  renewalsCascade: { cancelInFlightForMember: ReturnType<typeof vi.fn> };
+  renewalsCascade: {
+    cancelInFlightForMember: ReturnType<typeof vi.fn>;
+    restoreForMember: ReturnType<typeof vi.fn>;
+  };
   // COMP-1 US2a — F1 linked-login erasure cascade (Task 6). A real `vi.fn`
   // (not a double-cast) so the cascade tests can assert call args + override
   // the per-user result. Default: `ok({ erased: true })` (login anonymised).
@@ -142,6 +145,9 @@ export function buildEraseDeps(): StubbedEraseDeps {
         outcome: 'ok',
         cancelledCount: 0,
       })),
+      // Cluster 4 — erase never calls restore, but the port method is
+      // REQUIRED; no-op stub keeps the deps typecheck-clean.
+      restoreForMember: vi.fn(async () => ({ outcome: 'skipped_active_exists' })),
     },
     // F1 linked-login erasure (US2a). Default success: the login was
     // anonymised. Tests override to return `ok({ erased: false })` (login
