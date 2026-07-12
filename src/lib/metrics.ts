@@ -3503,6 +3503,49 @@ export const renewalsMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * `renewals_reconcile_async_reject_refund_total{tenant, outcome}` — F8-RP
+   * follow-up (2026-07-12).
+   *
+   * The reconcile-pending cron reconciles cycles carrying the async
+   * reject-with-refund marker (an admin REJECTED with a refund that F5 settled
+   * asynchronously). The cycle's terminal must mirror the SYNC reject path
+   * (→ `cancelled`), never the timeout (→ `lapsed`). `outcome` partitions:
+   *
+   *   - `settled_cancelled` — the refund settled succeeded → the cycle
+   *     converged to `cancelled`/`admin_rejected_with_refund`. INFORMATIONAL.
+   *   - `still_pending` — the refund is still settling; cron waits. INFORMATIONAL.
+   *   - `refund_failed` — the async refund settled FAILED/canceled (money not
+   *     returned). The cron cleared the marker; the admin must re-handle the
+   *     cycle. **ALERTING** — a sustained rate means admins are getting stuck
+   *     rejected cycles whose refunds never completed.
+   *   - `lookup_failed` — the F5 settlement lookup failed OR the refund id was
+   *     not found; transient, retried next pass. INFORMATIONAL.
+   *   - `admin_race_skipped` — a concurrent admin approve/reject (or an
+   *     optimistic-lock conflict) moved the cycle out of pending before the
+   *     cron's settle transition. Money residual surfaced. INFORMATIONAL.
+   *
+   * Alert rule: sustained `refund_failed` > 0 for 15 min pages on-call
+   * (parity with `adminRejectCompleted{outcome=failed}`). Other outcomes are
+   * informational and never page.
+   */
+  asyncRejectRefundReconciled(
+    tenantId: string,
+    outcome:
+      | 'settled_cancelled'
+      | 'still_pending'
+      | 'refund_failed'
+      | 'lookup_failed'
+      | 'admin_race_skipped',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_async_reject_refund_total',
+        'F8 reconcile-pending-reactivations — async reject-with-refund settlement reconciliation, partitioned by terminal outcome',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------

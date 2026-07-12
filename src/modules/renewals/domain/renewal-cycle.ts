@@ -124,6 +124,27 @@ interface RenewalCycleBase {
   /** Forensic reference to the anchoring invoice; null for backfilled pre-system payments. */
   readonly anchorInvoiceId: string | null;
 
+  /**
+   * F8-RP follow-up (migration 0243) — async reject-with-refund marker.
+   * `rejectRefundInitiatedAt` is the discriminator: non-null ONLY on a cycle
+   * whose admin REJECT initiated an F5 refund that is settling asynchronously
+   * (Stripe pending/requires_action) while the cycle stays
+   * `pending_admin_reactivation`. The reconcile-pending cron reads this + the
+   * refund id to detect settlement and converge the cycle →
+   * `cancelled`/`admin_rejected_with_refund` (parity with the SYNC reject),
+   * INSTEAD of the 30-day timeout → `lapsed`. An UNMARKED pending cycle
+   * (`rejectRefundInitiatedAt === null`) still times out → `lapsed` — the
+   * terminal-state divergence is preserved for genuine no-action timeouts.
+   * `rejectRefundId` is the F5 `rfnd_<ulid>` id (settlement lookup key);
+   * `rejectActorUserId` replays the rejecting admin so the async settle audit
+   * shows who rejected (not the cron). Left set on the resulting cancelled row
+   * for forensics; a genuine timeout never carries them. See cycle-status.ts
+   * terminal-state divergence note.
+   */
+  readonly rejectRefundInitiatedAt: string | null;
+  readonly rejectRefundId: string | null;
+  readonly rejectActorUserId: string | null;
+
   readonly createdAt: string;
   readonly updatedAt: string;
 }

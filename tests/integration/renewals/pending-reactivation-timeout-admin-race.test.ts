@@ -220,6 +220,9 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
       linkedCreditNoteId: null,
       anchoredAt: null,
       anchorInvoiceId: null,
+      rejectRefundInitiatedAt: null,
+      rejectRefundId: null,
+      rejectActorUserId: null,
       closedAt: null,
       closedReason: null,
       createdAt: '2026-04-14T00:00:00.000Z',
@@ -233,7 +236,13 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
         );
       },
     );
-    const spyBridge: F5RefundBridge = { issueRefundForInvoice: refundSpy };
+    const spyBridge: F5RefundBridge = {
+      issueRefundForInvoice: refundSpy,
+      // F8-RP follow-up — timeout path never calls the settlement lookup.
+      getRefundOutcomeForInvoice: vi.fn(async () => ({
+        status: 'not_found' as const,
+      })),
+    };
 
     const racedDeps = {
       ...deps,
@@ -382,7 +391,13 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
 
     const racedDeps = {
       ...deps,
-      f5RefundBridge: { issueRefundForInvoice: refundThenApprove },
+      f5RefundBridge: {
+        issueRefundForInvoice: refundThenApprove,
+        // F8-RP follow-up — timeout path never calls the settlement lookup.
+        getRefundOutcomeForInvoice: vi.fn(async () => ({
+          status: 'not_found' as const,
+        })),
+      },
     };
 
     const r = await reconcilePendingReactivations(racedDeps, {

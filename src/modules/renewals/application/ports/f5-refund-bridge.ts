@@ -94,8 +94,73 @@ export type IssueRefundForInvoiceResult =
       readonly processorRefundId?: string;
     };
 
+/**
+ * F8-RP follow-up (2026-07-12) — settlement lookup for a previously-initiated
+ * async reject-with-refund. When `adminRejectReactivation` records
+ * `refund_pending` it stamps the F5 refund id on the cycle marker; the
+ * reconcile-pending cron later calls this to learn whether that specific
+ * refund has SETTLED, so it can converge the cycle → `cancelled` (parity with
+ * the SYNC reject path) rather than let the 30-day timeout lapse it.
+ */
+export interface GetRefundOutcomeInput {
+  readonly tenantId: TenantId;
+  readonly invoiceId: InvoiceId;
+  /** The F5 refund row id (`rfnd_…`) stamped on the cycle at reject time. */
+  readonly refundId: string;
+}
+
+export type GetRefundOutcomeResult =
+  | {
+      /**
+       * The refund SETTLED successfully. The F4 credit note is now attached
+       * (F5 domain invariant: `status='succeeded'` ⟺ `credit_note_id NOT NULL`),
+       * so `creditNoteId` is present for byte-identical audit parity with the
+       * sync reject path. `null` only in the pathological case of a settled
+       * refund whose CN row is missing (referential drift) — the cron still
+       * converges to cancelled (money is back) and records a null CN, mirroring
+       * the sync path's `no_payment_found` null-CN tolerance.
+       */
+      readonly status: 'succeeded';
+      readonly creditNoteId: string | null;
+    }
+  | {
+      /** Still settling — the cron waits for a later pass. */
+      readonly status: 'pending';
+    }
+  | {
+      /**
+       * The refund settled `failed`/`canceled` (F5 collapses Stripe `canceled`
+       * → `failed`). The async refund did NOT return the money — the cron must
+       * NOT converge to cancelled. Carries the F5 failure reason for forensics.
+       */
+      readonly status: 'failed';
+      readonly failureReasonCode: string | null;
+    }
+  | {
+      /**
+       * The refund id could not be located in the invoice's F5 activity
+       * (defensive — should not happen for a marked cycle). The cron leaves
+       * the cycle marked + pending for a later pass / manual handling.
+       */
+      readonly status: 'not_found';
+    }
+  | {
+      /** F5 read failed (repo unavailable) — transient; the cron retries next pass. */
+      readonly status: 'lookup_failed';
+      readonly detail: string;
+    };
+
 export interface F5RefundBridge {
   issueRefundForInvoice(
     input: IssueRefundForInvoiceInput,
   ): Promise<IssueRefundForInvoiceResult>;
+
+  /**
+   * F8-RP follow-up — resolve the settlement status of a specific refund
+   * (matched by `refundId` within the invoice's F5 activity). Read-only; no
+   * Stripe call, no mutation. See `GetRefundOutcomeResult`.
+   */
+  getRefundOutcomeForInvoice(
+    input: GetRefundOutcomeInput,
+  ): Promise<GetRefundOutcomeResult>;
 }

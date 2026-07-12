@@ -137,6 +137,16 @@ async function seedPendingCycle(
   return { memberId, cycleId, invoiceId };
 }
 
+/**
+ * F8-RP follow-up — the SYNC reject path never calls the settlement lookup
+ * (`getRefundOutcomeForInvoice` is only used by the reconcile cron for
+ * async-marked cycles). Shared stub so every F5 bridge stub below satisfies
+ * the port without duplicating the throwaway method.
+ */
+function settlementLookupUnused(): F5RefundBridge['getRefundOutcomeForInvoice'] {
+  return vi.fn(async () => ({ status: 'not_found' as const }));
+}
+
 /** Stub F5 bridge that issues a synthetic credit-note (no Stripe). */
 function refundedStub(): F5RefundBridge {
   return {
@@ -146,6 +156,7 @@ function refundedStub(): F5RefundBridge {
       creditNoteId: randomUUID(),
       creditNoteNumber: 'CN-RR-1',
     })),
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
   };
 }
 
@@ -179,7 +190,11 @@ function refundOnceThenNoPaymentStub(): F5RefundBridge & {
       creditNoteNumber: 'CN-RR-CONCURRENT-1',
     };
   });
-  return { issueRefundForInvoice: fn, refundedCount: () => refunded };
+  return {
+    issueRefundForInvoice: fn,
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
+    refundedCount: () => refunded,
+  };
 }
 
 /** Stub F5 bridge that always reports a refund failure (NIT-2). */
@@ -190,6 +205,7 @@ function refundFailedStub(): F5RefundBridge {
       errorCode: 'processor_unavailable',
       detail: 'simulated F5 processor outage',
     })),
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
   };
 }
 
@@ -387,6 +403,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
       issueRefundForInvoice: vi.fn(async () => {
         throw new Error('refund bridge must not run without a linked invoice');
       }),
+      getRefundOutcomeForInvoice: settlementLookupUnused(),
     };
     const racedDeps = { ...deps, f5RefundBridge: neverBridge };
 

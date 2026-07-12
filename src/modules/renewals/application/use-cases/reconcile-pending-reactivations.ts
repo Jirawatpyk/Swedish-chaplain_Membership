@@ -170,6 +170,40 @@ export interface ReconcilePendingReactivationsOutput {
    * `renewalsMetrics.reminderAuditEmitFailures`.
    */
   readonly remindersFailed: number;
+  /**
+   * F8-RP follow-up (2026-07-12) — async reject-with-refund SETTLEMENT
+   * counters. Cycles carrying the reject-refund marker
+   * (`rejectRefundInitiatedAt !== null`) are reconciled EVERY cron pass,
+   * regardless of `daysPending` and BEFORE the timeout/reminder branches —
+   * their terminal must mirror the SYNC reject path (→ `cancelled`), never the
+   * timeout (→ `lapsed`). Five terminal outcomes (parity with the timeout
+   * counters):
+   *
+   *   - `asyncRejectSettledCancelled` — the marked refund SETTLED succeeded;
+   *     the cycle converged → `cancelled`/`admin_rejected_with_refund`
+   *     (byte-identical to the sync path: same closed_reason, the `_rejected`
+   *     audit carrying the settled refund's credit-note id + the rejecting
+   *     admin as actor, and the `post_refund_review` escalation task).
+   *   - `asyncRejectRefundStillPending` — the marked refund is still settling;
+   *     the cron leaves the cycle marked + pending for a later pass.
+   *   - `asyncRejectRefundFailed` — the marked refund settled FAILED/canceled;
+   *     the async refund never returned the money, so the cron CLEARS the
+   *     marker (reverting to an ordinary pending cycle the admin re-handles)
+   *     and fires an ALERTING metric. NEVER silently → cancelled / lapsed.
+   *   - `asyncRejectLookupFailed` — the F5 settlement lookup failed (repo
+   *     unavailable) or the refund id was not found; transient — the cycle
+   *     stays marked + pending and the next cron pass retries.
+   *   - `asyncRejectAdminRaceSkipped` — the tx-bound re-read under the lock
+   *     found the cycle no longer `pending_admin_reactivation` (a concurrent
+   *     admin approve/reject won between list + lock), or the transition lost
+   *     the optimistic-lock race. Money residual surfaced (the refund may have
+   *     settled against a now-non-pending cycle); NOT counted as settled.
+   */
+  readonly asyncRejectSettledCancelled: number;
+  readonly asyncRejectRefundStillPending: number;
+  readonly asyncRejectRefundFailed: number;
+  readonly asyncRejectLookupFailed: number;
+  readonly asyncRejectAdminRaceSkipped: number;
 }
 
 export type ReconcilePendingReactivationsError = {
@@ -190,7 +224,11 @@ export type ReconcilePendingReactivationsError = {
 export interface ReconcilePendingReactivationsDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter'
+    // F8-RP follow-up: `escalationTaskRepo` added so the async reject-with-
+    // refund SETTLE branch inserts the same `post_refund_review` task the
+    // SYNC reject path emits (byte-identical parity). `makeRenewalsDeps`
+    // already provides it — the cron route wiring is unchanged.
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'escalationTaskRepo'
   > {
   readonly f5RefundBridge: F5RefundBridge;
   readonly reminderAuditQuery: ReminderAuditQueryPort;
@@ -281,6 +319,15 @@ export async function reconcilePendingReactivations(
   let timeoutRefundOrphaned = 0;
   let timeoutTransitionFailedPostRefund = 0;
   let timeoutTransitionFailedNoRefund = 0;
+  // F8-RP follow-up async reject-with-refund settlement counters.
+  // (RED baseline: the marked-cycle branch that drives these is added in the
+  // GREEN step; until then a marked cycle wrongly falls through to the timeout
+  // → lapsed path, which the failing tests assert against.)
+  let asyncRejectSettledCancelled = 0;
+  let asyncRejectRefundStillPending = 0;
+  let asyncRejectRefundFailed = 0;
+  let asyncRejectLookupFailed = 0;
+  let asyncRejectAdminRaceSkipped = 0;
 
   for (const cycle of page.items) {
     const daysPending = computeDaysPending(cycle, input.now);
@@ -408,6 +455,11 @@ export async function reconcilePendingReactivations(
     timeoutRefundOrphaned,
     timeoutTransitionFailedPostRefund,
     timeoutTransitionFailedNoRefund,
+    asyncRejectSettledCancelled,
+    asyncRejectRefundStillPending,
+    asyncRejectRefundFailed,
+    asyncRejectLookupFailed,
+    asyncRejectAdminRaceSkipped,
   });
 }
 

@@ -132,6 +132,14 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     // conversion pattern as closedAt/enteredPendingAt below.
     anchoredAt: row.anchoredAt ? row.anchoredAt.toISOString() : null,
     anchorInvoiceId: row.anchorInvoiceId ?? null,
+    // F8-RP follow-up (migration 0243) — async reject-with-refund marker.
+    // Same Date-or-null conversion as anchoredAt/closedAt; the id + actor
+    // are plain text columns.
+    rejectRefundInitiatedAt: row.rejectRefundInitiatedAt
+      ? row.rejectRefundInitiatedAt.toISOString()
+      : null,
+    rejectRefundId: row.rejectRefundId ?? null,
+    rejectActorUserId: row.rejectActorUserId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -833,6 +841,67 @@ export function makeDrizzleRenewalCycleRepo(
       await txDb.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
       );
+    },
+
+    async markRejectRefundInitiatedInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly initiatedAt: string;
+        readonly refundId: string;
+        readonly actorUserId: string;
+      },
+    ): Promise<boolean> {
+      // F8-RP follow-up (migration 0243). GUARDED write: only stamp the marker
+      // while the cycle is STILL `pending_admin_reactivation` (CAS). If the
+      // cycle moved out of pending in the race window, 0 rows match → `false`.
+      // RLS scope comes from the inherited GUC; `_tenantId` intentionally
+      // unused (same precedent as findByIdInTx — no WHERE tenant_id predicate).
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          rejectRefundInitiatedAt: new Date(args.initiatedAt),
+          rejectRefundId: args.refundId,
+          rejectActorUserId: args.actorUserId,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.status, 'pending_admin_reactivation'),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
+    },
+
+    async clearRejectRefundMarkerInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+    ): Promise<boolean> {
+      // F8-RP follow-up (migration 0243) — idempotent marker clear on the
+      // settled-`failed` path. GUARDED: only clears a still-pending, still-
+      // marked cycle so a concurrent transition (admin re-handled it) is a
+      // no-op (`false`). RLS scope via inherited GUC.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          rejectRefundInitiatedAt: null,
+          rejectRefundId: null,
+          rejectActorUserId: null,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.status, 'pending_admin_reactivation'),
+            isNotNull(renewalCycles.rejectRefundInitiatedAt),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
     },
 
     async listCyclesEligibleForLapse(

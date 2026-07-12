@@ -26,6 +26,8 @@ import {
 import { asSatang } from '@/lib/money';
 import type {
   F5RefundBridge,
+  GetRefundOutcomeInput,
+  GetRefundOutcomeResult,
   IssueRefundForInvoiceInput,
   IssueRefundForInvoiceResult,
 } from '../../application/ports/f5-refund-bridge';
@@ -116,5 +118,51 @@ export const f5RefundBridge: F5RefundBridge = {
       creditNoteId: refundResult.value.refund.creditNoteId,
       creditNoteNumber: refundResult.value.refund.creditNoteNumber,
     };
+  },
+
+  async getRefundOutcomeForInvoice(
+    input: GetRefundOutcomeInput,
+  ): Promise<GetRefundOutcomeResult> {
+    // F8-RP follow-up — read-only settlement lookup. Compose F5's
+    // `loadInvoicePaymentActivity` (which returns every payment + refund DTO
+    // for the invoice, each refund carrying `status` + `creditNoteId`) and
+    // match the specific refund the cycle recorded at reject time by its id.
+    // No Stripe call, no mutation.
+    const activityResult = await loadInvoicePaymentActivity(
+      makeLoadInvoicePaymentActivityDeps(input.tenantId),
+      { tenantId: input.tenantId, invoiceId: input.invoiceId },
+    );
+    if (!activityResult.ok) {
+      return {
+        status: 'lookup_failed',
+        detail: activityResult.error.kind,
+      };
+    }
+    const refund = activityResult.value.refunds.find(
+      (r) => r.refundId === input.refundId,
+    );
+    if (!refund) {
+      return { status: 'not_found' };
+    }
+    switch (refund.status) {
+      case 'succeeded':
+        // F5 domain invariant: status='succeeded' ⟺ credit_note_id NOT NULL.
+        // The DTO surfaces it directly; pass it through (defensively nullable
+        // per the port contract — see GetRefundOutcomeResult.succeeded).
+        return { status: 'succeeded', creditNoteId: refund.creditNoteId };
+      case 'failed':
+        return {
+          status: 'failed',
+          failureReasonCode: refund.failureReasonCode,
+        };
+      case 'pending':
+        return { status: 'pending' };
+      default: {
+        // Exhaustiveness pin — a future RefundStatus addition surfaces here.
+        const _exhaustive: never = refund.status;
+        void _exhaustive;
+        return { status: 'pending' };
+      }
+    }
   },
 };

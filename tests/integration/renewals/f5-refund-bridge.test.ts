@@ -51,16 +51,27 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
     expect(typeof bridge.issueRefundForInvoice).toBe('function');
   });
 
-  it('F5RefundBridge port has exactly one method (`issueRefundForInvoice`)', () => {
-    // Defence against accidental scope creep on the bridge port. F8's
-    // view of F5 should remain narrow — the only operation F8 needs is
-    // "issue a refund for the renewal invoice that was held in
-    // pending_admin_reactivation". Adding methods here would couple
+  it('F5RefundBridge port has exactly two methods (issue + settlement lookup)', () => {
+    // Defence against accidental scope creep on the bridge port. F8's view of
+    // F5 stays narrow — two operations only: (1) `issueRefundForInvoice`
+    // (issue a refund for the renewal invoice held in
+    // `pending_admin_reactivation`) and (2) `getRefundOutcomeForInvoice` (the
+    // F8-RP follow-up settlement lookup — read-only; resolve whether a
+    // previously-initiated async refund SETTLED so the reconcile cron can
+    // converge the cycle to `cancelled`). Adding a THIRD method would couple
     // F8 to additional F5 surfaces — a code-review red flag.
     const portKeys = Object.keys({
       issueRefundForInvoice: null,
+      getRefundOutcomeForInvoice: null,
     } satisfies Record<keyof F5RefundBridge, null>);
-    expect(portKeys).toEqual(['issueRefundForInvoice']);
+    expect(portKeys.sort()).toEqual(
+      ['getRefundOutcomeForInvoice', 'issueRefundForInvoice'].sort(),
+    );
+  });
+
+  it('production adapter implements getRefundOutcomeForInvoice', () => {
+    const bridge: F5RefundBridge = f5RefundBridge;
+    expect(typeof bridge.getRefundOutcomeForInvoice).toBe('function');
   });
 
   it('IssueRefundForInvoiceInput requires branded TenantId + InvoiceId (compile-time arg-swap protection)', () => {

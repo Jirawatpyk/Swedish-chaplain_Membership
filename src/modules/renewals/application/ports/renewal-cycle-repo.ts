@@ -312,6 +312,53 @@ export interface RenewalCycleRepo {
   ): Promise<void>;
 
   /**
+   * F8-RP follow-up (migration 0243) — stamp the async reject-with-refund
+   * marker on a cycle. Called by `adminRejectReactivation` in the same tx
+   * where F5 returned `refund_pending` (Stripe settling asynchronously): the
+   * cycle stays `pending_admin_reactivation` and these columns record that an
+   * admin REJECT initiated a refund whose settlement the reconcile-pending
+   * cron will later converge to `cancelled`/`admin_rejected_with_refund`.
+   *
+   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'`
+   * (CAS) — returns `true` when the marker was written, `false` when 0 rows
+   * matched (the cycle moved out of pending in the race window between the
+   * validate tx and this write; the async refund is already in flight and
+   * money-safe, so the caller logs + still surfaces `refund_pending`). RLS
+   * scope comes from the inherited GUC (thread `tx` from `runInTenant`).
+   */
+  markRejectRefundInitiatedInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly initiatedAt: string;
+      readonly refundId: string;
+      readonly actorUserId: string;
+    },
+  ): Promise<boolean>;
+
+  /**
+   * F8-RP follow-up (migration 0243) — clear the async reject-with-refund
+   * marker. Called by the reconcile-pending cron when the marked refund
+   * settled `failed` (Stripe failed/canceled): the async refund never
+   * returned the money, so the cycle MUST NOT converge to `cancelled`. The
+   * cron clears the marker (reverting the cycle to an ordinary
+   * `pending_admin_reactivation` row the admin re-handles via the pending
+   * queue — the sync reject path's own refund-failure treatment) + emits an
+   * alerting metric.
+   *
+   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'
+   * AND reject_refund_initiated_at IS NOT NULL` — idempotent (`false` when 0
+   * rows matched: cycle moved on, or the marker was already cleared). Thread
+   * `tx` from `runInTenant`.
+   */
+  clearRejectRefundMarkerInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+  ): Promise<boolean>;
+
+  /**
    * T115a Phase 5 wave K24 — eligibility cursor for the daily
    * `lapseCyclesOnGraceExpiry` cron (FR-004 + AS3 closed-reason
    * differentiation). Returns cycles still in `awaiting_payment`

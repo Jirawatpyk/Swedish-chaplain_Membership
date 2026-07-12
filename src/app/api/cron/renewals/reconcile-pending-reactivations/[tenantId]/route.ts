@@ -138,6 +138,19 @@ export async function POST(
         // post-refund counter so a no-money DB blip does not falsely page.
         timeout_transition_failed_no_refund:
           result.value.timeoutTransitionFailedNoRefund,
+        // F8-RP follow-up: async reject-with-refund SETTLEMENT reconciliation.
+        // A cycle an admin REJECTED with a refund that F5 settled
+        // asynchronously converges → `cancelled` (parity with the sync reject),
+        // NOT the timeout → `lapsed`. `async_reject_refund_failed` is the
+        // ALERTING outcome (the async refund never returned the money).
+        async_reject_settled_cancelled:
+          result.value.asyncRejectSettledCancelled,
+        async_reject_refund_still_pending:
+          result.value.asyncRejectRefundStillPending,
+        async_reject_refund_failed: result.value.asyncRejectRefundFailed,
+        async_reject_lookup_failed: result.value.asyncRejectLookupFailed,
+        async_reject_admin_race_skipped:
+          result.value.asyncRejectAdminRaceSkipped,
         duration_ms: Date.now() - startedAt,
       });
     });
