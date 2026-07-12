@@ -133,17 +133,21 @@ export function StatCard({
           </p>
         ) : null}
         {action ? (
+          // `min-h-11` (≥44px) tap target on BOTH branches — the `size: 'sm'`
+          // buttonVariant is h-7 (28px), below the WCAG 2.5.8 / SC 2.5.5
+          // 44px minimum. Matches the sibling `invoices-summary-card.tsx`
+          // CTAs (Cluster 4 review a11y fix).
           isExternalHref(action.href) ? (
             <a
               href={action.href}
-              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit')}
+              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit min-h-11')}
             >
               {action.label}
             </a>
           ) : (
             <Link
               href={action.href}
-              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit')}
+              className={cn(buttonVariants({ size: 'sm' }), 'mt-2 w-fit min-h-11')}
             >
               {action.label}
             </Link>

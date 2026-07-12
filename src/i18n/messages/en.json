@@ -4539,7 +4539,7 @@
         "overdueSub": "Overdue by {days} days",
         "lapsedValue": "Membership lapsed",
         "lapsedSub": "Your membership has ended. Contact us to reactivate it and restore your benefits.",
-        "contactToRenew": "Contact us to renew",
+        "contactToRenew": "Contact us to reactivate",
         "lapsedMailSubject": "Membership reactivation request",
         "renewNow": "Renew now",
         "errorValue": "Status unavailable",

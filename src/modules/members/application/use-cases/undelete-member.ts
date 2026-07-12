@@ -132,12 +132,13 @@ export async function undeleteMember(
 
     // Cluster 4 (2026-07-12) — F8 renewal-cycle RESTORE cascade. Runs AFTER
     // the F3 undelete tx commits (mirrors archive-member's cancel cascade):
-    // opens its own tx to idempotently re-create ONE active cycle anchored to
-    // the member's current membership period, so the restored member
-    // re-appears in the renewal pipeline. Best-effort: a failure logs + emits
-    // a metric but does NOT fail the undelete (the member row is already
-    // restored durably; ops can re-attempt via admin "renew" if the cycle
-    // restore failed — e.g. the member's plan is no longer offered).
+    // opens its own tx to idempotently re-create ONE active cycle anchored at
+    // the member's PAID-THROUGH frontier (so it never overlaps an already-paid
+    // period → double-bill; review-fix), so the restored member re-appears in
+    // the renewal pipeline. Best-effort: a failure logs + emits a metric but
+    // does NOT fail the undelete (the member row is already restored durably;
+    // ops can re-attempt via admin "renew" if the cycle restore failed — e.g.
+    // the member's plan is no longer offered).
     {
       try {
         const restore = await deps.renewalsCascade.restoreForMember(

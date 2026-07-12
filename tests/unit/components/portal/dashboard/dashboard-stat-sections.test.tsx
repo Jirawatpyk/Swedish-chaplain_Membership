@@ -212,6 +212,9 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     if (present) {
       expect(html).toContain(`href="${RENEW_HREF}"`);
       expect(html).toContain(RENEW_LABEL);
+      // Cluster 4 a11y review-fix — the internal renew-now <Link> CTA carries
+      // the ≥44px (min-h-11) tap target (buttonVariants size:'sm' is h-7/28px).
+      expect(html).toContain('min-h-11');
     } else {
       expect(html).not.toContain(`href="${RENEW_HREF}"`);
       expect(html).not.toContain(RENEW_LABEL);
@@ -242,9 +245,12 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     const html = await renderMembership();
     noMissing(html);
     // A real mailto CTA (not the /portal/renewal dead-end) with the localized
-    // "Contact us to renew" label.
+    // "Contact us to reactivate" label.
     expect(html).toContain('href="mailto:info@swecham.se');
     expect(html).toContain(en.portal.dashboard.membership.contactToRenew);
+    // Cluster 4 a11y review-fix — the external mailto <a> CTA carries the
+    // ≥44px (min-h-11) tap target on the same footing as the internal <Link>.
+    expect(html).toContain('min-h-11');
     // And NOT the self-serve renewal href (there is no member self-serve path).
     expect(html).not.toContain(`href="${RENEW_HREF}"`);
   });

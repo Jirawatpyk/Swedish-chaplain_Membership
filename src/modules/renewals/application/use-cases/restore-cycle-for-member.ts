@@ -22,16 +22,37 @@
  *   sit up to 90 days) — resurrecting it would immediately re-lapse the
  *   restored member on the next lapse-cron pass.
  *
- *   Instead we re-use the EXACT cold-start creation path the member import
- *   (`scripts/import-members.ts`) and the create-member onboarding listener
- *   (`f8-on-create-member-callbacks.ts`) use: `createCycleInTx` with
- *   `anchorToCurrentPeriod`. That anchors at the member's registration
- *   ANNIVERSARY and advances by whole term multiples to the CURRENT
- *   membership period (068 cluster F) — correct, non-expired dates — and
- *   freezes the plan's live price at creation. The old cancelled cycle is
- *   left cancelled (append-only forensic trail: "cancelled at archive"),
- *   and a fresh `renewal_cycle_created` audit records the restore. No new
- *   `audit_event_type` enum value is introduced.
+ *   Instead we re-use `createCycleInTx` (the shared cold-start creator the
+ *   member import + create-member onboarding listener use) with
+ *   `anchorToCurrentPeriod`, anchored at the member's PAID-THROUGH FRONTIER.
+ *
+ *   Frontier anchoring (Cluster 4 review-fix — money BLOCKER):
+ *   `periodFrom = maxPaidThrough ?? registration_date`, where
+ *   `maxPaidThrough = MAX(period_to)` over the member's cycles that
+ *   represent paid coverage (`status='completed' OR anchored_at IS NOT
+ *   NULL` — `findMaxPaidThroughForMemberInTx`). Anchoring at the current
+ *   membership period via the registration ANNIVERSARY (the naive choice)
+ *   is WRONG for a member who has paid a renewal: the rolling-anchor model
+ *   moves a paid period OFF the anniversary, so an anniversary-anchored
+ *   restore could OVERLAP the already-paid window → the enter-awaiting cron
+ *   issues a DUPLICATE invoice (double-bill) + two cycles cover the same
+ *   span. Starting at the frontier makes the restored cycle GAPLESS after
+ *   the last paid period. `anchorToCurrentPeriod` stays ON in ALL cases —
+ *   it advances by whole term multiples until `periodTo > now`:
+ *     - no paid history (`null` → registration_date, possibly years past):
+ *       advances forward to the CURRENT period (not a decade-old expired
+ *       cycle) — the fresh-import behaviour, unchanged.
+ *     - frontier already >= now (paid-current / paid-ahead): the first
+ *       iteration's `frontier + term > now` holds, so it returns the
+ *       frontier UNCHANGED (no wrong advance) → the restored cycle starts
+ *       exactly at the paid frontier, gapless, no overlap.
+ *     - frontier in the past (paid then lapsed for a gap): advances past the
+ *       unpaid gap years to the current period — correct, and still no
+ *       overlap with the (older) paid window.
+ *   `createCycleInTx` freezes the plan's live price at creation. The old
+ *   cancelled cycle is left cancelled (append-only forensic trail:
+ *   "cancelled at archive"), and a fresh `renewal_cycle_created` audit
+ *   records the restore. No new `audit_event_type` enum value is introduced.
  *
  *   Trade-off vs un-cancelling: the restored cycle gets a NEW `cycle_id`
  *   and does not resurrect the old cycle's reminder/escalation history —
@@ -100,10 +121,13 @@ export interface RestoreCycleForMemberInput {
   /** The member's current F2 plan id (server-resolved by the F3 adapter). */
   readonly planId: string;
   /**
-   * ISO 8601 UTC anchor — the member's `registration_date`. Advanced to
-   * the CURRENT membership period by `anchorToCurrentPeriod` so a
-   * long-standing member does not land on a years-past (already-lapsed)
-   * window.
+   * ISO 8601 UTC — the member's `registration_date`. This is the FALLBACK
+   * anchor used ONLY when the member has NO paid coverage (fresh import;
+   * `findMaxPaidThroughForMemberInTx` returns null). For a member WITH paid
+   * history the restored cycle is anchored at the PAID-THROUGH frontier
+   * instead (see the module docstring). Either way `anchorToCurrentPeriod`
+   * advances the anchor to the CURRENT membership period so a long-standing
+   * member does not land on a years-past (already-lapsed) window.
    */
   readonly registrationDateIso: string;
   /**
@@ -114,7 +138,20 @@ export interface RestoreCycleForMemberInput {
    * undelete, not a direct admin cycle-create (mirrors the cancel cascade).
    */
   readonly initiatedByUserId: string | null;
+  /**
+   * The F3 undelete's `requestId` (the SAME value stamped on the
+   * `member_undeleted` audit row). Cluster 4 review-fix (FIX 2): threaded as
+   * the `renewal_cycle_created` `correlationId` below so an auditor can
+   * correlate the restore's cycle-creation with the undelete that triggered
+   * it. Previously a dead param.
+   */
   readonly requestId: string | null;
+  /**
+   * Fallback correlation id (a fresh UUID minted by the adapter) used only
+   * when `requestId` is null — in practice never, since F3's undelete always
+   * carries a non-null requestId. Kept as a defensive non-null anchor because
+   * `createCycleInTx` requires a non-null `correlationId`.
+   */
   readonly correlationId: string;
 }
 
@@ -141,24 +178,40 @@ export async function restoreCycleForMember(
     idFactory: deps.cycleIdFactory,
   };
 
+  // FIX 2 — link the restore's `renewal_cycle_created` audit to the
+  // `member_undeleted` row via the shared undelete requestId (falls back to
+  // the adapter-minted UUID only if requestId is null — never in practice).
+  const correlationId = input.requestId ?? input.correlationId;
+
   try {
-    const outcome = await runInTenant(input.tenant, (tx) =>
-      createCycleInTx(createDeps, tx, {
+    const outcome = await runInTenant(input.tenant, async (tx) => {
+      // FIX 1 (money BLOCKER) — anchor at the member's PAID-THROUGH frontier,
+      // NOT the registration anniversary. `MAX(period_to)` over paid coverage
+      // (completed OR anchored) → the restored cycle starts gapless AFTER the
+      // last paid period, so it never overlaps an already-paid window
+      // (double-bill). `null` (no paid history) falls back to registration_date.
+      // `anchorToCurrentPeriod` (below) then advances the anchor to the current
+      // period as needed — a no-op for a frontier already >= now, so the paid
+      // frontier is preserved exactly. See the module docstring case analysis.
+      const maxPaidThrough = await deps.cyclesRepo.findMaxPaidThroughForMemberInTx(
+        tx,
+        input.tenant.slug,
+        input.memberId as string,
+      );
+      return createCycleInTx(createDeps, tx, {
         tenantId: input.tenant.slug,
         memberId: input.memberId as string,
-        // Anchor at registration_date, advanced to the CURRENT membership
-        // period (068 cluster F). Same as the import cold-start + the
-        // create-member onboarding listener. A restored cycle re-enters
-        // the normal pipeline as `'upcoming'` (the createCycleInTx default)
-        // — restore is NOT a bill, so it is NOT `awaiting_payment`.
-        periodFrom: input.registrationDateIso,
+        periodFrom: maxPaidThrough ?? input.registrationDateIso,
         planId: input.planId,
         actorUserId: input.initiatedByUserId,
         actorRole: 'system',
-        correlationId: input.correlationId,
+        correlationId,
+        // A restored cycle re-enters the normal pipeline as `'upcoming'` (the
+        // createCycleInTx default) — restore is NOT a bill, so it is NOT
+        // `awaiting_payment`.
         anchorToCurrentPeriod: { nowIso: deps.clock.now().toISOString() },
-      }),
-    );
+      });
+    });
 
     if (outcome.kind === 'skipped_active_exists') {
       return ok({ outcome: 'skipped_active_exists' });

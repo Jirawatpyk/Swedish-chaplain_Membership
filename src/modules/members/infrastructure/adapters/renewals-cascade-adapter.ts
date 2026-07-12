@@ -18,7 +18,6 @@ import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { randomUUID } from 'node:crypto';
 import { drizzleMemberRepo } from '../db/drizzle-member-repo';
-import { asMemberId } from '../../domain/member';
 import type {
   RenewalsCascadePort,
   RenewalsCascadeResult,
@@ -180,11 +179,12 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
   /**
    * Cluster 4 (2026-07-12) — F3 undelete → F8 cycle restore.
    *
-   * Reads the member's registration anchor + current plan from F3's OWN
-   * member repo (a relative same-module import — NOT a cross-module barrel
-   * crossing) inside a short `runInTenant` read tx, then hands the anchor
-   * primitives to F8's `restoreCycleForMember` (which opens its own tx to
-   * create the cycle + emit the `renewal_cycle_created` audit atomically).
+   * Reads the member's registration_date (the fallback anchor) + current
+   * plan from F3's OWN member repo (a relative same-module import — NOT a
+   * cross-module barrel crossing) inside a short `runInTenant` read tx, then
+   * hands them to F8's `restoreCycleForMember` (which opens its own tx to read
+   * the member's PAID-THROUGH frontier, create the cycle anchored there, and
+   * emit the `renewal_cycle_created` audit atomically).
    *
    * The two-tx split mirrors the create-member onboarding bridge (F3
    * supplies the anchor; F8 creates the cycle) and is safe for this
@@ -199,7 +199,9 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       // Resolve the member's registration_date + current plan_id. Absent /
       // cross-tenant (RLS) / read error → skip (best-effort no-op).
       const memberResult = await runInTenant(tenant, (tx) =>
-        drizzleMemberRepo.findByIdInTx(tx, asMemberId(memberId as string)),
+        // `memberId` is already branded `MemberId` (the port param type) — no
+        // re-brand cast needed (Cluster 4 review-fix, FIX 5).
+        drizzleMemberRepo.findByIdInTx(tx, memberId),
       );
       if (!memberResult.ok) {
         logger.warn(

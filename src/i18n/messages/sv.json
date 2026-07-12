@@ -4539,7 +4539,7 @@
         "overdueSub": "Försenad med {days} dagar",
         "lapsedValue": "Medlemskap upphört",
         "lapsedSub": "Ditt medlemskap har upphört. Kontakta oss för att återaktivera det och återställa dina förmåner.",
-        "contactToRenew": "Kontakta oss för att förnya",
+        "contactToRenew": "Kontakta oss för att återaktivera",
         "lapsedMailSubject": "Begäran om återaktivering av medlemskap",
         "renewNow": "Förnya nu",
         "errorValue": "Status ej tillgänglig",

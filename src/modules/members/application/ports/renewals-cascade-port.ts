@@ -74,13 +74,16 @@ export interface RenewalsCascadePort {
    * `cancelInFlightForMember` cancels the in-flight cycle on archive, so an
    * un-deleted member would otherwise have NO active cycle and silently drop
    * out of the renewal pipeline. This method idempotently RE-CREATES one
-   * active cycle for the member, anchored to the CURRENT membership period
-   * (registration anniversary) via the F8 `createCycleInTx` +
-   * `anchorToCurrentPeriod` path (the same cold-start path the member import
-   * and create-member onboarding use). It does NOT un-cancel the exact old
-   * cancelled cycle — that window may be long-expired by undelete time; the
-   * fresh cycle carries correct, non-expired dates. Reuses the existing
-   * `renewal_cycle_created` audit event (no new `audit_event_type`).
+   * active cycle for the member via the F8 `createCycleInTx` +
+   * `anchorToCurrentPeriod` path, anchored at the member's PAID-THROUGH
+   * frontier (MAX period_to over completed/anchored cycles), falling back to
+   * the registration anniversary when the member has no paid history. Anchoring
+   * at the frontier (not the anniversary) prevents re-creating a cycle that
+   * OVERLAPS an already-paid period → a double-bill (Cluster 4 review-fix). It
+   * does NOT un-cancel the exact old cancelled cycle — that window may be
+   * long-expired by undelete time; the fresh cycle carries correct, non-expired
+   * dates. Reuses the existing `renewal_cycle_created` audit event (no new
+   * `audit_event_type`).
    *
    * IDEMPOTENT — the F8 `findActiveForMemberInTx` in-tx guard no-ops when an
    * active cycle already exists (`outcome: 'skipped_active_exists'`), and the
