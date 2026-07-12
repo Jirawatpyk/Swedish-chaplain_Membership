@@ -126,6 +126,12 @@ export async function PATCH(
   delete nonEmailBody.locale; // consumed by changeContactEmail, not a contact field
   const hasNonEmail = Object.keys(nonEmailBody).length > 0;
 
+  // Captures the contact value an in-place UNLINKED email update already
+  // returns (section 1) so section 2 can build the response WITHOUT a re-read.
+  // Stays null for the linked path (changeContactEmail returns a verification
+  // output, not a Contact) → section 2 re-reads for that case only.
+  let emailUpdatedContact: Parameters<typeof serialiseContact>[0] | null = null;
+
   // 1) Email change first (if present) — atomic with session revocation
   //    when a linked user exists; falls back to in-tx email-only update
   //    when there is no linked user.
@@ -151,6 +157,20 @@ export async function PATCH(
       );
     }
     const contact = contactLookup.value;
+
+    // SEC-3 parity: the unlinked + non-email paths reject a member/contact
+    // mismatch internally (they check `existing.memberId !== memberId`);
+    // changeContactEmail keys on contactId ONLY, so guard the linked
+    // email-change branch here too — a mismatched member URL must never drive
+    // a linked contact's email change (session revoke + verify/revert emails)
+    // under the wrong member. Same-tenant + admin-gated, but the lone
+    // asymmetric path.
+    if (contact.memberId !== (parsed.data.memberId as MemberId)) {
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Contact not found.' } },
+        { status: 404 },
+      );
+    }
 
     if (contact.linkedUserId) {
       // FR-012a 6-step atomic transaction
@@ -269,11 +289,18 @@ export async function PATCH(
             );
         }
       }
+      // Reuse the value the in-tx update already returned so section 2 need
+      // not re-read: a post-commit re-read whose transient failure mapped to
+      // not_found would return a misleading 404 for a committed change AND
+      // skip rememberIdempotentResponse, letting a fresh-key retry duplicate
+      // the append-only contact_updated audit row.
+      emailUpdatedContact = emailUpdate.value;
     }
   }
 
-  // 2) Non-email fields (if present, or if the body was email-only
-  //    we still re-fetch so the response shape is identical).
+  // 2) Non-email fields (if present), or an email-only edit whose value we
+  //    already hold from section 1 (unlinked path), otherwise a re-read for
+  //    the response shape (linked path only).
   const result = hasNonEmail
     ? await updateContactFields(
         parsed.data.memberId as MemberId,
@@ -282,20 +309,27 @@ export async function PATCH(
         { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
         deps,
       )
-    : await (async () => {
-        // Email-only path: re-read the contact so the response shape
-        // matches the non-email path.
-        const reread = await deps.contactRepo.findById(
-          tenant,
-          parsed.data.contactId as ContactId,
-        );
-        return reread.ok
-          ? { ok: true as const, value: reread.value }
-          : {
-              ok: false as const,
-              error: { type: 'not_found' as const },
-            };
-      })();
+    : emailUpdatedContact !== null
+      ? { ok: true as const, value: emailUpdatedContact }
+      : await (async () => {
+          // Email-only LINKED path: changeContactEmail returns a verification
+          // output (not a Contact), so re-read for the response shape. A
+          // transient re-read failure AFTER a committed change is a 500 (the
+          // contact provably exists), never a misleading 404.
+          const reread = await deps.contactRepo.findById(
+            tenant,
+            parsed.data.contactId as ContactId,
+          );
+          return reread.ok
+            ? { ok: true as const, value: reread.value }
+            : {
+                ok: false as const,
+                error: {
+                  type: 'server_error' as const,
+                  message: 'post-email-change re-read failed',
+                },
+              };
+        })();
 
   if (result.ok) {
     const body = serialiseContact(result.value);

@@ -3,7 +3,10 @@
  *
  * Mocks the Application use cases. Verifies:
  *   - 200 non-email update → body is serialised contact
- *   - 409 when email is changed on an unlinked contact (US3.b.3 guard)
+ *   - 200 in-place email update on an unlinked contact (the former US3.b.3
+ *     409 guard was replaced by updateUnlinkedContactEmail — imported members
+ *     have no portal login, so the email is a plain contact field)
+ *   - 409 when the NEW email is already in use (unlinked path)
  *   - 400 invalid body (validation)
  *   - 404 on unknown contact
  *   - 401/403 auth gate pass-through
@@ -25,8 +28,9 @@ const contactRepoFindByIdMock = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({
     contactRepo: {
-      // Called twice on the unlinked email path: once to route (linked vs
-      // unlinked), once on the fall-through re-read for the response shape.
+      // Called ONCE on the unlinked email path (route linked-vs-unlinked). The
+      // unlinked path returns updateUnlinkedContactEmail's value directly (no
+      // response re-read); only the LINKED path re-reads.
       findById: (...args: unknown[]) => contactRepoFindByIdMock(...args),
       update: vi.fn(async () => ok({})),
     },
@@ -140,11 +144,11 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
 
   it('200 when email change requested on unlinked contact — in-place update', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
-    // 1st findById routes to the unlinked path; 2nd (fall-through re-read)
-    // supplies the response body with the updated email.
-    contactRepoFindByIdMock
-      .mockResolvedValueOnce(ok(stubContact))
-      .mockResolvedValueOnce(ok({ ...stubContact, email: 'new@example.com' }));
+    // findById routes to the unlinked path; the route then returns the
+    // updateUnlinkedContactEmail value directly for the response body (no
+    // fall-through re-read on the unlinked path — that avoids a post-commit
+    // re-read whose transient failure would 404 a committed change).
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubContact));
     updateUnlinkedContactEmailMock.mockResolvedValueOnce(
       ok({ ...stubContact, email: 'new@example.com' }),
     );
@@ -157,6 +161,11 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.email).toBe('new@example.com');
+    // Regression guard (final-review MUST): the unlinked path must NOT re-read
+    // for the response — it returns the use-case value in hand. A re-read would
+    // let a transient failure 404 a committed change + skip the idempotency
+    // record (duplicate audit on retry). findById is called exactly once here.
+    expect(contactRepoFindByIdMock).toHaveBeenCalledTimes(1);
   });
 
   it('409 conflict when the new email is already in use (unlinked path)', async () => {
