@@ -4,7 +4,7 @@
 **Severity**: HIGH (financial reconciliation drift)
 **Owner**: Chamber-OS maintainer + tenant admin (joint resolution)
 **Source spec**: F5 (`specs/009-online-payment/spec.md` Q2 / FR-011 / FR-011a)
-**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action)
+**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action; § 1.6 `refund.updated` forward-path subscription — deprecated `charge.refund.updated`, PromptPay async settlement)
 
 ---
 
@@ -46,10 +46,10 @@ This is **much narrower** than the original #4 finding (which had no invoice-sid
 
 ### 1.4 Redundant OOB audit + single-owner metric (by design — expect ≥1 audit row per refund)
 
-A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) is delivered by Stripe as BOTH `charge.refunded` and `charge.refund.updated`. Both handlers emit `out_of_band_refund_detected` **on purpose** — the 10-year money-trail forensic is written redundantly so it survives either webhook failing its whole retry window (no single point of failure for the forensic). Consequences for on-call:
+A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) is delivered by Stripe as up to THREE events: `charge.refunded`, the deprecated `charge.refund.updated` (only when the refund has a legacy charge), and the forward-path `refund.updated` (see § 1.6). The `charge.refunded` and both refund-lifecycle handlers emit `out_of_band_refund_detected` **on purpose** — the 10-year money-trail forensic is written redundantly so it survives any one webhook failing its whole retry window (no single point of failure for the forensic). Consequences for on-call:
 
-- **Expect up to one audit row per delivered webhook event** for the same refund. **Deduplicate on `processor_refund_id`** when counting distinct OOB refunds — the same group-by-`processor_refund_id` convention the webhook dispatcher already mandates. Two `out_of_band_refund_detected` rows with the same `processor_refund_id` are ONE incident, not two.
-- **The paging metric `out_of_band_refund_rejected_total` is single-owner** (emitted only by the `charge.refunded` handler, the universal detector that fires on every refund). So the metric counts each refund **once** and is NOT doubled for async refunds, even though the audit may appear as ≥1 row.
+- **Expect up to one audit row per delivered webhook event** for the same refund. **Deduplicate on `processor_refund_id`** when counting distinct OOB refunds — the same group-by-`processor_refund_id` convention the webhook dispatcher already mandates. Multiple `out_of_band_refund_detected` rows with the same `processor_refund_id` are ONE incident, not many. The `summary` names the delivering channel (`via charge.refund.updated` vs `via refund.updated`) for triage.
+- **The paging metric `out_of_band_refund_rejected_total` is single-owner** (emitted only by the `charge.refunded` handler, the universal detector that fires on every refund). So the metric counts each refund **once** and is NOT doubled for async refunds, even though the audit may appear as ≥1 row. The `refund.updated` handler (like `charge.refund.updated`) emits only the redundant forensic audit, never the metric.
 
 ### 1.5 Failed stale-invoice auto-refund — resolve/acknowledge after reconciliation (CF-2)
 
@@ -58,6 +58,19 @@ When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(fai
 - **Reconcile the money out-of-band first** (issue a manual F4 credit note per § 2.3 Option A, or refund via the Stripe Dashboard), exactly as for any stuck refund.
 - **Then close the loop** — on `/admin/invoices/<id>`, click **"Mark as reconciled"** on the failed-auto-refund alert (confirm dialog). This appends the append-only `auto_refund_reconciled` event (10y) via `POST /api/refunds/resolve-auto-refund-failure` (admin-only). It is **idempotent** (a second click is a benign no-op) and **refuses** when no failure forensic exists.
 - **Effect**: `findStaleInvoiceAutoRefund.failed` becomes failure-AND-NOT-reconciled, so the admin alert clears and the member banner reverts to the (now-true) "refunded" copy. The forensic + the reconcile event both remain in the append-only audit log for the 10-year trail — the acknowledgement does NOT erase the failure record.
+
+### 1.6 Required Stripe webhook event subscriptions (`charge.refund.updated` + `refund.updated`)
+
+The async refund lifecycle depends on the Stripe endpoint subscribing to BOTH refund-lifecycle events. Missing `refund.updated` is the most likely silent cause of async refunds stuck `pending`:
+
+- **`charge.refund.updated`** — **DEPRECATED** by Stripe: *"This event is only sent for refunds with a corresponding charge; listen to `refund.updated` for updates on all refunds instead."* Still fires for card refunds (which have a legacy charge). Keep it subscribed — the OOB forensic redundancy (§ 1.4) relies on it firing alongside `charge.refunded`.
+- **`refund.updated`** — the **forward path** on the pinned `2025-09-30.basil` API. Fires on ANY `Refund` update (incl. `status → succeeded | failed | canceled`) for ALL refunds, including **charge-less async refunds** (PromptPay / GrabPay / bank transfers) that never emit `charge.refund.updated`. **This is the settlement signal for PromptPay refunds.**
+
+Both events carry a `Stripe.Refund` `data.object` and are routed to the **same** `processRefundUpdated` use-case (idempotent across both: `markProcessed` is per-event-id, the finaliser guards on `expectedCurrentStatus='pending'`, and the F4 credit note is idempotent per `(tenant, source_refund_id)` — so exactly ONE credit note is booked even when both fire for the same settlement).
+
+`refund.failed` is deliberately **not** subscribed: `refund.updated` already carries the `status → failed` transition; the stale-pending sweep (`sweep-stale-pending-refunds`) backstops any single-event delivery gap.
+
+**Symptom of a missing `refund.updated` subscription**: `payments_refund_pending_awaiting_processor_total` climbs and stays > 0 for async (PromptPay) refunds; the refund row sits `pending` until the sweep cron reconciles it via a direct `retrieveRefund`. Fix: add `refund.updated` to the endpoint's event list in the Stripe Dashboard.
 
 ---
 
