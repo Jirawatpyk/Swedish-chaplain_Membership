@@ -774,7 +774,23 @@ export function EventFeeForm({
       issueRes = null;
     }
     if (issueRes?.ok) {
-      toast.success(tAsPaid('success'));
+      // Cluster 5 (Finding 1 — event follow-up) — the §86/4 receipt WAS issued,
+      // numbered and persisted, but the auto-email was skipped because the buyer
+      // has no contact email on file. Append a non-blocking warning to the
+      // SUCCESS toast so the admin knows to deliver it manually (mirrors the
+      // issue + record-payment dialogs). A malformed body degrades to no
+      // warning — the success is never downgraded to an error.
+      const okBody = (await issueRes.json().catch(() => ({}))) as {
+        email_dispatch?: string;
+      };
+      const noEmailWarning =
+        okBody.email_dispatch === 'skipped_no_email'
+          ? tAsPaid('successNoEmailWarning')
+          : null;
+      toast.success(
+        tAsPaid('success'),
+        noEmailWarning ? { description: noEmailWarning } : undefined,
+      );
     } else {
       let issueCode: string | undefined;
       if (issueRes !== null) {

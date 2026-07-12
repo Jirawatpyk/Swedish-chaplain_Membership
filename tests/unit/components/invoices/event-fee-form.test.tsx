@@ -407,7 +407,7 @@ describe('<EventFeeForm>', () => {
       primary_contact_name: '',
       primary_contact_email: '',
     });
-    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success);
+    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined);
   });
 
   it('matched member submit posts amountOverride when the price was edited (bill_first)', async () => {
@@ -555,7 +555,39 @@ describe('<EventFeeForm>', () => {
       paymentDate: bangkokToday(),
       paymentMethod: 'bank_transfer',
     });
-    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success);
+    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined);
+  });
+
+  it('Cluster 5 (Finding 1 — event follow-up): issue-as-paid email_dispatch="skipped_no_email" → success toast carries the no-email warning description', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ invoice_id: 'inv-13' }), { status: 201 }),
+    );
+    // The §86/4 receipt WAS issued (200), but the buyer has no contact email so
+    // the route reports the auto-email was skipped.
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({ invoice_id: 'inv-13', email_dispatch: 'skipped_no_email' }),
+          { status: 200 },
+        ),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-13'));
+    // Still a SUCCESS toast (the operation succeeded), now with a non-blocking
+    // warning so the admin knows to deliver the receipt manually.
+    expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, {
+      description: asPaidMessages.successNoEmailWarning,
+    });
   });
 
   it('issue-as-paid failure → mapped error toast + draft-remains notice + Retry action + still lands on the draft', async () => {
@@ -664,7 +696,7 @@ describe('<EventFeeForm>', () => {
     );
     options.action.onClick();
 
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(asPaidMessages.success, undefined));
     expect(pushMock).toHaveBeenCalledWith('/admin/invoices/inv-21');
     // The retry (the call AFTER the snapshot) hit the SAME invoice id with
     // the saved payment details.

@@ -128,5 +128,12 @@ export async function POST(
     });
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseInvoice(result.value), { status: 200 });
+  // Cluster 5 (Finding 1 — event follow-up) — surface the auto-email dispatch
+  // outcome so the event-fee form's post-issue toast can warn the admin when
+  // the §86/4 receipt was NOT emailed (buyer has no contact email on file).
+  // The issuance itself still succeeded (mirrors /issue and /pay).
+  return NextResponse.json(
+    { ...serialiseInvoice(result.value), email_dispatch: result.value.emailDispatch },
+    { status: 200 },
+  );
 }

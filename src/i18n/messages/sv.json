@@ -2358,6 +2358,7 @@
       },
       "issueAsPaid": {
         "success": "Betalningen registrerades — kvitto utfärdat",
+        "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till köparen manuellt.",
         "draftRemains": "Fakturautkastet skapades ändå och visas i fakturalistan.",
         "retry": "Försök igen",
         "errors": {

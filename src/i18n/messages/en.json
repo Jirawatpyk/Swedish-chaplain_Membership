@@ -2358,6 +2358,7 @@
       },
       "issueAsPaid": {
         "success": "Payment recorded — receipt issued",
+        "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the buyer manually.",
         "draftRemains": "The draft invoice was still created and is visible in the invoice list.",
         "retry": "Retry issuing",
         "errors": {
