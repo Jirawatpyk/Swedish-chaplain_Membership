@@ -1009,11 +1009,13 @@
         "subtitleArchived": "{plan} · År {year} · Arkiverad",
         "timelinePreview": {
           "viewAll": "Visa all aktivitet",
-          "empty": "Ingen aktivitet ännu."
+          "empty": "Ingen aktivitet ännu.",
+          "loadFailed": "Vi kunde inte läsa in den senaste aktiviteten. Försök igen."
         },
         "renewalHealth": {
           "title": "Förnyelse & hälsa",
           "empty": "Ingen aktiv förnyelsecykel",
+          "readFailed": "Vi kunde inte läsa in den här medlemmens förnyelsestatus. Försök igen.",
           "status": "Status",
           "expiry": "Utgångsdatum",
           "daysRemaining": "{days} dagar kvar",

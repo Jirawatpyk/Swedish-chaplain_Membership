@@ -49,6 +49,14 @@ export interface RenewalHealthCardProps {
   /** Deep link to the renewals dashboard (or the specific cycle). */
   readonly viewHref: string;
   /**
+   * Cluster 7 (G18) — true when the renewal read errored. Renders a distinct
+   * "unavailable" state instead of the empty state, and suppresses the
+   * lapsed-comeback action: `status` is null only because the read failed, so
+   * we do NOT know the true status and offering the action would be
+   * misleading / could 409. Defaults false.
+   */
+  readonly readFailed?: boolean;
+  /**
    * F8-completion Slice 3 — admin-only "Renew / reactivate this member"
    * action. The trigger is rendered ONLY when `canRenew` (admin role) AND
    * the member is lapsed (no active cycle: status ∈ lapsed | cancelled |
@@ -103,6 +111,7 @@ export function RenewalHealthCard({
   engagementScore,
   engagementBand,
   viewHref,
+  readFailed = false,
   canRenew = false,
   memberId,
 }: RenewalHealthCardProps): React.ReactElement {
@@ -127,7 +136,7 @@ export function RenewalHealthCard({
           {t('title')}
         </h2>
         <div className="flex items-center gap-2">
-          {canRenew && memberId !== undefined && isLapsed(status) && (
+          {canRenew && memberId !== undefined && !readFailed && isLapsed(status) && (
             <RenewLapsedMemberDialog memberId={memberId} />
           )}
           <Link
@@ -140,7 +149,12 @@ export function RenewalHealthCard({
         </div>
       </CardHeader>
       <CardContent>
-        {status === null ? (
+        {readFailed ? (
+          // Cluster 7 (G18) — the read errored: render a DISTINCT "unavailable"
+          // state, never the empty state (which would claim the member has no
+          // cycle when in fact the read failed). Mirrors the portal precedent.
+          <p className="text-sm text-muted-foreground">{t('readFailed')}</p>
+        ) : status === null ? (
           <p className="text-sm text-muted-foreground">{t('empty')}</p>
         ) : (
           <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">

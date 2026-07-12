@@ -1009,11 +1009,13 @@
         "subtitleArchived": "{plan} · Year {year} · Archived",
         "timelinePreview": {
           "viewAll": "View all activity",
-          "empty": "No recent activity yet."
+          "empty": "No recent activity yet.",
+          "loadFailed": "We couldn't load recent activity. Please try again."
         },
         "renewalHealth": {
           "title": "Renewal & Health",
           "empty": "No active renewal cycle",
+          "readFailed": "We couldn't load this member's renewal status. Please try again.",
           "status": "Status",
           "expiry": "Expiry",
           "daysRemaining": "{days} days remaining",
