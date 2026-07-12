@@ -574,6 +574,89 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
     expect(afterClear?.rejectRefundId).toBeNull();
   });
 
+  it('M1: markRejectRefundInitiatedInTx is first-writer-wins on the marker (live Neon) — a second concurrent stamp is a no-op, the first writer actor survives, and a post-clear re-stamp still works', async () => {
+    // M1 fix. The admin-reject "no marker yet" idempotency decision reads a
+    // STALE app-level `lockedCycle.rejectRefundInitiatedAt === null` (read in an
+    // earlier tx, before the lock was released + the refund ran). Two admins
+    // rejecting the same UNMARKED cycle concurrently both see `=== null`, both
+    // resolve the same in-flight refund R1, and both stamp — the CAS previously
+    // guarded ONLY on `status='pending_admin_reactivation'`, so the marker's
+    // `reject_actor_user_id` ended up the LAST writer's (racy attribution;
+    // money-safe — same R1, cron still converges). THE FIX adds
+    // `reject_refund_initiated_at IS NULL` to the WHERE so the stamp is
+    // first-writer-wins at the DB layer. Direct repo test (the WHERE-clause
+    // behaviour unit mocks hide), sibling to the Finding-5 clear-CAS test above.
+    const { cycleId } = await seedCycle({
+      tenant: tenantA,
+      user,
+      daysPending: 4, // UNMARKED (no `marker`) — marker starts null
+    });
+    const repo = makeDrizzleRenewalCycleRepo(tenantA.ctx);
+    const initiatedAt = NOW.toISOString();
+    const refundA = `rfnd_A_${randomUUID().slice(0, 8)}`;
+    const refundB = `rfnd_B_${randomUUID().slice(0, 8)}`;
+    const actorA = `admin-A-${randomUUID().slice(0, 8)}`;
+    const actorB = `admin-B-${randomUUID().slice(0, 8)}`;
+
+    // First stamp: marker is null → IS NULL true → stamps → true.
+    const firstMarked = await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.acquireCycleLockInTx(tx, tenantA.ctx.slug, asCycleId(cycleId));
+      return repo.markRejectRefundInitiatedInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        { initiatedAt, refundId: refundA, actorUserId: actorA },
+      );
+    });
+    expect(firstMarked).toBe(true);
+
+    // Second stamp (concurrent admin B, same unmarked view): marker is now set
+    // → IS NULL false → 0 rows → no-op (`false`). BEFORE the fix this returned
+    // `true` and overwrote the actor to B.
+    const secondMarked = await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.acquireCycleLockInTx(tx, tenantA.ctx.slug, asCycleId(cycleId));
+      return repo.markRejectRefundInitiatedInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        { initiatedAt, refundId: refundB, actorUserId: actorB },
+      );
+    });
+    expect(secondMarked).toBe(false); // first-writer-wins
+
+    // The FIRST writer's attribution survives — B never overwrote it.
+    const afterSecond = await readCycle(tenantA, cycleId);
+    expect(afterSecond?.rejectRefundId).toBe(refundA);
+    expect(afterSecond?.rejectActorUserId).toBe(actorA);
+
+    // Post-clear re-stamp: clearing the marker (for R_A) then stamping again
+    // must succeed — the `IS NULL` guard must NOT break the legitimate
+    // re-stamp-after-clear path (the settled-`failed` recovery flow).
+    const refundC = `rfnd_C_${randomUUID().slice(0, 8)}`;
+    const actorC = `admin-C-${randomUUID().slice(0, 8)}`;
+    const reStamped = await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.acquireCycleLockInTx(tx, tenantA.ctx.slug, asCycleId(cycleId));
+      const cleared = await repo.clearRejectRefundMarkerInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        refundA,
+      );
+      expect(cleared).toBe(true);
+      // Marker now null again → IS NULL true → re-stamp succeeds.
+      return repo.markRejectRefundInitiatedInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        { initiatedAt, refundId: refundC, actorUserId: actorC },
+      );
+    });
+    expect(reStamped).toBe(true);
+    const afterReStamp = await readCycle(tenantA, cycleId);
+    expect(afterReStamp?.rejectRefundId).toBe(refundC);
+    expect(afterReStamp?.rejectActorUserId).toBe(actorC);
+  });
+
   it('Finding 1: a settled-FAILED marker-clear throw is per-cycle isolated (live Neon) — poison cycle rolls back with marker intact, a second cycle still converges', async () => {
     // Two marked cycles in tenant A: cycle 1's refund settled FAILED and its
     // marker-clear tx THROWS (injected persistent DB blip); cycle 2's refund

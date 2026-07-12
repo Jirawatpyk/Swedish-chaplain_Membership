@@ -348,13 +348,20 @@ export async function adminRejectReactivation(
           );
         });
         if (!marked) {
+          // M1 fix: `markRejectRefundInitiatedInTx` is now first-writer-wins
+          // (CAS also guards `reject_refund_initiated_at IS NULL`), so a `false`
+          // means EITHER the cycle moved out of pending in the race window OR a
+          // concurrent FIRST writer already stamped the marker (a benign
+          // idempotent no-op — that writer's actor is preserved). Both are
+          // money-safe: the async refund is in flight and the reconcile cron
+          // resolves it via F5 state.
           logger.warn(
             {
               cycleId: lockedCycle.cycleId,
               tenantId: input.tenantId,
               refundId: resolvedRefundId,
             },
-            '[admin-reject-reactivation] cycle no longer pending — reject-refund marker not stamped; async refund still in flight (money-safe), reconcile cron resolves via F5 state',
+            '[admin-reject-reactivation] reject-refund marker not stamped (cycle no longer pending, or already stamped by a concurrent first writer) — async refund still in flight (money-safe), reconcile cron resolves via F5 state',
           );
         }
       }

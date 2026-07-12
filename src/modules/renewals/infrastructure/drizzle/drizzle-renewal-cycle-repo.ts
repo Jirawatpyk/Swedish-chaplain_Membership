@@ -858,6 +858,21 @@ export function makeDrizzleRenewalCycleRepo(
       // cycle moved out of pending in the race window, 0 rows match → `false`.
       // RLS scope comes from the inherited GUC; `_tenantId` intentionally
       // unused (same precedent as findByIdInTx — no WHERE tenant_id predicate).
+      //
+      // M1 fix (reliability review): the additional `reject_refund_initiated_at
+      // IS NULL` predicate makes the stamp FIRST-WRITER-WINS at the DB layer.
+      // The admin-reject caller decides "no marker yet" from a STALE app-level
+      // read (`lockedCycle.rejectRefundInitiatedAt === null`, taken before the
+      // lock was released + the refund ran), so two admins rejecting the same
+      // UNMARKED cycle concurrently could both pass that check and both stamp —
+      // with only the status guard, the second overwrote `reject_actor_user_id`
+      // to the LAST writer's (racy attribution; money-safe — same in-flight
+      // refund, cron still converges). With `IS NULL`, the second concurrent
+      // stamp matches 0 rows (`false`) and the caller's existing `!marked`
+      // handler logs the benign already-stamped warning. NORMAL first stamp
+      // (marker null → true) and post-clear re-stamp (marker cleared → null →
+      // true) are unaffected — `clearRejectRefundMarkerInTx` sets the column
+      // back to NULL.
       const txDb = tx as typeof db;
       const updated = await txDb
         .update(renewalCycles)
@@ -870,6 +885,7 @@ export function makeDrizzleRenewalCycleRepo(
           and(
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, 'pending_admin_reactivation'),
+            isNull(renewalCycles.rejectRefundInitiatedAt),
           ),
         )
         .returning({ cycleId: renewalCycles.cycleId });

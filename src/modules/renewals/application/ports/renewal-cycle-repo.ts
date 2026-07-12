@@ -319,11 +319,22 @@ export interface RenewalCycleRepo {
    * admin REJECT initiated a refund whose settlement the reconcile-pending
    * cron will later converge to `cancelled`/`admin_rejected_with_refund`.
    *
-   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'`
-   * (CAS) — returns `true` when the marker was written, `false` when 0 rows
-   * matched (the cycle moved out of pending in the race window between the
-   * validate tx and this write; the async refund is already in flight and
-   * money-safe, so the caller logs + still surfaces `refund_pending`). RLS
+   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'
+   * AND reject_refund_initiated_at IS NULL` (CAS) — returns `true` when the
+   * marker was written, `false` when 0 rows matched. Two reasons for `false`,
+   * both handled by the caller's `!marked` warning: (1) the cycle moved out of
+   * pending in the race window between the validate tx and this write; (2) M1
+   * fix — the marker was ALREADY stamped by a concurrent FIRST writer. The
+   * `IS NULL` predicate makes the stamp first-writer-wins at the DB layer: the
+   * admin-reject caller decides "no marker yet" from a STALE app-level read
+   * (`lockedCycle.rejectRefundInitiatedAt === null`, taken before the lock was
+   * released + the refund ran), so two admins rejecting the same UNMARKED cycle
+   * concurrently could both pass that check; without `IS NULL` the second
+   * overwrote `reject_actor_user_id` to the last writer's (racy attribution —
+   * money-safe, same in-flight refund, but wrong actor). The async refund is
+   * already in flight and money-safe either way, so the caller logs + still
+   * surfaces `refund_pending`. NORMAL first stamp (marker null → true) and
+   * post-clear re-stamp (marker cleared → null → true) are unaffected. RLS
    * scope comes from the inherited GUC (thread `tx` from `runInTenant`).
    */
   markRejectRefundInitiatedInTx(
