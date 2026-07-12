@@ -27,9 +27,24 @@ import {
 } from '@/modules/payments/application/use-cases/process-charge-refunded';
 import { asPaymentId } from '@/modules/payments/domain/payment';
 import { F5_AUDIT_RETENTION_YEARS } from '@/modules/payments/application/ports/audit-port';
+import { paymentsMetrics } from '@/lib/metrics';
 
 const TENANT_ID = 'tnt_charge_refunded_test';
 const RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
+
+// Spy on the OOB paging metric so the Finding 2 suppression tests can assert
+// it is NOT bumped for a recognised app-initiated auto-refund. Spread keeps
+// every other real instrument (webhookDuplicateIgnored, etc.) intact.
+vi.mock('@/lib/metrics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/metrics')>();
+  return {
+    ...actual,
+    paymentsMetrics: {
+      ...actual.paymentsMetrics,
+      outOfBandRefundRejected: vi.fn(),
+    },
+  };
+});
 
 function makeDeps(): ProcessChargeRefundedDeps {
   return {
@@ -42,6 +57,12 @@ function makeDeps(): ProcessChargeRefundedDeps {
       // parent payment (A.12 — parent-payment flip + recovery moved to
       // finalizeSucceededRefund / charge.refund.updated, A.11).
       updateStatus: vi.fn(async () => ({})),
+      // Finding 2 — durable app-initiated auto-refund marker lookup. Default
+      // null (genuine OOB) so every existing OOB-branch test keeps its shape;
+      // the suppression tests override it. REQUIRED on the mock: the use-case
+      // now calls it in the OOB branch, so an absent method would throw at
+      // runtime under the cast-mock (not just a type gap).
+      findAutoRefundByProcessorRefundId: vi.fn(async () => null),
     } as unknown as ProcessChargeRefundedDeps['paymentsRepo'],
     refundsRepo: {
       findByProcessorRefundId: vi.fn(async () => null),
@@ -61,6 +82,8 @@ function makeDeps(): ProcessChargeRefundedDeps {
       nowMs: () => 1_700_000_000_000,
       nowIso: () => '2023-11-14T22:13:20.000Z',
     },
+    // Finding 2 — benign auto-refund-recognition ops log target.
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
 }
 
@@ -84,6 +107,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
 
   beforeEach(() => {
     deps = makeDeps();
+    vi.mocked(paymentsMetrics.outOfBandRefundRejected).mockClear();
   });
 
   it('empty refundIds — no audit emitted; markProcessed still fires inside tx', async () => {
@@ -457,6 +481,81 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
       .mock.calls.map((c) => c[1].eventType);
     expect(eventTypes).not.toContain('refund_amount_mismatch_detected');
     expect(eventTypes).not.toContain('refund_succeeded');
+  });
+
+  // ---------------------------------------------------------------------
+  // Finding 2 — app-initiated auto-refund marker suppression.
+  //
+  // confirm-payment's stale-invoice / late-charge auto-refund (A.13/A.15)
+  // stamps the durable `payments.auto_refund_processor_refund_id` marker and
+  // creates NO `refunds` row, so `findByProcessorRefundId` returns null and
+  // the OOB branch is entered. Stripe delivers BOTH `charge.refunded` AND
+  // `charge.refund.updated` for such an auto-refund; without consulting the
+  // marker, `charge.refunded` fires a FALSE `out_of_band_refund_detected`
+  // (10y forensic) + `outOfBandRefundRejected` paging metric. The sibling
+  // `charge.refund.updated` handler already suppresses this exact case —
+  // mirror it here. The FAILED-case forensic stays owned by
+  // `charge.refund.updated` (`charge.refunded` carries no per-refund status).
+  // ---------------------------------------------------------------------
+
+  it('Finding 2 — auto-refund marker present on an unknown refund id → benign log, NO out_of_band audit, NO OOB metric', async () => {
+    // refunds row absent (default null) → OOB branch entered; the durable
+    // auto_refund_processor_refund_id marker matches → recognised, suppressed.
+    vi.mocked(deps.paymentsRepo.findAutoRefundByProcessorRefundId).mockResolvedValue({
+      paymentId: asPaymentId('pmt_auto'),
+      invoiceId: 'inv_auto',
+    });
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({ refundIds: ['re_app_auto_refund'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    // No out_of_band forensic audit for a refund the app itself initiated.
+    const eventTypes = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.map((c) => c[1].eventType);
+    expect(eventTypes).not.toContain('out_of_band_refund_detected');
+    // No paging-metric bump.
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).not.toHaveBeenCalled();
+    // Benign PCI-clean ops log carries id-refs only (no card / status text).
+    expect(vi.mocked(deps.logger!.info)).toHaveBeenCalledWith(
+      'process_charge_refunded.auto_refund_recognized',
+      expect.objectContaining({
+        paymentId: 'pmt_auto',
+        invoiceId: 'inv_auto',
+        processorRefundId: 're_app_auto_refund',
+      }),
+    );
+    // Webhook still acked (markProcessed inside the same tx).
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+  });
+
+  it('Finding 2 — mixed recognised auto-refund + genuine OOB → exactly ONE OOB audit + ONE metric (only the genuine one)', async () => {
+    // re_auto matches the durable marker (suppressed); re_genuine has neither
+    // a refunds row nor a marker → the single genuine OOB.
+    vi.mocked(deps.paymentsRepo.findAutoRefundByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) =>
+        refundId === 're_auto'
+          ? { paymentId: asPaymentId('pmt_auto'), invoiceId: 'inv_auto' }
+          : null,
+    );
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({ refundIds: ['re_auto', 're_genuine_oob'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    const oobAudits = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.filter((c) => c[1].eventType === 'out_of_band_refund_detected');
+    expect(oobAudits).toHaveLength(1);
+    expect(
+      (oobAudits[0]![1].payload as { processor_refund_id: string }).processor_refund_id,
+    ).toBe('re_genuine_oob');
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledTimes(1);
   });
 
 });

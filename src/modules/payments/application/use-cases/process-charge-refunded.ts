@@ -274,7 +274,39 @@ export async function processChargeRefunded(
           // `charge.refund.updated` (processRefundUpdated) finalises it.
         }
         if (!existing) {
-          // Branch (b) — out-of-band refund detected. Audit + runbook url.
+          // Finding 2 (#2 sibling parity) — before flagging OOB, consult the
+          // durable app-initiated auto-refund marker. confirm-payment's
+          // stale-invoice / late-charge auto-refund (A.13/A.15) stamps
+          // `payments.auto_refund_processor_refund_id` and creates NO `refunds`
+          // row, so `findByProcessorRefundId` above returned null. Stripe
+          // delivers BOTH `charge.refunded` AND `charge.refund.updated` for such
+          // an auto-refund; without this guard `charge.refunded` fires a FALSE
+          // `out_of_band_refund_detected` (10y forensic) + `outOfBandRefundRejected`
+          // paging metric for a refund the app itself initiated. The sibling
+          // `charge.refund.updated` handler (`processRefundUpdated`, A.11) already
+          // suppresses this exact case via the same lookup — mirror it here.
+          const autoRefund =
+            await deps.paymentsRepo.findAutoRefundByProcessorRefundId(
+              tx,
+              input.tenantId,
+              refundId,
+            );
+          if (autoRefund !== null) {
+            // Recognised app-initiated auto-refund. The money-trail was already
+            // recorded at `payment_auto_refunded_stale_invoice` (A.13) — SUPPRESS
+            // the false OOB; audit-SILENT, PCI-clean ops log only. The FAILED-case
+            // forensic (`auto_refund_failed_needs_manual_reconcile`) stays SOLELY
+            // owned by `charge.refund.updated`: `charge.refunded` carries no
+            // per-refund status, so it cannot tell succeeded from failed.
+            deps.logger?.info('process_charge_refunded.auto_refund_recognized', {
+              tenantId: input.tenantId,
+              paymentId: autoRefund.paymentId,
+              invoiceId: autoRefund.invoiceId,
+              processorRefundId: refundId,
+            });
+            continue;
+          }
+          // Branch (b) — genuine out-of-band refund detected. Audit + runbook url.
           // No F4 credit note created (FR-011a — admin must reconcile via
           // Stripe Dashboard + manual CN issuance).
           await deps.audit.emit(tx, {

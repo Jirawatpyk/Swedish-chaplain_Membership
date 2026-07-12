@@ -48,6 +48,7 @@ import { ok } from '@/lib/result';
 import { asSatang } from '@/lib/money';
 import { confirmPayment } from '@/modules/payments';
 import { processRefundUpdated } from '@/modules/payments/application/use-cases/process-refund-updated';
+import { processChargeRefunded } from '@/modules/payments/application/use-cases/process-charge-refunded';
 import { systemClock } from '@/modules/payments/application/ports/clock-port';
 import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
@@ -111,6 +112,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
   let voidSeed: PaymentSeed;
   let recognizeSeed: PaymentSeed;
   let failSeed: PaymentSeed;
+  let chargeRefundedSeed: PaymentSeed;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -121,6 +123,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
     voidSeed = makeSeed('void');
     recognizeSeed = makeSeed('recognize');
     failSeed = makeSeed('fail');
+    chargeRefundedSeed = makeSeed('charge_refunded');
 
     const settings: NewTenantPaymentSettingsRow = {
       tenantId: tenant.ctx.slug,
@@ -185,9 +188,11 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
         documentType: 'invoice',
         fiscalYear: 2026,
       });
-      // Four parallel invoice+payment chains: paid/void exercise the pure
-      // A.13 flip; recognize/fail exercise the end-to-end A.13→A.11 hop.
-      for (const seed of [paidSeed, voidSeed, recognizeSeed, failSeed]) {
+      // Five parallel invoice+payment chains: paid/void exercise the pure
+      // A.13 flip; recognize/fail exercise the end-to-end A.13→A.11 hop
+      // (charge.refund.updated); charge_refunded exercises the A.13→Finding-2
+      // hop (charge.refunded marker suppression).
+      for (const seed of [paidSeed, voidSeed, recognizeSeed, failSeed, chargeRefundedSeed]) {
         await tx.insert(invoices).values({
           tenantId: tenant.ctx.slug,
           invoiceId: seed.invoiceId,
@@ -345,6 +350,36 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
     );
   }
 
+  /**
+   * Finding 2 driver — dispatch a `charge.refunded` for a given Stripe refund
+   * id against the LIVE repos. Stripe fires BOTH `charge.refunded` AND
+   * `charge.refund.updated` for a stale-invoice auto-refund; this handler must
+   * consult the durable marker via `findAutoRefundByProcessorRefundId` and
+   * SUPPRESS the false out-of-band alert. The recognised path never touches the
+   * refunds table beyond the marker read; `markProcessed` on a not-seeded event
+   * id is a harmless no-op UPDATE (mirrors `runProcessRefundUpdated`).
+   */
+  async function runProcessChargeRefunded(processorRefundId: string) {
+    return processChargeRefunded(
+      {
+        paymentsRepo: makeDrizzlePaymentsRepo(tenant.ctx.slug),
+        refundsRepo: makeDrizzleRefundsRepo(tenant.ctx.slug),
+        processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+        audit: f5AuditAdapter,
+        clock: systemClock,
+      },
+      {
+        tenantId: tenant.ctx.slug,
+        requestId: 'req-charge-refunded',
+        eventId: `evt_test_${randomUUID().slice(0, 12)}`,
+        chargeId: 'ch_test_stale',
+        refundIds: [processorRefundId],
+        amountSatang: 5_350_000n,
+        processorEnv: 'test',
+      },
+    );
+  }
+
   it('paid invoice → payment flips pending→auto_refunded WITH completed_at + durable marker + concurrent_manual_mark audit; NO refunds row (A.13, R3 CRIT-A)', async () => {
     const mocks = makeMocks(paidSeed, 'paid');
     const result = await runConfirmPayment(paidSeed, mocks);
@@ -465,6 +500,33 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
        WHERE tenant_id = ${tenant.ctx.slug}
          AND event_type = 'out_of_band_refund_detected'
          AND payload->>'processor_refund_id' = ${recognizeSeed.refundId}
+    `);
+    expect(Array.from(oobRows as unknown as Iterable<unknown>).length).toBe(0);
+  }, 30_000);
+
+  it('A.13→charge.refunded (Finding 2): later charge.refunded for the auto-refund re_ id → marker recognised, NO false out-of-band alert', async () => {
+    // 1) Auto-refund the stale-invoice payment → durable marker written, NO
+    //    refunds row.
+    const mocks = makeMocks(chargeRefundedSeed, 'void');
+    const confirmResult = await runConfirmPayment(chargeRefundedSeed, mocks);
+    expect(confirmResult.ok).toBe(true);
+
+    // 2) Stripe ALSO delivers `charge.refunded` for that same `re_…` id (it
+    //    fires for EVERY refund whenever `amount_refunded` changes, including
+    //    an auto-refund's initiation). The `charge.refunded` handler must
+    //    consult the durable marker via `findAutoRefundByProcessorRefundId`
+    //    (tx-threaded, tenant-scoped) and SUPPRESS the false OOB.
+    const result = await runProcessChargeRefunded(chargeRefundedSeed.refundId);
+    expect(result.ok).toBe(true);
+
+    // NO false `out_of_band_refund_detected` audit for this auto-refund's
+    // `re_…` id — narrow by the payload marker so a genuine OOB for a
+    // different refund in the shared suite cannot false-fail this assertion.
+    const oobRows = await db.execute(sql`
+      SELECT id FROM audit_log
+       WHERE tenant_id = ${tenant.ctx.slug}
+         AND event_type = 'out_of_band_refund_detected'
+         AND payload->>'processor_refund_id' = ${chargeRefundedSeed.refundId}
     `);
     expect(Array.from(oobRows as unknown as Iterable<unknown>).length).toBe(0);
   }, 30_000);
