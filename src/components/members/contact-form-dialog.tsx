@@ -3,16 +3,20 @@
 /**
  * Add / Edit contact dialog (admin member detail page).
  *
- * Wires the long-orphaned `admin.members.contactForm` i18n strings to the
- * existing contact APIs:
+ * Wires the `admin.members.contactForm` i18n strings to the contact APIs:
  *   - add  → POST   /api/members/[memberId]/contacts        (addContact)
- *   - edit → PATCH  /api/members/[memberId]/contacts/[id]   (updateContactFields)
+ *   - edit → PATCH  /api/members/[memberId]/contacts/[id]   (updateContactFields
+ *            for non-email fields; the email, when it changed, is routed
+ *            server-side — an UNLINKED contact is updated in place via
+ *            updateUnlinkedContactEmail, a portal-LINKED contact goes through
+ *            the FR-012a atomic flow.)
  *
- * Email is collected only on ADD (addContactSchema requires it). On EDIT
- * the email is shown read-only — a linked contact's email is changed on the
- * member Edit form (FR-012a direct change); an unlinked contact must be
- * invited to the portal first — so this dialog never sends an `email` field
- * on PATCH and only patches the fields that actually changed.
+ * Email editability: always on ADD; on EDIT it is editable for an UNLINKED
+ * contact (imported members' contacts have no portal user) and read-only for a
+ * portal-LINKED contact, whose sign-in email is changed from the member Edit
+ * page (it triggers a verification email). The dialog only sends an `email`
+ * field when it actually changed AND the field was editable, and otherwise
+ * patches only the non-email fields that changed.
  */
 
 import { useMemo, useState } from 'react';
@@ -59,6 +63,19 @@ export type ContactInitial = {
   readonly phone: string | null;
   readonly roleTitle: string | null;
   readonly preferredLanguage: 'en' | 'th' | 'sv';
+  /**
+   * Portal user this contact is linked to (null for imported/never-invited
+   * contacts). Drives email editability on edit: unlinked → editable in place;
+   * linked → read-only (sign-in email, changed via the member Edit page).
+   */
+  readonly linkedUserId: string | null;
+  /**
+   * Whether this is the member's PRIMARY contact. The member Edit page only
+   * changes the PRIMARY contact's sign-in email, so a linked SECONDARY contact
+   * has no edit path there — its email is editable here (routed through the
+   * PATCH linked branch → changeContactEmail / FR-012a).
+   */
+  readonly isPrimary: boolean;
 };
 
 type Props = {
@@ -89,6 +106,16 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Email is editable on ADD, on EDIT for an UNLINKED contact (imported
+  // members), and on EDIT for a linked SECONDARY contact — the member Edit page
+  // only changes the PRIMARY contact's sign-in email, so a linked secondary has
+  // no other edit path (the PATCH linked branch routes it through the FR-012a
+  // atomic change-contact-email flow). Only a linked PRIMARY contact's email is
+  // read-only here (a sign-in identity, changed via the member Edit page).
+  // Stable for a mounted dialog (mode + linkedUserId + isPrimary never change).
+  const emailEditable =
+    mode === 'add' || !contact?.linkedUserId || !contact?.isPrimary;
+
   const schema = useMemo(() => {
     const phone = z
       .string()
@@ -108,20 +135,20 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
       phone,
       role_title: z.string().max(100, tv('tooLong', { max: 100 })),
       preferred_language: z.enum(['en', 'th', 'sv']),
-      email:
-        mode === 'add'
-          ? z
-              .string()
-              .trim()
-              .min(1, t('fieldRequired'))
-              .max(254, tv('tooLong', { max: 254 }))
-              .email(t('emailInvalid'))
-          : z.string().optional(),
+      email: emailEditable
+        ? z
+            .string()
+            .trim()
+            .min(1, t('fieldRequired'))
+            .max(254, tv('tooLong', { max: 254 }))
+            .email(t('emailInvalid'))
+        : z.string().optional(),
     };
     return z.object(shape);
-    // t/tf/tv are stable per-render; mode never changes for a mounted dialog.
+    // t/tf/tv are stable per-render; mode/emailEditable never change for a
+    // mounted dialog.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, emailEditable]);
 
   const {
     register,
@@ -161,22 +188,37 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
 
   const handleError = async (res: Response): Promise<void> => {
     const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: string };
+      error?: { code?: string; details?: { field?: string } };
     };
     const code = body.error?.code;
-    if (res.status === 409 && code === 'conflict' && mode === 'add') {
+    const field = body.error?.details?.field;
+    if (res.status === 409 && code === 'conflict' && emailEditable) {
       // Field-level rejection — surface inline on the email input (+ focus)
-      // instead of a transient toast (audit XF-01). Guarded on add mode: email
-      // is read-only/not submitted on edit, so a future edit-side 409 must NOT
-      // be pinned onto the disabled email field (setFocus would no-op there).
+      // instead of a transient toast (audit XF-01). Only when the email field
+      // is editable (add, or an unlinked contact on edit); a read-only email
+      // must NOT pin a 409 onto the disabled field (setFocus would no-op).
       setError('email', { type: 'server', message: tA('errors.emailTaken') });
       setFocus('email');
     } else if (res.status === 409 && code === 'conflict') {
       toast.error(tA('errors.emailTaken'));
+    } else if (
+      res.status === 400 &&
+      code === 'validation_error' &&
+      field === 'email' &&
+      emailEditable
+    ) {
+      // Server-side email-format rejection on the unlinked in-place path.
+      setError('email', { type: 'server', message: t('emailInvalid') });
+      setFocus('email');
     } else if (res.status === 400) {
       toast.error(tA('errors.validation'));
     } else if (res.status === 404) {
       toast.error(tA('errors.notFound'));
+    } else if (res.status === 503) {
+      // Transient Upstash outage (idempotency_reservation_failed + Retry-After):
+      // report as retryable, matching the create/edit-member clients — not the
+      // permanent-sounding generic error.
+      toast.error(tA('errors.serverBusy'));
     } else {
       toast.error(tA('errors.generic'));
     }
@@ -207,7 +249,8 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
         }
         toast.success(tA('addSuccess'));
       } else {
-        // edit — patch only changed fields (excludes email).
+        // edit — patch only changed fields. `email` is included only when the
+        // field is editable (unlinked contact); the route updates it in place.
         const c = contact!;
         const patch: Record<string, unknown> = {};
         if (values.first_name.trim() !== c.firstName)
@@ -220,6 +263,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           patch.role_title = values.role_title.trim() || null;
         if (values.preferred_language !== c.preferredLanguage)
           patch.preferred_language = values.preferred_language;
+        if (emailEditable && values.email.trim() !== c.email) {
+          patch.email = values.email.trim();
+          // `locale` is consumed by changeContactEmail (linked SECONDARY path)
+          // to send the verification email in the contact's language; the route
+          // defaults to 'en' if absent and strips it on the unlinked in-place
+          // path, so sending it always is harmless.
+          patch.locale = values.preferred_language;
+        }
 
         if (Object.keys(patch).length === 0) {
           setOpen(false);
@@ -241,7 +292,20 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           await handleError(res);
           return;
         }
-        toast.success(tA('editSuccess'));
+        // A 200 may carry a `field_update_failed` marker (finding 6/8): the
+        // route runs the email change and the non-email fields as two txns, so
+        // the email can commit while the fields fail. Warn — rather than a plain
+        // success toast — so the admin knows the email saved and only the other
+        // fields need a retry (retrying replays the same idempotency key → no
+        // duplicate email audit).
+        const body = (await res.json().catch(() => ({}))) as {
+          field_update_failed?: string;
+        };
+        if (body.field_update_failed) {
+          toast.warning(t('partialSave'));
+        } else {
+          toast.success(tA('editSuccess'));
+        }
       }
       setOpen(false);
       router.refresh();
@@ -318,7 +382,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           <div>
             <Label htmlFor="cf-email">
               {tf('email')}
-              {mode === 'add' && (
+              {emailEditable && (
                 <>
                   {' '}
                   <RequiredMark />
@@ -328,11 +392,18 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
             <EmailInput
               id="cf-email"
               maxLength={254}
-              disabled={mode === 'edit'}
-              aria-required={mode === 'add' ? 'true' : undefined}
+              // Read-only (not `disabled`) for a linked contact so the field
+              // stays focusable — a disabled input is skipped by screen readers
+              // in forms mode, which would hide its `aria-describedby` note; it
+              // also avoids the disabled `opacity-50` dimming of the address.
+              // The PATCH already guards on `emailEditable`, so no value leaks.
+              readOnly={!emailEditable}
+              aria-readonly={!emailEditable ? 'true' : undefined}
+              className={!emailEditable ? 'bg-muted/50' : undefined}
+              aria-required={emailEditable ? 'true' : undefined}
               aria-invalid={Boolean(errors.email)}
               aria-describedby={
-                mode === 'edit'
+                !emailEditable
                   ? 'cf-email-note'
                   : errors.email
                     ? 'cf-email-error'
@@ -340,7 +411,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               }
               {...register('email')}
             />
-            {mode === 'edit' ? (
+            {!emailEditable ? (
               <p id="cf-email-note" className="mt-1 text-xs text-muted-foreground">
                 {t('emailEditNote')}
               </p>

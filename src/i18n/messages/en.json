@@ -1199,7 +1199,8 @@
             "emailTaken": "That email address is already in use.",
             "conflict": "Couldn't complete the action. Please refresh and try again.",
             "notFound": "Contact not found.",
-            "generic": "Something went wrong. Please try again."
+            "generic": "Something went wrong. Please try again.",
+            "serverBusy": "The server is busy. Please try again in a moment."
           }
         }
       },
@@ -1388,7 +1389,6 @@
           "validation": "Please fix the highlighted fields.",
           "contactNotFound": "Contact not found.",
           "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
-          "emailChangeNotSupported": "Email can only be changed for contacts linked to a portal account. Invite them to the portal first, then change the email.",
           "emailTaken": "That email address is already in use.",
           "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
           "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest."
@@ -1399,9 +1399,10 @@
         "editTitle": "Edit contact",
         "description": "Add another person at this member. They are added as a secondary contact.",
         "editDescription": "Update this contact's details.",
-        "emailEditNote": "To change this contact's email, edit it on the member Edit page. An unlinked contact must be invited to the portal first.",
+        "emailEditNote": "This contact is linked to a portal account, so this email is a sign-in identity. To change it, use the member's Edit page (it sends a verification email).",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
+        "partialSave": "Email updated, but the other changes couldn't be saved. Please retry them.",
         "submit": "Save",
         "submitting": "Saving…",
         "cancel": "Cancel"

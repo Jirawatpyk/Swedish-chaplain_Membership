@@ -166,6 +166,7 @@ export {
 export {
   addContact,
   updateContactFields,
+  updateUnlinkedContactEmail,
   removeContact,
   promotePrimary,
   addContactSchema,

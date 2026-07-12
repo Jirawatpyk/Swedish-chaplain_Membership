@@ -482,6 +482,14 @@ export function ContactBlock({
                 phone: contact.phone ?? null,
                 roleTitle: contact.roleTitle ?? null,
                 preferredLanguage: contact.preferredLanguage,
+                // Drives email editability in the edit dialog: unlinked
+                // (imported) contacts get an in-place email edit; a linked
+                // PRIMARY stays read-only (sign-in identity, changed via the
+                // member Edit page / FR-012a); a linked SECONDARY is editable
+                // here (no other edit path) and routes through the same
+                // FR-012a atomic flow.
+                linkedUserId: contact.linkedUserId ?? null,
+                isPrimary: contact.isPrimary,
               }}
             />
           </div>

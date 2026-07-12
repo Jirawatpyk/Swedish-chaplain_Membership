@@ -1199,7 +1199,8 @@
             "emailTaken": "E-postadressen används redan.",
             "conflict": "Åtgärden kunde inte slutföras. Uppdatera och försök igen.",
             "notFound": "Kontakt hittades inte.",
-            "generic": "Något gick fel. Försök igen."
+            "generic": "Något gick fel. Försök igen.",
+            "serverBusy": "Servern är upptagen. Försök igen om en stund."
           }
         }
       },
@@ -1388,7 +1389,6 @@
           "validation": "Rätta markerade fält.",
           "contactNotFound": "Kontakt hittades inte.",
           "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först.",
-          "emailChangeNotSupported": "E-postadressen kan endast ändras för kontakter som är kopplade till ett portalkonto. Bjud in dem till portalen först och ändra sedan e-postadressen.",
           "emailTaken": "E-postadressen används redan.",
           "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678.",
           "partialSave": "Vissa ändringar sparades innan ett fel uppstod. Granska medlemmen och försök igen med resten."
@@ -1399,9 +1399,10 @@
         "editTitle": "Redigera kontakt",
         "description": "Lägg till ytterligare en person hos denna medlem. De läggs till som en sekundär kontakt.",
         "editDescription": "Uppdatera den här kontaktens uppgifter.",
-        "emailEditNote": "För att ändra kontaktens e-postadress, redigera den på medlemmens redigeringssida. En okopplad kontakt måste först bjudas in till portalen.",
+        "emailEditNote": "Den här kontakten är kopplad till ett portalkonto, så e-postadressen är en inloggningsidentitet. Ändra den på medlemmens redigeringssida (ett verifieringsmejl skickas).",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
+        "partialSave": "E-postadressen uppdaterades, men de övriga ändringarna kunde inte sparas. Försök igen med dem.",
         "submit": "Spara",
         "submitting": "Sparar…",
         "cancel": "Avbryt"

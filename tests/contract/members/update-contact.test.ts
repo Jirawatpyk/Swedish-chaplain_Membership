@@ -3,7 +3,10 @@
  *
  * Mocks the Application use cases. Verifies:
  *   - 200 non-email update → body is serialised contact
- *   - 409 when email is changed on an unlinked contact (US3.b.3 guard)
+ *   - 200 in-place email update on an unlinked contact (the former US3.b.3
+ *     409 guard was replaced by updateUnlinkedContactEmail — imported members
+ *     have no portal login, so the email is a plain contact field)
+ *   - 409 when the NEW email is already in use (unlinked path)
  *   - 400 invalid body (validation)
  *   - 404 on unknown contact
  *   - 401/403 auth gate pass-through
@@ -15,6 +18,12 @@ import { ok, err } from '@/lib/result';
 const requireAdminContextMock = vi.fn();
 const updateContactFieldsMock = vi.fn();
 const changeContactEmailMock = vi.fn();
+const updateUnlinkedContactEmailMock = vi.fn();
+// Hoisted so the partial-save test can assert the 200 was persisted for replay
+// (a fresh-key retry must NOT re-emit the committed email audit).
+const rememberIdempotentResponseMock = vi.hoisted(() =>
+  vi.fn(async () => undefined),
+);
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -24,10 +33,10 @@ const contactRepoFindByIdMock = vi.fn();
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({
     contactRepo: {
+      // Called ONCE on the unlinked email path (route linked-vs-unlinked). The
+      // unlinked path returns updateUnlinkedContactEmail's value directly (no
+      // response re-read); only the LINKED path re-reads.
       findById: (...args: unknown[]) => contactRepoFindByIdMock(...args),
-      // The "no linked user" branch of the route calls `update` as a
-      // fallback before returning 409; stub to ok() so the flow reaches
-      // the 409 response.
       update: vi.fn(async () => ok({})),
     },
     // Fields touched by the route code — present but not exercised.
@@ -45,6 +54,8 @@ vi.mock('@/modules/members', async () => {
   return {
     ...actual,
     updateContactFields: (...args: unknown[]) => updateContactFieldsMock(...args),
+    updateUnlinkedContactEmail: (...args: unknown[]) =>
+      updateUnlinkedContactEmailMock(...args),
     changeContactEmail: (...args: unknown[]) => changeContactEmailMock(...args),
     // `removeContact` is defined by the barrel but not exercised here;
     // re-export it from the actual module so the import doesn't break.
@@ -62,7 +73,7 @@ vi.mock('@/lib/idempotency', () => ({
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
   reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
-  rememberIdempotentResponse: vi.fn(async () => undefined),
+  rememberIdempotentResponse: rememberIdempotentResponseMock,
   hashRequestBody: vi.fn(() => 'hash'),
 }));
 vi.mock('@/lib/logger', () => ({
@@ -136,18 +147,64 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(body.first_name).toBe('Alicia');
   });
 
-  it('409 when email change requested on unlinked contact (US3.b.3 guard)', async () => {
+  it('200 when email change requested on unlinked contact — in-place update', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    // findById routes to the unlinked path; the route then returns the
+    // updateUnlinkedContactEmail value directly for the response body (no
+    // fall-through re-read on the unlinked path — that avoids a post-commit
+    // re-read whose transient failure would 404 a committed change).
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubContact));
+    updateUnlinkedContactEmailMock.mockResolvedValueOnce(
+      ok({ ...stubContact, email: 'new@example.com' }),
+    );
     const { PATCH } = await import(
       '@/app/api/members/[memberId]/contacts/[contactId]/route'
     );
     const res = await PATCH(makeRequest({ email: 'new@example.com' }), {
       params: routeParams(),
     });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.email).toBe('new@example.com');
+    // Regression guard (final-review MUST): the unlinked path must NOT re-read
+    // for the response — it returns the use-case value in hand. A re-read would
+    // let a transient failure 404 a committed change + skip the idempotency
+    // record (duplicate audit on retry). findById is called exactly once here.
+    expect(contactRepoFindByIdMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 conflict when the new email is already in use (unlinked path)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValue(ok(stubContact));
+    updateUnlinkedContactEmailMock.mockResolvedValueOnce(
+      err({ type: 'conflict', reason: 'email_taken' }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'taken@example.com' }), {
+      params: routeParams(),
+    });
     expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.error.code).toBe('not_supported');
+    expect(body.error.code).toBe('conflict');
+  });
+
+  it('400 validation_error when the new email is malformed (unlinked path)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValue(ok(stubContact));
+    updateUnlinkedContactEmailMock.mockResolvedValueOnce(
+      err({ type: 'invalid_email' }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'not-an-email' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('validation_error');
   });
 
   it('400 invalid body', async () => {
@@ -291,5 +348,86 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  // --- Partial-save marker (finding 6/8) -------------------------------------
+  // A combined PATCH runs email (section 1) then non-email fields (section 2)
+  // as two txns. When section 1 commits but section 2 fails, return 200 with
+  // the email-updated contact + a `field_update_failed` marker so the admin
+  // knows the email persisted (and a retry replays via rememberIdempotentResponse
+  // rather than re-emitting the email audit).
+
+  it('200 + field_update_failed when unlinked email commits but field update fails', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubContact)); // unlinked
+    updateUnlinkedContactEmailMock.mockResolvedValueOnce(
+      ok({ ...stubContact, email: 'new@example.com' }),
+    );
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(
+      makeRequest({ email: 'new@example.com', first_name: 'Alicia' }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The committed email is reflected; the marker names the failed section.
+    expect(body.email).toBe('new@example.com');
+    expect(body.field_update_failed).toBe('server_error');
+    // The unlinked path returns the use-case value in hand — no re-read.
+    expect(contactRepoFindByIdMock).toHaveBeenCalledTimes(1);
+    // Persist the 200 so a fresh-key retry replays it (no duplicate email audit).
+    expect(rememberIdempotentResponseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('200 + field_update_failed when linked email commits but field update fails (re-reads)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock
+      .mockResolvedValueOnce(ok(stubLinkedContact)) // section 1 lookup → linked
+      .mockResolvedValueOnce(
+        ok({ ...stubLinkedContact, email: 'alice@new.example' }),
+      ); // partial-save re-read for the response shape
+    changeContactEmailMock.mockResolvedValueOnce(
+      ok({
+        contactId,
+        userId: 'user-123',
+        oldEmail: 'alice@old.example',
+        newEmail: 'alice@new.example',
+        verificationOutboxRowId: 'outbox-v',
+        revertOutboxRowId: 'outbox-r',
+        sessionsRevoked: 1,
+      }),
+    );
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(
+      makeRequest({ email: 'alice@new.example', first_name: 'Alicia', locale: 'th' }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.email).toBe('alice@new.example');
+    expect(body.field_update_failed).toBe('server_error');
+    expect(rememberIdempotentResponseMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('field-only update that fails still returns the error (no partial-save marker)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ first_name: 'Alicia' }), {
+      params: routeParams(),
+    });
+    // No email changed → the section-2 error is returned as-is (unaffected).
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('server_error');
+    expect(body.field_update_failed).toBeUndefined();
   });
 });

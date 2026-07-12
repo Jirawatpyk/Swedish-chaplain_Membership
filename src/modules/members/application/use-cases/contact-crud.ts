@@ -248,6 +248,112 @@ export async function updateContactFields(
   }
 }
 
+// --- update email in place (unlinked contact only) --------------------------
+
+/**
+ * Update the email of a contact that is NOT linked to a portal user.
+ *
+ * For an unlinked contact the email is a plain data field, not a login
+ * identity, so it is written in place — the FR-012a atomic flow
+ * (`change-contact-email.ts`: session revocation + dual-channel
+ * verify/revert) is only required when the address is also a portal
+ * login. This is the "simple contact-update path" the route header
+ * documents for the no-linked-user case (imported members, never
+ * invited, all have `linked_user_id = NULL`).
+ *
+ * Guards:
+ *   - `invalid_email` — new address fails Domain `asEmail` validation
+ *   - `not_found`     — contact missing OR belongs to another member (IDOR)
+ *   - `conflict`      — new address collides with another ACTIVE contact
+ *                       (`contacts_tenant_email_uniq`), surfaced by
+ *                       `updateEmailInTx` as `repo.conflict`
+ *   - `server_error`  — DEFENCE: a LINKED contact must never be written
+ *                       in place here (that would bypass session
+ *                       revocation + verification). The route only routes
+ *                       unlinked contacts here; this guard makes the
+ *                       bypass impossible even if the use case is misused.
+ *
+ * Residual race (accepted Minor): the linked-ness check reads OUTSIDE the
+ * write tx — the same pattern as `change-contact-email.ts`. A contact linked
+ * concurrently within the write window would still get an in-place email
+ * write, but this path NEVER touches `users.email`, so it is a
+ * data-divergence race, NOT an auth bypass — and imported members (the only
+ * unlinked contacts) are never invited to the portal. Close it DB-side
+ * (`UPDATE … WHERE linked_user_id IS NULL`) if it ever becomes reachable.
+ */
+export async function updateUnlinkedContactEmail(
+  memberId: MemberId,
+  contactId: ContactId,
+  newEmailRaw: string,
+  meta: ContactCrudCallMeta,
+  deps: ContactCrudDeps,
+): Promise<Result<Contact, ContactCrudError>> {
+  const email = asEmail(newEmailRaw);
+  if (!email.ok) return err({ type: 'invalid_email' });
+
+  // Ownership + linked-ness check (SEC-3 IDOR guard, same as
+  // updateContactFields; plus the anti-bypass defence).
+  const existing = await deps.contactRepo.findById(deps.tenant, contactId);
+  if (!existing.ok) {
+    if (existing.error.code === 'repo.not_found')
+      return err({ type: 'not_found' });
+    return err({ type: 'server_error', message: `lookup: ${existing.error.code}` });
+  }
+  if (existing.value.memberId !== memberId) {
+    return err({ type: 'not_found' });
+  }
+  if (existing.value.linkedUserId) {
+    // Invariant violation — a linked contact reached the in-place path.
+    // Refuse rather than silently skip the atomic FR-012a flow.
+    return err({
+      type: 'server_error',
+      message: 'linked contact requires the atomic change-contact-email flow',
+    });
+  }
+
+  try {
+    await runInTenant(deps.tenant, async (tx) => {
+      const updated = await deps.contactRepo.updateEmailInTx(
+        tx,
+        deps.tenant,
+        contactId,
+        email.value,
+      );
+      if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
+
+      const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'contact_updated',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `contact_updated ${contactId} (email)`,
+        payload: {
+          member_id: memberId,
+          contact_id: contactId,
+          fields_changed: ['email'],
+        },
+      });
+      if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
+    });
+  } catch (e) {
+    if (e instanceof UseCaseAbort) {
+      const re = e.error as RepoError;
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      if (re.code === 'repo.conflict')
+        return err({ type: 'conflict', reason: re.reason });
+      return err({ type: 'server_error', message: `email update: ${re.code}` });
+    }
+    return err({ type: 'server_error', message: 'email update: unexpected' });
+  }
+
+  // Build the response from data already in hand (the committed write only
+  // changed `email`). Avoids a post-commit re-read whose transient failure
+  // would return `server_error` (→ HTTP 500) AFTER the email was already
+  // persisted — which also skips the route's idempotency-response record,
+  // locking/duplicating a retry. The route re-reads from the DB for its own
+  // response shape, so this returned value is only the use case's contract.
+  return ok({ ...existing.value, email: email.value });
+}
+
 // --- remove ------------------------------------------------------------------
 
 export async function removeContact(

@@ -110,7 +110,10 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
       <ContactFormDialog
         memberId={memberId}
         mode="edit"
-        contact={contact}
+        // `isPrimary` is the authoritative prop here — thread it onto the
+        // ContactInitial so the dialog can keep a linked PRIMARY email
+        // read-only while letting a linked SECONDARY email be edited.
+        contact={{ ...contact, isPrimary }}
         trigger={
           <Button type="button" variant="outline" size="sm" className="gap-2">
             <PencilIcon className="size-4" aria-hidden="true" />

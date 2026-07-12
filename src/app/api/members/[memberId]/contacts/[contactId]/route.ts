@@ -29,6 +29,7 @@ import {
   changeContactEmail,
   removeContact,
   updateContactFields,
+  updateUnlinkedContactEmail,
 } from '@/modules/members';
 import type { ContactId, MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -125,6 +126,18 @@ export async function PATCH(
   delete nonEmailBody.locale; // consumed by changeContactEmail, not a contact field
   const hasNonEmail = Object.keys(nonEmailBody).length > 0;
 
+  // Captures the contact value an in-place UNLINKED email update already
+  // returns (section 1) so section 2 can build the response WITHOUT a re-read.
+  // Stays null for the linked path (changeContactEmail returns a verification
+  // output, not a Contact) → section 2 re-reads for that case only.
+  let emailUpdatedContact: Parameters<typeof serialiseContact>[0] | null = null;
+  // True once section 1 has COMMITTED an email change (either path). Section 2
+  // uses it to surface a partial save: if the non-email field update then fails
+  // we must not return a bare error that hides the already-committed email (a
+  // fresh-key retry would re-emit the email audit) — see the partial-save
+  // branch below.
+  let emailChangeCommitted = false;
+
   // 1) Email change first (if present) — atomic with session revocation
   //    when a linked user exists; falls back to in-tx email-only update
   //    when there is no linked user.
@@ -150,6 +163,20 @@ export async function PATCH(
       );
     }
     const contact = contactLookup.value;
+
+    // SEC-3 parity: the unlinked + non-email paths reject a member/contact
+    // mismatch internally (they check `existing.memberId !== memberId`);
+    // changeContactEmail keys on contactId ONLY, so guard the linked
+    // email-change branch here too — a mismatched member URL must never drive
+    // a linked contact's email change (session revoke + verify/revert emails)
+    // under the wrong member. Same-tenant + admin-gated, but the lone
+    // asymmetric path.
+    if (contact.memberId !== (parsed.data.memberId as MemberId)) {
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Contact not found.' } },
+        { status: 404 },
+      );
+    }
 
     if (contact.linkedUserId) {
       // FR-012a 6-step atomic transaction
@@ -216,25 +243,73 @@ export async function PATCH(
             );
         }
       }
+      // Linked email change committed (session revoke + verify/revert emails).
+      emailChangeCommitted = true;
     } else {
-      // No linked user — email change requires the FR-012a atomic
-      // transaction (session revocation + dual-channel email) which
-      // needs a linked user. Reject with a clear message.
-      return NextResponse.json(
-        {
-          error: {
-            code: 'not_supported',
-            message:
-              'Email change is only supported for contacts linked to a portal user. Ask the primary contact to add the new address as a secondary contact, then promote.',
-          },
-        },
-        { status: 409 },
+      // No linked user — the email is a plain contact field (not a login
+      // identity), so update it in place. The FR-012a atomic flow above is
+      // only needed when the address is also a portal login. (Imported
+      // members are never invited, so their contacts are always unlinked.)
+      const emailUpdate = await updateUnlinkedContactEmail(
+        parsed.data.memberId as MemberId,
+        parsed.data.contactId as ContactId,
+        emailValue,
+        { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+        deps,
       );
+      if (!emailUpdate.ok) {
+        switch (emailUpdate.error.type) {
+          case 'invalid_email':
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'validation_error',
+                  message: 'Invalid email address.',
+                  details: { field: 'email' },
+                },
+              },
+              { status: 400 },
+            );
+          case 'not_found':
+            return NextResponse.json(
+              { error: { code: 'not_found', message: 'Contact not found.' } },
+              { status: 404 },
+            );
+          case 'conflict':
+            return NextResponse.json(
+              {
+                error: {
+                  code: 'conflict',
+                  message: 'Email already in use.',
+                  reason: emailUpdate.error.reason,
+                },
+              },
+              { status: 409 },
+            );
+          default:
+            logger.error(
+              { requestId: ctx.requestId, err: emailUpdate.error },
+              'update-unlinked-contact-email: unhandled',
+            );
+            return NextResponse.json(
+              { error: { code: 'server_error', message: 'Internal server error.' } },
+              { status: 500 },
+            );
+        }
+      }
+      // Reuse the value the in-tx update already returned so section 2 need
+      // not re-read: a post-commit re-read whose transient failure mapped to
+      // not_found would return a misleading 404 for a committed change AND
+      // skip rememberIdempotentResponse, letting a fresh-key retry duplicate
+      // the append-only contact_updated audit row.
+      emailUpdatedContact = emailUpdate.value;
+      emailChangeCommitted = true;
     }
   }
 
-  // 2) Non-email fields (if present, or if the body was email-only
-  //    we still re-fetch so the response shape is identical).
+  // 2) Non-email fields (if present), or an email-only edit whose value we
+  //    already hold from section 1 (unlinked path), otherwise a re-read for
+  //    the response shape (linked path only).
   const result = hasNonEmail
     ? await updateContactFields(
         parsed.data.memberId as MemberId,
@@ -243,20 +318,27 @@ export async function PATCH(
         { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
         deps,
       )
-    : await (async () => {
-        // Email-only path: re-read the contact so the response shape
-        // matches the non-email path.
-        const reread = await deps.contactRepo.findById(
-          tenant,
-          parsed.data.contactId as ContactId,
-        );
-        return reread.ok
-          ? { ok: true as const, value: reread.value }
-          : {
-              ok: false as const,
-              error: { type: 'not_found' as const },
-            };
-      })();
+    : emailUpdatedContact !== null
+      ? { ok: true as const, value: emailUpdatedContact }
+      : await (async () => {
+          // Email-only LINKED path: changeContactEmail returns a verification
+          // output (not a Contact), so re-read for the response shape. A
+          // transient re-read failure AFTER a committed change is a 500 (the
+          // contact provably exists), never a misleading 404.
+          const reread = await deps.contactRepo.findById(
+            tenant,
+            parsed.data.contactId as ContactId,
+          );
+          return reread.ok
+            ? { ok: true as const, value: reread.value }
+            : {
+                ok: false as const,
+                error: {
+                  type: 'server_error' as const,
+                  message: 'post-email-change re-read failed',
+                },
+              };
+        })();
 
   if (result.ok) {
     const body = serialiseContact(result.value);
@@ -265,6 +347,39 @@ export async function PATCH(
       body,
     });
     return NextResponse.json(body, { status: 200 });
+  }
+
+  // Partial save: section 1 (email) COMMITTED but section 2 (non-email fields)
+  // failed. The two use-cases have separate audit + tx boundaries, so we can't
+  // roll the email back here. Returning the bare section-2 error would hide the
+  // committed email from the admin AND a fresh-key retry would re-emit the email
+  // audit. Instead respond 200 with the email-updated contact plus a top-level
+  // `field_update_failed` marker (existing success consumers read the contact
+  // fields and ignore it) so the client can prompt a retry of just the fields.
+  if (hasNonEmail && emailChangeCommitted) {
+    // The unlinked path already holds the committed contact; the linked path
+    // re-reads once (a re-read failure degrades to the normal error below).
+    let committed = emailUpdatedContact;
+    if (committed === null) {
+      const reread = await deps.contactRepo.findById(
+        tenant,
+        parsed.data.contactId as ContactId,
+      );
+      if (reread.ok) committed = reread.value;
+    }
+    if (committed !== null) {
+      const body = {
+        ...serialiseContact(committed),
+        field_update_failed: result.error.type,
+      };
+      // Persist the 200 so a fresh-key retry replays it rather than re-running
+      // (and re-auditing) the committed email change.
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+        status: 200,
+        body,
+      });
+      return NextResponse.json(body, { status: 200 });
+    }
   }
 
   switch (result.error.type) {
