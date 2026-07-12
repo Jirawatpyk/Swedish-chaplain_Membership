@@ -283,12 +283,18 @@ export async function processRefundUpdated(
           //     record. Deliberate redundancy removes that SPOF; the duplicate
           //     rows are deduped on READ by `processor_refund_id` (existing
           //     group-by convention), so downstream sees one OOB per refund.
-          //   · `outOfBandRefundRejected` METRIC (paging counter) — stays
-          //     SINGLE-OWNER on `processChargeRefunded`, the UNIVERSAL detector
-          //     that fires on EVERY refund (`charge.refunded` fires whenever the
-          //     charge's `amount_refunded` changes — partial + full + async-
-          //     refund initiation). Bumping it here too double-counts the async
-          //     path (2× per genuine OOB). DO NOT add the metric here.
+          //   · `outOfBandRefundRejected` METRIC (paging counter) — SINGLE-OWNER
+          //     on `processChargeRefunded` FOR REFUNDS THAT HAVE A CHARGE.
+          //     `charge.refunded` fires whenever a charge's `amount_refunded`
+          //     changes (partial + full + async-refund initiation), so it is the
+          //     universal detector for CHARGED refunds; bumping it here too would
+          //     double-count them (2× per genuine OOB). EXCEPTION (Fix 1): a
+          //     charge-less async refund (PromptPay / GrabPay / bank transfer —
+          //     no `charge` object) NEVER fires `charge.refunded`, so it reaches
+          //     us ONLY via `refund.updated` and this handler is its SOLE
+          //     detector. For that case (`input.chargeId === null`) we DO emit
+          //     the metric below so on-call is paged in real time; with-charge
+          //     OOBs still page via `charge.refunded` only.
           //
           // Finding 2 suppression (app-initiated auto-refunds) is handled in the
           // NOT-FOUND branch above (autoRefund !== null) and mirrored in
@@ -313,8 +319,21 @@ export async function processRefundUpdated(
             },
             retentionYears: retentionFor('out_of_band_refund_detected'),
           });
-          // NB: NO `paymentsMetrics.outOfBandRefundRejected(...)` here — the
-          // paging metric is single-owner on `processChargeRefunded` (above).
+          // Paging metric — single-owner on `processChargeRefunded` for refunds
+          // that HAVE a charge (do NOT bump here for those: it would double-
+          // count). The charge-less case is the exception (Fix 1): no
+          // `charge.refunded` will EVER fire for it, so this handler is the sole
+          // detector and MUST page or on-call gets the 10y forensic but no
+          // real-time alert. Emitted INSIDE the tx (same buffered-until-flush
+          // trade-off as the sibling counters): a rollback yields at most a tiny
+          // over-count window, and consistency with the forensic audit above
+          // matters more than that window.
+          if (input.chargeId === null) {
+            paymentsMetrics.outOfBandRefundRejected(
+              input.tenantId,
+              input.processorEnv,
+            );
+          }
           await deps.processorEventsRepo.markProcessed(tx, input.eventId);
           return { kind: 'out_of_band' };
         }
