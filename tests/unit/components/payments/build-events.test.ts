@@ -230,4 +230,81 @@ describe('buildEvents', () => {
     const sorted = [...timestamps].sort((a, b) => a - b);
     expect(timestamps).toEqual(sorted);
   });
+
+  // -------------------------------------------------------------------------
+  // Gap C (2026-07-12) — auto_refunded payment terminal event.
+  //
+  // The stale-invoice / late-charge auto-refund (migration 0240) flips a
+  // payment `pending → auto_refunded` and writes NO `refunds` row. Before
+  // this fix the payment fell through the succeeded/failed/canceled switch
+  // and rendered as a lone "Payment initiated" row. It must surface its
+  // own terminal `auto_refunded` event. It stays OUT of the succeeded
+  // lineage, so no `invoice_paid` row is synthesized.
+  // -------------------------------------------------------------------------
+  it('emits an auto_refunded terminal event for an auto_refunded payment (system actor)', () => {
+    const events = buildEvents(
+      [makeCardPayment({ status: 'auto_refunded', completedAt: T1 })],
+      [],
+      null,
+      null,
+    );
+    const types = events.map((e) => e.type as string);
+    expect(types).toContain('payment_initiated');
+    expect(types).toContain('auto_refunded');
+    const terminal = events.find((e) => (e.type as string) === 'auto_refunded');
+    // Auto-refund is booked by the webhook-dispatch tail — not the member.
+    expect(terminal?.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY);
+    expect(terminal?.timestamp).toBe(T1);
+  });
+
+  it('does NOT emit invoice_paid for an auto_refunded payment even when paidAt is set', () => {
+    // `hasSucceeded` filters on status='succeeded'; auto_refunded is
+    // excluded from the succeeded lineage, so the invoice was never
+    // settled by this attempt → no invoice_paid row.
+    const events = buildEvents(
+      [makeCardPayment({ status: 'auto_refunded', completedAt: T1 })],
+      [],
+      T2.toISOString(),
+      null,
+    );
+    expect(events.find((e) => e.type === 'invoice_paid')).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // Gap B (2026-07-12) — pending async refund settling affordance.
+  //
+  // An async Stripe refund lands as a `pending` row (completedAt === null).
+  // Before this fix it rendered only a neutral "Refund initiated" row,
+  // indistinguishable from the first half of a completed refund. It must
+  // get a distinct warning-tone `refund_pending` event alongside the
+  // initiation row — and NO terminal event until it settles.
+  // -------------------------------------------------------------------------
+  it('emits a refund_pending event for a pending refund, alongside refund_initiated', () => {
+    const events = buildEvents(
+      [],
+      [makeRefund({ status: 'pending', completedAt: null })],
+      null,
+      null,
+    );
+    const types = events.map((e) => e.type as string);
+    expect(types).toContain('refund_initiated');
+    expect(types).toContain('refund_pending');
+    expect(types).not.toContain('refund_succeeded');
+    expect(types).not.toContain('refund_failed');
+    const pending = events.find((e) => (e.type as string) === 'refund_pending');
+    expect(pending?.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK_LEGACY);
+    expect(pending?.subjectId).toBe('rfnd_test_1');
+  });
+
+  it('does NOT emit refund_pending once the refund has settled', () => {
+    const events = buildEvents(
+      [],
+      [makeRefund({ status: 'succeeded', completedAt: T2 })],
+      null,
+      null,
+    );
+    const types = events.map((e) => e.type as string);
+    expect(types).not.toContain('refund_pending');
+    expect(types).toContain('refund_succeeded');
+  });
 });
