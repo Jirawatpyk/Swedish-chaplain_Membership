@@ -440,6 +440,77 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
     expect(inv.credited).toBe(REFUND_AMOUNT);
   }, 90_000);
 
+  it('CROSS-EVENT: charge.refund.updated(succeeded) + refund.updated(succeeded) for the SAME refund → exactly ONE credit note, §87 +1', async () => {
+    // Stripe DEPRECATED charge.refund.updated ("only sent for refunds with a
+    // corresponding charge; listen to refund.updated for updates on all
+    // refunds instead") and MAY deliver BOTH channels for the same settlement
+    // (distinct event ids). Both route to processRefundUpdated. Prove that two
+    // succeeded deliveries for one refund book exactly ONE credit note (the
+    // 2nd finds the row already terminal → already_finalized no-op) — the
+    // real F4 CN + §87 sequence run on live Neon here (not stubbed).
+    const { invoiceId, paymentId } = await seedPaidInvoice('XEV001');
+    const reId = `re_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+    const seqBefore = await readCreditNoteSeq();
+
+    const refundResult = await issueRefund(pendingRefundDeps(reId), {
+      tenantId: tenant.ctx.slug,
+      paymentId,
+      amountSatang: asSatang(REFUND_AMOUNT),
+      reason: 'PromptPay refund settled via both webhook channels',
+      actorUserId: user.userId,
+      correlationId: 'corr-async-xev',
+      requestId: 'req-async-xev',
+    });
+    expect(refundResult.ok).toBe(true);
+    if (!refundResult.ok) return;
+    expect(refundResult.value.kind).toBe('pending');
+    if (refundResult.value.kind !== 'pending') return;
+    const refundId = refundResult.value.refund.id;
+    expect((await refundRow(refundId)).status).toBe('pending');
+
+    // Delivery 1 — the (deprecated) charge.refund.updated(succeeded) finalises.
+    const settle1 = await processRefundUpdated(webhookDeps(), {
+      tenantId: tenant.ctx.slug,
+      requestId: 'req-async-xev-1',
+      eventId: `evt_${randomUUID().slice(0, 12)}`,
+      sourceEventType: 'charge.refund.updated',
+      processorRefundId: reId,
+      chargeId: 'ch_x',
+      refundStatus: 'succeeded',
+      amountSatang: asSatang(REFUND_AMOUNT),
+      processorEnv: 'test',
+    });
+    expect(settle1.ok).toBe(true);
+    if (!settle1.ok) return;
+    expect(settle1.value.kind).toBe('reconciled_succeeded');
+
+    // Delivery 2 — the forward-path refund.updated(succeeded) for the SAME
+    // refund (distinct event id) → terminal-row no-op, NO second credit note.
+    const settle2 = await processRefundUpdated(webhookDeps(), {
+      tenantId: tenant.ctx.slug,
+      requestId: 'req-async-xev-2',
+      eventId: `evt_${randomUUID().slice(0, 12)}`,
+      sourceEventType: 'refund.updated',
+      processorRefundId: reId,
+      chargeId: 'ch_x',
+      refundStatus: 'succeeded',
+      amountSatang: asSatang(REFUND_AMOUNT),
+      processorEnv: 'test',
+    });
+    expect(settle2.ok).toBe(true);
+    if (!settle2.ok) return;
+    expect(settle2.value.kind).toBe('already_finalized');
+
+    // Exactly ONE credit note across BOTH deliveries; §87 advanced by exactly 1.
+    expect(await cnCountForRefund(refundId)).toBe(1);
+    expect((await readCreditNoteSeq()) - seqBefore).toBe(1);
+    const settled = await refundRow(refundId);
+    expect(settled.status).toBe('succeeded');
+    expect(settled.creditNoteId).not.toBeNull();
+    expect(await paymentStatus(paymentId)).toBe('partially_refunded');
+    expect((await invoiceState(invoiceId)).status).toBe('partially_credited');
+  }, 90_000);
+
   it('FAILED: createRefund→pending (no CN) → charge.refund.updated(failed) → reconciled_failed, NO CN', async () => {
     const { invoiceId, paymentId } = await seedPaidInvoice('FAI001');
     const reId = `re_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
