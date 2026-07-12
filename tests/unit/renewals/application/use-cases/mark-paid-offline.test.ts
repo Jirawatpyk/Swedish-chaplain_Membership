@@ -841,7 +841,30 @@ describe('markPaidOffline — error paths', () => {
     if (!r.ok) expect(r.error.kind).toBe('cycle_not_payable');
   });
 
-  it('returns f4_failure when bridge fails', async () => {
+  it('returns f4_failure for a TRANSIENT bridge fault (retry may help)', async () => {
+    // Cluster 5 (Finding 2) — a non-permanent reason stays the generic
+    // "please try again" f4_failure (stage + reason preserved for ops logs).
+    const cycle = buildCycle();
+    const { deps } = fakeDeps(cycle, async () => ({
+      ok: false,
+      error: { kind: 'issue_invoice_failed', reason: 'pdf_render_failed' },
+    }));
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('f4_failure');
+      if (r.error.kind === 'f4_failure') {
+        expect(r.error.stage).toBe('issue_invoice_failed');
+        expect(r.error.reason).toBe('pdf_render_failed');
+      }
+    }
+  });
+
+  // Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry will NEVER succeed) is
+  // now surfaced as a distinct, actionable code instead of the blanket
+  // "please try again". `plan_not_found` is the imported-member case: the plan
+  // for that fiscal year isn't in the fee catalogue yet.
+  it('returns f4_permanent_failure for a permanent F4 reject (plan_not_found)', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps(cycle, async () => ({
       ok: false,
@@ -850,13 +873,30 @@ describe('markPaidOffline — error paths', () => {
     const r = await markPaidOffline(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.kind).toBe('f4_failure');
-      if (r.error.kind === 'f4_failure') {
-        expect(r.error.stage).toBe('create_invoice_failed');
+      expect(r.error.kind).toBe('f4_permanent_failure');
+      if (r.error.kind === 'f4_permanent_failure') {
         expect(r.error.reason).toBe('plan_not_found');
       }
     }
   });
+
+  it.each(['settings_missing', 'member_archived', 'member_not_found'] as const)(
+    'returns f4_permanent_failure for permanent reject %s',
+    async (reason) => {
+      const cycle = buildCycle();
+      const { deps } = fakeDeps(cycle, async () => ({
+        ok: false,
+        error: { kind: 'issue_invoice_failed', reason },
+      }));
+      const r = await markPaidOffline(deps, baseInput);
+      expect(r.ok).toBe(false);
+      if (!r.ok && r.error.kind === 'f4_permanent_failure') {
+        expect(r.error.reason).toBe(reason);
+      } else {
+        expect.unreachable('expected f4_permanent_failure');
+      }
+    },
+  );
 
   it('returns f4_orphan_invoice when bridge reports record_payment_failed', async () => {
     const cycle = buildCycle();

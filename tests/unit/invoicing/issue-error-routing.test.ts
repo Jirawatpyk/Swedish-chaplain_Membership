@@ -30,7 +30,37 @@ describe('routeIssueError (FR-032)', () => {
     });
   });
 
+  // Cluster 5 (Finding 4) — the irreversible §86/4 issue path no longer dumps a
+  // raw code for reachable business rejects; each gets actionable inline copy.
+  it('maps reachable business rejects to dedicated actionable copy (not a raw code)', () => {
+    for (const code of [
+      'settings_missing',
+      'member_archived',
+      'member_not_found',
+      'no_buyer_snapshot',
+      'invalid_lines',
+    ] as const) {
+      expect(routeIssueError(code)).toEqual({
+        kind: 'failure',
+        messageKey: `errors.${code}`,
+      });
+    }
+  });
+
+  // Cluster 5 (Finding 4) — infra faults (rollback happened, nothing issued) map
+  // to one generic "temporary problem — retry", never a raw code.
+  it('maps infra faults to the generic temporary-retry message', () => {
+    for (const code of ['pdf_render_failed', 'blob_upload_failed', 'overflow'] as const) {
+      expect(routeIssueError(code)).toEqual({
+        kind: 'failure',
+        messageKey: 'errors.temporary',
+      });
+    }
+  });
+
   it('an unrecognised but present code falls back to codeFallback with the raw code', () => {
+    // Zero-rate fail-closed codes stay on codeFallback (crafted-request-only —
+    // the form fail-closes on them before POST).
     expect(routeIssueError('membership_cannot_be_zero_rated')).toEqual({
       kind: 'failure',
       messageKey: 'errors.codeFallback',

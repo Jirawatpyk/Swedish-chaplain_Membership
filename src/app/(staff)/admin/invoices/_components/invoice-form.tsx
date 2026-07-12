@@ -291,11 +291,19 @@ export function CreateDraftForm({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         const code = (body as { error?: { code?: string } })?.error?.code;
-        toast.error(t('errors.create_failed'), {
-          description: code
-            ? t('errors.codeFallback', { code })
-            : t('errors.unknown'),
-        });
+        // Cluster 5 (Finding 3) — a freshly-imported member whose plan-year or
+        // invoice settings aren't seeded yet hits `plan_not_found` /
+        // `settings_missing` / `member_archived` / `member_not_found`. Look up
+        // dedicated, actionable copy by code; fall back to the raw
+        // "Error code: <code>" ONLY for genuinely unknown codes.
+        const dedicatedKey = code ? `errors.${code}` : null;
+        const description =
+          dedicatedKey && t.has(dedicatedKey)
+            ? t(dedicatedKey)
+            : code
+              ? t('errors.codeFallback', { code })
+              : t('errors.unknown');
+        toast.error(t('errors.create_failed'), { description });
         return;
       }
       const data = (await res.json()) as { invoice_id: string };

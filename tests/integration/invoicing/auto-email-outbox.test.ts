@@ -472,6 +472,117 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
     }
   }, 120_000);
 
+  it('(Cluster 5 / Finding 1) member with NO contact email → issue + pay return emailDispatch="skipped_no_email" and enqueue NO auto-email row', async () => {
+    const freshTenant = await createTestTenant('test-swecham');
+    try {
+      const seed = await seedTenantForIssuance(freshTenant, user);
+      const draftId = await insertDraft(
+        freshTenant,
+        user,
+        seed.memberId,
+        seed.planId,
+        seed.planYear,
+      );
+
+      // Imported-member snapshot: NO primary_contact_email. Auto-email stays ON
+      // (tenant setting), so the enqueue is SKIPPED — the exact silent gap
+      // Finding 1 makes observable via the returned dispatch outcome.
+      const noEmailIdentity: RecordPaymentDeps['memberIdentity'] = {
+        getForIssue: vi.fn(async (_tx, _t, memberId) => ({
+          memberId,
+          isActive: true,
+          isArchived: false,
+          memberTypeScope: 'company' as const,
+          registrationFeePaid: true,
+          registrationDate: '2026-01-01',
+          snapshot: {
+            legal_name: 'No-Email Co',
+            tax_id: '1234567890123',
+            address: 'Bangkok',
+            primary_contact_name: 'No Contact',
+            // An imported member with no email on file: the snapshot's email is
+            // empty. The issue helper trims '' → skip; record-payment
+            // truthiness-checks the pinned snapshot → skip. Both surface
+            // emailDispatch='skipped_no_email'.
+            primary_contact_email: '',
+            member_number: null,
+            member_number_display: null,
+          },
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      };
+
+      // --- Issue with no email → skipped_no_email, no invoice_issued row ---
+      const issueDeps: IssueInvoiceDeps = {
+        ...makeIssueDeps(freshTenant),
+        memberIdentity: noEmailIdentity,
+      };
+      const issueR = await issueInvoice(issueDeps, {
+        tenantId: freshTenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: null,
+        invoiceId: draftId,
+      });
+      expect(issueR.ok).toBe(true);
+      if (issueR.ok) expect(issueR.value.emailDispatch).toBe('skipped_no_email');
+
+      const afterIssue = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(
+          and(
+            eq(notificationsOutbox.tenantId, freshTenant.ctx.slug),
+            eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+          ),
+        );
+      expect(
+        afterIssue.find(
+          (r) =>
+            (r.contextData as Record<string, unknown>).event_type ===
+            'invoice_issued',
+        ),
+        'no invoice_issued auto-email row should be enqueued for a no-email member',
+      ).toBeUndefined();
+
+      // --- Pay (reads the pinned null-email snapshot) → skipped_no_email ---
+      const payDeps: RecordPaymentDeps = {
+        ...makePaymentDeps(freshTenant),
+        memberIdentity: noEmailIdentity,
+      };
+      const payR = await recordPayment(payDeps, {
+        tenantId: freshTenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: null,
+        invoiceId: draftId,
+        paymentMethod: 'bank_transfer',
+        paymentDate: '2026-04-20',
+        paymentReference: 'TXN-NOEMAIL',
+      });
+      expect(payR.ok).toBe(true);
+      if (payR.ok) expect(payR.value.emailDispatch).toBe('skipped_no_email');
+
+      const afterPay = await db
+        .select()
+        .from(notificationsOutbox)
+        .where(
+          and(
+            eq(notificationsOutbox.tenantId, freshTenant.ctx.slug),
+            eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+          ),
+        );
+      expect(
+        afterPay.find(
+          (r) =>
+            (r.contextData as Record<string, unknown>).event_type ===
+            'invoice_paid',
+        ),
+        'no invoice_paid auto-email row should be enqueued for a no-email member',
+      ).toBeUndefined();
+    } finally {
+      await freshTenant.cleanup().catch(() => {});
+    }
+  }, 120_000);
+
   it('(T106 dual-emit) dispatcher perm-fails F4 invoice_auto_email → emits BOTH email_dispatch_failed AND auto_email_delivery_failed', async () => {
     const freshTenant = await createTestTenant('test-swecham');
     // S2 — `vi.stubEnv` is preferred over manual `process.env` mutation:

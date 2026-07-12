@@ -269,13 +269,23 @@ export function IssueInvoiceForm({
       const okBody = (await res.json().catch(() => ({}))) as {
         bill_document_number_raw?: string | null;
         document_number?: string | null;
+        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+        email_dispatch?: string;
       };
       const number =
         (typeof okBody.bill_document_number_raw === 'string' &&
           okBody.bill_document_number_raw) ||
         (typeof okBody.document_number === 'string' && okBody.document_number) ||
         null;
-      toast.success(number ? t('successWithNumber', { number }) : t('success'));
+      // Cluster 5 (Finding 1) — the invoice was NOT emailed because the buyer
+      // has no contact email on file. Issuance still SUCCEEDED; append a
+      // non-blocking warning line so the admin knows to deliver it manually.
+      const noEmailWarning =
+        okBody.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
+      toast.success(
+        number ? t('successWithNumber', { number }) : t('success'),
+        noEmailWarning ? { description: noEmailWarning } : undefined,
+      );
       setTyped('');
       onClose();
       router.refresh();

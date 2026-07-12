@@ -179,7 +179,13 @@ export {
   issueInvoiceSchema,
   type IssueInvoiceInput,
   type IssueInvoiceError,
+  type IssueInvoiceSuccess,
 } from './application/use-cases/issue-invoice';
+
+// Cluster 5 (Finding 1) — observable auto-email dispatch outcome surfaced by
+// the issuance + payment use-cases so the admin toast can warn on a silent
+// "no email on file" skip.
+export type { EmailDispatchOutcome } from './application/email-dispatch-outcome';
 
 // 064 — one-shot draft→paid issuance for EVENT invoices (combined
 // tax-invoice/receipt; no intermediate issued state). TIN →
@@ -299,6 +305,7 @@ export {
   recordPaymentSchema,
   type RecordPaymentInput,
   type RecordPaymentError,
+  type RecordPaymentSuccess,
 } from './application/use-cases/record-payment';
 
 // T166-05 — async receipt PDF worker callback. Routed by the F4

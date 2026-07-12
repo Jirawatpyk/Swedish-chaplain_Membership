@@ -106,6 +106,7 @@ import { renderAndUploadPdf } from '../lib/render-and-upload';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { resolveInvoiceBuyerForIssue } from '../lib/resolve-invoice-buyer';
 import { enqueueInvoiceAutoEmail } from '../lib/enqueue-invoice-email';
+import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -253,10 +254,21 @@ export interface IssueInvoiceDeps {
   readonly taxAtPayment: TaxAtPaymentFlag;
 }
 
+/**
+ * Cluster 5 (Finding 1) — the issued invoice PLUS an observable auto-email
+ * dispatch outcome. `Invoice & { emailDispatch }` (not a wrapper object) so
+ * every existing consumer that reads the value structurally as an `Invoice`
+ * (routes, F8 bridges, tests) keeps working; only the callers that WANT the
+ * dispatch signal read the extra field.
+ */
+export type IssueInvoiceSuccess = Invoice & {
+  readonly emailDispatch: EmailDispatchOutcome;
+};
+
 export async function issueInvoice(
   deps: IssueInvoiceDeps,
   input: IssueInvoiceInput,
-): Promise<Result<Invoice, IssueInvoiceError>> {
+): Promise<Result<IssueInvoiceSuccess, IssueInvoiceError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   const now = deps.clock.nowIso();
 
@@ -806,13 +818,17 @@ export async function issueInvoice(
     //       so the auto-email carries the §87/3 PDPA transparency notice.
     const shouldAutoEmail =
       draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
+    // Cluster 5 (Finding 1) — observable dispatch outcome. `'disabled'` when
+    // auto-email is intentionally off (tenant default or per-invoice override);
+    // otherwise the helper reports 'sent' vs 'skipped_no_email'.
+    let emailDispatch: EmailDispatchOutcome = 'disabled';
     if (shouldAutoEmail) {
       // (A)+(B) live in the shared helper (wave-4 S15) — trim + skip-with-
       // warn+metric on an empty buyer email; otherwise ONE outbox row with
       // the non-member-event PDPA footer. An enqueue THROW still rolls the
       // whole issue tx back (the helper only swallows the empty-recipient
       // skip).
-      await enqueueInvoiceAutoEmail(deps.outbox, tx, {
+      emailDispatch = await enqueueInvoiceAutoEmail(deps.outbox, tx, {
         tenantId: input.tenantId,
         invoiceId,
         invoiceSubject: draft.invoiceSubject,
@@ -833,7 +849,9 @@ export async function issueInvoice(
     // wall-time on the dashboard.
     invoicingMetrics.issueCount();
     invoicingMetrics.issueDurationMs(performance.now() - issueStartedAt);
-    return ok(issued);
+    // Cluster 5 (Finding 1) — thread the auto-email outcome alongside the
+    // issued invoice (subtype of `Invoice`, so no consumer breaks).
+    return ok({ ...issued, emailDispatch });
   });
   } catch (e) {
     // 065 L-3 — orphan-blob mitigation, ported from issueEventInvoiceAsPaid's
