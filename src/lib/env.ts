@@ -109,6 +109,12 @@ const schema = z.object({
   // Bootstrap (used only by scripts/seed-bootstrap-admin.ts)
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
 
+  // Member-facing support contact — the `mailto:` target on the portal's
+  // lapsed-membership + invoice cards. Defaulted to the SweCham address so a
+  // single-tenant deploy works out of the box; override per deployment
+  // (tenant-config-ready for multi-tenant onboarding). Not a secret.
+  SUPPORT_EMAIL: z.string().email().default('info@swecham.se'),
+
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
@@ -918,6 +924,9 @@ export const env = {
   log: {
     level: raw.LOG_LEVEL,
   },
+
+  // Member-facing support contact (mailto on portal lapsed/invoice cards).
+  supportEmail: raw.SUPPORT_EMAIL,
 
   // F2: Single-tenant deployment — constant resolved by
   // `src/lib/tenant-context.ts` for every request. Extended in F10

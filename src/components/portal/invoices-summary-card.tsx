@@ -25,6 +25,7 @@ import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
 import {
@@ -119,7 +120,7 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
             {t('notLinked')}
           </p>
           <a
-            href="mailto:info@swecham.se"
+            href={`mailto:${env.supportEmail}`}
             className={cn(
               buttonVariants({ variant: 'outline', size: 'sm' }),
               'min-h-11 px-3 self-start',

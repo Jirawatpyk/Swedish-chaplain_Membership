@@ -1,4 +1,5 @@
 import { getTranslations } from 'next-intl/server';
+import { env } from '@/lib/env';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
@@ -7,12 +8,11 @@ import { loadDashboardRenewalCycle } from './dashboard-reads';
 
 /**
  * Chamber support/contact address for the lapsed-membership reactivation
- * mailto. Mirrors the portal's existing contact-admin affordance
- * (`invoices-summary-card.tsx`, which uses the same address). There is no
- * dedicated support-email env today; this single-tenant (SweCham) constant
- * should become a tenant-config value when Chamber-OS onboards a second tenant.
+ * mailto. Single source of truth is `SUPPORT_EMAIL` (env, defaulted to the
+ * SweCham address) — the same value backs `invoices-summary-card.tsx`; override
+ * per deployment / tenant-config at multi-tenant onboarding.
  */
-const SUPPORT_CONTACT_EMAIL = 'info@swecham.se';
+const SUPPORT_CONTACT_EMAIL = env.supportEmail;
 
 /**
  * 057 portal redesign §4.1 — Membership stat card section.
