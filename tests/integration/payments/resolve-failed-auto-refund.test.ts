@@ -28,12 +28,14 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
 describe('resolveFailedAutoRefund — live Neon (CF-2)', () => {
   let tenantA: TestTenant;
+  let tenantB: TestTenant;
   let admin: TestUser;
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
     const pair = await createTwoTestTenants();
     tenantA = pair.a;
+    tenantB = pair.b;
   });
 
   // Seed the realistic pair a stale-invoice auto-refund failure leaves behind:
@@ -140,5 +142,33 @@ describe('resolveFailedAutoRefund — live Neon (CF-2)', () => {
     });
     expect(r3.ok).toBe(false);
     if (!r3.ok) expect(r3.error.code).toBe('no_failed_auto_refund');
+  });
+
+  it('S1: cross-tenant — tenant B deps against tenant A invoice refuse (no_failed_auto_refund)', async () => {
+    // Constitution Principle I clause 3 — DIRECT cross-tenant negative for the
+    // CF-2 use-case (not just the sibling repo read). Seed a REAL failed-auto-
+    // refund forensic under tenant A, then drive `resolveFailedAutoRefund` with
+    // tenant B's deps + tenant B's tenantId against tenant A's invoiceId. The
+    // forensic read runs under tenant B's RLS context + tenant_id filter, so
+    // tenant A's row is invisible → the use-case refuses (never emitting a
+    // reconcile for another tenant's invoice). If isolation were broken, this
+    // would return `reconciled` carrying tenant A's ids.
+    const invoiceId = randomUUID();
+    const paymentId = `pmt_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    const refundId = `re_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+    await seedFailureForensic(invoiceId, paymentId, refundId); // seeds under tenant A
+
+    const depsB = makeResolveFailedAutoRefundDeps(tenantB.ctx.slug);
+    const rB = await resolveFailedAutoRefund(depsB, {
+      tenantId: tenantB.ctx.slug,
+      invoiceId, // tenant A's invoice id, probed from tenant B
+      actorUserId: admin.userId,
+      requestId: 's1-cross-tenant',
+    });
+    expect(rB.ok).toBe(false);
+    if (!rB.ok) expect(rB.error.code).toBe('no_failed_auto_refund');
+
+    // And tenant B's refused call left NO reconcile row on tenant A's invoice.
+    expect(await countReconcileRows(invoiceId)).toBe(0);
   });
 });
