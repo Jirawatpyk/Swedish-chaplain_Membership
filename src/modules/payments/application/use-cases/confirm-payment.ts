@@ -1256,7 +1256,10 @@ async function confirmPaymentBody(
        * → Phase A re-runs against the still-`failed` row → same refund id →
        * this tx re-attempts cleanly). */
     } catch (phaseBErr) {
-      paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
+      // Distinct late-charge (#8) counter — mirrors the distinct SUCCESS-path
+      // metric `lateChargeAutoRefundedCount` so the two Phase B failure paths
+      // (stale-invoice vs late-charge) are not conflated on SRE dashboards.
+      paymentsMetrics.confirmPaymentLateChargePhaseBMarkFailed();
       deps.logger?.warn('confirm_payment.late_charge_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,

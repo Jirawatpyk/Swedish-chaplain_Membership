@@ -45,6 +45,7 @@ import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
 import { ok } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { confirmPayment, failPayment } from '@/modules/payments';
 import { processRefundUpdated } from '@/modules/payments/application/use-cases/process-refund-updated';
 import { systemClock } from '@/modules/payments/application/ports/clock-port';
@@ -371,7 +372,7 @@ describe('confirmPayment failed→succeeded late-charge reconcile — live Neon 
         processorRefundId,
         chargeId: seed.chargeId,
         refundStatus,
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorEnv: 'test',
       },
     );

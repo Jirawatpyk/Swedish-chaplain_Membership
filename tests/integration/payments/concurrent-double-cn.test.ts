@@ -379,7 +379,7 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
         processorRefundId: reId,
         chargeId: 'ch_x',
         refundStatus: 'succeeded',
-        amountSatang: REFUND_AMOUNT,
+        amountSatang: asSatang(REFUND_AMOUNT),
         processorEnv: 'test',
       }),
     ]);
@@ -522,7 +522,7 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
       processorRefundId: reId,
       chargeId: 'ch_x',
       refundStatus: 'succeeded',
-      amountSatang: REFUND_AMOUNT,
+      amountSatang: asSatang(REFUND_AMOUNT),
       processorEnv: 'test',
     });
 

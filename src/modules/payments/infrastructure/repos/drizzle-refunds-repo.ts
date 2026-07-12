@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -318,6 +318,13 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
             sql`${refunds.initiatedAt} < ${cutoff.toISOString()}`,
           ),
         )
+        // A.14 fairness — oldest-first so the LIMIT/row-cap can never
+        // permanently starve a refund past the batch boundary (the sweep's
+        // MAX_STALE_REFUNDS_PER_SWEEP=50 slice + this repo's LIMIT 100 both
+        // take a PREFIX of the ordered set; without ORDER BY the prefix is
+        // Postgres-arbitrary, so a stuck row could sit past position 50 every
+        // run). Oldest stuck refunds are also the most urgent to reconcile.
+        .orderBy(asc(refunds.initiatedAt))
         .limit(100); // bounded sweep — repeat call drains the rest
       // Surface cap-hit so ops can manually re-trigger via
       // `?olderThanHours=N` for faster drain when a real outage

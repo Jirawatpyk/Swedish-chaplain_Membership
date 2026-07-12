@@ -66,6 +66,7 @@ import { retentionFor } from '../ports/audit-port';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { paymentsMetrics } from '@/lib/metrics';
+import type { Satang } from '@/lib/money';
 
 const OOB_RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
 
@@ -80,8 +81,12 @@ export interface ProcessRefundUpdatedInput {
   readonly chargeId: string | null;
   /** Projected Stripe Refund `status` (`pending|succeeded|failed|canceled|requires_action`). */
   readonly refundStatus: string | null;
-  /** Refund amount in satang (verifier projection); OOB audit + metric only. */
-  readonly amountSatang: bigint;
+  /**
+   * Refund amount in satang (verifier projection); OOB audit + metric only.
+   * Branded `Satang` to keep money-type discipline uniform across F5 even
+   * though this value is forensic-only (never arithmetic-folded here).
+   */
+  readonly amountSatang: Satang;
   /** `event.livemode` → env label for the OOB per-env counter. */
   readonly processorEnv: 'test' | 'live';
 }
@@ -290,6 +295,19 @@ export async function processRefundUpdated(
           // Shared finaliser in WEBHOOK mode (omit `paymentNextStatus`):
           // idempotent F4 CN + refund flip (expectedCurrentStatus guard) +
           // SB-1 self-lock/aggregate/recovery of the payment.
+          //
+          // INTENT (do NOT "optimise" the lock-hold away): this refund row is
+          // held under `FOR NO KEY UPDATE` (locked above) for the FULL duration
+          // of `finalizeSucceededRefund`, INCLUDING the external F4 credit-note
+          // bridge call (its own tx: PDF render + Blob + §87 sequence). Holding
+          // the lock across the CN issuance is DELIBERATE — it serialises
+          // duplicate `charge.refund.updated` deliveries on the same `re_…` so
+          // exactly one CN is minted (the CN bridge is also idempotent per
+          // `(tenant, source_refund_id)`, but the lock is the first line). It is
+          // NOT a deadlock risk: the lock strength is `FOR NO KEY UPDATE` (A.18),
+          // which permits the CN insert's `FOR KEY SHARE` FK check on this row
+          // from the separate bridge connection; and refunds↔credit_notes are
+          // DISJOINT tables so no lock-ordering cycle exists.
           const finalized = await finalizeSucceededRefund(deps, tx, {
             refundId: refund.id,
             tenantId: input.tenantId,

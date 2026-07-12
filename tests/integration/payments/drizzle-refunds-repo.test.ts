@@ -602,4 +602,58 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     expect(stillA).not.toBeNull();
     expect(stillA?.id).toBe(refundId);
   });
+
+  // ===========================================================================
+  // A.14 fairness — `listPendingOlderThan` returns oldest-first so the sweep's
+  // row-cap (MAX_STALE_REFUNDS_PER_SWEEP) + this repo's LIMIT can never
+  // permanently starve a stuck refund past the batch boundary. Placed last so
+  // these fresh inserts do not perturb the cumulative-partition assertions in
+  // the earlier aggregates test (which ran first by declaration order).
+  // ===========================================================================
+
+  it('A.14: listPendingOlderThan returns rows oldest-first (initiatedAt ASC), independent of insertion order', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const base = Date.now();
+    // Three distinct initiatedAt values in the past, INSERTED out of
+    // chronological order to prove the ORDER BY (not insertion order) drives
+    // the result.
+    const oldest = new Date(base - 3 * 60 * 60 * 1000);
+    const middle = new Date(base - 2 * 60 * 60 * 1000);
+    const newest = new Date(base - 1 * 60 * 60 * 1000);
+    const idOldest = makeRefundUlid();
+    const idMiddle = makeRefundUlid();
+    const idNewest = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      // Scrambled insertion order: middle → newest → oldest.
+      for (const [id, initiatedAt] of [
+        [idMiddle, middle],
+        [idNewest, newest],
+        [idOldest, oldest],
+      ] as const) {
+        await repo.insert(tx, {
+          id,
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(5_000n),
+          reason: 'a14-order',
+          status: 'pending',
+          processorRefundId: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-a14-order',
+          initiatedAt,
+        });
+      }
+
+      // All three past rows are `< cutoff`. Filter the (globally-ordered)
+      // result to just this test's three ids — their relative order must be
+      // oldest-first regardless of the other pending rows in the partition.
+      const rows = await repo.listPendingOlderThan(tx, tenantA.ctx.slug, new Date(base));
+      const mine = rows
+        .filter((r) => [idOldest, idMiddle, idNewest].includes(r.id))
+        .map((r) => r.id);
+      expect(mine).toEqual([idOldest, idMiddle, idNewest]);
+    });
+  });
 });

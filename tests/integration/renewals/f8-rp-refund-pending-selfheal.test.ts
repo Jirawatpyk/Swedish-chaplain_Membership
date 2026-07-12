@@ -412,7 +412,7 @@ describe('F8-RP refund_pending → settle → reconcile self-heal — live Neon 
         processorRefundId: h.reId,
         chargeId: 'ch_x',
         refundStatus: 'succeeded',
-        amountSatang: INVOICE_TOTAL,
+        amountSatang: asSatang(INVOICE_TOTAL),
         processorEnv: 'test',
       },
     );

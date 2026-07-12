@@ -51,6 +51,7 @@ import { processChargeRefunded } from './process-charge-refunded';
 import { processRefundUpdated } from './process-refund-updated';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { paymentsMetrics } from '@/lib/metrics';
+import { asSatang } from '@/lib/money';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 
@@ -697,7 +698,10 @@ async function processWebhookEventBody(
           processorRefundId: dataObject.id,
           chargeId: dataObject.latestChargeId ?? null,
           refundStatus: dataObject.refundStatus ?? null,
-          amountSatang: dataObject.amountSatang ?? 0n,
+          // Branded fallback — ProcessRefundUpdatedInput.amountSatang is
+          // `Satang`; the projection-failed case yields `asSatang(0n)`
+          // (runtime-identical to `0n`, forensic-only value).
+          amountSatang: dataObject.amountSatang ?? asSatang(0n),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
            * livemode value at a time. Cross-livemode coverage lives in the
            * contract tests for /api/webhooks/stripe. */

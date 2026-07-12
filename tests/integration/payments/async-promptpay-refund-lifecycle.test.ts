@@ -421,7 +421,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       processorRefundId: reId,
       chargeId: 'ch_x',
       refundStatus: 'succeeded',
-      amountSatang: REFUND_AMOUNT,
+      amountSatang: asSatang(REFUND_AMOUNT),
       processorEnv: 'test',
     });
     expect(settle.ok).toBe(true);
@@ -472,7 +472,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       processorRefundId: reId,
       chargeId: 'ch_x',
       refundStatus: 'failed',
-      amountSatang: REFUND_AMOUNT,
+      amountSatang: asSatang(REFUND_AMOUNT),
       processorEnv: 'test',
     });
     expect(settle.ok).toBe(true);

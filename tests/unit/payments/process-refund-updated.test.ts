@@ -130,7 +130,7 @@ function makeInput(
     processorRefundId: 're_test_1',
     chargeId: 'ch_test_1',
     refundStatus: 'succeeded',
-    amountSatang: 50_000n,
+    amountSatang: asSatang(50_000n),
     processorEnv: 'test',
     ...partial,
   };

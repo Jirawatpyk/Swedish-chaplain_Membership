@@ -45,6 +45,7 @@ import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
 import { ok } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { confirmPayment } from '@/modules/payments';
 import { processRefundUpdated } from '@/modules/payments/application/use-cases/process-refund-updated';
 import { systemClock } from '@/modules/payments/application/ports/clock-port';
@@ -338,7 +339,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
         processorRefundId,
         chargeId: 'ch_test_stale',
         refundStatus,
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorEnv: 'test',
       },
     );

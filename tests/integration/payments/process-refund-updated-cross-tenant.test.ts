@@ -239,7 +239,7 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
       processorRefundId: reA,
       chargeId: 'ch_x',
       refundStatus: 'succeeded',
-      amountSatang: REFUND_AMOUNT,
+      amountSatang: asSatang(REFUND_AMOUNT),
       processorEnv: 'test',
     });
 
@@ -298,7 +298,7 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
       processorRefundId: reA,
       chargeId: 'ch_x',
       refundStatus: 'failed',
-      amountSatang: REFUND_AMOUNT,
+      amountSatang: asSatang(REFUND_AMOUNT),
       processorEnv: 'test',
     });
 

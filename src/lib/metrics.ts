@@ -1143,6 +1143,25 @@ export const paymentsMetrics = {
   },
 
   /**
+   * A.15 (#8 late-charge) — fires when the failed→succeeded late-charge
+   * reconcile's Phase B catch swallows (the attachAutoRefundMarkerOnFailed +
+   * audit + markProcessed tx threw AFTER the Stripe refund committed).
+   * DISTINCT from `confirmPaymentStaleRefundPhaseBMarkFailed` (the Step-3
+   * stale-invoice variant) so SRE can tell the two Phase B failure paths
+   * apart — the SUCCESS-path counter `lateChargeAutoRefundedCount` is already
+   * distinct, so this makes the FAILURE side symmetric. Recovery is automatic
+   * via Stripe retry idempotency; the structured log key
+   * `confirm_payment.late_charge_phase_b_mark_failed` already distinguishes
+   * the path. Alert on >0 over 1h.
+   */
+  confirmPaymentLateChargePhaseBMarkFailed(): void {
+    counter(
+      'payments_confirm_payment_late_charge_phase_b_mark_failed_total',
+      'Late-charge (#8) Phase B mark throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
    * F5R3 CR-7 (2026-05-16) — fires inside `issueRefund`'s
    * finaliseFailedRefund double-fault catch. Money already moved
    * (Stripe + F4 CN succeeded), local row stuck pending, sweep cron
