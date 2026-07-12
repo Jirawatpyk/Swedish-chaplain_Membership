@@ -4,7 +4,7 @@
 **Severity**: HIGH (financial reconciliation drift)
 **Owner**: Chamber-OS maintainer + tenant admin (joint resolution)
 **Source spec**: F5 (`specs/009-online-payment/spec.md` Q2 / FR-011 / FR-011a)
-**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4))
+**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action)
 
 ---
 
@@ -50,6 +50,14 @@ A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) i
 
 - **Expect up to one audit row per delivered webhook event** for the same refund. **Deduplicate on `processor_refund_id`** when counting distinct OOB refunds — the same group-by-`processor_refund_id` convention the webhook dispatcher already mandates. Two `out_of_band_refund_detected` rows with the same `processor_refund_id` are ONE incident, not two.
 - **The paging metric `out_of_band_refund_rejected_total` is single-owner** (emitted only by the `charge.refunded` handler, the universal detector that fires on every refund). So the metric counts each refund **once** and is NOT doubled for async refunds, even though the audit may appear as ≥1 row.
+
+### 1.5 Failed stale-invoice auto-refund — resolve/acknowledge after reconciliation (CF-2)
+
+When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(failed|canceled)` — the money did NOT reach the customer while the payment reads `auto_refunded`), `processRefundUpdated` emits the 10-year forensic `auto_refund_failed_needs_manual_reconcile` and pages ops. This is the genuine give-up/failed reconcile item referenced in § 1.1 (it is NOT a marker guard-miss). The admin invoice detail page shows a destructive `AutoRefundFailedAlert` and the member's void banner reads "being reconciled".
+
+- **Reconcile the money out-of-band first** (issue a manual F4 credit note per § 2.3 Option A, or refund via the Stripe Dashboard), exactly as for any stuck refund.
+- **Then close the loop** — on `/admin/invoices/<id>`, click **"Mark as reconciled"** on the failed-auto-refund alert (confirm dialog). This appends the append-only `auto_refund_reconciled` event (10y) via `POST /api/refunds/resolve-auto-refund-failure` (admin-only). It is **idempotent** (a second click is a benign no-op) and **refuses** when no failure forensic exists.
+- **Effect**: `findStaleInvoiceAutoRefund.failed` becomes failure-AND-NOT-reconciled, so the admin alert clears and the member banner reverts to the (now-true) "refunded" copy. The forensic + the reconcile event both remain in the append-only audit log for the 10-year trail — the acknowledgement does NOT erase the failure record.
 
 ---
 

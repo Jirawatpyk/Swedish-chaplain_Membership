@@ -29,14 +29,14 @@ ledger/go-live-readiness → reliability-guardian consolidation). 25 items.
 | OP-2 | **Enable Stripe `charge.refund.updated` delivery** — **after** the `processRefundUpdated` handler is deployed | 🔴 | Ordering-sensitive: enabling too early swallows events on the `acknowledged_only` 200-ack branch; never enabling hangs every async refund forever. Watch `payments_refund_pending_awaiting_processor_total` (sustained > 0 = subscription broken). |
 | OP-3 | **`pnpm seed:system-actors:prod`** (webhook actors f5001/f5002) if prod was wiped | 🔴 | Prod was re-wiped 07-10, so this almost certainly applies. Run **before** resuming Stripe traffic, else every refund webhook FK-throws and payments stick pending. See `reference_prod_wipe_breaks_system_actors`. |
 | OP-4 | cron-job.org `sweep-stale-pending-refunds` per-request timeout **≥60s** | 🟡 | Budget = 35s internal + ≤8s Stripe retrieve + finalise headroom. A shorter timeout aborts mid-finalise, but the sweep is idempotent + a backstop, so a bad run self-corrects next pass. Confirm, don't block. |
-| OP-5 | Migrations 0240–0243 auto-apply on deploy; **renumber 0243** if a `0243+` migration lands on `main` first | 🟡 | Only a NIT renumber (+journal offset) needed on a collision — verify at merge. |
+| OP-5 | Migrations 0240–0244 auto-apply on deploy; **renumber 0244** if a `0244+` migration lands on `main` first | 🟡 | Only a NIT renumber (+journal offset) needed on a collision — verify at merge. 0244 (`auto_refund_reconciled` enum add) is an idempotent `ADD VALUE`, so a re-run/renumber is safe. |
 
 ## 3. Closed for go-live (code-fixable — done / in this branch)
 
 | # | Item | Status |
 |---|------|--------|
 | CF-1 | **Guard-miss sub-case (i)** — succeeded/non-`failed` row stamped no marker → false OOB on both webhooks | ✅ CLOSED — `attachAutoRefundMarkerOnFailed` generalised to `attachAutoRefundMarkerIfAbsent` (guards on `auto_refund_processor_refund_id IS NULL` only), called in the else branch; runbook §1.1 → CLOSED. |
-| CF-2 | **Failed-auto-refund forensic has no resolve/acknowledge event** — admin alert + member "reconciling" copy persist forever after out-of-band reconciliation | ⏳ in progress — append-only `auto_refund_reconciled` event (10y) + an admin acknowledge action; `findStaleInvoiceAutoRefund.failed` returns false once a reconcile event exists. Money-safe today (forensic still pages) — a forensic/UX-closure gap, not a data risk. |
+| CF-2 | **Failed-auto-refund forensic has no resolve/acknowledge event** — admin alert + member "reconciling" copy persist forever after out-of-band reconciliation | ✅ CLOSED — append-only `auto_refund_reconciled` event (10y, migration 0244) + admin-only `resolveFailedAutoRefund` use-case + `POST /api/refunds/resolve-auto-refund-failure` (RBAC `refund:write`) + a "Mark as reconciled" confirm action on `AutoRefundFailedAlert`. `findStaleInvoiceAutoRefund.failed` is now failure-AND-NOT-reconciled, so once the admin acknowledges, the alert clears + the member banner reverts to the "refunded" copy. Idempotent; refuses when no failure forensic exists. Runbook `out-of-band-refund.md` §1.1 → note the resolve action. |
 | CF-3 | a11y/UX polish nits — refund-dialog `?refund=1` URL strip, SV en-dash | ⏳ in progress — cosmetic; the renewals semantic-token migration + T9a chip labels are **pre-existing PR #181** items, not #185's. |
 | CF-4 | ~18 ledger MINOR cosmetic items (stale comments, doc drift) | ⏳ in progress — all triaged SAFE by the whole-branch review; e.g. `6x6`→`7x7` matrix comment. |
 
@@ -70,7 +70,7 @@ None blocks a safe go-live. Revisit criteria noted where relevant.
 
 ## Bottom line for go-live
 
-- **Code**: the 4 code-fixable deferrals are being closed on this branch (CF-1 done; CF-2/3/4 in progress). Nothing in §4/§5 needs code before launch.
+- **Code**: the 4 code-fixable deferrals are being closed on this branch (CF-1 + CF-2 done; CF-3/4 in progress). Nothing in §4/§5 needs code before launch.
 - **Merge gate (§1)**: MG-1 (≥2 reviewers + security sign-off) and MG-2 (CI coverage) are the real blockers — both human/CI, not code.
 - **Ship-day (§2)**: OP-1, OP-2, OP-3 are 🔴 must-do at deploy in the stated order. OP-4/OP-5 are confirm-not-block.
 - **Known limitations (§4/§5)**: documented + accepted; none blocks a safe launch. Revisit KL-1 (B.1) and KL-5 (sweep fairness) if volume/tenancy grows.
