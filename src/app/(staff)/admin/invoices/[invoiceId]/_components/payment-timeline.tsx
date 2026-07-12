@@ -100,7 +100,8 @@ function isSystemActor(actorUserId: string): boolean {
 /**
  * F5R1-S8 — record-driven event visual table. The previous two
  * switch statements (`eventIcon` + `eventIconClass`) duplicated the
- * 8-value SyntheticEventType key list across ~40 lines. The
+ * 10-value SyntheticEventType key list across ~40 lines (grown from 8
+ * by the F5 refund-lifecycle `auto_refunded` + `refund_pending` events). The
  * `Record<SyntheticEventType, ...>` shape forces compile-time
  * exhaustiveness: if a new SyntheticEventType variant is added, the
  * Record literal must list it OR the file fails to compile.

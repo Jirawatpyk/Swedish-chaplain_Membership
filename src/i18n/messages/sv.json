@@ -3219,8 +3219,8 @@
         "pendingNoticeTitle": "Väntar på ditt beslut",
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
-        "refundSettlingNoticeTitle": "Avslagen – återbetalning behandlas",
-        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas – ingen åtgärd behövs.",
+        "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
+        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas — ingen åtgärd behövs.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Godkänn återaktivering",
@@ -3231,7 +3231,7 @@
             "submitting": "Godkänner…",
             "successToast": "Återaktivering godkänd – medlemskapet är nu aktivt.",
             "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen.",
-            "errorRefundInProgressToast": "Den här återaktiveringen har redan avslagits – en återbetalning behandlas och den kan därför inte längre godkännas."
+            "errorRefundInProgressToast": "Den här återaktiveringen har redan avslagits — en återbetalning behandlas och den kan därför inte längre godkännas."
           },
           "reject": {
             "button": "Avslå och återbetala",
