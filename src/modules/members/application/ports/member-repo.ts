@@ -270,8 +270,9 @@ export interface MemberRepo {
   /**
    * C6 round-10 ui-design-specialist — list every pending portal
    * invitation for the member's contacts. "Pending" =
-   * `invitations.consumed_at IS NULL AND invitations.expires_at >
-   * NOW()`. Cross-schema query joining auth `invitations` →
+   * `invitations.consumed_at IS NULL` (an UNCONSUMED invitation,
+   * whether still live OR expired-unaccepted — Cluster 3 re-invite fix,
+   * 2026-07-12). Cross-schema query joining auth `invitations` →
    * members `contacts` via `contacts.linked_user_id = invitations.user_id`.
    *
    * Tenant scope: `contacts.tenant_id` is filtered explicitly in the

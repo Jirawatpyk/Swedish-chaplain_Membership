@@ -1068,6 +1068,8 @@
           "rowLabel": "Inbjuden {date}",
           "expiresAt": "Går ut {date}",
           "expiresInDays": "{days, plural, =0 {Går ut idag} one {Går ut om # dag} other {Går ut om # dagar}}",
+          "expired": "Inbjudan har gått ut",
+          "expiredAria": "Portalinbjudan gick ut utan att accepteras — skicka igen för att återställa",
           "empty": "Inga väntande inbjudningar.",
           "loadError": "Kunde inte läsa in väntande inbjudningar."
         },

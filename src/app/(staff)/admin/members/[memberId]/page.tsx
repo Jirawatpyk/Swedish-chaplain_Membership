@@ -285,9 +285,17 @@ type PendingInvitation = {
    * snapshot-style consistency requirement.
    */
   readonly daysUntilExpiry: number;
+  /**
+   * Cluster 3 (2026-07-12) — true when `expiresAt <= now` at page-render
+   * time. An expired-but-unconsumed invitation now surfaces (the repo
+   * dropped its `expires_at > NOW()` filter) so the UI can show an
+   * "Invitation expired" badge + a re-invite affordance instead of a
+   * false "Portal linked" dead-end.
+   */
+  readonly expired: boolean;
 };
 
-function ContactBlock({
+export function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
@@ -359,8 +367,9 @@ function ContactBlock({
             )}
             {/* C6 round-10 ui-design-specialist — inline pending-
                 invitation badge replaces "Portal linked" when the
-                user row exists but `consumed_at` is NULL. */}
-            {pendingInvitation && daysUntilExpiry !== null && (
+                user row exists but `consumed_at` is NULL. Cluster 3
+                (2026-07-12) splits this into a live vs expired variant. */}
+            {pendingInvitation && !pendingInvitation.expired && daysUntilExpiry !== null && (
               <Badge
                 variant="outline"
                 className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
@@ -383,6 +392,23 @@ function ContactBlock({
                     days: daysUntilExpiry,
                   })}
                 </span>
+              </Badge>
+            )}
+            {/* Cluster 3 (2026-07-12) — an invitation that expired
+                unaccepted (still consumed_at IS NULL, past expires_at).
+                Destructive styling signals the dead-end; the sibling
+                "Re-send invitation" button (below) is the recovery. */}
+            {pendingInvitation && pendingInvitation.expired && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"
+                aria-label={t('pendingInvitations.expiredAria')}
+              >
+                <MailWarningIcon
+                  aria-hidden="true"
+                  className="size-3"
+                />
+                <span>{t('pendingInvitations.expired')}</span>
               </Badge>
             )}
             {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
@@ -415,13 +441,18 @@ function ContactBlock({
             {canInvite && (
               <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
             )}
-            {/* F3 spec § Edge Cases — "Re-send invite" button. Shown when the
-                invitation bounced AND the contact still has a linked (pending)
-                user. The button calls the resend-invite route, which re-issues
-                the invitation email (owner role) then clears the bounce flag. */}
-            {contact.inviteBouncedAt && contact.linkedUserId && (
-              <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
-            )}
+            {/* F3 spec § Edge Cases + Cluster 3 — "Re-send invitation" button.
+                Shown when the contact has a linked (pending) user AND the
+                invitation is in a dead-end: it either BOUNCED
+                (`inviteBouncedAt`) OR expired unaccepted
+                (`pendingInvitation.expired`). The route re-issues the
+                invitation email (owner role) for the still-pending user; the
+                in-tx `status==='pending'` re-check keeps it safe. */}
+            {contact.linkedUserId &&
+              (contact.inviteBouncedAt ||
+                (pendingInvitation && pendingInvitation.expired)) && (
+                <ResendBouncedInviteButton memberId={memberId} contactId={contact.contactId} />
+              )}
             {/* DV-11 — re-send verification email when the linked contact's
                 email is still unverified (e.g. mid email-change).
                 Fix 6: outer {canWrite && (…)} block already guards this
@@ -614,6 +645,9 @@ export default async function MemberDetailPage({
                     0,
                     Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
                   ),
+                  // Cluster 3 — expired-unaccepted invite (drives the
+                  // "Invitation expired" badge + re-invite affordance).
+                  expired: row.expiresAt.getTime() <= nowMs,
                 },
               ]),
             );

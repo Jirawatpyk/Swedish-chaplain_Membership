@@ -1068,6 +1068,8 @@
           "rowLabel": "Invited {date}",
           "expiresAt": "Expires {date}",
           "expiresInDays": "{days, plural, =0 {Expires today} one {Expires in # day} other {Expires in # days}}",
+          "expired": "Invitation expired",
+          "expiredAria": "Portal invitation expired unaccepted — re-send to recover",
           "empty": "No pending invitations.",
           "loadError": "Could not load pending invitations."
         },

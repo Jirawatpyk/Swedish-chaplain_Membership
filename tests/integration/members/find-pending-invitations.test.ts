@@ -5,7 +5,9 @@
  *
  * Covers the 4 minimal cases the inline-badge UI relies on:
  *   1. Happy path — a contact with a pending invitation surfaces.
- *   2. Expired invitation — `expires_at <= NOW()` filtered out.
+ *   2. Expired-unaccepted invitation — Cluster 3 (2026-07-12): now
+ *      SURFACES (`consumed_at IS NULL`, `expires_at` in the past) so the
+ *      UI can offer a re-invite instead of a false "Portal linked" badge.
  *   3. Consumed invitation — `consumed_at IS NOT NULL` filtered out.
  *   4. Removed contact — `contacts.removed_at IS NOT NULL` filtered out.
  *
@@ -194,12 +196,15 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
     expect(result.value[0]?.expiresAt).toBeInstanceOf(Date);
   });
 
-  it('expired invitation does NOT surface', async () => {
+  it('Cluster 3 — expired-unaccepted invitation DOES surface (consumed_at IS NULL)', async () => {
     const invitedUser = await createActiveTestUser('member');
-    const { memberId } = await seedMemberWithContact(tenant, {
+    const { memberId, contactId } = await seedMemberWithContact(tenant, {
       linkedUserId: invitedUser.userId,
     });
-    // 1 day past
+    // Expired 1 day ago, never consumed → the Cluster 3 re-invite fix now
+    // surfaces this so the member-detail UI can show "Invitation expired"
+    // + a re-invite affordance (was previously filtered out by
+    // `expires_at > NOW()`, which produced a dead-end "Portal linked").
     await seedInvitation(invitedUser.userId, adminUser.userId, {
       createdAt: new Date(Date.now() - 8 * 86_400_000),
       expiresAt: new Date(Date.now() - 86_400_000),
@@ -213,7 +218,10 @@ describe('findPendingInvitationsForMember (C6 round-10)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value).toHaveLength(0);
+    expect(result.value).toHaveLength(1);
+    expect(result.value[0]?.contactId).toBe(contactId);
+    // The past expiry is returned as-is; the caller derives `expired`.
+    expect(result.value[0]?.expiresAt.getTime()).toBeLessThan(Date.now());
   });
 
   it('consumed invitation does NOT surface', async () => {

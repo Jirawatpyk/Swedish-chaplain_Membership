@@ -6,7 +6,9 @@
  *   Phase 2 (chamber_app, runInTenant): clear bounced flag + audit.
  *
  * Covered:
- *   - guard paths (not_found / no_linked_user / not_bounced / already_active)
+ *   - guard paths (not_found / no_linked_user / already_active)
+ *   - Cluster 3 (2026-07-12): an expired-but-pending contact with NO
+ *     bounce flag re-sends (the `not_bounced` guard was removed)
  *   - Phase 1 error mapping (user_not_found / not_pending / reissue_failed)
  *   - happy path (reissue → clear → audit, returns {contactId, invitationId})
  *   - FAIL-SAFE: Phase 2 failure (clear OR audit) still returns ok because
@@ -153,15 +155,21 @@ describe('resendBouncedInvite — guard paths', () => {
     expect(deps.reissueInvitation.reissue).not.toHaveBeenCalled();
   });
 
-  it('returns not_eligible/not_bounced when inviteBouncedAt is null', async () => {
+  it('Cluster 3 — re-sends an EXPIRED-but-pending invite even with NO bounce flag', async () => {
+    // Regression guard for the Cluster 3 fix (2026-07-12): the old
+    // `inviteBouncedAt` requirement returned not_eligible/not_bounced here.
+    // An expired-unaccepted invitation (linked + still pending, but never
+    // bounced) is now a recoverable dead-end — the use-case must reissue.
     const deps = makeDeps({ inviteBouncedAt: null });
     const result = await resendBouncedInvite(deps, input);
-    expect(result.ok).toBe(false);
-    if (!result.ok && result.error.code === 'not_eligible') {
-      expect(result.error.reason).toBe('not_bounced');
-    } else {
-      throw new Error('expected not_eligible/not_bounced');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.invitationId).toBe('hash-of-plain-token');
     }
+    // Phase 1 mint runs; Phase 2 clear is a harmless no-op (flag already null).
+    expect(deps.reissueInvitation.reissue).toHaveBeenCalledTimes(1);
+    expect(deps.contactRepo.clearInviteBouncedInTx).toHaveBeenCalledTimes(1);
+    expect(deps.audit.recordInTx).toHaveBeenCalledTimes(1);
   });
 
   it('returns not_eligible/already_active when user is no longer pending', async () => {

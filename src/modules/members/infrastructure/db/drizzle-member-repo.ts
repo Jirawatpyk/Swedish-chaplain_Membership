@@ -10,7 +10,7 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, gt, ilike, inArray, isNull, or, sql, asc, type SQL } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, or, sql, asc, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -1247,8 +1247,17 @@ export const drizzleMemberRepo: MemberRepo = {
    * sorts by `expiresAt ASC` (soonest-to-expire first) since we can't
    * sort by `createdAt`.
    *
-   * "Pending" = `consumed_at IS NULL AND expires_at > NOW()`. LIMIT 50
-   * caps pathological cases.
+   * "Pending" = `consumed_at IS NULL` — an UNCONSUMED invitation,
+   * whether still live OR already expired-unaccepted. Cluster 3 fix
+   * (2026-07-12): an expired-but-never-accepted invite MUST surface so
+   * the member-detail page can show "Invitation expired" + a re-invite
+   * affordance instead of a false "Portal linked" badge. The
+   * `expires_at > NOW()` predicate was dropped; the caller derives an
+   * `expired` flag from `expiresAt` to pick the badge. With
+   * `orderBy(expiresAt ASC)` the caller's `new Map(rows.map(...))` keeps
+   * the LATEST-expiry unconsumed invitation per contact (last-write-wins),
+   * so a freshly re-issued invite supersedes the stale expired one.
+   * LIMIT 50 caps pathological cases.
    */
   async findPendingInvitationsForMember(ctx, memberId) {
     try {
@@ -1270,10 +1279,14 @@ export const drizzleMemberRepo: MemberRepo = {
             and(
               eq(contacts.memberId, memberId),
               isNull(contacts.removedAt),
+              // Cluster 3 (2026-07-12): NO `expires_at > NOW()` filter —
+              // an expired-but-unconsumed invite must surface so the UI
+              // can offer a re-invite instead of a dead-end "Portal linked".
               isNull(invitations.consumedAt),
-              gt(invitations.expiresAt, sql`NOW()`),
             ),
           )
+          // ASC so `new Map(rows.map(...))` keeps the latest-expiry
+          // unconsumed invitation per contact (last-write-wins).
           .orderBy(asc(invitations.expiresAt))
           .limit(50),
       );
