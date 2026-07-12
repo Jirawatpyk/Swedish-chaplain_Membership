@@ -131,3 +131,89 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
     expect(issueRefundMock).not.toHaveBeenCalled();
   });
 });
+
+describe('f5RefundBridge getRefundOutcomeForInvoice mapping (F8-RP follow-up)', () => {
+  const SETTLE_INPUT = {
+    tenantId: asTenantId('tenant-a'),
+    invoiceId: asInvoiceId('00000000-0000-0000-0000-0000000bbbb1'),
+    refundId: 'rfnd-target',
+  };
+  const refundRow = (over: Record<string, unknown>) => ({
+    refundId: 'rfnd-target',
+    paymentId: 'pay-1',
+    invoiceId: SETTLE_INPUT.invoiceId,
+    status: 'pending',
+    amountSatang: 10_000n,
+    reason: 'x',
+    initiatedAt: new Date(),
+    completedAt: null,
+    initiatorUserId: 'admin-1',
+    processorRefundId: 're_x',
+    failureReasonCode: null,
+    creditNoteId: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('settled succeeded → { succeeded, creditNoteId } (matched by refund id)', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({
+        payments: [],
+        refunds: [
+          refundRow({ refundId: 'rfnd-other', status: 'failed' }),
+          refundRow({ status: 'succeeded', creditNoteId: 'cn-settled' }),
+        ],
+      }),
+    );
+    const r = await f5RefundBridge.getRefundOutcomeForInvoice(SETTLE_INPUT);
+    expect(r.status).toBe('succeeded');
+    if (r.status === 'succeeded') expect(r.creditNoteId).toBe('cn-settled');
+  });
+
+  it('settled failed → { failed, failureReasonCode }', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({
+        payments: [],
+        refunds: [
+          refundRow({ status: 'failed', failureReasonCode: 'stripe_refund_failed' }),
+        ],
+      }),
+    );
+    const r = await f5RefundBridge.getRefundOutcomeForInvoice(SETTLE_INPUT);
+    expect(r.status).toBe('failed');
+    if (r.status === 'failed') {
+      expect(r.failureReasonCode).toBe('stripe_refund_failed');
+    }
+  });
+
+  it('still pending → { pending }', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({ payments: [], refunds: [refundRow({ status: 'pending' })] }),
+    );
+    const r = await f5RefundBridge.getRefundOutcomeForInvoice(SETTLE_INPUT);
+    expect(r.status).toBe('pending');
+  });
+
+  it('refund id absent from activity → { not_found }', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({
+        payments: [],
+        refunds: [refundRow({ refundId: 'rfnd-different', status: 'succeeded' })],
+      }),
+    );
+    const r = await f5RefundBridge.getRefundOutcomeForInvoice(SETTLE_INPUT);
+    expect(r.status).toBe('not_found');
+  });
+
+  it('activity load error → { lookup_failed, detail }', async () => {
+    loadActivityMock.mockResolvedValue(
+      err({ kind: 'repo_unavailable', cause: new Error('boom') }),
+    );
+    const r = await f5RefundBridge.getRefundOutcomeForInvoice(SETTLE_INPUT);
+    expect(r.status).toBe('lookup_failed');
+    if (r.status === 'lookup_failed') expect(r.detail).toBe('repo_unavailable');
+  });
+});
