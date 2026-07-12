@@ -589,3 +589,90 @@ describe('stripeWebhookVerifier — refund envelope (PCI-1, A.10)', () => {
     expect(serialized).not.toContain('destination_details');
   });
 });
+
+// PR-A follow-up (2026-07-12) — modern `refund.updated` event. Stripe
+// DEPRECATED `charge.refund.updated` ("This event is only sent for refunds
+// with a corresponding charge; listen to `refund.updated` for updates on all
+// refunds instead"). PromptPay/async refunds whose Refund object carries no
+// legacy charge settle via `refund.updated`. The verifier's `project()` keys
+// the Refund allow-list on `data.object.object === 'refund'`, so ALL
+// refund-carrying events (`charge.refund.updated` | `refund.updated` |
+// `refund.failed`) share the SAME projection with ZERO per-event-type
+// branching — these tests pin the allow-list membership + the reuse invariant.
+describe('stripeWebhookVerifier — modern refund.updated event (async refund forward path)', () => {
+  it('subscribes refund.updated in F5_HANDLED_EVENT_TYPES_SET', () => {
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('refund.updated')).toBe(true);
+  });
+
+  it('refund.updated(succeeded): projects the SAME envelope as charge.refund.updated (allow-list only, no async-rail metadata leak)', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_updated_succeeded',
+      type: 'refund.updated',
+      api_version: '2025-09-30.basil',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_async_pp',
+          object: 'refund',
+          status: 'succeeded',
+          charge: 'ch_async_pp',
+          amount: 53_500,
+          // Async settlement-rail metadata — the reason `refund.updated`
+          // exists (charge-less async refunds). Only the allow-listed keys
+          // may reach the envelope; this whole subtree must be dropped.
+          destination_details: { promptpay: { reference: 'PP-XYZ-123' } },
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.type).toBe('refund.updated');
+    expect(envelope.dataObject.id).toBe('re_async_pp');
+    expect(envelope.dataObject.refundStatus).toBe('succeeded');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_async_pp');
+    expect(envelope.dataObject.amountSatang).toBe(53_500n);
+    // Same allow-list hygiene as the charge.refund.updated arm.
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    for (const k of Object.keys(envelope.dataObject)) {
+      expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund.updated envelope`).toBe(true);
+    }
+    const serialized = JSON.stringify(envelope, (_k, v) =>
+      typeof v === 'bigint' ? v.toString() : v,
+    );
+    expect(serialized).not.toContain('destination_details');
+    expect(serialized).not.toContain('PP-XYZ-123');
+  });
+
+  it('refund.updated(failed): projects refundStatus=failed (the failure transition arrives on refund.updated too)', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_updated_failed',
+      type: 'refund.updated',
+      api_version: '2025-09-30.basil',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_async_fail',
+          object: 'refund',
+          status: 'failed',
+          charge: 'ch_async_fail',
+          amount: 10_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.refundStatus).toBe('failed');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_async_fail');
+    expect(envelope.dataObject.amountSatang).toBe(10_000n);
+  });
+});

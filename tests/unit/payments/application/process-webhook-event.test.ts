@@ -466,6 +466,202 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.error.detail).toBe('Error');
   });
 
+  // PR-A follow-up (2026-07-12) — `refund.updated` routes to the SAME
+  // `processRefundUpdated` use-case as (deprecated) `charge.refund.updated`.
+  // Stripe: "`charge.refund.updated` is only sent for refunds with a
+  // corresponding charge; listen to `refund.updated` for updates on all
+  // refunds instead" — so a charge-less async (PromptPay) refund's terminal
+  // settlement arrives via `refund.updated`. These pin the routing +
+  // markProcessed semantics (identical to the charge.refund.updated arm).
+  it('refund.updated unknown refund + no auto-refund → processed (out_of_band; routes to processRefundUpdated, emits the redundant forensic audit)', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Routed to processRefundUpdated (NOT the default acknowledged_only branch).
+    expect(result.value.kind).toBe('processed');
+    expect('invoiceId' in result.value).toBe(false);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
+    );
+    expect(oobCall).toBeDefined();
+    expect(oobCall![1].payload.processor_refund_id).toBe('re_async_ru_1');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('refund.updated with an already-terminal refund → processed + forwards invoiceId', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_ru_terminal',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_ru_terminal',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'succeeded',
+      processorRefundId: 're_async_ru_2',
+      failureReasonCode: null,
+      creditNoteId: 'cn_prev',
+      initiatedAt: new Date(),
+      completedAt: new Date(),
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_2',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_2',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    if (result.value.kind === 'processed') {
+      expect(result.value.invoiceId).toBe('inv_ru_terminal');
+    }
+  });
+
+  it('refund.updated(failed) on a pending refund → reconciled_failed (routes to the failed branch, no CN)', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_ru_pending',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_ru_failed',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'pending',
+      processorRefundId: 're_async_ru_3',
+      failureReasonCode: null,
+      creditNoteId: null,
+      initiatedAt: new Date(),
+      completedAt: null,
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_3',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_3',
+        refundStatus: 'failed',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // NO credit note on a failed refund (no §86/4 receipt was reduced).
+    expect(deps.invoicingBridge.issueCreditNoteFromRefund).not.toHaveBeenCalled();
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(auditCalls.some((c) => c[1].eventType === 'refund_failed')).toBe(true);
+  });
+
+  it('refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, eventType=refund.updated)', async () => {
+    const deps = makeDeps();
+    rejectSecondTx(deps, new Error('neon reset'));
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_boom',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_boom',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.kind).toBe('dispatch_threw');
+    expect(result.error.eventType).toBe('refund.updated');
+    expect(result.error.detail).toBe('Error');
+  });
+
+  it('CROSS-EVENT idempotency: charge.refund.updated(succeeded) + refund.updated(succeeded) for the SAME refund → credit note issued exactly ONCE', async () => {
+    const deps = makeDeps();
+    const pendingRow = {
+      id: 'rfd_xevent',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_xevent',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'pending' as const,
+      processorRefundId: 're_xevent',
+      failureReasonCode: null,
+      creditNoteId: null,
+      initiatedAt: new Date(),
+      completedAt: null,
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    };
+    // Delivery 1 finds the row pending (finalises → 1 CN); delivery 2 finds it
+    // already terminal (the DB flip the 1st delivery committed) → no-op no CN.
+    const lock = deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>;
+    lock
+      .mockResolvedValueOnce(pendingRow)
+      .mockResolvedValueOnce({ ...pendingRow, status: 'succeeded', creditNoteId: 'cn_webhook_1' });
+
+    const dataObject = {
+      id: 're_xevent',
+      type: 'refund' as const,
+      latestChargeId: 'ch_xevent',
+      refundStatus: 'succeeded',
+      amountSatang: asSatang(50_000n),
+    };
+    // Different event ids (Stripe delivers the two channels as distinct events).
+    const first = await processWebhookEvent(
+      deps,
+      makeInput(makeEvent({ id: 'evt_charge_refund_updated', type: 'charge.refund.updated', dataObject })),
+    );
+    const second = await processWebhookEvent(
+      deps,
+      makeInput(makeEvent({ id: 'evt_refund_updated', type: 'refund.updated', dataObject })),
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    // BOTH deliveries route to processRefundUpdated (2nd is NOT the default
+    // acknowledged_only branch) and both forward the invoice id.
+    expect(first.value.kind).toBe('processed');
+    expect(second.value.kind).toBe('processed');
+    if (second.value.kind === 'processed') {
+      expect(second.value.invoiceId).toBe('inv_xevent');
+    }
+    // Exactly ONE credit note across BOTH deliveries: the finaliser's
+    // expectedCurrentStatus='pending' guard makes the 2nd (terminal-row)
+    // delivery an already_finalized no-op, and the F4 CN is idempotent per
+    // (tenant, source_refund_id).
+    expect(deps.invoicingBridge.issueCreditNoteFromRefund).toHaveBeenCalledTimes(1);
+    // markProcessed is per-event-id → both events acknowledged.
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(2);
+  });
+
   it('charge.dispute.created — emits dispute_created audit', async () => {
     const deps = makeDeps();
     const event = makeEvent({
