@@ -13,10 +13,14 @@
  *   the source of truth for programmatic clients (contract tests,
  *   future client-side sort/filter).
  *
- * RBAC:
- *   - `admin`   — list + all quick actions (view, record payment, issue CN).
- *   - `manager` — list only; mutating actions rendered disabled with a
- *     tooltip explaining the role constraint.
+ * RBAC (`canMutate = role === 'admin'`):
+ *   - `admin`   — list + all quick actions (view, record payment, issue CN),
+ *     plus the "New invoice" create affordances.
+ *   - `manager` — list only. Per-row mutating actions (record payment / void /
+ *     issue CN) render DISABLED with a role-constraint tooltip
+ *     (`ManagerDisabledAction`). The "New invoice" create affordances (the
+ *     header CTA and the empty-state CTA) are HIDDEN rather than disabled —
+ *     a create flow has no existing row to anchor a per-action tooltip on.
  *   - `member`  — never reaches this surface (admin route).
  */
 import Link from 'next/link';

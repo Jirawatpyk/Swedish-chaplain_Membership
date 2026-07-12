@@ -13,12 +13,19 @@ export interface MemberIdentityView {
   readonly isArchived: boolean;
   readonly snapshot: MemberIdentitySnapshot;
   /**
-   * The member's plan `memberTypeScope` (S1-P1-16). `'company'` members MUST
-   * carry a tax_id to be issued a Thai tax invoice (FR-009a / Revenue Code §86);
-   * person tiers (`'individual'`) and mixed `'both'`-scope plans are exempt.
-   * `null` when the plan row is missing (defensive — treated as not-a-company so
-   * issue is never blocked on a data gap). The gate fires ONLY on an explicit
-   * `'company'` scope, so `'both'`/`'individual'`/`null` all fail open.
+   * The member's plan `memberTypeScope` (S1-P1-16): `'company'` / `'individual'`
+   * / `'both'`, or `null` when the plan row is missing.
+   *
+   * NOTE — informational only; issuance is NOT gated on this. The former
+   * `tax_id_required` block (which refused a company tax invoice without a
+   * 13-digit TIN) was REMOVED per the auditor ruling of 2026-06-12: a §86/4
+   * membership tax invoice is issued regardless of whether the buyer carries a
+   * TIN (the buyer TIN is mandatory only for a VAT-registrant buyer's own
+   * input-VAT claim — the seller chamber is never at fault), so the PDF simply
+   * omits the TIN line. See the doc-kind gate in `issue-invoice.ts` (the only
+   * TIN-based gate left is EVENT + no-TIN → §105 paid-issue path). This field
+   * is carried on the snapshot for reference/observability but no invoicing
+   * use-case reads it to block issuance.
    */
   readonly memberTypeScope: 'company' | 'individual' | 'both' | null;
   /**
