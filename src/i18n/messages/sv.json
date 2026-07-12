@@ -2114,9 +2114,9 @@
         },
         "errors": {
           "create_failed": "Kunde inte skapa utkast",
-          "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret under Planer innan du skapar fakturan.",
+          "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret under Paket innan du skapar fakturan.",
           "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem först.",
-          "member_archived": "Den här medlemmen är arkiverad och kan inte faktureras — återställ medlemmen först.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen."
@@ -2345,7 +2345,7 @@
           "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du utfärdar.",
-          "member_archived": "Den här medlemmen är arkiverad och kan inte faktureras — återställ medlemmen först.",
+          "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
           "no_buyer_snapshot": "Det här utkastet saknar köparuppgifter — ta bort det och skapa ett nytt med köparen ifylld.",
           "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",

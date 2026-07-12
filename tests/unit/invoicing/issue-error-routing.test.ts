@@ -49,8 +49,15 @@ describe('routeIssueError (FR-032)', () => {
 
   // Cluster 5 (Finding 4) — infra faults (rollback happened, nothing issued) map
   // to one generic "temporary problem — retry", never a raw code.
+  // `registration_lookup_failed` (064 S1 — transient event-registration re-read
+  // fault; retry helps) routes to the same transient copy, not a bare code.
   it('maps infra faults to the generic temporary-retry message', () => {
-    for (const code of ['pdf_render_failed', 'blob_upload_failed', 'overflow'] as const) {
+    for (const code of [
+      'pdf_render_failed',
+      'blob_upload_failed',
+      'overflow',
+      'registration_lookup_failed',
+    ] as const) {
       expect(routeIssueError(code)).toEqual({
         kind: 'failure',
         messageKey: 'errors.temporary',

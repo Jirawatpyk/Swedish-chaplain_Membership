@@ -310,6 +310,54 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(deps.outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  // Cluster 5 (review) — the idempotent replay does NOT re-attempt the email, so
+  // it must REPORT the outcome the original attempt would have had. The derivation
+  // mirrors the fresh path's arm precedence EXACTLY. The suppress arm is the
+  // honesty fix: an F5-suppressed original must NOT replay as 'sent'.
+  it('idempotent replay derives emailDispatch honestly across the fresh-path arms', async () => {
+    // auto-email on, recipient present, NOT suppressed → 'sent'
+    {
+      const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings({ autoEmailEnabled: true }));
+      const r = await recordPayment(deps, input);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.emailDispatch).toBe('sent');
+    }
+    // auto-email on, recipient present, SUPPRESSED (F5) → 'disabled' (the fix; a
+    // suppressed original previously replayed as 'sent').
+    {
+      const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings({ autoEmailEnabled: true }));
+      const r = await recordPayment(deps, { ...input, suppressReceiptEmail: true });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
+    }
+    // auto-email OFF → 'disabled' regardless of recipient/suppress
+    {
+      const deps = makeDeps(true, makeIssuedInvoice({ status: 'paid' }), makeSettings({ autoEmailEnabled: false }));
+      const r = await recordPayment(deps, input);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
+    }
+    // auto-email on, NO recipient (empty-string sentinel) → 'skipped_no_email'
+    {
+      const noEmail = makeIssuedInvoice({
+        status: 'paid',
+        memberIdentitySnapshot: {
+          legal_name: 'Acme Co',
+          tax_id: 'snapshot-tax-at-issue',
+          address: '123 Road',
+          primary_contact_name: 'John',
+          primary_contact_email: '',
+          member_number: null,
+          member_number_display: null,
+        },
+      });
+      const deps = makeDeps(true, noEmail, makeSettings({ autoEmailEnabled: true }));
+      const r = await recordPayment(deps, input);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+    }
+  });
+
   it('invalid_status — draft', async () => {
     const draft = makeIssuedInvoice({ status: 'draft' });
     const deps = makeDeps(true, draft, makeSettings());

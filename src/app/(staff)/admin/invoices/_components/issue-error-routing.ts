@@ -55,12 +55,16 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
  * NOTHING was issued and no §87 number was burned). Surface a single generic
  * "temporary problem — nothing was issued, please try again" instead of a raw
  * code. `overflow` (§87 numbers exhausted) is grouped here so the admin retries
- * / contacts support rather than seeing a bare code.
+ * / contacts support rather than seeing a bare code. `registration_lookup_failed`
+ * (064 S1 — the issuance-time event-registration re-read faulted, a transient DB
+ * read fault where a retry helps) belongs here too: without it the §86/4 dialog
+ * dumped a raw "Error code: registration_lookup_failed" instead of the retry copy.
  */
 const TRANSIENT_RETRY_CODES: ReadonlySet<string> = new Set([
   'pdf_render_failed',
   'blob_upload_failed',
   'overflow',
+  'registration_lookup_failed',
 ]);
 
 export function routeIssueError(

@@ -325,16 +325,22 @@ export async function recordPayment(
     if (lockedStatus === 'paid') {
       const loaded = await deps.invoiceRepo.findByIdInTx(tx, invoiceId, input.tenantId);
       if (!loaded) return err({ code: 'invoice_not_found' });
-      // Cluster 5 (Finding 1) — a replay does NOT re-attempt the email (the
-      // original payment already owned that decision). Report the outcome the
-      // original attempt would have had so a double-submit toast stays truthful
-      // (and keeps warning on a no-email member): auto-email off → 'disabled';
-      // else present recipient → 'sent', absent → 'skipped_no_email'.
+      // Cluster 5 (Finding 1 + review) — a replay does NOT re-attempt the email
+      // (the original payment already owned that decision). Report the outcome
+      // the original attempt would have had so a double-submit toast stays
+      // truthful (and keeps warning on a no-email member). Mirrors the fresh
+      // path's arm precedence EXACTLY: auto-email off → 'disabled'; else no
+      // recipient → 'skipped_no_email'; else F5-suppressed → 'disabled'; else
+      // → 'sent'. Without the suppress arm a suppressed original replayed as
+      // 'sent' (dishonest). Unreachable via the admin pay route today (it never
+      // sets suppressReceiptEmail) but honest for any future caller.
       const replayEmailDispatch: EmailDispatchOutcome = !settings.autoEmailEnabled
         ? 'disabled'
-        : loaded.memberIdentitySnapshot?.primary_contact_email
-          ? 'sent'
-          : 'skipped_no_email';
+        : !loaded.memberIdentitySnapshot?.primary_contact_email
+          ? 'skipped_no_email'
+          : input.suppressReceiptEmail
+            ? 'disabled'
+            : 'sent';
       return ok({ ...loaded, emailDispatch: replayEmailDispatch });
     }
 
