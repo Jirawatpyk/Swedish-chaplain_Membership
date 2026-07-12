@@ -28,7 +28,7 @@
  * Cross-tenant (Constitution Principle I, Review-Gate blocker): a marked cycle
  * in tenant A is NOT reconciled/cancelled when the cron runs under tenant B.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -184,6 +184,28 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
     tenantA = await createTestTenant();
     tenantB = await createTestTenant();
   }, 120_000);
+
+  // Each test seeds its own cycle(s) and asserts on the run's AGGREGATE
+  // reconcile counters, so tenant state must be reset between tests — otherwise
+  // a marked cycle left pending by an earlier test (e.g. the reject-marker
+  // test) is re-processed by a later test's cron and skews its counter.
+  afterEach(async () => {
+    for (const t of [tenantA, tenantB]) {
+      if (!t) continue;
+      await db
+        .delete(renewalEscalationTasks)
+        .where(eq(renewalEscalationTasks.tenantId, t.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, t.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(auditLog)
+        .where(eq(auditLog.tenantId, t.ctx.slug))
+        .catch(() => {});
+    }
+  });
 
   afterAll(async () => {
     for (const t of [tenantA, tenantB]) {

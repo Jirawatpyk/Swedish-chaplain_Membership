@@ -270,6 +270,48 @@ export async function adminRejectReactivation(
         },
         '[admin-reject-reactivation] F5 refund settling asynchronously — cycle stays pending; async settlement + reconcile cron resolve it',
       );
+      // F8-RP follow-up: DURABLY stamp the async reject-with-refund marker so
+      // the reconcile cron can converge this cycle → `cancelled` (parity with
+      // the sync path) once the refund settles, instead of the 30-day timeout
+      // → `lapsed`. Only the F5 `kind:'pending'` path carries a refund id (the
+      // settlement lookup key); the `refund_in_progress` retry path carries
+      // none — a PRIOR reject already stamped the marker for that in-flight
+      // refund, so skip (nothing new to record). Guarded write under the
+      // per-cycle lock (CAS on status='pending_admin_reactivation'): a 0-row
+      // result means the cycle moved out of pending in the race window — the
+      // async refund is already in flight (money-safe) and the reconcile cron
+      // resolves it via F5 state, so we log + still surface `refund_pending`.
+      const stampRefundId = refundResult.refundId;
+      if (stampRefundId) {
+        const initiatedAt = (input.now ?? new Date()).toISOString();
+        const marked = await runInTenant(deps.tenant, async (tx) => {
+          await deps.cyclesRepo.acquireCycleLockInTx(
+            tx,
+            input.tenantId,
+            cycleId,
+          );
+          return deps.cyclesRepo.markRejectRefundInitiatedInTx(
+            tx,
+            input.tenantId,
+            cycleId,
+            {
+              initiatedAt,
+              refundId: stampRefundId,
+              actorUserId: input.actorUserId,
+            },
+          );
+        });
+        if (!marked) {
+          logger.warn(
+            {
+              cycleId: lockedCycle.cycleId,
+              tenantId: input.tenantId,
+              refundId: stampRefundId,
+            },
+            '[admin-reject-reactivation] cycle no longer pending — reject-refund marker not stamped; async refund still in flight (money-safe), reconcile cron resolves via F5 state',
+          );
+        }
+      }
       renewalsMetrics.adminRejectCompleted(input.tenantId, 'refund_pending');
       return ok({
         outcome: 'refund_pending' as const,
