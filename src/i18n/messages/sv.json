@@ -1081,7 +1081,6 @@
           "resendSuccess": "Inbjudan skickad på nytt.",
           "errors": {
             "notFound": "Kontakten hittades inte.",
-            "notBounced": "Denna inbjudan har inte studsat.",
             "alreadyActive": "Den här användaren har redan accepterat sin inbjudan.",
             "noLinkedUser": "Inget portalkonto är kopplat till denna kontakt.",
             "serverError": "Något gick fel. Försök igen."

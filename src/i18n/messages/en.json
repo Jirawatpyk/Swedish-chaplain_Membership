@@ -1081,7 +1081,6 @@
           "resendSuccess": "Invitation re-sent.",
           "errors": {
             "notFound": "Contact not found.",
-            "notBounced": "This invitation has not bounced.",
             "alreadyActive": "This user has already accepted their invitation.",
             "noLinkedUser": "No portal account is linked to this contact.",
             "serverError": "Something went wrong. Please try again."

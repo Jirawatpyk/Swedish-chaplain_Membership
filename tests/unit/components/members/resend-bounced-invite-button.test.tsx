@@ -53,14 +53,17 @@ describe('ResendBouncedInviteButton', () => {
     expect(btn).toBeDisabled();
   });
 
-  it('toasts notBounced on 409 not_eligible/not_bounced', async () => {
+  // Cluster 3 (2026-07-12): the relaxed use-case no longer emits a
+  // `not_bounced` reason and the `notBounced` toast + i18n key were removed.
+  // A legacy/unknown reason now falls through to the default → serverError.
+  it('toasts serverError on 409 not_eligible/not_bounced (removed reason → default)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false, status: 409, json: async () => ({ error: 'not_eligible', reason: 'not_bounced' }),
     } as unknown as Response);
     renderButton();
     fireEvent.click(screen.getByRole('button'));
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith(en.admin.members.detail.inviteBounced.errors.notBounced),
+      expect(toast.error).toHaveBeenCalledWith(en.admin.members.detail.inviteBounced.errors.serverError),
     );
   });
 

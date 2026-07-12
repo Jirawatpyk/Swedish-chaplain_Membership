@@ -88,10 +88,11 @@ export type ResendBouncedInviteError =
   | { readonly code: 'not_found' }
   | {
       readonly code: 'not_eligible';
-      // `not_bounced` is retained for response back-compat but is now
-      // UNREACHABLE — the bounce-state guard was removed in the Cluster 3
-      // fix (a lapsed-but-pending invite is re-sendable without a bounce).
-      readonly reason: 'no_linked_user' | 'not_bounced' | 'already_active';
+      // Cluster 3 (2026-07-12): `not_bounced` was dropped — the bounce-state
+      // guard is gone (a lapsed-but-pending invite is re-sendable without a
+      // bounce), so this use-case never produces that reason. Only the two
+      // reachable reasons remain.
+      readonly reason: 'no_linked_user' | 'already_active';
     }
   | { readonly code: 'server_error'; readonly cause?: unknown };
 

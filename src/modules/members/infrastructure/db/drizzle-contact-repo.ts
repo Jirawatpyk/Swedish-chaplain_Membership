@@ -283,7 +283,9 @@ export const drizzleContactRepo: ContactRepo = {
       // runInTenant tx. Idempotent: if already NULL the update affects 0 rows.
       // No WHERE guard on removedAt — we allow clearing on a removed contact
       // to avoid a confusing stuck-in-bounced state if archiving races with
-      // a resend. The use-case guards `not_bounced` before this is called.
+      // a resend. Idempotent no-op when already NULL (the Cluster 3 lapsed-
+      // but-not-bounced re-send path), so no bounce-state precondition is
+      // required before this is called.
       const updated = await tx
         .update(contacts)
         .set({ inviteBouncedAt: null, updatedAt: new Date() })

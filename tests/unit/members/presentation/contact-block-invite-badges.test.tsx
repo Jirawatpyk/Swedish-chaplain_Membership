@@ -175,4 +175,39 @@ describe('ContactBlock — invitation badges (Cluster 3)', () => {
     });
     expect(markup).toContain('resend-invite-btn');
   });
+
+  it('Cluster 3 review — consumed/active contact whose stale expired invite was suppressed → "Portal linked", NOT expired', () => {
+    // The repo active-user anti-join excludes an ACTIVE user's lingering
+    // unconsumed+expired row, so the page passes NO pendingInvitation for this
+    // contact. A linked contact with no pending invite must render the honest
+    // "Portal linked" badge — never the false "Invitation expired".
+    const markup = renderBlock({
+      contact: makeContact({
+        linkedUserId: '33333333-3333-4333-8333-333333333333',
+      }),
+      pendingInvitation: undefined,
+    });
+    expect(markup).toContain('Portal linked');
+    expect(markup).not.toContain('Invitation expired');
+    expect(markup).not.toContain('resend-invite-btn');
+  });
+
+  it('Cluster 3 review — bounced AND expired → ONE red badge (expired), bounced badge suppressed', () => {
+    // FIX 2 (a11y double-badge): a bounced-then-expired invite shares one root
+    // cause + one re-send button; the red "Invitation expired" badge covers it,
+    // so the near-identical "Invite bounced" badge is suppressed.
+    const markup = renderBlock({
+      contact: makeContact({ inviteBouncedAt: new Date('2026-03-01T00:00:00Z') }),
+      pendingInvitation: {
+        expiresAt: new Date('2026-03-20T00:00:00Z'),
+        daysUntilExpiry: 0,
+        expired: true,
+      },
+    });
+    expect(markup).toContain('Invitation expired');
+    // The second, near-identical red badge is gone.
+    expect(markup).not.toContain('Invite bounced');
+    // The single shared recovery affordance is still present.
+    expect(markup).toContain('resend-invite-btn');
+  });
 });

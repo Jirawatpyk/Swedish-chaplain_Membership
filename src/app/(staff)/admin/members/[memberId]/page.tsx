@@ -413,10 +413,17 @@ export function ContactBlock({
             )}
             {/* F3 spec § Edge Cases — "Invite bounced" warning badge.
                 Shown when invite_bounced_at is set (the invitation email
-                bounced and was never delivered). Sits alongside the
-                pending-invitation badge or alone when the pending row
-                has since expired. */}
-            {contact.inviteBouncedAt && (
+                bounced and was never delivered). Sits alongside a LIVE
+                pending-invitation badge.
+
+                Cluster 3 review (2026-07-12) — suppressed when the pending
+                invite has ALSO expired: the red "Invitation expired" badge
+                above already signals the dead-end and the shared "Re-send
+                invitation" button below is the single recovery, so showing
+                a second near-identical red "Invite bounced" badge for the
+                same root cause is redundant (a11y double-badge finding). */}
+            {contact.inviteBouncedAt &&
+              !(pendingInvitation && pendingInvitation.expired) && (
               <Badge
                 variant="outline"
                 className="gap-1 border-destructive text-destructive dark:border-red-400 dark:text-red-400"

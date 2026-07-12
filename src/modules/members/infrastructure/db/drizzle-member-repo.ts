@@ -10,7 +10,20 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, ilike, inArray, isNull, or, sql, asc, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -1253,17 +1266,42 @@ export const drizzleMemberRepo: MemberRepo = {
    * the member-detail page can show "Invitation expired" + a re-invite
    * affordance instead of a false "Portal linked" badge. The
    * `expires_at > NOW()` predicate was dropped; the caller derives an
-   * `expired` flag from `expiresAt` to pick the badge. With
-   * `orderBy(expiresAt ASC)` the caller's `new Map(rows.map(...))` keeps
-   * the LATEST-expiry unconsumed invitation per contact (last-write-wins),
-   * so a freshly re-issued invite supersedes the stale expired one.
-   * LIMIT 50 caps pathological cases.
+   * `expired` flag from `expiresAt` to pick the badge.
+   *
+   * Cluster 3 review (2026-07-12) — two guards close the "expired badge
+   * on an ALREADY-ACTIVE contact" hole:
+   *
+   *   1. ACTIVE-USER ANTI-JOIN. `reissueInvitation` INSERTs a fresh
+   *      invitation row WITHOUT invalidating the old one (the documented
+   *      two-live-tokens posture). So an invited → expired → re-sent →
+   *      REDEEMED user still owns the ORIGINAL unconsumed+expired row.
+   *      Filtering per-row on `consumed_at IS NULL` would surface that
+   *      stale row forever (the old `expires_at > NOW()` filter self-healed
+   *      it within ≤7 days). The `NOT EXISTS` sub-select excludes any
+   *      contact whose linked user has EVER consumed an invitation — a
+   *      consumed invite means the user activated, so no re-invite is due.
+   *      Keyed on `consumed_at`, which is chamber_app-visible (migration
+   *      0017); it deliberately does NOT reach into `users.status`.
+   *
+   *   2. DISTINCT ON per contact, latest-expiry first. `SELECT DISTINCT ON
+   *      (contacts.contact_id) … ORDER BY contacts.contact_id,
+   *      invitations.expires_at DESC` returns exactly ONE row per contact —
+   *      the freshest unconsumed invite. This replaces the old
+   *      `ORDER BY expires_at ASC` + LIMIT 50, which could accumulate one
+   *      expired row per re-issue and, once >50 piled up ASC-first, drop
+   *      the newest live invite off the end. The caller's
+   *      `new Map(rows.map(...))` still works — one row per contact means no
+   *      last-write-wins reliance. LIMIT 50 now caps distinct contacts.
    */
   async findPendingInvitationsForMember(ctx, memberId) {
     try {
-      const rows = await runInTenant(ctx, async (tx) =>
-        tx
-          .select({
+      const rows = await runInTenant(ctx, async (tx) => {
+        // Second reference to `invitations` for the active-user anti-join.
+        // Aliased so the correlated `user_id` refs resolve unambiguously
+        // (mirrors the `directoryPlanNameSubquery` alias pattern above).
+        const consumedInv = alias(invitations, 'consumed_inv');
+        return tx
+          .selectDistinctOn([contacts.contactId], {
             expiresAt: invitations.expiresAt,
             contactId: contacts.contactId,
             firstName: contacts.firstName,
@@ -1283,13 +1321,29 @@ export const drizzleMemberRepo: MemberRepo = {
               // an expired-but-unconsumed invite must surface so the UI
               // can offer a re-invite instead of a dead-end "Portal linked".
               isNull(invitations.consumedAt),
+              // Cluster 3 review (2026-07-12) anti-join — exclude any
+              // contact whose linked user has EVER consumed an invitation
+              // (= they activated). Guards against the stale-unconsumed row
+              // a redeemed user retains after a re-issue (two live tokens).
+              notExists(
+                tx
+                  .select({ one: sql`1` })
+                  .from(consumedInv)
+                  .where(
+                    and(
+                      eq(consumedInv.userId, invitations.userId),
+                      isNotNull(consumedInv.consumedAt),
+                    ),
+                  ),
+              ),
             ),
           )
-          // ASC so `new Map(rows.map(...))` keeps the latest-expiry
-          // unconsumed invitation per contact (last-write-wins).
-          .orderBy(asc(invitations.expiresAt))
-          .limit(50),
-      );
+          // DISTINCT ON (contact_id) requires contact_id to lead ORDER BY;
+          // expires_at DESC then keeps the LATEST-expiry unconsumed invite
+          // per contact (one row per contact, freshest wins).
+          .orderBy(contacts.contactId, desc(invitations.expiresAt))
+          .limit(50);
+      });
       return ok(
         rows.map((r) => ({
           contactId: r.contactId as ContactId,
