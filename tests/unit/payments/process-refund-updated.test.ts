@@ -292,9 +292,53 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     const evt = vi.mocked(deps.audit.emit).mock.calls[0]![1];
     expect(evt.eventType).toBe('out_of_band_refund_detected');
     // The payload requires a string; a null chargeId maps to an explicit
-    // `unknown` sentinel (a misleading value would be worse). Metric still
-    // single-owner → not bumped here.
+    // `unknown` sentinel (a misleading value would be worse).
     expect((evt.payload as { processor_charge_id: string }).processor_charge_id).toBe('unknown');
+    // Fix 1 — a charge-less OOB (null chargeId) NEVER fires `charge.refunded`,
+    // so THIS handler is its sole detector and DOES page (see the dedicated
+    // charge-less test below for the full both-emissions invariant).
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledTimes(1);
+  });
+
+  it('Fix 1 — charge-less genuine OOB via refund.updated (chargeId null) → emits BOTH the 10y forensic audit AND the paging metric exactly once (sole detector: no charge.refunded fires)', async () => {
+    const result = await processRefundUpdated(
+      deps,
+      makeInput({ chargeId: null, sourceEventType: 'refund.updated' }),
+    );
+
+    expect(result.ok && result.value.kind).toBe('out_of_band');
+
+    // Forensic audit — exactly one out_of_band_refund_detected row (10y).
+    const oobAudits = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.filter((c) => c[1].eventType === 'out_of_band_refund_detected');
+    expect(oobAudits).toHaveLength(1);
+    expect(oobAudits[0]![1].retentionYears).toBe(10);
+
+    // Paging metric — the charge-less EXCEPTION to single-owner: emitted here
+    // exactly once with (tenantId, processorEnv) so on-call is paged in real
+    // time (charge.refunded can never fire for a charge-less refund).
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'test',
+    );
+  });
+
+  it('Fix 1 — with-charge genuine OOB via refund.updated (chargeId set) → forensic audit but NOT the paging metric (single-owner stays on charge.refunded, which still fires for charged refunds)', async () => {
+    const result = await processRefundUpdated(
+      deps,
+      makeInput({ chargeId: 'ch_has_charge', sourceEventType: 'refund.updated' }),
+    );
+
+    expect(result.ok && result.value.kind).toBe('out_of_band');
+
+    const oobAudits = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.filter((c) => c[1].eventType === 'out_of_band_refund_detected');
+    expect(oobAudits).toHaveLength(1);
+    // charge.refunded is the single owner for charged refunds → this handler
+    // must NOT bump the metric (would double-count the async path).
     expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).not.toHaveBeenCalled();
   });
 
