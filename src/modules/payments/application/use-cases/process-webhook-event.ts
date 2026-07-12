@@ -674,7 +674,20 @@ async function processWebhookEventBody(
       break;
     }
 
-    case 'charge.refund.updated': {
+    // PR-A follow-up (2026-07-12) — `charge.refund.updated` is DEPRECATED by
+    // Stripe ("only sent for refunds with a corresponding charge; listen to
+    // `refund.updated` for updates on all refunds instead"). Charge-less async
+    // refunds (PromptPay / GrabPay / bank transfers) settle via `refund.updated`
+    // ONLY. Both carry a `Stripe.Refund` `data.object` and route to the SAME
+    // use-case. `refund.updated` fires on any Refund update INCL. status→failed,
+    // so it covers the failure transition too — no separate `refund.failed`
+    // subscription (the A.14 stale-pending sweep backstops any delivery gap).
+    // Idempotent across BOTH events for one refund: markProcessed is
+    // per-event-id, the finaliser guards on `expectedCurrentStatus='pending'`
+    // (a sibling-won race → already_finalized no-op), and the F4 credit note is
+    // idempotent per `(tenant, source_refund_id)` — so exactly one CN is booked.
+    case 'charge.refund.updated':
+    case 'refund.updated': {
       // A.11 — async refund-lifecycle reconciliation. Mirrors the
       // charge.refunded branch shape: the sub-use-case's `dispatch_failed`
       // Result maps to this branch's `dispatch_threw` error variant, and it
@@ -695,6 +708,11 @@ async function processWebhookEventBody(
           tenantId,
           requestId: input.requestId,
           eventId: event.id,
+          // The concrete Stripe event that carried this settlement
+          // (`charge.refund.updated` | `refund.updated`) — threaded so the
+          // 10-year OOB / refund_failed forensic summaries name the real
+          // channel instead of a hardcoded (possibly wrong) event type.
+          sourceEventType: event.type,
           processorRefundId: dataObject.id,
           chargeId: dataObject.latestChargeId ?? null,
           refundStatus: dataObject.refundStatus ?? null,

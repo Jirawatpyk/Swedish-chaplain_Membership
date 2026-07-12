@@ -61,8 +61,33 @@ export const F5_HANDLED_EVENT_TYPES = [
    * `refundStatus` (added to `VerifiedStripeEvent['dataObject']` in
    * A.9) from this event's `status` field. `processRefundUpdated`
    * (A.11) subscribes here to finalize a `pending` refund row.
+   *
+   * DEPRECATED by Stripe: "This event is only sent for refunds with a
+   * corresponding charge; listen to `refund.updated` for updates on all
+   * refunds instead." Kept because it STILL fires for refunds that DO
+   * have a legacy charge (card refunds), and the OOB forensic redundancy
+   * (KL-7) relies on it firing alongside `charge.refunded`.
    */
   'charge.refund.updated',
+  /**
+   * PR-A follow-up (2026-07-12) — the FORWARD-PATH refund-lifecycle event
+   * on the pinned `2025-09-30.basil` API. `refund.updated` fires on ANY
+   * `Refund` update (incl. `status → succeeded | failed | canceled`), for
+   * ALL refunds — including charge-less async refunds (PromptPay / GrabPay
+   * / bank transfers) that never emit the deprecated `charge.refund.updated`.
+   * Its `data.object` is the SAME `Stripe.Refund` the `charge.refund.updated`
+   * arm already projects, so the verifier's object-type-driven `refund` arm
+   * reuses one projection for both, and the dispatcher routes both to the
+   * SAME `processRefundUpdated` use-case (idempotent: markProcessed is
+   * per-event-id; the finaliser guards on `expectedCurrentStatus='pending'`
+   * and the F4 CN is idempotent per `(tenant, source_refund_id)`).
+   *
+   * `refund.failed` is deliberately NOT subscribed: `refund.updated`
+   * already carries the `status → failed` transition, so a separate
+   * subscription would be redundant; the stale-pending sweep (A.14)
+   * backstops any single-event delivery gap.
+   */
+  'refund.updated',
 ] as const;
 export type F5HandledEventType = (typeof F5_HANDLED_EVENT_TYPES)[number];
 

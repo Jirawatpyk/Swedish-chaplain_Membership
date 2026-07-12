@@ -1,9 +1,15 @@
 /**
  * PR-A Task A.11 — `processRefundUpdated` use-case (bugs #1 reconcile, #2).
  *
- * Handles the Stripe `charge.refund.updated` webhook — the async
- * refund-lifecycle event that fires as a `Refund` object transitions
- * `pending → succeeded | failed | canceled`. `issueRefund` (#1) now leaves
+ * Handles Stripe's refund-lifecycle webhooks — the async refund events that
+ * fire as a `Refund` object transitions `pending → succeeded | failed |
+ * canceled`. The dispatcher routes BOTH the deprecated `charge.refund.updated`
+ * (fires only for refunds WITH a legacy charge) AND the forward-path
+ * `refund.updated` (PR-A follow-up, 2026-07-12 — fires for ALL refunds incl.
+ * charge-less async PromptPay/GrabPay/bank-transfer settlements) to this ONE
+ * use-case; it is event-type-agnostic (keys on `processorRefundId` +
+ * `refundStatus`, with `sourceEventType` carried only for the forensic
+ * summary). `issueRefund` (#1) now leaves
  * an async refund row `pending` at creation time (with its
  * `processor_refund_id` attached, A.6/#2); THIS use-case is the eventual-
  * consistency finaliser that resolves that row by the real Stripe outcome.
@@ -81,6 +87,17 @@ export interface ProcessRefundUpdatedInput {
   readonly chargeId: string | null;
   /** Projected Stripe Refund `status` (`pending|succeeded|failed|canceled|requires_action`). */
   readonly refundStatus: string | null;
+  /**
+   * PR-A follow-up (2026-07-12) — the concrete Stripe event type that
+   * carried this settlement (`charge.refund.updated` | `refund.updated`).
+   * Interpolated into the OOB / refund_failed forensic summaries so a
+   * 10-year audit row names the REAL channel instead of a hardcoded event
+   * type (the codebase's "no known-wrong value in a retained forensic"
+   * discipline). Optional so existing callers/tests that omit it keep the
+   * historical `charge.refund.updated` wording; the dispatcher always
+   * threads the real `event.type`.
+   */
+  readonly sourceEventType?: string;
   /**
    * Refund amount in satang (verifier projection); OOB audit + metric only.
    * Branded `Satang` to keep money-type discipline uniform across F5 even
@@ -282,7 +299,7 @@ export async function processRefundUpdated(
             requestId: input.requestId,
             eventType: 'out_of_band_refund_detected',
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-            summary: `Out-of-band refund detected via charge.refund.updated on charge ${input.chargeId ?? 'unknown'}`,
+            summary: `Out-of-band refund detected via ${input.sourceEventType ?? 'charge.refund.updated'} on charge ${input.chargeId ?? 'unknown'}`,
             payload: {
               processor_refund_id: input.processorRefundId,
               // The `out_of_band_refund_detected` payload requires a string;
@@ -391,7 +408,7 @@ export async function processRefundUpdated(
             requestId: input.requestId,
             eventType: 'refund_failed',
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-            summary: `Refund ${refund.id} settled ${incoming.status} via charge.refund.updated (${input.processorRefundId})`,
+            summary: `Refund ${refund.id} settled ${incoming.status} via ${input.sourceEventType ?? 'charge.refund.updated'} (${input.processorRefundId})`,
             payload: {
               refund_id: refund.id,
               payment_id: refund.paymentId,

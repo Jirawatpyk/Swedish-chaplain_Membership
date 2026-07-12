@@ -185,8 +185,13 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
       projectAmountSafely('dispute', raw['amount'] as number);
     }
   } else if (objectType === 'refund') {
-    // Task A.10 (PCI-1, 2026-07-11) — `charge.refund.updated` envelope.
-    // Positive allow-list ONLY: `refundStatus` (from the Refund's
+    // Task A.10 (PCI-1, 2026-07-11) — refund-lifecycle envelope. This arm is
+    // keyed on `data.object.object === 'refund'`, NOT on the event `type`, so
+    // it projects EVERY refund-carrying event with ONE shared projection:
+    // the deprecated `charge.refund.updated` AND the forward-path
+    // `refund.updated` (PR-A follow-up, 2026-07-12) — both deliver a
+    // `Stripe.Refund` as `data.object`. Positive allow-list ONLY:
+    // `refundStatus` (from the Refund's
     // `status`), `latestChargeId` (defensive expandable-id extraction —
     // mirrors the payment_intent/dispute arms above; a Refund's
     // `charge` field is normally a `ch_…` string but Stripe CAN return
