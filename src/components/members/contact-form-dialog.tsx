@@ -357,7 +357,14 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
             <EmailInput
               id="cf-email"
               maxLength={254}
-              disabled={!emailEditable}
+              // Read-only (not `disabled`) for a linked contact so the field
+              // stays focusable — a disabled input is skipped by screen readers
+              // in forms mode, which would hide its `aria-describedby` note; it
+              // also avoids the disabled `opacity-50` dimming of the address.
+              // The PATCH already guards on `emailEditable`, so no value leaks.
+              readOnly={!emailEditable}
+              aria-readonly={!emailEditable ? 'true' : undefined}
+              className={!emailEditable ? 'bg-muted/50' : undefined}
               aria-required={emailEditable ? 'true' : undefined}
               aria-invalid={Boolean(errors.email)}
               aria-describedby={
