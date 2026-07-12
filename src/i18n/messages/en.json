@@ -2852,6 +2852,8 @@
           "action": "Action"
         },
         "openAction": "Review",
+        "viewAction": "View",
+        "settlingPill": "Refund settling",
         "loadFailed": "Couldn't load the pending-review list. Please try again."
       },
       "tierBadge": {
@@ -3210,6 +3212,9 @@
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
+        "refundSettlingBadge": "Refund settling",
+        "refundSettlingNoticeTitle": "Rejected — refund settling",
+        "refundSettlingNoticeBody": "This reactivation was rejected and the refund is settling with the payment processor. This closes automatically once it confirms — no action is needed.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Approve reactivation",
@@ -3219,7 +3224,8 @@
             "cancel": "Cancel",
             "submitting": "Approving…",
             "successToast": "Reactivation approved — the membership is now active.",
-            "errorToast": "Couldn't approve the reactivation. Please try again."
+            "errorToast": "Couldn't approve the reactivation. Please try again.",
+            "errorRefundInProgressToast": "This reactivation was already rejected — a refund is settling, so it can no longer be approved."
           },
           "reject": {
             "button": "Reject & refund",
@@ -5235,6 +5241,8 @@
       "notYetOpenBody": "Your renewal isn't due yet. We'll email you when it's time to renew — there's nothing to do here for now.",
       "pendingReviewTitle": "Awaiting admin verification",
       "pendingReviewBody": "We've received your renewal and our team is verifying it. You'll be notified once it's confirmed — no further action is needed right now.",
+      "rejectedRefundTitle": "Reactivation not approved",
+      "rejectedRefundBody": "Your reactivation request was not approved. A refund is being processed to your original payment method. No further action is needed.",
       "loading": {
         "announce": "Loading your renewal details…"
       },

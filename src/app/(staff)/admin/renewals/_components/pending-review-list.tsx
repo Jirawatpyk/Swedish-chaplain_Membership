@@ -9,6 +9,12 @@
  * Pre-formatted date strings (already locale-/BE-formatted on the server)
  * are passed in so this client component stays locale-agnostic — matching
  * the cycle-detail page's day-grain date treatment.
+ *
+ * UX-A Bug 2: a row whose cycle carries the async reject-with-refund marker
+ * (`refundSettling`) has ALREADY been decided (rejected; refund settling) — it
+ * only sits in this pending-status list until the reconcile cron converges it
+ * to `cancelled`. It renders a distinct "Refund settling" pill and a read-only
+ * "View" CTA (not "Review") so the queue doesn't overstate open work.
  */
 'use client';
 
@@ -31,6 +37,12 @@ export interface PendingReviewRow {
   readonly companyName: string;
   readonly pendingSinceLabel: string;
   readonly expiryLabel: string;
+  /**
+   * UX-A Bug 2 — true when the cycle carries the async reject-with-refund
+   * marker: already rejected, refund settling, awaiting cron convergence to
+   * `cancelled`. Drives the "Refund settling" pill + read-only "View" CTA.
+   */
+  readonly refundSettling: boolean;
 }
 
 export interface PendingReviewListProps {
@@ -63,7 +75,16 @@ export function PendingReviewList({ rows }: PendingReviewListProps) {
       <TableBody>
         {rows.map((row) => (
           <TableRow key={row.cycleId}>
-            <TableCell className="font-medium">{row.companyName}</TableCell>
+            <TableCell className="font-medium">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{row.companyName}</span>
+                {row.refundSettling && (
+                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-600">
+                    {t('settlingPill')}
+                  </span>
+                )}
+              </span>
+            </TableCell>
             <TableCell className="text-muted-foreground">
               {row.pendingSinceLabel}
             </TableCell>
@@ -75,7 +96,9 @@ export function PendingReviewList({ rows }: PendingReviewListProps) {
                 href={`/admin/renewals/${row.cycleId}`}
                 className={buttonVariants({ variant: 'outline', size: 'sm' })}
               >
-                {t('openAction')}
+                {/* UX-A Bug 2: read-only "View" for a decided (refund-settling)
+                    row so the queue doesn't imply open review work. */}
+                {row.refundSettling ? t('viewAction') : t('openAction')}
               </Link>
             </TableCell>
           </TableRow>

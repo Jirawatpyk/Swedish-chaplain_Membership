@@ -2852,6 +2852,8 @@
           "action": "Åtgärd"
         },
         "openAction": "Granska",
+        "viewAction": "Visa",
+        "settlingPill": "Återbetalning behandlas",
         "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen."
       },
       "tierBadge": {
@@ -3210,6 +3212,9 @@
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
+        "refundSettlingBadge": "Återbetalning behandlas",
+        "refundSettlingNoticeTitle": "Avslagen – återbetalning behandlas",
+        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas – ingen åtgärd behövs.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Godkänn återaktivering",
@@ -3219,7 +3224,8 @@
             "cancel": "Avbryt",
             "submitting": "Godkänner…",
             "successToast": "Återaktivering godkänd – medlemskapet är nu aktivt.",
-            "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen."
+            "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen.",
+            "errorRefundInProgressToast": "Den här återaktiveringen har redan avslagits – en återbetalning behandlas och den kan därför inte längre godkännas."
           },
           "reject": {
             "button": "Avslå och återbetala",
@@ -5238,6 +5244,8 @@
       "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
       "pendingReviewTitle": "Inväntar administratörsgranskning",
       "pendingReviewBody": "Vi har tagit emot din förnyelse och vårt team verifierar den. Du meddelas när den är bekräftad — ingen ytterligare åtgärd krävs just nu.",
+      "rejectedRefundTitle": "Återaktivering ej godkänd",
+      "rejectedRefundBody": "Din begäran om återaktivering godkändes inte. En återbetalning behandlas till din ursprungliga betalningsmetod. Ingen ytterligare åtgärd krävs.",
       "fields": {
         "plan": "Plan",
         "tier": "Nivå",

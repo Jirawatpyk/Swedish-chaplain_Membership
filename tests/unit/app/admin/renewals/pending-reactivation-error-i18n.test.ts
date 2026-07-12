@@ -93,4 +93,52 @@ describe('PendingReactivationActions error set — EN i18n coverage (070)', () =
       expect(typeof reject[k], `reject.${k}`).toBe('string');
     }
   });
+
+  it('the UX-A Bug 2 reactivate + surfacing keys the components read directly are present', () => {
+    // These keys are referenced WITHOUT a `t.has(...)` guard, so a missing one
+    // renders the raw dotted key path at runtime. check:i18n is parity-only
+    // (not code-ref-aware) and mock-next-intl never throws — so pin them here.
+    const reactivate = pr.reactivate;
+    expect(
+      typeof reactivate['errorRefundInProgressToast'],
+      'reactivate.errorRefundInProgressToast',
+    ).toBe('string');
+
+    // cycleDetail-level marked-state notice + badge (admin cycle-detail page).
+    const cycleDetail = (
+      en as unknown as {
+        admin: {
+          renewals: {
+            cycleDetail: Record<string, unknown>;
+            pendingReview: Record<string, unknown>;
+          };
+        };
+      }
+    ).admin.renewals.cycleDetail;
+    for (const k of [
+      'refundSettlingBadge',
+      'refundSettlingNoticeTitle',
+      'refundSettlingNoticeBody',
+    ]) {
+      expect(typeof cycleDetail[k], `cycleDetail.${k}`).toBe('string');
+    }
+
+    // pending-review queue pill + read-only View CTA.
+    const pendingReview = (
+      en as unknown as {
+        admin: { renewals: { pendingReview: Record<string, unknown> } };
+      }
+    ).admin.renewals.pendingReview;
+    for (const k of ['settlingPill', 'viewAction']) {
+      expect(typeof pendingReview[k], `pendingReview.${k}`).toBe('string');
+    }
+
+    // Member portal rejected-refund copy.
+    const portalRenewal = (
+      en as unknown as { portal: { renewal: Record<string, unknown> } }
+    ).portal.renewal;
+    for (const k of ['rejectedRefundTitle', 'rejectedRefundBody']) {
+      expect(typeof portalRenewal[k], `portal.renewal.${k}`).toBe('string');
+    }
+  });
 });

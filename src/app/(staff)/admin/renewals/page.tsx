@@ -499,6 +499,10 @@ async function PendingReviewSection({
     companyName: companyNames.get(c.memberId) ?? c.cycleId.slice(0, 8),
     pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
     expiryLabel: fmtDateOnly(c.expiresAt),
+    // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
+    // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
+    // CTA instead of overstating open review work.
+    refundSettling: c.rejectRefundInitiatedAt !== null,
   }));
 
   return (
