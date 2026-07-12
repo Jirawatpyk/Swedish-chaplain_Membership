@@ -67,7 +67,12 @@ describe('BulkActionBar — server error code mapping', () => {
       json: async () => ({
         error: {
           code: 'state_error',
-          // The server's raw message embeds a member UUID — must NOT be shown.
+          // Deliberately HOSTILE fixture: the live route now sends a generic,
+          // sanitized message (see bulk/route.ts state_error arm), but this mock
+          // injects a raw UUID-bearing message to prove the client maps by
+          // `code` and never echoes the server `message` — even if a future
+          // regression (or an old deploy) were to leak one. Do NOT "sync" this
+          // to the sanitized copy or the assertions below lose their teeth.
           message: `State transition failed for member ${MEMBER_UUID}.`,
           details: { member_id: MEMBER_UUID, code: 'state.already_archived' },
         },
