@@ -1454,7 +1454,7 @@
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "errors": {
-          "state_error": "En eller flera valda medlemmar kan inte arkiveras — de kan redan vara arkiverade. Uppdatera och försök igen.",
+          "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
           "not_found": "En eller flera valda medlemmar finns inte längre. Uppdatera och försök igen.",
           "plan_not_found": "Målplanen finns inte längre. Uppdatera och försök igen.",
           "bulk_cap_exceeded": "För många medlemmar valda för en omgång. Minska urvalet och försök igen.",

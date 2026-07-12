@@ -86,7 +86,7 @@ describe('BulkActionBar — server error code mapping', () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     const arg = toastError.mock.calls[0]?.[0] as string;
     expect(arg).toBe(
-      "One or more selected members can't be archived — they may already be archived. Refresh and try again.",
+      "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
     );
     // The raw server message (with the UUID) must never reach the toast.
     expect(arg).not.toContain('State transition failed');

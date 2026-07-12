@@ -1454,7 +1454,7 @@
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "errors": {
-          "state_error": "One or more selected members can't be archived — they may already be archived. Refresh and try again.",
+          "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
           "not_found": "One or more selected members no longer exist. Refresh and try again.",
           "plan_not_found": "The target plan no longer exists. Refresh and try again.",
           "bulk_cap_exceeded": "Too many members selected for one batch. Reduce the selection and try again.",

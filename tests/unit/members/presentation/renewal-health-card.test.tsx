@@ -166,6 +166,27 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     expect(screen.queryByTestId('renew-lapsed-trigger')).not.toBeInTheDocument();
   });
 
+  it('still surfaces a loaded engagement score alongside the readFailed notice (final-review nit)', () => {
+    // Engagement is fetched independently of the renewal read, so a renewal-read
+    // blip must not drop an engagement score that DID load.
+    renderCard({
+      readFailed: true,
+      status: null,
+      expiryIso: null,
+      daysRemaining: null,
+      engagementScore: 82,
+      engagementBand: 'healthy',
+      viewHref: '/admin/renewals',
+    });
+    expect(
+      screen.getByText("We couldn't load this member's renewal status. Please try again."),
+    ).toBeInTheDocument();
+    // The loaded engagement value + band are still shown.
+    expect(screen.getByText('Engagement')).toBeInTheDocument();
+    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('Healthy')).toBeInTheDocument();
+  });
+
   it('still renders the empty state when readFailed is false and status is null (regression guard)', () => {
     renderCard({
       readFailed: false,
