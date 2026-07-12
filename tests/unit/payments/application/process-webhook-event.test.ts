@@ -347,12 +347,8 @@ describe('processWebhookEvent (T056)', () => {
   });
 
   // A.11 — charge.refund.updated dispatch branch (processRefundUpdated).
-  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band DEFERRED; no invoiceId, no audit)', async () => {
+  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band; emits the redundant forensic audit, no invoiceId)', async () => {
     const deps = makeDeps();
-    // Thread a logger so the dispatcher's `deps.logger ? {logger} : {}`
-    // spread propagates the structured logger into processRefundUpdated.
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    (deps as { logger?: unknown }).logger = logger;
     const event = makeEvent({
       type: 'charge.refund.updated',
       dataObject: {
@@ -369,17 +365,17 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.value.kind).toBe('processed');
     // out_of_band carries no invoiceId → the dispatcher omits it.
     expect('invoiceId' in result.value).toBe(false);
-    // Finding 4 — `charge.refund.updated` DEFERS OOB detection to the
-    // `charge.refunded` handler (single-owner). No `out_of_band_refund_detected`
-    // audit is emitted here; only a benign defer log + markProcessed.
+    // Finding 4 (split ownership) — `charge.refund.updated` emits the
+    // `out_of_band_refund_detected` forensic REDUNDANTLY with `charge.refunded`
+    // so the 10y money-trail survives either handler failing (deduped on read by
+    // processor_refund_id). Only the paging metric stays single-owner on
+    // `charge.refunded`.
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
-    expect(
-      auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
-    ).toBe(false);
-    expect(logger.info).toHaveBeenCalledWith(
-      'process_refund_updated.out_of_band_deferred',
-      expect.objectContaining({ processorRefundId: 're_async_unknown_1' }),
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
     );
+    expect(oobCall).toBeDefined();
+    expect(oobCall![1].payload.processor_refund_id).toBe('re_async_unknown_1');
     expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
   });
 

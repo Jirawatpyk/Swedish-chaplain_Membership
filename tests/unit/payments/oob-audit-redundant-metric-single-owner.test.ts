@@ -1,20 +1,26 @@
 /**
- * Findings 2 + 4 — out-of-band refund single-owner dedup (cross-handler).
+ * Findings 2 + 4 — out-of-band refund SPLIT ownership (cross-handler):
+ * audit redundant, metric single-owner.
  *
  * Stripe delivers BOTH `charge.refunded` AND `charge.refund.updated` for the
  * same genuine Dashboard-initiated (out-of-band) refund. This test pins the
  * combined invariant that survives both fixes:
  *
- *   - `processChargeRefunded` (charge.refunded) is the SOLE OOB detector —
- *     it emits `out_of_band_refund_detected` + bumps `outOfBandRefundRejected`
- *     (Finding 2 only SUPPRESSES app-initiated auto-refunds, never a genuine
- *     Dashboard OOB).
- *   - `processRefundUpdated` (charge.refund.updated) DEFERS — on a genuine OOB
- *     it logs + acks only, emitting NO audit + NO metric (Finding 4).
+ *   - `out_of_band_refund_detected` AUDIT (10y forensic) is emitted from BOTH
+ *     handlers — deliberate redundancy so the money-trail forensic has NO single
+ *     point of failure if one handler fails its whole retry window. Duplicates
+ *     are deduped on READ by `processor_refund_id` (existing group-by
+ *     convention). (Finding 2 only SUPPRESSES app-initiated auto-refunds here,
+ *     never a genuine Dashboard OOB.)
+ *   - `outOfBandRefundRejected` METRIC (paging counter) stays SINGLE-OWNER on
+ *     `processChargeRefunded` (the universal detector that fires on every
+ *     refund). `processRefundUpdated` must NOT bump it — that double-counted the
+ *     async path (Finding 4).
  *
- * Net across both webhook deliveries: exactly ONE forensic audit + ONE paging
- * metric per refund — regardless of delivery order. Both handlers share the
- * same `audit.emit` spy + metric mock here so the assertion sums across them.
+ * Net across both webhook deliveries: exactly TWO forensic audits (one per
+ * handler, deduped on read) but exactly ONE paging metric — regardless of
+ * delivery order. Both handlers share the same `audit.emit` spy + metric mock
+ * here so the assertions sum across them.
  *
  * PCI SAQ-A: minimal mocks; no card metadata anywhere in the deps.
  */
@@ -45,7 +51,7 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
   };
 });
 
-describe('OOB single-owner dedup — genuine Dashboard refund → exactly ONE audit + ONE metric across both handlers (Findings 2 + 4)', () => {
+describe('OOB split ownership — genuine Dashboard refund → redundant audit (BOTH handlers) + single-owner metric (charge.refunded only) (Findings 2 + 4)', () => {
   // Shared spies so the assertion sums across BOTH webhook handlers.
   let auditEmit: ReturnType<typeof vi.fn>;
   const clock = {
@@ -138,7 +144,7 @@ describe('OOB single-owner dedup — genuine Dashboard refund → exactly ONE au
     ).length;
   }
 
-  it('charge.refunded first (owner emits), charge.refund.updated second (defers) → exactly ONE audit + ONE metric', async () => {
+  it('charge.refunded first, charge.refund.updated second → TWO forensic audits (both handlers, deduped on read) + exactly ONE metric', async () => {
     const chargeRes = await runChargeRefunded();
     expect(chargeRes.ok).toBe(true);
 
@@ -146,18 +152,21 @@ describe('OOB single-owner dedup — genuine Dashboard refund → exactly ONE au
     expect(updatedRes.ok).toBe(true);
     if (updatedRes.ok) expect(updatedRes.value.kind).toBe('out_of_band');
 
-    expect(oobAuditCount()).toBe(1);
+    // Redundant forensic — one row per handler (deduped downstream by
+    // processor_refund_id); the money-trail survives either handler failing.
+    expect(oobAuditCount()).toBe(2);
+    // Paging metric single-owner on charge.refunded → exactly once.
     expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledTimes(1);
   });
 
-  it('reversed order (charge.refund.updated first, charge.refunded second) → still exactly ONE audit + ONE metric', async () => {
+  it('reversed order (charge.refund.updated first, charge.refunded second) → still TWO audits + exactly ONE metric', async () => {
     const updatedRes = await runRefundUpdated();
     expect(updatedRes.ok).toBe(true);
 
     const chargeRes = await runChargeRefunded();
     expect(chargeRes.ok).toBe(true);
 
-    expect(oobAuditCount()).toBe(1);
+    expect(oobAuditCount()).toBe(2);
     expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).toHaveBeenCalledTimes(1);
   });
 });

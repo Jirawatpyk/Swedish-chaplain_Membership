@@ -250,43 +250,52 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     expect((evt.payload as { refund_status: string }).refund_status).toBe('canceled');
   });
 
-  it('Finding 4 — not found + no auto-refund → out_of_band DEFERRED to charge.refunded (benign log + markProcessed, NO audit, NO metric)', async () => {
+  it('Finding 4 — not found + no auto-refund → out_of_band; emits the redundant 10y forensic audit (dedup-on-read) but NOT the paging metric (single-owner on charge.refunded)', async () => {
     const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.kind).toBe('out_of_band');
 
-    // Single-owner OOB detection: the `charge.refunded` handler owns the
-    // forensic audit + paging metric. This handler must emit NEITHER — only a
-    // benign defer log + ack — so a genuine Dashboard OOB yields exactly ONE
-    // audit + ONE metric across both event types (no double-count).
-    expect(vi.mocked(deps.audit.emit)).not.toHaveBeenCalled();
+    // SPLIT ownership (money-trail forensic ⇒ redundancy). The
+    // `out_of_band_refund_detected` audit is emitted REDUNDANTLY from BOTH the
+    // `charge.refunded` and `charge.refund.updated` handlers so the 10y forensic
+    // has no single point of failure (duplicates deduped on read by
+    // processor_refund_id). This handler MUST emit it.
+    const auditCalls = vi.mocked(deps.audit.emit).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    const evt = auditCalls[0]![1];
+    expect(evt.eventType).toBe('out_of_band_refund_detected');
+    expect(evt.retentionYears).toBe(10);
+    expect(F5_AUDIT_RETENTION_YEARS.out_of_band_refund_detected).toBe(10);
+    expect(evt.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK);
+    // RR-8 allow-list — id-refs + status + satang + runbook ONLY. No card, no
+    // raw event, no error.message.
+    expect(evt.payload).toEqual({
+      processor_refund_id: 're_test_1',
+      processor_charge_id: 'ch_test_1',
+      amount_satang: '50000',
+      runbook_url: OOB_RUNBOOK_URL,
+    });
+    // The paging metric stays SINGLE-OWNER on `processChargeRefunded` (the
+    // universal detector that fires on every refund). Emitting it here too would
+    // double-count the async path — so this handler must NOT bump it.
     expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).not.toHaveBeenCalled();
-    // Benign PCI-clean defer log — id-refs + status only.
-    expect(vi.mocked(deps.logger!.info)).toHaveBeenCalledWith(
-      'process_refund_updated.out_of_band_deferred',
-      expect.objectContaining({
-        processorRefundId: 're_test_1',
-        chargeId: 'ch_test_1',
-        refundStatus: 'succeeded',
-      }),
-    );
-    // Still acked so Stripe stops re-delivering THIS event.
+    // Acked so Stripe stops re-delivering THIS event (atomic with the audit).
     expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
   });
 
-  it('Finding 4 — not found + no auto-refund + null chargeId → out_of_band deferred; defer log carries the raw null chargeId (no audit-payload sentinel needed)', async () => {
+  it('Finding 4 — not found + no auto-refund + null chargeId → out_of_band; audit payload uses the `unknown` processor_charge_id sentinel', async () => {
     const result = await processRefundUpdated(deps, makeInput({ chargeId: null }));
 
     expect(result.ok && result.value.kind).toBe('out_of_band');
-    // No audit is emitted, so the former "unknown" processor_charge_id sentinel
-    // is no longer needed; the benign defer log carries the raw null chargeId.
-    expect(vi.mocked(deps.audit.emit)).not.toHaveBeenCalled();
-    expect(vi.mocked(deps.logger!.info)).toHaveBeenCalledWith(
-      'process_refund_updated.out_of_band_deferred',
-      expect.objectContaining({ chargeId: null }),
-    );
+    const evt = vi.mocked(deps.audit.emit).mock.calls[0]![1];
+    expect(evt.eventType).toBe('out_of_band_refund_detected');
+    // The payload requires a string; a null chargeId maps to an explicit
+    // `unknown` sentinel (a misleading value would be worse). Metric still
+    // single-owner → not bumped here.
+    expect((evt.payload as { processor_charge_id: string }).processor_charge_id).toBe('unknown');
+    expect(vi.mocked(paymentsMetrics.outOfBandRefundRejected)).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------
