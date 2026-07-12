@@ -242,6 +242,10 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
       getRefundOutcomeForInvoice: vi.fn(async () => ({
         status: 'not_found' as const,
       })),
+      // F8-RP-2 Finding 3 — timeout path never resolves an in-flight refund.
+      findPendingRefundForInvoice: vi.fn(async () => ({
+        status: 'none' as const,
+      })),
     };
 
     const racedDeps = {
@@ -396,6 +400,10 @@ describe('F8 reconcilePendingReactivations — admin-approve-before-lock money s
         // F8-RP follow-up — timeout path never calls the settlement lookup.
         getRefundOutcomeForInvoice: vi.fn(async () => ({
           status: 'not_found' as const,
+        })),
+        // F8-RP-2 Finding 3 — timeout path never resolves an in-flight refund.
+        findPendingRefundForInvoice: vi.fn(async () => ({
+          status: 'none' as const,
         })),
       },
     };

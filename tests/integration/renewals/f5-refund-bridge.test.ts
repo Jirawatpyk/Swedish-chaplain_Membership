@@ -51,21 +51,31 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
     expect(typeof bridge.issueRefundForInvoice).toBe('function');
   });
 
-  it('F5RefundBridge port has exactly two methods (issue + settlement lookup)', () => {
+  it('F5RefundBridge port has exactly three methods (issue + settlement lookup + in-flight resolver)', () => {
     // Defence against accidental scope creep on the bridge port. F8's view of
-    // F5 stays narrow — two operations only: (1) `issueRefundForInvoice`
-    // (issue a refund for the renewal invoice held in
-    // `pending_admin_reactivation`) and (2) `getRefundOutcomeForInvoice` (the
+    // F5 stays narrow — three read/write operations only: (1)
+    // `issueRefundForInvoice` (issue a refund for the renewal invoice held in
+    // `pending_admin_reactivation`); (2) `getRefundOutcomeForInvoice` (the
     // F8-RP follow-up settlement lookup — read-only; resolve whether a
     // previously-initiated async refund SETTLED so the reconcile cron can
-    // converge the cycle to `cancelled`). Adding a THIRD method would couple
-    // F8 to additional F5 surfaces — a code-review red flag.
+    // converge the cycle to `cancelled`); (3) `findPendingRefundForInvoice`
+    // (F8-RP-2 Finding 3 — read-only; resolve the invoice's single in-flight
+    // refund id so the reject use-case can stamp the marker on F5's id-less
+    // `refund_in_progress` path, preventing a cron-timeout refund from silently
+    // dropping the admin's reject → `lapsed`). Adding a FOURTH method would
+    // couple F8 to additional F5 surfaces — a code-review red flag. The
+    // `satisfies` below forces this list to stay in lock-step with the port.
     const portKeys = Object.keys({
       issueRefundForInvoice: null,
       getRefundOutcomeForInvoice: null,
+      findPendingRefundForInvoice: null,
     } satisfies Record<keyof F5RefundBridge, null>);
     expect(portKeys.sort()).toEqual(
-      ['getRefundOutcomeForInvoice', 'issueRefundForInvoice'].sort(),
+      [
+        'findPendingRefundForInvoice',
+        'getRefundOutcomeForInvoice',
+        'issueRefundForInvoice',
+      ].sort(),
     );
   });
 

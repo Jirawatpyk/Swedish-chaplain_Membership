@@ -150,6 +150,50 @@ export type GetRefundOutcomeResult =
       readonly detail: string;
     };
 
+/**
+ * F8-RP-2 review (Finding 3) — locate the SINGLE in-flight (`pending`) refund
+ * for an invoice and return its F5 refund id.
+ *
+ * WHY: when `adminRejectReactivation` hits F5's `refund_in_progress` guard, the
+ * error carries NO ids — a prior refund is already settling, but the reject use-
+ * case does not know which. That in-flight refund is NOT necessarily from a
+ * prior reject on this cycle: the reconcile cron's `processTimeout` (day-30) path
+ * also issues an async refund that returns `refund_in_progress` and leaves the
+ * cycle UNMARKED. Without a marker, the next cron pass re-times-out the cycle →
+ * `lapsed` (actor=cron), silently dropping the admin's explicit reject. This
+ * read-only lookup lets the reject use-case resolve that in-flight refund's id
+ * and stamp the marker so the reconcile marked branch converges → `cancelled`.
+ *
+ * The one-active-payment-per-invoice + one-pending-refund-per-payment F5
+ * invariants make "the pending refund for this invoice" unambiguous.
+ */
+export interface FindPendingRefundForInvoiceInput {
+  readonly tenantId: TenantId;
+  readonly invoiceId: InvoiceId;
+}
+
+export type FindPendingRefundForInvoiceResult =
+  | {
+      /** A single `pending` refund exists; its ids are the marker key. */
+      readonly status: 'found';
+      readonly refundId: string;
+      readonly processorRefundId: string | null;
+    }
+  | {
+      /**
+       * No `pending` refund in the invoice's F5 activity. Either it already
+       * settled between F5's `refund_in_progress` guard and this lookup (TOCTOU),
+       * or none exists. The caller does NOT stamp — it surfaces `refund_pending`
+       * and lets the sweep/webhook + a later cron pass reconcile.
+       */
+      readonly status: 'none';
+    }
+  | {
+      /** F5 read failed (repo unavailable) — transient; caller does not stamp. */
+      readonly status: 'lookup_failed';
+      readonly detail: string;
+    };
+
 export interface F5RefundBridge {
   issueRefundForInvoice(
     input: IssueRefundForInvoiceInput,
@@ -163,4 +207,14 @@ export interface F5RefundBridge {
   getRefundOutcomeForInvoice(
     input: GetRefundOutcomeInput,
   ): Promise<GetRefundOutcomeResult>;
+
+  /**
+   * F8-RP-2 review (Finding 3) — find the invoice's single in-flight
+   * (`pending`) refund + its id, so the reject use-case can stamp the marker on
+   * the `refund_in_progress` path. Read-only; no Stripe call, no mutation.
+   * See `FindPendingRefundForInvoiceResult`.
+   */
+  findPendingRefundForInvoice(
+    input: FindPendingRefundForInvoiceInput,
+  ): Promise<FindPendingRefundForInvoiceResult>;
 }

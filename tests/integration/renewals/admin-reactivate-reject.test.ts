@@ -147,6 +147,16 @@ function settlementLookupUnused(): F5RefundBridge['getRefundOutcomeForInvoice'] 
   return vi.fn(async () => ({ status: 'not_found' as const }));
 }
 
+/**
+ * F8-RP-2 Finding 3 — the in-flight-refund resolver is only consulted on the
+ * `refund_in_progress` (id-less) path; the SYNC reject stubs below use
+ * refunded/no_payment_found/refund_failed, so a throwaway `none` satisfies the
+ * port without being reached.
+ */
+function findPendingRefundUnused(): F5RefundBridge['findPendingRefundForInvoice'] {
+  return vi.fn(async () => ({ status: 'none' as const }));
+}
+
 /** Stub F5 bridge that issues a synthetic credit-note (no Stripe). */
 function refundedStub(): F5RefundBridge {
   return {
@@ -157,6 +167,7 @@ function refundedStub(): F5RefundBridge {
       creditNoteNumber: 'CN-RR-1',
     })),
     getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
   };
 }
 
@@ -193,6 +204,7 @@ function refundOnceThenNoPaymentStub(): F5RefundBridge & {
   return {
     issueRefundForInvoice: fn,
     getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
     refundedCount: () => refunded,
   };
 }
@@ -206,6 +218,7 @@ function refundFailedStub(): F5RefundBridge {
       detail: 'simulated F5 processor outage',
     })),
     getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
   };
 }
 
@@ -404,6 +417,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
         throw new Error('refund bridge must not run without a linked invoice');
       }),
       getRefundOutcomeForInvoice: settlementLookupUnused(),
+      findPendingRefundForInvoice: findPendingRefundUnused(),
     };
     const racedDeps = { ...deps, f5RefundBridge: neverBridge };
 

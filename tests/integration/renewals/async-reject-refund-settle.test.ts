@@ -43,6 +43,8 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 import type { F5RefundBridge } from '@/modules/renewals/application/ports/f5-refund-bridge';
+import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
+import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -153,6 +155,9 @@ function bridgeWithSettlement(
       );
     }),
     getRefundOutcomeForInvoice: vi.fn(async () => outcome),
+    // The cron settle branch never resolves an in-flight refund (Finding 3 is
+    // the admin-reject path) — stub it so the bridge satisfies the port.
+    findPendingRefundForInvoice: vi.fn(async () => ({ status: 'none' as const })),
   };
 }
 
@@ -248,6 +253,11 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
         })),
         getRefundOutcomeForInvoice: vi.fn(async () => ({
           status: 'not_found' as const,
+        })),
+        // This path carries a refundId directly (kind:'pending'), so the
+        // resolver is never reached; stub for port completeness.
+        findPendingRefundForInvoice: vi.fn(async () => ({
+          status: 'none' as const,
         })),
       },
     };
@@ -370,6 +380,11 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
             'settlement lookup must not run for an unmarked timeout',
           );
         }),
+        findPendingRefundForInvoice: vi.fn(async () => {
+          throw new Error(
+            'in-flight resolver must not run for an unmarked timeout',
+          );
+        }),
       },
     };
 
@@ -426,6 +441,219 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
     expect(row?.rejectRefundInitiatedAt).toBeNull();
     expect(row?.rejectRefundId).toBeNull();
     expect(row?.rejectActorUserId).toBeNull();
+  });
+
+  it('Finding 3: reject hits refund_in_progress on an UNMARKED (cron-timeout) cycle → resolver STAMPS marker on the live row → next cron pass converges to cancelled (not lapsed)', async () => {
+    // Reproduces the dropped-reject bug: the reconcile cron's day-30
+    // `processTimeout` issued an async refund (settling) and left the cycle
+    // UNMARKED. Then an admin clicks Reject while that refund is still settling
+    // — F5's `issueRefund` returns `refund_in_progress` (no ids). Before the
+    // fix, the reject skipped stamping → the next cron pass re-timed-out the
+    // cycle → `lapsed` (actor=cron), silently dropping the reject. THE FIX:
+    // the reject resolves the in-flight refund id via the bridge + stamps the
+    // marker, so the marked branch converges the cycle → `cancelled`.
+    const inflightRefundId = `rfnd_inflight_${randomUUID().slice(0, 8)}`;
+    const creditNoteId = randomUUID();
+    const { cycleId } = await seedCycle({
+      tenant: tenantA,
+      user,
+      daysPending: 31, // PAST the 30-day timeout — the pre-fix lapse trap
+      // NO marker — the cron-timeout refund left it unmarked
+    });
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+
+    // Admin reject: issueRefund → refund_in_progress (models F5's guard, no ids);
+    // the resolver surfaces the in-flight refund id from F5 activity.
+    const rejectDeps: typeof deps = {
+      ...deps,
+      f5RefundBridge: {
+        issueRefundForInvoice: vi.fn(async () => ({
+          status: 'refund_pending' as const, // refund_in_progress → no ids
+        })),
+        getRefundOutcomeForInvoice: vi.fn(async () => ({
+          status: 'not_found' as const,
+        })),
+        findPendingRefundForInvoice: vi.fn(async () => ({
+          status: 'found' as const,
+          refundId: inflightRefundId,
+          processorRefundId: 're_inflight_live_1',
+        })),
+      },
+    };
+    const rejectResult = await adminRejectReactivation(rejectDeps, {
+      tenantId: tenantA.ctx.slug,
+      cycleId,
+      reason: 'fraud flag — reject while cron refund settling',
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      requestId: null,
+      correlationId: randomUUID(),
+    });
+    expect(rejectResult.ok).toBe(true);
+    if (rejectResult.ok) {
+      expect(rejectResult.value.outcome).toBe('refund_pending');
+    }
+
+    // The LIVE row is now MARKED with the RESOLVED in-flight refund id + admin.
+    const marked = await readCycle(tenantA, cycleId);
+    expect(marked?.status).toBe('pending_admin_reactivation');
+    expect(marked?.rejectRefundInitiatedAt).not.toBeNull();
+    expect(marked?.rejectRefundId).toBe(inflightRefundId);
+    expect(marked?.rejectActorUserId).toBe(user.userId);
+
+    // Next cron pass: the refund settled succeeded → the marked branch converges
+    // the cycle → `cancelled` (NOT lapsed), even though it is 31 days pending.
+    const cronDeps: typeof deps = {
+      ...deps,
+      f5RefundBridge: bridgeWithSettlement({
+        status: 'succeeded',
+        creditNoteId,
+      }),
+    };
+    const cronResult = await reconcilePendingReactivations(cronDeps, {
+      tenantId: tenantA.ctx.slug,
+      now: NOW,
+      correlationId: randomUUID(),
+    });
+    expect(cronResult.ok).toBe(true);
+    if (cronResult.ok) {
+      expect(cronResult.value.asyncRejectSettledCancelled).toBe(1);
+      expect(cronResult.value.timedOut).toBe(0); // NOT lapsed despite day 31
+    }
+    const converged = await readCycle(tenantA, cycleId);
+    expect(converged?.status).toBe('cancelled');
+    expect(converged?.closedReason).toBe('admin_rejected_with_refund');
+  });
+
+  it('Finding 5: clearRejectRefundMarkerInTx is guarded on the refund id — a clear for R1 is a no-op when the live marker holds a newer R2 (marker survives)', async () => {
+    // The FAILED branch reads settlement for R1 OUTSIDE the lock, then clears
+    // under the lock. If a concurrent re-reject overwrote the marker with a
+    // fresh R2 in that window, the R1-guarded clear must be a no-op so R2's
+    // marker SURVIVES — otherwise R2's real in-flight refund is orphaned and the
+    // cycle lapses instead of converging. Direct repo test on live Neon (the
+    // WHERE-clause behaviour mocks hide).
+    const r2 = `rfnd_r2_${randomUUID().slice(0, 8)}`;
+    const { cycleId } = await seedCycle({
+      tenant: tenantA,
+      user,
+      daysPending: 4,
+      marker: { refundId: r2, actorUserId: user.userId }, // live marker = R2
+    });
+    const repo = makeDrizzleRenewalCycleRepo(tenantA.ctx);
+    const r1 = `rfnd_r1_${randomUUID().slice(0, 8)}`; // the STALE id the FAILED branch resolved
+
+    const clearedForR1 = await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.acquireCycleLockInTx(tx, tenantA.ctx.slug, asCycleId(cycleId));
+      return repo.clearRejectRefundMarkerInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        r1, // clearing for R1 while the live marker holds R2
+      );
+    });
+    expect(clearedForR1).toBe(false); // no-op: WHERE reject_refund_id = R1 → 0 rows
+
+    // R2's marker SURVIVES — the cycle stays marked so R2 still converges.
+    const survived = await readCycle(tenantA, cycleId);
+    expect(survived?.rejectRefundInitiatedAt).not.toBeNull();
+    expect(survived?.rejectRefundId).toBe(r2);
+
+    // Sanity: clearing for the CORRECT id (R2) DOES clear it.
+    const clearedForR2 = await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.acquireCycleLockInTx(tx, tenantA.ctx.slug, asCycleId(cycleId));
+      return repo.clearRejectRefundMarkerInTx(
+        tx,
+        tenantA.ctx.slug,
+        asCycleId(cycleId),
+        r2,
+      );
+    });
+    expect(clearedForR2).toBe(true);
+    const afterClear = await readCycle(tenantA, cycleId);
+    expect(afterClear?.rejectRefundInitiatedAt).toBeNull();
+    expect(afterClear?.rejectRefundId).toBeNull();
+  });
+
+  it('Finding 1: a settled-FAILED marker-clear throw is per-cycle isolated (live Neon) — poison cycle rolls back with marker intact, a second cycle still converges', async () => {
+    // Two marked cycles in tenant A: cycle 1's refund settled FAILED and its
+    // marker-clear tx THROWS (injected persistent DB blip); cycle 2's refund
+    // settled SUCCEEDED. BEFORE the fix, the bare `runInTenant` in the FAILED
+    // branch let the throw escape → the caller's unguarded for-loop → the whole
+    // reconcile pass 500'd (self-DoS). THE FIX isolates it: cycle 1 →
+    // `settle_failed` with its marker INTACT (the throwing clear-tx rolled back
+    // on live Neon), and cycle 2 still converges → `cancelled`.
+    const poisonRefundId = `rfnd_poison_${randomUUID().slice(0, 8)}`;
+    const okRefundId = `rfnd_ok_${randomUUID().slice(0, 8)}`;
+    const okCreditNoteId = randomUUID();
+    const poison = await seedCycle({
+      tenant: tenantA,
+      user,
+      daysPending: 4,
+      marker: { refundId: poisonRefundId, actorUserId: user.userId },
+    });
+    const healthy = await seedCycle({
+      tenant: tenantA,
+      user,
+      daysPending: 4,
+      marker: { refundId: okRefundId, actorUserId: user.userId },
+    });
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const racedDeps: typeof deps = {
+      ...deps,
+      f5RefundBridge: {
+        issueRefundForInvoice: vi.fn(async () => {
+          throw new Error('issueRefundForInvoice must not run on the settle branch');
+        }),
+        // Per-invoice settlement: poison → failed (drives the FAILED branch);
+        // healthy → succeeded (drives the convergence branch).
+        getRefundOutcomeForInvoice: vi.fn(async (input) =>
+          input.invoiceId === poison.invoiceId
+            ? {
+                status: 'failed' as const,
+                failureReasonCode: 'stripe_refund_failed',
+              }
+            : { status: 'succeeded' as const, creditNoteId: okCreditNoteId },
+        ),
+        findPendingRefundForInvoice: vi.fn(async () => ({
+          status: 'none' as const,
+        })),
+      },
+      cyclesRepo: {
+        ...deps.cyclesRepo,
+        // Inject a persistent throw on the FAILED-branch marker clear — the
+        // exact self-DoS class Finding 1 isolates. Real repo for every other op.
+        clearRejectRefundMarkerInTx: vi.fn(async () => {
+          throw new Error('renewal_cycles: connection reset mid-clear-tx');
+        }),
+      },
+    };
+
+    const r = await reconcilePendingReactivations(racedDeps, {
+      tenantId: tenantA.ctx.slug,
+      now: NOW,
+      correlationId: randomUUID(),
+    });
+
+    // The run does NOT reject despite the poison cycle's clear throwing.
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectSettleFailed).toBe(1); // poison isolated
+      expect(r.value.asyncRejectSettledCancelled).toBe(1); // healthy converged
+      expect(r.value.timedOut).toBe(0);
+    }
+
+    // Poison cycle: the throwing clear-tx rolled back → marker INTACT, still
+    // pending (self-heals on a later pass).
+    const poisonRow = await readCycle(tenantA, poison.cycleId);
+    expect(poisonRow?.status).toBe('pending_admin_reactivation');
+    expect(poisonRow?.rejectRefundInitiatedAt).not.toBeNull();
+    expect(poisonRow?.rejectRefundId).toBe(poisonRefundId);
+
+    // Healthy cycle: converged to cancelled in the SAME run — not blocked by
+    // the poison cycle's throw.
+    const healthyRow = await readCycle(tenantA, healthy.cycleId);
+    expect(healthyRow?.status).toBe('cancelled');
+    expect(healthyRow?.closedReason).toBe('admin_rejected_with_refund');
   });
 
   it('cross-tenant isolation: tenant B cron does NOT settle tenant A marked cycle (Principle I)', async () => {

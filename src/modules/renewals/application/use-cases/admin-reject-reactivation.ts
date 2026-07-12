@@ -212,6 +212,11 @@ export async function adminRejectReactivation(
     // no-payment-found path (audit refund_credit_note_id stays null).
     refundCreditNoteId = null;
   } else {
+    // Capture the (here non-null) linked invoice id as a stable const: TS
+    // property narrowing on `lockedCycle.linkedInvoiceId` does NOT survive the
+    // `await` below, and the Finding-3 in-flight-refund resolver needs it after
+    // the refund call.
+    const linkedInvoiceId = lockedCycle.linkedInvoiceId;
     // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
     // boundary. The bridge input type now demands TenantId/InvoiceId
     // brands so a swapped (tenantId, invoiceId) call no longer
@@ -219,7 +224,7 @@ export async function adminRejectReactivation(
     // — adoption is incremental per S-9 scope policy.
     const refundResult = await deps.f5RefundBridge.issueRefundForInvoice({
       tenantId: asTenantId(input.tenantId),
-      invoiceId: asInvoiceId(lockedCycle.linkedInvoiceId),
+      invoiceId: asInvoiceId(linkedInvoiceId),
       reason: input.reason,
       actorUserId: input.actorUserId,
       correlationId: input.correlationId,
@@ -273,17 +278,58 @@ export async function adminRejectReactivation(
       // F8-RP follow-up: DURABLY stamp the async reject-with-refund marker so
       // the reconcile cron can converge this cycle → `cancelled` (parity with
       // the sync path) once the refund settles, instead of the 30-day timeout
-      // → `lapsed`. Only the F5 `kind:'pending'` path carries a refund id (the
-      // settlement lookup key); the `refund_in_progress` retry path carries
-      // none — a PRIOR reject already stamped the marker for that in-flight
-      // refund, so skip (nothing new to record). Guarded write under the
-      // per-cycle lock (CAS on status='pending_admin_reactivation'): a 0-row
-      // result means the cycle moved out of pending in the race window — the
-      // async refund is already in flight (money-safe) and the reconcile cron
-      // resolves it via F5 state, so we log + still surface `refund_pending`.
-      const stampRefundId = refundResult.refundId;
+      // → `lapsed`.
+      //
+      // The F5 `kind:'pending'` path carries the refund id (the settlement
+      // lookup key) directly. The `refund_in_progress` path carries NONE — F5's
+      // Phase-A guard fires for ANY pending refund on the payment.
+      //
+      // Finding 3 (F8-RP-2 review): that in-flight refund is NOT necessarily
+      // from a prior reject on THIS cycle. The reconcile cron's `processTimeout`
+      // (day-30) path also issues an async refund that returns
+      // `refund_in_progress` and leaves the cycle UNMARKED. If we skipped
+      // stamping here (the old assumption "a prior reject already stamped the
+      // marker"), the next cron pass would re-time-out the cycle → `lapsed`
+      // (actor=cron, no post_refund_review task), silently DROPPING the admin's
+      // explicit reject and misrouting the member from the cancelled bucket into
+      // the lapsed re-engagement funnel. So on the id-less path, when the cycle
+      // has NO existing marker, resolve the in-flight refund's id from F5 and
+      // stamp it. If a marker already exists (a genuine prior reject), keep the
+      // idempotent skip (preserve that reject's actor). If the resolution finds
+      // no pending refund (TOCTOU — it settled/vanished, or the lookup failed),
+      // do NOT fabricate an id and do NOT crash: leave the cycle unmarked and let
+      // the sweep/webhook + a later cron pass reconcile it (surface
+      // `refund_pending` as before).
+      let stampRefundId = refundResult.refundId;
+      if (!stampRefundId && lockedCycle.rejectRefundInitiatedAt === null) {
+        const resolved = await deps.f5RefundBridge.findPendingRefundForInvoice({
+          tenantId: asTenantId(input.tenantId),
+          invoiceId: asInvoiceId(linkedInvoiceId),
+        });
+        if (resolved.status === 'found') {
+          stampRefundId = resolved.refundId;
+        } else {
+          logger.warn(
+            {
+              cycleId: lockedCycle.cycleId,
+              tenantId: input.tenantId,
+              invoiceId: linkedInvoiceId,
+              resolveStatus: resolved.status,
+            },
+            '[admin-reject-reactivation] refund_in_progress but no resolvable in-flight refund id (TOCTOU) — marker not stamped; cycle stays pending, async settlement + reconcile cron resolve it',
+          );
+        }
+      }
       if (stampRefundId) {
+        // Capture as a const so the non-undefined narrowing survives the
+        // `runInTenant` closure (a `let` narrowing would not).
+        const resolvedRefundId = stampRefundId;
         const initiatedAt = (input.now ?? new Date()).toISOString();
+        // Guarded write under the per-cycle lock (CAS on
+        // status='pending_admin_reactivation'): a 0-row result means the cycle
+        // moved out of pending in the race window — the async refund is already
+        // in flight (money-safe) and the reconcile cron resolves it via F5
+        // state, so we log + still surface `refund_pending`.
         const marked = await runInTenant(deps.tenant, async (tx) => {
           await deps.cyclesRepo.acquireCycleLockInTx(
             tx,
@@ -296,7 +342,7 @@ export async function adminRejectReactivation(
             cycleId,
             {
               initiatedAt,
-              refundId: stampRefundId,
+              refundId: resolvedRefundId,
               actorUserId: input.actorUserId,
             },
           );
@@ -306,7 +352,7 @@ export async function adminRejectReactivation(
             {
               cycleId: lockedCycle.cycleId,
               tenantId: input.tenantId,
-              refundId: stampRefundId,
+              refundId: resolvedRefundId,
             },
             '[admin-reject-reactivation] cycle no longer pending — reject-refund marker not stamped; async refund still in flight (money-safe), reconcile cron resolves via F5 state',
           );

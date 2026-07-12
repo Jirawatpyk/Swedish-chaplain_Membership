@@ -348,14 +348,22 @@ export interface RenewalCycleRepo {
    * alerting metric.
    *
    * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'
-   * AND reject_refund_initiated_at IS NOT NULL` — idempotent (`false` when 0
-   * rows matched: cycle moved on, or the marker was already cleared). Thread
-   * `tx` from `runInTenant`.
+   * AND reject_refund_initiated_at IS NOT NULL AND reject_refund_id = ?` —
+   * idempotent (`false` when 0 rows matched: cycle moved on, or the marker was
+   * already cleared). Thread `tx` from `runInTenant`.
+   *
+   * Finding 5 (F8-RP-2 review): the `expectedRefundId` guard makes the clear a
+   * CAS on the SPECIFIC refund the caller resolved OUTSIDE the lock (R1). If a
+   * concurrent admin re-reject overwrote the marker with a fresh refund (R2) in
+   * the caller's read→clear window, the clear matches 0 rows (no-op, `false`)
+   * instead of wiping R2's live marker — so R2's own settlement still converges
+   * the cycle rather than the cycle being silently unmarked → lapsed.
    */
   clearRejectRefundMarkerInTx(
     tx: TenantTx,
     tenantId: string,
     cycleId: CycleId,
+    expectedRefundId: string,
   ): Promise<boolean>;
 
   /**

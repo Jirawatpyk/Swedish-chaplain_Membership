@@ -880,11 +880,19 @@ export function makeDrizzleRenewalCycleRepo(
       tx: unknown,
       _tenantId: string,
       cycleId: CycleId,
+      expectedRefundId: string,
     ): Promise<boolean> {
       // F8-RP follow-up (migration 0243) — idempotent marker clear on the
       // settled-`failed` path. GUARDED: only clears a still-pending, still-
       // marked cycle so a concurrent transition (admin re-handled it) is a
       // no-op (`false`). RLS scope via inherited GUC.
+      //
+      // Finding 5 (F8-RP-2 review): the additional `reject_refund_id =
+      // expectedRefundId` predicate makes this a CAS on the SPECIFIC refund the
+      // caller resolved OUTSIDE the lock (R1). If a concurrent re-reject stamped
+      // a fresh refund (R2) via `markRejectRefundInitiatedInTx` in the caller's
+      // read→clear window, this UPDATE matches 0 rows (`false`) instead of wiping
+      // R2's marker — so R2's own settlement still converges the cycle.
       const txDb = tx as typeof db;
       const updated = await txDb
         .update(renewalCycles)
@@ -898,6 +906,7 @@ export function makeDrizzleRenewalCycleRepo(
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, 'pending_admin_reactivation'),
             isNotNull(renewalCycles.rejectRefundInitiatedAt),
+            eq(renewalCycles.rejectRefundId, expectedRefundId),
           ),
         )
         .returning({ cycleId: renewalCycles.cycleId });

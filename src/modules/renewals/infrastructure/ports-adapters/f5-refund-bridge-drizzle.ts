@@ -26,6 +26,8 @@ import {
 import { asSatang } from '@/lib/money';
 import type {
   F5RefundBridge,
+  FindPendingRefundForInvoiceInput,
+  FindPendingRefundForInvoiceResult,
   GetRefundOutcomeInput,
   GetRefundOutcomeResult,
   IssueRefundForInvoiceInput,
@@ -164,5 +166,36 @@ export const f5RefundBridge: F5RefundBridge = {
         return { status: 'pending' };
       }
     }
+  },
+
+  async findPendingRefundForInvoice(
+    input: FindPendingRefundForInvoiceInput,
+  ): Promise<FindPendingRefundForInvoiceResult> {
+    // F8-RP-2 review (Finding 3) — read-only lookup of the invoice's single
+    // in-flight (`pending`) refund + its id. Composes F5's
+    // `loadInvoicePaymentActivity` (every payment + refund DTO for the invoice)
+    // and picks the one `pending` refund. The one-active-payment-per-invoice +
+    // one-pending-refund-per-payment F5 invariants make this unambiguous. No
+    // Stripe call, no mutation.
+    const activityResult = await loadInvoicePaymentActivity(
+      makeLoadInvoicePaymentActivityDeps(input.tenantId),
+      { tenantId: input.tenantId, invoiceId: input.invoiceId },
+    );
+    if (!activityResult.ok) {
+      return { status: 'lookup_failed', detail: activityResult.error.kind };
+    }
+    const pending = activityResult.value.refunds.find(
+      (r) => r.status === 'pending',
+    );
+    if (!pending) {
+      // Either it already settled between F5's `refund_in_progress` guard and
+      // this lookup (TOCTOU), or none exists. Caller does not stamp.
+      return { status: 'none' };
+    }
+    return {
+      status: 'found',
+      refundId: pending.refundId,
+      processorRefundId: pending.processorRefundId,
+    };
   },
 };

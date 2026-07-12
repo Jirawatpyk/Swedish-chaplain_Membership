@@ -217,3 +217,77 @@ describe('f5RefundBridge getRefundOutcomeForInvoice mapping (F8-RP follow-up)', 
     if (r.status === 'lookup_failed') expect(r.detail).toBe('repo_unavailable');
   });
 });
+
+describe('f5RefundBridge findPendingRefundForInvoice mapping (F8-RP-2 Finding 3)', () => {
+  const FIND_INPUT = {
+    tenantId: asTenantId('tenant-a'),
+    invoiceId: asInvoiceId('00000000-0000-0000-0000-0000000bbbb1'),
+  };
+  const refundRow = (over: Record<string, unknown>) => ({
+    refundId: 'rfnd-x',
+    paymentId: 'pay-1',
+    invoiceId: FIND_INPUT.invoiceId,
+    status: 'pending',
+    amountSatang: 10_000n,
+    reason: 'x',
+    initiatedAt: new Date(),
+    completedAt: null,
+    initiatorUserId: 'admin-1',
+    processorRefundId: 're_x',
+    failureReasonCode: null,
+    creditNoteId: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('one pending refund present → { found, refundId, processorRefundId }', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({
+        payments: [],
+        refunds: [
+          refundRow({ refundId: 'rfnd-old', status: 'failed' }),
+          refundRow({
+            refundId: 'rfnd-inflight',
+            status: 'pending',
+            processorRefundId: 're_inflight',
+          }),
+        ],
+      }),
+    );
+    const r = await f5RefundBridge.findPendingRefundForInvoice(FIND_INPUT);
+    expect(r.status).toBe('found');
+    if (r.status === 'found') {
+      expect(r.refundId).toBe('rfnd-inflight');
+      expect(r.processorRefundId).toBe('re_inflight');
+    }
+  });
+
+  it('no pending refund (all settled) → { none }', async () => {
+    loadActivityMock.mockResolvedValue(
+      ok({
+        payments: [],
+        refunds: [refundRow({ refundId: 'rfnd-done', status: 'succeeded' })],
+      }),
+    );
+    const r = await f5RefundBridge.findPendingRefundForInvoice(FIND_INPUT);
+    expect(r.status).toBe('none');
+  });
+
+  it('empty activity → { none }', async () => {
+    loadActivityMock.mockResolvedValue(ok({ payments: [], refunds: [] }));
+    const r = await f5RefundBridge.findPendingRefundForInvoice(FIND_INPUT);
+    expect(r.status).toBe('none');
+  });
+
+  it('activity load error → { lookup_failed, detail }', async () => {
+    loadActivityMock.mockResolvedValue(
+      err({ kind: 'repo_unavailable', cause: new Error('boom') }),
+    );
+    const r = await f5RefundBridge.findPendingRefundForInvoice(FIND_INPUT);
+    expect(r.status).toBe('lookup_failed');
+    if (r.status === 'lookup_failed') expect(r.detail).toBe('repo_unavailable');
+  });
+});

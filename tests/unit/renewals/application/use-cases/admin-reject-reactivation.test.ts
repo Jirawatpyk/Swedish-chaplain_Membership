@@ -12,6 +12,7 @@ import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type {
   F5RefundBridge,
+  FindPendingRefundForInvoiceResult,
   IssueRefundForInvoiceResult,
 } from '@/modules/renewals/application/ports/f5-refund-bridge';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
@@ -59,6 +60,12 @@ function fakeDeps(args: {
   emitImpl?: () => Promise<void>;
   /** F8-RP follow-up — override the guarded marker-write result (default true). */
   markRejectRefundResult?: boolean;
+  /**
+   * F8-RP-2 review (Finding 3) — override the in-flight-refund resolution the
+   * reject use-case runs on the `refund_in_progress` path. Default `none` (no
+   * resolvable pending refund → no stamp, the pre-fix behaviour).
+   */
+  findPendingRefundResult?: FindPendingRefundForInvoiceResult;
 }): {
   deps: AdminRejectReactivationDeps;
   refundMock: ReturnType<typeof vi.fn>;
@@ -66,6 +73,7 @@ function fakeDeps(args: {
   emitInTxMock: ReturnType<typeof vi.fn>;
   insertTaskMock: ReturnType<typeof vi.fn>;
   markRejectRefundMock: ReturnType<typeof vi.fn>;
+  findPendingRefundMock: ReturnType<typeof vi.fn>;
 } {
   const findByIdInTxMock = vi.fn(async () => args.cycle ?? null);
   const refundMock = vi.fn(
@@ -89,6 +97,12 @@ function fakeDeps(args: {
   const markRejectRefundMock = vi.fn(
     async () => args.markRejectRefundResult ?? true,
   );
+  // F8-RP-2 review (Finding 3) — the in-flight-refund resolver the reject use-
+  // case calls on the `refund_in_progress` path when the cycle has no marker.
+  const findPendingRefundMock = vi.fn(
+    async () =>
+      args.findPendingRefundResult ?? { status: 'none' as const },
+  );
   const f5Bridge: F5RefundBridge = {
     issueRefundForInvoice: refundMock as never,
     // The sync reject path never consults the settlement lookup; provide a
@@ -96,6 +110,7 @@ function fakeDeps(args: {
     getRefundOutcomeForInvoice: vi.fn(async () => ({
       status: 'not_found' as const,
     })),
+    findPendingRefundForInvoice: findPendingRefundMock as never,
   };
   // I9 review-fix: stub `escalationTaskRepo.insertIfAbsent` so the
   // post-refund-review task path runs without persistence; default
@@ -157,6 +172,7 @@ function fakeDeps(args: {
     emitInTxMock,
     insertTaskMock,
     markRejectRefundMock,
+    findPendingRefundMock,
   };
 }
 
@@ -320,20 +336,97 @@ describe('adminRejectReactivation (T137)', () => {
     );
   });
 
-  it('F8-RP follow-up: refund_pending with NO refundId (refund_in_progress path) does NOT stamp the marker', async () => {
-    // The `refund_in_progress` retry path carries no ids — there is no refund
-    // id to look up settlement against, and a prior reject already stamped the
-    // marker for the in-flight refund. Skip the marker write (nothing to
-    // record) but still surface `refund_pending`.
-    const cycle = buildCycle();
-    const { deps, markRejectRefundMock } = fakeDeps({
+  it('Finding 3: refund_in_progress (no id) + UNMARKED cycle → resolves in-flight refund id via bridge + STAMPS the marker', async () => {
+    // THE BUG: F5 `refund_in_progress` fires for ANY pending refund on the
+    // payment — including one issued by the reconcile cron's day-30
+    // `processTimeout` path, which leaves the cycle UNMARKED. If the reject
+    // skipped stamping here (the pre-fix behaviour), the next cron pass would
+    // re-time-out the cycle → `lapsed` (actor=cron), silently dropping the
+    // admin's explicit reject. THE FIX: with no existing marker, resolve the
+    // in-flight refund's id from F5 and stamp the marker so the reconcile
+    // marked branch converges the cycle → `cancelled` with the admin actor.
+    const cycle = buildCycle(); // rejectRefundInitiatedAt defaults to null
+    const { deps, markRejectRefundMock, findPendingRefundMock } = fakeDeps({
+      cycle,
+      refundResult: { status: 'refund_pending' }, // refund_in_progress → no ids
+      findPendingRefundResult: {
+        status: 'found',
+        refundId: 'rfnd-inflight-cron-1',
+        processorRefundId: 're_inflight_1',
+      },
+    });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('refund_pending');
+    // The bridge was consulted to resolve the in-flight refund id.
+    expect(findPendingRefundMock).toHaveBeenCalledOnce();
+    // The marker is stamped with the RESOLVED id + the rejecting admin actor.
+    expect(markRejectRefundMock).toHaveBeenCalledOnce();
+    expect(markRejectRefundMock.mock.calls[0]?.[3]).toMatchObject({
+      refundId: 'rfnd-inflight-cron-1',
+      actorUserId: 'admin-1',
+    });
+  });
+
+  it('Finding 3: refund_in_progress (no id) + cycle ALREADY marked (prior reject) → does NOT resolve or re-stamp (idempotent)', async () => {
+    // A genuine prior reject already stamped the marker for this in-flight
+    // refund. Re-stamping would overwrite that reject's actor — keep the
+    // idempotent skip. The bridge resolution is NOT consulted.
+    const cycle = buildCycle({
+      rejectRefundInitiatedAt: '2026-04-02T00:00:00Z',
+      rejectRefundId: 'rfnd-prior-reject-1',
+      rejectActorUserId: 'admin-prior',
+    });
+    const { deps, markRejectRefundMock, findPendingRefundMock } = fakeDeps({
       cycle,
       refundResult: { status: 'refund_pending' },
     });
     const r = await adminRejectReactivation(deps, baseInput);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.outcome).toBe('refund_pending');
+    expect(findPendingRefundMock).not.toHaveBeenCalled();
     expect(markRejectRefundMock).not.toHaveBeenCalled();
+  });
+
+  it('Finding 3: refund_in_progress (no id) + UNMARKED but bridge returns none (TOCTOU) → does NOT stamp, still surfaces refund_pending', async () => {
+    // The in-flight refund settled/vanished between F5's guard and the lookup
+    // (TOCTOU), or the lookup failed. Do NOT fabricate an id, do NOT crash —
+    // leave the cycle unmarked; the sweep/webhook + a later cron pass reconcile.
+    const cycle = buildCycle();
+    const { deps, markRejectRefundMock, findPendingRefundMock } = fakeDeps({
+      cycle,
+      refundResult: { status: 'refund_pending' },
+      findPendingRefundResult: { status: 'none' },
+    });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.outcome).toBe('refund_pending');
+    // The resolution WAS attempted (no marker existed) but returned nothing.
+    expect(findPendingRefundMock).toHaveBeenCalledOnce();
+    expect(markRejectRefundMock).not.toHaveBeenCalled();
+  });
+
+  it('Finding 3: refund_pending WITH a refundId (kind:pending path) still stamps directly, WITHOUT the bridge resolution', async () => {
+    // Regression guard for the common async path: `issueRefund` → kind:'pending'
+    // carries the refund id, so the reject stamps it directly and never needs
+    // the in-flight resolver (the resolver is only for the id-less
+    // refund_in_progress path).
+    const cycle = buildCycle();
+    const { deps, markRejectRefundMock, findPendingRefundMock } = fakeDeps({
+      cycle,
+      refundResult: {
+        status: 'refund_pending',
+        refundId: 'rfnd-async-1',
+        processorRefundId: 're_async_1',
+      },
+    });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(findPendingRefundMock).not.toHaveBeenCalled();
+    expect(markRejectRefundMock).toHaveBeenCalledOnce();
+    expect(markRejectRefundMock.mock.calls[0]?.[3]).toMatchObject({
+      refundId: 'rfnd-async-1',
+    });
   });
 
   it('cycle_not_found — null re-read after lock', async () => {

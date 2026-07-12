@@ -98,6 +98,13 @@ function fakeDeps(args: {
   getRefundOutcomeResult?: GetRefundOutcomeResult;
   getRefundOutcomeImpl?: () => Promise<GetRefundOutcomeResult>;
   /**
+   * F8-RP-2 review (Finding 1) — override the guarded marker-CLEAR result on
+   * the settled-`failed` branch. Set to a throwing impl to prove the FAILED
+   * branch is per-cycle error-isolated (a persistent clear-tx throw must NOT
+   * 500 the whole reconcile pass).
+   */
+  clearRejectRefundImpl?: () => Promise<boolean>;
+  /**
    * T138 catch-up review-fix: per-cycleId mapping of which reminder
    * audits already exist. Defaults to empty (cron-skip never happened
    * before — fire all crossed thresholds). Set to a populated set to
@@ -163,7 +170,9 @@ function fakeDeps(args: {
   // the guarded marker writes succeed (return true); the escalation task is
   // newly created. Threaded onto cyclesRepo / a new escalationTaskRepo dep.
   const markRejectRefundMock = vi.fn(async () => true);
-  const clearRejectRefundMock = vi.fn(async () => true);
+  const clearRejectRefundMock = vi.fn(
+    args.clearRejectRefundImpl ?? (async () => true),
+  );
   const insertTaskMock = vi.fn(async () => ({
     created: true,
     row: { taskId: 'task-async-reject-1' },
@@ -171,6 +180,9 @@ function fakeDeps(args: {
   const f5Bridge: F5RefundBridge = {
     issueRefundForInvoice: refundMock as never,
     getRefundOutcomeForInvoice: getRefundOutcomeMock as never,
+    // The reconcile cron never calls the in-flight-refund resolver (Finding 3
+    // is the admin-reject path); stub it so the mock satisfies the port.
+    findPendingRefundForInvoice: vi.fn(async () => ({ status: 'none' as const })),
   };
   const reminderAuditQueryMock = vi.fn(
     args.reminderAuditQueryImpl ??
@@ -877,8 +889,67 @@ describe('reconcilePendingReactivations (F8-RP) — async reject-with-refund set
       expect(r.value.timedOut).toBe(0);
     }
     expect(clearRejectRefundMock).toHaveBeenCalledOnce();
+    // Finding 5: the clear is GUARDED on the SAME refund id this branch resolved
+    // (the marker's R1, `REJECT_REFUND_ID`) so a concurrent re-reject that
+    // overwrote the marker with a fresh R2 in the read→clear window is a no-op
+    // rather than clobbering R2's live marker. Signature:
+    // (tx, tenantId, cycleId, refundId).
+    expect(clearRejectRefundMock.mock.calls[0]?.[3]).toBe(REJECT_REFUND_ID);
     expect(transitionMock).not.toHaveBeenCalled();
     expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('Finding 1 (per-cycle isolation): marked FAILED-branch marker-clear tx THROWS (non-conflict) → settle_failed, cron does NOT reject, next cycle still processed', async () => {
+    // Sibling of the succeeded-settle THROW test above, for the settled-FAILED
+    // branch. BEFORE this fix that branch cleared the marker inside a BARE
+    // `runInTenant` with NO try/catch — a persistent throw from
+    // `acquireCycleLockInTx` / `clearRejectRefundMarkerInTx` escaped
+    // `processMarkedRejectRefund`, propagated through the caller's unguarded
+    // for-loop, and 500'd the WHOLE reconcile pass (self-DoS), blocking every
+    // other marked/timeout/reminder cycle for the tenant. A SECOND,
+    // otherwise-processable cycle (a day-23 reminder-due cycle) is seeded AFTER
+    // the poison cycle to prove the loop keeps going past the throw.
+    const poisonCycle = pendingCycle({
+      daysPending: 5,
+      marked: true,
+      cycleSuffix: 'c093',
+    });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'c094' });
+    const { deps, transitionMock, emitMock, clearRejectRefundMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      getRefundOutcomeResult: {
+        status: 'failed',
+        failureReasonCode: 'stripe_refund_failed',
+      },
+      clearRejectRefundImpl: async () => {
+        throw new Error('renewal_cycles: connection reset mid-clear-tx');
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (c) the failing cycle is classified `settle_failed` (self-heals next
+      // pass, same discipline as the succeeded-settle blip), NEVER
+      // `refund_failed` (which would imply the marker was cleared + the cycle
+      // reverted) and never a settled/lapse counter.
+      expect(r.value.asyncRejectSettleFailed).toBe(1);
+      expect(r.value.asyncRejectRefundFailed).toBe(0);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.timedOut).toBe(0);
+      // (b) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // The clear was attempted (and threw); the succeeded-path transition never runs.
+    expect(clearRejectRefundMock).toHaveBeenCalledOnce();
+    expect(transitionMock).not.toHaveBeenCalled();
+    // The reminder path's `emit` (distinct from the marked-branch writes) fires
+    // once for the second cycle — unaffected by the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
   });
 
   it('marked cycle, F5 settlement lookup FAILED → lookup_failed counter, cycle untouched (retry next pass)', async () => {
