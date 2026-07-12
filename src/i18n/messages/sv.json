@@ -1397,7 +1397,7 @@
         "editTitle": "Redigera kontakt",
         "description": "Lägg till ytterligare en person hos denna medlem. De läggs till som en sekundär kontakt.",
         "editDescription": "Uppdatera den här kontaktens uppgifter.",
-        "emailEditNote": "För att ändra kontaktens e-postadress, redigera den på medlemmens redigeringssida. En okopplad kontakt måste först bjudas in till portalen.",
+        "emailEditNote": "Den här kontakten är kopplad till ett portalkonto, så e-postadressen är en inloggningsidentitet. Ändra den på medlemmens redigeringssida (ett verifieringsmejl skickas).",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
         "submit": "Spara",

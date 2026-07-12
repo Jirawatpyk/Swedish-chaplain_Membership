@@ -9,7 +9,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
-import { ContactFormDialog } from '@/components/members/contact-form-dialog';
+import {
+  ContactFormDialog,
+  type ContactInitial,
+} from '@/components/members/contact-form-dialog';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -32,6 +35,66 @@ function openAddDialog() {
   );
   fireEvent.click(screen.getByText('Open'));
 }
+
+function openEditDialog(overrides: Partial<ContactInitial> = {}) {
+  const contact: ContactInitial = {
+    contactId: 'c1',
+    firstName: 'Alice',
+    lastName: 'Anderson',
+    email: 'alice@old.example',
+    phone: null,
+    roleTitle: null,
+    preferredLanguage: 'en',
+    linkedUserId: null,
+    ...overrides,
+  };
+  render(
+    <NextIntlClientProvider locale="en" messages={enMessages}>
+      <ContactFormDialog memberId="m1" mode="edit" contact={contact} trigger={<button>Open</button>} />
+    </NextIntlClientProvider>,
+  );
+  fireEvent.click(screen.getByText('Open'));
+  return contact;
+}
+
+describe('ContactFormDialog — edit-mode email editability', () => {
+  it('UNLINKED contact: email field is editable (not disabled), no read-only note', () => {
+    openEditDialog({ linkedUserId: null });
+    const email = document.querySelector('#cf-email') as HTMLInputElement;
+    expect(email.disabled).toBe(false);
+    expect(document.querySelector('#cf-email-note')).toBeNull();
+  });
+
+  it('LINKED contact: email is read-only with a note (sign-in identity)', () => {
+    openEditDialog({ linkedUserId: 'user-1' });
+    const email = document.querySelector('#cf-email') as HTMLInputElement;
+    expect(email.disabled).toBe(true);
+    expect(document.querySelector('#cf-email-note')).not.toBeNull();
+  });
+
+  it('UNLINKED contact: submitting a changed email PATCHes the `email` field', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openEditDialog({ linkedUserId: null, email: 'alice@old.example' });
+
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'alice@new.example' },
+    });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const init = fetchMock.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(init.body as string);
+    expect(body.email).toBe('alice@new.example');
+    expect(init.method).toBe('PATCH');
+
+    vi.unstubAllGlobals();
+  });
+});
 
 describe('ContactFormDialog — inline email-taken', () => {
   it('surfaces a 409 conflict inline on #cf-email (not a toast)', async () => {

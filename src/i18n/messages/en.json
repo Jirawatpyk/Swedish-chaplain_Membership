@@ -1397,7 +1397,7 @@
         "editTitle": "Edit contact",
         "description": "Add another person at this member. They are added as a secondary contact.",
         "editDescription": "Update this contact's details.",
-        "emailEditNote": "To change this contact's email, edit it on the member Edit page. An unlinked contact must be invited to the portal first.",
+        "emailEditNote": "This contact is linked to a portal account, so this email is a sign-in identity. To change it, use the member's Edit page (it sends a verification email).",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
         "submit": "Save",

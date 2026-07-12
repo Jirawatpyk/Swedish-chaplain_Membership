@@ -444,6 +444,10 @@ function ContactBlock({
                 phone: contact.phone ?? null,
                 roleTitle: contact.roleTitle ?? null,
                 preferredLanguage: contact.preferredLanguage,
+                // Drives email editability in the edit dialog: unlinked
+                // (imported) contacts get an in-place email edit; linked ones
+                // stay read-only (sign-in identity, changed via FR-012a).
+                linkedUserId: contact.linkedUserId ?? null,
               }}
             />
           </div>
