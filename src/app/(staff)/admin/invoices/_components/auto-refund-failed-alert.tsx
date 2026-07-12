@@ -32,7 +32,7 @@ export function AutoRefundFailedAlert({
         <span>{t('autoRefundFailed.body')}</span>
         {processorRefundId ? (
           <span
-            className="font-mono text-xs"
+            className="font-mono text-xs break-all"
             data-testid="admin-invoice-auto-refund-failed-ref"
           >
             {t('autoRefundFailed.ref', { ref: processorRefundId })}
