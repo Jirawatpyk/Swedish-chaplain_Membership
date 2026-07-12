@@ -187,11 +187,15 @@ export async function PATCH(
         { status: 404 },
       );
     case 'state_error':
+      // The client maps `code` → localized copy; the message here is a
+      // generic non-leaky fallback (no dev-y "<code>" interpolation). The
+      // domain code is preserved under `details.code` for observability.
       return NextResponse.json(
         {
           error: {
             code: 'state_error',
-            message: `State transition failed: ${result.error.code}`,
+            message: 'Member state transition is not allowed.',
+            details: { code: result.error.code },
           },
         },
         { status: 409 },

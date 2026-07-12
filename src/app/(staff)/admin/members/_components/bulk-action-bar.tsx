@@ -113,7 +113,13 @@ export function BulkActionBar({
         } else if (res.status === 429) {
           toast.error(t('rateLimited'));
         } else {
-          toast.error(body.error?.message ?? t('unknownError'));
+          // Map the server error CODE to localized copy — never render the
+          // server's raw English `error.message` (state_error's message even
+          // embeds a member UUID, see bulk/route.ts). Unknown codes fall back
+          // to a generic localized message.
+          const code = body.error?.code;
+          const key = typeof code === 'string' ? `errors.${code}` : null;
+          toast.error(key && t.has(key) ? t(key) : t('unknownError'));
         }
       } catch {
         toast.error(t('networkError'));

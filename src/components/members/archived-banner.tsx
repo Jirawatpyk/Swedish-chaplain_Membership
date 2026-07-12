@@ -68,13 +68,19 @@ export function ArchivedBanner({
         });
       } else {
         const data = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string; message?: string };
+          error?: { code?: string };
         };
         const code = data.error?.code ?? 'server_error';
+        // Map the server error CODE to localized copy — never render the
+        // server's raw English `error.message`.
         if (code === 'archive_window_expired') {
           toast.error(t('windowExpiredToast'));
+        } else if (code === 'state_error') {
+          toast.error(t('undeleteNotArchived'));
+        } else if (code === 'not_found') {
+          toast.error(t('undeleteNotFound'));
         } else {
-          toast.error(data.error?.message ?? t('undeleteError'));
+          toast.error(t('undeleteError'));
         }
       }
     } catch {

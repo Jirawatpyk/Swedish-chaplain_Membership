@@ -1419,6 +1419,7 @@
           "invalidEmail": "Kontaktens e-postadress är ogiltig.",
           "emailTaken": "Denna e-post tillhör redan ett annat konto.",
           "notFound": "Kontakten hittades inte.",
+          "contactRemoved": "Den här kontakten har tagits bort. Uppdatera sidan.",
           "linkFailed": "Det gick inte att koppla portalkontot. Ingen inbjudan skickades – försök igen.",
           "serverError": "Något gick fel. Försök igen."
         }
@@ -1450,6 +1451,13 @@
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
+        "errors": {
+          "state_error": "En eller flera valda medlemmar kan inte arkiveras — de kan redan vara arkiverade. Uppdatera och försök igen.",
+          "not_found": "En eller flera valda medlemmar finns inte längre. Uppdatera och försök igen.",
+          "plan_not_found": "Målplanen finns inte längre. Uppdatera och försök igen.",
+          "bulk_cap_exceeded": "För många medlemmar valda för en omgång. Minska urvalet och försök igen.",
+          "invalid_body": "Begäran var ogiltig. Uppdatera och försök igen."
+        },
         "unknownError": "Något gick fel.",
         "networkError": "Nätverksfel. Kontrollera anslutningen.",
         "progressLabel": "Massåtgärd pågår",
@@ -1462,7 +1470,10 @@
         "saving": "Sparar…",
         "saved": "Sparat",
         "toggleStatus": "Växla status (nuvarande: {current})",
-        "networkError": "Nätverksfel. Kontrollera anslutningen."
+        "networkError": "Nätverksfel. Kontrollera anslutningen.",
+        "errors": {
+          "state_error": "Kunde inte ändra status — medlemmens nuvarande status tillåter inte det."
+        }
       },
       "archive": {
         "archiveCta": "Arkivera medlem",
@@ -1476,6 +1487,8 @@
         "archivingInProgress": "Arkiverar…",
         "archiveSuccess": "{companyName} arkiverad.",
         "archiveError": "Kunde inte arkivera. Försök igen.",
+        "archiveAlreadyArchived": "Den här medlemmen är redan arkiverad. Uppdatera sidan.",
+        "archiveNotFound": "Medlemmen hittades inte. Uppdatera sidan.",
         "bannerTitle": "Arkiverad {date}",
         "withinWindow": "{daysRemaining, plural, one {# dag kvar} other {# dagar kvar}} i 90-dagars återställningsfönstret.",
         "windowExpired": "Arkiverad för {daysSinceArchive} dagar sedan — utanför 90-dagars återställningsfönstret.",
@@ -1483,6 +1496,8 @@
         "undeleteCta": "Återställ",
         "undeleteSuccess": "Medlemmen har återställts.",
         "undeleteError": "Kunde inte återställa. Försök igen.",
+        "undeleteNotArchived": "Den här medlemmen är inte arkiverad. Uppdatera sidan.",
+        "undeleteNotFound": "Medlemmen hittades inte. Uppdatera sidan.",
         "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
       },
       "erase": {
@@ -1516,6 +1531,7 @@
         "eraseSuccess": "{companyName} raderad.",
         "eraseSuccessPending": "Radering av {companyName} påbörjad — slutförs strax.",
         "eraseError": "Kunde inte radera. Försök igen.",
+        "eraseNotFound": "Medlemmen hittades inte. Den kan redan ha raderats. Uppdatera sidan.",
         "bannerTitle": "Personuppgifter raderade {date}",
         "bannerBody": "Den här medlemmens personuppgifter raderades (GDPR art. 17 / PDPA §33). Permanent — kan inte ångras.",
         "bannerPending": "Slutförs strax — den automatiska reconcilern avslutar de återstående stegen."
@@ -3146,7 +3162,11 @@
             "error": {
               "server_error": "Serverfel. Försök igen.",
               "invalid_input": "Ogiltiga indata.",
-              "member_not_found": "Medlemmen hittades inte."
+              "member_not_found": "Medlemmen hittades inte.",
+              "feature_disabled": "Riskdetektering är tillfälligt otillgänglig. Försök igen senare.",
+              "invalid_body": "Begäran var ogiltig. Försök igen.",
+              "no_session": "Din session har gått ut. Logga in igen.",
+              "forbidden": "Du har inte behörighet att göra det."
             }
           }
         },
@@ -3183,7 +3203,11 @@
             "failure": "Kunde inte registrera kontakt",
             "error": {
               "server_error": "Serverfel. Försök igen.",
-              "invalid_input": "Ogiltiga indata."
+              "invalid_input": "Ogiltiga indata.",
+              "feature_disabled": "Riskdetektering är tillfälligt otillgänglig. Försök igen senare.",
+              "invalid_body": "Begäran var ogiltig. Försök igen.",
+              "no_session": "Din session har gått ut. Logga in igen.",
+              "forbidden": "Du har inte behörighet att göra det."
             }
           }
         }
@@ -5081,6 +5105,8 @@
       "saving": "Sparar…",
       "saveSuccess": "Profilen har uppdaterats.",
       "saveError": "Kunde inte spara ändringar. Försök igen.",
+      "forbiddenError": "Du har inte behörighet att redigera den här profilen.",
+      "notFoundError": "Den här profilen finns inte längre. Uppdatera sidan.",
       "noChanges": "Inga ändringar att spara."
     },
     "invite": {
@@ -5102,6 +5128,8 @@
       "sendSuccess": "Inbjudan har skickats.",
       "sendError": "Kunde inte skicka inbjudan. Försök igen.",
       "emailTaken": "Denna e-postadress är redan registrerad.",
+      "invalidEmail": "Ange en giltig e-postadress.",
+      "validationError": "Kontrollera formuläret och försök igen.",
       "linkFailed": "Det gick inte att slutföra inbjudan. Ingen inbjudan skickades – försök igen."
     },
     "payment": {
