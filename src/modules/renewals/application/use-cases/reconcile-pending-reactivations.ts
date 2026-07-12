@@ -202,12 +202,25 @@ export interface ReconcilePendingReactivationsOutput {
    *     admin approve/reject won between list + lock), or the transition lost
    *     the optimistic-lock race. Money residual surfaced (the refund may have
    *     settled against a now-non-pending cycle); NOT counted as settled.
+   *   - `asyncRejectSettleFailed` — F8-RP-2 review fix (resilience): the
+   *     settle tx (transition + audit + escalation-task insert) threw a
+   *     NON-conflict error (DB blip / RLS regression mid-tx). The tx rolled
+   *     back — NO partial write landed — and the cycle stays marked+pending
+   *     for the next cron pass to retry. Distinct from
+   *     `asyncRejectAdminRaceSkipped` (a clean no-op race, not an error) and
+   *     from `asyncRejectRefundFailed` (the F5 refund itself failed — this
+   *     counter fires when the F5 refund SUCCEEDED but our own settle-write
+   *     blipped). Mirrors the timeout branch's
+   *     `timeoutTransitionFailedPostRefund` self-heal discipline. Per-cycle
+   *     isolation (this counter existing at all) prevents one poison marked
+   *     cycle from 500'ing the whole cron pass — parity with `processTimeout`.
    */
   readonly asyncRejectSettledCancelled: number;
   readonly asyncRejectRefundStillPending: number;
   readonly asyncRejectRefundFailed: number;
   readonly asyncRejectLookupFailed: number;
   readonly asyncRejectAdminRaceSkipped: number;
+  readonly asyncRejectSettleFailed: number;
 }
 
 export type ReconcilePendingReactivationsError = {
@@ -277,13 +290,28 @@ const POST_REFUND_REVIEW_DUE_DAYS = 3;
  *   - `admin_race_skipped`  — the tx re-read under the lock found the cycle no
  *     longer pending (concurrent admin approve/reject won), OR the transition
  *     lost the optimistic-lock race. No transition; money residual surfaced.
+ *   - `settle_failed`       — F8-RP-2 review fix (resilience): the settle tx
+ *     (transition + `emitInTx` + the `post_refund_review` task insert + its
+ *     audit) threw a NON-conflict error (DB blip / RLS regression mid-tx).
+ *     `CycleTransitionConflictError`/`CycleNotFoundError` are handled above
+ *     and never reach this outcome. Mirrors `ProcessTimeoutOutcome`'s
+ *     `transition_failed_post_refund`/`transition_failed_no_refund`
+ *     self-heal discipline: the tx rolled back (no partial write), the
+ *     cycle stays marked+pending, and the NEXT cron pass retries the same
+ *     settle from scratch. Before this fix the throw escaped
+ *     `processMarkedRejectRefund` uncaught, propagated through the caller's
+ *     for-loop (which has no try/catch either), and 500'd the ENTIRE
+ *     reconcile pass — a single poison marked cycle could block every other
+ *     marked/timeout/reminder cycle in the same tenant's run (self-DoS;
+ *     money-safe, since the tx rolls back, but availability-unsafe).
  */
 type ProcessMarkedRejectOutcome =
   | 'settled_cancelled'
   | 'refund_pending'
   | 'refund_failed'
   | 'lookup_failed'
-  | 'admin_race_skipped';
+  | 'admin_race_skipped'
+  | 'settle_failed';
 
 /**
  * Round 3 review-fix (R3-S6+S7): single source of truth for the
@@ -360,6 +388,7 @@ export async function reconcilePendingReactivations(
   let asyncRejectRefundFailed = 0;
   let asyncRejectLookupFailed = 0;
   let asyncRejectAdminRaceSkipped = 0;
+  let asyncRejectSettleFailed = 0;
 
   for (const cycle of page.items) {
     // F8-RP follow-up: a cycle carrying the async reject-with-refund marker is
@@ -412,6 +441,18 @@ export async function reconcilePendingReactivations(
           renewalsMetrics.asyncRejectRefundReconciled(
             cycle.tenantId,
             'admin_race_skipped',
+          );
+          break;
+        case 'settle_failed':
+          // F8-RP-2 review fix: the settle tx threw a non-conflict error
+          // (DB blip / RLS regression mid-tx) — caught INSIDE
+          // `processMarkedRejectRefund` so it never reaches this loop as an
+          // exception. The tx rolled back (no partial write); the cycle
+          // stays marked+pending and self-heals on the next cron pass.
+          asyncRejectSettleFailed += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'settle_failed',
           );
           break;
         default: {
@@ -551,6 +592,7 @@ export async function reconcilePendingReactivations(
     asyncRejectRefundFailed,
     asyncRejectLookupFailed,
     asyncRejectAdminRaceSkipped,
+    asyncRejectSettleFailed,
   });
 }
 
@@ -815,129 +857,161 @@ async function processMarkedRejectRefund(
   // audit + escalation task, all atomic in one tx (Constitution Principle VIII).
   const creditNoteId = settlement.creditNoteId;
   const closedAt = now.toISOString();
-  return runInTenant(
-    deps.tenant,
-    async (tx): Promise<ProcessMarkedRejectOutcome> => {
-      await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
-      const reread = await deps.cyclesRepo.findByIdInTx(
-        tx,
-        cycle.tenantId,
-        cycleId,
-      );
-      if (
-        !reread ||
-        reread.status !== 'pending_admin_reactivation' ||
-        reread.rejectRefundInitiatedAt === null
-      ) {
-        // A concurrent admin approve/reject (or a marker clear) won between
-        // list + lock. The refund already settled against a now-non-pending
-        // cycle — surface the money residual (do NOT write the cancel).
-        logger.warn(
-          {
-            cycleId,
-            tenantId: cycle.tenantId,
-            observedStatus: reread?.status ?? 'not_found',
-          },
-          '[reconcile-pending-reactivations] async reject-refund settled but cycle no longer pending/marked at lock — admin race; skipping cancel transition',
-        );
-        return 'admin_race_skipped';
-      }
-
-      let updated: RenewalCycle;
-      try {
-        updated = await deps.cyclesRepo.transitionStatus(
+  // F8-RP-2 review fix (resilience — per-cycle error isolation): mirror
+  // `processTimeout`'s tx2 outer try/catch EXACTLY. `CycleTransitionConflictError`
+  // / `CycleNotFoundError` are already caught INSIDE the tx (below) and return
+  // `admin_race_skipped` — this outer catch exists solely to stop a NON-conflict
+  // throw from `emitInTx`, `escalationTaskRepo.insertIfAbsent`, the 2nd `emitInTx`,
+  // or any other unexpected DB blip mid-tx from escaping this function. Before this
+  // fix, such a throw propagated through the caller's for-loop (which has no
+  // try/catch of its own — same as `processTimeout`'s caller) and 500'd the ENTIRE
+  // reconcile pass, so one poison marked cycle could block every other marked/
+  // timeout/reminder cycle for the tenant. Money-safe either way (the tx rolls
+  // back — no partial write lands), but NOT availability-safe without this guard.
+  try {
+    return await runInTenant(
+      deps.tenant,
+      async (tx): Promise<ProcessMarkedRejectOutcome> => {
+        await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
+        const reread = await deps.cyclesRepo.findByIdInTx(
           tx,
           cycle.tenantId,
           cycleId,
-          {
-            from: 'pending_admin_reactivation',
-            to: 'cancelled',
-            closedAt,
-            closedReason: 'admin_rejected_with_refund',
-          },
         );
-      } catch (e) {
         if (
-          e instanceof CycleTransitionConflictError ||
-          e instanceof CycleNotFoundError
+          !reread ||
+          reread.status !== 'pending_admin_reactivation' ||
+          reread.rejectRefundInitiatedAt === null
         ) {
+          // A concurrent admin approve/reject (or a marker clear) won between
+          // list + lock. The refund already settled against a now-non-pending
+          // cycle — surface the money residual (do NOT write the cancel).
           logger.warn(
-            { cycleId, tenantId: cycle.tenantId, err: e.message },
-            '[reconcile-pending-reactivations] async reject-refund cancel transition lost optimistic-lock race — admin/conflict won; skipping',
+            {
+              cycleId,
+              tenantId: cycle.tenantId,
+              observedStatus: reread?.status ?? 'not_found',
+            },
+            '[reconcile-pending-reactivations] async reject-refund settled but cycle no longer pending/marked at lock — admin race; skipping cancel transition',
           );
           return 'admin_race_skipped';
         }
-        throw e;
-      }
 
-      // `lapsed_member_admin_reactivation_rejected` audit — byte-identical to
-      // the sync path: same payload (cycle_id + actor + refund_credit_note_id)
-      // and the REPLAYED admin as actor (actorRole='admin'), NOT the cron.
-      await deps.auditEmitter.emitInTx(
-        tx,
-        {
-          type: 'lapsed_member_admin_reactivation_rejected' as const,
-          payload: {
-            cycle_id: updated.cycleId,
-            actor_user_id: asUserId(rejectActorUserId),
-            refund_credit_note_id:
-              creditNoteId === null ? null : asCreditNoteId(creditNoteId),
-          },
-        },
-        {
-          tenantId: cycle.tenantId,
-          actorUserId: rejectActorUserId,
-          actorRole: 'admin',
-          correlationId,
-          requestId: null,
-        },
-      );
-
-      // post_refund_review escalation task — inserted only when a credit note
-      // materialised (parity with the sync path, which inserts only when
-      // refundCreditNoteId !== null). Idempotent on the open-task index.
-      if (creditNoteId !== null) {
-        const dueAt = new Date(
-          now.getTime() + POST_REFUND_REVIEW_DUE_DAYS * MS_PER_DAY,
-        ).toISOString();
-        const taskInsert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
-          tenantId: cycle.tenantId,
-          taskId: asTaskId(randomUUID()),
-          memberId: cycle.memberId,
-          cycleId,
-          taskType: POST_REFUND_REVIEW_TASK_TYPE,
-          assignedToRole: 'admin',
-          dueAt,
-        });
-        if (taskInsert.created) {
-          await deps.auditEmitter.emitInTx(
+        let updated: RenewalCycle;
+        try {
+          updated = await deps.cyclesRepo.transitionStatus(
             tx,
+            cycle.tenantId,
+            cycleId,
             {
-              type: 'escalation_task_created' as const,
-              payload: {
-                task_id: taskInsert.row.taskId,
-                task_type: POST_REFUND_REVIEW_TASK_TYPE,
-                member_id: cycle.memberId as MemberId,
-                cycle_id: cycleId as CycleId,
-                trigger_reason: 'admin_reject_with_refund',
-                refund_credit_note_id: asCreditNoteId(creditNoteId),
-              },
-            },
-            {
-              tenantId: cycle.tenantId,
-              actorUserId: rejectActorUserId,
-              actorRole: 'admin',
-              correlationId,
-              requestId: null,
-              summary: `post_refund_review task created for credit-note ${creditNoteId}`,
+              from: 'pending_admin_reactivation',
+              to: 'cancelled',
+              closedAt,
+              closedReason: 'admin_rejected_with_refund',
             },
           );
+        } catch (e) {
+          if (
+            e instanceof CycleTransitionConflictError ||
+            e instanceof CycleNotFoundError
+          ) {
+            logger.warn(
+              { cycleId, tenantId: cycle.tenantId, err: e.message },
+              '[reconcile-pending-reactivations] async reject-refund cancel transition lost optimistic-lock race — admin/conflict won; skipping',
+            );
+            return 'admin_race_skipped';
+          }
+          throw e;
         }
-      }
 
-      return 'settled_cancelled';
-    },
-  );
+        // `lapsed_member_admin_reactivation_rejected` audit — byte-identical to
+        // the sync path: same payload (cycle_id + actor + refund_credit_note_id)
+        // and the REPLAYED admin as actor (actorRole='admin'), NOT the cron.
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'lapsed_member_admin_reactivation_rejected' as const,
+            payload: {
+              cycle_id: updated.cycleId,
+              actor_user_id: asUserId(rejectActorUserId),
+              refund_credit_note_id:
+                creditNoteId === null ? null : asCreditNoteId(creditNoteId),
+            },
+          },
+          {
+            tenantId: cycle.tenantId,
+            actorUserId: rejectActorUserId,
+            actorRole: 'admin',
+            correlationId,
+            requestId: null,
+          },
+        );
+
+        // post_refund_review escalation task — inserted only when a credit note
+        // materialised (parity with the sync path, which inserts only when
+        // refundCreditNoteId !== null). Idempotent on the open-task index.
+        if (creditNoteId !== null) {
+          const dueAt = new Date(
+            now.getTime() + POST_REFUND_REVIEW_DUE_DAYS * MS_PER_DAY,
+          ).toISOString();
+          const taskInsert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
+            tenantId: cycle.tenantId,
+            taskId: asTaskId(randomUUID()),
+            memberId: cycle.memberId,
+            cycleId,
+            taskType: POST_REFUND_REVIEW_TASK_TYPE,
+            assignedToRole: 'admin',
+            dueAt,
+          });
+          if (taskInsert.created) {
+            await deps.auditEmitter.emitInTx(
+              tx,
+              {
+                type: 'escalation_task_created' as const,
+                payload: {
+                  task_id: taskInsert.row.taskId,
+                  task_type: POST_REFUND_REVIEW_TASK_TYPE,
+                  member_id: cycle.memberId as MemberId,
+                  cycle_id: cycleId as CycleId,
+                  trigger_reason: 'admin_reject_with_refund',
+                  refund_credit_note_id: asCreditNoteId(creditNoteId),
+                },
+              },
+              {
+                tenantId: cycle.tenantId,
+                actorUserId: rejectActorUserId,
+                actorRole: 'admin',
+                correlationId,
+                requestId: null,
+                summary: `post_refund_review task created for credit-note ${creditNoteId}`,
+              },
+            );
+          }
+        }
+
+        return 'settled_cancelled';
+      },
+    );
+  } catch (e) {
+    // F8-RP-2 review fix: a NON-conflict throw from anywhere in the settle
+    // tx above (`emitInTx`, `escalationTaskRepo.insertIfAbsent`, the 2nd
+    // `emitInTx`, or an unexpected DB blip) lands here. `runInTenant` has
+    // already rolled the tx back, so NO partial write landed — the cycle is
+    // untouched, still `pending_admin_reactivation` with the marker intact.
+    // The next cron pass re-resolves the settlement and retries this same
+    // branch from scratch (self-heals, same discipline as
+    // `transition_failed_post_refund` on the timeout branch).
+    logger.error(
+      {
+        cycleId,
+        tenantId: cycle.tenantId,
+        refundId: cycle.rejectRefundId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[reconcile-pending-reactivations] async reject-refund settle tx threw (non-conflict) — tx rolled back, cycle stays marked+pending; next cron pass retries',
+    );
+    return 'settle_failed';
+  }
 }
 
 async function processTimeout(

@@ -922,6 +922,64 @@ describe('reconcilePendingReactivations (F8-RP) — async reject-with-refund set
     expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
+  it('F8-RP-2 review fix: marked cycle settle-tx THROWS a non-conflict error (emitInTx blip) → settle_failed, cron does NOT reject, next cycle still processed', async () => {
+    // Resilience regression guard (F8-RP-2 review). BEFORE this fix, the
+    // succeeded-settle tx only caught `CycleTransitionConflictError` /
+    // `CycleNotFoundError` — a NON-conflict throw from `emitInTx` (or
+    // `escalationTaskRepo.insertIfAbsent` / the 2nd `emitInTx`) escaped
+    // `processMarkedRejectRefund` uncaught, propagated through the caller's
+    // for-loop (which has no try/catch of its own — same shape as
+    // `processTimeout`'s caller), and rejected the WHOLE
+    // `reconcilePendingReactivations` call. A single poison marked cycle
+    // could 500 the entire cron pass, blocking every other marked/timeout/
+    // reminder cycle for the tenant in the same run — a self-DoS. A SECOND,
+    // otherwise-processable cycle (a day-23 reminder-due cycle) is seeded
+    // AFTER the poison cycle to prove the loop keeps going past the throw.
+    const poisonCycle = pendingCycle({
+      daysPending: 5,
+      marked: true,
+      cycleSuffix: 'c091',
+    });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'c092' });
+    const { deps, transitionMock, emitInTxMock, emitMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      getRefundOutcomeResult: {
+        status: 'succeeded',
+        creditNoteId: 'cn-throw-1',
+      },
+      emitInTxImpl: async () => {
+        throw new Error('audit_log: connection reset mid-tx');
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (c) the failing cycle is classified `settle_failed`, NEVER
+      // `settled_cancelled` (which would imply the cycle was cancelled) and
+      // never a timeout/lapse counter — it stays marked + pending for the
+      // next cron pass to retry (the tx that would have written `cancelled`
+      // rolled back on the throw; nothing here landed a partial write).
+      expect(r.value.asyncRejectSettleFailed).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.timedOut).toBe(0);
+      // (b) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // The transition was attempted (it runs before the emitInTx throw inside
+    // the same tx) — only the poison cycle reaches it (the second cycle is
+    // below the 30-day timeout threshold, so it never calls transitionStatus).
+    expect(transitionMock).toHaveBeenCalledOnce();
+    expect(emitInTxMock).toHaveBeenCalledOnce();
+    // The reminder path's `emit` (distinct from `emitInTx`) is unaffected by
+    // the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
+  });
+
   it('marked cycle PAST timeout (day 35) with pending refund → stays pending, does NOT lapse (marker shields from timeout)', async () => {
     // REGRESSION guard for the divergence invariant: a marked reject cycle
     // whose refund is still settling at day 35 must NOT time out to `lapsed`

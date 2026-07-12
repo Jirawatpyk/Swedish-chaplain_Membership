@@ -151,6 +151,10 @@ export async function POST(
         async_reject_lookup_failed: result.value.asyncRejectLookupFailed,
         async_reject_admin_race_skipped:
           result.value.asyncRejectAdminRaceSkipped,
+        // F8-RP-2 review fix: the settle tx threw a non-conflict error (DB
+        // blip); the tx rolled back, the cycle stays marked+pending and
+        // self-heals next pass. INFORMATIONAL — never pages on its own.
+        async_reject_settle_failed: result.value.asyncRejectSettleFailed,
         duration_ms: Date.now() - startedAt,
       });
     });

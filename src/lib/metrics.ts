@@ -3525,10 +3525,23 @@ export const renewalsMetrics = {
    *   - `admin_race_skipped` — a concurrent admin approve/reject (or an
    *     optimistic-lock conflict) moved the cycle out of pending before the
    *     cron's settle transition. Money residual surfaced. INFORMATIONAL.
+   *   - `settle_failed` — F8-RP-2 review fix (resilience): the settle tx
+   *     (transition + audit + escalation-task insert) threw a NON-conflict
+   *     error (DB blip / RLS regression mid-tx). The tx rolled back — no
+   *     partial write landed — and the cycle stays marked+pending for the
+   *     next cron pass to retry (self-heals). Distinct from `refund_failed`
+   *     (the F5 refund itself failed — no money moved) because here the F5
+   *     refund SUCCEEDED and only our own write blipped. Per-cycle isolation
+   *     (this outcome existing at all, instead of the throw escaping and
+   *     500'ing the whole reconcile pass) is the fix itself — parity with
+   *     `timeoutTransitionFailedPostRefund` on the sibling timeout branch.
    *
    * Alert rule: sustained `refund_failed` > 0 for 15 min pages on-call
-   * (parity with `adminRejectCompleted{outcome=failed}`). Other outcomes are
-   * informational and never page.
+   * (parity with `adminRejectCompleted{outcome=failed}`). `settle_failed`
+   * is INFORMATIONAL (mirrors `timeoutTransitionFailedPostRefund` — a
+   * transient-DB signal, not a money-at-risk page); a SUSTAINED rate
+   * warrants investigating chronic settle-tx failures (the self-heal is not
+   * clearing). Other outcomes are informational and never page.
    */
   asyncRejectRefundReconciled(
     tenantId: string,
@@ -3537,7 +3550,8 @@ export const renewalsMetrics = {
       | 'still_pending'
       | 'refund_failed'
       | 'lookup_failed'
-      | 'admin_race_skipped',
+      | 'admin_race_skipped'
+      | 'settle_failed',
   ): void {
     safeMetric(() => {
       counter(

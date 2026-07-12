@@ -39,6 +39,10 @@ This is **much narrower** than the original #4 finding (which had no invoice-sid
 - **Operational mitigation**: the operator reconciles the resulting stuck/orphaned refund via this runbook (§ 2–3) — Stripe DID move the money (this is the post-Stripe `f4_bridge_error` case, not the pre-flight `f4_preflight_read_error` case — see `specs/009-online-payment/contracts/payments-api.md` § 3), so treat it exactly like any other successfully-issued-but-not-yet-booked refund.
 - **Full close is out of scope for F5 MVP**: requires a cross-module F4↔F5 lock (e.g. a shared advisory lock namespace spanning both `invoicing:` and `payments:` for the invoice) so a manual F4 credit note and an F5 refund cannot interleave on the same invoice. Tracked as a follow-up, not a launch blocker given the narrow window + low volume.
 
+### 1.3 Known residual — F8 async-reject marker-commit crash window (narrow, money-safe)
+
+`adminRejectReactivation` (F8) stamps the async reject-with-refund marker (`reject_refund_initiated_at`/`reject_refund_id`/`reject_actor_user_id`) in a **separate transaction** from the F5 call that returns `refund_pending` — unavoidable, since F5 is an external Stripe call and cannot be atomic with an F8 write. If the process crashes in the narrow window between F5 returning `refund_pending` and that marker-commit landing, the cycle stays `pending_admin_reactivation` **without** the marker. The F8 reconcile cron (`reconcilePendingReactivations`) then has no way to distinguish it from an ordinary pending cycle, so its 30-day timeout eventually `lapsed`s it instead of converging it to `cancelled`/`admin_rejected_with_refund` — the wrong terminal LABEL, but money-safe (the refund itself already succeeded via F5 independently of the marker write). This is strictly better than the pre-F8-RP-2 baseline, where **every** async reject-with-refund lapsed (no marker existed at all); the 30-day timeout safety net still resolves the cycle either way. No operator action required — noted here for on-call context if a lapsed cycle is later found to have had a settled reject-refund.
+
 ---
 
 ## 2. Immediate actions (within 1 hour)
@@ -194,3 +198,4 @@ If the Stripe refund itself was a mistake:
 - Future post-MVP escape hatch: tracked in Q2 follow-up backlog
 - § 1.1 guard-miss false-OOB class: `44b394a3` (sub-case ii fix); `src/modules/payments/application/use-cases/confirm-payment.ts` (`markAutoRefunded` / `attachAutoRefundMarkerOnFailed`)
 - § 1.2 B.1 residual race: `src/modules/payments/application/use-cases/issue-refund.ts` (pre-flight `getInvoiceCreditedTotal` read vs. `createRefund` call)
+- § 1.3 F8 marker-commit crash window: `src/modules/renewals/application/use-cases/admin-reject-reactivation.ts` (F5 call vs. marker-write tx boundary); `src/modules/renewals/application/use-cases/reconcile-pending-reactivations.ts` (`processMarkedRejectRefund`)
