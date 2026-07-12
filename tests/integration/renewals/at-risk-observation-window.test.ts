@@ -80,7 +80,10 @@ describe('at-risk observation window — imported cohort (G5/G6, single + batch)
    * real membership (registration_date), and a configurable import instant
    * (created_at → the observation window).
    */
-  async function seedMember(createdAtDaysAgo: number): Promise<string> {
+  async function seedMember(
+    createdAtDaysAgo: number,
+    registrationDate = '2019-01-01',
+  ): Promise<string> {
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
@@ -92,9 +95,9 @@ describe('at-risk observation window — imported cohort (G5/G6, single + batch)
         planId,
         planYear: 2026,
         status: 'active',
-        // Real membership start — years ago (long tenure).
-        registrationDate: '2019-01-01',
-        // Import instant — recent OR old, per the test.
+        // Real membership start — drives tenure (default: years ago = long tenure).
+        registrationDate,
+        // Import instant — recent OR old, per the test (drives the obs window).
         createdAt: new Date(NOW_MS - createdAtDaysAgo * MS_PER_DAY),
         // Recent so `days_since_contact_update` does not fire (isolate engagement).
         lastActivityAt: new Date(NOW_MS - 1 * MS_PER_DAY),
@@ -143,7 +146,8 @@ describe('at-risk observation window — imported cohort (G5/G6, single + batch)
     const factorKeys = result.contributions.map((c) => c.factor);
     expect(factorKeys).not.toContain('events_attended_last_12mo_zero');
     expect(factorKeys).not.toContain('e_blast_quota_under_30pct');
-    expect(factorKeys).not.toContain('cultural_ticket_quota_under_50pct');
+    // (cultural is inert on the default plan — cultural_tickets_per_year=0 — so
+    // the events + eblast assertions above are what actually prove the G5 gate.)
   }, 60_000);
 
   it('single scorer — long-observed member (in-system > 1yr): zero engagement IS scored', async () => {
@@ -169,6 +173,10 @@ describe('at-risk observation window — imported cohort (G5/G6, single + batch)
     if (!result.ok) return;
     // The registration_date column read + the batch runs cleanly on live Neon.
     expect(result.value.membersFailed).toBe(0);
+    // G6 (batch) — neither member is min-tenure-skipped; tenure derives from
+    // registration_date (2019), NOT created_at. A batch-G6 revert would skip
+    // `fresh` (created 10d < 30d min-tenure) → this would be 1, not 0.
+    expect(result.value.membersSkippedBelowTenure).toBe(0);
 
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx
@@ -184,4 +192,27 @@ describe('at-risk observation window — imported cohort (G5/G6, single + batch)
     // the gated engagement factors. The zero-event factor alone is +25.
     expect(observed - fresh).toBeGreaterThanOrEqual(25);
   }, 90_000);
+
+  it('min-tenure gate still fires post-G6 — a genuinely NEW member (recent registration_date) is skipped in BOTH scorers', async () => {
+    // Guards that anchoring tenure on registration_date did not disable the
+    // FR-035 min-tenure gate: a real new signup (5-day-old membership) must
+    // still be skipped — in the single scorer AND the batch.
+    const recentReg = new Date(NOW_MS - 5 * MS_PER_DAY)
+      .toISOString()
+      .slice(0, 10);
+    const memberId = await seedMember(5, recentReg);
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const single = await deps.atRiskScorer.scoreMember(tenant.ctx.slug, memberId);
+    expect(single.skippedBelowMinTenure).toBe(true);
+    expect(single.contributions).toHaveLength(0);
+
+    const batch = await recomputeAtRiskScoresBatch(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+    });
+    expect(batch.ok).toBe(true);
+    if (!batch.ok) return;
+    expect(batch.value.membersSkippedBelowTenure).toBeGreaterThanOrEqual(1);
+  }, 60_000);
 });

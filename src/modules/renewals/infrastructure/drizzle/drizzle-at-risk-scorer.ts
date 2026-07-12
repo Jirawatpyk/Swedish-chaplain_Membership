@@ -173,13 +173,23 @@ export function makeDrizzleAtRiskScorer(
       // `date` col (notNull, defaultNow) → parse to a Date; fall back to
       // created_at defensively. MUST match the batch scorer
       // (drizzle-member-renewal-flags-repo.ts) to avoid single/batch drift.
-      const tenureAnchor: Date | null =
-        memberRow?.registrationDate != null
-          ? new Date(memberRow.registrationDate as string | Date)
-          : (memberRow?.createdAt ?? null);
+      // Two-tier anchor (MUST mirror the batch scorer's fallback): use
+      // registration_date when it parses, else fall back to created_at. A
+      // present-but-unparseable registration_date must still fall back (not
+      // yield undefined tenure), so single == batch for the same member.
+      let tenureAnchorMs: number | undefined;
+      if (memberRow?.registrationDate != null) {
+        const t = new Date(
+          memberRow.registrationDate as string | Date,
+        ).getTime();
+        if (!Number.isNaN(t)) tenureAnchorMs = t;
+      }
+      if (tenureAnchorMs === undefined && memberRow?.createdAt != null) {
+        tenureAnchorMs = memberRow.createdAt.getTime();
+      }
       const tenureDays =
-        tenureAnchor != null && !Number.isNaN(tenureAnchor.getTime())
-          ? Math.floor((nowMs - tenureAnchor.getTime()) / (24 * 60 * 60 * 1000))
+        tenureAnchorMs !== undefined
+          ? Math.floor((nowMs - tenureAnchorMs) / (24 * 60 * 60 * 1000))
           : undefined;
       // In-system observation window = now - created_at (when we STARTED
       // observing this member's in-system benefit usage). Distinct from tenure:
