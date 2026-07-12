@@ -495,7 +495,11 @@ export const DB_ONLY_AUDIT_EVENT_TYPES: readonly string[] = [
   'quota_partnership_decremented',
   'registration_relinked',
   'renewal_completed',
-  'renewal_completed_post_lapse',
+  // NOTE: `renewal_completed_post_lapse` is intentionally NOT listed here —
+  // it lives in the `audit_event_type` pgEnum tuple above (migration 0109), so
+  // a DB_ONLY entry would duplicate it in ALL_AUDIT_EVENT_TYPES (which is
+  // `[...enumValues, ...DB_ONLY].sort()` with no dedup). DB_ONLY is only for
+  // values present in the DB enum but absent from the tuple.
   'renewal_cross_member_probe',
   'renewal_cross_tenant_probe',
   'renewal_cycle_cancelled',
