@@ -71,7 +71,8 @@ export const F5_HANDLED_EVENT_TYPES = [
   'charge.refund.updated',
   /**
    * PR-A follow-up (2026-07-12) — the FORWARD-PATH refund-lifecycle event
-   * on the pinned `2025-09-30.basil` API. `refund.updated` fires on ANY
+   * on the pinned Stripe API version (`STRIPE_API_VERSION`, currently
+   * `2025-09-30.clover`). `refund.updated` fires on ANY
    * `Refund` update (incl. `status → succeeded | failed | canceled`), for
    * ALL refunds — including charge-less async refunds (PromptPay / GrabPay
    * / bank transfers) that never emit the deprecated `charge.refund.updated`.

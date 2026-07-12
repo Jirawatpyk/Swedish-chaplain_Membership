@@ -247,7 +247,9 @@ const schema = z.object({
     .refine((v) => v.startsWith('whsec_'), 'expected "whsec_" prefix')
     .describe('SECRET — do not log'),
 
-  // Pinned Stripe API version (e.g. `2025-09-30.basil`). Passed to
+  // Pinned Stripe API version (currently `2025-09-30.clover`; the live
+  // pin is whatever this `STRIPE_API_VERSION` var is set to — see
+  // `.env.example` + `stripe-api-version.ts`). Passed to
   // `new Stripe(..., { apiVersion })` and surfaced as `Stripe-Version`
   // response header by the webhook route. Pinning prevents silent
   // behaviour drift when Stripe releases a new default version.
