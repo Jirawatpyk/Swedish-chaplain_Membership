@@ -1198,7 +1198,8 @@
             "emailTaken": "E-postadressen används redan.",
             "conflict": "Åtgärden kunde inte slutföras. Uppdatera och försök igen.",
             "notFound": "Kontakt hittades inte.",
-            "generic": "Något gick fel. Försök igen."
+            "generic": "Något gick fel. Försök igen.",
+            "serverBusy": "Servern är upptagen. Försök igen om en stund."
           }
         }
       },

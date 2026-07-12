@@ -205,3 +205,39 @@ describe('ContactFormDialog — inline email-taken', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('ContactFormDialog — retryable 503 (G24)', () => {
+  it('maps a 503 idempotency-reservation outage to the retryable serverBusy toast, not the generic dead-end', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: { code: 'idempotency_reservation_failed' } }),
+      }),
+    );
+    openAddDialog();
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, {
+      target: { value: 'Jane' },
+    });
+    fireEvent.change(document.querySelector('#cf-last-name')!, {
+      target: { value: 'Doe' },
+    });
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'new@example.com' },
+    });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError).toHaveBeenCalledWith(
+      'The server is busy. Please try again in a moment.',
+    );
+    // Must NOT read as a permanent failure.
+    expect(toastError).not.toHaveBeenCalledWith(
+      'Something went wrong. Please try again.',
+    );
+
+    vi.unstubAllGlobals();
+  });
+});

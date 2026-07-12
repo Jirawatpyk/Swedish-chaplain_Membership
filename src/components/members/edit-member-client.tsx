@@ -150,6 +150,12 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       toast.error(message);
     } else if (res.status === 400) {
       toast.error(t('errors.validation'));
+    } else if (res.status === 503) {
+      // Transient Upstash outage (idempotency_reservation_failed + Retry-After):
+      // report as retryable, identical to the member-field handler
+      // (handleResponse 503 arm) — a contact/email save must not read as a
+      // permanent failure for the same outage.
+      toast.error(tCreate('errors.serverBusy'));
     } else {
       toast.error(t('errors.generic'));
     }

@@ -1198,7 +1198,8 @@
             "emailTaken": "That email address is already in use.",
             "conflict": "Couldn't complete the action. Please refresh and try again.",
             "notFound": "Contact not found.",
-            "generic": "Something went wrong. Please try again."
+            "generic": "Something went wrong. Please try again.",
+            "serverBusy": "The server is busy. Please try again in a moment."
           }
         }
       },

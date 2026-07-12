@@ -186,6 +186,25 @@ describe('EditMemberClient orchestration', () => {
     expect(h.toast.error).toHaveBeenCalledWith('admin.members.edit.errors.emailTaken');
   });
 
+  it('a contact-save 503 outage maps to the retryable serverBusy toast (parity with the member-field step) — G23', async () => {
+    h.values = EMAIL_DIFF;
+    fetchMock.mockResolvedValueOnce(
+      res(503, { error: { code: 'idempotency_reservation_failed' } }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.error).toHaveBeenCalledWith(
+        'admin.members.create.errors.serverBusy',
+      ),
+    );
+    // Must NOT read as a permanent failure (the pre-fix generic dead-end).
+    expect(h.toast.error).not.toHaveBeenCalledWith(
+      'admin.members.edit.errors.generic',
+    );
+  });
+
   it('a contact-fields 400 invalid_phone highlights the phone field', async () => {
     h.values = PHONE_DIFF;
     fetchMock.mockResolvedValueOnce(

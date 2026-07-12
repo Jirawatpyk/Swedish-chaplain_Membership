@@ -203,6 +203,11 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
       toast.error(tA('errors.validation'));
     } else if (res.status === 404) {
       toast.error(tA('errors.notFound'));
+    } else if (res.status === 503) {
+      // Transient Upstash outage (idempotency_reservation_failed + Retry-After):
+      // report as retryable, matching the create/edit-member clients — not the
+      // permanent-sounding generic error.
+      toast.error(tA('errors.serverBusy'));
     } else {
       toast.error(tA('errors.generic'));
     }
