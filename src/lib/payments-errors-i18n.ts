@@ -58,7 +58,12 @@ export type F5RouteErrorCode =
   // orphaned refund exists. DISTINCT from `f4_bridge_error` (Stripe DID
   // succeed → out-of-band-refund runbook) so on-call does not chase a
   // non-existent refund. Both currently map to 502.
-  | 'f4_preflight_read_error';
+  | 'f4_preflight_read_error'
+  // CF-2 — the "mark failed auto-refund as reconciled" surface found NO
+  // `auto_refund_failed_needs_manual_reconcile` forensic for the invoice, so
+  // there is nothing to reconcile (409 conflict; the alert only offers the
+  // action when a failure exists, so this is a race / stale-page path).
+  | 'no_failed_auto_refund';
 
 interface Bilingual {
   readonly message: string;
@@ -166,6 +171,10 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   f4_preflight_read_error: {
     message: 'Could not verify the refundable balance right now. No money was moved — please retry.',
     messageThai: 'ไม่สามารถตรวจสอบยอดที่คืนได้ในขณะนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองใหม่อีกครั้ง',
+  },
+  no_failed_auto_refund: {
+    message: 'There is no failed auto-refund to reconcile for this invoice.',
+    messageThai: 'ไม่มีการคืนเงินอัตโนมัติที่ล้มเหลวให้กระทบยอดสำหรับใบแจ้งหนี้นี้',
   },
 };
 

@@ -130,7 +130,17 @@ export type F5AuditEventType =
   // forensic, Thai RD §87/3 tax-document-adjacent). NOTE: this value does NOT
   // match the `refund_`/`payment_` F5 prefixes — the parity test's
   // `F5_PREFIXES` is extended with `auto_refund_` so it stays in scope.
-  | 'auto_refund_failed_needs_manual_reconcile';
+  | 'auto_refund_failed_needs_manual_reconcile'
+  // CF-2 (migration 0244, 2026-07-12) — the append-only "resolved" counterpart
+  // to the failure forensic above: an admin marks a failed stale-invoice
+  // auto-refund as MANUALLY reconciled (out-of-band CN / Stripe Dashboard refund
+  // done). Emitted by `resolveFailedAutoRefund` with the acting admin as
+  // `actorUserId`. Once present, `findStaleInvoiceAutoRefund.failed` becomes
+  // failure-AND-not-reconciled → the persistent admin alert clears + the member
+  // "being reconciled" banner reverts to the "refunded" copy. 10y retention
+  // (mirrors the failure forensic — money-trail-adjacent, Thai RD §87/3). Shares
+  // the `auto_refund_` prefix so the parity test already covers it.
+  | 'auto_refund_reconciled';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -440,6 +450,17 @@ export interface F5AuditPayloadByType {
     readonly amount_satang: string;
     readonly runbook_url: string;
   };
+  // CF-2 (migration 0244) — admin manual-reconciliation acknowledgement.
+  // ID-refs + acting-admin trail only; the optional `note` is a free-text
+  // admin memo (single line, bounded at the route). NO card metadata, NO raw
+  // Stripe text — keeps SAQ-A intact. `processor_refund_id` is the same `re_…`
+  // the failure forensic carried (as `auto_refund_processor_refund_id`).
+  auto_refund_reconciled: {
+    readonly invoice_id: string;
+    readonly payment_id: string;
+    readonly processor_refund_id: string;
+    readonly note?: string;
+  };
 }
 
 /**
@@ -544,6 +565,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // 10y (tax-document-adjacent, Thai RD §87/3), NOT the 5y default; mirrors
   // refund_succeeded's 10y class.
   auto_refund_failed_needs_manual_reconcile: 10,
+  // CF-2 (migration 0244) — manual-reconciliation acknowledgement. 10y to
+  // mirror the failure forensic it resolves (same money-trail lineage).
+  auto_refund_reconciled: 10,
 };
 
 /**

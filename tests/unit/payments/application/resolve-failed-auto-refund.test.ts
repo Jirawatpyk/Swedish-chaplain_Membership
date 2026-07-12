@@ -19,12 +19,19 @@ import { resolveFailedAutoRefund } from '@/modules/payments/application/use-case
 
 const FAKE_TX = Symbol('tx');
 
+type EmitEvent = {
+  eventType: string;
+  actorUserId: string;
+  retentionYears: number;
+  payload: Record<string, unknown> & { note?: string };
+};
+
 function makeDeps(
   findResult:
     | { paymentId: string; processorRefundId: string; alreadyReconciled: boolean }
     | null,
 ) {
-  const emit = vi.fn(async () => undefined);
+  const emit = vi.fn(async (_tx: unknown, _event: EmitEvent) => undefined);
   const findFailedAutoRefundForInvoice = vi.fn(async () => findResult);
   const withTx = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(FAKE_TX));
   return {

@@ -671,6 +671,7 @@ export default async function InvoiceDetailPage({
               red flag so an admin cannot miss stuck funds. */}
           {isAdmin && autoRefundFailed && (
             <AutoRefundFailedAlert
+              invoiceId={invoice.invoiceId}
               processorRefundId={autoRefundStatus?.processorRefundId ?? null}
               runbookUrl={OOB_RUNBOOK_URL}
             />

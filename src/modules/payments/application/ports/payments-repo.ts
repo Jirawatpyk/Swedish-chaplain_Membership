@@ -296,6 +296,14 @@ export interface PaymentsRepo {
    * exists whenever `failed` is true, so a non-null return covers both
    * surfaces regardless of invoice status.
    *
+   * CF-2 — `failed` is failure-AND-NOT-reconciled: it is true only if the
+   * failure forensic exists AND no `auto_refund_reconciled` event exists for
+   * the invoice. Once an admin acknowledges the manual reconciliation (via
+   * `resolveFailedAutoRefund`), the reconcile event lands and `failed` flips
+   * false, so the persistent admin alert clears + the member banner reverts to
+   * the (now-true) "refunded" copy. Fail-safe: any ambiguity resolves toward
+   * NOT-failed (a reconcile for the invoice always clears it).
+   *
    * Authoritative source: `audit_log` (append-only). The F5
    * `refunds.reason` column carries the Stripe enum
    * (`requested_by_customer`) which doesn't disambiguate auto-stale
@@ -317,6 +325,32 @@ export interface PaymentsRepo {
   ): Promise<{
     readonly processorRefundId: string | null;
     readonly failed: boolean;
+  } | null>;
+
+  /**
+   * CF-2 — resolve-path read for `resolveFailedAutoRefund`.
+   *
+   * Returns the latest `auto_refund_failed_needs_manual_reconcile` forensic's
+   * `(payment_id, auto_refund_processor_refund_id)` for `invoiceId`, plus
+   * whether an `auto_refund_reconciled` event already exists for the invoice
+   * (`alreadyReconciled` — the idempotency signal). Returns `null` when NO
+   * failure forensic exists → the use-case refuses (`no_failed_auto_refund`).
+   *
+   * Threads the caller's `tx` (the use-case runs the read + the reconcile emit
+   * inside ONE tenant-scoped tx). Explicit `tenantId` WHERE is defence-in-depth
+   * (RLS+FORCE is the primary backstop) — mirrors
+   * `findAutoRefundByProcessorRefundId`. Fail-safe: if the failure forensic's
+   * id fields are somehow NULL (data corruption), returns `null` rather than
+   * emitting a reconcile with null ids.
+   */
+  findFailedAutoRefundForInvoice(
+    tx: unknown,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<{
+    readonly paymentId: string;
+    readonly processorRefundId: string;
+    readonly alreadyReconciled: boolean;
   } | null>;
 
   /**

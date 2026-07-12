@@ -2254,7 +2254,17 @@
           "title": "Auto-refund failed — needs manual reconciliation",
           "body": "An automatic refund for this invoice's online payment did not complete at the payment provider, so the funds have not been returned to the member. Reconcile this manually.",
           "ref": "Processor refund reference: {ref}",
-          "runbook": "Follow the reconciliation runbook: {path}"
+          "runbook": "Follow the reconciliation runbook: {path}",
+          "resolve": "Mark as reconciled",
+          "resolveConfirm": {
+            "title": "Mark this auto-refund as reconciled?",
+            "body": "Do this only after you have returned the funds to the member out-of-band (a Stripe Dashboard refund or a manual credit note). It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "cancel": "Cancel",
+            "confirm": "Yes, mark as reconciled",
+            "pending": "Recording…"
+          },
+          "resolveSuccess": "Auto-refund marked as reconciled.",
+          "resolveError": "Could not mark as reconciled. Please try again."
         }
       },
       "issue": {
@@ -5506,6 +5516,7 @@
       "dispute_created": "Payment dispute opened",
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",
       "auto_refund_failed_needs_manual_reconcile": "Auto-refund failed — needs manual reconciliation",
+      "auto_refund_reconciled": "Auto-refund reconciled manually",
       "webhook_dispatch_permanent_failure": "Webhook processing permanently failed",
       "registration_cross_tenant_probe": "Cross-tenant probe (event registrations)",
       "event_buyer_pii_redacted": "Event buyer PII redacted",

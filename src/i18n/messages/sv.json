@@ -2254,7 +2254,17 @@
           "title": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
           "body": "En automatisk återbetalning för denna fakturas onlinebetalning slutfördes inte hos betalningsleverantören, så medlen har inte återförts till medlemmen. Stäm av detta manuellt.",
           "ref": "Betalningsleverantörens återbetalningsreferens: {ref}",
-          "runbook": "Följ avstämningsrunboken: {path}"
+          "runbook": "Följ avstämningsrunboken: {path}",
+          "resolve": "Markera som avstämd",
+          "resolveConfirm": {
+            "title": "Markera denna automatiska återbetalning som avstämd?",
+            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (en återbetalning via Stripe Dashboard eller en manuell kreditnota). Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "cancel": "Avbryt",
+            "confirm": "Ja, markera som avstämd",
+            "pending": "Registrerar…"
+          },
+          "resolveSuccess": "Automatisk återbetalning markerad som avstämd.",
+          "resolveError": "Kunde inte markera som avstämd. Försök igen."
         }
       },
       "issue": {
@@ -5506,6 +5516,7 @@
       "dispute_created": "Betalningstvist öppnad",
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",
       "auto_refund_failed_needs_manual_reconcile": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
+      "auto_refund_reconciled": "Automatisk återbetalning manuellt avstämd",
       "webhook_dispatch_permanent_failure": "Webhook-bearbetning permanent misslyckad",
       "registration_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (evenemangsregistreringar)",
       "event_buyer_pii_redacted": "Personuppgifter för biljettköpare maskerade",

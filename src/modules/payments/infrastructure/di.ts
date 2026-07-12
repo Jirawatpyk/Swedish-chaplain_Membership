@@ -29,6 +29,7 @@ import type { HandleCancelEventDeps } from '../application/use-cases/handle-canc
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
+import type { ResolveFailedAutoRefundDeps } from '../application/use-cases/resolve-failed-auto-refund';
 
 import { systemClock } from '../application/ports/clock-port';
 import { asPaymentId, type PaymentId } from '../domain/payment';
@@ -295,6 +296,22 @@ export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
     // double-fault `.catch()` at the failure-finalise tail emits a
     // structured warn instead of silent swallow.
     logger: paymentsLogger,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CF-2 — resolveFailedAutoRefund composition (admin "mark as reconciled").
+//
+// Thin: the tenant-bound payments repo (whose `findFailedAutoRefundForInvoice`
+// + `withTx` the use-case uses) + the F5 audit adapter (emits the append-only
+// `auto_refund_reconciled` inside the caller's tenant-scoped tx).
+// ---------------------------------------------------------------------------
+export function makeResolveFailedAutoRefundDeps(
+  tenantId: string,
+): ResolveFailedAutoRefundDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    audit: f5AuditAdapter,
   };
 }
 

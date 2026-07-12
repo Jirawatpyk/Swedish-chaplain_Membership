@@ -103,6 +103,13 @@ export {
   type IssueRefundDeps,
 } from './application/use-cases/issue-refund';
 export {
+  resolveFailedAutoRefund,
+  type ResolveFailedAutoRefundInput,
+  type ResolveFailedAutoRefundOutcome,
+  type ResolveFailedAutoRefundError,
+  type ResolveFailedAutoRefundDeps,
+} from './application/use-cases/resolve-failed-auto-refund';
+export {
   sweepStalePendingRefunds,
   type SweepStalePendingRefundsInput,
   type SweepStalePendingRefundsOutput,
@@ -136,6 +143,7 @@ export {
   makeListSucceededPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,
   makeIssueRefundDeps,
+  makeResolveFailedAutoRefundDeps,
   makeSweepStalePendingRefundsDeps,
 } from './infrastructure/di';
 

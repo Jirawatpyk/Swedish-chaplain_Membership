@@ -378,6 +378,15 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     audit port) — the F5 enum↔retention parity test enforces it (its
   //     `F5_PREFIXES` is extended with `auto_refund_` to cover this name). ---
   'auto_refund_failed_needs_manual_reconcile',
+  // --- F5 go-live CF-2 (migration 0244, 2026-07-12) —
+  //     `auto_refund_reconciled` is the append-only "resolved" counterpart to
+  //     the failure forensic above: an admin marks a failed stale-invoice
+  //     auto-refund as MANUALLY reconciled. Clears the persistent admin alert +
+  //     reverts the member banner (findStaleInvoiceAutoRefund.failed becomes
+  //     failure-AND-not-reconciled). 10y retention. Keep in lockstep with
+  //     F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5 parity test's
+  //     `auto_refund_` prefix already covers it. ---
+  'auto_refund_reconciled',
 ]);
 
 /**

@@ -574,13 +574,25 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return runInTenant(ctx, async (tx) => {
         const result = await tx.execute(sql`
           SELECT init.processor_refund_id AS processor_refund_id,
-                 EXISTS (
+                 (EXISTS (
                    SELECT 1
                      FROM audit_log fail
                     WHERE fail.tenant_id = ${tenantId}
                       AND fail.event_type = 'auto_refund_failed_needs_manual_reconcile'
                       AND fail.payload->>'invoice_id' = ${invoiceId}
-                 ) AS failed
+                 )
+                 -- CF-2 failure-AND-NOT-reconciled: once the admin acknowledges
+                 -- the manual reconciliation (an auto_refund_reconciled event is
+                 -- appended for this invoice), failed flips false so the admin
+                 -- alert clears + the member banner reverts. Keyed on invoice_id
+                 -- (one auto-refund per invoice; safest match toward NOT-failed).
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM audit_log rec
+                    WHERE rec.tenant_id = ${tenantId}
+                      AND rec.event_type = 'auto_refund_reconciled'
+                      AND rec.payload->>'invoice_id' = ${invoiceId}
+                 )) AS failed
             FROM (
               SELECT payload->>'processor_refund_id' AS processor_refund_id
                 FROM audit_log
@@ -606,6 +618,63 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
           failed: rows[0]!.failed === true,
         };
       });
+    },
+
+    /**
+     * CF-2 — resolve-path read for `resolveFailedAutoRefund`. See the port
+     * docstring for the contract. Threads the caller's `tx` (read + reconcile
+     * emit run in ONE tenant-scoped tx). Defence-in-depth `tenant_id =` WHERE
+     * mirrors `findAutoRefundByProcessorRefundId`; RLS is the primary backstop.
+     * The `already_reconciled` correlated EXISTS is keyed on `invoice_id` (one
+     * auto-refund per invoice) — the same key the failure forensic uses.
+     */
+    async findFailedAutoRefundForInvoice(
+      txUnknown,
+      tenantIdArg: string,
+      invoiceId: string,
+    ): Promise<{
+      readonly paymentId: string;
+      readonly processorRefundId: string;
+      readonly alreadyReconciled: boolean;
+    } | null> {
+      const tx = txUnknown as TenantTx;
+      const result = await tx.execute(sql`
+        SELECT fail.payload->>'payment_id' AS payment_id,
+               fail.payload->>'auto_refund_processor_refund_id' AS processor_refund_id,
+               EXISTS (
+                 SELECT 1
+                   FROM audit_log rec
+                  WHERE rec.tenant_id = ${tenantIdArg}
+                    AND rec.event_type = 'auto_refund_reconciled'
+                    AND rec.payload->>'invoice_id' = ${invoiceId}
+               ) AS already_reconciled
+          FROM audit_log fail
+         WHERE fail.tenant_id = ${tenantIdArg}
+           AND fail.event_type = 'auto_refund_failed_needs_manual_reconcile'
+           AND fail.payload->>'invoice_id' = ${invoiceId}
+         ORDER BY fail.timestamp DESC
+         LIMIT 1
+      `);
+      const rows = Array.from(
+        result as unknown as Iterable<{
+          payment_id: string | null;
+          processor_refund_id: string | null;
+          already_reconciled: boolean;
+        }>,
+      );
+      if (rows.length === 0) return null;
+      const row = rows[0]!;
+      // Fail-safe: the RR-8 failure payload always carries both id fields; if
+      // either is somehow NULL (data corruption / hand-patched row), return
+      // null rather than emit a reconcile carrying null ids.
+      if (row.payment_id === null || row.processor_refund_id === null) {
+        return null;
+      }
+      return {
+        paymentId: row.payment_id,
+        processorRefundId: row.processor_refund_id,
+        alreadyReconciled: row.already_reconciled === true,
+      };
     },
 
     /**
