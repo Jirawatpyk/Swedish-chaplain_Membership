@@ -222,6 +222,29 @@ export interface ReconcilePendingReactivationsOutput {
   readonly asyncRejectLookupFailed: number;
   readonly asyncRejectAdminRaceSkipped: number;
   readonly asyncRejectSettleFailed: number;
+  /**
+   * H1 reliability fix — loop-level per-cycle backstop. Counts cycles whose
+   * processing threw an UNCLASSIFIED error that ESCAPED its per-cycle branch's
+   * own error handling. Each per-cycle branch already classifies its KNOWN
+   * failure modes and RETURNS a typed outcome/counter (settle_failed,
+   * refund_failed, admin_race_skipped, transition_failed_*, …) — those are
+   * returned, never thrown, so they never reach this backstop. This counter is
+   * ONLY for a genuine escaped throw: e.g. `processTimeout`'s Step-1
+   * validate-under-lock re-read (`acquireCycleLockInTx` + `findByIdInTx`) opens
+   * an UNGUARDED `runInTenant`; a persistent NON-conflict throw there (DB blip /
+   * RLS regression / poison row) escapes `processTimeout` and, without the
+   * per-cycle try/catch, propagates through the caller for-loop and 500s the
+   * WHOLE reconcile pass — blocking every OTHER marked/timeout/reminder cycle
+   * for the tenant (a self-DoS; money-safe since read-only/rolled-back, but
+   * availability-unsafe). The backstop isolates ANY such throw to its one cycle:
+   * ERROR log (PCI-safe ids + error constructor name — never `error.message`) +
+   * this distinct counter + `renewalsMetrics.cycleProcessingError` + `continue`.
+   * DISTINCT + alertable (never silently swallowed): a sustained non-zero rate
+   * means a per-cycle branch is chronically throwing an unhandled error and
+   * warrants investigation (the escaped throw is a latent unguarded path, not a
+   * classified outcome).
+   */
+  readonly cycleProcessingErrors: number;
 }
 
 export type ReconcilePendingReactivationsError = {
@@ -393,8 +416,27 @@ export async function reconcilePendingReactivations(
   let asyncRejectLookupFailed = 0;
   let asyncRejectAdminRaceSkipped = 0;
   let asyncRejectSettleFailed = 0;
+  // H1 reliability fix — loop-level per-cycle backstop counter.
+  let cycleProcessingErrors = 0;
 
-  for (const cycle of page.items) {
+  // H1 reliability fix — the per-cycle processing is extracted into this named
+  // unit so the caller loop can wrap EACH cycle in a TIGHT try/catch backstop.
+  // Each branch below (marked / timeout / reminder) already classifies its KNOWN
+  // failure modes and RETURNS a typed outcome (settle_failed, refund_failed,
+  // admin_race_skipped, transition_failed_*, …); those never throw, so the
+  // backstop below can NEVER mask or re-label a classified outcome. The backstop
+  // exists SOLELY to isolate an UNCLASSIFIED throw that escapes a branch — the
+  // canonical case being `processTimeout`'s Step-1 validate-under-lock re-read,
+  // which opens an UNGUARDED `runInTenant` (`acquireCycleLockInTx` +
+  // `findByIdInTx`); a persistent NON-conflict throw there would otherwise
+  // propagate out of the loop and 500 the WHOLE pass, blocking every OTHER cycle
+  // for the tenant (self-DoS). Closing it at the loop level (rather than
+  // wrapping only Step-1) also covers any FUTURE unguarded per-cycle
+  // `runInTenant`. Mutates the run-scoped counters above via closure (same
+  // pattern the inline loop used); the per-cycle skips that were `continue`
+  // become `return` (identical control flow — the loop advances to the next
+  // cycle either way).
+  async function processCycle(cycle: RenewalCycle): Promise<void> {
     // F8-RP follow-up: a cycle carrying the async reject-with-refund marker is
     // reconciled to its intended `cancelled` terminal EVERY pass, regardless
     // of `daysPending` and BEFORE the timeout/reminder branches — an admin
@@ -464,10 +506,10 @@ export async function reconcilePendingReactivations(
           void _exhaustive;
         }
       }
-      continue;
+      return; // H1: was `continue` — see processCycle extraction note
     }
     const daysPending = computeDaysPending(cycle, input.now);
-    if (daysPending === null) continue; // missing entered_pending_at — defensive
+    if (daysPending === null) return; // missing entered_pending_at — defensive (H1: was `continue`)
     if (daysPending >= PENDING_TIMEOUT_DAYS) {
       const outcome = await processTimeout(
         deps,
@@ -525,7 +567,7 @@ export async function reconcilePendingReactivations(
           void _exhaustive;
         }
       }
-      continue;
+      return; // H1: was `continue` — see processCycle extraction note
     }
     // T138 catch-up review-fix: instead of equality-only firing
     // (which silently drops a reminder when the cron skips that exact
@@ -578,6 +620,36 @@ export async function reconcilePendingReactivations(
     }
   }
 
+  // H1 reliability fix — TOP-LEVEL per-cycle backstop. `processCycle` handles a
+  // single cycle and reports its CLASSIFIED outcome via the run-scoped counters;
+  // any UNCLASSIFIED throw that escapes it (e.g. the timeout branch's Step-1
+  // unguarded re-read) is isolated HERE — never allowed to abort the pass and
+  // block every other cycle. Made VISIBLE (not silently swallowed) via the
+  // distinct, alertable `cycleProcessingErrors` counter +
+  // `renewalsMetrics.cycleProcessingError` + an ERROR log (PCI-safe ids + the
+  // error CONSTRUCTOR NAME only — NEVER `error.message`, which on the
+  // payment-adjacent refund path could carry processor detail) — then the loop
+  // continues to the next cycle. Classified per-branch outcomes are RETURNED,
+  // not thrown, so this never masks or re-labels one.
+  for (const cycle of page.items) {
+    try {
+      await processCycle(cycle);
+    } catch (e) {
+      cycleProcessingErrors += 1;
+      renewalsMetrics.cycleProcessingError(cycle.tenantId);
+      logger.error(
+        {
+          errorId: 'F8.RECONCILE.CYCLE_PROCESSING_ERROR',
+          cycleId: cycle.cycleId,
+          tenantId: cycle.tenantId,
+          errorName: e instanceof Error ? e.constructor.name : typeof e,
+        },
+        '[reconcile-pending-reactivations] unclassified per-cycle throw escaped branch handling — isolated to this cycle (counted + alerting); reconcile pass continues',
+      );
+      continue;
+    }
+  }
+
   return ok({
     cyclesProcessed: page.items.length,
     remindersT7: reminderCounters['lapsed_member_admin_reactivation_reminder_t-7'],
@@ -597,6 +669,7 @@ export async function reconcilePendingReactivations(
     asyncRejectLookupFailed,
     asyncRejectAdminRaceSkipped,
     asyncRejectSettleFailed,
+    cycleProcessingErrors,
   });
 }
 

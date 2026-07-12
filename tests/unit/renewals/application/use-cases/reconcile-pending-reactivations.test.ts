@@ -536,6 +536,87 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
   });
 });
 
+describe('reconcilePendingReactivations (H1 reliability) — loop-level per-cycle backstop', () => {
+  it('timeout Step-1 re-read THROWS persistently → isolated as cycleProcessingErrors, cron does NOT reject, a second healthy cycle still processes', async () => {
+    // H1 reliability fix. `processTimeout` Step-1 (the validate-under-lock
+    // re-read: `acquireCycleLockInTx` + `findByIdInTx`) opens an UNGUARDED
+    // `runInTenant`. A persistent NON-conflict throw there (DB blip / RLS
+    // regression / poison row) escaped `processTimeout` → the caller for-loop
+    // (which had NO top-level per-cycle guard) → the route 500'd the WHOLE
+    // reconcile pass, blocking every other marked/timeout/reminder cycle for
+    // the tenant — the SAME self-DoS class the marked branch's own outer
+    // try/catch already closes, but on the timeout branch's Step-1. The
+    // loop-level backstop isolates ANY unclassified escaped throw to its one
+    // cycle: counts it in the distinct, alertable `cycleProcessingErrors`
+    // outcome, logs at ERROR (PCI-safe ids + error constructor name only), and
+    // continues.
+    //
+    // A SECOND, otherwise-processable cycle (a day-23 reminder-due cycle) is
+    // seeded AFTER the poison cycle to prove the loop keeps going past the
+    // throw. (A day-23 reminder cycle never calls `findByIdInTx`, so ONLY the
+    // poison timeout cycle reaches the Step-1 re-read.)
+    const poisonCycle = pendingCycle({ daysPending: 31, cycleSuffix: 'ca01' });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'ca02' });
+    const { deps, refundMock, transitionMock, emitMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      findByIdInTxImpl: (_callIndex, cycle) => {
+        if (cycle.cycleId === poisonCycle.cycleId) {
+          throw new Error('renewal_cycles: connection reset mid-Step-1-reread');
+        }
+        return cycle;
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (b) the poison cycle is isolated into the distinct alertable counter,
+      // NEVER a classified timeout outcome (the throw escaped Step-1 BEFORE
+      // any per-branch classification could run).
+      expect(r.value.cycleProcessingErrors).toBe(1);
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(0);
+      // (c) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // Step-1 threw BEFORE the refund, so no Stripe call + no transition ran
+    // for the poison cycle.
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    // The reminder path's `emit` fires once for the second cycle — unaffected
+    // by the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
+  });
+
+  it('a classified per-branch outcome is NEVER re-labelled by the backstop (refund_failed stays refund_failed, cycleProcessingErrors=0)', async () => {
+    // Guard the "backstop must not mask/re-label a classified outcome"
+    // invariant: a branch that RETURNS a classified outcome (here the timeout
+    // branch's `refund_failed`, which returns — never throws) must land in its
+    // own counter and leave `cycleProcessingErrors` at 0. The backstop fires
+    // ONLY on genuine escaped throws.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      refundResult: {
+        status: 'refund_failed',
+        errorCode: 'processor_unavailable',
+        detail: 'Stripe 503',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.timeoutRefundFailures).toBe(1);
+      expect(r.value.cycleProcessingErrors).toBe(0);
+    }
+  });
+});
+
 describe('reconcilePendingReactivations (063) — POST-refund Step-3 residual classification', () => {
   it('Step-3 admin-approve-AFTER-refund (tx2 re-read shows completed) → post_refund_admin_race, NOT timed_out', async () => {
     // MONEY-OBSERVABILITY regression guard (063 xhigh review): the Step-1

@@ -3560,6 +3560,38 @@ export const renewalsMetrics = {
       ).add(1, { tenant: tenantId, outcome });
     });
   },
+
+  /**
+   * `renewals_reconcile_cycle_processing_error_total{tenant}` — H1 reliability
+   * fix (loop-level per-cycle backstop).
+   *
+   * Incremented by the `reconcilePendingReactivations` caller for-loop when a
+   * per-cycle branch (marked / timeout / reminder) threw an UNCLASSIFIED error
+   * that ESCAPED its own error handling. Every branch already classifies its
+   * KNOWN failure modes and RETURNS a typed outcome (settle_failed,
+   * refund_failed, admin_race_skipped, transition_failed_*, …) — those are
+   * returned, never thrown, so they never reach this counter. This one fires
+   * ONLY on a genuine escaped throw — the canonical case being
+   * `processTimeout`'s Step-1 validate-under-lock re-read (`acquireCycleLockInTx`
+   * + `findByIdInTx`), an UNGUARDED `runInTenant` whose persistent NON-conflict
+   * throw (DB blip / RLS regression / poison row) would otherwise propagate out
+   * of the loop and 500 the WHOLE reconcile pass, blocking every OTHER cycle for
+   * the tenant (a self-DoS). The backstop isolates it to that one cycle (ERROR
+   * log with PCI-safe ids + error constructor name, then `continue`).
+   *
+   * Alert rule: ALERTING — unlike the informational per-branch race/pending
+   * counters, a non-zero rate here means an UNHANDLED per-cycle throw is
+   * recurring (a latent unguarded path), NOT an expected admin–cron race. A
+   * sustained rate warrants investigating which branch is chronically throwing.
+   */
+  cycleProcessingError(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_cycle_processing_error_total',
+        'F8 reconcile-pending-reactivations — unclassified per-cycle throw isolated by the loop-level backstop (would otherwise 500 the whole pass)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;
 
 // ---------------------------------------------------------------------------

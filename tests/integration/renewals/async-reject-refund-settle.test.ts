@@ -656,6 +656,88 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
     expect(healthyRow?.closedReason).toBe('admin_rejected_with_refund');
   });
 
+  it('H1: a timeout cycle whose Step-1 re-read THROWS is per-cycle isolated (live Neon) — pass does not 500, a second reminder-due cycle still processes', async () => {
+    // H1 reliability fix (live Neon). `processTimeout` Step-1 (the
+    // validate-under-lock re-read) opens an UNGUARDED `runInTenant`
+    // (`acquireCycleLockInTx` + `findByIdInTx`). A persistent NON-conflict throw
+    // there escaped `processTimeout` → the caller for-loop (no top-level guard)
+    // → the whole reconcile pass 500'd (self-DoS), blocking every OTHER cycle
+    // for the tenant. THE FIX: a loop-level per-cycle backstop isolates ANY
+    // escaped throw to its one cycle (distinct `cycleProcessingErrors` counter +
+    // ERROR log), then continues.
+    //
+    // Two UNMARKED cycles in tenant A: a day-31 timeout cycle whose Step-1
+    // re-read is injected to throw (poison), and a day-23 reminder-due cycle
+    // seeded AFTER it. The reminder cycle never calls `findByIdInTx`, so only
+    // the poison timeout cycle hits the injected throw. `findByIdInTx` is
+    // scoped to the poison cycle's id and delegates to the real repo otherwise.
+    const poison = await seedCycle({ tenant: tenantA, user, daysPending: 31 });
+    const healthy = await seedCycle({ tenant: tenantA, user, daysPending: 23 });
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const realFindById = deps.cyclesRepo.findByIdInTx;
+    const racedDeps: typeof deps = {
+      ...deps,
+      // Timeout path issues a refund via F5; stub it loud so a bug that reaches
+      // the refund (Step-1 did NOT throw) is caught. Step-1 throws first, so it
+      // must never run.
+      f5RefundBridge: {
+        issueRefundForInvoice: vi.fn(async () => {
+          throw new Error('issueRefundForInvoice must not run — Step-1 throws first');
+        }),
+        getRefundOutcomeForInvoice: vi.fn(async () => ({ status: 'not_found' as const })),
+        findPendingRefundForInvoice: vi.fn(async () => ({ status: 'none' as const })),
+      },
+      cyclesRepo: {
+        ...deps.cyclesRepo,
+        findByIdInTx: vi.fn(async (tx: unknown, tid: string, cid: string) => {
+          if (cid === poison.cycleId) {
+            throw new Error('renewal_cycles: connection reset mid-Step-1-reread');
+          }
+          return realFindById(tx as never, tid, cid as never);
+        }),
+      },
+    };
+
+    const r = await reconcilePendingReactivations(racedDeps, {
+      tenantId: tenantA.ctx.slug,
+      now: NOW,
+      correlationId: randomUUID(),
+    });
+
+    // The run does NOT reject despite the poison cycle's Step-1 throwing.
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.cycleProcessingErrors).toBe(1); // poison isolated
+      expect(r.value.remindersT7).toBe(1); // healthy reminder cycle processed
+      expect(r.value.timedOut).toBe(0); // poison never lapsed
+    }
+
+    // Poison cycle: Step-1 is read-only + rolled back → row untouched, still
+    // pending (self-heals on a later pass).
+    const poisonRow = await readCycle(tenantA, poison.cycleId);
+    expect(poisonRow?.status).toBe('pending_admin_reactivation');
+    // Healthy cycle: reminders never transition — still pending, but its T-7
+    // reminder audit row landed on live Neon (proof the loop processed it).
+    const healthyRow = await readCycle(tenantA, healthy.cycleId);
+    expect(healthyRow?.status).toBe('pending_admin_reactivation');
+    const reminderAudit = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ eventType: auditLog.eventType })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(
+              auditLog.eventType,
+              'lapsed_member_admin_reactivation_reminder_t-7' as never,
+            ),
+          ),
+        )
+        .limit(1),
+    );
+    expect(reminderAudit.length).toBe(1);
+  });
+
   it('cross-tenant isolation: tenant B cron does NOT settle tenant A marked cycle (Principle I)', async () => {
     const { cycleId } = await seedCycle({
       tenant: tenantA,

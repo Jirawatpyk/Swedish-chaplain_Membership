@@ -155,6 +155,12 @@ export async function POST(
         // blip); the tx rolled back, the cycle stays marked+pending and
         // self-heals next pass. INFORMATIONAL — never pages on its own.
         async_reject_settle_failed: result.value.asyncRejectSettleFailed,
+        // H1 reliability fix: an UNCLASSIFIED per-cycle throw (e.g. the timeout
+        // branch's Step-1 unguarded re-read) that the loop-level backstop
+        // isolated to its one cycle instead of letting it 500 the whole pass.
+        // ALERTING — a non-zero value means an unhandled per-cycle path is
+        // throwing, distinct from the informational race/pending counters.
+        cycle_processing_errors: result.value.cycleProcessingErrors,
         duration_ms: Date.now() - startedAt,
       });
     });
