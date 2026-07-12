@@ -2351,7 +2351,8 @@
           "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",
           "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
           "codeFallback": "Felkod: {code}",
-          "unknown": "Ett okänt fel inträffade. Försök igen."
+          "unknown": "Ett okänt fel inträffade. Försök igen.",
+          "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten."
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."

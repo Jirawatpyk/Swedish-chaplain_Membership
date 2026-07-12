@@ -55,7 +55,6 @@ describe('routeIssueError (FR-032)', () => {
     for (const code of [
       'pdf_render_failed',
       'blob_upload_failed',
-      'overflow',
       'registration_lookup_failed',
     ] as const) {
       expect(routeIssueError(code)).toEqual({
@@ -63,6 +62,17 @@ describe('routeIssueError (FR-032)', () => {
         messageKey: 'errors.temporary',
       });
     }
+  });
+
+  // final-review Finding — §87 sequential-number exhaustion is PERMANENT until
+  // the fiscal year rolls, so it must NOT route to the transient "please try
+  // again" copy (which fails every retry). It gets dedicated `errors.overflow`
+  // copy ("...exhausted. Contact support."), matching the issue-as-paid dialog.
+  it('maps overflow (§87 exhausted) to dedicated errors.overflow, not the retry copy', () => {
+    expect(routeIssueError('overflow')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.overflow',
+    });
   });
 
   it('an unrecognised but present code falls back to codeFallback with the raw code', () => {

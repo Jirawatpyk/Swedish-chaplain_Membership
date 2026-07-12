@@ -48,22 +48,27 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   'member_not_found',
   'no_buyer_snapshot',
   'invalid_lines',
+  // §87 sequential numbers exhausted is a PERMANENT condition until the fiscal
+  // year rolls — "please try again" (the transient copy) fails every retry, so
+  // route it to dedicated `errors.overflow` copy ("...exhausted. Contact
+  // support."), matching the issue-as-paid dialog. (final-review Finding.)
+  'overflow',
 ]);
 
 /**
  * Cluster 5 (Finding 4) — infrastructure faults (the tx already rolled back, so
  * NOTHING was issued and no §87 number was burned). Surface a single generic
  * "temporary problem — nothing was issued, please try again" instead of a raw
- * code. `overflow` (§87 numbers exhausted) is grouped here so the admin retries
- * / contacts support rather than seeing a bare code. `registration_lookup_failed`
- * (064 S1 — the issuance-time event-registration re-read faulted, a transient DB
- * read fault where a retry helps) belongs here too: without it the §86/4 dialog
- * dumped a raw "Error code: registration_lookup_failed" instead of the retry copy.
+ * code. `registration_lookup_failed` (064 S1 — the issuance-time
+ * event-registration re-read faulted, a transient DB read fault where a retry
+ * helps) belongs here: without it the §86/4 dialog dumped a raw "Error code:
+ * registration_lookup_failed" instead of the retry copy. NB: `overflow` (§87
+ * exhaustion) is NOT here — it is a permanent condition, so it lives in
+ * DEDICATED_MESSAGE_CODES → `errors.overflow` (final-review Finding).
  */
 const TRANSIENT_RETRY_CODES: ReadonlySet<string> = new Set([
   'pdf_render_failed',
   'blob_upload_failed',
-  'overflow',
   'registration_lookup_failed',
 ]);
 

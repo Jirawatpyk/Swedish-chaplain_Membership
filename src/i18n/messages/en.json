@@ -2351,7 +2351,8 @@
           "invalid_lines": "This draft's line items are invalid — delete it and recreate it.",
           "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
-          "unknown": "An unknown error occurred. Please try again."
+          "unknown": "An unknown error occurred. Please try again.",
+          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support."
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
