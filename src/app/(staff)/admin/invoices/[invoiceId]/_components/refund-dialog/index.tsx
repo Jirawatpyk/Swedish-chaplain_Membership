@@ -16,7 +16,7 @@
  * `/admin/invoices/[id]?refund=1` so admins can refund without
  * leaving the keyboard.
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -79,22 +79,37 @@ export function RefundDialog({
     !pendingRefundExists && searchParams.get('refund') === '1',
   );
 
-  // On close: clear the `?refund=1` query param so a refresh / shared
-  // link does not reopen the dialog. `router.replace` keeps history
-  // clean (no extra entry).
+  // Clear the `?refund=1` query param (preserving any other params) so a
+  // refresh / shared link does not reopen the dialog. `router.replace`
+  // keeps history clean (no extra entry).
+  const stripRefundParam = useCallback(() => {
+    if (searchParams.get('refund') !== '1') return;
+    const params = new URLSearchParams(searchParams);
+    params.delete('refund');
+    const qs = params.toString();
+    router.replace(`/admin/invoices/${invoiceId}${qs ? `?${qs}` : ''}`, {
+      scroll: false,
+    });
+  }, [searchParams, router, invoiceId]);
+
+  // CF-3 (2026-07-12) — consume the auto-open intent once, on mount: the
+  // `open` initializer above already captured `?refund=1`, so removing the
+  // param here never closes the dialog — it just stops a hard reload from
+  // re-opening it and keeps a stale param out of shared/bookmarked URLs.
+  // Also covers the pending-gate branch below (dialog stays closed, but the
+  // dead `?refund=1` param is still cleared).
+  useEffect(() => {
+    stripRefundParam();
+  }, [stripRefundParam]);
+
+  // Defence-in-depth: also clear on close (no-op if the mount effect already
+  // stripped it).
   const handleOpenChange = useCallback(
     (next: boolean) => {
       setOpen(next);
-      if (!next && searchParams.get('refund') === '1') {
-        const params = new URLSearchParams(searchParams);
-        params.delete('refund');
-        const qs = params.toString();
-        router.replace(`/admin/invoices/${invoiceId}${qs ? `?${qs}` : ''}`, {
-          scroll: false,
-        });
-      }
+      if (!next) stripRefundParam();
     },
-    [searchParams, router, invoiceId],
+    [stripRefundParam],
   );
 
   // Gap E — a refund is settling: disable the trigger + surface a "settling"
