@@ -998,16 +998,59 @@ async function confirmPaymentBody(
         });
         await markProcessedIfPresent(deps, input, tx);
         if (flipped === null) {
-          // The Stripe refund DID happen; the audit above is the durable
-          // money-trail even though the row is now owned by the concurrent
-          // writer's terminal status. Warn so ops can reconcile the
-          // marker-less refund via the runbook.
-          /* v8 ignore next 5 -- ops warn on the rare concurrent-terminalisation race; unit tests don't wire deps.logger (mirrors the Phase B catch + give-up siblings). The flipped===null branch itself is covered by the guard-miss unit test. */
-          deps.logger?.warn('confirm_payment.auto_refund_flip_guard_miss', {
-            tenantId: input.tenantId,
-            paymentId: payment.id,
-            processorRefundId: refund.value.id,
-          });
+          // `markAutoRefunded`'s `status='pending'` guard matched ZERO rows.
+          // Two DISJOINT sub-cases, discriminated by the Phase-A-locked
+          // `payment.status` (stable for a terminal row — no writer can move
+          // a `failed` row back to `pending`):
+          if (payment.status === 'failed') {
+            // Sub-case (ii) — the locked row was ALREADY terminal `failed`. A
+            // late captured charge on a NON-payable invoice routes through
+            // Step 3 (stale-invoice), which runs BEFORE the Step 4 transition
+            // check and does NOT inspect `payment.status`, so `markAutoRefunded`
+            // (guard `status='pending'`) could never match here. Stamp the A.15
+            // status-preserving marker (guard `status='failed' AND
+            // auto_refund_processor_refund_id IS NULL`; F-9 — status UNTOUCHED)
+            // so the auto-refund's own later `charge.refund.updated` is
+            // RECOGNISED via `findAutoRefundByProcessorRefundId`
+            // (A.11 `auto_refund_recognized`) instead of firing a FALSE
+            // `out_of_band_refund_detected`. The refund itself is correct;
+            // this only closes the false-OOB noise (guard-miss ii).
+            const marked = await deps.paymentsRepo.attachAutoRefundMarkerOnFailed(
+              tx,
+              {
+                paymentId: payment.id,
+                tenantId: input.tenantId,
+                processorRefundId: refund.value.id,
+              },
+            );
+            if (marked === null) {
+              // A concurrent writer changed the row off `failed`, OR the marker
+              // was already stamped (Stripe retry idempotency; the partial-
+              // unique index is the DB backstop). The Stripe refund DID happen;
+              // the audit above is the durable money-trail.
+              /* v8 ignore next 5 -- ops warn on the rare concurrent race; unit tests don't wire deps.logger (mirrors the late-charge marker + Phase B siblings). */
+              deps.logger?.warn('confirm_payment.auto_refund_marker_on_failed_guard_miss', {
+                tenantId: input.tenantId,
+                paymentId: payment.id,
+                processorRefundId: refund.value.id,
+              });
+            }
+          } else {
+            // Sub-case (i) — concurrent-manual-mark: the row was `pending` at
+            // the Phase-A lock but a concurrent writer terminalised it to a
+            // DIFFERENT terminal status (e.g. a member cancel, or an admin
+            // mark-paid flip) between Phase A's lock release and here. The
+            // Stripe refund DID happen; the audit above is the durable
+            // money-trail. This stays a runbook reconciliation item (NOT
+            // marker-stamped — the row is owned by the concurrent writer's
+            // terminal status).
+            /* v8 ignore next 5 -- ops warn on the rare concurrent-terminalisation race; unit tests don't wire deps.logger (mirrors the Phase B catch + give-up siblings). The flipped===null branch itself is covered by the guard-miss unit tests. */
+            deps.logger?.warn('confirm_payment.auto_refund_flip_guard_miss', {
+              tenantId: input.tenantId,
+              paymentId: payment.id,
+              processorRefundId: refund.value.id,
+            });
+          }
         }
       });
       // F5R1-E15 — metric AFTER the tx commits so a Phase B failure does

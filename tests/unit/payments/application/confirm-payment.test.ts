@@ -336,6 +336,62 @@ describe('confirmPayment (T057)', () => {
     ).toBe(true);
   });
 
+  // Guard-miss sub-case (ii): the locked row was ALREADY terminal `failed`
+  // (a late captured charge on a NON-payable invoice routes through Step 3,
+  // which runs before the transition check and never inspects payment.status).
+  // markAutoRefunded's `status='pending'` guard cannot match → fall back to
+  // the A.15 status-preserving marker so A.11 recognises the refund instead of
+  // firing a false OOB. Distinct from sub-case (i) above (pending row raced to
+  // a different terminal status → runbook warn, no marker).
+  it('guard-miss (ii) — failed row in stale Step-3 stamps the A.15 marker (auto_refund_recognized, not false OOB)', async () => {
+    const deps = makeDeps();
+    // Locked row is terminal `failed`.
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    // Invoice is NON-payable → Step-3 stale path.
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    // markAutoRefunded guards status='pending' → null on a `failed` row.
+    (deps.paymentsRepo.markAutoRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    // Step-3 stale path (auto-refund- namespace), guard-missed markAutoRefunded.
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotencyKey: `auto-refund-${FAILED_PAYMENT.id}` }),
+    );
+    expect(deps.paymentsRepo.markAutoRefunded).toHaveBeenCalledTimes(1);
+
+    // THE FIX: the A.15 status-preserving marker is stamped so A.11 recognises
+    // the refund; the row is NOT flipped to auto_refunded (F-9).
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledTimes(1);
+    expect(deps.paymentsRepo.attachAutoRefundMarkerOnFailed).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        paymentId: FAILED_PAYMENT.id,
+        tenantId: TENANT_ID,
+        processorRefundId: 're_test_auto',
+      }),
+    );
+
+    // The money-trail audit still fires.
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'payment_auto_refunded_stale_invoice'),
+    ).toBe(true);
+  });
+
   it('stale invoice (void) — cause=invoice_voided', async () => {
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
