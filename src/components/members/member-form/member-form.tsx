@@ -127,8 +127,34 @@ export function MemberForm({
   const {
     handleSubmit,
     setError,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = methods;
+
+  // PR-B task 9 — beforeunload unsaved-changes guard (docs/ux-patterns.md
+  // § 4.2 names "member edit" explicitly; PR-B roughly doubled this form's
+  // size, so losing ~40 filled fields to a stray tab-close/refresh is a
+  // real, expensive failure). Clone of the broadcasts compose-form /
+  // issue-invoice-form guard. Active only when RHF's own dirty-tracking
+  // has diverged from the initial values AND we're not mid-submit (the
+  // post-submit redirect would false-trigger the prompt). `isDirty` is
+  // read here (component top level, via formState destructuring) rather
+  // than inside the effect — react-hook-form's `formState` is a Proxy that
+  // only subscribes to fields actually read during render; reading it only
+  // inside the effect body would silently never update. Note: App Router
+  // exposes no clean SPA route-change interception, so this covers tab
+  // close / hard nav / refresh only, not in-app navigation.
+  useEffect(() => {
+    const dirty = !submitting && isDirty;
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      // Modern browsers ignore the message string and show their own copy;
+      // preventDefault + returnValue is the cross-browser invocation pattern.
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [submitting, isDirty]);
 
   // 088 US3 (FR-008) — the head-office toggle drives the conditional 5-digit
   // branch_code input (rendered on the EDIT form only). Local state so the

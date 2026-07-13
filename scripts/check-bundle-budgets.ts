@@ -3,8 +3,8 @@
  *
  * Reads Next.js's build manifest + per-route app-build-manifest, sums
  * the on-disk size of every chunk file under `.next/static/chunks/`,
- * and fails the process if any tracked F7 / F8 route exceeds its KB
- * ceiling.
+ * and fails the process if any tracked F7 / F8 / members route exceeds
+ * its KB ceiling.
  *
  * Run as a post-build step:
  *
@@ -27,6 +27,10 @@
  *     /admin/renewals/tier-upgrades   ≤ 120 KB  (tier-upgrade queue)
  *     /portal/renewal/[memberId]      ≤ 100 KB  (member self-service confirm)
  *     /portal/preferences/renewals    ≤  60 KB  (preferences toggle only)
+ *   Members (058 / PR-B — guards the 97 KB gzipped Thai postal dataset,
+ *   which must stay server-only behind /api/geo/postal/[code]):
+ *     /admin/members/new              ≤ 150 KB
+ *     /admin/members/[memberId]/edit  ≤ 150 KB
  *
  * The script is intentionally fail-soft when `.next/` is absent (e.g.
  * before the build runs in dev branches) so it can be added to a
@@ -61,6 +65,12 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // The `/portal/renewal/[memberId]/success` page is fully server-
   // rendered and has no client JS, so no budget entry is needed.
   { route: '/admin/settings/renewals/schedules', maxKb: 80 },
+  // --- Members (058 / PR-B) --------------------------------------------
+  // The Thai postal dataset (97 KB gzipped) is server-only, behind
+  // /api/geo/postal/[code] and an `import 'server-only'` guard. If it ever
+  // lands in the client bundle, these budgets are what catches it.
+  { route: '/admin/members/new', maxKb: 150 },
+  { route: '/admin/members/[memberId]/edit', maxKb: 150 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
