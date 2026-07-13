@@ -29,7 +29,7 @@ Today the Notes textarea renders on the create form, the admin types into it, an
 **Files:**
 - Modify: `src/modules/members/application/use-cases/create-member.ts:52-81` (schema) and `:372` (member draft)
 - Modify: `src/components/members/create-member-client.tsx:58-86` (`toPayload`)
-- Test: `tests/contract/members/create-member.test.ts` (existing file — reuse its `validBody` fixture at `:65`)
+- Create: `tests/unit/members/application/create-member-notes.test.ts`
 - Test: `tests/unit/members/presentation/create-member-client.test.tsx` (existing file)
 - Test: `tests/integration/members/create-member.test.ts` (existing file)
 
@@ -37,38 +37,63 @@ Today the Notes textarea renders on the create form, the admin types into it, an
 - Consumes: nothing from earlier tasks.
 - Produces: `createMemberSchema` gains `notes?: string | null`. `CreateMemberInput` (inferred) therefore gains `notes`. No other task depends on this.
 
-- [ ] **Step 1: Write the failing contract test**
+**Why there is no contract test here.** `src/app/api/members/route.ts:209` hands the raw request body straight to `createMember`, which parses it internally (`create-member.ts:191`). A contract test that mocks `createMember` therefore sees `notes` on the call **whether or not the schema accepts it** — it cannot go red, so it would be a test that proves nothing. The two tests that genuinely discriminate are the schema test (zod strips an unknown key today) and the integration test (the member draft hardcodes `notes: null` today). Both are below.
 
-In `tests/contract/members/create-member.test.ts`, inside the existing `describe('contract: POST /api/members (T040)')` block, add:
+- [ ] **Step 1: Write the failing schema test**
+
+Create `tests/unit/members/application/create-member-notes.test.ts`:
 
 ```ts
-  it('accepts notes and forwards them to the use case', async () => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
-    createMemberMock.mockResolvedValue(
-      ok({ memberId: 'm-1', primaryContactId: 'c-1' }),
-    );
+import { describe, expect, it } from 'vitest';
+import { createMemberSchema } from '@/modules/members/application/use-cases/create-member';
 
-    const res = await POST(
-      makeRequest({ ...validBody, notes: 'Paid by bank transfer, VIP' }),
-    );
+const baseInput = {
+  company_name: 'ACME Co., Ltd.',
+  country: 'TH',
+  plan_id: 'plan-corporate',
+  plan_year: 2026,
+  primary_contact: {
+    first_name: 'Somchai',
+    last_name: 'Jaidee',
+    email: 'somchai@acme.example',
+    preferred_language: 'en' as const,
+  },
+};
 
-    expect(res.status).toBe(201);
-    expect(createMemberMock).toHaveBeenCalledWith(
-      expect.objectContaining({ notes: 'Paid by bank transfer, VIP' }),
-      expect.anything(),
-    );
+describe('createMemberSchema — notes', () => {
+  it('accepts notes and preserves the value', () => {
+    const parsed = createMemberSchema.parse({
+      ...baseInput,
+      notes: 'Paid by bank transfer, VIP',
+    });
+
+    expect(parsed.notes).toBe('Paid by bank transfer, VIP');
   });
-```
 
-If `makeRequest` / `POST` / `ok` are already imported at the top of the file (they are — see `:9-11`, `:78`), no new imports are needed. If the existing 201 test passes its arguments in a different shape, mirror that shape exactly rather than the one above.
+  it('leaves notes undefined when omitted', () => {
+    const parsed = createMemberSchema.parse(baseInput);
+
+    expect(parsed.notes).toBeUndefined();
+  });
+
+  it('rejects notes longer than 4000 characters', () => {
+    const result = createMemberSchema.safeParse({
+      ...baseInput,
+      notes: 'x'.repeat(4001),
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+```
 
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-pnpm vitest run tests/contract/members/create-member.test.ts -t "accepts notes"
+pnpm vitest run tests/unit/members/application/create-member-notes.test.ts
 ```
 
-Expected: FAIL. `createMemberSchema` is `.strict()`-adjacent in effect — an unknown `notes` key is stripped by zod, so `createMemberMock` is called **without** `notes` and the `objectContaining` assertion fails.
+Expected: the first and third tests FAIL — zod strips the unknown `notes` key, so `parsed.notes` is `undefined` and the over-length value is accepted. The second test passes trivially (it is the regression guard for the other two).
 
 - [ ] **Step 3: Accept `notes` in the schema**
 
@@ -91,13 +116,13 @@ In the same file at line 372, replace the hardcoded null:
         addressLine1: data.address_line1 ?? null,
 ```
 
-- [ ] **Step 5: Run the contract test again**
+- [ ] **Step 5: Run the schema test again**
 
 ```bash
-pnpm vitest run tests/contract/members/create-member.test.ts
+pnpm vitest run tests/unit/members/application/create-member-notes.test.ts
 ```
 
-Expected: PASS, and no previously-passing test in the file regresses.
+Expected: all three PASS.
 
 - [ ] **Step 6: Write the failing client-payload test**
 
@@ -175,7 +200,7 @@ Expected: PASS. This hits the **`dev` Neon branch** via `.env.local`; the suite 
 ```bash
 git add src/modules/members/application/use-cases/create-member.ts \
         src/components/members/create-member-client.tsx \
-        tests/contract/members/create-member.test.ts \
+        tests/unit/members/application/create-member-notes.test.ts \
         tests/unit/members/presentation/create-member-client.test.tsx \
         tests/integration/members/create-member.test.ts
 git commit -m "fix(members): accept notes on member create
