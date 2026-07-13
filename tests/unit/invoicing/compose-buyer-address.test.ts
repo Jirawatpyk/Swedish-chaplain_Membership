@@ -14,6 +14,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: '99/1 Rama IV Road',
       addressLine2: 'Unit 12B',
+      subDistrict: null,
       city: 'Khlong Toei',
       province: 'Bangkok',
       postalCode: '10110',
@@ -27,6 +28,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: 'Kungsgatan 1',
       addressLine2: null,
+      subDistrict: null,
       city: 'Stockholm',
       province: null,
       postalCode: '11143',
@@ -39,6 +41,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: '500 Sukhumvit',
       addressLine2: null,
+      subDistrict: null,
       city: null,
       province: 'Bangkok',
       postalCode: '10250',
@@ -51,6 +54,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: null,
       addressLine2: null,
+      subDistrict: null,
       city: null,
       province: null,
       postalCode: null,
@@ -63,6 +67,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: null,
       addressLine2: null,
+      subDistrict: null,
       city: null,
       province: null,
       postalCode: null,
@@ -75,6 +80,7 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: '  ',
       addressLine2: '',
+      subDistrict: '  ',
       city: '  ',
       province: 'Chiang Mai',
       postalCode: '50000',
@@ -87,11 +93,40 @@ describe('composeBuyerAddress', () => {
     const out = composeBuyerAddress({
       addressLine1: '๙๙/๑ ถนนพระราม ๔',
       addressLine2: null,
+      subDistrict: null,
       city: 'คลองเตย',
       province: 'กรุงเทพมหานคร',
       postalCode: '๑๐๑๑๐',
       country: 'TH',
     });
     expect(out).toBe('๙๙/๑ ถนนพระราม ๔\nคลองเตย กรุงเทพมหานคร ๑๐๑๑๐');
+  });
+
+  it('places the sub-district before the district on the locality line', () => {
+    expect(
+      composeBuyerAddress({
+        addressLine1: '123 ถนนสุขุมวิท',
+        addressLine2: null,
+        subDistrict: 'คลองตันเหนือ',
+        city: 'เขตวัฒนา',
+        province: 'กรุงเทพมหานคร',
+        postalCode: '10110',
+        country: 'TH',
+      }),
+    ).toBe('123 ถนนสุขุมวิท\nคลองตันเหนือ เขตวัฒนา กรุงเทพมหานคร 10110');
+  });
+
+  it('drops a blank sub-district without leaving a double space', () => {
+    expect(
+      composeBuyerAddress({
+        addressLine1: '123 Sukhumvit Rd',
+        addressLine2: null,
+        subDistrict: null,
+        city: 'Watthana',
+        province: 'Bangkok',
+        postalCode: '10110',
+        country: 'TH',
+      }),
+    ).toBe('123 Sukhumvit Rd\nWatthana Bangkok 10110');
   });
 });
