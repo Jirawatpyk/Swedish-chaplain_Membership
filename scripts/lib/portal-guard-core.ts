@@ -17,15 +17,33 @@
  *     layout above its children, so ONE call site covers every page —
  *     no per-page.tsx scan is needed).
  *
- * Wiring the two chokepoints closes today's gap, but nothing stops a FUTURE
+ * Task 7b closed the 3-route gap Task 7 left tracked below: `timeline`,
+ * `directory`, and `directory/logo` each resolve their member via a bespoke
+ * `requireSession`/`getCurrentSession` + `findByLinkedUserId` lookup instead
+ * of `requireMemberContext`, so they call `checkPortalAccess`
+ * (`src/lib/lapsed-portal-scope.ts`) DIRECTLY instead — same deps builder
+ * (`buildPortalAccessDeps`), same ctx shape, same fail-open behaviour. The
+ * gate below therefore accepts EITHER symbol as satisfying the chokepoint.
+ *
+ * Wiring the chokepoints closes today's gap, but nothing stops a FUTURE
  * `/api/portal/**` route from being added without ever calling
- * `requireMemberContext` (e.g. copy-pasting an older route's inline
- * `getCurrentSession()` pattern). This script scans every route file and
- * fails CI the moment that happens — unless the route is on the
- * `EXEMPT_ROUTES` allowlist below, which requires a documented reason.
+ * `requireMemberContext` OR `checkPortalAccess` (e.g. copy-pasting an older
+ * route's inline `getCurrentSession()` pattern with no gate at all). This
+ * script scans every route file and fails CI the moment that happens —
+ * unless the route is on the `EXEMPT_ROUTES` allowlist below, which requires
+ * a documented reason.
  */
 
 export const CHOKEPOINT_SYMBOL = 'requireMemberContext';
+/**
+ * Task 7b — a route MAY satisfy the gate by calling `checkPortalAccess`
+ * directly (the same function `requireMemberContext` calls internally)
+ * instead of going through `requireMemberContext`. Legitimate when a route
+ * already has its own bespoke session + member-resolution flow that predates
+ * `requireMemberContext` and cannot be trivially rehomed onto it without
+ * touching its response-shape contract.
+ */
+export const DIRECT_ACCESS_CHECK_SYMBOL = 'checkPortalAccess';
 export const PAGE_CHOKEPOINT_SYMBOL = 'enforcePortalPageAccess';
 
 export interface ExemptRoute {
@@ -35,27 +53,27 @@ export interface ExemptRoute {
 }
 
 /**
- * Routes NOT covered by `requireMemberContext`. Every entry must carry an
- * accurate, specific reason — a route that simply forgot to wire the gate
- * must NEVER be added here, because that is exactly the regression this
- * script exists to catch.
+ * Routes NOT covered by `requireMemberContext` (nor the Task 7b direct
+ * `checkPortalAccess` escape hatch). Every entry must carry an accurate,
+ * specific reason — a route that simply forgot to wire the gate must NEVER
+ * be added here, because that is exactly the regression this script exists
+ * to catch.
  *
- * The first 3 entries are LEGITIMATE architectural exemptions (verified by
- * reading each route's actual auth mechanism at Task 7 time, 2026-07-14):
+ * All 3 entries are LEGITIMATE architectural exemptions (verified by reading
+ * each route's actual auth mechanism at Task 7 time, 2026-07-14):
  * pre-session public-token redemption, and GDPR/PDPA data-subject rights
  * that must survive membership termination.
  *
- * The last 3 entries are a DOCUMENTED, TRACKED GAP — NOT exempt by design.
- * All three use the exact same session + `findByLinkedUserId` pattern that
- * `requireMemberContext` formalises, but were never routed through it, so a
- * terminated/suspended member can currently still reach them. Retrofitting
- * them safely requires touching their existing response-shape contracts and
- * their test doubles, which is outside Task 7's assigned file scope
- * (`src/lib/member-context.ts`, `(member)/portal/layout.tsx`,
- * `scripts/check-portal-guard.ts` + its test). Flagged in
- * `.superpowers/sdd/progress.md` "Minor findings" for a fast-follow task
- * (candidate: Task 11 "coverage-threshold restore + full gate") — do NOT
- * silently reclassify these as legitimate without actually wiring the gate.
+ * Task 7 also left a DOCUMENTED, TRACKED GAP of 3 routes (`timeline`,
+ * `directory`, `directory/logo`) that used the same session +
+ * `findByLinkedUserId` pattern `requireMemberContext` formalises, but were
+ * never routed through it. Task 7b (2026-07-14) closed that gap by wiring
+ * `checkPortalAccess` directly into each of those 3 routes — they are no
+ * longer listed here; `findRoutesMissingChokepoint` now recognises a direct
+ * `checkPortalAccess` reference as satisfying the chokepoint (see
+ * `DIRECT_ACCESS_CHECK_SYMBOL`), so those routes pass the gate without an
+ * exemption entry. As of Task 7b, there is no outstanding gap — this list is
+ * exemptions-only.
  */
 export const EXEMPT_ROUTES: readonly ExemptRoute[] = [
   {
@@ -79,46 +97,27 @@ export const EXEMPT_ROUTES: readonly ExemptRoute[] = [
       'data-export request route — a member must be able to download an ' +
       'already-queued export even after their membership terminates.',
   },
-  {
-    path: 'src/app/api/portal/timeline/route.ts',
-    reason:
-      'GAP (tracked, NOT exempt-by-design): resolves the member via ' +
-      'requireSession + findByLinkedUserId — the same pattern ' +
-      'requireMemberContext formalises — but does not call it. Not yet ' +
-      'gated by checkPortalAccess. See progress.md Minor findings.',
-  },
-  {
-    path: 'src/app/api/portal/directory/route.ts',
-    reason:
-      'GAP (tracked, NOT exempt-by-design): resolves the member via ' +
-      'getCurrentSession + findByLinkedUserId but does not call ' +
-      'requireMemberContext. Not yet gated by checkPortalAccess. See ' +
-      'progress.md Minor findings.',
-  },
-  {
-    path: 'src/app/api/portal/directory/logo/route.ts',
-    reason:
-      'GAP (tracked, NOT exempt-by-design): same own-session resolution ' +
-      'pattern as directory/route.ts, does not call requireMemberContext. ' +
-      'Not yet gated by checkPortalAccess. See progress.md Minor findings.',
-  },
 ];
 
 /**
  * Pure scan: given a map of repo-relative route path → file source, returns
- * the paths that reference neither `chokepointSymbol` nor appear in
- * `exemptRoutes`, sorted lexicographically for stable output.
+ * the paths that reference neither `chokepointSymbol` (`requireMemberContext`)
+ * nor `directAccessCheckSymbol` (a direct `checkPortalAccess` call — Task 7b)
+ * nor appear in `exemptRoutes`, sorted lexicographically for stable output.
  */
 export function findRoutesMissingChokepoint(
   routeSources: ReadonlyMap<string, string>,
   exemptRoutes: readonly ExemptRoute[] = EXEMPT_ROUTES,
   chokepointSymbol: string = CHOKEPOINT_SYMBOL,
+  directAccessCheckSymbol: string = DIRECT_ACCESS_CHECK_SYMBOL,
 ): string[] {
   const exemptPaths = new Set(exemptRoutes.map((r) => r.path));
   const offenses: string[] = [];
   for (const [path, source] of routeSources) {
     if (exemptPaths.has(path)) continue;
-    if (!source.includes(chokepointSymbol)) offenses.push(path);
+    if (!source.includes(chokepointSymbol) && !source.includes(directAccessCheckSymbol)) {
+      offenses.push(path);
+    }
   }
   return offenses.sort();
 }

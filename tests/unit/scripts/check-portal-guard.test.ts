@@ -11,6 +11,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
   CHOKEPOINT_SYMBOL,
+  DIRECT_ACCESS_CHECK_SYMBOL,
   EXEMPT_ROUTES,
   PAGE_CHOKEPOINT_SYMBOL,
   findRoutesMissingChokepoint,
@@ -75,6 +76,25 @@ describe('findRoutesMissingChokepoint', () => {
     expect(findRoutesMissingChokepoint(routeSources, exempt)).toEqual([
       'src/app/api/portal/gap/route.ts',
     ]);
+  });
+
+  it('Task 7b — passes a fixture route that calls checkPortalAccess DIRECTLY (no requireMemberContext)', () => {
+    const routeSources = new Map<string, string>([
+      [
+        'src/app/api/portal/fixture-direct-gate/route.ts',
+        `import { checkPortalAccess } from '@/lib/lapsed-portal-scope';\n` +
+          `import { buildPortalAccessDeps } from '@/lib/portal-access-deps';\n` +
+          `export async function GET(request) {\n` +
+          `  const decision = await checkPortalAccess(buildPortalAccessDeps(tenant), ctx);\n` +
+          `  if (!decision.allowed) return new Response(null, { status: 403 });\n` +
+          `}`,
+      ],
+    ]);
+    expect(findRoutesMissingChokepoint(routeSources, [])).toEqual([]);
+  });
+
+  it('DIRECT_ACCESS_CHECK_SYMBOL matches the real production identifier', () => {
+    expect(DIRECT_ACCESS_CHECK_SYMBOL).toBe('checkPortalAccess');
   });
 
   it('every EXEMPT_ROUTES entry carries a substantive documented reason', () => {

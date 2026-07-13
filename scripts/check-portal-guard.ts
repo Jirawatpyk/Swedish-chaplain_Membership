@@ -12,6 +12,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
   CHOKEPOINT_SYMBOL,
+  DIRECT_ACCESS_CHECK_SYMBOL,
   EXEMPT_ROUTES,
   PAGE_CHOKEPOINT_SYMBOL,
   findRoutesMissingChokepoint,
@@ -53,7 +54,12 @@ function main(): void {
     return;
   }
 
-  const missing = findRoutesMissingChokepoint(routeSources, EXEMPT_ROUTES, CHOKEPOINT_SYMBOL);
+  const missing = findRoutesMissingChokepoint(
+    routeSources,
+    EXEMPT_ROUTES,
+    CHOKEPOINT_SYMBOL,
+    DIRECT_ACCESS_CHECK_SYMBOL,
+  );
 
   let layoutSource: string;
   try {
@@ -69,13 +75,16 @@ function main(): void {
     console.error('check:portal-guard — portal access-gate coverage FAILED.\n');
     if (missing.length > 0) {
       console.error(
-        `${missing.length} /api/portal/** route(s) do not reference ${CHOKEPOINT_SYMBOL}:`,
+        `${missing.length} /api/portal/** route(s) do not reference ${CHOKEPOINT_SYMBOL} ` +
+          `or ${DIRECT_ACCESS_CHECK_SYMBOL}:`,
       );
       for (const m of missing) console.error(`  ${m}`);
       console.error(
         `\nEvery src/app/api/portal/**/route.ts must call ${CHOKEPOINT_SYMBOL} ` +
-          '(src/lib/member-context.ts), or be added to EXEMPT_ROUTES in ' +
-          'scripts/lib/portal-guard-core.ts with a documented, accurate reason.',
+          `(src/lib/member-context.ts), or call ${DIRECT_ACCESS_CHECK_SYMBOL} ` +
+          '(src/lib/lapsed-portal-scope.ts) directly when a bespoke session-resolution ' +
+          'flow cannot be trivially rehomed onto requireMemberContext, or be added to ' +
+          'EXEMPT_ROUTES in scripts/lib/portal-guard-core.ts with a documented, accurate reason.',
       );
     }
     if (!layoutOk) {
