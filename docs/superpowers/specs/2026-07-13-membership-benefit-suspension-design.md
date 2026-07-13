@@ -1,9 +1,9 @@
 # Membership Benefit Suspension + Lapse Enforcement — Design
 
-**Date**: 2026-07-13
-**Status**: Approved design, awaiting spec review
+**Date**: 2026-07-13 (rev 2 — post 5-agent adversarial review; every Blocker/High resolved inline)
+**Status**: Approved design, rev 2 awaiting maintainer re-confirmation
 **Branch**: `059-membership-suspension` (worktree, off `origin/main`)
-**Owner modules**: `src/modules/renewals` (F8) · `src/modules/broadcasts` (F7) · `src/modules/events` (F6) · `src/modules/insights` (F9) · `src/lib/lapsed-portal-scope.ts` (presentation)
+**Owner modules**: `src/modules/renewals` (F8) · `src/modules/broadcasts` (F7) · `src/modules/events` (F6) · `src/modules/insights` (F9) · `src/lib/lapsed-portal-scope.ts` + `src/lib/member-context.ts` (presentation composition)
 **Provenance**: TSCC policy update received 2026-07-13 (supersedes the "no fixed lapse policy — board discretion per case" note in `docs/runbooks/cron-jobs.md:1056`).
 
 ## Purpose
@@ -14,16 +14,19 @@ TSCC's updated membership policy:
 > **remain members but may not use any benefits**. Benefits unlock the moment payment
 > lands. If the 90 days elapse unpaid, membership is terminated.
 
-Three things in the platform contradict that policy today, and all three are
-**enforcement** gaps — the renewal-cycle period math is already correct and is
-**not touched by this work**.
+This **deliberately changes** the shipped F8 grace semantics (see § FR amendments — FR-003
+previously said grace *retains* access). Under the new policy grace still means "not yet
+terminated", but it no longer means "benefits still usable".
+
+Three enforcement gaps in the platform contradict the new policy today. The renewal-cycle
+period math is already correct and is **not touched** by this work (see § Anchor scope).
 
 ### The three gaps
 
 1. **`src/lib/lapsed-portal-scope.ts` is dead AND broken.**
-   `checkLapsedPortalScope()` has **zero production callers** (imported only by tests;
-   0% coverage, with an exemption note in `vitest.config.ts`). Worse — wiring it up as-is
-   would still block nobody:
+   `checkLapsedPortalScope()` has **zero production callers** (imported only by tests; its
+   per-file coverage threshold was lowered to 80/70/80 in `vitest.config.ts:615-624` because
+   actual coverage is ~0%). Worse — wiring it up as-is would still block nobody:
 
    ```ts
    // lapsed-portal-scope.ts:128-134
@@ -33,92 +36,135 @@ Three things in the platform contradict that policy today, and all three are
 
    `findActiveForMember` filters `status NOT IN ('lapsed','cancelled','completed')`
    (`drizzle-renewal-cycle-repo.ts:576`), so a lapsed member yields `null` → `!cycle` →
-   `allowed: true`. The `cycle.status !== 'lapsed'` branch is **unreachable**. The unit and
-   integration tests pass only because they mock the repo to return a lapsed cycle — a state
-   the real query cannot produce. Classic mock-hides-bug.
+   `allowed: true`. The `cycle.status !== 'lapsed'` branch is **unreachable**. The tests pass
+   only because they mock the repo to return a lapsed cycle — a state the real query cannot
+   produce (`tests/integration/renewals/lapsed-portal-scope.test.ts:104-120` documents this
+   in a comment, seeds a lapsed row, then `void`-s it and skips the block branch as a
+   "Wave D follow-up" that was never actioned).
 
 2. **FR-004's role-revocation half was never implemented.**
    `specs/011-renewal-reminders/spec.md:211` requires lapse to "revoke their `member` role's
    full access". `lapse-cycles-on-grace-expiry.ts:257-313` only writes the cycle status + an
-   audit row. No role change, no session invalidation, no `members.status` change, no trigger.
+   audit row. FR-004 intended FR-005a's portal gate to *be* that revocation — but the gate is
+   gap #1. Gaps #1 and #2 are the same hole from two sides.
 
-3. **Quotas reset on 1 Jan regardless of payment.**
-   F7 e-blast (`compute-quota-counter.ts:43-51`), F6 event seats
-   (`apply-quota-effect.ts:88-96`) and F9 benefit usage (`compute-benefit-usage.ts:81-87`)
-   all key on **plan + calendar year only** — none reads membership or cycle status. An unpaid,
-   expired member receives a full fresh year of benefits on 1 Jan and can spend them.
+3. **Quotas reset on 1 Jan regardless of membership status.**
+   F7 e-blast (decision point `compute-quota-counter.ts:129,147`), F6 event seats
+   (`apply-quota-effect.ts:269-280`) and F9 benefit usage (`compute-benefit-usage.ts:81-93`)
+   all key on **plan + calendar year**. A grep of `broadcasts/`, `events/`, `insights/` finds
+   **zero imports from `@/modules/renewals`** and zero reads of `members.status`/`lapsed`. An
+   unpaid, expired member receives a full fresh year of benefits on 1 Jan and can spend them.
+   (F6 does read a per-ticket `payment_status`, but never *membership* status.)
 
-Net effect today: lapse produces a red badge on the dashboard and nothing else. An unpaid
-member keeps full portal access and a fresh annual quota indefinitely.
+Net effect today: lapse produces a red badge and nothing else.
 
 ## Decisions
 
 | Question | Decision |
 |---|---|
-| Renewal anchor | **Unchanged.** Renewals stay gapless at `prior.periodTo` (`create-next-cycle-on-paid.ts:74`). An earlier proposal to anchor on the invoice issue date was **rejected** — TSCC bills ~1 month in advance, so the invoice date is not the period start; anchoring on it would overlap periods and compound-drift (~1 year lost per 5). See `docs/Bug/2026-07-08-renewal-paid-invoice-disconnect.md`. |
-| What gets suspended | **E-Blast submission (F7)** + the portal surfaces that consume a benefit. |
-| What does NOT get suspended | **F6 event seats** — the platform has no in-system event registration to block (members register on EventCreate; admins import attendee CSVs *after* the event). Blocking the import would discard a record of reality, not prevent a benefit. Record it and alert staff instead; controlling who is invited is a process concern. **Member directory** — delisting someone over a late invoice is disproportionate, publicly visible, and degrades the directory for *other* members. Delist only on `terminated`. |
-| Suspension policy shape | **Allow-by-default + short denylist** (NOT the existing whitelist). See § Two policies. |
-| Lapse trigger | `expires_at + grace_period_days` **plus a new guard**: never lapse a member who has an unpaid membership invoice that is **not yet past its `due_date`**. |
-| `grace_period_days` | **90** (TSCC-confirmed policy, not a chosen default). Config-only SQL; `GRACE_PERIOD_DAYS_MAX` is already 90. |
-| Post-lapse payment | `admin-renew-lapsed-member` currently always re-anchors to `now`. Change to: compute the gapless period first; **use it if it has not already expired**, otherwise re-anchor at the payment month. Self-correcting — no threshold config. |
-| Per-member override | **Dropped (YAGNI).** It was proposed against the now-superseded "board discretion per case" note. With a fixed 90-day policy the rationale disappears, and 90 days is already generous. Admins retain `mark-paid-offline` as an escape hatch. |
-| Auto-issue of renewal invoices | **Out of scope.** No cron issues invoices today (`dispatch-one-cycle.ts` only sends emails / creates admin tasks). Members can self-serve via `/portal/renewal/[memberId]`, which creates the invoice (`confirm-renewal.ts:523`). A T-30 auto-issue cron would touch F4, §87 numbering and tax documents — a separate feature. |
-| Benefit-quota year | Stays **calendar year** (F7/F9 unchanged) — suspension gates *consumption*, it does not reshape the quota window. |
+| Anchor scope | **Steady-state renewal anchor unchanged** — gapless at `prior.periodTo` (`create-next-cycle-on-paid.ts:73`). The **one** anchor this design does change is the post-lapse comeback path (`admin-renew-lapsed-member`), argued separately in § Post-lapse. |
+| Why not anchor on the invoice issue date | Rejected. TSCC issues the renewal invoice ~1 month **before** the period starts, so the invoice date is not the period start; anchoring a new period on it would start the period before the prior one ends, overlap, and lose ~1 month per renewal — compounding to ~1 year over ~12 renewals. (This rationale is the design's own reasoning; it is **not** attributed to the anchor docs, whose recorded rejections concern *payment-date* anchoring and the *calendar-year* model — `docs/Bug/2026-07-08-renewal-paid-invoice-disconnect.md:158-184,229`.) |
+| What gets suspended (enforceable) | **E-Blast submission (F7)** — the sole self-serve, in-system, benefit-consuming surface — plus the **`contacts/invite`** privilege surface (see § Surfaces). |
+| What is alert-only, not blocked | **F6 event seats** — no in-system registration exists to block (members register on EventCreate; admins import a CSV after the fact). Record + alert. **Banner / cultural tickets / website logo** — fulfilled by staff off-platform; no consumption route exists. **Directory** — delist only on `terminated`, never `suspended`. |
+| Suspension policy shape | `suspended` = **allow-by-default + short denylist**; `terminated` = the existing **deny-by-default + allowlist**. See § Two policies. |
+| Lapse trigger | `expires_at + grace_period_days` **plus a new guard**: never lapse a member who has an unpaid membership invoice that is **not yet past its `due_date`**. This requires a **new repo query** — the dispatcher's Gate 7.5 SQL cannot be reused (it selects `status IN ('paid','partially_credited')`, the opposite of what the guard needs). |
+| `grace_period_days` | **90** (TSCC-confirmed). Prod-config SQL; the shipped code/migration default stays **14** and is unchanged. `GRACE_PERIOD_DAYS_MAX` is already 90. |
+| Post-lapse payment | Change `admin-renew-lapsed-member` from an unconditional `periodFrom = now` to: compute the gapless period; use it if it has not already expired, else re-anchor at the payment month. See § Post-lapse for why this touches the "one place a payment-time anchor is right". |
+| Per-member override | **Dropped (YAGNI)** — proposed against the now-superseded "board discretion" note; with a fixed 90-day policy the rationale is gone. `mark-paid-offline` remains an admin escape hatch. |
+| Auto-issue of renewal invoices | **Out of scope.** No cron issues invoices today. Members self-serve via `/portal/renewal/[memberId]` (`confirm-renewal.ts:523`), which self-issues. |
+| Kill-switch | Enforcement rides the existing `FEATURE_F8_RENEWALS` flag (`proxy.ts` § 1f). No new flag. Because this gate can block a paying member if it misfires, the plan must confirm the flag disables the *new* gate too, not just the old paths. |
 
 ## Architecture
 
 ### 1. Single source of truth (Domain)
 
 ```ts
-// src/modules/renewals/domain/renewal-cycle.ts — beside the existing isMembershipLapsed (:325)
-export type MembershipAccess = 'full' | 'suspended' | 'terminated';
+// src/modules/renewals/domain/renewal-cycle.ts — replaces/subsumes isMembershipLapsed (:325)
+export type MembershipAccessReason =
+  | 'in_good_standing'      // access = 'full'
+  | 'unpaid'                // suspended: expired, awaiting payment
+  | 'pending_review'        // suspended: paid, held for admin (FR-005b)
+  | 'grace_expired'         // terminated: lapsed
+  | 'cancelled';            // terminated: admin-cancelled an ENDED period
+
+export interface MembershipAccessDecision {
+  readonly access: 'full' | 'suspended' | 'terminated';
+  readonly reason: MembershipAccessReason;
+}
 
 export function deriveMembershipAccess(
   cycle: RenewalCycle | null,
   now: Date,
-): MembershipAccess;
+): MembershipAccessDecision;
 ```
 
-Pure function, no I/O — meets the Domain 100%-line-coverage bar. Exported through the
-renewals barrel (`src/modules/renewals/index.ts`, which already exports `isMembershipLapsed`).
+The `reason` field is **load-bearing for copy**, not cosmetic: without it the banner tells a
+member who already paid (`pending_review`) to "pay to restore" (UX review, HIGH-5).
 
-Status mapping (all 7 states from the `renewal_cycles_status_check` CHECK,
-`0087_f8_create_renewal_cycles_table.sql:88-100`):
+`deriveMembershipAccess` **subsumes** `isMembershipLapsed`, which is redefined as
+`deriveMembershipAccess(cycle, now).access === 'terminated'` so there is exactly one
+good-standing predicate in the file (architect BLOCKER-1 corollary).
 
-| `status` | access | rationale |
+Pure function, no I/O, `now` injected — meets Domain 100%-line coverage. Exported through the
+renewals barrel as a **value** (precedent: `isMembershipLapsed`, `barWidthPercent` are already
+value-exported *"so Presentation never deep-imports ./domain/**"*, `src/modules/renewals/index.ts`).
+
+**Status mapping — the corrected table.** The critical fix from review: a terminal status is
+**not enough** to terminate; the period must also have ended. Cancelling a still-live
+`upcoming` duplicate cycle (`cancel-cycle.ts` transitions from `upcoming|reminded|awaiting_payment|pending_admin_reactivation`)
+must **not** lock the member out (architect BLOCKER-1). And a `completed` cycle past its
+period must stay `full`, or the member is prompted to pay a **second** time — the exact
+057 R2 (CRITICAL) failure the dashboard already guards against
+(`dashboard-stats.ts:64-86`, UX BLOCKER-3).
+
+| `status` | `expires_at` vs now | → access / reason |
 |---|---|---|
-| `upcoming` · `reminded` | `full` | inside a live period |
-| `completed` | `full` | paid |
-| `awaiting_payment` | **`suspended`** | expired, unpaid |
-| `pending_admin_reactivation` | **`suspended`** | paid but deliberately held for admin review (FR-005b) — do not unlock until the admin acts |
-| `lapsed` · `cancelled` | **`terminated`** | out of membership |
-| *(no cycle at all)* | `full` | a new member with no cycle yet must never be blocked |
+| `upcoming` · `reminded` | future | `full` / `in_good_standing` |
+| `upcoming` · `reminded` | **past** | `suspended` / `unpaid` ← closes the 06:15-cron gap |
+| `awaiting_payment` | any | `suspended` / `unpaid` |
+| `pending_admin_reactivation` | any | `suspended` / `pending_review` |
+| `completed` | any (incl. past) | **`full`** / `in_good_standing` ← 057 R2: never re-prompt payment |
+| `lapsed` | any | `terminated` / `grace_expired` |
+| `cancelled` | **past** | `terminated` / `cancelled` |
+| `cancelled` | **future** | **`full`** / `in_good_standing` ← a cancelled *future* cycle is not ended coverage |
+| *(no cycle)* | — | `full` / `in_good_standing` — never block a member with no cycle |
 
-**Plus one overriding rule**: if `period_to` is in the past, the result is at least
-`suspended` **regardless of status**. The `enter-awaiting-payment` cron runs once daily at
-06:15 Asia/Bangkok, so a status-only rule leaves a half-day window in which an expired member
-still has full access. Reading `period_to` directly makes the predicate correct the instant
-the period ends, with no cron in the path.
+Rule stated precisely: **`terminated` requires a terminal status (`lapsed`/`cancelled`) AND
+`expires_at < now`** (mirrors the shipped `isMembershipLapsed` two-condition rule exactly).
+The "expired → at least suspended" override applies to **non-terminal** statuses only
+(`upcoming`/`reminded`); it never touches `completed`. Comparison is **instant vs instant**
+using `expiresAt` (the trigger-maintained mirror of `period_to`,
+`0087_...sql:37-39,192-203` — every sibling predicate reads `expiresAt`, so we do too; no
+day-truncation, which would flip access ±7 h at the Bangkok boundary). Boundary
+`expires_at === now` is treated as expired (strict `<` means exactly-now is still `full`;
+the plan pins this with a test).
 
 ### 2. New repo read (Infrastructure)
 
-The predicate needs a cycle that **may be terminal**. No existing per-member repo method
-returns one — `findActiveForMember` excludes `lapsed`/`cancelled`/`completed` (:576) and
-`findMostRecentForMember` still excludes `lapsed`/`cancelled` (:599). Hence:
+The predicate needs a cycle that **may be terminal**. The correct approach is **not** a new
+ordering — `findLatestCyclesForMembers` (batch, `drizzle-renewal-cycle-repo.ts:640-663`)
+already returns all statuses ordered `created_at DESC, cycle_id DESC` with a deterministic
+tiebreak, and carries a review comment (S1 speckit-review) requiring the single-read and
+batch-read paths to **share that ordering** so the portal chip and admin badge cannot
+disagree. The earlier `period_from DESC` proposal was **wrong**: it is a third ordering, has
+no tiebreak (two cycles can share a `period_from` → nondeterministic gate), and a frozen
+future `period_from` on a cancelled row can outrank a freshly-restored live cycle,
+terminating a member who was just un-archived (security F-1, architect BLOCKER-2).
 
 ```ts
-// RenewalCycleRepo port + drizzle impl
+// single-row sibling of findLatestCyclesForMembers — SAME ordering key
 findLatestCycleForMember(tenantId, memberId): Promise<RenewalCycle | null>
-// ALL statuses, no filter · ORDER BY period_from DESC · LIMIT 1
+// all statuses, no filter · ORDER BY created_at DESC, cycle_id DESC · LIMIT 1
 ```
 
-Ordering by `period_from DESC` gives the right answer in every shape: a member whose 2026
-cycle is `completed` and whose 2027 cycle is `upcoming` resolves to 2027 (`full`); a member
-lapsed in 2026 and admin-renewed into 2027 resolves to the 2027 cycle, not the stale `lapsed`
-row.
+This resolves every multi-cycle shape correctly (2026-`completed` + 2027-`upcoming` → 2027;
+2026-`lapsed` + 2027 admin-renewed → the 2027 row, not the stale lapsed one; archive→restore
+→ the restored row) because the newest row always has the newest `created_at`. It **replaces**
+the broken `findActiveForMember` call in `lapsed-portal-scope.ts`.
 
-This read **replaces** the broken `findActiveForMember` call in `lapsed-portal-scope.ts`.
+Tenant isolation: the method wraps its own `runInTenant(tenant, tx)` and relies on the RLS
+GUC, exactly like every sibling read (there is no `WHERE tenant_id` in these methods — RLS
+enforces it). A cross-tenant probe integration test is a Review-Gate blocker (Principle I).
 
 ### 3. Three consumers, one predicate
 
@@ -129,259 +175,349 @@ This read **replaces** the broken `findActiveForMember` call in `lapsed-portal-s
         │                 │                  │
    [Presentation]    [Application]      [Application]
         │                 │                  │
-  lapsed-portal-     F7 submit-         F6 import /
-  scope.ts           broadcast.ts       F9 display
-  (barrel, direct)   (via port)         (via port)
+  chokepoints        F7 submitBroadcast  F6 import /
+  (see § 4)          F3 inviteColleague  F9 display
         │                 │                  │
-  blocks portal      blocks + spends    alert only /
-  surfaces           no quota           badge only
+  blocks portal      block + spend      alert / badge
+  surfaces           no quota / no acct
 ```
 
 | Consumer | Layer | Access path |
 |---|---|---|
-| Portal pages | Presentation | Calls the renewals barrel directly — allowed under Principle III. |
-| F7 `submit-broadcast` | Application | **New port** `MembershipAccessPort` + an adapter wired at the F7 composition root — mirrors the existing `plans-bridge-port.ts` / `plans-bridge.ts` pair exactly. Application code may not import `src/lib/**` (ESLint `no-restricted-imports`). |
-| F6 import · F9 display | Application | Same port. F6 records + alerts (never blocks); F9 renders a "suspended" badge. |
+| Portal pages / API | Presentation | via the two chokepoints in § 4, which call the renewals barrel directly (allowed — `src/lib/**` is the exempt composition layer, `eslint.config.mjs:332`). |
+| F7 `submitBroadcast` · F3 `inviteColleague` | Application | **New port** `MembershipAccessPort` + adapter wired at each composition root — mirrors `plans-bridge-port.ts` / `plans-bridge.ts`. (These use-cases are cross-module F→F8 dependencies; the port exists for that reason, not because Application may not import `src/lib/**` — it may.) |
+| F6 import · F9 display | Application | Same port. F6 records + alerts; F9 renders a badge. |
 
-The F7 gate lives in the **use-case**, not the route: quota is reserved inside
-`submitBroadcast`, so a route-only guard would leak through any other caller.
+The write gates live in the **use-case**, not the route: F7 quota is reserved inside
+`submitBroadcast`; `inviteColleague` provisions an auth account. A route-only guard leaks
+through any other caller.
 
-### 4. Two policies, not one
+### 4. Enforcement chokepoints — the fix for gap #1's root cause
 
-The existing gate is **deny-by-default with a small allowlist**
-(`LAPSED_PORTAL_ALLOWED_PREFIXES`, `lapsed-portal-scope.ts:41-59`). That is correct for
-`terminated` — a near-total lockout with a renewal escape hatch.
+The original gate died because there was **no chokepoint** — enforcement was per-call-site and
+every call site forgot. This design names the chokepoints and adds a CI guard so a future
+route cannot silently skip them.
 
-It is the **wrong shape for `suspended`**. The portal has 18 pages and 18 API routes; an
-allowlist would have to enumerate nearly all of them, and **forgetting one means a paying
-customer cannot reach their invoice**. Among the routes that must never be blocked:
-`/portal/invoices/[invoiceId]`, `/api/portal/invoices/[invoiceId]/pdf`,
-`/portal/account/data-export` (a GDPR Art. 20 / PDPA right), `/portal/credit-notes/[id]`
-(tax documents).
-
-| State | Policy | List |
-|---|---|---|
-| `terminated` | deny-by-default + allowlist | unchanged (`/portal/renewal`, `/portal/preferences`, `/portal/account`, …) |
-| `suspended` | **allow-by-default + denylist** | `/portal/broadcasts/new` (the single self-serve benefit-consuming surface) |
-
-This fails safe: a missed denylist entry costs one leaked e-blast surface, which the
-use-case gate catches anyway. A missed allowlist entry locks a customer out of paying.
-
-`/portal/benefits` stays **open** while suspended — showing "E-Blast 10/10 · suspended"
-motivates payment; hiding it does not.
+- **`terminated` (deny-by-default allowlist)** is enforced at the two existing DB-capable
+  chokepoints, not per page:
+  - **Pages**: `src/app/(member)/portal/layout.tsx:41` (`requireSession('member')`) — extend to
+    run the terminated-scope check for every portal page.
+  - **API routes**: `src/lib/member-context.ts:48` (`requireMemberContext`, used by the portal
+    API routes) — extend the same way.
+  - The Edge proxy stays path-prefix-only (no DB; `proxy.ts:378`).
+- **`suspended` (allow-by-default denylist)** is enforced at **two layers**: the
+  `/portal/broadcasts/new` server component (UX) + the `submitBroadcast` and `inviteColleague`
+  use-cases (enforcement). The page block is UX; the use-case block is the real gate.
+- **New CI gate `check:portal-guard`** (pattern: `check:layout`, `check:multi-tenant`): fails
+  when a `src/app/(member)/portal/**` page or `src/app/api/portal/**` route does not route
+  through a chokepoint. Without it, the hole reopens on the next route — which is precisely how
+  the original gate shipped dead.
 
 ### 5. Which benefits the system can actually gate
 
-The plan benefit matrix carries four quota'd entitlements
-(`plans/domain/benefit-matrix.ts:57-80`): `eblast_per_year`, event seats,
-`banner_per_year`, `cultural_tickets_per_year`.
+The plan benefit matrix (`plans/domain/benefit-matrix.ts`) has quota'd entitlements on two
+different unions. On **base** (every tier): `eblast_per_year` (:72), `cultural_tickets_per_year`
+(:80). **Partnership-only**: `event_tickets_included` (:46), `banner_per_year` (:57),
+`website_logo_months` (:56). Enforcement must **not** reference `banner_per_year` for a
+corporate member — it does not exist on their matrix (spec-compliance blocker; the earlier
+"gate 4 benefits" phrasing was a modeling error).
 
-Only **e-blast** has a self-serve, in-system consumption surface. Event seats are consumed on
-EventCreate (external) and land here as an admin CSV import *after the fact*; banners and
-cultural tickets are fulfilled by staff off-platform entirely. There is no route to block for
-those three — the system never sees the moment of consumption.
-
-So the enforcement surface is genuinely one page and one use-case, and that is a property of
-the product, not an oversight. For the other three, suspension shows up as an **alert to staff**
-(F6 import) and a **badge** (F9 usage view); the decision not to grant them sits with whoever
-invites the member or hands over the ticket. This is recorded so a future reader does not
-mistake the narrow denylist for a missed requirement.
+Only **e-blast** has a self-serve in-system consumption surface. Everything else is consumed
+externally (EventCreate) or fulfilled by staff off-platform — the system never sees the moment
+of consumption, so there is no route to block. The enforceable surface is genuinely one page +
+one use-case; that is a property of the product, not an oversight. For the rest, suspension
+surfaces as a **staff alert** (F6 import) and a **badge** (F9), and the decision to withhold
+sits with whoever invites the member or hands over the ticket.
 
 ## Data flow
 
-**Suspension (instant, no cron)** — `period_to` passes → the predicate reads it directly →
-`suspended` on the very next request.
+**Suspension (instant, no cron)** — `expires_at` passes → the predicate reads it directly →
+`suspended` on the next request.
 
-**Restoration (instant, no cron)** — payment lands (Stripe webhook *or* admin
-`mark-paid-offline`) → F4 flips the invoice to `paid` → the F8 `onPaid` callback classifies
-`renewal` → closes the old cycle → creates the next at `prior.periodTo` (gapless backdate) →
-the next request resolves the new cycle, whose `period_to` is in the future → `full`.
-Total latency ≈ the F4 tx commit (~50 ms). This satisfies TSCC's "จนกว่าเงินจะเข้า" literally.
+**Restoration — two distinct paths (the earlier draft told only the first):**
+
+1. **Steady-state / within-grace** (`awaiting_payment` or non-terminal-expired): payment lands
+   (Stripe webhook *or* admin `mark-paid-offline`) → F4 flips the invoice `paid` → the F8
+   `onPaid` callback classifies `renewal` → closes the old cycle → creates the next at
+   `prior.periodTo` (gapless) → the next request resolves the new cycle (future `expires_at`) →
+   `full`. Latency ≈ the F4 tx commit (~50 ms). No cron.
+2. **Post-termination** (`lapsed`/`cancelled`): the `onPaid` callback classifier folds a
+   terminal cycle to `not_applicable` (`mark-cycle-complete-from-invoice-paid.ts:104`) — a raw
+   payment does **not** auto-restore. Restoration goes through **`admin-renew-lapsed-member`**,
+   which creates a fresh cycle (§ Post-lapse). This is by design (FR-005b admin-comeback), and
+   the smart CTA reflects it: a terminated member sees a contact-support action, not a
+   self-serve renew.
 
 **Lapse (daily cron 06:30, now guarded)**
 
 ```
 expires_at + grace(90) < now ?          → no  → skip
-unpaid membership invoice not yet due ? → yes → skip + audit + loud log
+unpaid membership invoice not yet due ? → yes → skip + audit(renewal_lapse_deferred_invoice_not_due) + log
                                         → otherwise → lapsed
 ```
 
-The guard must find invoices that are **not linked to the cycle** — an admin-created invoice
-leaves `linked_invoice_id` NULL, which is why lapse currently records
-`closed_reason: 'grace_expired'` with `failed_payment_attempts: 0` even when a live unpaid
-invoice exists (`lapse-cycles-on-grace-expiry.ts:236-243`). Resolve by
-`member + subject='membership' + status='issued'`, reusing the dispatcher's Gate 7.5 SQL
-(`drizzle-member-renewal-flags-repo.ts:937-991`).
+The guard needs a **new** query — `member + invoice_subject='membership' + status='issued' +
+due_date >= today(Bangkok)`. It must find invoices **not linked** to the cycle (an
+admin-created invoice leaves `linked_invoice_id` NULL, which is why lapse currently records
+`grace_expired` with `failed_payment_attempts: 0` even when a live unpaid invoice exists).
+**The guard runs OUTSIDE the advisory-lock tx** — beside the existing pre-tx F5 attempts read
+in `processOne` — not inside it. Every repo read in this module opens its own `runInTenant`
+(a fresh pooled connection); calling it while holding `pg_advisory_xact_lock` is the
+documented deadlock/pool-starvation class (architect HIGH-3). Prefer a port
+(`InvoiceDueBridgePort` + adapter at the F8 root), mirroring `f5PaymentAttemptsBridge`, over
+raw cross-module SQL against F4's `invoices` table.
 
-**Post-lapse payment** — `admin-renew-lapsed-member.ts:211` changes from an unconditional
-`periodFrom = now` to: compute the gapless period; if it has not already expired use it
-(the member merely paid late — anniversary unmoved), otherwise re-anchor at the payment
-month (a genuine comeback).
+## Post-lapse (admin-renew comeback anchor)
+
+`admin-renew-lapsed-member.ts:211` today is unconditionally `periodFrom = now`. Change to:
+compute the gapless period from the prior cycle's `periodTo`; **use it if it has not already
+expired**, otherwise re-anchor at the payment month.
+
+This **does** touch a path the anchor docs deliberately reserved as *"the ONE place a
+payment-time anchor is right"* (`docs/Bug/2026-07-08-renewal-paid-invoice-disconnect.md:139`).
+The justification: with benefit suspension now doing the punishing, a member who pays late but
+**within** a still-live period should not *also* lose their anniversary — the suspension window
+already cost them. A genuine comeback (prior period long expired) still re-anchors, exactly as
+before. The member with **no settled predecessor** (the documented FIX-1/R2-FIX-2 branch,
+`admin-renew-lapsed-member.ts:222-249`) has no gapless period to compute and keeps the
+payment-month anchor. "Re-anchor at the payment month" means Bangkok-month truncation
+(consistent with `payment-anchor-date.ts`), and the chosen `period_from` is printed on the
+§86/4 tax document — the plan must test that the printed window matches the anchor.
+
+## Grace-90 × gapless-backdate interaction (new analysis)
+
+A member who pays on day 89 gets a gapless period that began 89 days ago → they were suspended
+~89 days **and** the freshly-paid year is already 89 days spent. At the old 30-day grace this
+was tolerable; at 90 it triples. This is **intended** under the new policy (benefits genuinely
+pause; paying late costs usable time — the incentive to pay on time), but it must be stated so
+TSCC confirms it, and the member-facing copy must show *"benefits paused · N days used of your
+new period"* rather than hide it.
 
 ## User-facing surfaces
 
-**Member**
+**Member** — the banner is **not a second red block**. The dashboard membership card already
+renders status (067 decision: keep it *in* the card, not a duplicate banner;
+`membership-stat-section.tsx:71-75`). Add a `suspended` kind to `MembershipStat` + reuse
+`StatCard` (`stat-card.tsx:101` structurally refuses a status row without a text label → no
+colour-alone). If a cross-page persistent banner is wanted (it shows on every portal page),
+suppress it on `/portal` to avoid stacking with the card, and record that this supersedes 067.
 
 | Surface | Behaviour |
 |---|---|
-| `/portal` | Banner: "ระงับสิทธิ์ชั่วคราว — ชำระเงินเพื่อเปิดใช้งาน" + a **smart CTA** (below). The membership stat card already renders `overdue` in red (`dashboard-stats.ts:60-62`); extend its copy to name the suspension. |
-| `/portal/benefits` | Open. Quota rendered in a suspended state. |
-| `/portal/broadcasts/new` | Blocked — **not a bare 403**: an explanatory page with the same smart CTA. |
+| `/portal` card | `suspended:unpaid` → **amber** (`tone="warning"`, not red — distinct from terminated's red), `<PauseCircle>` icon + distinct `sr-only` phrase, smart CTA. Copy carries dates, not accusation: *"Benefits paused · invoice due {dueDate} · membership ends {expiresAt + 90d}"*. `suspended:pending_review` → *"Payment received — being verified"*, **no** pay CTA. `terminated` → the existing `mailto:` contact action (`membership-stat-section.tsx:98-107`; copy `contactToRenew`/`lapsedMailSubject` already written). |
+| `/portal/benefits` | Open. Quota shown *"10 of 10 remaining — paused until payment"* (never greyed to 0 — the quota is intact). Names **every** paused benefit, including the ones the platform can't technically gate (event/banner/logo), so a member isn't blindsided at an event door. |
+| `/portal/broadcasts/new` | Blocked. Reuse the FR-009 precedent (`broadcasts/new/page.tsx:83` already `redirect`s to `/portal/benefits?tab=broadcasts` when `cap === 0`) — same destination, `InlineAlert tone="warning"` + smart CTA. If a standalone page is preferred, use `EmptyState` (`role="status"`, `<PauseCircle>` — **not** `ErrorState`/`TriangleAlert`, which read as a transient error). |
+| Command palette | Filter the "Compose E-Blast" jump target when `access !== 'full'` (`member-command-palette-root.tsx`) — the denylist covers routes, not the palette that links to them. |
 | Everything else | Unchanged (invoices, tax documents, timeline, account, GDPR export). |
 
-**Smart CTA** — the banner must never dead-end. Since no cron issues invoices, a suspended
-member may have nothing to pay:
+**Smart CTA — must never dead-end.** Branch on the resolved decision, and the target must be
+reachable under the member's own policy:
 
 ```
-unpaid membership invoice exists?
-  yes → /portal/invoices/[invoiceId]
-  no  → /portal/renewal/[memberId]   ← confirm-renewal.ts:523 issues the invoice on confirm
+access = suspended:
+  unpaid membership invoice exists? → /portal/invoices/[invoiceId]
+  else                              → /portal/renewal/[memberId]  (self-issues on confirm)
+access = suspended:pending_review   → no CTA (already paid)
+access = terminated                 → /portal (mailto contact — NOT /portal/renewal)
 ```
 
-`/portal/renewal` is already in the terminated-state allowlist and needs no new code — only
-the CTA target must branch. A member can therefore always unblock themselves without waiting
-for an admin.
+Two reachability fixes the review surfaced:
 
-Accessibility: never colour-alone (icon + text). i18n EN/TH/SV from day one — `pnpm check:i18n`
-fails the build on a missing EN key.
+- **The renewal page's payability gate keys on a status literal** (`page.tsx:240`,
+  `summary.status === 'awaiting_payment'`), so the `upcoming`-but-expired cohort the override
+  rule creates lands on *"renewal window not yet open"* — a dead end that contradicts the
+  banner. The gate must key on the **same predicate** (`awaiting_payment` OR non-terminal &&
+  expired). The reviewer note at `page.tsx:224-239` (which currently says the opposite) must be
+  updated. `confirm-renewal.ts:241` already has the lazy `upcoming|reminded → awaiting_payment`
+  self-transition, so the server accepts this confirm — only the presentation gate blocks it.
+- **`terminated`'s allowlist must not point at a redirect-into-a-wall.** `/portal/renewal` for a
+  terminated member resolves `null` and `redirect('/portal')` (`page.tsx:110-113`), and
+  `/portal` is not allowlisted → 403. Fix: the terminated CTA goes to `/portal` (which renders
+  the working `mailto:` action) and `/portal` is added to the terminated allowlist; drop the
+  "`/portal/renewal` needs no new code" claim.
 
 **Admin**
 
 | Surface | Behaviour |
 |---|---|
-| Members directory | New "suspended" badge (today only a lapsed badge exists, and only for terminal cycles). |
+| Members directory | New "suspended" badge — copy the existing lapsed badge shape exactly (`members-table.tsx:600-604`: `aria-hidden` icon + `aria-hidden` short label + `sr-only` full phrase), distinct icon + phrase, **amber** not red. |
 | F6 CSV import | A suspended attendee is **recorded normally**, plus a warning row in the import report and an audit event. |
+
+Accessibility: never colour-alone; suspended = amber/`PauseCircle`, terminated = red/`TriangleAlert`
+(two reds side by side is the classic colour-alone failure). `role="status"` on the banner
+(server-rendered, not async — no `aria-live`). `@a11y` axe scan on `/portal` in the suspended
+state (banner + card + badge stack), not only the blocked page. Use `warning-surface`/
+`destructive-surface` tokens, not raw `amber-*` literals. TH/SV copy from native speakers — the
+suspended-vs-terminated distinction ("ระงับสิทธิ์" vs "ยกเลิกสมาชิกภาพ") is one members read
+carefully; not machine-translated. Test TH banner length at 320 px (Reflow, WCAG 1.4.10).
 
 ## Audit & observability
 
-Four new `audit_event_type` values (5-year retention, emitted in the same tx as any state
-change per Principle VIII):
+Five new `audit_event_type` values (5-year retention, emitted in the same tx as any state
+change per Principle VIII). They land in **three module taxonomies** (each with its own
+compile-time count assertion) plus the global enum:
 
-| Event | Fires when |
-|---|---|
-| `membership_suspended_action_blocked` | a suspended member hits a denylisted portal surface |
-| `broadcast_blocked_membership_suspended` | F7 rejects a submit (follows the existing broadcasts reject taxonomy) |
-| `renewal_lapse_deferred_invoice_not_due` | the new lapse guard spares a member — **the signal that proves the guard works** |
-| `event_attendance_by_suspended_member` | F6 import sees an unpaid attendee |
+| Event | Module taxonomy | Fires when |
+|---|---|---|
+| `membership_suspended_action_blocked` | F8 (`renewal-audit-emitter.ts`) | a suspended member hits a chokepoint-blocked surface |
+| `membership_access_fail_open` | F8 | the read threw and the gate failed open — the durable, forensic record of a fail-open decision (security F-3) |
+| `renewal_lapse_deferred_invoice_not_due` | F8 | the lapse guard spared a member — the signal that proves the guard works |
+| `broadcast_membership_suspended_blocked` | F7 (`broadcasts` audit-port, 43-list) | F7 rejects a submit (name follows F7's `broadcast_<reason>_blocked` taxonomy — **not** the earlier `broadcast_blocked_membership_suspended`) |
+| `event_attendance_by_suspended_member` | F6 events taxonomy | F6 import sees an unpaid attendee |
 
-Adding an audit event type touches **4 places** (domain const, pgEnum migration, and two
-parity-test counts) — a recurring trap; the plan will enumerate them.
+**Adding an audit event type touches 5 places, not 4** (UX review): domain const, pgEnum
+migration, the two parity-test counts, **and the `audit.*` i18n label registry** — miss the
+last and the F9 audit viewer renders raw `snake_case`. Enumerate per-event, per-module in the
+plan; the F7 one also needs a 422 error-code + union entry in `broadcasts-api.md:87-92` and
+`data-model.md:547-589`. Shared-Neon caveat: an enum add on a side branch drifts audit-parity
+on all other branches until merge — note ship order.
 
-Metrics: counter `membership_access_blocked{surface, reason}` + a gauge of currently-suspended
-members (so the January spike is visible).
+Metrics: counter `membership_access_blocked{surface, reason}` + counter
+`membership_access_fail_open{surface}` (alertable) + a gauge of currently-suspended members
+(the January spike). The gate adds a DB read to the portal hot path — memoise per render with
+`React.cache` and state the p95 budget (Principle VII).
 
 ## Schema
 
 ```sql
-ALTER TYPE audit_event_type ADD VALUE IF NOT EXISTS '…';  -- ×4
+ALTER TYPE audit_event_type ADD VALUE IF NOT EXISTS '…';  -- ×5
 ```
 
 **No new columns, no new tables, no indexes, no backfill.** The truth already lives in
-`renewal_cycles`; this work only starts listening to it. `grace_period_days = 90` is a
-separate one-line ops SQL, not a migration.
+`renewal_cycles`. `grace_period_days = 90` is a separate one-line ops SQL, not a migration.
+
+## FR amendments (required — this design changes shipped F8/F7 behaviour)
+
+This is a deliberate policy change, so the shipped specs must be amended, not left stale:
+
+- **`specs/011-renewal-reminders/spec.md`**
+  - **FR-003** — grace no longer "retains access"; during grace the member is **suspended**
+    (benefits blocked, access to pay/read retained). The `default 14` text gets a footnote that
+    prod config is 90 (code default unchanged).
+  - **FR-004** — lapse trigger gains the due-date guard; the "revoke access" half is now
+    actually delivered via the wired chokepoints.
+  - **FR-005** — delete the "any F6 event registration" blocked-route clause (that route was
+    never built and never will be — F6 is admin-only after-the-fact import). Reconcile the
+    documented allowlist (`/portal/profile`, `/portal/renewal`, `/portal/billing`) with the
+    real `LAPSED_PORTAL_ALLOWED_PREFIXES`, which drifted; add the two-policy model and `/portal`.
+  - **FR-005a** — record that the helper is now wired at the chokepoints and uses
+    `findLatestCycleForMember`.
+  - Entity `TenantRenewalSettings` (:357) default note; audit taxonomy (+5 events).
+- **`specs/010-email-broadcast/spec.md`** — FR-002 gains precondition (l) + the 422 error code;
+  `contracts/broadcasts-api.md` + `data-model.md` gain the audit event.
+- **`docs/runbooks/cron-jobs.md`** — `:1047-1063` (30→90, board-discretion note superseded) **and**
+  the contradictory `:937` ("SweCham uses the default 14").
+
+## Delivery slices
+
+| Slice | Contents | Order constraint |
+|---|---|---|
+| **1 — Enforcement core** | `deriveMembershipAccess` (+ reason) · `findLatestCycleForMember` · wire terminated at layout + `requireMemberContext` · suspended denylist + F7/F3 use-case gates · `check:portal-guard` · smart CTA + payability-gate fix + `/portal` allowlist fix · fail-open audit · 4 of the 5 audit events | Closes both go-live blockers. |
+| **2 — Lapse correctness** | new due-date-guard query (outside tx) · `admin-renew-lapsed-member` gapless-or-re-anchor · `renewal_lapse_deferred_invoice_not_due` · `grace_period_days = 90` ops SQL | **Must not ship before slice 1** — grace 90 before suspension exists = a 90-day free ride. |
+| **3 — Visibility** | admin badge · F6 import alert + `event_attendance_by_suspended_member` · F9 badge · metrics gauge | Observability; nobody blocked on it. |
 
 ## Error handling
 
-**The load-bearing decision — a DB failure must fail differently per layer:**
+**Fail differently per layer:**
 
 | Path | On `findLatestCycleForMember` throw | Why |
 |---|---|---|
-| Portal pages (read) | **Fail open** — allow + log + metric | A DB blip that locks every member out of the portal is far worse than a suspended member briefly seeing a page. |
-| F7 `submitBroadcast` (write) | **Fail closed** — return `submit.server_error` (500) | Failing open spends a quota unit **irreversibly**. |
+| Portal page reads (GET) | **Fail open** — allow + **emit `membership_access_fail_open`** + metric | A DB blip locking every member out is worse than a brief page view. |
+| F7 `submitBroadcast`, F3 `inviteColleague`, and every other state-changing use-case | **Fail closed** — 500 (`submit.server_error` shape) | Failing open spends a quota unit / provisions an account **irreversibly**. Each write use-case fails closed **independently** — never relying on a page-level fail-open (security F-3). |
 
-F7 must **not** return `broadcast_blocked_membership_suspended` on an infra error: that
-collapses "policy said no" (422) into "our database fell over" (500) and blinds the ops
-dashboard. This mirrors the adjacent quota check exactly (`submit-broadcast.ts:349-356`),
-which already returns `submit.server_error` rather than a fake `quota_blocked`.
+Fail-open must leave an **audit row**, not just a log — otherwise an attacker who induces the
+DB error (statement timeout, pool exhaustion) bypasses the gate with no forensic trace
+(security F-3). F7 must **not** return the policy-reject code on an infra error (don't collapse
+422 into 500) — mirrors `submit-broadcast.ts:349-356`.
 
 **Lapse guard**
 
 | Case | Behaviour |
 |---|---|
-| Several unpaid invoices | If **any** is not yet due → do not lapse. |
-| No invoice at all | Guard finds nothing → lapse proceeds on grace alone. Essential fallback: without it a never-billed member could never be lapsed. |
-| Draft invoice (`due_date` NULL) | Ignored — only `status = 'issued'` counts. |
+| Several unpaid invoices | **any** not yet due → do not lapse (`.some`, not `.every`). |
+| No invoice at all | guard finds nothing → lapse proceeds on grace alone (essential fallback). |
+| `draft` (`due_date` NULL) / `void` / `cancelled` / `paid` | ignored — only `status='issued'` with a non-null future `due_date` counts. |
+| Event invoice (subject≠membership) with future due date | ignored — must not defer a membership lapse. |
 | Date comparison | Asia/Bangkok, reusing `invoicing/application/use-cases/derive-overdue.ts:83-85` (`bangkokLocalDate(nowUtcIso)` → `todayBkk > invoice.dueDate`). |
+| Guard throws | it runs inside the per-cycle best-effort loop (`errors += 1; continue`) — a throw must not become an invisible skip; make it observable (metric/audit), and test the throw path. |
 
-**Other paths**
-
-- Payment mid-session → the next request returns `full`; no refresh, no cron.
-- A backdated new cycle (`period_from` in the past, `status = 'upcoming'`) → `period_to` is in
-  the future → `full`. Covered by the mapping table.
-- F4 `onPaid` callback throws → F4 rolls back → the invoice stays `issued` → the member stays
-  suspended. No half-state. Existing contract; no change.
-- Audit emit failure → log and swallow (fire-and-forget), per
-  `lapsed-portal-scope.ts:197-211`. A 403 must never hang on a log write.
+**Other paths**: payment mid-session → next request `full` (no refresh); backdated new cycle
+(`period_from` past, `upcoming`, future `expires_at`) → `full`; F4 `onPaid` throw → F4 rolls
+back → member stays suspended (no half-state); audit emit failure → log + swallow
+(`lapsed-portal-scope.ts:197-211`) — a 403 never hangs on a log write.
 
 ## Testing
 
-**The lesson from gap #1 is a testing lesson.** The broken gate shipped with unit,
-integration *and* E2E tests. They passed because they mocked `findActiveForMember` into
-returning a `lapsed` cycle — something the real SQL cannot do.
+The incident's lesson is a testing lesson: the broken gate shipped green because a test author
+**found** the bug, could not make the test pass, and rewrote the test's scope
+(`tests/integration/renewals/lapsed-portal-scope.test.ts:104-120,140-141,226-235`). The plan
+enforces these rules:
 
-Two rules follow, and they are requirements of this design, not suggestions:
-
-1. **`findLatestCycleForMember` must be covered by a live-Neon integration test, unmocked.**
-   The single most important assertion in this work is *"the repo returns a `lapsed` cycle"* —
-   the one test that would have caught the original bug.
-2. **An E2E test must prove the gate is actually wired.** Unit tests call the helper directly
-   and therefore cannot distinguish "wired" from "dead code" — which is exactly how the
-   original defect survived. E2E is mandatory here, not optional.
+1. **A test may never be narrowed to accommodate a defect.** A discovered-but-unfixed defect is
+   a red test + a blocking issue — never a `void`-ed variable or a "follow-up" comment.
+2. **A test may never mock a repo method into a row its own SQL cannot produce.** For any
+   status-keyed predicate, a live-Neon test inserts that exact status and asserts the repo
+   returns it.
+3. **A deny gate is tested from the deny side** — at least one test that goes red if the gate is
+   deleted. "Allowed routes are allowed" carries zero information.
+4. **A gate is not tested until its production wiring is tested** — through the real DI graph,
+   not a mocked port. This applies to the **F7 `submitBroadcast` gate too** (the earlier draft
+   left it with only a mocked-port unit test — the original defect one layer up).
+5. **Never lower a coverage threshold to pass a gate** — `vitest.config.ts:615-624` is raised
+   back in slice 1 and its two false claims deleted.
+6. **Best-effort loops need per-item try/catch + an explicit throw-path test.**
+7. **Every tenant-scoped read threads `tx` from `runInTenant`; cross-tenant probes assert a
+   distinguishable outcome** — assert the repo returns `null` for a foreign member (not just
+   `allowed:true`, which is what a *dead* gate returns).
 
 | Layer | Coverage |
 |---|---|
-| Unit — Domain (100% line) | `deriveMembershipAccess`, table-driven: 7 statuses × `period_to` past/future × `cycle = null`. |
-| Unit — Application | `submitBroadcast`: suspended → reject; **DB throw → `server_error`, not `quota_blocked`**. Lapse guard: not-yet-due → skip; no invoice → lapse; draft → ignore. `admin-renew-lapsed-member`: unexpired → gapless; expired → re-anchor. |
-| Contract | `MembershipAccessPort` (F7→F8 bridge) + barrel export. |
-| Integration (live Neon) | **Repo returns a `lapsed` cycle.** Full cycle: expire → suspended → pay → `full`. Lapse guard against a real invoice with a future `due_date`. **Cross-tenant probe** (Principle I — Review-Gate blocker). |
-| E2E | Suspended member: banner renders; `/portal/invoices` reachable; `/portal/broadcasts/new` blocked with a working pay CTA. `@a11y` axe scan of the blocked page. `@i18n` banner in EN/TH/SV. |
+| Unit — Domain (100% line) | `deriveMembershipAccess`, table-driven: 7 statuses × `expires_at` {past, exactly-now, future} × `cycle=null`; **terminated requires status AND expired** (cancelled-future → full; completed-past → full); instant-not-day comparison; `reason` for every branch. |
+| Unit — Application | `submitBroadcast` + `inviteColleague`: suspended → reject; **DB throw → server_error, not the policy code**. Lapse guard: any-not-due → skip; no invoice → lapse; draft/void/paid → ignore; event-subject → ignore; on-due-date exactly; guard-throws → observable. `admin-renew-lapsed`: unexpired → gapless; expired → re-anchor; no-predecessor branch; printed §86/4 window matches anchor. Smart CTA: both branches + every target resolves to an allowed route. |
+| Contract | `MembershipAccessPort` (F7/F3→F8) + barrel export. |
+| Integration (live Neon) | **Repo returns a `lapsed` cycle** (the assertion that would have caught the original bug). Ordering shapes: completed-2026+upcoming-2027; lapsed-2026+admin-renewed-2027; **archive→restore → full**. Full cycle: expire → suspended → pay → full. Lapse guard against a real `issued` invoice with future `due_date` → cycle survives + `renewal_lapse_deferred_invoice_not_due` payload. **F7 gate through the real `makeBroadcastsDeps()`** (not a mocked port). **Cross-tenant probe** on the new read (Review-Gate blocker). |
+| E2E | Suspended member (needs a **new seed fixture** — the existing `renewals-seed.ts` seeds `upcoming`+`lapsed` on one member, which resolves to `full`): banner renders; `/portal/invoices` reachable; `/portal/broadcasts/new` blocked with a working CTA; the four never-block routes (`/portal/invoices/[id]`, its PDF API, `/portal/account/data-export`, `/portal/credit-notes/[id]`) reachable. `@a11y` axe on `/portal` + blocked page. `@i18n` banner EN/TH/SV. |
+
+**Test files** — new: `tests/unit/renewals/domain/derive-membership-access.test.ts` ·
+`tests/integration/renewals/find-latest-cycle-for-member.test.ts` (model on the existing
+`find-most-recent-for-member.test.ts`, which exists for this exact bug class) ·
+`tests/unit/lib/membership-suspension-policy.test.ts` (the four never-block routes by name;
+denylist prefix-confusables) · `tests/integration/broadcasts/submit-broadcast-membership-suspended.test.ts`
+(real deps) · `tests/contract/renewals/membership-access-port.contract.test.ts` ·
+lapse-guard unit + integration · smart-CTA unit · `tests/e2e/membership-suspension.spec.ts`.
+Rewritten (they currently encode the bug): `lapsed-portal-scope` integration + e2e + unit.
+Updated: `vitest.config.ts`, both `admin-renew-lapsed-member` tests, `renewals-seed.ts`.
 
 **Gate before merge**
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test:coverage \
-  && pnpm check:i18n && pnpm check:audit-events && pnpm check:audit-counts \
+  && pnpm check:i18n && pnpm check:audit-events && pnpm check:audit-counts && pnpm check:portal-guard \
   && pnpm test:integration && pnpm test:e2e
 ```
 
-`check:audit-events` and `check:audit-counts` matter especially here — four new audit event
-types, each needing all four touch-points.
-
-## Delivery slices
-
-The work is one cohesive policy change, but it sequences into three slices that each land
-green on their own. Slice 1 alone closes both go-live blockers.
-
-| Slice | Contents | Why this order |
-|---|---|---|
-| **1 — Enforcement core** | `deriveMembershipAccess` · `findLatestCycleForMember` · wire + fix `lapsed-portal-scope` (two policies) · F7 port/adapter + `submitBroadcast` precondition · smart CTA · 2 audit events | Closes the free-benefits hole and the dead/broken gate — the two go-live blockers. Nothing below depends on it being deferred. |
-| **2 — Lapse correctness** | due-date guard on the lapse cron · `admin-renew-lapsed-member` gapless-or-re-anchor · 1 audit event · `grace_period_days = 90` ops SQL | Only meaningful once suspension exists: raising grace to 90 *before* slice 1 would extend the free ride from 30 days to 90. **Slice 2 must not ship before slice 1.** |
-| **3 — Visibility** | admin "suspended" badge · F6 import alert · F9 badge · metrics gauge | Pure observability. Valuable, but nobody is blocked on it. |
-
 ## Security & compliance
 
-- All reads and writes go through the caller's `TenantTx` — never the global `db` singleton
-  (Principle I, two-layer isolation). A cross-tenant probe is a Review-Gate blocker.
-- Audit rows are emitted in the same tx as the state change (Principle VIII).
+- All reads/writes via the caller's `runInTenant`/RLS (never the global `db`) — Principle I.
+  The hazard on the new read is **connection-nesting** (see § Data flow lapse guard), not RLS
+  bypass. Cross-tenant probe is a Review-Gate blocker.
+- Audit rows in the same tx as the state change (Principle VIII); fail-open itself is audited.
 - `/portal/account/data-export` stays reachable while suspended — GDPR Art. 20 / PDPA
-  portability is a legal right and must not be gated on payment.
+  portability is a legal right, not gated on payment.
+- `contacts/invite` (account provisioning) is gated under `suspended` — an unpaid member should
+  not mint colleague logins.
 - Renewal state is finance-adjacent → ≥2 reviewers (or the Constitution v1.4.2 solo-maintainer
-  substitute).
+  substitute). One signs a feature `security.md` § checklist covering the AuthZ chokepoints,
+  fail-open audit, and the two-policy enumeration.
 
 ## Out of scope
 
-- Auto-issuing renewal invoices on a schedule (see § Decisions).
+- Auto-issuing renewal invoices on a schedule.
 - Per-member grace overrides.
-- Blocking F6 event imports.
-- Delisting suspended members from the directory.
-- Any change to renewal-period anchoring or the gapless-continuation math.
+- Blocking F6 event imports; delisting suspended members from the directory.
+- Any change to steady-state renewal-period anchoring (only the admin-comeback path changes).
 
 ## Ops steps at ship
 
-1. `UPDATE tenant_renewal_settings SET grace_period_days = 90 WHERE tenant_id = 'swecham';`
-   (verify the current value first — code/migration default is 14, and the intended 30 was a
-   hand-run SQL that may never have executed; `docs/runbooks/cron-jobs.md:937` and `:1053`
-   contradict each other.)
-2. Update `docs/runbooks/cron-jobs.md:1047-1063` — the "no fixed lapse policy — board
-   discretion per case / 30 days chosen default" note is **superseded** by TSCC's 90-day
-   credit policy.
+1. Verify the current value first — `SELECT tenant_id, grace_period_days FROM tenant_renewal_settings WHERE tenant_id='swecham';` (code default is 14; the intended 30 was a hand-run SQL that may never have executed — `cron-jobs.md:937` vs `:1053` contradict). Then `UPDATE … SET grace_period_days = 90 WHERE tenant_id='swecham';` **after** slice 1 is live.
+2. Amend the specs/runbook per § FR amendments.
