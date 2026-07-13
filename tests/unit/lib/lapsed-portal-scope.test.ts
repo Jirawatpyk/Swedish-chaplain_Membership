@@ -1,13 +1,20 @@
 /**
- * F8 Phase 5 Wave C · T133 + T134 spec — `checkLapsedPortalScope`.
+ * 059-membership-suspension Task 3 — `checkPortalAccess` spec.
+ *
+ * Repoints the pre-existing F8 Phase 5 Wave C spec (`checkLapsedPortalScope`,
+ * mocked via the never-returns-lapsed `findActiveForMember`) onto the new
+ * two-policy resolver, mocked via `findLatestCycleForMember` — which, unlike
+ * `findActiveForMember`, DOES return a cycle in `lapsed` status. That is the
+ * whole point of Task 2/3: a lapsed cycle is no longer invisible to the
+ * portal gate.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
-  checkLapsedPortalScope,
-  isLapsedAllowedRoute,
+  checkPortalAccess,
+  isTerminatedAllowedRoute,
   LAPSED_PORTAL_ALLOWED_PREFIXES,
 } from '@/lib/lapsed-portal-scope';
-import type { LapsedPortalScopeDeps } from '@/lib/lapsed-portal-scope';
+import type { PortalAccessDeps } from '@/lib/lapsed-portal-scope';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import { buildCycle as buildCycleShared } from '../renewals/_helpers/build-cycle';
@@ -15,32 +22,37 @@ import { buildCycle as buildCycleShared } from '../renewals/_helpers/build-cycle
 const TENANT_ID = 'tenantA';
 const MEMBER_ID = 'mem-133';
 const CYCLE_UUID = '00000000-0000-0000-0000-0000000c1330';
+const FIXED_NOW = new Date('2026-07-14T12:00:00Z');
 
-function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
+function buildCycle(overrides: Record<string, unknown> = {}): RenewalCycle {
   return buildCycleShared({
     tenantId: TENANT_ID,
     cycleId: asCycleId(CYCLE_UUID),
     memberId: MEMBER_ID,
     status: 'lapsed',
+    expiresAt: '2026-01-01T00:00:00Z', // in the past relative to FIXED_NOW → terminated
     ...overrides,
   });
 }
 
 function fakeDeps(args: {
-  activeCycle?: RenewalCycle | null;
+  cycle?: RenewalCycle | null;
+  findImpl?: () => Promise<RenewalCycle | null>;
   emitImpl?: () => Promise<void>;
+  now?: Date;
 }): {
-  deps: LapsedPortalScopeDeps;
+  deps: PortalAccessDeps;
   emitMock: ReturnType<typeof vi.fn>;
-  findActiveMock: ReturnType<typeof vi.fn>;
+  findMock: ReturnType<typeof vi.fn>;
 } {
-  const findActiveMock = vi.fn(async () => args.activeCycle ?? null);
+  const findMock = vi.fn(args.findImpl ?? (async () => args.cycle ?? null));
   const emitMock = vi.fn(args.emitImpl ?? (async () => {}));
-  const deps: LapsedPortalScopeDeps = {
-    cyclesRepo: { findActiveForMember: findActiveMock as never },
+  const deps: PortalAccessDeps = {
+    cyclesRepo: { findLatestCycleForMember: findMock as never },
     auditEmitter: { emit: emitMock as never },
+    clock: { now: () => args.now ?? FIXED_NOW },
   };
-  return { deps, emitMock, findActiveMock };
+  return { deps, emitMock, findMock };
 }
 
 const baseCtx = {
@@ -50,22 +62,22 @@ const baseCtx = {
   correlationId: 'corr-1',
 };
 
-describe('checkLapsedPortalScope (T133 + T134)', () => {
-  it('whitelisted /portal/renewal/* → allowed without DB lookup', async () => {
+describe('checkPortalAccess — terminated policy (deny-by-default)', () => {
+  it('whitelisted /portal/renewal/* → allowed (route_whitelisted)', async () => {
     const cycle = buildCycle();
-    const { deps, findActiveMock } = fakeDeps({ activeCycle: cycle });
-    const r = await checkLapsedPortalScope(deps, {
+    const { deps, findMock } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/portal/renewal/abc',
     });
     expect(r.allowed).toBe(true);
     if (r.allowed) expect(r.reason).toBe('route_whitelisted');
-    expect(findActiveMock).not.toHaveBeenCalled();
+    expect(findMock).toHaveBeenCalledWith(TENANT_ID, MEMBER_ID);
   });
 
   it('whitelisted /portal/preferences/renewals → allowed', async () => {
-    const { deps } = fakeDeps({ activeCycle: buildCycle() });
-    const r = await checkLapsedPortalScope(deps, {
+    const { deps } = fakeDeps({ cycle: buildCycle() });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/portal/preferences/renewals',
     });
@@ -73,46 +85,34 @@ describe('checkLapsedPortalScope (T133 + T134)', () => {
   });
 
   it('whitelisted /api/portal/renewal/* → allowed', async () => {
-    const { deps } = fakeDeps({ activeCycle: buildCycle() });
-    const r = await checkLapsedPortalScope(deps, {
+    const { deps } = fakeDeps({ cycle: buildCycle() });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/api/portal/renewal/abc/confirm',
     });
     expect(r.allowed).toBe(true);
   });
 
-  it('non-whitelisted + no active cycle → allowed (not lapsed)', async () => {
-    const { deps } = fakeDeps({ activeCycle: null });
-    const r = await checkLapsedPortalScope(deps, {
+  it('bare /portal dashboard → allowed (exact-match, not a swallow-all prefix)', async () => {
+    const { deps } = fakeDeps({ cycle: buildCycle() });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
-      pathname: '/portal/dashboard',
+      pathname: '/portal',
     });
     expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('not_lapsed');
+    if (r.allowed) expect(r.reason).toBe('route_whitelisted');
   });
 
-  it('non-whitelisted + active cycle awaiting_payment → allowed (not lapsed)', async () => {
-    const { deps } = fakeDeps({
-      activeCycle: buildCycle({ status: 'awaiting_payment' }),
-    });
-    const r = await checkLapsedPortalScope(deps, {
-      ...baseCtx,
-      pathname: '/portal/billing',
-    });
-    expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('not_lapsed');
-  });
-
-  it('non-whitelisted + active cycle lapsed → blocked + emits audit', async () => {
-    const cycle = buildCycle({ status: 'lapsed' });
-    const { deps, emitMock } = fakeDeps({ activeCycle: cycle });
-    const r = await checkLapsedPortalScope(deps, {
+  it('non-whitelisted + terminated cycle (lapsed, expired) → blocked + emits audit', async () => {
+    const cycle = buildCycle();
+    const { deps, emitMock } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/portal/dashboard',
     });
     expect(r.allowed).toBe(false);
     if (!r.allowed) {
-      expect(r.reason).toBe('lapsed_route_blocked');
+      expect(r.reason).toBe('terminated_route_blocked');
       expect(r.cycleId).toBe(cycle.cycleId);
     }
     expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
@@ -121,15 +121,25 @@ describe('checkLapsedPortalScope (T133 + T134)', () => {
     });
   });
 
-  it('audit emit failure does not mask blocked decision', async () => {
-    const cycle = buildCycle({ status: 'lapsed' });
+  it('audit emit failure does not mask the blocked decision', async () => {
+    const cycle = buildCycle();
     const { deps } = fakeDeps({
-      activeCycle: cycle,
+      cycle,
       emitImpl: async () => {
         throw new Error('audit_log: insert failed');
       },
     });
-    const r = await checkLapsedPortalScope(deps, {
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/dashboard',
+    });
+    expect(r.allowed).toBe(false);
+  });
+
+  it('cancelled + expired is ALSO terminated (not just lapsed)', async () => {
+    const cycle = buildCycle({ status: 'cancelled', closedReason: 'admin_marked' });
+    const { deps } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/portal/dashboard',
     });
@@ -137,39 +147,134 @@ describe('checkLapsedPortalScope (T133 + T134)', () => {
   });
 });
 
-describe('isLapsedAllowedRoute (T134 helper)', () => {
+describe('checkPortalAccess — full access (no cycle / good standing)', () => {
+  it('no cycle at all → allowed (full), no audit emitted', async () => {
+    const { deps, emitMock } = fakeDeps({ cycle: null });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/dashboard',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('full');
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it('lapsed but NOT yet expired (still in grace) → allowed (full)', async () => {
+    const cycle = buildCycle({ expiresAt: '2027-01-01T00:00:00Z' }); // future relative to FIXED_NOW
+    const { deps } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/dashboard',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('full');
+  });
+
+  it('completed cycle → allowed (full)', async () => {
+    const cycle = buildCycle({
+      status: 'completed',
+      closedAt: '2026-06-01T00:00:00Z',
+      closedReason: null,
+      linkedInvoiceId: 'inv-1',
+    });
+    const { deps } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/dashboard',
+    });
+    expect(r.allowed).toBe(true);
+  });
+});
+
+describe('checkPortalAccess — suspended policy (allow-by-default)', () => {
+  it('awaiting_payment + non-denylisted route → allowed (suspended_route_allowed)', async () => {
+    const cycle = buildCycle({ status: 'awaiting_payment', closedAt: null, closedReason: null });
+    const { deps } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/invoices/abc',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('suspended_route_allowed');
+  });
+
+  it('awaiting_payment + denylisted /portal/broadcasts/new → blocked + emits audit', async () => {
+    const cycle = buildCycle({ status: 'awaiting_payment', closedAt: null, closedReason: null });
+    const { deps, emitMock } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/broadcasts/new',
+    });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) {
+      expect(r.reason).toBe('suspended_route_blocked');
+      expect(r.cycleId).toBe(cycle.cycleId);
+    }
+    expect(emitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('pending_admin_reactivation → suspended (allowed on ordinary routes)', async () => {
+    const cycle = buildCycle({
+      status: 'pending_admin_reactivation',
+      closedAt: null,
+      closedReason: null,
+      enteredPendingAt: '2026-07-01T00:00:00Z',
+    });
+    const { deps } = fakeDeps({ cycle });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/invoices/abc',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('suspended_route_allowed');
+  });
+});
+
+describe('checkPortalAccess — fail-open on read error', () => {
+  it('cyclesRepo throws → allowed (fail_open), no audit emitted', async () => {
+    const { deps, emitMock } = fakeDeps({
+      findImpl: async () => {
+        throw new Error('connection reset');
+      },
+    });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/broadcasts/new',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('fail_open');
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('isTerminatedAllowedRoute (route-matching table)', () => {
   it.each([
+    ['/portal', true],
+    ['/portal?tab=account', true],
     ['/portal/renewal/abc', true],
     ['/portal/renewal/abc/success', true],
     ['/portal/preferences/renewals', true],
     ['/api/portal/renewal/abc/confirm', true],
     ['/portal/dashboard', false],
+    ['/portal/timeline', false],
     ['/portal/billing', false],
     ['/portal/broadcasts', false],
     ['/api/portal/billing', false],
-    // Suggestion review-fix (Phase 5 / US3 backlog close): the bare
-    // `startsWith` previously treated `/portal/renewal-evil` as a
-    // whitelisted prefix-match. The hardened `matchesScopePrefix`
-    // requires the next char to be `/` or `?` (or the strings are
-    // equal), so confusable substrings get rejected.
+    // The hardened `matchesScopePrefix` requires the next char to be `/` or
+    // `?` (or the strings be equal), so confusable substrings are rejected.
     ['/portal/renewal-evil', false],
     ['/portal/renewal-admin/foo', false],
     ['/portal/preferences-other', false],
     ['/api/portal/preferences/renewals?next=/x', true],
     ['/portal/renewal', true],
     ['/portal/renewal?cycle=1', true],
-    // 058 D2: the consolidated Account hub hosts the FR-016 renewal opt-out
-    // + GDPR data export — both must stay reachable for a lapsed member.
-    // `isLapsedAllowedRoute` matches the PATHNAME only; the `#renewal-prefs`
-    // hash the redirect appends never reaches the server, so we assert the
-    // bare pathname. The data-export child route is covered by prefix match.
     ['/portal/account', true],
     ['/portal/account/data-export', true],
     // Precision: a confusable substring like /portal/account-settings must
     // NOT match the /portal/account prefix.
     ['/portal/account-settings', false],
-  ])('isLapsedAllowedRoute(%s) === %s', (path, expected) => {
-    expect(isLapsedAllowedRoute(path)).toBe(expected);
+  ])('isTerminatedAllowedRoute(%s) === %s', (path, expected) => {
+    expect(isTerminatedAllowedRoute(path)).toBe(expected);
   });
 
   it('LAPSED_PORTAL_ALLOWED_PREFIXES is non-empty', () => {

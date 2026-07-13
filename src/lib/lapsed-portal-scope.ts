@@ -1,33 +1,42 @@
 /**
- * F8 Phase 5 Wave C · T133 + T134 — lapsed-portal scope enforcement.
+ * 059-membership-suspension Task 3 — two-policy portal access resolver.
  *
- * Lapsed members (those whose most recent renewal cycle is in
- * `lapsed` status) MUST only be allowed to use a narrow whitelist of
- * portal routes per FR-005a. Non-renewal portal API requests + page
- * server components return 403 + emit `lapsed_member_action_blocked`
- * audit so admins can see the access pattern.
+ * Replaces the F8 Phase 5 Wave C `checkLapsedPortalScope` helper, which was
+ * DEAD + BROKEN: it called `cyclesRepo.findActiveForMember`, whose repo-level
+ * predicate excludes `status='lapsed'` (`NOT IN ('lapsed','cancelled',
+ * 'completed')`), so the "member is lapsed" branch could never be reached in
+ * production — only an in-memory unit-test mock could ever hand it a lapsed
+ * cycle. It also had zero production callers (imported only by tests).
  *
- * Architectural note: tasks.md originally placed this in
- * `src/middleware.ts`, but Next.js 16's proxy (the new name for
- * middleware) runs in Edge runtime which CANNOT do DB lookups
- * (postgres-js needs Node). So the lapsed-status check lives in this
- * shared helper called from each F8-relevant portal route handler +
- * page server component. The proxy still does the F8 path-prefix
- * kill-switch (T133b — `proxy.ts` § "1f. FEATURE_F8_RENEWALS
- * kill-switch"); this helper is the second layer doing the per-member
- * status check.
+ * This resolver is built on two Task-1/Task-2 primitives instead:
+ *   - `deriveMembershipAccess(cycle, now)` (Domain, Task 1) — classifies a
+ *     member's most-recent cycle into `full | suspended | terminated`.
+ *   - `cyclesRepo.findLatestCycleForMember` (Task 2) — the member's single
+ *     most-recent cycle across ALL statuses (including `lapsed`), so the
+ *     Domain predicate can actually see a lapsed row.
  *
- * Allowed-routes whitelist (T134) is the single source of truth — any
- * future F8 portal surface must be added here OR explicitly rejected
- * by the lapsed-scope policy.
+ * Two independent route policies key off the derived access state:
+ *   - `terminated` (grace-expired lapsed / cancelled) — DENY-BY-DEFAULT
+ *     allowlist. Only a narrow whitelist of portal routes (renewal, account,
+ *     preferences, the bare dashboard) stay reachable.
+ *   - `suspended` (unpaid / pending admin review) — ALLOW-BY-DEFAULT
+ *     denylist. The member keeps full portal access EXCEPT a short list of
+ *     self-serve benefit-consuming surfaces (e.g. compose a new e-blast).
+ *     The real enforcement for suspended members is the per-use-case gate
+ *     (Tasks 4-5); this denylist is UX (redirect before the member even
+ *     tries the blocked action).
  */
 import { logger } from '@/lib/logger';
+import { deriveMembershipAccess, type RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type { F8AuditEvent, RenewalAuditEmitter } from '@/modules/renewals/application/ports/renewal-audit-emitter';
 import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 
 /**
- * Allowed portal route prefixes (T134) — matched against pathname via
- * `startsWith`. A lapsed member can:
+ * Allowed portal route prefixes for a `terminated` member (T134) — matched
+ * against pathname via `matchesScopePrefix` (exact match, or prefix followed
+ * by `/` or `?`). A terminated member can:
+ *   - Land on the bare `/portal` dashboard, which renders the "membership
+ *     ended" mailto-contact CTA instead of the normal widgets.
  *   - Open `/portal/renewal/[memberId]` to renew (FR-005a)
  *   - Toggle `/portal/preferences/renewals` opt-out (FR-016)
  *   - Use the `/portal/account` hub (058 D2) — covers the FR-016 renewal
@@ -35,20 +44,26 @@ import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/rene
  *   - Sign out from anywhere (auth-public sign-out endpoint)
  *   - View `/portal/sign-in` and `/forgot-password` (auth-public)
  *
- * Everything else (member dashboard, billing, broadcasts, events) is
- * blocked until they renew.
+ * Everything else (member dashboard widgets, billing, broadcasts, events)
+ * is blocked until they renew.
+ *
+ * NOTE: `'/portal'` is intentionally NOT prefix-matched against its
+ * children — see the `isTerminatedAllowedRoute` docstring below. It is
+ * listed here (rather than handled as an out-of-band special case) so the
+ * array stays the single documented source of truth for "what's reachable",
+ * but the matching function special-cases it to exact-path-only.
  */
 export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
+  '/portal', // bare dashboard — renders the terminated mailto CTA (exact-only, see below)
   '/portal/renewal',
   '/portal/preferences/renewals',
   '/portal/preferences', // top-level preferences page is informational
   // 058 D2: the consolidated Account hub now hosts the FR-016 renewal
   // opt-out (moved from /portal/preferences/renewals) + the GDPR data
   // export (Art. 20 / PDPA portability, at /portal/account/data-export).
-  // Both MUST stay reachable for a lapsed member; the legacy routes now
-  // redirect here. Neither surface is an "engagement" feature the lapse
-  // gate is meant to block. Prefix-matched, so /portal/account/data-export
-  // is covered too.
+  // Both MUST stay reachable for a terminated member; the legacy routes
+  // now redirect here. Prefix-matched, so /portal/account/data-export is
+  // covered too.
   '/portal/account',
   '/api/portal/renewal',
   '/api/portal/preferences/renewals',
@@ -59,37 +74,55 @@ export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
 ];
 
 /**
- * Result of the lapsed-scope check.
+ * Denylist for a `suspended` member (allow-by-default). The use-case gates
+ * (Tasks 4-5) are the real enforcement; this is UX — redirect/block before
+ * the member even attempts the action.
  */
-export type LapsedScopeDecision =
-  | { readonly allowed: true; readonly reason: 'not_lapsed' | 'route_whitelisted' }
+export const SUSPENDED_DENYLIST_PREFIXES: readonly string[] = [
+  '/portal/broadcasts/new',
+  '/api/portal/broadcasts', // compose/submit API surface
+];
+
+/**
+ * Result of the two-policy access check.
+ */
+export type PortalAccessDecision =
+  | {
+      readonly allowed: true;
+      readonly reason: 'full' | 'route_whitelisted' | 'suspended_route_allowed' | 'fail_open';
+    }
   | {
       readonly allowed: false;
-      readonly reason: 'lapsed_route_blocked';
-      /** The active cycle id whose status is `lapsed`. */
+      readonly reason: 'terminated_route_blocked' | 'suspended_route_blocked';
+      /** The cycle id whose derived access blocked this request. */
       readonly cycleId: string;
     };
 
-export interface LapsedPortalScopeDeps {
-  readonly cyclesRepo: Pick<RenewalCycleRepo, 'findActiveForMember'>;
+export interface PortalAccessDeps {
+  readonly cyclesRepo: Pick<RenewalCycleRepo, 'findLatestCycleForMember'>;
   readonly auditEmitter: Pick<RenewalAuditEmitter, 'emit'>;
+  /**
+   * Deterministic time source — `deriveMembershipAccess` needs `now` to
+   * decide expiry. Production composition wires `systemClock`; tests pin a
+   * fixed instant.
+   */
+  readonly clock: { now(): Date };
 }
 
-export interface LapsedPortalScopeContext {
+export interface PortalAccessContext {
   readonly tenantId: string;
   readonly memberId: string;
   readonly pathname: string;
   /**
-   * R4-W3 + Round-5 review-finding M5: HTTP method of the blocked
-   * request — captured on the `lapsed_member_action_blocked` audit
-   * row so SRE can distinguish a blocked GET (read attempt) from
-   * a blocked POST (mutation attempt) when triaging audit logs.
+   * R4-W3 + Round-5 review-finding M5: HTTP method of the (possibly)
+   * blocked request — captured on the blocked-action audit row so SRE can
+   * distinguish a blocked GET (read attempt) from a blocked POST (mutation
+   * attempt) when triaging audit logs.
    *
-   * Closed union (Round-5 M5) — bare `string` accepted typos like
-   * 'Get' vs 'GET' and defeated forensic dashboard aggregation.
-   * Mirrors the `f8_role_violation_blocked.action` discipline already
-   * established in the audit-payload schemas. Optional for backward-
-   * compat with existing callers; omitted defaults to `null` audit row.
+   * Closed union (Round-5 M5) — bare `string` accepted typos like 'Get' vs
+   * 'GET' and defeated forensic dashboard aggregation. Optional for
+   * backward-compat with callers that don't pass it — omitted defaults to
+   * `null` audit row.
    */
   readonly action?:
     | 'GET'
@@ -105,62 +138,111 @@ export interface LapsedPortalScopeContext {
 }
 
 /**
- * Decide whether the current request is allowed for a lapsed member.
- * Steps:
- *   1. If the path matches an allowed prefix → allow (cheap path; no
- *      DB read needed).
- *   2. Look up the member's active cycle. If null OR not lapsed →
- *      allow.
- *   3. Otherwise → block + emit `lapsed_member_action_blocked` audit.
+ * Decide whether the current request is allowed, keyed on
+ * `deriveMembershipAccess` rather than raw status literals.
  *
- * The path-whitelist short-circuit ahead of the DB read is a
- * deliberate cost optimisation — most member traffic targets the few
- * F8-relevant routes, so we avoid an unnecessary read on those.
+ * Steps:
+ *   1. Look up the member's single most-recent cycle (ANY status,
+ *      including `lapsed` — Task 2's `findLatestCycleForMember`). A read
+ *      failure here FAILS OPEN (never lock every member out on a DB blip);
+ *      the fail-open is logged, not silently swallowed.
+ *   2. Derive `access` from the cycle + current time.
+ *   3. `full` → allow.
+ *   4. `terminated` → deny-by-default allowlist (`isTerminatedAllowedRoute`);
+ *      a non-whitelisted route is blocked + audited.
+ *   5. `suspended` → allow-by-default denylist (`isSuspendedDeniedRoute`);
+ *      a denied route is blocked + audited.
  */
-export async function checkLapsedPortalScope(
-  deps: LapsedPortalScopeDeps,
-  ctx: LapsedPortalScopeContext,
-): Promise<LapsedScopeDecision> {
-  if (isLapsedAllowedRoute(ctx.pathname)) {
-    return { allowed: true, reason: 'route_whitelisted' };
+export async function checkPortalAccess(
+  deps: PortalAccessDeps,
+  ctx: PortalAccessContext,
+): Promise<PortalAccessDecision> {
+  let cycle: RenewalCycle | null;
+  try {
+    cycle = await deps.cyclesRepo.findLatestCycleForMember(
+      ctx.tenantId,
+      ctx.memberId,
+    );
+  } catch (e) {
+    // FAIL OPEN on read errors — a DB blip must not lock every member out.
+    emitFailOpen(ctx, e);
+    return { allowed: true, reason: 'fail_open' };
   }
 
-  const cycle = await deps.cyclesRepo.findActiveForMember(
-    ctx.tenantId,
-    ctx.memberId,
-  );
-  if (!cycle || cycle.status !== 'lapsed') {
-    return { allowed: true, reason: 'not_lapsed' };
+  if (cycle === null) {
+    return { allowed: true, reason: 'full' };
   }
 
-  // Lapsed + non-whitelisted route — block + audit.
+  const { access } = deriveMembershipAccess(cycle, deps.clock.now());
+
+  if (access === 'full') {
+    return { allowed: true, reason: 'full' };
+  }
+
+  if (access === 'terminated') {
+    if (isTerminatedAllowedRoute(ctx.pathname)) {
+      return { allowed: true, reason: 'route_whitelisted' };
+    }
+    await emitBlockedAudit(deps, ctx, cycle.cycleId);
+    return {
+      allowed: false,
+      reason: 'terminated_route_blocked',
+      cycleId: cycle.cycleId,
+    };
+  }
+
+  // access === 'suspended'
+  if (!isSuspendedDeniedRoute(ctx.pathname)) {
+    return { allowed: true, reason: 'suspended_route_allowed' };
+  }
   await emitBlockedAudit(deps, ctx, cycle.cycleId);
   return {
     allowed: false,
-    reason: 'lapsed_route_blocked',
+    reason: 'suspended_route_blocked',
     cycleId: cycle.cycleId,
   };
 }
 
 /**
- * Suggestion review-fix (Phase 5 / US3 backlog close): tighten the
- * prefix match so `/portal/renewal-evil` does NOT match the
- * `/portal/renewal` prefix. The check now requires the pathname to
- * EITHER equal a whitelisted prefix OR be followed by a path separator
- * (`/` or `?` for the query-string variant). This rules out path-name
- * confusables that the bare `startsWith` accepted.
+ * Whether `pathname` is reachable for a `terminated` member.
  *
- * The previous bare `startsWith` was a soft confused-deputy risk: a
- * future operator could accidentally land a `/portal/renewal-admin`
- * page (or any `${prefix}-suffix` route) and have it pass the lapsed
- * gate without explicit policy review.
+ * `'/portal'` is deliberately matched EXACT-ONLY (plus a `?query` suffix on
+ * the bare path) rather than as a boundary-prefix like every other entry:
+ * the boundary-prefix rule (`matchesScopePrefix`) treats any prefix as
+ * matching itself, its `?query` form, AND any `/`-delimited child path — so
+ * treating `'/portal'` as an ordinary prefix would make it swallow every
+ * `/portal/*` route (`/portal/timeline`, `/portal/billing`, …), defeating
+ * the deny-by-default allowlist entirely. Every OTHER entry legitimately
+ * wants its children included (e.g. `/portal/account/data-export` must
+ * match `/portal/account`), so only the bare-dashboard entry needs the
+ * narrower rule.
  */
-export function isLapsedAllowedRoute(pathname: string): boolean {
-  return LAPSED_PORTAL_ALLOWED_PREFIXES.some((prefix) =>
+export function isTerminatedAllowedRoute(pathname: string): boolean {
+  if (matchesExactOrQuery(pathname, '/portal')) return true;
+  return LAPSED_PORTAL_ALLOWED_PREFIXES.some(
+    (prefix) => prefix !== '/portal' && matchesScopePrefix(pathname, prefix),
+  );
+}
+
+/** Whether `pathname` is on the `suspended`-member denylist. */
+export function isSuspendedDeniedRoute(pathname: string): boolean {
+  return SUSPENDED_DENYLIST_PREFIXES.some((prefix) =>
     matchesScopePrefix(pathname, prefix),
   );
 }
 
+function matchesExactOrQuery(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}?`);
+}
+
+/**
+ * Suggestion review-fix (Phase 5 / US3 backlog close): tighten the prefix
+ * match so `/portal/renewal-evil` does NOT match the `/portal/renewal`
+ * prefix. The check requires the pathname to EITHER equal a whitelisted
+ * prefix OR be followed by a path separator (`/` or `?` for the
+ * query-string variant). This rules out path-name confusables that a bare
+ * `startsWith` would accept.
+ */
 function matchesScopePrefix(pathname: string, prefix: string): boolean {
   if (pathname === prefix) return true;
   if (!pathname.startsWith(prefix)) return false;
@@ -171,10 +253,14 @@ function matchesScopePrefix(pathname: string, prefix: string): boolean {
 }
 
 async function emitBlockedAudit(
-  deps: LapsedPortalScopeDeps,
-  ctx: LapsedPortalScopeContext,
+  deps: PortalAccessDeps,
+  ctx: PortalAccessContext,
   cycleId: string,
 ): Promise<void> {
+  // TODO(Task 8): discriminate `membership_suspended_action_blocked` from
+  // `lapsed_member_action_blocked` once the new enum value ships. For now
+  // BOTH the terminated and suspended blocked paths emit the existing
+  // (already-shipped) `lapsed_member_action_blocked` event.
   const event: F8AuditEvent<'lapsed_member_action_blocked'> = {
     type: 'lapsed_member_action_blocked',
     payload: {
@@ -208,5 +294,32 @@ async function emitBlockedAudit(
       },
       '[lapsed-portal-scope] audit emit failed',
     );
+  }
+}
+
+/**
+ * Fail-OPEN path: `cyclesRepo.findLatestCycleForMember` threw (DB blip).
+ * `checkPortalAccess` allows the request rather than locking every member
+ * out on a transient read failure — but the fail-open itself must stay
+ * forensically visible, so it's logged here (fire-and-forget, swallowed
+ * internally so a logging hiccup can never escalate into blocking the
+ * request that already decided to fail open).
+ *
+ * TODO(Task 8): emit a `membership_access_fail_open` audit event once that
+ * enum value + its migration ship — it does not exist yet.
+ */
+function emitFailOpen(ctx: PortalAccessContext, err: unknown): void {
+  try {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId: ctx.tenantId,
+        memberId: ctx.memberId,
+        blockedRoute: ctx.pathname,
+      },
+      '[lapsed-portal-scope] fail-open: cyclesRepo read failed — allowing request',
+    );
+  } catch {
+    // Never let a logging failure escalate into blocking the request.
   }
 }

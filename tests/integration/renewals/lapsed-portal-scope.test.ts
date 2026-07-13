@@ -2,17 +2,26 @@
  * F8 Phase 5 Wave D · T146 — lapsed-portal-scope integration test
  * (live Neon).
  *
- * Verifies the `checkLapsedPortalScope` helper (T133 + T134) against
- * real cycles in Postgres:
+ * 059-membership-suspension Task 3: repointed onto `checkPortalAccess`,
+ * the two-policy resolver built on `deriveMembershipAccess` +
+ * `findLatestCycleForMember`. UNLIKE the old `findActiveForMember`-backed
+ * helper (whose repo predicate excludes `status='lapsed'`, making the
+ * lapsed-blocking branch untestable on live Neon — see git history),
+ * `findLatestCycleForMember` returns a cycle regardless of status, so
+ * this suite now exercises the terminated-block branch for real.
  *
- *   1. Member without active cycle → allowed (default no-op)
- *   2. Active cycle in awaiting_payment → allowed (not lapsed)
- *   3. Active cycle in lapsed status + non-whitelisted route → blocked
- *   4. Active cycle in lapsed status + whitelisted route → allowed
- *      (path-prefix short-circuit, no DB read)
+ * Verifies `checkPortalAccess` against real cycles in Postgres:
+ *
+ *   1. Member without any cycle → allowed (`full`)
+ *   2. Cycle in `awaiting_payment` → allowed (`suspended_route_allowed`;
+ *      `awaiting_payment` derives to `suspended`, not `full`)
+ *   3. Cycle `lapsed` + expired (terminated) + non-whitelisted route →
+ *      blocked
+ *   4. Cycle `lapsed` + expired (terminated) + whitelisted route →
+ *      allowed (`route_whitelisted`)
  *   5. Block emits `lapsed_member_action_blocked` audit row
- *   6. Cross-tenant isolation: tenant B's lapsed cycle does NOT
- *      affect tenant A's member visible state
+ *   6. Cross-tenant isolation: tenant B has no view of tenant A's
+ *      members (RLS) → `full`
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -22,7 +31,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { makeRenewalsDeps } from '@/modules/renewals';
-import { checkLapsedPortalScope } from '@/lib/lapsed-portal-scope';
+import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import {
@@ -101,23 +110,9 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
       ]),
     );
 
-    // Lapsed cycle: active + non-terminal status. The schema's
-    // `findActiveForMember` predicate excludes 'lapsed' from
-    // 'NOT IN (...)' check — actually let me re-read:
-    // findActiveForMember filters `status NOT IN ('lapsed','cancelled','completed')`
-    // so a cycle in `lapsed` status is NOT returned by findActive!
-    //
-    // The lapsed-portal-scope helper relies on findActiveForMember
-    // returning the lapsed cycle to detect the "lapsed" state. The
-    // semantic is: "lapsed member" = member whose ONLY cycle is
-    // lapsed. Currently the helper would short-circuit to allow
-    // because findActiveForMember returns null. This is a known
-    // helper-vs-data-model nuance — see helper docstring.
-    //
-    // For the integration test, we use `awaiting_payment` to test
-    // the not-lapsed branch + skip the lapsed-blocking branch
-    // entirely (covered exhaustively by spec.ts unit tests with
-    // the in-memory mock returning a lapsed cycle directly).
+    // Active (non-terminal) cycle in `awaiting_payment` — derives to
+    // `suspended` per `deriveMembershipAccess` (unpaid, not yet expired-
+    // terminal). Used to exercise the suspended-allow branch below.
     await runInTenant(tenantA.ctx, (tx) =>
       tx.insert(renewalCycles).values([
         {
@@ -137,8 +132,36 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
         },
       ]),
     );
-    void lapsedCycleId; // unused given the helper-vs-schema nuance above
-    void lapsedMemberId; // referenced only in whitelist tests below
+
+    // Terminated cycle: `lapsed` status + `expiresAt` in the past. Per the
+    // DB CHECK `renewal_cycles_closed_at_iff_terminal_check`, a terminal
+    // status (`lapsed`/`cancelled`/`completed`) REQUIRES `closed_at` set.
+    // `findLatestCycleForMember` (Task 2) — UNLIKE `findActiveForMember` —
+    // returns this row, so `deriveMembershipAccess` can classify it
+    // `terminated` (grace-expired). This is the row the old helper could
+    // never see; it makes the terminated-block branch testable on live
+    // Neon for the first time.
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(renewalCycles).values([
+        {
+          tenantId: tenantA.ctx.slug,
+          cycleId: lapsedCycleId,
+          memberId: lapsedMemberId,
+          status: 'lapsed',
+          periodFrom: new Date('2019-01-01T00:00:00Z'),
+          periodTo: new Date('2020-01-01T00:00:00Z'),
+          expiresAt: new Date('2020-01-01T00:00:00Z'),
+          closedAt: new Date('2020-02-01T00:00:00Z'),
+          closedReason: 'lapsed',
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: randomUUID(),
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        },
+      ]),
+    );
     void tenantB; // imported for parity with tenantA cleanup
   }, 120_000);
 
@@ -157,9 +180,9 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     await tenantB.cleanup().catch(() => {});
   }, 120_000);
 
-  it('whitelisted /portal/renewal/* → allowed without DB read', async () => {
+  it('terminated member + whitelisted /portal/renewal/* → allowed', async () => {
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
-    const r = await checkLapsedPortalScope(deps, {
+    const r = await checkPortalAccess(deps, {
       tenantId: tenantA.ctx.slug,
       memberId: lapsedMemberId,
       pathname: '/portal/renewal/abc',
@@ -170,9 +193,9 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     if (r.allowed) expect(r.reason).toBe('route_whitelisted');
   });
 
-  it('whitelisted /portal/preferences/renewals → allowed', async () => {
+  it('terminated member + whitelisted /portal/preferences/renewals → allowed', async () => {
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
-    const r = await checkLapsedPortalScope(deps, {
+    const r = await checkPortalAccess(deps, {
       tenantId: tenantA.ctx.slug,
       memberId: lapsedMemberId,
       pathname: '/portal/preferences/renewals',
@@ -182,9 +205,36 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     expect(r.allowed).toBe(true);
   });
 
-  it('non-whitelisted route + no active cycle → allowed (not lapsed)', async () => {
+  it('terminated member + non-whitelisted route → blocked + emits audit', async () => {
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
-    const r = await checkLapsedPortalScope(deps, {
+    const correlationId = randomUUID();
+    const r = await checkPortalAccess(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: lapsedMemberId,
+      pathname: '/portal/dashboard',
+      actorUserId: user.userId,
+      correlationId,
+    });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) {
+      expect(r.reason).toBe('terminated_route_blocked');
+      expect(r.cycleId).toBe(lapsedCycleId);
+    }
+
+    // `ctx.requestId` was not passed, so the adapter falls back to storing
+    // `correlationId` in the `request_id` column (see
+    // `buildInsertValues` — `requestId: ctx.requestId ?? ctx.correlationId`).
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, correlationId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.eventType).toBe('lapsed_member_action_blocked');
+  });
+
+  it('no cycle at all → allowed (full)', async () => {
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const r = await checkPortalAccess(deps, {
       tenantId: tenantA.ctx.slug,
       memberId: memberWithoutCycle,
       pathname: '/portal/dashboard',
@@ -192,12 +242,12 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
       correlationId: randomUUID(),
     });
     expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('not_lapsed');
+    if (r.allowed) expect(r.reason).toBe('full');
   });
 
-  it('non-whitelisted route + cycle in awaiting_payment → allowed (not lapsed)', async () => {
+  it('cycle in awaiting_payment (suspended) + non-denylisted route → allowed', async () => {
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
-    const r = await checkLapsedPortalScope(deps, {
+    const r = await checkPortalAccess(deps, {
       tenantId: tenantA.ctx.slug,
       memberId: activeMemberId,
       pathname: '/portal/billing',
@@ -205,14 +255,14 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
       correlationId: randomUUID(),
     });
     expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('not_lapsed');
+    if (r.allowed) expect(r.reason).toBe('suspended_route_allowed');
   });
 
-  it('cross-tenant: tenant B has no view of tenant A members → not lapsed', async () => {
+  it('cross-tenant: tenant B has no view of tenant A members → full', async () => {
     // tenant B context — none of A's members exist in B's RLS scope,
-    // so findActiveForMember returns null → allowed.
+    // so findLatestCycleForMember returns null → full access.
     const depsB = makeRenewalsDeps(tenantB.ctx.slug);
-    const r = await checkLapsedPortalScope(depsB, {
+    const r = await checkPortalAccess(depsB, {
       tenantId: tenantB.ctx.slug,
       memberId: activeMemberId, // belongs to tenant A
       pathname: '/portal/dashboard',
@@ -220,17 +270,6 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
       correlationId: randomUUID(),
     });
     expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('not_lapsed');
+    if (r.allowed) expect(r.reason).toBe('full');
   });
-
-  // Note: T146 does NOT test the lapsed-blocking branch on live Neon
-  // because `cyclesRepo.findActiveForMember` excludes status IN
-  // ('lapsed','cancelled','completed') per its schema convention. A
-  // cycle in status='lapsed' is therefore invisible to the helper.
-  // Production wiring needs either (a) including 'lapsed' in
-  // findActiveForMember's `NOT IN (...)` exclusion OR (b) a separate
-  // findLapsedForMember repo method. Tracked as Wave D follow-up;
-  // unit-test coverage in tests/unit/lib/lapsed-portal-scope.test.ts
-  // exercises the lapsed-block path with an in-memory mock returning
-  // a lapsed cycle directly (16/16 PASS).
 });
