@@ -21,7 +21,7 @@
  * `mode === 'create'`) so the two surfaces never become two sources of
  * truth for the same rows.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
 import { UserPlusIcon, Trash2Icon } from 'lucide-react';
@@ -33,6 +33,20 @@ export function SecondaryContactSection() {
   const t = useTranslations('admin.members.create');
   const { unregister, setValue } = useFormContext<MemberFormValues>();
   const [expanded, setExpanded] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  // Task 8 review-fix (Minor 4) — Remove unmounts the whole fieldset with no
+  // focus target, dropping a keyboard user to <body> (top of document). This
+  // flag distinguishes "collapsed because Remove just ran" from the initial
+  // (already-collapsed) mount, so the effect below never steals focus on
+  // first paint — only after an explicit Remove.
+  const shouldFocusAddButtonRef = useRef(false);
+
+  useEffect(() => {
+    if (!expanded && shouldFocusAddButtonRef.current) {
+      shouldFocusAddButtonRef.current = false;
+      addButtonRef.current?.focus();
+    }
+  }, [expanded]);
 
   const handleAdd = () => {
     // Seed `preferred_language` explicitly — unlike the primary contact
@@ -56,12 +70,14 @@ export function SecondaryContactSection() {
     // filled-then-removed secondary contact would still ride along in the
     // submitted values (the widget unmounts, but the RHF value survives).
     unregister('secondary_contact');
+    shouldFocusAddButtonRef.current = true;
     setExpanded(false);
   };
 
   if (!expanded) {
     return (
       <Button
+        ref={addButtonRef}
         type="button"
         variant="outline"
         onClick={handleAdd}

@@ -219,6 +219,20 @@ export function ContactFields({
           <Controller
             control={control}
             name={fieldPath('preferred_language')}
+            // Task 8 review-fix (Important 3) — `defaultValue` is the RHF
+            // mechanism for a Controller mounted WITHOUT a corresponding
+            // `useForm({defaultValues})` entry (the secondary-contact
+            // fieldset has none: it mounts fresh via `unregister`/re-add).
+            // Unlike `useWatch`'s `defaultValue` (a per-render display
+            // override — see `address-section.tsx`'s postcode gotcha),
+            // `Controller`'s `defaultValue` only applies when NEITHER the
+            // live form value NOR `useForm`'s defaultValues already have an
+            // entry at this path, and it WRITES the value into the real
+            // form state on mount (not just the display) — so it never
+            // clobbers the primary contact's real seeded value and closes
+            // the "displays English, actually undefined" trap for any
+            // future un-seeded consumer of this component.
+            defaultValue="en"
             render={({ field }) => (
               <Select
                 value={(field.value as 'en' | 'th' | 'sv' | undefined) ?? 'en'}
@@ -227,6 +241,12 @@ export function ContactFields({
                 <SelectTrigger
                   id={idPreferredLanguage}
                   aria-required={required ? 'true' : undefined}
+                  aria-invalid={Boolean(contactErrors?.preferred_language)}
+                  aria-describedby={
+                    contactErrors?.preferred_language
+                      ? `${idPreferredLanguage}-error`
+                      : undefined
+                  }
                   className="w-full"
                 >
                   {/* 067 #4 review-fix — no `?? LANG_LABELS.en` fallback is
@@ -249,6 +269,10 @@ export function ContactFields({
                 </SelectContent>
               </Select>
             )}
+          />
+          <FieldError
+            id={`${idPreferredLanguage}-error`}
+            message={contactErrors?.preferred_language?.message}
           />
         </div>
       </div>

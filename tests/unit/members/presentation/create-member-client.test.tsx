@@ -29,6 +29,16 @@ const h = vi.hoisted(() => ({
       email: 'a@b.com',
       preferred_language: 'en',
     },
+    // PR-B task 8 — optional secondary contact. Seeded here so the
+    // "forwards secondary_contact" test below asserts on the actual POST
+    // body, not just MemberForm's onSubmit callback (which sits one layer
+    // above `toPayload` and can't see it).
+    secondary_contact: {
+      first_name: 'C',
+      last_name: 'D',
+      email: 'c@d.com',
+      preferred_language: 'en',
+    },
   },
 }));
 
@@ -216,5 +226,30 @@ describe('CreateMemberClient orchestration', () => {
       (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
     );
     expect(body.registered_capital_thb).toBe(5_000_000);
+  });
+
+  it('forwards secondary_contact into the create payload (PR-B task 8)', async () => {
+    fetchMock.mockResolvedValueOnce(res(201, { member_id: 'm-secondary-contact' }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    // CreateMemberClient's `toPayload` is the ONLY place that puts
+    // `secondary_contact` on the actual POST body — assert on that body
+    // directly (not MemberForm's onSubmit callback, a layer above
+    // `toPayload` that can't see it) so this test discriminates a dropped
+    // block. Full shape, including the null-coalesced optional fields, so
+    // a regression in the trim/null mapping is caught too.
+    expect(body.secondary_contact).toEqual({
+      first_name: 'C',
+      last_name: 'D',
+      email: 'c@d.com',
+      phone: null,
+      role_title: null,
+      preferred_language: 'en',
+    });
   });
 });
