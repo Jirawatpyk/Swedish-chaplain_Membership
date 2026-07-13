@@ -15,6 +15,11 @@ import { render } from '@testing-library/react';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
+  // PR-B task 5 — CountryCombobox (rendered inside CompanySection) calls
+  // useLocale() to resolve i18n-iso-countries' locale data; the minimal
+  // mock above is a full replace (not `importOriginal` partial), so it
+  // must also stub this export or the render throws.
+  useLocale: () => 'en',
 }));
 
 import {

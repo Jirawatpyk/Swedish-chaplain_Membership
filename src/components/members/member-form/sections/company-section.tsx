@@ -10,11 +10,12 @@
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useFormContext } from 'react-hook-form';
+import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
+import { CountryCombobox } from '@/components/members/country-combobox';
 import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
 
@@ -23,6 +24,7 @@ export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
   const tf = useTranslations('admin.members.create.fields');
   const {
     register,
+    control,
     getValues,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
@@ -85,25 +87,31 @@ export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
           />
         </div>
         <div>
-          <Label htmlFor="country">
+          <Label id="country-label" htmlFor="country">
             {tf('country')}
             <RequiredMark />
           </Label>
-          <Input
-            id="country"
-            {...register('country', {
-              onChange: (e) => setCountry(e.target.value),
-            })}
-            required
-            aria-required="true"
-            aria-invalid={Boolean(errors.country)}
-            aria-describedby={
-              errors.country ? 'country-error required-fields-note' : 'required-fields-note'
-            }
-            maxLength={2}
-            autoComplete="country"
-            placeholder={tf('countryPlaceholder')}
-            className="uppercase"
+          <Controller
+            control={control}
+            name="country"
+            render={({ field }) => (
+              <CountryCombobox
+                id="country"
+                value={field.value ?? 'TH'}
+                onChange={(next) => {
+                  field.onChange(next);
+                  setCountry(next);
+                }}
+                aria-labelledby="country-label"
+                aria-required
+                aria-invalid={Boolean(errors.country)}
+                aria-describedby={
+                  errors.country
+                    ? 'country-error required-fields-note'
+                    : 'required-fields-note'
+                }
+              />
+            )}
           />
           <FieldError id="country-error" message={errors.country?.message} />
         </div>
