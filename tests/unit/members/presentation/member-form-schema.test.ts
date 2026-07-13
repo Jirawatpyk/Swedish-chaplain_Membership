@@ -97,6 +97,16 @@ describe('buildMemberFormSchema — client mirrors server', () => {
   it('rejects a negative turnover on the turnover_thb field', () => {
     expect(issuePaths({ ...BASE, turnover_thb: '-5' })).toContain('turnover_thb');
   });
+
+  // Review fix (Task 7): `turnover_thb` is a `bigint` column (no decimals).
+  // The client rule used to be `Number.isFinite`, which let a fractional
+  // value like "1.5" pass the client and reach the server's
+  // `z.number().int()`, producing a 400 `invalid_body` that
+  // `mapMemberCreateServerError` has no case for — a generic toast with
+  // nothing highlighted. Reject it inline instead.
+  it('rejects a non-integer turnover on the turnover_thb field', () => {
+    expect(issuePaths({ ...BASE, turnover_thb: '1.5' })).toContain('turnover_thb');
+  });
 });
 
 // PR-B task 7 — registered_capital_thb is a SEPARATE field from turnover_thb
@@ -121,6 +131,13 @@ describe('buildMemberFormSchema — registered_capital_thb (PR-B task 7)', () =>
 
   it('is optional — omitting it entirely is valid', () => {
     expect(issuePaths(BASE)).not.toContain('registered_capital_thb');
+  });
+
+  // Review fix (Task 7) — same bigint-column reasoning as turnover_thb above.
+  it('rejects a non-integer registered capital on its own field', () => {
+    expect(issuePaths({ ...BASE, registered_capital_thb: '1.5' })).toContain(
+      'registered_capital_thb',
+    );
   });
 });
 

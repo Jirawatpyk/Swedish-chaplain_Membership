@@ -305,6 +305,20 @@ describe('<Combobox> — allowCustomValue contract (a11y re-review, PR-B task 6)
     expect(screen.queryByText(/^Use /)).toBeNull();
   });
 
+  // Task 6 data-path review fix: the trigger used to render
+  // `selected?.label ?? placeholder`, where `selected = options.find(o =>
+  // o.value === value)`. A value committed via `allowCustomValue` is NOT in
+  // `options` — it only ever displayed because `address-section.tsx`
+  // re-injects it through its own `withCurrentValue` helper. Pinned here, at
+  // the primitive, WITHOUT that re-injection, so the next `allowCustomValue`
+  // consumer can't reproduce the "where did what I typed go?" bug.
+  it('displays a committed custom value on the trigger even when the caller never re-injects it into `options`', () => {
+    render(<CreatableHarness initial="Farmland" />);
+    const trigger = screen.getByRole('combobox');
+    expect(trigger).toHaveTextContent('Farmland');
+    expect(trigger).not.toHaveTextContent('Select a country…');
+  });
+
   it('with allowCustomValue off (the default), the option set stays closed: emptyMessage renders, and Enter on unmatched text commits nothing', async () => {
     const onChangeSpy = vi.fn();
     render(<Harness onChangeSpy={onChangeSpy} />);

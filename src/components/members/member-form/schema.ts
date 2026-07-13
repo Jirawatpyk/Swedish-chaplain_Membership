@@ -112,12 +112,18 @@ export function buildMemberFormSchema(
       (v) => v === undefined || (Number.isInteger(v) && v >= 1800 && v <= currentYear),
       tf('errors.foundedYear'),
     ),
+  // Review fix (Task 7): `turnover_thb` is a `bigint` column (no decimals),
+  // and the SERVER schema requires `z.number().int()`. This used to check
+  // `Number.isFinite`, so a fractional value like "1.5" passed here and only
+  // got rejected by the server's `int()` rule — a 400 `invalid_body` that
+  // `mapMemberCreateServerError` has no case for, surfacing as a generic
+  // toast with nothing highlighted. `Number.isInteger` rejects it inline.
   turnover_thb: z
     .union([z.string(), z.number()])
     .optional()
     .transform((v) => (v === '' || v === undefined ? undefined : Number(v)))
     .refine(
-      (v) => v === undefined || (Number.isFinite(v) && v >= 0),
+      (v) => v === undefined || (Number.isInteger(v) && v >= 0),
       tf('errors.turnover'),
     ),
   // PR-B task 7 — ทุนจดทะเบียน (registered capital). A SEPARATE field from
@@ -126,12 +132,14 @@ export function buildMemberFormSchema(
   // auto tier-upgrade suggestions; renaming it would silently re-point a
   // membership-tier business rule at a different quantity. See the hint
   // rendered under turnover_thb in company-section.tsx.
+  // Review fix (Task 7) — same bigint-column / server-int() reasoning as
+  // turnover_thb above.
   registered_capital_thb: z
     .union([z.string(), z.number()])
     .optional()
     .transform((v) => (v === '' || v === undefined ? undefined : Number(v)))
     .refine(
-      (v) => v === undefined || (Number.isFinite(v) && v >= 0),
+      (v) => v === undefined || (Number.isInteger(v) && v >= 0),
       tf('errors.registeredCapital'),
     ),
   plan_id: z.string().min(1, tf('errors.required')),

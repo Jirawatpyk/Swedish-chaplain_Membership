@@ -318,7 +318,7 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
   it('renders plain text inputs for city/province/postal_code and never calls the lookup route', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    render(
+    const { unmount } = render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <MemberForm
           plans={PLANS}
@@ -342,6 +342,71 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
       await new Promise((r) => setTimeout(r, 400));
     });
     expect(fetchMock).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  // Task 6 data-path review fix: the reason the `!countryIsTH` branch calls
+  // `setValue('sub_district', '', { shouldDirty: true })` is that
+  // `create-member-client.tsx`'s `toPayload` forwards `sub_district`
+  // unconditionally — a stale Thai sub-district would otherwise ride along
+  // on a switched-to-non-TH member's POST. The test above only proved the
+  // WIDGET unmounts; it never asserted the underlying form VALUE actually
+  // clears. Seed a TH address WITH a sub_district, switch country away from
+  // TH through the real UI, and read the value back via a submitted payload
+  // (the field itself is gone from the DOM once non-TH, so this is the only
+  // way to observe it).
+  it('clears the stale sub_district VALUE (not just the widget) when the country is switched away from TH', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const onSubmit = vi.fn();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={PLANS}
+          defaultPlanYear={2026}
+          onSubmit={onSubmit}
+          submitting={false}
+          mode="edit"
+          initialValues={{
+            company_name: 'Acme',
+            country: 'TH',
+            plan_id: 'premium',
+            address_line1: '99 Nimman Rd',
+            postal_code: '10330',
+            province: 'เชียงใหม่',
+            city: 'อำเภอเมืองเชียงใหม่',
+            sub_district: 'ศรีภูมิ',
+            primary_contact: {
+              first_name: 'A',
+              last_name: 'B',
+              email: 'a@b.com',
+              preferred_language: 'en',
+            },
+          }}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+
+    fireEvent.click(byId('country'));
+    const listbox = await screen.findByRole('listbox');
+    fireEvent.click(within(listbox).getByText('Sweden'));
+
+    // The widget unmounts on the very next render...
+    await waitFor(() => expect(document.getElementById('sub_district')).toBeNull());
+
+    // ...but the underlying RHF value only clears once the debounced
+    // effect's non-TH branch actually runs — give it the full window.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0]?.[0]?.sub_district).toBe('');
   });
 });
 

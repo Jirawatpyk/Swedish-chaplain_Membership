@@ -210,7 +210,16 @@ export function Combobox({
         }
       >
         <span className={cn('truncate', !selected && 'text-muted-foreground')}>
-          {selected?.label ?? placeholder}
+          {/* Task 6 review fix: a value committed via `allowCustomValue` is
+              NOT in `options` (it was typed, not selected), so `selected`
+              above is `undefined` for it — display the raw committed value
+              instead of falling through to the placeholder. Fixed at the
+              primitive so a consumer opting into `allowCustomValue` never
+              has to re-inject the value into `options` itself (the trap
+              `address-section.tsx`'s `withCurrentValue` helper worked around
+              for its own three fields, but the next consumer would not know
+              to repeat). */}
+          {selected?.label ?? (allowCustomValue && value ? value : placeholder)}
         </span>
         <ChevronsUpDownIcon className="ml-2 size-4 shrink-0 opacity-50" aria-hidden="true" />
       </PopoverTrigger>
