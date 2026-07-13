@@ -67,15 +67,18 @@ test.describe('F8 — admin cycle-detail page (Phase 6 review-round 2 A1)', () =
       page.getByRole('heading', { level: 1 }).first(),
     ).toBeVisible({ timeout: 10_000 });
     // Member & Plan section landmark (Phase 6 review-round 1 +
-    // round-2 C2 — section landmarks for keyboard/SR navigation).
+    // round-2 C2 — section landmarks for keyboard/SR navigation). Give the
+    // same 10s headroom as the h1 above: the FIRST navigation to
+    // /admin/renewals/[cycleId] cold-compiles the route in dev/CI, so a default
+    // 5s can race the compile on the first spec to hit this page (was flaky).
     await expect(
       page.getByRole('region', { name: /member.*plan|plan.*member/i }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 10_000 });
     // CycleStatusBadge label — pill with translated cycle status
     // (Phase 6 review-round 2 C1 — i18n srSuffix for severity).
     await expect(
       page.getByText(/upcoming|reminded|awaiting|completed|lapsed|cancelled/i),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('admin views a bogus cycleId — empty-state UI', async ({ page }) => {

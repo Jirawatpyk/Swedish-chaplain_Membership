@@ -20,6 +20,7 @@
  * or the seed can't resolve the e2e fixtures (per the task's "robust spec,
  * don't block on running it" guidance). Run with `--workers=1`.
  */
+import type { Locator } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import {
@@ -27,6 +28,32 @@ import {
   cleanupPendingReactivationSeeds,
   type PendingSeedResult,
 } from './helpers/pending-reactivation-seed';
+
+/**
+ * Open a controlled Radix dialog by clicking its trigger button, resilient to
+ * the Next dev-mode hydration race: on slower engines (WebKit / mobile-safari)
+ * Playwright can click the server-rendered trigger BEFORE the client component
+ * (`PendingReactivationActions`) finishes hydrating, so its
+ * `onClick={() => setOpen(true)}` handler isn't attached yet and the click
+ * no-ops — the dialog never opens and the following `getByRole('alertdialog')`
+ * assertion times out. Retry the click until the dialog is visible; the trigger
+ * only sets `open = true`, so re-clicking is idempotent (and the guard skips the
+ * click once the dialog is already open, so we never click a covered trigger).
+ * Prod builds hydrate fast enough that a single click always lands — this only
+ * bites dev-mode e2e, so the hardening lives in the test, not the product.
+ */
+async function openDialogByTrigger(
+  trigger: Locator,
+  dialog: Locator,
+): Promise<void> {
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await expect(async () => {
+    if (!(await dialog.isVisible())) {
+      await trigger.click();
+    }
+    await expect(dialog).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+}
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -73,15 +100,16 @@ test.describe('F8 — admin pending-reactivation actions (070)', () => {
     await signInAsAdmin(page);
     await page.goto(`/admin/renewals/${seeded!.cycleId}`);
 
-    // The cycle is pending → the actions are present.
+    // The cycle is pending → the actions are present. Open the confirm dialog
+    // via the hydration-race-resistant helper (WebKit dev-mode: the first click
+    // can land pre-hydration and no-op).
     const approveBtn = page.getByRole('button', {
       name: /approve reactivation/i,
     });
-    await expect(approveBtn).toBeVisible({ timeout: 10_000 });
-    await approveBtn.click();
+    const dialog = page.getByRole('alertdialog');
+    await openDialogByTrigger(approveBtn, dialog);
 
     // Confirmation dialog opens; confirm.
-    const dialog = page.getByRole('alertdialog');
     await expect(dialog.getByRole('heading')).toBeVisible();
     await dialog.getByRole('button', { name: /^approve$/i }).click();
 
@@ -103,11 +131,10 @@ test.describe('F8 — admin pending-reactivation actions (070)', () => {
     await page.goto(`/admin/renewals/${seeded!.cycleId}`);
 
     const rejectBtn = page.getByRole('button', { name: /reject & refund/i });
-    await expect(rejectBtn).toBeVisible({ timeout: 10_000 });
-    await rejectBtn.click();
+    const dialog = page.getByRole('alertdialog');
+    await openDialogByTrigger(rejectBtn, dialog);
 
     // Destructive AlertDialog with a required reason textarea.
-    const dialog = page.getByRole('alertdialog');
     await expect(dialog.getByRole('heading')).toBeVisible();
     const reason = dialog.getByRole('textbox');
     await reason.fill('E2E: duplicate payment — reject and refund');
