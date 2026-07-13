@@ -169,28 +169,48 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // `useWatch` (no `defaultValue`, per the comment above) read RHF's
   // `defaultValues` on the very FIRST render — in edit mode that is the
   // member's already-SAVED postcode, not something the admin just typed.
-  // Without this guard, the effect below fired ~300ms after every edit-form
+  // Without a guard, the effect below fires ~300ms after every edit-form
   // load, and for any unambiguous saved postcode (≈82% of them) silently
-  // overwrote province/city/sub_district with "auto-filled" values, marked
-  // them dirty, and announced a change the admin never made — the exact
+  // overwrites province/city/sub_district with "auto-filled" values, marks
+  // them dirty, and announces a change the admin never made — the exact
   // failure this whole feature exists to prevent, on its most common
-  // non-create interaction. Skip the effect's first invocation; only react
-  // to a value that changed AFTER mount (an actual admin edit).
+  // non-create interaction.
   //
-  // Deliberately NOT reset in a cleanup function: a cleanup that flips this
-  // back to `false` would also fire on the FIRST genuine post-mount
-  // dependency change (React always runs the previous invocation's cleanup
-  // right before the next one) and re-arm the skip on every single
-  // invocation forever, silently breaking the lookup for every admin
-  // keystroke, not just the mount one — worse than the bug being fixed. The
-  // one known trade-off: React 19 `reactStrictMode: true` (next.config.ts)
-  // replays effects once in dev (setup → cleanup → setup again) on the SAME
-  // mount, and since this ref has no cleanup to undo it, that replay's
-  // second invocation sees `hasMountedRef.current` already `true` and runs
-  // the lookup body once against the mount-time value — dev-only console
-  // noise (an extra fetch call), not a data-loss risk, and Vitest/RTL's
-  // `render()` doesn't wrap in StrictMode so it isn't visible in this suite.
-  const hasMountedRef = useRef(false);
+  // a11y re-review fix: the original guard here was a plain
+  // `hasMountedRef = useRef(false)` flipped to `true` on the effect's first
+  // invocation, with no cleanup. That guard is NOT StrictMode-safe, and
+  // this is a LIVE bug, not "dev-only console noise" — `next.config.ts`'s
+  // `reactStrictMode: true` replays every effect once on mount (setup →
+  // cleanup → setup again), including in dev, and **UAT runs against the
+  // dev server on :3100**. The boolean flips `true` on the replay's FIRST
+  // setup; its SECOND setup then sees `hasMountedRef.current` already
+  // `true` and runs the full lookup body against the mount-time value —
+  // on the dev server that IS the Critical 2 bug happening again (a real
+  // `setValue` + dirty flags + live-region announcement a tester will see
+  // and report), not noise. (Production is genuinely unaffected — React
+  // never double-invokes effects outside dev — so this was never a
+  // data-corruption risk in prod, only a dev/UAT-visible one.)
+  //
+  // A cleanup-based fix (reset the ref back to `false` in the effect's own
+  // cleanup) was tried and reverted: React runs the PREVIOUS invocation's
+  // cleanup before EVERY next invocation, not just the StrictMode replay
+  // one — so the reset re-arms the skip on the admin's very first genuine
+  // keystroke too, permanently breaking the lookup.
+  //
+  // Fix: key on the *value* instead of "have I run yet". `lastLookupKeyRef`
+  // is seeded once during render (`??=` — a no-op on every render after the
+  // first, including StrictMode's double-render) with the mount-time
+  // `countryIsTH|postalCode` pair. The effect recomputes the same key on
+  // every invocation and compares: the initial setup sees its own
+  // just-seeded key and skips (no cleanup scheduled); a StrictMode replay
+  // recomputes an IDENTICAL key (nothing in the deps actually changed
+  // between the two invocations) and also skips — idempotent, no
+  // cleanup-based reset needed. Only a REAL change (the admin edits the
+  // postcode, or `country` flips) produces a different key, which updates
+  // the ref and lets the body run. The reset/clear paths still fire,
+  // because clearing the field changes the key too.
+  const lastLookupKeyRef = useRef<string | null>(null);
+  lastLookupKeyRef.current ??= `${countryIsTH}|${postalCodeValue.trim()}`;
 
   // Debounced postcode → candidates lookup, PLUS the country-switch-away/
   // malformed-code reset. All of it is routed through the scheduled
@@ -201,10 +221,9 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // a callback function"). A 300ms delay on the reset path is imperceptible
   // (it is a state cleanup, not something the admin is waiting to see).
   useEffect(() => {
-    if (!hasMountedRef.current) {
-      hasMountedRef.current = true;
-      return;
-    }
+    const key = `${countryIsTH}|${postalCodeValue.trim()}`;
+    if (key === lastLookupKeyRef.current) return; // mount value, or a no-op replay
+    lastLookupKeyRef.current = key;
 
     let cancelled = false;
     const controller = new AbortController();

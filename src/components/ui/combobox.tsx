@@ -46,7 +46,22 @@
  * postcode) — there, "no match" must never mean "no way forward". The
  * search box is CONTROLLED (`CommandInput value/onValueChange`) so the
  * typed text is available to render a "Use «text»" `CommandItem`; that item
- * is `forceMount`ed so cmdk's own relevance filter can never hide it.
+ * is `forceMount`ed so cmdk's own relevance filter can never hide it, and
+ * because cmdk tracks its keyboard-navigation "selected" item via a plain
+ * DOM query over rendered `[cmdk-item]` elements (not a React-level list),
+ * the forceMounted item is a real member of the arrow-key rotation like any
+ * other option — `role="option"`, `aria-selected` toggles onto it exactly
+ * like a normal item, and Enter commits whichever item currently holds
+ * that state, so it is never a mouse-only affordance.
+ *
+ * `ComboboxProps` makes `customValueLabel` a REQUIRED companion of
+ * `allowCustomValue` at the type level (a discriminated union — see below),
+ * not an optional prop with an untranslated runtime fallback. A hardcoded
+ * `Use "…"` string living in `components/ui/` is invisible to
+ * `pnpm check:i18n` (it only scans `i18n/messages/*.json` + `t(...)`
+ * call-sites), so the type checker is the enforcement mechanism instead:
+ * a caller that sets `allowCustomValue` without `customValueLabel` fails
+ * to compile.
  */
 import * as React from 'react';
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
@@ -71,7 +86,7 @@ export type ComboboxOption = {
   readonly group?: string;
 };
 
-export type ComboboxProps = {
+type ComboboxCommonProps = {
   readonly options: readonly ComboboxOption[];
   readonly value: string;
   readonly onChange: (next: string) => void;
@@ -89,19 +104,32 @@ export type ComboboxProps = {
   readonly 'aria-invalid'?: boolean | undefined;
   readonly 'aria-required'?: boolean | undefined;
   readonly disabled?: boolean | undefined;
-  /** Opt-in creatable-combobox affordance — see the file-header comment.
-   * Off by default. */
-  readonly allowCustomValue?: boolean | undefined;
-  /** Formats the "commit the typed text" item's label, e.g.
-   * `(typed) => tf('useTypedValueLabel', { value: typed })`. Falls back to
-   * an untranslated `Use "<text>"` if `allowCustomValue` is set without
-   * this — every real call site should pass a translated one. */
-  readonly customValueLabel?: ((typed: string) => string) | undefined;
 };
 
-function defaultCustomValueLabel(typed: string): string {
-  return `Use "${typed}"`;
-}
+/**
+ * Discriminated on `allowCustomValue` (a11y re-review Minor fix): a bare
+ * `allowCustomValue?: boolean` + `customValueLabel?: fn` pair let a caller
+ * opt into the creatable-combobox affordance while forgetting the label,
+ * silently falling back to a hardcoded English string that `pnpm
+ * check:i18n` cannot see (it lives in `components/ui/`, not
+ * `i18n/messages/*.json`). Splitting into a union makes that combination a
+ * COMPILE error instead — the next consumer cannot get it wrong.
+ */
+export type ComboboxProps =
+  | (ComboboxCommonProps & {
+      /** Off by default — see the file-header comment. */
+      readonly allowCustomValue?: false | undefined;
+      readonly customValueLabel?: undefined;
+    })
+  | (ComboboxCommonProps & {
+      /** Opt-in creatable-combobox affordance — see the file-header comment. */
+      readonly allowCustomValue: true;
+      /** Formats the "commit the typed text" item's label, e.g.
+       * `(typed) => tf('useTypedValueLabel', { value: typed })`. REQUIRED
+       * whenever `allowCustomValue` is set — there is no untranslated
+       * fallback; every call site must pass a translated one. */
+      readonly customValueLabel: (typed: string) => string;
+    });
 
 export function Combobox({
   options,
@@ -241,11 +269,16 @@ export function Combobox({
                   ))}
                 </CommandGroup>
               ))}
-              {showCustomValueItem && (
+              {showCustomValueItem && customValueLabel && (
                 // `forceMount`: cmdk's own relevance filter would otherwise
                 // hide this item whenever the typed text doesn't fuzzy-match
                 // its own value string — it must ALWAYS be selectable while
                 // visible, that's the whole point (Critical 1 fix).
+                // `customValueLabel &&`: narrows the union's `| undefined`
+                // for the type checker. Never actually undefined here at
+                // runtime — `showCustomValueItem` is only true when
+                // `allowCustomValue` is, and the `ComboboxProps` union makes
+                // `customValueLabel` required whenever `allowCustomValue` is.
                 <CommandItem
                   value={`__custom-value__${trimmedSearch}`}
                   forceMount
@@ -255,7 +288,7 @@ export function Combobox({
                   }}
                   className="cursor-pointer italic"
                 >
-                  {(customValueLabel ?? defaultCustomValueLabel)(trimmedSearch)}
+                  {customValueLabel(trimmedSearch)}
                 </CommandItem>
               )}
             </CommandList>

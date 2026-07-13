@@ -26,6 +26,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { MemberForm, type PlanOption } from '@/components/members/member-form';
@@ -379,6 +380,60 @@ describe('AddressSection — edit mode must not fire the lookup ceremony on moun
     // Give the 300ms debounce every chance to fire — RED against the old
     // code (which watches `postal_code`'s mount-time value via `useWatch`
     // and treats it as a change) needs this to actually observe the bug.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(liveRegionText()).toBe('');
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
+    expect(byId('province')).toHaveTextContent('เชียงใหม่');
+    expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
+    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+  });
+});
+
+describe('AddressSection — edit mode must not fire the lookup ceremony on mount under React StrictMode (a11y re-review, dev-server-visible regression)', () => {
+  it('does not call the lookup on the StrictMode setup→cleanup→setup mount replay', async () => {
+    // Same fixture as the plain (non-StrictMode) Critical 2 regression test
+    // above — a pre-populated, resolvable postcode paired with a DIFFERENT
+    // real Thai address, so a silent overwrite is unmistakable. The only
+    // difference is the `<StrictMode>` wrapper: `next.config.ts`'s
+    // `reactStrictMode: true` replays every effect once on mount (setup →
+    // cleanup → setup again) on the dev server — which is where UAT runs
+    // (:3100) — and RTL's plain `render()` does NOT reproduce that replay,
+    // so the test above alone cannot catch a guard that only survives a
+    // SINGLE setup.
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <StrictMode>
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <MemberForm
+            plans={PLANS}
+            defaultPlanYear={2026}
+            onSubmit={vi.fn()}
+            submitting={false}
+            mode="edit"
+            initialValues={{
+              company_name: 'Acme',
+              country: 'TH',
+              address_line1: '99 Nimman Rd',
+              postal_code: '10330',
+              province: 'เชียงใหม่',
+              city: 'อำเภอเมืองเชียงใหม่',
+              sub_district: 'ศรีภูมิ',
+            }}
+          />
+        </NextIntlClientProvider>
+      </StrictMode>,
+    );
+
+    // Give the 300ms debounce every chance to fire, same as the plain test.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 500));
     });
