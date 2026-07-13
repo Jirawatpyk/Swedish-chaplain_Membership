@@ -21,6 +21,8 @@ describe('suspended denylist (allow-by-default)', () => {
     expect(isSuspendedDeniedRoute('/portal/broadcasts/newsletter')).toBe(false));
   it('allows reading an existing broadcast /portal/broadcasts/[id]', () =>
     expect(isSuspendedDeniedRoute('/portal/broadcasts/abc123')).toBe(false));
+  it('allows POST /api/portal/broadcasts/acknowledge (GDPR Art.7 consent ack, not benefit consumption)', () =>
+    expect(isSuspendedDeniedRoute('/api/portal/broadcasts/acknowledge')).toBe(false));
 });
 
 describe('terminated allowlist (deny-by-default)', () => {

@@ -74,13 +74,23 @@ export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
 ];
 
 /**
- * Denylist for a `suspended` member (allow-by-default). The use-case gates
- * (Tasks 4-5) are the real enforcement; this is UX — redirect/block before
- * the member even attempts the action.
+ * Denylist for a `suspended` member (allow-by-default). The real enforcement
+ * for broadcast submission is the `submitBroadcast` use-case precondition
+ * gate (F7 Task 5) — this denylist is UX only (redirect the compose PAGE
+ * before the member even starts drafting).
+ *
+ * `/api/portal/broadcasts` was REMOVED from this list (review finding,
+ * 2026-07-14): it protected nothing — the only route under
+ * `/api/portal/broadcasts/` is `acknowledge/route.ts`, a GDPR Art. 7
+ * marketing-consent acknowledgement, NOT broadcast submission (submit goes
+ * through the F7 `submitBroadcast` use-case, not this API path). Worse, it
+ * wrongly BLOCKED `POST /api/portal/broadcasts/acknowledge` for suspended
+ * members — acknowledging a received broadcast is not benefit consumption,
+ * so it must stay reachable even while suspended (a suspended member still
+ * needs to be able to dismiss the consent banner).
  */
 export const SUSPENDED_DENYLIST_PREFIXES: readonly string[] = [
   '/portal/broadcasts/new',
-  '/api/portal/broadcasts', // compose/submit API surface
 ];
 
 /**
