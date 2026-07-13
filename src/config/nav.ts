@@ -68,7 +68,14 @@ export interface NavItem {
  * registration in the resolver + layout — prevents "ghost" flags that
  * silently default to `false` and hide items unintentionally.
  */
-export type NavVisibilityFlag = 'eventcreateConfigured';
+export type NavVisibilityFlag =
+  | 'eventcreateConfigured'
+  // Set from `env.features.f7Broadcasts` / `f6EventCreate` by the staff
+  // layout (016). When the feature kill-switch is OFF, the corresponding
+  // top-level nav item is dropped so the sidebar never shows a link that
+  // would 503 (F7 proxy) / 404 (F6 page `notFound()`) on click.
+  | 'broadcastsEnabled'
+  | 'eventsEnabled';
 
 export type NavVisibilityFlags = Readonly<
   Partial<Record<NavVisibilityFlag, boolean>>
@@ -238,6 +245,10 @@ export const staffNavConfig: NavConfig = {
           icon: MegaphoneIcon,
           href: '/admin/broadcasts',
           activePattern: '/admin/broadcasts',
+          // 016 — hide when FEATURE_F7_BROADCASTS is off (the /admin/broadcasts
+          // routes 503 via the proxy kill-switch, so a visible link is a dead
+          // end). Member-side E-Blast is already gated in the Benefits page.
+          visibilityFlag: 'broadcastsEnabled',
         },
         // F6 Events — EventCreate-imported event list + attendee detail.
         // Manager has read-only access via the same route (FR-035).
@@ -246,6 +257,9 @@ export const staffNavConfig: NavConfig = {
           icon: CalendarDaysIcon,
           href: '/admin/events',
           activePattern: '/admin/events',
+          // 016 — hide when FEATURE_F6_EVENTCREATE is off (the /admin/events
+          // pages call `notFound()` when the flag is off, so a visible link 404s).
+          visibilityFlag: 'eventsEnabled',
         },
       ],
     },

@@ -153,17 +153,31 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
     cfg.sections.flatMap((s) => s.items.map((i) => (i as NavItem).href));
 
   it('admin sees every staff entry incl. both admin-only Settings pages + the Compliance erasure log', () => {
-    const filtered = filterNavConfig(staffNavConfig, {}, 'admin');
+    // 016 — the Broadcasts/Events top-level items now carry a visibilityFlag,
+    // so the "sees everything" case passes the feature flags ON (the normal
+    // runtime state when F6/F7 are enabled); otherwise those items + the whole
+    // Engagement section would drop.
+    const filtered = filterNavConfig(
+      staffNavConfig,
+      { broadcastsEnabled: true, eventsEnabled: true },
+      'admin',
+    );
     // 7 sections survive — the Compliance section has an admin-visible item.
     expect(filtered.sections).toHaveLength(7);
     const all = hrefs(filtered);
+    expect(all).toContain('/admin/broadcasts');
+    expect(all).toContain('/admin/events');
     expect(all).toContain('/admin/settings/broadcasts');
     expect(all).toContain('/admin/settings/integrations/eventcreate');
     expect(all).toContain('/admin/compliance/erasure-log');
   });
 
   it('manager drops the 2 admin-only Settings pages + the whole Compliance section, keeps everything else', () => {
-    const filtered = filterNavConfig(staffNavConfig, {}, 'manager');
+    const filtered = filterNavConfig(
+      staffNavConfig,
+      { broadcastsEnabled: true, eventsEnabled: true },
+      'manager',
+    );
     // The Compliance section's only item is admin-only → the section empties →
     // it is dropped. Settings survives (Invoice Settings + Renewal Schedules
     // stay manager-readable, rendered read-only), so 6 sections remain and
@@ -185,6 +199,57 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
     expect(all).toContain('/admin/invoices');
     expect(all).toContain('/admin/credit-notes');
     expect(all).toContain('/admin/audit');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 016 — F6 (Events) / F7 (Broadcasts) feature-flag nav gating. The staff
+// layout resolves `broadcastsEnabled` / `eventsEnabled` from
+// `env.features.f7Broadcasts` / `f6EventCreate` and passes them here. When a
+// feature kill-switch is OFF, its top-level nav item must disappear so the
+// sidebar never shows a link that 503s (F7 proxy) / 404s (F6 `notFound()`) on
+// click. Exercised against the LIVE staffNavConfig (not a synthetic one).
+// ---------------------------------------------------------------------------
+describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)', () => {
+  const staffHrefs = (flags: Parameters<typeof filterNavConfig>[1]) =>
+    filterNavConfig(staffNavConfig, flags, 'admin').sections.flatMap((s) =>
+      s.items.map((i) => (i as NavItem).href),
+    );
+
+  it('both flags ON → Broadcasts + Events nav items present', () => {
+    const all = staffHrefs({ broadcastsEnabled: true, eventsEnabled: true });
+    expect(all).toContain('/admin/broadcasts');
+    expect(all).toContain('/admin/events');
+  });
+
+  it('F7 OFF → Broadcasts hidden, Events still shown', () => {
+    const all = staffHrefs({ broadcastsEnabled: false, eventsEnabled: true });
+    expect(all).not.toContain('/admin/broadcasts');
+    expect(all).toContain('/admin/events');
+  });
+
+  it('F6 OFF → Events hidden, Broadcasts still shown', () => {
+    const all = staffHrefs({ broadcastsEnabled: true, eventsEnabled: false });
+    expect(all).not.toContain('/admin/events');
+    expect(all).toContain('/admin/broadcasts');
+  });
+
+  it('both OFF → the Engagement section drops entirely (no orphan header), 7→6 sections', () => {
+    const filtered = filterNavConfig(
+      staffNavConfig,
+      { broadcastsEnabled: false, eventsEnabled: false },
+      'admin',
+    );
+    expect(filtered.sections.map((s) => s.titleKey)).not.toContain(
+      'nav.staff.sections.engagement',
+    );
+    expect(filtered.sections).toHaveLength(6);
+  });
+
+  it('absent flags default to HIDDEN (closed-union safety — a layout that forgets to pass them never leaks a dead link)', () => {
+    const all = staffHrefs({});
+    expect(all).not.toContain('/admin/broadcasts');
+    expect(all).not.toContain('/admin/events');
   });
 });
 
