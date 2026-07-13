@@ -7,11 +7,11 @@
  * directly (FR-037 archive-race guard).
  *
  * The snapshot's `address` is composed from the F3 `members` structured
- * postal columns (`address_line1/2`, `city`, `province`, `postal_code`,
- * `country`) via `composeBuyerAddress`, so the buyer block satisfies the
- * Thai Revenue Code §86/§87 full-address requirement (not just a country
- * code — the prior stub). The primary contact's first/last name + email
- * come from `contacts`.
+ * postal columns (`address_line1/2`, `sub_district`, `city`, `province`,
+ * `postal_code`, `country`) via `composeBuyerAddress`, so the buyer block
+ * satisfies the Thai Revenue Code §86/§87 full-address requirement (not
+ * just a country code — the prior stub). The primary contact's first/last
+ * name + email come from `contacts`.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { isVatRegistrantEntityType } from '@/lib/legal-entity';
