@@ -6,8 +6,8 @@
 --    auto tier-upgrade suggestions. Both columns coexist.
 --
 -- 2. `sub_district` (แขวง/ตำบล) is the Thai address level the existing five
---    address columns cannot express. It is threaded onto the §86/4 buyer
---    address by `composeBuyerAddress` — a Bangkok address reading
+--    address columns cannot express. Task 2 threads this onto the §86/4
+--    buyer address via `composeBuyerAddress` — a Bangkok address reading
 --    "เขตคลองเตย กรุงเทพมหานคร 10110" with no แขวง is not a complete address.
 --    Do NOT overload `address_line2`: legacy rows hold building/floor/soi
 --    there, and one column with two meanings is unfixable later.

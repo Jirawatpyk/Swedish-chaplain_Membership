@@ -27,12 +27,16 @@ const member: MemberBackupRow = {
   isHeadOffice: true,
   website: null,
   foundedYear: 1999,
+  // 058 / PR-B — ทุนจดทะเบียน, a NEW field distinct from turnoverThb.
+  registeredCapitalThb: 5_000_000,
   plan: 'Gold',
   planYear: 2026,
   registrationFeePaid: true,
   status: 'active',
   addressLine1: '1 Road, "Suite 2"',
   addressLine2: null,
+  // 058 / PR-B — แขวง/ตำบล, sits between address_line2 and city.
+  subDistrict: 'คลองตันเหนือ',
   city: 'Bangkok',
   province: null,
   postalCode: '10110',
@@ -52,7 +56,7 @@ describe('buildMembersCsv', () => {
     expect(csv.startsWith(BOM)).toBe(true);
     const firstLine = csv.slice(1).split('\r\n')[0];
     expect(firstLine).toBe(
-      '"member_number","company_name","legal_entity_type","tax_id","is_head_office","website","founded_year","plan","plan_year","registration_fee_paid","status","address_line1","address_line2","city","province","postal_code","country","preferred_locale","last_activity_at","risk_band","notes","created_at","archived_at","erased_at"',
+      '"member_number","company_name","legal_entity_type","tax_id","is_head_office","website","founded_year","registered_capital_thb","plan","plan_year","registration_fee_paid","status","address_line1","address_line2","sub_district","city","province","postal_code","country","preferred_locale","last_activity_at","risk_band","notes","created_at","archived_at","erased_at"',
     );
     // header-only file still ends with one CRLF
     expect(csv.endsWith('\r\n')).toBe(true);
@@ -73,6 +77,21 @@ describe('buildMembersCsv', () => {
     const dataLine = csv.slice(1).split('\r\n')[1]!;
     expect(dataLine).toContain('""'); // website null
     expect(dataLine).toContain('"true"');
+  });
+
+  it('renders registered_capital_thb and sub_district (058 / PR-B new columns)', () => {
+    const csv = buildMembersCsv([member]);
+    // registered_capital_thb sits right after founded_year.
+    expect(csv).toContain('"1999","5000000"');
+    // sub_district sits between address_line2 and city.
+    expect(csv).toContain('"","คลองตันเหนือ","Bangkok"');
+  });
+
+  it('renders registered_capital_thb and sub_district as empty cells when null', () => {
+    const csv = buildMembersCsv([{ ...member, registeredCapitalThb: null, subDistrict: null }]);
+    const dataLine = csv.slice(1).split('\r\n')[1]!;
+    expect(dataLine).toContain('"1999",""');
+    expect(dataLine).toContain('"","","Bangkok"');
   });
 });
 

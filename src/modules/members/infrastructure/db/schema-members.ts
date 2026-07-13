@@ -106,8 +106,10 @@ export const members = pgTable(
     province: text('province'),
     postalCode: text('postal_code'),
     // 058 / PR-B — แขวง/ตำบล. Sits BETWEEN address_line2 and city in a Thai
-    // address, and is threaded onto the §86/4 buyer address by
-    // composeBuyerAddress. `city` holds the district (อำเภอ/เขต).
+    // address. Task 2 threads this onto the §86/4 buyer address via
+    // composeBuyerAddress — a Bangkok address reading "เขตคลองเตย
+    // กรุงเทพมหานคร 10110" with no แขวง is not a complete address. `city`
+    // holds the district (อำเภอ/เขต).
     subDistrict: text('sub_district'),
 
     // State

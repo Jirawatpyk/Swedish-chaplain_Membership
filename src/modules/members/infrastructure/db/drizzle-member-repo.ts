@@ -133,7 +133,8 @@ function applyMemberPatch(
   if (patch.notes !== undefined) set.notes = patch.notes;
   if (patch.taxId !== undefined) set.taxId = patch.taxId;
   if (patch.turnoverThb !== undefined) set.turnoverThb = patch.turnoverThb;
-  if (patch.registeredCapitalThb !== undefined) set.registeredCapitalThb = patch.registeredCapitalThb;
+  if (patch.registeredCapitalThb !== undefined)
+    set.registeredCapitalThb = patch.registeredCapitalThb;
   if (patch.foundedYear !== undefined) set.foundedYear = patch.foundedYear;
   if (patch.addressLine1 !== undefined) set.addressLine1 = patch.addressLine1;
   if (patch.addressLine2 !== undefined) set.addressLine2 = patch.addressLine2;
