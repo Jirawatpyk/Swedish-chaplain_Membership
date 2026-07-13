@@ -258,6 +258,80 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     if (r.allowed) expect(r.reason).toBe('suspended_route_allowed');
   });
 
+  // 059-membership-suspension Task 8 — proves the `membership_suspended_
+  // action_blocked` enum value exists live (migration 0245) AND that it is
+  // discriminated from `lapsed_member_action_blocked` (which the earlier
+  // "terminated member" test above still exercises).
+  it('cycle in awaiting_payment (suspended) + denylisted /portal/broadcasts/new → blocked + emits membership_suspended_action_blocked (Task 8)', async () => {
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const correlationId = randomUUID();
+    const r = await checkPortalAccess(deps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: activeMemberId,
+      pathname: '/portal/broadcasts/new',
+      actorUserId: user.userId,
+      correlationId,
+    });
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) {
+      expect(r.reason).toBe('suspended_route_blocked');
+      expect(r.cycleId).toBe(activeCycleId);
+    }
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, correlationId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.eventType).toBe('membership_suspended_action_blocked');
+    expect(rows[0]?.payload).toMatchObject({
+      cycle_id: activeCycleId,
+      member_id: activeMemberId,
+      blocked_route: '/portal/broadcasts/new',
+      access_state: 'suspended',
+    });
+  });
+
+  // 059-membership-suspension Task 8 — proves the `membership_access_
+  // fail_open` enum value exists live (migration 0245). Forces the
+  // cyclesRepo read to throw while keeping every OTHER dep (crucially
+  // `auditEmitter`) real, so the emit round-trips through the actual
+  // Drizzle F8 audit adapter into Postgres.
+  it('cyclesRepo read failure → fail-open + emits membership_access_fail_open (Task 8, real audit adapter)', async () => {
+    const realDeps = makeRenewalsDeps(tenantA.ctx.slug);
+    const correlationId = randomUUID();
+    const throwingDeps = {
+      ...realDeps,
+      cyclesRepo: {
+        ...realDeps.cyclesRepo,
+        findLatestCycleForMember: async () => {
+          throw new Error('simulated connection reset (Task 8 fail-open proof)');
+        },
+      },
+    };
+    const r = await checkPortalAccess(throwingDeps, {
+      tenantId: tenantA.ctx.slug,
+      memberId: activeMemberId,
+      pathname: '/portal/dashboard',
+      actorUserId: user.userId,
+      correlationId,
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('fail_open');
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, correlationId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.eventType).toBe('membership_access_fail_open');
+    expect(rows[0]?.payload).toMatchObject({
+      member_id: activeMemberId,
+      blocked_route: '/portal/dashboard',
+      error: 'simulated connection reset (Task 8 fail-open proof)',
+    });
+  });
+
   it('cross-tenant: tenant B has no view of tenant A members → full', async () => {
     // tenant B context — none of A's members exist in B's RLS scope,
     // so findLatestCycleForMember returns null → full access.

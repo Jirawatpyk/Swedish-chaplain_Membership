@@ -347,6 +347,38 @@ describe('submit-broadcast — precondition (l) membership access (Task 5)', () 
     expect(counters.rateLimiterCalls).toBe(0);
   });
 
+  it('suspended member → emits broadcast_membership_suspended_blocked audit (Task 8)', async () => {
+    const counters = makeCallCounters();
+    const membershipAccess = makeMembershipAccess(
+      ok({ access: 'suspended', reason: 'unpaid' }),
+    );
+    const { deps, audit } = makeDeps(counters, membershipAccess);
+
+    await submitBroadcast(deps, baseInput);
+
+    expect(audit.emits).toHaveLength(1);
+    expect(audit.emits[0]).toMatchObject({
+      eventType: 'broadcast_membership_suspended_blocked',
+      payload: { memberId: baseInput.memberId },
+    });
+  });
+
+  it('terminated member ALSO emits broadcast_membership_suspended_blocked audit (Task 8)', async () => {
+    const counters = makeCallCounters();
+    const membershipAccess = makeMembershipAccess(
+      ok({ access: 'terminated', reason: 'grace_expired' }),
+    );
+    const { deps, audit } = makeDeps(counters, membershipAccess);
+
+    await submitBroadcast(deps, baseInput);
+
+    expect(audit.emits).toHaveLength(1);
+    expect(audit.emits[0]).toMatchObject({
+      eventType: 'broadcast_membership_suspended_blocked',
+      payload: { memberId: baseInput.memberId },
+    });
+  });
+
   it('full access member is NOT blocked by this precondition (control — reaches rate-limit)', async () => {
     const counters = makeCallCounters();
     const membershipAccess = makeMembershipAccess(

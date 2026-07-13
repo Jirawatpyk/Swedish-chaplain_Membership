@@ -30,8 +30,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { submitBroadcast, makeSubmitBroadcastDeps } from '@/modules/broadcasts';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { broadcasts } from '@/modules/broadcasts/infrastructure/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
@@ -151,6 +152,22 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
     // `insertDraft` — the whole point of gating BEFORE rate-limit/plan/
     // quota, not after.
     expect(await countBroadcastRowsForMember(memberId)).toBe(0);
+
+    // 059-membership-suspension Task 8 — proves the
+    // `broadcast_membership_suspended_blocked` enum value exists live
+    // (migration 0245) AND that the real `f7AuditAdapter` (wired via
+    // `makeSubmitBroadcastDeps`, no mock) actually persisted the row.
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'broadcast_membership_suspended_blocked'),
+        ),
+      );
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.payload).toMatchObject({ memberId });
   });
 
   it('member with a lapsed (ended-terminal) LATEST cycle → also blocked (access=terminated)', async () => {

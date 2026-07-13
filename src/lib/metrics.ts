@@ -1548,7 +1548,10 @@ export const broadcastsMetrics = {
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'
-      | 'member_halted_pending_review',
+      | 'member_halted_pending_review'
+      // 059-membership-suspension Task 8 — keep in sync with
+      // submit-broadcast.ts SubmitPrecondition
+      | 'membership_suspended',
   ): void {
     safeMetric(() => {
       counter(

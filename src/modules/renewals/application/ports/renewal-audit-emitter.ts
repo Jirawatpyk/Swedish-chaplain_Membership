@@ -192,6 +192,24 @@ export const F8_AUDIT_EVENT_TYPES = [
   // `source:'confirm'`). The timeline surfaces which writer made the
   // cycle payable.
   'renewal_entered_awaiting_payment',
+  // --- 059-membership-suspension Task 8 (2) — membership benefit-access
+  // forensic events emitted by `src/lib/lapsed-portal-scope.ts`
+  // (`checkPortalAccess`). Migration adds the 2 pgEnum values.
+  //
+  //   - `membership_suspended_action_blocked` — the SUSPENDED-member
+  //     counterpart of `lapsed_member_action_blocked` (which continues to
+  //     cover the TERMINATED-member block). Discriminating the two lets
+  //     dashboards separate "unpaid, still on allow-by-default denylist"
+  //     blocks from "grace-expired, deny-by-default allowlist" blocks —
+  //     previously both branches emitted the same event, hiding which
+  //     policy actually fired.
+  //   - `membership_access_fail_open` — emitted when `cyclesRepo.
+  //     findLatestCycleForMember` throws (DB blip) and the resolver fails
+  //     OPEN (allows the request rather than locking every member out).
+  //     Previously this path only pino-logged; a sustained fail-open
+  //     storm (e.g. a partial Neon outage) was invisible in audit_log.
+  'membership_suspended_action_blocked',
+  'membership_access_fail_open',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -200,9 +218,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 66
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 68
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 66';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 68';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1145,6 +1163,51 @@ export interface F8AuditPayloadShapes {
             | { readonly kind: 'at_risk_recompute'; readonly members_failed: number; readonly members_skipped_below_tenure?: number };
         }
     >;
+  };
+  /**
+   * 059-membership-suspension Task 8 — emitted from `checkPortalAccess`'s
+   * suspended-policy denylist branch (`src/lib/lapsed-portal-scope.ts`).
+   * Discriminated from `lapsed_member_action_blocked` (which now covers
+   * ONLY the terminated-policy allowlist branch) so dashboards can tell
+   * the two block reasons apart. `access_state` is always `'suspended'`
+   * for this event — the field exists for payload-shape symmetry with
+   * the resolver's own `PortalAccessDecision`, so a future
+   * generalisation of this event to cover both access states (should one
+   * ever be needed) would not require a payload-shape churn.
+   *
+   * IDs are plain `string` (not the module's branded `CycleId`/`MemberId`)
+   * because the emit site lives OUTSIDE `src/modules/renewals/` in the
+   * cross-cutting `src/lib/lapsed-portal-scope.ts` helper, which
+   * deliberately works in raw route/member strings rather than importing
+   * Domain brands from a sibling it doesn't otherwise depend on.
+   */
+  readonly membership_suspended_action_blocked: {
+    readonly cycle_id: string;
+    readonly member_id: string;
+    readonly blocked_route: string;
+    readonly access_state: 'suspended';
+    readonly action:
+      | 'GET'
+      | 'POST'
+      | 'PUT'
+      | 'PATCH'
+      | 'DELETE'
+      | 'HEAD'
+      | 'OPTIONS'
+      | null;
+  };
+  /**
+   * 059-membership-suspension Task 8 — emitted from `checkPortalAccess`'s
+   * fail-open branch when `cyclesRepo.findLatestCycleForMember` throws.
+   * No `cycle_id` — the read itself failed, so no cycle was ever
+   * resolved. `error` carries the caught error's message (never the raw
+   * error object — matches the existing `emitBlockedAudit` log-field
+   * convention of string-only error detail).
+   */
+  readonly membership_access_fail_open: {
+    readonly member_id: string;
+    readonly blocked_route: string;
+    readonly error: string;
   };
 }
 

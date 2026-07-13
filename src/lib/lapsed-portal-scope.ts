@@ -175,7 +175,7 @@ export async function checkPortalAccess(
     );
   } catch (e) {
     // FAIL OPEN on read errors — a DB blip must not lock every member out.
-    emitFailOpen(ctx, e);
+    emitFailOpen(deps, ctx, e);
     return { allowed: true, reason: 'fail_open' };
   }
 
@@ -193,7 +193,7 @@ export async function checkPortalAccess(
     if (isTerminatedAllowedRoute(ctx.pathname)) {
       return { allowed: true, reason: 'route_whitelisted' };
     }
-    await emitBlockedAudit(deps, ctx, cycle.cycleId);
+    await emitTerminatedBlockedAudit(deps, ctx, cycle.cycleId);
     return {
       allowed: false,
       reason: 'terminated_route_blocked',
@@ -205,7 +205,7 @@ export async function checkPortalAccess(
   if (!isSuspendedDeniedRoute(ctx.pathname)) {
     return { allowed: true, reason: 'suspended_route_allowed' };
   }
-  await emitBlockedAudit(deps, ctx, cycle.cycleId);
+  await emitSuspendedBlockedAudit(deps, ctx, cycle.cycleId);
   return {
     allowed: false,
     reason: 'suspended_route_blocked',
@@ -262,26 +262,13 @@ function matchesScopePrefix(pathname: string, prefix: string): boolean {
   return next === 0x2f || next === 0x3f;
 }
 
-async function emitBlockedAudit(
+/** Common try/log/swallow wrapper shared by the 3 emit sites below. */
+async function emitAuditSwallowingFailure(
   deps: PortalAccessDeps,
   ctx: PortalAccessContext,
-  cycleId: string,
+  event: F8AuditEvent<'lapsed_member_action_blocked' | 'membership_suspended_action_blocked' | 'membership_access_fail_open'>,
+  cycleId: string | null,
 ): Promise<void> {
-  // TODO(Task 8): discriminate `membership_suspended_action_blocked` from
-  // `lapsed_member_action_blocked` once the new enum value ships. For now
-  // BOTH the terminated and suspended blocked paths emit the existing
-  // (already-shipped) `lapsed_member_action_blocked` event.
-  const event: F8AuditEvent<'lapsed_member_action_blocked'> = {
-    type: 'lapsed_member_action_blocked',
-    payload: {
-      cycle_id: cycleId,
-      member_id: ctx.memberId,
-      blocked_route: ctx.pathname,
-      // R4-W3 (staff-review-2026-05-09): HTTP method / logical operation
-      // — null when caller does not pass it (legacy site).
-      action: ctx.action ?? null,
-    },
-  };
   try {
     await deps.auditEmitter.emit(event, {
       tenantId: ctx.tenantId,
@@ -308,21 +295,76 @@ async function emitBlockedAudit(
 }
 
 /**
+ * `terminated` deny-by-default block. Emits the F8 Phase 5 event that
+ * existed before Task 8 — kept as-is; Task 8 only added the SUSPENDED
+ * sibling below, it did not rename this one.
+ */
+async function emitTerminatedBlockedAudit(
+  deps: PortalAccessDeps,
+  ctx: PortalAccessContext,
+  cycleId: string,
+): Promise<void> {
+  const event: F8AuditEvent<'lapsed_member_action_blocked'> = {
+    type: 'lapsed_member_action_blocked',
+    payload: {
+      cycle_id: cycleId,
+      member_id: ctx.memberId,
+      blocked_route: ctx.pathname,
+      // R4-W3 (staff-review-2026-05-09): HTTP method / logical operation
+      // — null when caller does not pass it (legacy site).
+      action: ctx.action ?? null,
+    },
+  };
+  await emitAuditSwallowingFailure(deps, ctx, event, cycleId);
+}
+
+/**
+ * `suspended` allow-by-default denylist block (059-membership-suspension
+ * Task 8). Discriminated from `emitTerminatedBlockedAudit` above so
+ * dashboards can tell which policy fired — previously both branches
+ * emitted the same `lapsed_member_action_blocked` event.
+ */
+async function emitSuspendedBlockedAudit(
+  deps: PortalAccessDeps,
+  ctx: PortalAccessContext,
+  cycleId: string,
+): Promise<void> {
+  const event: F8AuditEvent<'membership_suspended_action_blocked'> = {
+    type: 'membership_suspended_action_blocked',
+    payload: {
+      cycle_id: cycleId,
+      member_id: ctx.memberId,
+      blocked_route: ctx.pathname,
+      access_state: 'suspended',
+      action: ctx.action ?? null,
+    },
+  };
+  await emitAuditSwallowingFailure(deps, ctx, event, cycleId);
+}
+
+/**
  * Fail-OPEN path: `cyclesRepo.findLatestCycleForMember` threw (DB blip).
  * `checkPortalAccess` allows the request rather than locking every member
- * out on a transient read failure — but the fail-open itself must stay
- * forensically visible, so it's logged here (fire-and-forget, swallowed
- * internally so a logging hiccup can never escalate into blocking the
- * request that already decided to fail open).
- *
- * TODO(Task 8): emit a `membership_access_fail_open` audit event once that
- * enum value + its migration ship — it does not exist yet.
+ * out on a transient read failure. The fail-open is ALWAYS logged
+ * (fire-and-forget, swallowed internally so a logging hiccup can never
+ * escalate into blocking the request that already decided to fail open),
+ * and — since 059-membership-suspension Task 8 — also emits a
+ * `membership_access_fail_open` audit row so a sustained fail-open storm
+ * (e.g. a partial Neon outage) is forensically visible, not just logged.
+ * The audit emit itself is best-effort: a throw here is caught by
+ * `emitAuditSwallowingFailure` and never escalates into blocking the
+ * request or masking the original read failure.
  */
-function emitFailOpen(ctx: PortalAccessContext, err: unknown): void {
+function emitFailOpen(
+  deps: PortalAccessDeps,
+  ctx: PortalAccessContext,
+  err: unknown,
+): void {
+  const message = err instanceof Error ? err.message : String(err);
   try {
     logger.warn(
       {
-        err: err instanceof Error ? err.message : String(err),
+        err: message,
         tenantId: ctx.tenantId,
         memberId: ctx.memberId,
         blockedRoute: ctx.pathname,
@@ -332,4 +374,18 @@ function emitFailOpen(ctx: PortalAccessContext, err: unknown): void {
   } catch {
     // Never let a logging failure escalate into blocking the request.
   }
+
+  const event: F8AuditEvent<'membership_access_fail_open'> = {
+    type: 'membership_access_fail_open',
+    payload: {
+      member_id: ctx.memberId,
+      blocked_route: ctx.pathname,
+      error: message,
+    },
+  };
+  // Fire-and-forget — `checkPortalAccess`'s catch block already decided to
+  // allow the request; this must never turn into an unhandled rejection
+  // or delay the response. `emitAuditSwallowingFailure` logs + swallows
+  // any emit failure internally.
+  void emitAuditSwallowingFailure(deps, ctx, event, null);
 }

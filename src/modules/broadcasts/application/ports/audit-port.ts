@@ -37,7 +37,9 @@
  *     (`broadcast_partially_sent`, migration 0220)
  *   - COMP-1 US2b content redaction: 1 event
  *     (`broadcast_content_redacted`, migration 0224)
- *   = 60 total. Static-assert at line ~170 (`extends 60`) is the
+ *   - 059-membership-suspension Task 8: 1 event
+ *     (`broadcast_membership_suspended_blocked`, migration 0245)
+ *   = 61 total. Static-assert below (`extends 61`) is the
  *   source of truth; the header summary is informational only and
  *   should be re-derived when the assert changes. R4.3 M-8 fixed
  *   the "10" → "11" double-count drift that R3.5 M-8 missed.
@@ -172,6 +174,13 @@ export const F7_AUDIT_EVENT_TYPES = [
   // reply_to_email/custom_recipient_emails) is tombstoned + their
   // `broadcast_deliveries` recipient email is anonymised. 5y retention.
   'broadcast_content_redacted',
+
+  // --- 059-membership-suspension Task 8 (migration 0245) — precondition (l)
+  // submit-block forensic event — 1 -----------------------------------------
+  // Emitted by `submitBroadcast` when the F8 membership-access gate
+  // (Task 5) rejects a suspended/terminated member's submission, BEFORE
+  // rate-limit/plan/quota. 5y retention (no tax-document overlap).
+  'broadcast_membership_suspended_blocked',
 ] as const;
 
 /**
@@ -187,7 +196,7 @@ export const F7_AUDIT_EVENT_TYPES = [
  * additions", so it summed to 60 while the real count was 59. Don't
  * re-introduce a hand-summed breakdown next to a self-checking assert.)
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 60
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 61
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;

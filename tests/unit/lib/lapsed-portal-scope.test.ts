@@ -198,7 +198,7 @@ describe('checkPortalAccess — suspended policy (allow-by-default)', () => {
     if (r.allowed) expect(r.reason).toBe('suspended_route_allowed');
   });
 
-  it('awaiting_payment + denylisted /portal/broadcasts/new → blocked + emits audit', async () => {
+  it('awaiting_payment + denylisted /portal/broadcasts/new → blocked + emits membership_suspended_action_blocked (Task 8: discriminated from the terminated event)', async () => {
     const cycle = buildCycle({ status: 'awaiting_payment', closedAt: null, closedReason: null });
     const { deps, emitMock } = fakeDeps({ cycle });
     const r = await checkPortalAccess(deps, {
@@ -211,6 +211,15 @@ describe('checkPortalAccess — suspended policy (allow-by-default)', () => {
       expect(r.cycleId).toBe(cycle.cycleId);
     }
     expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'membership_suspended_action_blocked',
+      payload: {
+        cycle_id: cycle.cycleId,
+        member_id: MEMBER_ID,
+        blocked_route: '/portal/broadcasts/new',
+        access_state: 'suspended',
+      },
+    });
   });
 
   it('pending_admin_reactivation → suspended (allowed on ordinary routes)', async () => {
@@ -231,7 +240,7 @@ describe('checkPortalAccess — suspended policy (allow-by-default)', () => {
 });
 
 describe('checkPortalAccess — fail-open on read error', () => {
-  it('cyclesRepo throws → allowed (fail_open), no audit emitted', async () => {
+  it('cyclesRepo throws → allowed (fail_open) + emits membership_access_fail_open (Task 8)', async () => {
     const { deps, emitMock } = fakeDeps({
       findImpl: async () => {
         throw new Error('connection reset');
@@ -243,7 +252,32 @@ describe('checkPortalAccess — fail-open on read error', () => {
     });
     expect(r.allowed).toBe(true);
     if (r.allowed) expect(r.reason).toBe('fail_open');
-    expect(emitMock).not.toHaveBeenCalled();
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'membership_access_fail_open',
+      payload: {
+        member_id: MEMBER_ID,
+        blocked_route: '/portal/broadcasts/new',
+        error: 'connection reset',
+      },
+    });
+  });
+
+  it('fail-open audit emit failure does not mask the fail-open decision (fire-and-forget)', async () => {
+    const { deps } = fakeDeps({
+      findImpl: async () => {
+        throw new Error('connection reset');
+      },
+      emitImpl: async () => {
+        throw new Error('audit_log: insert failed');
+      },
+    });
+    const r = await checkPortalAccess(deps, {
+      ...baseCtx,
+      pathname: '/portal/broadcasts/new',
+    });
+    expect(r.allowed).toBe(true);
+    if (r.allowed) expect(r.reason).toBe('fail_open');
   });
 });
 

@@ -8,13 +8,14 @@
  * Pipeline (FR-002 preconditions in CHEAP → EXPENSIVE order; the letters
  * map to the FR-002 sub-clauses, not pipeline order):
  *   k. halt flag → broadcast_member_halted_pending_review
- *   l. membership access (059-membership-suspension Task 5) →
+ *   l. membership access (059-membership-suspension Task 5 + Task 8) →
  *      broadcast_membership_suspended_blocked — a suspended/terminated
  *      member (F8 `deriveMembershipAccess`) cannot spend e-blast quota.
  *      Runs BEFORE rate-limit/plan/quota so a suspended member's
  *      submission never reaches the quota counter (the bug class this
  *      gate exists to close: a check that compiles but is never wired
- *      into the actual submit path).
+ *      into the actual submit path). Task 8 wires the audit emit
+ *      (migration 0245 adds the pgEnum value).
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
  *   b. quota → broadcast_quota_blocked  (enforced for all actors incl admin_proxy — T-10)
@@ -79,10 +80,9 @@ export type SubmitBroadcastError =
   // 059-membership-suspension Task 5 — precondition (l). Distinct kind
   // from the halt-flag reject: a halt is an admin-imposed hold, while
   // this is a member benefit-access state derived from F8's renewal
-  // cycle (suspended/terminated). NOT added to F7_AUDIT_EVENT_TYPES yet
-  // — the audit emit + enum value land in Task 8 (see the TODO at the
-  // emit site below); this is purely a Result-kind discriminant, which
-  // is independent of the audit taxonomy.
+  // cycle (suspended/terminated). Audit emit + enum value shipped in
+  // Task 8 (migration 0245) — see the `emitReject` call at the emit site
+  // below.
   | {
       readonly kind: 'broadcast_membership_suspended_blocked';
       readonly memberId: string;
@@ -246,7 +246,10 @@ type SubmitPrecondition =
   | 'audience_too_large'
   | 'custom_recipient_unknown'
   | 'member_missing_primary_contact_email'
-  | 'member_halted_pending_review';
+  | 'member_halted_pending_review'
+  // 059-membership-suspension Task 8 — precondition (l), analogous to
+  // the halt-flag precondition (k) directly above it in the pipeline.
+  | 'membership_suspended';
 
 const PRECONDITION_BY_EVENT = {
   broadcast_quota_blocked: 'quota_exhausted',
@@ -264,6 +267,7 @@ const PRECONDITION_BY_EVENT = {
   broadcast_member_missing_primary_contact_email:
     'member_missing_primary_contact_email',
   broadcast_member_halted_pending_review: 'member_halted_pending_review',
+  broadcast_membership_suspended_blocked: 'membership_suspended',
 } as const satisfies Partial<Record<F7AuditEventType, SubmitPrecondition>>;
 
 /** Helper: emit a precondition-rejection audit on a standalone tx. */
@@ -347,10 +351,9 @@ export async function submitBroadcast(
     });
   }
   if (access.value.access !== 'full') {
-    // TODO(Task 8): emitReject(deps, input, 'broadcast_membership_suspended_blocked', { memberId: input.memberId })
-    //   — the audit event TYPE is added to the F7 taxonomy in Task 8; do
-    //   NOT call emitReject with it now (it is not yet a valid
-    //   F7AuditEventType and would fail the enum/typecheck).
+    await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
+      memberId: input.memberId,
+    });
     return err({
       kind: 'broadcast_membership_suspended_blocked',
       memberId: input.memberId,

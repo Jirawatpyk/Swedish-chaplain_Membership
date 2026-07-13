@@ -1,7 +1,7 @@
 /**
  * F8 Phase 9 / T258 — F8 audit-port contract test.
  *
- * Pins the 65-event audit catalogue at runtime + asserts representative
+ * Pins the 68-event audit catalogue at runtime + asserts representative
  * canonical payloads against the typed shape map (`F8AuditPayloadShapes`).
  *
  * Companion to:
@@ -62,10 +62,12 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 66 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+  it('catalogue contains exactly 68 event types (matches compile-time _AssertF8AuditEventCount)', () => {
     // Renewal rolling-anchor refactor (migration 0238): 65 → 66, +1
     // `renewal_cycle_reanchored`.
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(66);
+    // 059-membership-suspension Task 8: 66 → 68, +2
+    // (`membership_suspended_action_blocked`, `membership_access_fail_open`).
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(68);
   });
 
   it('catalogue contains no duplicate event types', () => {
