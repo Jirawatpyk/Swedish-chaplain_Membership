@@ -12,6 +12,7 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { BrandMark } from '@/components/shell/brand-mark';
 import { requireSession } from '@/lib/auth-session';
+import { enforcePortalPageAccess } from '@/lib/portal-page-access';
 import { MarketingAcknowledgementBanner } from './_components/marketing-acknowledgement-banner';
 
 /**
@@ -39,12 +40,23 @@ export const viewport: Viewport = {
 };
 
 export default async function MemberLayout({ children }: { children: ReactNode }) {
-  const { user } = await requireSession('member');
+  const session = await requireSession('member');
+  const { user } = session;
 
   // Cross-portal guard: staff landed on a member route by accident.
   if (user.role === 'admin' || user.role === 'manager') {
     redirect('/admin');
   }
+
+  // Task 7 (059-membership-suspension) — SSR-load defense-in-depth for the
+  // terminated/suspended portal-scope gate. Runs AFTER the cross-portal
+  // guard above (a staff account has no linked member). Next.js 16 does
+  // NOT re-run this layout on client-side navigation between sibling
+  // portal routes, so this only catches SSR load / refresh / direct nav —
+  // the real, always-on enforcement is `requireMemberContext`
+  // (`src/lib/member-context.ts`), which every `/api/portal/**` route
+  // calls on every request. See `enforcePortalPageAccess` docstring.
+  await enforcePortalPageAccess(session);
 
   const tPortal = await getTranslations('shell.portalLabel');
 
