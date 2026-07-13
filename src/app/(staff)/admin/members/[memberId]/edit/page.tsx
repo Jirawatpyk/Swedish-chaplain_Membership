@@ -180,6 +180,8 @@ export default async function EditMemberPage({ params }: PageProps) {
               city: member.city,
               province: member.province,
               postalCode: member.postalCode,
+              // PR-B task 6 — แขวง/ตำบล.
+              subDistrict: member.subDistrict,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
               // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular.

@@ -13,9 +13,20 @@ const tf = (k: string) => k;
 const tv = ((k: string) => k) as unknown as Translator;
 const schema = buildMemberFormSchema(tf, tv);
 
+// PR-B task 6 — `buildMemberFormSchema` defaults `mode` to 'create' (a
+// forgotten 4th arg fails SAFE, over-blocking rather than silently
+// disabling the address-completeness gate a §86/4 tax invoice depends on).
+// BASE therefore needs a COMPLETE TH address or every "accepts" assertion
+// below would start failing on address_line1/city/province/sub_district/
+// postal_code — those fields are not what this file is testing.
 const BASE = {
   company_name: 'Acme',
   country: 'TH',
+  address_line1: '123 Sukhumvit Rd',
+  sub_district: 'คลองตันเหนือ',
+  city: 'เขตวัฒนา',
+  province: 'กรุงเทพมหานคร',
+  postal_code: '10110',
   plan_id: 'p',
   plan_year: 2026,
   notes: null,
@@ -160,6 +171,81 @@ describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)'
         is_head_office: false,
         branch_code: '00042',
         legal_entity_type: 'company',
+      }),
+    ).toEqual([]);
+  });
+});
+
+// PR-B task 6 — address completeness gate. CREATE blocks; EDIT never does
+// (an admin fixing an unrelated field on an imported member with no address
+// must not be locked out — the same trap PR-0 avoided for
+// `registration_date`). `mode` defaults to 'create', so most cases below
+// pass it explicitly only where the point is to contrast with 'edit'.
+describe('buildMemberFormSchema — address completeness gate (PR-B task 6)', () => {
+  it('create + TH: flags a missing sub_district', () => {
+    const { sub_district: _omit, ...rest } = BASE;
+    expect(issuePaths(rest)).toContain('sub_district');
+  });
+
+  it('create + TH: flags a missing province', () => {
+    const { province: _omit, ...rest } = BASE;
+    expect(issuePaths(rest)).toContain('province');
+  });
+
+  it('create + TH: flags a missing postal_code', () => {
+    const { postal_code: _omit, ...rest } = BASE;
+    expect(issuePaths(rest)).toContain('postal_code');
+  });
+
+  it('create + TH: flags a missing address_line1', () => {
+    const { address_line1: _omit, ...rest } = BASE;
+    expect(issuePaths(rest)).toContain('address_line1');
+  });
+
+  it('create + TH: flags a missing city', () => {
+    const { city: _omit, ...rest } = BASE;
+    expect(issuePaths(rest)).toContain('city');
+  });
+
+  it('create + non-TH: requires only address_line1 + city — province/sub_district/postal_code stay optional', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        country: 'SE',
+        province: undefined,
+        sub_district: undefined,
+        postal_code: undefined,
+      }),
+    ).toEqual([]);
+  });
+
+  it('create + non-TH: still flags a missing city', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        country: 'SE',
+        city: undefined,
+        province: undefined,
+        sub_district: undefined,
+        postal_code: undefined,
+      }),
+    ).toContain('city');
+  });
+
+  it('edit: never blocks on a completely empty address', () => {
+    const editSchema = buildMemberFormSchema(tf, tv, false, 'edit');
+    const editPaths = (values: unknown): string[] => {
+      const r = editSchema.safeParse(values);
+      return r.success ? [] : r.error.issues.map((i) => i.path.join('.'));
+    };
+    expect(
+      editPaths({
+        ...BASE,
+        address_line1: undefined,
+        sub_district: undefined,
+        city: undefined,
+        province: undefined,
+        postal_code: undefined,
       }),
     ).toEqual([]);
   });

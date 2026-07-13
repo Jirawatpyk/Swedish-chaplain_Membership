@@ -68,6 +68,8 @@ function toPayload(
     city: values.city?.trim() || null,
     province: values.province?.trim() || null,
     postal_code: values.postal_code?.trim() || null,
+    // PR-B task 6 — แขวง/ตำบล. TH-only in the UI; null for a non-TH address.
+    sub_district: values.sub_district?.trim() || null,
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:

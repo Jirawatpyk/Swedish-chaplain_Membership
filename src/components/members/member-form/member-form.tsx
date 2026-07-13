@@ -106,8 +106,9 @@ export function MemberForm({
         tf as (key: string) => string,
         tv as Translator,
         needsDob,
+        mode,
       ),
-    [tf, tv, needsDob],
+    [tf, tv, needsDob, mode],
   );
 
   const methods = useForm<MemberFormValues>({
@@ -183,7 +184,7 @@ export function MemberForm({
 
         <CompanySection mode={mode} />
         <MembershipSection plans={plans} mode={mode} onPlanIdChange={setPlanId} />
-        <AddressSection />
+        <AddressSection mode={mode} />
 
         {mode === 'edit' && (
           <TaxBranchSection

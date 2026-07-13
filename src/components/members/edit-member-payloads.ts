@@ -26,6 +26,10 @@ export type MemberInitialValues = {
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;
+  // PR-B task 6 — แขวง/ตำบล. Optional so pre-existing fixtures + the create
+  // path (which never seeded it before this task) stay non-breaking — same
+  // precedent as `isHeadOffice`/`branchCode` above.
+  readonly subDistrict?: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
   readonly planId: string;
@@ -65,6 +69,8 @@ export function buildFieldPayload(
     city: values.city?.trim() || null,
     province: values.province?.trim() || null,
     postal_code: values.postal_code?.trim() || null,
+    // PR-B task 6 — แขวง/ตำบล.
+    sub_district: values.sub_district?.trim() || null,
     // `values.notes` is already `string | null` after the form's zod
     // transform. Safe to trim only when string.
     notes: values.notes ? values.notes.trim() || null : null,
@@ -99,6 +105,7 @@ export function hasFieldDiff(
     (values.city?.trim() || null) !== (member.city ?? null) ||
     (values.province?.trim() || null) !== (member.province ?? null) ||
     (values.postal_code?.trim() || null) !== (member.postalCode ?? null) ||
+    (values.sub_district?.trim() || null) !== (member.subDistrict ?? null) ||
     (values.description?.trim() || null) !== (member.description ?? null) ||
     (values.notes ? values.notes.trim() || null : null) !==
       (member.notes ?? null) ||

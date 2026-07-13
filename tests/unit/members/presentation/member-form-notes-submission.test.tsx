@@ -41,6 +41,15 @@ describe('MemberForm notes — reaches onSubmit via the real DOM (create mode)',
           initialValues={{
             company_name: 'Acme Co',
             country: 'TH',
+            // PR-B task 6 — CREATE mode now gates submit on a complete TH
+            // address (schema.ts superRefine). Seeded here so this test can
+            // isolate what it actually asserts: that the typed `notes`
+            // value reaches `onSubmit`, not the address completeness rule.
+            address_line1: '123 Sukhumvit Rd',
+            sub_district: 'คลองตันเหนือ',
+            city: 'เขตวัฒนา',
+            province: 'กรุงเทพมหานคร',
+            postal_code: '10110',
             plan_id: PLANS[0]!.plan_id,
             plan_year: 2026,
             primary_contact: {

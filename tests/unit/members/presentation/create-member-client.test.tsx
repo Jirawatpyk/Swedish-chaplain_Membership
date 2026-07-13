@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
     company_name: 'Acme Co',
     country: 'TH',
     notes: 'Renewal handled by finance',
+    sub_district: 'คลองตันเหนือ',
     plan_id: 'premium',
     plan_year: 2026,
     primary_contact: {
@@ -190,5 +191,17 @@ describe('CreateMemberClient orchestration', () => {
       (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
     );
     expect(body.notes).toBe('Renewal handled by finance');
+  });
+
+  it('forwards sub_district into the create payload (PR-B task 6 — แขวง/ตำบล)', async () => {
+    fetchMock.mockResolvedValueOnce(res(201, { member_id: 'm-sub-district' }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.sub_district).toBe('คลองตันเหนือ');
   });
 });

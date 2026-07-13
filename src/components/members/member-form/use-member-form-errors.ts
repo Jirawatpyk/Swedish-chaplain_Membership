@@ -53,6 +53,7 @@ export function useMemberFormErrors({
     ['city', errors.city?.message],
     ['province', errors.province?.message],
     ['postal_code', errors.postal_code?.message],
+    ['sub_district', errors.sub_district?.message],
     ['first_name', errors.primary_contact?.first_name?.message],
     ['last_name', errors.primary_contact?.last_name?.message],
     ['contact_email', errors.primary_contact?.email?.message],

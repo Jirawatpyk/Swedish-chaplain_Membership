@@ -397,6 +397,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           city: member.city ?? undefined,
           province: member.province ?? undefined,
           postal_code: member.postalCode ?? undefined,
+          // PR-B task 6 — แขวง/ตำบล.
+          sub_district: member.subDistrict ?? undefined,
           // 088 US3 — §86/4 branch particular (seed the head-office toggle +
           // branch code so the admin sees the present value before Save).
           is_head_office: member.isHeadOffice ?? true,

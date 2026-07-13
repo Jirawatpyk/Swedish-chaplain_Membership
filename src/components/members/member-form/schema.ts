@@ -38,6 +38,12 @@ export function buildMemberFormSchema(
   // not silently accept an empty value the server then rejects (audit). Default
   // false keeps the 2-arg call sites (and the schema unit test) unchanged.
   requireDob = false,
+  // PR-B task 6 — gates the address completeness rule below. Defaults to
+  // 'create' (fail-safe): a caller that forgets to pass this explicitly gets
+  // the STRICTER behaviour (over-blocks) rather than silently disabling the
+  // completeness gate a §86/4 tax invoice depends on. The one real call site
+  // (member-form.tsx) always passes the component's own `mode` prop explicitly.
+  mode: 'create' | 'edit' = 'create',
 ) {
   const currentYear = new Date().getUTCFullYear();
   return z.object({
@@ -64,6 +70,11 @@ export function buildMemberFormSchema(
   city: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   province: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   postal_code: z.string().max(20, tv('tooLong', { max: 20 })).optional(),
+  // PR-B task 6 — แขวง/ตำบล. Sits between address_line2 and city in a Thai
+  // address; threaded onto the §86/4 buyer address by composeBuyerAddress
+  // (invoicing module, Task 2). TH-only in the UI, but not `.nullable()` —
+  // mirrors city/province/postal_code's shape exactly.
+  sub_district: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
   // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular. Rendered on the
   // EDIT form only (tax-critical, admin-managed). `is_head_office` defaults true
   // (สำนักงานใหญ่); a branch carries a 5-digit `branch_code`. The 5-digit +
@@ -183,6 +194,55 @@ export function buildMemberFormSchema(
         path: ['primary_contact', 'date_of_birth'],
         message: tf('errors.dobRequired'),
       });
+    }
+    // PR-B task 6 — address completeness gate. CREATE ONLY: an incomplete
+    // address on an EXISTING (imported) member must never block an unrelated
+    // edit (e.g. fixing an email) — same trap PR-0 avoided for
+    // `registration_date`. The edit form shows a persistent banner instead
+    // (address-section.tsx), computed independently of this schema.
+    if (mode === 'create') {
+      const addressLine1 = data.address_line1?.trim();
+      const city = data.city?.trim();
+      if (!addressLine1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['address_line1'],
+          message: tf('errors.required'),
+        });
+      }
+      if (!city) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['city'],
+          message: tf('errors.required'),
+        });
+      }
+      // TH additionally requires province + sub_district + postal_code — the
+      // §86/4 buyer-address particulars. Non-TH (e.g. Hong Kong, UAE) may have
+      // no postal code at all, and has no province/sub_district concept.
+      if ((data.country ?? '').toUpperCase() === 'TH') {
+        if (!data.province?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['province'],
+            message: tf('errors.required'),
+          });
+        }
+        if (!data.sub_district?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sub_district'],
+            message: tf('errors.required'),
+          });
+        }
+        if (!data.postal_code?.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['postal_code'],
+            message: tf('errors.required'),
+          });
+        }
+      }
     }
     // 088 US3 (FR-008) — §86/4 branch cross-field validation. A branch (NOT head
     // office) requires a 5-digit code AND is only valid for a VAT-registrant
