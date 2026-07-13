@@ -1322,6 +1322,8 @@
           "planPlaceholder": "เลือกแพ็กเกจ…",
           "planYear": "ปีแพ็กเกจ",
           "registrationDate": "วันที่สมัคร",
+          "registrationDateHint": "นับจากวันที่สร้างสมาชิกในระบบ",
+          "registrationDateReadOnly": "กำหนดตอนสร้างสมาชิก ไม่สามารถแก้ไขที่หน้านี้ได้",
           "firstName": "ชื่อ",
           "lastName": "นามสกุล",
           "email": "อีเมล",

@@ -1322,6 +1322,8 @@
           "planPlaceholder": "Välj paket…",
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
+          "registrationDateHint": "Räknas från det datum då medlemmen skapas i systemet.",
+          "registrationDateReadOnly": "Anges när medlemmen skapas och kan inte ändras här.",
           "firstName": "Förnamn",
           "lastName": "Efternamn",
           "email": "E-post",

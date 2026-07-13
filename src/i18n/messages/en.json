@@ -1322,6 +1322,8 @@
           "planPlaceholder": "Select a plan…",
           "planYear": "Plan year",
           "registrationDate": "Registration date",
+          "registrationDateHint": "Counted from the date the member is created in the system.",
+          "registrationDateReadOnly": "Set at member creation and cannot be changed here.",
           "firstName": "First name",
           "lastName": "Last name",
           "email": "Email",

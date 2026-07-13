@@ -700,8 +700,29 @@ export function MemberForm({
           <Input
             id="registration_date"
             type="date"
+            readOnly={mode === 'edit'}
+            aria-describedby={
+              mode === 'edit'
+                ? 'registration_date-hint registration_date-readonly'
+                : 'registration_date-hint'
+            }
+            className={mode === 'edit' ? 'bg-muted' : undefined}
             {...register('registration_date')}
           />
+          <p
+            id="registration_date-hint"
+            className="mt-1 text-xs text-muted-foreground"
+          >
+            {tf('registrationDateHint')}
+          </p>
+          {mode === 'edit' && (
+            <p
+              id="registration_date-readonly"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {tf('registrationDateReadOnly')}
+            </p>
+          )}
         </div>
       </fieldset>
 
