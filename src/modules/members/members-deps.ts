@@ -26,6 +26,7 @@ import { createUserPortAdapter } from './infrastructure/adapters/create-user-por
 import { deleteInvitedUserPortAdapter } from './infrastructure/adapters/delete-invited-user-port-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
 import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
+import { membershipAccessBridge } from './infrastructure/membership-access-bridge';
 import { authUserErasureAdapter } from './infrastructure/adapters/auth-user-erasure-adapter';
 import { f7BroadcastsContentScrubAdapter } from './infrastructure/adapters/broadcasts-content-scrub-adapter';
 import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
@@ -56,6 +57,7 @@ import type { BroadcastsCascadePort } from './application/ports/broadcasts-casca
 import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
 import type { PlanAdvisoryLockPort } from './application/ports/plan-advisory-lock-port';
+import type { MembershipAccessPort } from './application/ports/membership-access-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
 
@@ -93,6 +95,12 @@ export type MembersDeps = {
    * module.
    */
   renewalsCascade: RenewalsCascadePort;
+  /**
+   * 059-membership-suspension Task 6 — F8 benefit-access gate consumed by
+   * `inviteColleague` (a suspended/terminated member must not mint a new
+   * F1 account via the colleague-invite path).
+   */
+  membershipAccess: MembershipAccessPort;
   timeline: TimelinePort;
   /** F1 createUser glue for the portal-invite use-cases (single + bulk). P1-17. */
   createUser: CreateUserPort;
@@ -163,6 +171,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     reissueInvitation: reissueInvitationAdapter,
     broadcastsCascade: f7BroadcastsCascadeAdapter,
     renewalsCascade: f8RenewalsCascadeAdapter,
+    membershipAccess: membershipAccessBridge,
     timeline: drizzleTimelineRepo,
     createUser: createUserPortAdapter,
     deleteInvitedUser: deleteInvitedUserPortAdapter,

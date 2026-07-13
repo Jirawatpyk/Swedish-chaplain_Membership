@@ -116,12 +116,20 @@ function makeDeps(overrides: DepsOverrides = {}): InviteColleagueDeps {
     }),
   };
 
+  // 059-membership-suspension Task 6 — this suite is not about the
+  // membership-access gate (see invite-colleague-membership.test.ts for
+  // that), so it always reports full access here.
+  const membershipAccess = {
+    getMembershipAccess: vi.fn(async () => ok({ access: 'full' as const, reason: 'in_good_standing' as const })),
+  };
+
   return {
     tenant,
     contactRepo,
     audit,
     createUser,
     deleteInvitedUser,
+    membershipAccess,
     idFactory: { contactId: vi.fn(() => newContactId) },
   } as unknown as InviteColleagueDeps;
 }

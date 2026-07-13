@@ -22,6 +22,7 @@ import { asEmail } from '../../domain/value-objects/email';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { RepoError } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
 import {
   compensateInviteOrphan,
   type CreateUserPort,
@@ -60,6 +61,11 @@ export type InviteColleagueError =
   | { type: 'validation_error'; issues: z.ZodIssue[] }
   | { type: 'email_taken' }
   | { type: 'invalid_email' }
+  // 059-membership-suspension Task 6 — a suspended/terminated member (F8
+  // `deriveMembershipAccess`) cannot invite a colleague: every invite mints
+  // a brand-new F1 auth account via `createUser`, which is exactly the
+  // account-provisioning surface a suspended member must not reach.
+  | { type: 'membership_suspended' }
   // go-live #12-13 (follow-up) — the contact tx failed after createUser
   // committed; the orphaned invite was rolled back (SAGA compensation), so a
   // retry is safe. Distinct from server_error (an unexpected fault) for parity
@@ -74,6 +80,12 @@ export type InviteColleagueDeps = {
   readonly createUser: CreateUserPort;
   /** SAGA compensation for the invite orphan window (go-live #12-13 follow-up). */
   readonly deleteInvitedUser: DeleteInvitedUserPort;
+  /**
+   * 059-membership-suspension Task 6 — F8 benefit-access gate (F3-owned
+   * port; concrete adapter is `membershipAccessBridge` in
+   * `../../infrastructure/membership-access-bridge.ts`).
+   */
+  readonly membershipAccess: MembershipAccessPort;
   readonly idFactory: { contactId(): ContactId };
 };
 
@@ -85,6 +97,27 @@ export async function inviteColleague(
   deps: InviteColleagueDeps,
   input: InviteColleagueInput,
 ): Promise<Result<{ contact: Contact; userId: string }, InviteColleagueError>> {
+  // 0. 059-membership-suspension Task 6 — membership-access gate. Checked
+  // FIRST (before the actor-contact lookup and before any createUser call)
+  // so a suspended/terminated member's request never touches F1's
+  // account-provisioning path. A route-only guard would leak: nothing
+  // stops a future second caller of this use case from skipping it.
+  const access = await deps.membershipAccess.getMembershipAccess(
+    deps.tenant,
+    input.memberId,
+  );
+  if (!access.ok) {
+    // Infra error → fail CLOSED. A DB blip on the F8 lookup must not be
+    // silently treated as "member is fine, let them mint an account".
+    return err({
+      type: 'server_error',
+      message: `membership_access_error: ${access.error.kind}`,
+    });
+  }
+  if (access.value.access !== 'full') {
+    return err({ type: 'membership_suspended' });
+  }
+
   // 1. Verify the actor is the primary contact
   const actorContact = await deps.contactRepo.findById(
     deps.tenant,
