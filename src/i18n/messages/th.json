@@ -1293,6 +1293,7 @@
         "cancel": "ยกเลิก",
         "sections": {
           "company": "ข้อมูลบริษัท",
+          "membership": "การเป็นสมาชิก",
           "address": "ที่อยู่",
           "primaryContact": "ผู้ติดต่อหลัก",
           "taxBranch": "สำนักงานใหญ่ / สาขา (มาตรา 86/4)"

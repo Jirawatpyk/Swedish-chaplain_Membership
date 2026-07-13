@@ -1293,6 +1293,7 @@
         "cancel": "Avbryt",
         "sections": {
           "company": "Företag",
+          "membership": "Medlemskap",
           "address": "Adress",
           "primaryContact": "Primär kontakt",
           "taxBranch": "Huvudkontor / Filial (สำนักงานใหญ่/สาขา, §86/4)"

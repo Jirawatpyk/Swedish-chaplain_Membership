@@ -1293,6 +1293,7 @@
         "cancel": "Cancel",
         "sections": {
           "company": "Company",
+          "membership": "Membership",
           "address": "Address",
           "primaryContact": "Primary contact",
           "taxBranch": "Head office / Branch (§86/4)"
