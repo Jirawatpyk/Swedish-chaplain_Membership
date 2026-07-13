@@ -89,6 +89,7 @@ function rowToMember(row: MemberRow): Member {
     description: row.description,
     foundedYear: row.foundedYear,
     turnoverThb: row.turnoverThb,
+    registeredCapitalThb: row.registeredCapitalThb,
     planId: row.planId as PlanId,
     planYear: row.planYear,
     registrationDate: new Date(row.registrationDate),
@@ -100,6 +101,7 @@ function rowToMember(row: MemberRow): Member {
     city: row.city,
     province: row.province,
     postalCode: row.postalCode,
+    subDistrict: row.subDistrict,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     // M5: narrow into the correlated lifecycle union (status ⟺ archivedAt).
@@ -131,12 +133,14 @@ function applyMemberPatch(
   if (patch.notes !== undefined) set.notes = patch.notes;
   if (patch.taxId !== undefined) set.taxId = patch.taxId;
   if (patch.turnoverThb !== undefined) set.turnoverThb = patch.turnoverThb;
+  if (patch.registeredCapitalThb !== undefined) set.registeredCapitalThb = patch.registeredCapitalThb;
   if (patch.foundedYear !== undefined) set.foundedYear = patch.foundedYear;
   if (patch.addressLine1 !== undefined) set.addressLine1 = patch.addressLine1;
   if (patch.addressLine2 !== undefined) set.addressLine2 = patch.addressLine2;
   if (patch.city !== undefined) set.city = patch.city;
   if (patch.province !== undefined) set.province = patch.province;
   if (patch.postalCode !== undefined) set.postalCode = patch.postalCode;
+  if (patch.subDistrict !== undefined) set.subDistrict = patch.subDistrict;
   if (patch.country !== undefined) set.country = patch.country;
   if (patch.planId !== undefined) set.planId = patch.planId;
   if (patch.planYear !== undefined) set.planYear = patch.planYear;
@@ -509,6 +513,7 @@ export const drizzleMemberRepo: MemberRepo = {
           description: draft.member.description,
           foundedYear: draft.member.foundedYear,
           turnoverThb: draft.member.turnoverThb,
+          registeredCapitalThb: draft.member.registeredCapitalThb,
           planId: draft.member.planId,
           planYear: draft.member.planYear,
           registrationDate: draft.member.registrationDate
@@ -521,6 +526,7 @@ export const drizzleMemberRepo: MemberRepo = {
           city: draft.member.city,
           province: draft.member.province,
           postalCode: draft.member.postalCode,
+          subDistrict: draft.member.subDistrict,
           status: draft.member.status,
           archivedAt: draft.member.archivedAt,
         })
@@ -677,6 +683,8 @@ export const drizzleMemberRepo: MemberRepo = {
           city: null,
           province: null,
           postalCode: null,
+          subDistrict: null,
+          registeredCapitalThb: null,
           // 088 US3 — reset the §86/4 Head-Office / Branch particular to its
           // head-office DEFAULT on erasure (drops the RD branch identifier). The
           // pair stays CHECK-consistent (`members_branch_pairing_ck`): head

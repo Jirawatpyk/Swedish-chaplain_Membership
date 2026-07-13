@@ -43,8 +43,10 @@ export const updateMemberSchema = z
     city: z.string().max(100).nullable().optional(),
     province: z.string().max(100).nullable().optional(),
     postal_code: z.string().max(20).nullable().optional(),
+    sub_district: z.string().max(100).nullable().optional(),
     founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
     turnover_thb: z.number().int().nonnegative().nullable().optional(),
+    registered_capital_thb: z.number().int().nonnegative().nullable().optional(),
     notes: z.string().max(4000).nullable().optional(),
     // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular, admin-managed.
     // `is_head_office=true` = สำนักงานใหญ่; a branch carries a 5-digit code.
@@ -216,8 +218,11 @@ export async function updateMember(
       if (data.city !== undefined) draft.city = data.city;
       if (data.province !== undefined) draft.province = data.province;
       if (data.postal_code !== undefined) draft.postalCode = data.postal_code;
+      if (data.sub_district !== undefined) draft.subDistrict = data.sub_district;
       if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
       if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
+      if (data.registered_capital_thb !== undefined)
+        draft.registeredCapitalThb = data.registered_capital_thb;
       if (data.notes !== undefined) draft.notes = data.notes;
       const patch = draft as MemberPatch;
 

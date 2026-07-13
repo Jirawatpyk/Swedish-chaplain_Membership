@@ -122,11 +122,13 @@ export type MemberPatch = Partial<
     | 'notes'
     | 'foundedYear'
     | 'turnoverThb'
+    | 'registeredCapitalThb'
     | 'addressLine1'
     | 'addressLine2'
     | 'city'
     | 'province'
     | 'postalCode'
+    | 'subDistrict'
   > & {
     country: IsoCountryCode;
     taxId: TaxId | null;

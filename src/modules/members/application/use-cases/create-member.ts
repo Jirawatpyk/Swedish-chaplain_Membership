@@ -62,8 +62,10 @@ export const createMemberSchema = z.object({
   city: z.string().max(100).nullable().optional(),
   province: z.string().max(100).nullable().optional(),
   postal_code: z.string().max(20).nullable().optional(),
+  sub_district: z.string().max(100).nullable().optional(),
   founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
   turnover_thb: z.number().int().nonnegative().nullable().optional(),
+  registered_capital_thb: z.number().int().nonnegative().nullable().optional(),
   plan_id: z.string().min(1),
   plan_year: z.number().int().min(2020).max(2100),
   registration_date: z.string().optional(), // ISO date; defaults to today
@@ -365,6 +367,7 @@ export async function createMember(
         description: data.description ?? null,
         foundedYear: data.founded_year ?? null,
         turnoverThb: data.turnover_thb ?? null,
+        registeredCapitalThb: data.registered_capital_thb ?? null,
         planId: plan.planId,
         planYear: data.plan_year,
         registrationDate: regDate,
@@ -376,6 +379,7 @@ export async function createMember(
         city: data.city ?? null,
         province: data.province ?? null,
         postalCode: data.postal_code ?? null,
+        subDistrict: data.sub_district ?? null,
         status: 'active',
         archivedAt: null,
       };

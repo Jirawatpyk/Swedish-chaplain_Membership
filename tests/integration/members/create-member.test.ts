@@ -283,6 +283,48 @@ describe('create-member integration (T041, US1)', () => {
     expect(rows[0]!.notes).toBe('Introduced by the Swedish embassy');
   });
 
+  it('persists registered capital and sub-district (058 / PR-B)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      registered_capital_thb: 5_000_000,
+      sub_district: 'คลองตันเหนือ',
+      city: 'เขตวัฒนา',
+      province: 'กรุงเทพมหานคร',
+      postal_code: '10110',
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-capital` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.registeredCapitalThb).toBe(5_000_000);
+    expect(rows[0]!.subDistrict).toBe('คลองตันเหนือ');
+  });
+
+  it('rejects a negative registered capital at the database (058 / PR-B)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      registered_capital_thb: -1,
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-neg-capital` },
+      deps,
+    );
+    // The zod `nonnegative()` catches this first — that is fine and intended;
+    // this test pins the behaviour (create rejects), not the layer.
+    expect(result.ok).toBe(false);
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {

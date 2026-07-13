@@ -165,6 +165,7 @@ export type Member = {
   readonly description: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
+  readonly registeredCapitalThb: number | null;
   readonly planId: PlanId;
   readonly planYear: number;
   readonly registrationDate: Date;
@@ -176,6 +177,7 @@ export type Member = {
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;
+  readonly subDistrict: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & MemberLifecycle;
