@@ -47,7 +47,18 @@ export function StaffSidebar({
   const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags, role);
 
   return (
-    <Sidebar collapsible="icon" role="navigation" aria-label={t('nav.staff.ariaLabel')}>
+    <Sidebar
+      collapsible="icon"
+      role="navigation"
+      aria-label={t('nav.staff.ariaLabel')}
+      // Swedish flag: the navy rail is the field, this 4px edge is the
+      // vertical arm of the cross. Decorative only — no text ever sits on it,
+      // which is what keeps flag yellow (1.5:1 under white, 3.8:1 under
+      // Sweden-blue) out of every contrast pairing. Overrides the primitive's
+      // 1px `border-r`; both carry the same variant prefix so tailwind-merge
+      // dedupes width instead of stacking specificity.
+      className="group-data-[side=left]:border-r-4 group-data-[side=left]:border-r-[color:var(--sidebar-flag)]"
+    >
       <SidebarHeader className="border-b border-sidebar-border py-3 px-2">
         <div className="flex items-center gap-2">
           {/* Official Interlocking Link mark. Decorative — the adjacent

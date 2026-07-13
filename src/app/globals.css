@@ -59,6 +59,8 @@
 
   --color-sidebar-foreground: var(--sidebar-foreground);
 
+  --color-sidebar-flag: var(--sidebar-flag);
+
   --color-sidebar: var(--sidebar);
 
   --color-chart-5: var(--chart-5);
@@ -205,17 +207,32 @@
   --chart-4: oklch(0.3414 0.0937 248.81); /* navy */
   --chart-5: oklch(0.70 0.15 70);         /* amber */
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.3947 0.1012 250.40); /* navy header badge */
-  --sidebar-primary-foreground: oklch(0.985 0 0); /* white on navy 9.4:1 */
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.3947 0.1012 250.40);
+  /* --- Swedish-flag staff sidebar ---
+   * Blue rail = the flag's field; the 4px --sidebar-flag edge (see below) is
+   * the vertical arm of the flag's cross. Measured on the rendered DOM:
+   * nav links 9.0:1, group labels (foreground/70) 5.3:1, white-on-hover
+   * (#2B5F92) 6.7:1 — all clear of the 4.5:1 AA floor.
+   * Flag YELLOW is deliberately absent from every text pairing here: white on
+   * it is 1.5:1 and Sweden-blue on it is 3.8:1, so it only ever appears as the
+   * decorative edge stripe (SC 1.4.11 exempts pure decoration). */
+  --sidebar: oklch(0.3947 0.1012 250.40);         /* navy #10487A */
+  --sidebar-foreground: oklch(0.985 0 0);         /* white on navy 9.0:1 */
+  --sidebar-primary: oklch(0.7280 0.1380 89.73);  /* gold badge */
+  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on gold 6.3:1 */
+  --sidebar-accent: oklch(0.4750 0.1000 250.40);  /* hover/active #2B5F92 */
+  --sidebar-accent-foreground: oklch(0.985 0 0);  /* white on #2B5F92 6.7:1 */
+  --sidebar-border: oklch(1 0 0 / 22%);           /* white hairline on navy */
+  --sidebar-ring: oklch(0.7280 0.1380 89.73);     /* gold focus ring, 3.9:1 on navy */
+  /* Exact Swedish flag yellow. Decorative edge stripe ONLY — never a text
+   * background. Hex (not oklch) so the brand value stays literal. */
+  --sidebar-flag: #FECC02;
 
   /* --- Brand accent tokens (premium navy + gold) --- */
-  --nav-indicator: oklch(0.3947 0.1012 250.40); /* member bottom-tabs / sidebar active stripe — navy, 9.4:1 on white */
+  /* Member bottom-tabs active border ONLY (the staff sidebar does NOT use this
+   * — its active state is --sidebar-accent). It renders on the WHITE member
+   * shell, so it must stay navy: gold here would be 2.4:1 and fail SC 1.4.11's
+   * 3:1 floor for a state indicator. Do NOT "flag-ify" this token. */
+  --nav-indicator: oklch(0.3947 0.1012 250.40); /* navy, 9.4:1 on white */
   --brand-accent: oklch(0.7280 0.1380 89.73);   /* muted gold #C9A227 — pair ONLY with dark text or place on a navy/dark surface (gold-on-white = 2.4:1) */
   --brand-accent-foreground: oklch(0.205 0 0);  /* near-black on gold — 6.3:1 */
 
@@ -325,14 +342,18 @@
   --chart-3: oklch(0.7280 0.1380 89.73);  /* gold */
   --chart-4: oklch(0.55 0.13 248);        /* deep blue */
   --chart-5: oklch(0.78 0.15 70);         /* amber */
-  --sidebar: oklch(0.205 0 0);
+  /* Swedish-flag sidebar, dark theme — the navy is darkened so it still reads
+   * as a rail against the near-black shell instead of glowing off it. Flag
+   * yellow is unchanged: the edge stripe is decorative in both themes. */
+  --sidebar: oklch(0.3000 0.0750 250.40);         /* deep navy */
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.7635 0.0616 240.33); /* steel-blue badge */
-  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on steel blue 7.3:1 */
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-primary: oklch(0.7280 0.1380 89.73);  /* gold badge */
+  --sidebar-primary-foreground: oklch(0.205 0 0); /* near-black on gold 6.3:1 */
+  --sidebar-accent: oklch(0.3800 0.0800 250.40);  /* hover/active */
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.7635 0.0616 240.33);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.7280 0.1380 89.73);     /* gold focus ring */
+  --sidebar-flag: #FECC02;
 
   /* --- Brand accent tokens (dark) --- */
   --nav-indicator: oklch(0.7280 0.1380 89.73); /* member bottom-tabs / sidebar active stripe — gold on dark, 5.2:1 */
