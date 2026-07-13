@@ -12,10 +12,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
-import { lookupPostalCode } from '@/lib/thai-postal/lookup';
+import { lookupPostalCode, POSTAL_CODE_RE } from '@/lib/thai-postal/lookup';
 
 const paramsSchema = z.object({
-  code: z.string().regex(/^\d{5}$/),
+  code: z.string().regex(POSTAL_CODE_RE),
 });
 
 export async function GET(
@@ -53,8 +53,14 @@ export async function GET(
 
   return NextResponse.json(
     { candidates },
-    // Immutable reference data — cache hard. It changes when we regenerate the
-    // dataset and redeploy, never at runtime.
-    { headers: { 'Cache-Control': 'public, max-age=86400, immutable' } },
+    // Immutable reference data — cache hard, but `private`: this route is
+    // staff-guarded, and `public` would let Vercel's Edge Network cache the
+    // response and replay it to an unauthenticated caller for up to 24h
+    // without ever re-running the auth guard above. `private` keeps the
+    // long max-age (the data really doesn't change between deploys) while
+    // confining the cache to the requesting browser — every other
+    // authenticated route in src/app/api/** uses no-store/private, no
+    // exceptions.
+    { headers: { 'Cache-Control': 'private, max-age=86400, immutable' } },
   );
 }

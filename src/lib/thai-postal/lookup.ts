@@ -9,6 +9,7 @@
  * 174 map to more than one district and 8 span two provinces (13240 =
  * Ayutthaya/Lopburi). Callers get every candidate and let the admin choose.
  */
+import 'server-only';
 import data from './data.json';
 
 export type PostalName = {
@@ -40,7 +41,7 @@ type PostalData = {
 // `tests/unit/lib/thai-postal-data-integrity.test.ts`.
 const POSTAL: PostalData = data as unknown as PostalData;
 
-const POSTAL_CODE_RE = /^\d{5}$/;
+export const POSTAL_CODE_RE = /^\d{5}$/;
 
 export function lookupPostalCode(code: string): readonly PostalCandidate[] {
   if (!POSTAL_CODE_RE.test(code)) return [];
