@@ -328,15 +328,20 @@ export const staffNavConfig: NavConfig = {
         // + F6 EventCreate-integration patterns). The auto-derived
         // breadcrumb reads "Settings / Broadcasts" instead of the
         // misleading "Broadcasts / Settings" the old URL produced.
-        // Surface gated by `isF71aUs2Enabled()` server-side — when
-        // the flag is OFF the page returns notFound(); the nav entry
-        // stays visible (mirrors F6 EventCreate pattern at lines
-        // 198-208 below which does not gate on the kill-switch either).
+        // Surface gated by `isF71aUs2Enabled()` server-side — which itself
+        // REQUIRES FEATURE_F7_BROADCASTS (returns `f7_master_off` when it is
+        // off), so when F7 is OFF the page returns notFound(). 016 follow-up:
+        // gate the nav entry on the same F7 master flag so a switched-off
+        // Broadcasts feature hides its Settings link too (no dead link),
+        // matching the top-level Broadcasts item. (The narrower F71A-advanced-
+        // off case still 404s with the entry shown, but F71A-advanced is on in
+        // prod; the F7 master flag is the switch-off lever operators use.)
         {
           titleKey: 'nav.staff.settingsBroadcasts',
           icon: Settings2Icon,
           href: '/admin/settings/broadcasts',
           activePattern: '/admin/settings/broadcasts',
+          visibilityFlag: 'broadcastsEnabled',
           // Admin-only ACCESS — the page returns notFound() for manager
           // (role !== 'admin'), unlike Invoice Settings / Renewal Schedules
           // which managers may view read-only. Hide the entry so manager
@@ -361,6 +366,11 @@ export const staffNavConfig: NavConfig = {
           icon: PlugZapIcon,
           href: '/admin/settings/integrations/eventcreate',
           activePattern: '/admin/settings/integrations/eventcreate',
+          // 016 follow-up — the page returns notFound() when
+          // FEATURE_F6_EVENTCREATE is off, so gate the nav entry on the same F6
+          // flag (matches the top-level Events item); no dead link when the
+          // Events feature is switched off.
+          visibilityFlag: 'eventsEnabled',
           // Admin-only ACCESS (FR-035) — route returns notFound() for
           // manager. Hidden from the manager sidebar via the roles filter.
           roles: ['admin'],

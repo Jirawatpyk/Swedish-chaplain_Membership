@@ -216,25 +216,31 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
       s.items.map((i) => (i as NavItem).href),
     );
 
-  it('both flags ON → Broadcasts + Events nav items present', () => {
+  it('both flags ON → Broadcasts + Events top-nav AND their Settings entries present', () => {
     const all = staffHrefs({ broadcastsEnabled: true, eventsEnabled: true });
     expect(all).toContain('/admin/broadcasts');
     expect(all).toContain('/admin/events');
+    expect(all).toContain('/admin/settings/broadcasts');
+    expect(all).toContain('/admin/settings/integrations/eventcreate');
   });
 
-  it('F7 OFF → Broadcasts hidden, Events still shown', () => {
+  it('F7 OFF → Broadcasts top-nav AND Broadcast Settings hidden; Events untouched', () => {
     const all = staffHrefs({ broadcastsEnabled: false, eventsEnabled: true });
     expect(all).not.toContain('/admin/broadcasts');
+    expect(all).not.toContain('/admin/settings/broadcasts');
     expect(all).toContain('/admin/events');
+    expect(all).toContain('/admin/settings/integrations/eventcreate');
   });
 
-  it('F6 OFF → Events hidden, Broadcasts still shown', () => {
+  it('F6 OFF → Events top-nav AND EventCreate Integration settings hidden; Broadcasts untouched', () => {
     const all = staffHrefs({ broadcastsEnabled: true, eventsEnabled: false });
     expect(all).not.toContain('/admin/events');
+    expect(all).not.toContain('/admin/settings/integrations/eventcreate');
     expect(all).toContain('/admin/broadcasts');
+    expect(all).toContain('/admin/settings/broadcasts');
   });
 
-  it('both OFF → the Engagement section drops entirely (no orphan header), 7→6 sections', () => {
+  it('both OFF → the Engagement section drops entirely; Settings keeps its non-F6/F7 entries', () => {
     const filtered = filterNavConfig(
       staffNavConfig,
       { broadcastsEnabled: false, eventsEnabled: false },
@@ -243,13 +249,26 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
     expect(filtered.sections.map((s) => s.titleKey)).not.toContain(
       'nav.staff.sections.engagement',
     );
+    // Engagement drops (7→6); Settings survives (Invoice + Renewal Schedules
+    // remain) with the Broadcast + EventCreate entries removed.
     expect(filtered.sections).toHaveLength(6);
+    const settings = filtered.sections.find(
+      (s) => s.titleKey === 'nav.staff.sections.settings',
+    );
+    const settingsHrefs = settings!.items.map((i) => (i as NavItem).href);
+    expect(settingsHrefs).toContain('/admin/settings/invoicing');
+    expect(settingsHrefs).not.toContain('/admin/settings/broadcasts');
+    expect(settingsHrefs).not.toContain(
+      '/admin/settings/integrations/eventcreate',
+    );
   });
 
-  it('absent flags default to HIDDEN (closed-union safety — a layout that forgets to pass them never leaks a dead link)', () => {
+  it('absent flags default to HIDDEN (closed-union safety) — top-nav AND settings entries', () => {
     const all = staffHrefs({});
     expect(all).not.toContain('/admin/broadcasts');
     expect(all).not.toContain('/admin/events');
+    expect(all).not.toContain('/admin/settings/broadcasts');
+    expect(all).not.toContain('/admin/settings/integrations/eventcreate');
   });
 });
 
