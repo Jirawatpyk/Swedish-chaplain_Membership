@@ -648,8 +648,17 @@ export function InvoiceSettingsForm({
               </Label>
               <p className="text-xs text-muted-foreground">{t('hints.autoEmail')}</p>
             </div>
+            {/* Base UI Switch.Root renders a <span role="switch"> and wires its
+                own aria-labelledby on hydration, so the <Label htmlFor> above
+                names it only once the client bundle runs. axe scanning the
+                pre-hydration DOM sees no accessible name (aria-toggle-field-name,
+                WCAG 4.1.2). The explicit aria-label ships in the SSR HTML and
+                covers that window; aria-labelledby still wins afterwards, and
+                resolves to the same string. Same fix as directory-visibility-form
+                and renewal-reminders-toggle. */}
             <Switch
               id="auto_email"
+              aria-label={t('labels.autoEmail')}
               checked={autoEmail}
               onCheckedChange={setAutoEmail}
               disabled={disabled}
@@ -674,6 +683,7 @@ export function InvoiceSettingsForm({
           </div>
           <Switch
             id="seller_ho"
+            aria-label={t('labels.sellerIsHeadOffice')}
             checked={sellerIsHeadOffice}
             onCheckedChange={setSellerIsHeadOffice}
             disabled={disabled}

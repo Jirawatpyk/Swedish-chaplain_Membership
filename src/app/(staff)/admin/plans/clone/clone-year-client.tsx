@@ -214,8 +214,12 @@ export function CloneYearClient({
         <Label htmlFor="activate_cloned" className="flex-1">
           {tClone('activateClonedLabel')}
         </Label>
+        {/* Named in the SSR HTML so the switch is not anonymous to AT during
+            the pre-hydration window — see invoice-settings-form for the full
+            note on Base UI's late aria-labelledby. */}
         <Switch
           id="activate_cloned"
+          aria-label={tClone('activateClonedLabel')}
           checked={activateCloned}
           onCheckedChange={setActivateCloned}
         />

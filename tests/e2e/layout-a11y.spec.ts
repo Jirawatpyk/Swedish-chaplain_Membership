@@ -15,6 +15,7 @@ const PAGES = [
   '/admin/users',
   '/admin/plans',
   '/admin/plans/new',
+  '/admin/plans/clone',
   '/admin/settings/invoicing',
 ];
 
