@@ -257,6 +257,21 @@ export interface RenewalCycleRepo {
   ): Promise<ReadonlyArray<RenewalCycle>>;
 
   /**
+   * 059-membership-suspension Task 2 — the member's single most-recent cycle
+   * across ALL statuses (incl. lapsed/cancelled). Ordered created_at DESC,
+   * cycle_id DESC — the SAME key as `findLatestCyclesForMembers`, so the
+   * suspension gate and the admin badge never disagree on "latest". UNLIKE
+   * `findMostRecentForMember` (070, which EXCLUDES lapsed/cancelled for the
+   * post-payment success page), this method must NOT filter by status: the
+   * whole point is to let the Domain predicate `deriveMembershipAccess` see
+   * a `lapsed` row so it can gate access. Backs `deriveMembershipAccess`.
+   */
+  findLatestCycleForMember(
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Pipeline list for `/admin/renewals` dashboard (FR-046). Supports
    * server-side pagination + filter combinations. Default sort by
    * `expires_at_asc` (most urgent first).

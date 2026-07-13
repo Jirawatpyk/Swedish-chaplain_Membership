@@ -662,6 +662,30 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    /**
+     * 059-membership-suspension Task 2 — single-row sibling of
+     * `findLatestCyclesForMembers`. NO status filter (unlike
+     * `findMostRecentForMember`, which excludes lapsed/cancelled) — the
+     * whole point is to let `deriveMembershipAccess` see a `lapsed`/
+     * `cancelled` row so it can gate access. Same ordering key
+     * (`created_at DESC, cycle_id DESC`) as the batch method above so the
+     * suspension gate and the admin badge never disagree on "latest".
+     */
+    async findLatestCycleForMember(
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(eq(renewalCycles.memberId, memberId))
+          .orderBy(desc(renewalCycles.createdAt), desc(renewalCycles.cycleId))
+          .limit(1);
+        return rows[0] ? rowToDomain(rows[0]) : null;
+      });
+    },
+
     async list(
       _tenantId: string,
       opts: ListRenewalCyclesOpts,
