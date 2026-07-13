@@ -1296,7 +1296,8 @@
           "membership": "Membership",
           "address": "Address",
           "primaryContact": "Primary contact",
-          "taxBranch": "Head office / Branch (§86/4)"
+          "taxBranch": "Head office / Branch (§86/4)",
+          "additionalDetails": "Additional details"
         },
         "fields": {
           "companyName": "Company name",
@@ -1309,8 +1310,8 @@
           "countryAllGroup": "All countries",
           "taxId": "Tax ID",
           "taxIdHintTH": "Thai 13-digit tax ID with checksum",
-          "website": "Website",
-          "websitePlaceholder": "https://…",
+          "website": "Website / Online presence",
+          "websitePlaceholder": "facebook.com/yourcompany",
           "addressLine1": "Address line 1",
           "addressLine2": "Address line 2",
           "city": "City / District",
@@ -1346,6 +1347,8 @@
           "description": "Description",
           "foundedYear": "Founded year",
           "turnoverThb": "Annual turnover (THB)",
+          "turnoverHint": "Used to place the member in a plan's turnover band.",
+          "registeredCapitalThb": "Registered capital (THB)",
           "plan": "Plan",
           "planPlaceholder": "Select a plan…",
           "planYear": "Plan year",
@@ -1371,6 +1374,7 @@
             "dobRequired": "Date of birth is required for this plan.",
             "foundedYear": "Enter a year between 1800 and this year.",
             "turnover": "Enter a non-negative amount.",
+            "registeredCapital": "Enter a non-negative amount.",
             "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
             "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first."
           },

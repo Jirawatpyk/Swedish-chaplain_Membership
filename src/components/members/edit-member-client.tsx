@@ -410,6 +410,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           notes: member.notes,
           founded_year: member.foundedYear ?? undefined,
           turnover_thb: member.turnoverThb ?? undefined,
+          // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnover_thb.
+          registered_capital_thb: member.registeredCapitalThb ?? undefined,
           plan_id: member.planId,
           plan_year: member.planYear,
           registration_date: member.registrationDate,

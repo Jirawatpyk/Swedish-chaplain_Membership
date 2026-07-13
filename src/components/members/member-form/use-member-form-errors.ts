@@ -46,6 +46,7 @@ export function useMemberFormErrors({
     ['notes', errors.notes?.message],
     ['founded_year', errors.founded_year?.message],
     ['turnover_thb', errors.turnover_thb?.message],
+    ['registered_capital_thb', errors.registered_capital_thb?.message],
     ['plan_id', errors.plan_id?.message],
     ['plan_year', errors.plan_year?.message],
     ['address_line1', errors.address_line1?.message],

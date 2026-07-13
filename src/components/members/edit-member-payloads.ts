@@ -32,6 +32,9 @@ export type MemberInitialValues = {
   readonly subDistrict?: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
+  // PR-B task 7 — ทุนจดทะเบียน. Optional (like `subDistrict` above) so
+  // pre-existing fixtures + the create path stay non-breaking.
+  readonly registeredCapitalThb?: number | null;
   readonly planId: string;
   readonly planYear: number;
   readonly registrationDate: string;
@@ -78,6 +81,11 @@ export function buildFieldPayload(
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
       typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
+    // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnover_thb above.
+    registered_capital_thb:
+      typeof values.registered_capital_thb === 'number'
+        ? values.registered_capital_thb
+        : null,
     // 088 US3 — §86/4 branch particular. Always send a CHECK-consistent pair:
     // head office ⇒ branch_code null; branch ⇒ the trimmed 5-digit code (the
     // form's zod already validated the digit count + registrant rule).
@@ -113,6 +121,9 @@ export function hasFieldDiff(
       (member.foundedYear ?? null) ||
     (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==
       (member.turnoverThb ?? null) ||
+    (typeof values.registered_capital_thb === 'number'
+      ? values.registered_capital_thb
+      : null) !== (member.registeredCapitalThb ?? null) ||
     // 088 US3 — §86/4 branch particular (both sides default head-office / null).
     (values.is_head_office ?? true) !== (member.isHeadOffice ?? true) ||
     ((values.is_head_office ?? true)

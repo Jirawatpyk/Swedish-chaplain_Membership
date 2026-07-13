@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
     country: 'TH',
     notes: 'Renewal handled by finance',
     sub_district: 'คลองตันเหนือ',
+    registered_capital_thb: 5_000_000,
     plan_id: 'premium',
     plan_year: 2026,
     primary_contact: {
@@ -203,5 +204,17 @@ describe('CreateMemberClient orchestration', () => {
       (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
     );
     expect(body.sub_district).toBe('คลองตันเหนือ');
+  });
+
+  it('forwards registered_capital_thb into the create payload (PR-B task 7)', async () => {
+    fetchMock.mockResolvedValueOnce(res(201, { member_id: 'm-registered-capital' }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.registered_capital_thb).toBe(5_000_000);
   });
 });

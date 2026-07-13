@@ -99,6 +99,69 @@ describe('buildMemberFormSchema — client mirrors server', () => {
   });
 });
 
+// PR-B task 7 — registered_capital_thb is a SEPARATE field from turnover_thb
+// (a reviewer asked for a rename; not done — turnover gates the F2 plan
+// turnover band + F8 tier upgrades). Mirrors turnover_thb's own rule exactly.
+describe('buildMemberFormSchema — registered_capital_thb (PR-B task 7)', () => {
+  it('rejects a negative registered capital on its own field', () => {
+    expect(issuePaths({ ...BASE, registered_capital_thb: '-5' })).toContain(
+      'registered_capital_thb',
+    );
+  });
+
+  it('accepts a valid registered capital, independent of turnover_thb', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        registered_capital_thb: '5000000',
+        turnover_thb: '1000000',
+      }),
+    ).toEqual([]);
+  });
+
+  it('is optional — omitting it entirely is valid', () => {
+    expect(issuePaths(BASE)).not.toContain('registered_capital_thb');
+  });
+});
+
+// PR-B task 7 — website accepts a bare domain by prefixing https:// BEFORE
+// the .url() check runs (z.preprocess). `example.com` alone would fail
+// `.url()` outright, and a Facebook page slug is the single most common
+// thing an admin pastes here.
+describe('buildMemberFormSchema — website accepts a bare domain (PR-B task 7)', () => {
+  it('normalizes a bare domain by prefixing https://', () => {
+    const r = schema.safeParse({ ...BASE, website: 'example.com' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.website).toBe('https://example.com');
+  });
+
+  it('normalizes a bare Facebook page slug', () => {
+    const r = schema.safeParse({ ...BASE, website: 'facebook.com/swecham' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.website).toBe('https://facebook.com/swecham');
+  });
+
+  it('leaves an already-complete https:// URL unchanged', () => {
+    const r = schema.safeParse({ ...BASE, website: 'https://facebook.com/x' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.website).toBe('https://facebook.com/x');
+  });
+
+  it('leaves an already-complete http:// URL unchanged (does not force https)', () => {
+    const r = schema.safeParse({ ...BASE, website: 'http://example.com' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.website).toBe('http://example.com');
+  });
+
+  it('still rejects a non-URL string on the website field', () => {
+    expect(issuePaths({ ...BASE, website: 'not a url' })).toContain('website');
+  });
+
+  it('still accepts an empty website (optional field)', () => {
+    expect(issuePaths({ ...BASE, website: '' })).not.toContain('website');
+  });
+});
+
 describe('buildMemberFormSchema — conditional DOB requirement (requireDob=true)', () => {
   const dobSchema = buildMemberFormSchema(tf, tv, true);
   function dobPaths(values: unknown): string[] {

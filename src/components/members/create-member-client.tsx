@@ -74,6 +74,11 @@ function toPayload(
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
       typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
+    // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnover_thb above.
+    registered_capital_thb:
+      typeof values.registered_capital_thb === 'number'
+        ? values.registered_capital_thb
+        : null,
     plan_id: values.plan_id,
     plan_year: values.plan_year,
     registration_date: values.registration_date || undefined,

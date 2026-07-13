@@ -22,6 +22,25 @@ import { type Translator } from '@/lib/zod-i18n';
 
 // --- Form shape --------------------------------------------------------------
 
+/**
+ * PR-B task 7 — normalises a bare domain (e.g. "facebook.com/x") into a full
+ * URL by prefixing `https://` BEFORE the `.url()` check below runs. Without
+ * this, `z.string().url()` rejects anything the admin didn't already type
+ * `https://` in front of — the single most common thing an admin pastes into
+ * a "Website" field is a bare domain or a Facebook page slug.
+ *
+ * Runs via `z.preprocess` (executes ahead of the inner schema), so an
+ * already-complete `http(s)://` URL passes through byte-for-byte unchanged,
+ * and a non-string / blank value is left alone so the downstream
+ * `.optional().or(z.literal(''))` branches still see what they expect.
+ */
+function normalizeWebsiteUrl(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (trimmed === '' || /^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 // A2 — schema is built per-render via this factory so zod validation messages
 // resolve through the active-locale translator (TH/SV previously saw hardcoded
 // English). `tf` is the `admin.members.create.fields` translator, widened to
@@ -58,12 +77,15 @@ export function buildMemberFormSchema(
     .length(2, tf('errors.countryCode'))
     .regex(/^[A-Za-z]{2}$/, tf('errors.countryCode')),
   tax_id: z.string().max(50, tv('tooLong', { max: 50 })).optional(),
-  website: z
-    .string()
-    .max(200, tv('tooLong', { max: 200 }))
-    .url(tf('errors.url'))
-    .optional()
-    .or(z.literal('')),
+  website: z.preprocess(
+    normalizeWebsiteUrl,
+    z
+      .string()
+      .max(200, tv('tooLong', { max: 200 }))
+      .url(tf('errors.url'))
+      .optional()
+      .or(z.literal('')),
+  ),
   description: z.string().max(2000, tv('tooLong', { max: 2000 })).optional(),
   address_line1: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
   address_line2: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
@@ -97,6 +119,20 @@ export function buildMemberFormSchema(
     .refine(
       (v) => v === undefined || (Number.isFinite(v) && v >= 0),
       tf('errors.turnover'),
+    ),
+  // PR-B task 7 — ทุนจดทะเบียน (registered capital). A SEPARATE field from
+  // `turnover_thb` above — NOT a rename. `turnover_thb` gates the F2 plan
+  // turnover band (out-of-band ⇒ mandatory override reason) and drives F8
+  // auto tier-upgrade suggestions; renaming it would silently re-point a
+  // membership-tier business rule at a different quantity. See the hint
+  // rendered under turnover_thb in company-section.tsx.
+  registered_capital_thb: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => (v === '' || v === undefined ? undefined : Number(v)))
+    .refine(
+      (v) => v === undefined || (Number.isFinite(v) && v >= 0),
+      tf('errors.registeredCapital'),
     ),
   plan_id: z.string().min(1, tf('errors.required')),
   plan_year: z.coerce

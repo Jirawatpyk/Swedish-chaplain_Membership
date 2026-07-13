@@ -2,7 +2,9 @@
 
 /**
  * MemberForm — Company section (company name, legal entity type, country,
- * tax ID, website, founded year, turnover, description, admin notes).
+ * tax ID, website). The genuinely-optional fields (founded year, turnover,
+ * registered capital, description, admin notes) live behind an "Additional
+ * details" collapsible (PR-B task 7).
  *
  * Extracted from the former single-file `member-form.tsx` (pure move, PR-B
  * task 4) — reads/writes form state via `useFormContext` instead of
@@ -11,10 +13,17 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
+import { ChevronDownIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { RequiredMark } from '@/components/ui/required-mark';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { CountryCombobox } from '@/components/members/country-combobox';
 import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
@@ -37,6 +46,27 @@ export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
     () => getValues('country') ?? 'TH',
   );
   const countryIsTH = country.toUpperCase() === 'TH';
+
+  // PR-B task 7 — "Additional details" collapsible (description, notes,
+  // founded_year, turnover_thb, registered_capital_thb). Closed by default
+  // (none of these are needed to create a member), but FORCE-derived open
+  // whenever one of its own fields has a validation error: a collapsed panel
+  // hides the error and FormErrorSummary's jump link would land inside a
+  // closed section (invisible, unfocusable). This is a pure per-render
+  // derivation, not a setState-in-effect — no timing gap between the errors
+  // updating and the panel unhiding in the same commit. While an error is
+  // present the panel also cannot be manually re-collapsed (clicking the
+  // trigger only updates `additionalOpen`; `hasAdditionalError` still wins
+  // the `||`) — deliberate: never let an admin hide an unresolved error.
+  const [additionalOpen, setAdditionalOpen] = useState(false);
+  const hasAdditionalError = Boolean(
+    errors.description ||
+      errors.notes ||
+      errors.founded_year ||
+      errors.turnover_thb ||
+      errors.registered_capital_thb,
+  );
+  const additionalDetailsOpen = additionalOpen || hasAdditionalError;
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -140,83 +170,141 @@ export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div>
-          <Label htmlFor="website">{tf('website')}</Label>
-          <Input
-            id="website"
-            type="url"
-            {...register('website')}
-            autoComplete="url"
-            maxLength={200}
-            placeholder={tf('websitePlaceholder')}
-            aria-invalid={Boolean(errors.website)}
-            aria-describedby={errors.website ? 'website-error' : undefined}
-          />
-          <FieldError id="website-error" message={errors.website?.message} />
-        </div>
-        <div>
-          <Label htmlFor="founded_year">{tf('foundedYear')}</Label>
-          <Input
-            id="founded_year"
-            type="number"
-            inputMode="numeric"
-            min={1800}
-            max={new Date().getUTCFullYear()}
-            aria-invalid={Boolean(errors.founded_year)}
-            aria-describedby={errors.founded_year ? 'founded_year-error' : undefined}
-            {...register('founded_year')}
-          />
-          <FieldError id="founded_year-error" message={errors.founded_year?.message} />
-        </div>
-        <div>
-          <Label htmlFor="turnover_thb">{tf('turnoverThb')}</Label>
-          <Input
-            id="turnover_thb"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            aria-invalid={Boolean(errors.turnover_thb)}
-            aria-describedby={errors.turnover_thb ? 'turnover_thb-error' : undefined}
-            {...register('turnover_thb')}
-          />
-          <FieldError id="turnover_thb-error" message={errors.turnover_thb?.message} />
-        </div>
+      <div>
+        <Label htmlFor="website">{tf('website')}</Label>
+        <Input
+          id="website"
+          type="url"
+          {...register('website')}
+          autoComplete="url"
+          maxLength={200}
+          placeholder={tf('websitePlaceholder')}
+          aria-invalid={Boolean(errors.website)}
+          aria-describedby={errors.website ? 'website-error' : undefined}
+        />
+        <FieldError id="website-error" message={errors.website?.message} />
       </div>
 
-      <div>
-        <Label htmlFor="description">{tf('description')}</Label>
-        <Textarea
-          id="description"
-          {...register('description')}
-          rows={3}
-          maxLength={2000}
-          aria-invalid={Boolean(errors.description)}
-          aria-describedby={
-            errors.description ? 'description-error' : undefined
+      {/* PR-B task 7 — genuinely optional fields, not needed to create a
+        * member: description, notes, founded_year, turnover_thb,
+        * registered_capital_thb. `keepMounted` on the panel keeps every
+        * field permanently in the DOM (never unmounted) — closed just sets
+        * the native `hidden` attribute, which already removes it from the
+        * accessibility tree and from `getByRole` queries. That is what lets
+        * `additionalDetailsOpen` force back to `true` synchronously the
+        * moment one of these fields errors, with no mount/ref timing gap for
+        * react-hook-form's focus-on-error to race against. */}
+      <Collapsible open={additionalDetailsOpen} onOpenChange={setAdditionalOpen}>
+        <CollapsibleTrigger
+          render={
+            <Button type="button" variant="ghost" className="group w-full justify-between" />
           }
-        />
-        <FieldError id="description-error" message={errors.description?.message} />
-      </div>
+        >
+          {t('sections.additionalDetails')}
+          <ChevronDownIcon
+            className="size-4 shrink-0 transition-transform duration-200 group-data-[panel-open]:rotate-180"
+            aria-hidden="true"
+          />
+        </CollapsibleTrigger>
+        <CollapsibleContent keepMounted className="flex flex-col gap-4 pt-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="founded_year">{tf('foundedYear')}</Label>
+              <Input
+                id="founded_year"
+                type="number"
+                inputMode="numeric"
+                min={1800}
+                max={new Date().getUTCFullYear()}
+                aria-invalid={Boolean(errors.founded_year)}
+                aria-describedby={errors.founded_year ? 'founded_year-error' : undefined}
+                {...register('founded_year')}
+              />
+              <FieldError id="founded_year-error" message={errors.founded_year?.message} />
+            </div>
+            <div>
+              <Label htmlFor="turnover_thb">{tf('turnoverThb')}</Label>
+              <Input
+                id="turnover_thb"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                aria-invalid={Boolean(errors.turnover_thb)}
+                aria-describedby={
+                  [
+                    errors.turnover_thb ? 'turnover_thb-error' : null,
+                    'turnover_thb-hint',
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
+                {...register('turnover_thb')}
+              />
+              {/* Reviewer asked to RENAME this to registered capital — deliberately
+                * not done: turnover gates the F2 plan turnover band (out-of-band ⇒
+                * mandatory override reason) and drives F8 auto tier-upgrade
+                * suggestions. Renaming the label would silently re-point a
+                * membership-tier business rule at a different quantity. */}
+              <p id="turnover_thb-hint" className="mt-1 text-xs text-muted-foreground">
+                {tf('turnoverHint')}
+              </p>
+              <FieldError id="turnover_thb-error" message={errors.turnover_thb?.message} />
+            </div>
+            <div>
+              <Label htmlFor="registered_capital_thb">{tf('registeredCapitalThb')}</Label>
+              <Input
+                id="registered_capital_thb"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                aria-invalid={Boolean(errors.registered_capital_thb)}
+                aria-describedby={
+                  errors.registered_capital_thb ? 'registered_capital_thb-error' : undefined
+                }
+                {...register('registered_capital_thb')}
+              />
+              <FieldError
+                id="registered_capital_thb-error"
+                message={errors.registered_capital_thb?.message}
+              />
+            </div>
+          </div>
 
-      <div>
-        <Label htmlFor="notes">{tf('notes')}</Label>
-        <Textarea
-          id="notes"
-          {...register('notes')}
-          rows={3}
-          maxLength={4000}
-          placeholder={tf('notesPlaceholder')}
-          aria-invalid={Boolean(errors.notes)}
-          aria-describedby={
-            errors.notes ? 'notes-error notes-hint' : 'notes-hint'
-          }
-        />
-        <p id="notes-hint" className="mt-1 text-xs text-muted-foreground">
-          {tf('notesHint')}
-        </p>
-        <FieldError id="notes-error" message={errors.notes?.message} />
-      </div>
+          <div>
+            <Label htmlFor="description">{tf('description')}</Label>
+            <Textarea
+              id="description"
+              {...register('description')}
+              rows={3}
+              maxLength={2000}
+              aria-invalid={Boolean(errors.description)}
+              aria-describedby={
+                errors.description ? 'description-error' : undefined
+              }
+            />
+            <FieldError id="description-error" message={errors.description?.message} />
+          </div>
+
+          <div>
+            <Label htmlFor="notes">{tf('notes')}</Label>
+            <Textarea
+              id="notes"
+              {...register('notes')}
+              rows={3}
+              maxLength={4000}
+              placeholder={tf('notesPlaceholder')}
+              aria-invalid={Boolean(errors.notes)}
+              aria-describedby={
+                errors.notes ? 'notes-error notes-hint' : 'notes-hint'
+              }
+            />
+            <p id="notes-hint" className="mt-1 text-xs text-muted-foreground">
+              {tf('notesHint')}
+            </p>
+            <FieldError id="notes-error" message={errors.notes?.message} />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </fieldset>
   );
 }

@@ -1296,7 +1296,8 @@
           "membership": "Medlemskap",
           "address": "Adress",
           "primaryContact": "Primär kontakt",
-          "taxBranch": "Huvudkontor / Filial (สำนักงานใหญ่/สาขา, §86/4)"
+          "taxBranch": "Huvudkontor / Filial (สำนักงานใหญ่/สาขา, §86/4)",
+          "additionalDetails": "Ytterligare uppgifter"
         },
         "fields": {
           "companyName": "Företagsnamn",
@@ -1309,8 +1310,8 @@
           "countryAllGroup": "Alla länder",
           "taxId": "Skatte-ID",
           "taxIdHintTH": "Thailändskt 13-siffrigt skatte-ID med checksiffra",
-          "website": "Webbplats",
-          "websitePlaceholder": "https://…",
+          "website": "Webbplats / Onlinenärvaro",
+          "websitePlaceholder": "facebook.com/yourcompany",
           "addressLine1": "Adressrad 1",
           "addressLine2": "Adressrad 2",
           "city": "Ort/Stad",
@@ -1346,6 +1347,8 @@
           "description": "Beskrivning",
           "foundedYear": "Grundat år",
           "turnoverThb": "Årsomsättning (THB)",
+          "turnoverHint": "Används för att placera medlemmen i planens omsättningsintervall.",
+          "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
           "planPlaceholder": "Välj paket…",
           "planYear": "Paketår",
@@ -1371,6 +1374,7 @@
             "dobRequired": "Födelsedatum krävs för denna plan.",
             "foundedYear": "Ange ett år mellan 1800 och i år.",
             "turnover": "Ange ett icke-negativt belopp.",
+            "registeredCapital": "Ange ett icke-negativt belopp.",
             "branchCodeFormat": "Ange en 5-siffrig filialkod, t.ex. 00001.",
             "branchOnNonRegistrant": "En filialkod gäller endast ett momsregistrerat bolag. Ange den juridiska personens typ först."
           },

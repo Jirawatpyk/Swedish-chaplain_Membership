@@ -184,6 +184,8 @@ export default async function EditMemberPage({ params }: PageProps) {
               subDistrict: member.subDistrict,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
+              // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnoverThb.
+              registeredCapitalThb: member.registeredCapitalThb,
               // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular.
               isHeadOffice: member.isHeadOffice ?? true,
               branchCode: member.branchCode ?? null,

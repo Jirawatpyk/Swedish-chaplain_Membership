@@ -1296,7 +1296,8 @@
           "membership": "การเป็นสมาชิก",
           "address": "ที่อยู่",
           "primaryContact": "ผู้ติดต่อหลัก",
-          "taxBranch": "สำนักงานใหญ่ / สาขา (มาตรา 86/4)"
+          "taxBranch": "สำนักงานใหญ่ / สาขา (มาตรา 86/4)",
+          "additionalDetails": "รายละเอียดเพิ่มเติม"
         },
         "fields": {
           "companyName": "ชื่อบริษัท",
@@ -1309,8 +1310,8 @@
           "countryAllGroup": "ประเทศทั้งหมด",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "taxIdHintTH": "เลข 13 หลัก พร้อม checksum ตามเกณฑ์สรรพากร",
-          "website": "เว็บไซต์",
-          "websitePlaceholder": "https://…",
+          "website": "เว็บไซต์ / ช่องทางออนไลน์",
+          "websitePlaceholder": "facebook.com/yourcompany",
           "addressLine1": "ที่อยู่ บรรทัด 1",
           "addressLine2": "ที่อยู่ บรรทัด 2",
           "city": "อำเภอ/เขต",
@@ -1346,6 +1347,8 @@
           "description": "คำอธิบาย",
           "foundedYear": "ปีก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "turnoverHint": "ใช้จัดสมาชิกให้อยู่ในช่วงยอดขายของแพ็กเกจ",
+          "registeredCapitalThb": "ทุนจดทะเบียน (บาท)",
           "plan": "แพ็กเกจ",
           "planPlaceholder": "เลือกแพ็กเกจ…",
           "planYear": "ปีแพ็กเกจ",
@@ -1371,6 +1374,7 @@
             "dobRequired": "แผนนี้ต้องระบุวันเกิด",
             "foundedYear": "กรอกปีระหว่าง 1800 ถึงปีปัจจุบัน",
             "turnover": "กรอกจำนวนที่ไม่ติดลบ",
+            "registeredCapital": "กรอกจำนวนที่ไม่ติดลบ",
             "branchCodeFormat": "กรอกรหัสสาขา 5 หลัก เช่น 00001",
             "branchOnNonRegistrant": "รหัสสาขาใช้กับนิติบุคคลที่จดทะเบียนภาษีมูลค่าเพิ่มเท่านั้น โปรดระบุประเภทนิติบุคคลก่อน"
           },
