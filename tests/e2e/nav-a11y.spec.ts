@@ -115,8 +115,13 @@ test.describe('nav a11y — US5 @a11y', () => {
     await expect(focused).toHaveAttribute('href', '#main-content');
   });
 
-  test('keyboard Tab reaches sidebar links', async ({ page }) => {
+  test('keyboard Tab reaches sidebar links', async ({ page, isMobile }) => {
     test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'Set E2E_ADMIN_*');
+    // The persistent rail is `hidden md:block`; below md the nav lives in a
+    // Sheet that only mounts once opened, so there is no [data-slot="sidebar"]
+    // to Tab into and this asserts an element that cannot exist. Keyboard
+    // access to the mobile nav is a different journey (open the Sheet first).
+    test.skip(isMobile === true, 'Desktop rail only — mobile renders the nav in a Sheet');
 
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);

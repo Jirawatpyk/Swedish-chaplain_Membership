@@ -27,6 +27,13 @@ test.describe('F4 — layout a11y regressions @a11y @layout', () => {
   });
 
   test('every migrated admin page passes WCAG 2.1 AA', async ({ page }) => {
+    // One sign-in plus a full axe pass over every page in PAGES, serially. At
+    // six pages this runs ~27s on desktop chromium and overruns the 30s default
+    // on the mobile projects, where each axe frame.evaluate is slower. The work
+    // is inherently linear in PAGES, so raise the ceiling rather than thin the
+    // coverage — adding a page here must not silently cost us a scan.
+    test.setTimeout(120_000);
+
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
