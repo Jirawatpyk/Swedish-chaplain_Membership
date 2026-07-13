@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { requireSession } from '@/lib/auth-session';
+import { env } from '@/lib/env';
 
 /**
  * Staff shell layout (T075 / T016).
@@ -54,6 +55,15 @@ export default async function StaffLayout({ children }: { children: ReactNode })
         <StaffSidebar
           tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
           role={user.role}
+          // 016 — drop the Broadcasts/Events nav items when their feature
+          // kill-switch is OFF, so the sidebar never shows a link that would
+          // 503 (F7 proxy) / 404 (F6 `notFound()`) on click. Resolved here in
+          // the server layout (the sidebar is a client component + can't read
+          // `env`). Mirrors the same flags the proxy + pages already check.
+          navVisibilityFlags={{
+            broadcastsEnabled: env.features.f7Broadcasts,
+            eventsEnabled: env.features.f6EventCreate,
+          }}
         />
 
         <SidebarInset>
