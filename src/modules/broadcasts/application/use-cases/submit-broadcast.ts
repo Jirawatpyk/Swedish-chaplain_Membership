@@ -8,6 +8,13 @@
  * Pipeline (FR-002 preconditions in CHEAP → EXPENSIVE order; the letters
  * map to the FR-002 sub-clauses, not pipeline order):
  *   k. halt flag → broadcast_member_halted_pending_review
+ *   l. membership access (059-membership-suspension Task 5) →
+ *      broadcast_membership_suspended_blocked — a suspended/terminated
+ *      member (F8 `deriveMembershipAccess`) cannot spend e-blast quota.
+ *      Runs BEFORE rate-limit/plan/quota so a suspended member's
+ *      submission never reaches the quota counter (the bug class this
+ *      gate exists to close: a check that compiles but is never wired
+ *      into the actual submit path).
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
  *   b. quota → broadcast_quota_blocked  (enforced for all actors incl admin_proxy — T-10)
@@ -50,6 +57,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailValidatorPort } from '../ports/email-validator-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
@@ -68,6 +76,17 @@ const REVIEW_SLA_TARGET_HOURS = 48;
 
 export type SubmitBroadcastError =
   | { readonly kind: 'broadcast_member_halted_pending_review'; readonly memberId: string }
+  // 059-membership-suspension Task 5 — precondition (l). Distinct kind
+  // from the halt-flag reject: a halt is an admin-imposed hold, while
+  // this is a member benefit-access state derived from F8's renewal
+  // cycle (suspended/terminated). NOT added to F7_AUDIT_EVENT_TYPES yet
+  // — the audit emit + enum value land in Task 8 (see the TODO at the
+  // emit site below); this is purely a Result-kind discriminant, which
+  // is independent of the audit taxonomy.
+  | {
+      readonly kind: 'broadcast_membership_suspended_blocked';
+      readonly memberId: string;
+    }
   | {
       readonly kind: 'broadcast_rate_limit_exceeded';
       readonly retryAfterSeconds: number;
@@ -151,6 +170,14 @@ export interface SubmitBroadcastDeps {
    */
   readonly imageAllowlistPort?: ImageAllowlistPort;
   readonly membersBridge: MembersBridgePort;
+  /**
+   * 059-membership-suspension Task 5 — precondition (l). Cross-module
+   * read against F8's `deriveMembershipAccess` (via the
+   * `membershipAccessBridge` adapter). REQUIRED (not optional) — every
+   * submit path, including admin_proxy, must be gated the same way the
+   * halt-flag and quota preconditions are non-optional.
+   */
+  readonly membershipAccess: MembershipAccessPort;
   readonly plansBridge: PlansBridgePort;
   readonly emailValidator: EmailValidatorPort;
   readonly eventAttendees: EventAttendeesRepository;
@@ -293,6 +320,39 @@ export async function submitBroadcast(
     });
     return err({
       kind: 'broadcast_member_halted_pending_review',
+      memberId: input.memberId,
+    });
+  }
+
+  // ---- Precondition (l): membership access -------------------------
+  // 059-membership-suspension Task 5. A suspended/terminated member
+  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is
+  // the enforcement that actually stops quota from being spent (a
+  // route-only guard would leak: use-cases are called from more than
+  // one route, e.g. proxy-submit delegates here too).
+  const access = await deps.membershipAccess.getMembershipAccess(
+    deps.tenant,
+    input.memberId,
+  );
+  if (!access.ok) {
+    // Infra error → fail CLOSED as a server_error (mirrors the quota
+    // counter's round-4 MED-D pattern at :349-357 below): a DB blip on
+    // the F8 lookup is NOT "member is fine, let it through". Returning
+    // a fake policy reject here would misreport an infra fault as a
+    // 422 user-fault; returning fake success would grant benefit access
+    // on an unexpected error. Neither is acceptable on a write path.
+    return err({
+      kind: 'submit.server_error',
+      message: `membership_access_error: ${access.error.kind}`,
+    });
+  }
+  if (access.value.access !== 'full') {
+    // TODO(Task 8): emitReject(deps, input, 'broadcast_membership_suspended_blocked', { memberId: input.memberId })
+    //   — the audit event TYPE is added to the F7 taxonomy in Task 8; do
+    //   NOT call emitReject with it now (it is not yet a valid
+    //   F7AuditEventType and would fail the enum/typecheck).
+    return err({
+      kind: 'broadcast_membership_suspended_blocked',
       memberId: input.memberId,
     });
   }
