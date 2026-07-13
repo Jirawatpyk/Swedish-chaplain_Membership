@@ -23,6 +23,38 @@ describe('mapMemberCreateServerError', () => {
     });
   });
 
+  // PR-B task 8 — the server now discriminates WHICH email collided via
+  // `details.reason` instead of always assuming the primary contact.
+  it('routes a 409 conflict with reason=secondary_email_in_use to the secondary field', () => {
+    expect(
+      mapMemberCreateServerError(
+        409,
+        'conflict',
+        undefined,
+        'secondary_email_in_use',
+      ),
+    ).toEqual({
+      field: 'secondary_contact.email',
+      messageKey: 'errors.secondaryEmailInUse',
+    });
+  });
+
+  it.each([
+    ['primary_email_in_use'],
+    ['member_duplicate'],
+    [undefined],
+  ] as const)(
+    'falls back to the primary email field for reason=%s',
+    (reason) => {
+      expect(
+        mapMemberCreateServerError(409, 'conflict', undefined, reason),
+      ).toEqual({
+        field: 'primary_contact.email',
+        messageKey: 'errors.emailInUse',
+      });
+    },
+  );
+
   it('does NOT claim 409 soft_duplicate (its own confirm dialog owns it)', () => {
     expect(
       mapMemberCreateServerError(409, 'soft_duplicate', undefined),
@@ -35,6 +67,20 @@ describe('mapMemberCreateServerError', () => {
     ['invalid_phone', 'primary_contact.phone', 'fields.phoneError'],
     ['invalid_country', 'country', 'fields.errors.countryCode'],
   ])('routes a 400 %s to its originating field', (type, field, messageKey) => {
+    expect(mapMemberCreateServerError(400, 'validation_error', type)).toEqual({
+      field,
+      messageKey,
+    });
+  });
+
+  it.each([
+    [
+      'invalid_secondary_email',
+      'secondary_contact.email',
+      'fields.errors.emailFormat',
+    ],
+    ['invalid_secondary_phone', 'secondary_contact.phone', 'fields.phoneError'],
+  ])('routes a 400 %s to its originating secondary-contact field', (type, field, messageKey) => {
     expect(mapMemberCreateServerError(400, 'validation_error', type)).toEqual({
       field,
       messageKey,
@@ -63,9 +109,25 @@ describe('mapMemberCreateServerError', () => {
       mapMemberCreateServerError(400, 'validation_error', 'invalid_tax_id'),
       mapMemberCreateServerError(400, 'validation_error', 'invalid_phone'),
       mapMemberCreateServerError(400, 'validation_error', 'invalid_country'),
+      mapMemberCreateServerError(
+        409,
+        'conflict',
+        undefined,
+        'secondary_email_in_use',
+      ),
+      mapMemberCreateServerError(
+        400,
+        'validation_error',
+        'invalid_secondary_email',
+      ),
+      mapMemberCreateServerError(
+        400,
+        'validation_error',
+        'invalid_secondary_phone',
+      ),
     ].filter((m): m is NonNullable<typeof m> => m !== null);
 
-    expect(mapped).toHaveLength(5);
+    expect(mapped).toHaveLength(8);
     for (const m of mapped) {
       expect(typeof resolveCreateKey(m.messageKey)).toBe('string');
     }

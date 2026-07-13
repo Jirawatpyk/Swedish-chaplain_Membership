@@ -1296,8 +1296,13 @@
           "membership": "Membership",
           "address": "Address",
           "primaryContact": "Primary contact",
+          "secondaryContact": "Secondary contact",
           "taxBranch": "Head office / Branch (§86/4)",
           "additionalDetails": "Additional details"
+        },
+        "secondaryContact": {
+          "addButton": "+ Add a secondary contact",
+          "removeButton": "Remove secondary contact"
         },
         "fields": {
           "companyName": "Company name",
@@ -1376,7 +1381,8 @@
             "turnover": "Enter a non-negative amount.",
             "registeredCapital": "Enter a non-negative amount.",
             "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
-            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first."
+            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first.",
+            "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -1388,6 +1394,7 @@
           "forbidden": "Only administrators can add members.",
           "planMissing": "No active plans found — create a plan first.",
           "emailInUse": "This email is already used by another member in this chamber.",
+          "secondaryEmailInUse": "This secondary contact's email is already used by another member in this chamber.",
           "taxIdInvalid": "This Tax ID is invalid. Check the 13-digit number and its checksum.",
           "planUnavailable": "This plan is no longer available. Refresh the page and choose another.",
           "serverBusy": "The server is busy. Please try again in a moment."

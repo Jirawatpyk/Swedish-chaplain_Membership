@@ -92,6 +92,21 @@ function toPayload(
       date_of_birth: values.primary_contact.date_of_birth || null,
     },
   };
+  // PR-B task 8 — optional secondary contact. Only present when the admin
+  // clicked "+ Add a secondary contact" and filled it in — `secondary_contact`
+  // is `undefined` on `values` otherwise (SecondaryContactSection clears the
+  // whole sub-object on Remove, so a filled-then-removed contact never rides
+  // along here).
+  if (values.secondary_contact) {
+    payload.secondary_contact = {
+      first_name: values.secondary_contact.first_name.trim(),
+      last_name: values.secondary_contact.last_name.trim(),
+      email: values.secondary_contact.email.trim(),
+      phone: values.secondary_contact.phone?.trim() || null,
+      role_title: values.secondary_contact.role_title?.trim() || null,
+      preferred_language: values.secondary_contact.preferred_language,
+    };
+  }
   if (opts.confirmSoftDuplicate) payload.confirm_soft_duplicate = true;
   if (opts.overrideReason) {
     payload.override_reason_code = opts.overrideReason.code;
@@ -169,6 +184,7 @@ export function CreateMemberClient({ plans, defaultPlanYear }: Props) {
       res.status,
       body?.error?.code,
       body?.error?.details?.type,
+      body?.error?.details?.reason,
     );
     if (fieldError) {
       const message = t(fieldError.messageKey);

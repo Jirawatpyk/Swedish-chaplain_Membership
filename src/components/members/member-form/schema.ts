@@ -197,7 +197,60 @@ export function buildMemberFormSchema(
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().optional(),
   }),
+  // PR-B task 8 — optional secondary contact. `undefined` until the admin
+  // clicks "+ Add a secondary contact" (SecondaryContactSection); Remove
+  // clears it back to `undefined` via RHF `unregister`, so this branch only
+  // validates when the fieldset is actually mounted. Same shape as
+  // primary_contact MINUS date_of_birth (primary-only, plan-driven gate).
+  secondary_contact: z
+    .object({
+      first_name: z
+        .string()
+        .trim()
+        .min(1, tf('errors.required'))
+        .max(100, tv('tooLong', { max: 100 })),
+      last_name: z
+        .string()
+        .trim()
+        .min(1, tf('errors.required'))
+        .max(100, tv('tooLong', { max: 100 })),
+      email: z
+        .string()
+        .trim()
+        .min(1, tf('errors.required'))
+        .email(tf('errors.emailFormat'))
+        .max(254, tv('tooLong', { max: 254 })),
+      phone: z
+        .string()
+        .max(20, tv('tooLong', { max: 20 }))
+        .optional()
+        .refine((v) => v === undefined || isAcceptablePhoneInput(v), {
+          message: tf('phoneError'),
+        }),
+      role_title: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+      preferred_language: z.enum(['en', 'th', 'sv']),
+    })
+    .optional(),
   }).superRefine((data, ctx) => {
+    // PR-B task 8 — cheap guard for the commonest secondary-contact
+    // conflict, checked client-side BEFORE any round-trip: the two contacts
+    // cannot share an email (mirrors the server's
+    // `secondary_email_same_as_primary` defense-in-depth check). Only fires
+    // once the secondary fieldset is actually filled in — a case-insensitive
+    // compare since the DB uniqueness (`contacts_tenant_email_uniq`) is on
+    // `lower(email)`.
+    if (
+      data.secondary_contact?.email &&
+      data.primary_contact?.email &&
+      data.secondary_contact.email.trim().toLowerCase() ===
+        data.primary_contact.email.trim().toLowerCase()
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['secondary_contact', 'email'],
+        message: tf('errors.secondaryEmailSameAsPrimary'),
+      });
+    }
     // Mirror the server's Thai tax-id checksum so a bad value is rejected +
     // highlighted inline (like the email .email() rule) instead of via a 400
     // round-trip — whose highlight briefly clears on the next resubmit because

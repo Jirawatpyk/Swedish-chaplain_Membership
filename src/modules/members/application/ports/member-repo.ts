@@ -87,9 +87,47 @@ export type DirectoryRow = {
     | null;
 };
 
+/**
+ * PR-B task 8 — closed set of `repo.conflict` discriminators across the
+ * whole Members module (MemberRepo + ContactRepo + UserEmailPort all share
+ * `RepoError`). Was a free-form `string` — every producer picked its own
+ * ad-hoc sentence ('duplicate', 'no current primary', 'email already
+ * taken', …) and no consumer could safely switch on it. Narrowed here so
+ * `createWithPrimaryContactInTx`'s per-insert conflict (member / primary
+ * contact / secondary contact) can be threaded all the way to the API
+ * response's `details.reason` and back to the correct form field —
+ * see `src/components/members/member-create-error-map.ts`.
+ *
+ * `member_duplicate` — a plain `members` uniqueness violation (PK / the
+ *   per-tenant member-number index). Extremely unlikely in practice: both
+ *   are allocated fresh inside the same tx, but kept for defence-in-depth
+ *   symmetry with the two contact reasons below.
+ * `primary_email_in_use` / `secondary_email_in_use` — the primary or
+ *   secondary contact insert hit `contacts_tenant_email_uniq`.
+ * `contact_email_in_use` — same DB constraint, but from the Edit-page
+ *   "Add contact" / change-email flows (`addInTx` / `updateEmailInTx`),
+ *   which don't have a primary/secondary distinction to make.
+ * `contact_already_linked` — `linkUserInTx` found the contact already
+ *   bound to a user (not a DB unique-violation — a manual state probe).
+ * `no_current_primary` — `promotePrimaryInTx` demoted 0 rows (manual probe).
+ * `primary_contact_race` — `promotePrimaryInTx` hit
+ *   `contacts_one_primary_per_member` (a genuine unique-violation race).
+ * `user_email_already_taken` — `UserEmailPort.updateInTx` hit the F1
+ *   `users` email-uniqueness index.
+ */
+export type RepoConflictReason =
+  | 'member_duplicate'
+  | 'primary_email_in_use'
+  | 'secondary_email_in_use'
+  | 'contact_email_in_use'
+  | 'contact_already_linked'
+  | 'no_current_primary'
+  | 'primary_contact_race'
+  | 'user_email_already_taken';
+
 export type RepoError =
   | { code: 'repo.not_found' }
-  | { code: 'repo.conflict'; reason: string }
+  | { code: 'repo.conflict'; reason: RepoConflictReason }
   | { code: 'repo.unexpected'; cause?: unknown };
 
 /**
@@ -197,11 +235,25 @@ export interface MemberRepo {
   ): Promise<Result<Member | null, RepoError>>;
 
   /**
-   * Insert member + primary contact rows inside the caller's transaction.
-   * Returns the persisted Member + Contact (with DB-generated timestamps).
-   * Does NOT emit audit events — caller emits `member_created` +
-   * `contact_created` via `AuditPort.recordInTx` so Application-layer
-   * ownership of audit emission is preserved (Principle III, S1).
+   * Insert member + primary contact + an OPTIONAL secondary contact rows
+   * inside the caller's transaction. Returns the persisted Member + primary
+   * Contact (with DB-generated timestamps) + the secondary Contact when one
+   * was supplied (`null` otherwise). Does NOT emit audit events — caller
+   * emits `member_created` + one `contact_created` per inserted contact via
+   * `AuditPort.recordInTx` so Application-layer ownership of audit emission
+   * is preserved (Principle III, S1).
+   *
+   * PR-B task 8 — the secondary contact is inserted `isPrimary: false` in
+   * the SAME transaction (never a separate call): `contacts_one_primary_per_member`
+   * is a partial unique index that would reject a second `isPrimary: true`
+   * row, and "one transaction, or none" means a secondary-email collision
+   * must roll back the member + primary contact too, not leave an orphan.
+   * The three inserts (member, primary, secondary) each run in their OWN
+   * try/catch so a unique-violation on any one of them is mapped to a
+   * DISTINCT `RepoConflictReason` ('member_duplicate' /
+   * 'primary_email_in_use' / 'secondary_email_in_use') — the discriminator
+   * the API needs to highlight the field that actually collided instead of
+   * always assuming the primary contact's email.
    */
   createWithPrimaryContactInTx(
     tx: TenantTx,
@@ -211,8 +263,17 @@ export interface MemberRepo {
         Contact,
         'createdAt' | 'updatedAt' | 'memberId'
       >;
+      readonly secondaryContact?: Omit<
+        Contact,
+        'createdAt' | 'updatedAt' | 'memberId'
+      >;
     },
-  ): Promise<Result<{ member: Member; contact: Contact }, RepoError>>;
+  ): Promise<
+    Result<
+      { member: Member; contact: Contact; secondaryContact: Contact | null },
+      RepoError
+    >
+  >;
 
   /**
    * Persist a status-transition snapshot. Caller is responsible for

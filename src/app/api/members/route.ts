@@ -244,6 +244,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     case 'invalid_country':
     case 'invalid_tax_id':
     case 'invalid_override_reason':
+    // PR-B task 8 — secondary-contact domain validation, same 400 shape.
+    case 'invalid_secondary_email':
+    case 'invalid_secondary_phone':
+    case 'secondary_email_same_as_primary':
       return NextResponse.json(
         {
           error: {
@@ -305,8 +309,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 409 },
       );
     case 'conflict':
+      // PR-B task 8 — `reason` moved OUT of the user-visible `message` and
+      // into `details.reason` (the `soft_duplicate` arm above is the
+      // in-repo precedent for a discriminator living in `details`). `code`
+      // stays 'conflict' so existing clients keep working; the message is
+      // now a fixed, non-leaking string and `mapMemberCreateServerError`
+      // switches on `details.reason` to highlight the field that actually
+      // collided (member / primary contact / secondary contact).
       return NextResponse.json(
-        { error: { code: 'conflict', message: result.error.reason } },
+        {
+          error: {
+            code: 'conflict',
+            message: 'A record with this value already exists.',
+            details: { reason: result.error.reason },
+          },
+        },
         { status: 409 },
       );
     case 'audit_failed':

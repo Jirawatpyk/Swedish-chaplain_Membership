@@ -62,7 +62,7 @@ export const userEmailAdapter: UserEmailPort = {
         isUniqueViolation(e) ||
         /duplicate key|unique constraint/i.test(errorChainMessage(e))
       ) {
-        return err({ code: 'repo.conflict', reason: 'email already taken' });
+        return err({ code: 'repo.conflict', reason: 'user_email_already_taken' });
       }
       return err({ code: 'repo.unexpected', cause: e });
     }

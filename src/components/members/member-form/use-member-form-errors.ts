@@ -73,6 +73,36 @@ export function useMemberFormErrors({
         ? errors.branch_code?.message
         : undefined,
     ],
+    // PR-B task 8 — secondary contact fields. CREATE only (the section
+    // never renders in edit mode); DOM ids come from ContactFields'
+    // `fieldId('secondary_contact', <field>)` fallback branch
+    // (`${idPrefix}_${field}` since idPrefix !== 'contact').
+    [
+      'secondary_contact_first_name',
+      mode === 'create'
+        ? errors.secondary_contact?.first_name?.message
+        : undefined,
+    ],
+    [
+      'secondary_contact_last_name',
+      mode === 'create'
+        ? errors.secondary_contact?.last_name?.message
+        : undefined,
+    ],
+    [
+      'secondary_contact_email',
+      mode === 'create' ? errors.secondary_contact?.email?.message : undefined,
+    ],
+    [
+      'secondary_contact_phone',
+      mode === 'create' ? errors.secondary_contact?.phone?.message : undefined,
+    ],
+    [
+      'secondary_contact_role_title',
+      mode === 'create'
+        ? errors.secondary_contact?.role_title?.message
+        : undefined,
+    ],
   ];
   return summaryEntries
     .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))

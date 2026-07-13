@@ -59,7 +59,7 @@ import {
   type TenantId,
   type PlanId,
 } from '../../domain/member';
-import type { ContactId } from '../../domain/contact';
+import type { Contact, ContactId } from '../../domain/contact';
 import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
@@ -241,6 +241,41 @@ function directoryPlanNameSubquery(tx: RepoTx) {
       ),
     )
     .limit(1);
+}
+
+/**
+ * PR-B task 8 — insert one `contacts` row on the given tx, factored out of
+ * `createWithPrimaryContactInTx` so the primary and secondary contact
+ * inserts share the exact same column mapping (only `isPrimary` differs).
+ * Callers wrap this in their OWN try/catch so a unique-violation on the
+ * primary insert vs the secondary insert maps to a DISTINCT
+ * `RepoConflictReason` — see the port doc.
+ */
+async function insertContactRow(
+  tx: RepoTx,
+  memberId: string,
+  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>,
+  isPrimary: boolean,
+) {
+  const inserted = await tx
+    .insert(contacts)
+    .values({
+      tenantId: contact.tenantId,
+      contactId: contact.contactId,
+      memberId,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      email: contact.email,
+      phone: contact.phone,
+      roleTitle: contact.roleTitle,
+      preferredLanguage: contact.preferredLanguage,
+      isPrimary,
+      dateOfBirth: contact.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      linkedUserId: contact.linkedUserId,
+      removedAt: null,
+    })
+    .returning();
+  return inserted[0]!;
 }
 
 /** Map a `{ row, planDisplayName }` page row → DirectoryRow. */
@@ -497,8 +532,20 @@ export const drizzleMemberRepo: MemberRepo = {
   },
 
   async createWithPrimaryContactInTx(tx, draft) {
+    // PR-B task 8 — THREE separate try/catch blocks (member, primary
+    // contact, secondary contact), each mapping a unique-violation to its
+    // OWN `RepoConflictReason`. The former single try/catch around the
+    // whole method could only ever say 'duplicate' regardless of which
+    // insert actually collided — a secondary-email collision would report
+    // as if the PRIMARY email were taken. All three inserts still run on
+    // the SAME `tx` (threaded from the caller's `runInTenant`), so a
+    // failure on insert 2 or 3 still rolls back insert 1 — "one
+    // transaction, or none" is a property of the CALLER's tx boundary, not
+    // of how many try/catch blocks sit inside this method.
+
+    // 1. Insert member
+    let memberRow: typeof members.$inferSelect;
     try {
-      // 1. Insert member
       const insertedMembers = await tx
         .insert(members)
         .values({
@@ -532,42 +579,54 @@ export const drizzleMemberRepo: MemberRepo = {
           archivedAt: draft.member.archivedAt,
         })
         .returning();
-      const memberRow = insertedMembers[0]!;
-
-      // 2. Insert primary contact (bound to the inserted member's id)
-      const insertedContacts = await tx
-        .insert(contacts)
-        .values({
-          tenantId: draft.primaryContact.tenantId,
-          contactId: draft.primaryContact.contactId,
-          memberId: memberRow.memberId,
-          firstName: draft.primaryContact.firstName,
-          lastName: draft.primaryContact.lastName,
-          email: draft.primaryContact.email,
-          phone: draft.primaryContact.phone,
-          roleTitle: draft.primaryContact.roleTitle,
-          preferredLanguage: draft.primaryContact.preferredLanguage,
-          isPrimary: true,
-          dateOfBirth:
-            draft.primaryContact.dateOfBirth?.toISOString().slice(0, 10) ??
-            null,
-          linkedUserId: draft.primaryContact.linkedUserId,
-          removedAt: null,
-        })
-        .returning();
-      const contactRow = insertedContacts[0]!;
-
-      const result = { memberRow, contactRow };
-
-      const persistedMember = rowToMember(result.memberRow);
-      // Reuse the canonical row→Contact mapper (handles the M5 primacy union
-      // narrowing) instead of duplicating the field-by-field literal.
-      const persistedContact = rowToContact(result.contactRow);
-
-      return ok({ member: persistedMember, contact: persistedContact });
+      memberRow = insertedMembers[0]!;
     } catch (e) {
-      return err(mapDbError(e, 'duplicate'));
+      return err(mapDbError(e, 'member_duplicate'));
     }
+
+    // 2. Insert primary contact (bound to the inserted member's id)
+    let contactRow: typeof contacts.$inferSelect;
+    try {
+      contactRow = await insertContactRow(
+        tx,
+        memberRow.memberId,
+        draft.primaryContact,
+        true,
+      );
+    } catch (e) {
+      return err(mapDbError(e, 'primary_email_in_use'));
+    }
+
+    // 3. Insert secondary contact — OPTIONAL (PR-B task 8). isPrimary is
+    // always false: `contacts_one_primary_per_member` (a partial unique
+    // index) would reject a second isPrimary:true row for this member.
+    let secondaryContactRow: typeof contacts.$inferSelect | null = null;
+    if (draft.secondaryContact) {
+      try {
+        secondaryContactRow = await insertContactRow(
+          tx,
+          memberRow.memberId,
+          draft.secondaryContact,
+          false,
+        );
+      } catch (e) {
+        return err(mapDbError(e, 'secondary_email_in_use'));
+      }
+    }
+
+    const persistedMember = rowToMember(memberRow);
+    // Reuse the canonical row→Contact mapper (handles the M5 primacy union
+    // narrowing) instead of duplicating the field-by-field literal.
+    const persistedContact = rowToContact(contactRow);
+    const persistedSecondaryContact = secondaryContactRow
+      ? rowToContact(secondaryContactRow)
+      : null;
+
+    return ok({
+      member: persistedMember,
+      contact: persistedContact,
+      secondaryContact: persistedSecondaryContact,
+    });
   },
 
   async updateStatus(ctx, memberId, next) {

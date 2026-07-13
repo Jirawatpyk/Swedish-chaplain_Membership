@@ -48,6 +48,7 @@ import { MembershipSection } from './sections/membership-section';
 import { AddressSection } from './sections/address-section';
 import { TaxBranchSection } from './sections/tax-branch-section';
 import { ContactFields } from './sections/contact-fields';
+import { SecondaryContactSection } from './sections/secondary-contact-section';
 
 type Props = {
   readonly plans: readonly PlanOption[];
@@ -205,6 +206,9 @@ export function MemberForm({
             required
           />
         </fieldset>
+
+        {/* --- Secondary contact — CREATE only (PR-B task 8) --- */}
+        {mode === 'create' && <SecondaryContactSection />}
 
         <div className="flex items-center justify-end gap-2">
           {onCancel && (

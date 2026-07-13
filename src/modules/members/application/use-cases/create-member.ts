@@ -40,7 +40,11 @@ import { checkStartupDuration } from '../../domain/policies/startup-duration-pol
 import { asPlanId } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
-import type { MemberRepo, RepoError } from '../ports/member-repo';
+import type {
+  MemberRepo,
+  RepoConflictReason,
+  RepoError,
+} from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
@@ -78,6 +82,19 @@ export const createMemberSchema = z.object({
     preferred_language: z.enum(['en', 'th', 'sv']),
     date_of_birth: z.string().nullable().optional(),
   }),
+  // PR-B task 8 — optional secondary contact. Same shape as primary_contact
+  // MINUS date_of_birth (that gate is primary-only and plan-driven — the
+  // Thai Alumni DOB requirement never applies to a secondary contact).
+  secondary_contact: z
+    .object({
+      first_name: z.string().trim().min(1).max(100),
+      last_name: z.string().trim().min(1).max(100),
+      email: z.string().max(254),
+      phone: z.string().max(20).nullable().optional(),
+      role_title: z.string().max(100).nullable().optional(),
+      preferred_language: z.enum(['en', 'th', 'sv']),
+    })
+    .optional(),
   override_reason_code: z.enum(OVERRIDE_REASON_CODES).nullable().optional(),
   override_reason_note: z.string().max(500).nullable().optional(),
   confirm_soft_duplicate: z.boolean().optional(),
@@ -94,6 +111,18 @@ export type CreateMemberError =
     }
   | { type: 'invalid_email' }
   | { type: 'invalid_phone' }
+  // PR-B task 8 — secondary contact validation branches. Kept as their own
+  // discriminated types (not reusing invalid_email/invalid_phone) so the
+  // route can put a distinct `details.type` on the 400 response and
+  // `mapMemberCreateServerError` can route the highlight to
+  // `secondary_contact.email` / `secondary_contact.phone` instead of the
+  // primary fields.
+  | { type: 'invalid_secondary_email' }
+  | { type: 'invalid_secondary_phone' }
+  // Cheap guard for the commonest secondary-contact conflict, checked
+  // BEFORE any DB write — the client zod schema blocks this first, this is
+  // defense-in-depth for a direct API call.
+  | { type: 'secondary_email_same_as_primary' }
   | { type: 'invalid_country' }
   | { type: 'invalid_tax_id'; code: string }
   | { type: 'invalid_override_reason'; code: string }
@@ -114,7 +143,7 @@ export type CreateMemberError =
       existingMemberId: string;
       existingCompanyName: string;
     }
-  | { type: 'conflict'; reason: string }
+  | { type: 'conflict'; reason: RepoConflictReason }
   | { type: 'audit_failed' }
   | { type: 'server_error'; message: string };
 
@@ -215,6 +244,52 @@ export async function createMember(
     const r = asPhone(data.primary_contact.phone);
     if (!r.ok) return err({ type: 'invalid_phone' });
     phone = r.value;
+  }
+
+  // PR-B task 8 — optional secondary contact. Validated the same way as the
+  // primary contact, plus a same-email guard: the client zod schema blocks
+  // this first (cheap, before any round-trip), this is defense-in-depth for
+  // a caller that bypasses the form (direct API call). The draft is
+  // assembled here (not later, alongside contactDraft) so `secondaryEmail`'s
+  // non-null-ness stays in ONE block instead of relying on a re-check of
+  // `data.secondary_contact` to satisfy the type checker further down.
+  let secondaryContactDraft:
+    | Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>
+    | null = null;
+  if (data.secondary_contact) {
+    const secondaryEmailResult = asEmail(data.secondary_contact.email);
+    if (!secondaryEmailResult.ok) return err({ type: 'invalid_secondary_email' });
+    const secondaryEmail = secondaryEmailResult.value;
+
+    // asEmail() normalises to lowercase (see email.ts), so a plain `===`
+    // is a correct case-insensitive comparison.
+    if (secondaryEmail === email.value) {
+      return err({ type: 'secondary_email_same_as_primary' });
+    }
+
+    let secondaryPhone: Phone | null = null;
+    if (data.secondary_contact.phone) {
+      const r = asPhone(data.secondary_contact.phone);
+      if (!r.ok) return err({ type: 'invalid_secondary_phone' });
+      secondaryPhone = r.value;
+    }
+
+    secondaryContactDraft = {
+      tenantId: deps.tenant.slug,
+      contactId: deps.idFactory.contactId(),
+      firstName: data.secondary_contact.first_name.trim(),
+      lastName: data.secondary_contact.last_name.trim(),
+      email: secondaryEmail,
+      phone: secondaryPhone,
+      roleTitle: data.secondary_contact.role_title ?? null,
+      preferredLanguage: data.secondary_contact.preferred_language,
+      isPrimary: false,
+      // No DOB collection on the secondary contact (primary-only gate).
+      dateOfBirth: null,
+      linkedUserId: null,
+      inviteBouncedAt: null,
+      removedAt: null,
+    };
   }
 
   let taxId: TaxId | null = null;
@@ -387,6 +462,11 @@ export async function createMember(
       const result = await deps.memberRepo.createWithPrimaryContactInTx(tx, {
         member: memberDraft,
         primaryContact: contactDraft,
+        // PR-B task 8 — inserted in the SAME transaction as the member +
+        // primary contact (never a separate call): a secondary-email
+        // collision must roll back the whole create, not leave an orphan
+        // member/primary-contact row.
+        ...(secondaryContactDraft && { secondaryContact: secondaryContactDraft }),
       });
       if (!result.ok) throw new UseCaseAbort<RepoError>(result.error);
 
@@ -447,6 +527,29 @@ export async function createMember(
         },
       });
       if (!contactAudit.ok) throw new UseCaseAbort<RepoError>(contactAudit.error);
+
+      // PR-B task 8 — a SECOND contact_created audit event, in the SAME tx,
+      // when a secondary contact was added. No new audit event type — the
+      // existing `contact_created` shape already carries `is_primary`.
+      if (result.value.secondaryContact) {
+        const secondaryContactAudit = await deps.audit.recordInTx(
+          tx,
+          deps.tenant,
+          {
+            type: 'contact_created',
+            actorUserId: meta.actorUserId,
+            requestId: meta.requestId,
+            summary: `contact_created for member ${result.value.member.memberId}`,
+            payload: {
+              member_id: result.value.member.memberId,
+              contact_id: result.value.secondaryContact.contactId,
+              is_primary: false,
+            },
+          },
+        );
+        if (!secondaryContactAudit.ok)
+          throw new UseCaseAbort<RepoError>(secondaryContactAudit.error);
+      }
 
       return result.value;
     });
