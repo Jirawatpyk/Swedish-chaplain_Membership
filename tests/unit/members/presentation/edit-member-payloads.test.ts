@@ -180,6 +180,13 @@ describe('hasFieldDiff', () => {
       true,
     );
   });
+  // PR-0 finding 4: a changed registration_date must NOT trip hasFieldDiff —
+  // paired with the buildFieldPayload guard above so the two stay in sync.
+  it('a changed registration_date does not trip hasFieldDiff', () => {
+    expect(
+      hasFieldDiff(makeValues({ registration_date: '2025-06-15' }), member),
+    ).toBe(false);
+  });
   it('detects an added address field', () => {
     expect(hasFieldDiff(makeValues({ city: 'Bangkok' }), member)).toBe(true);
   });
@@ -200,6 +207,18 @@ describe('buildFieldPayload', () => {
     );
     expect(out.address_line1).toBe('99 Rd');
     expect(out.city).toBeNull();
+  });
+
+  // PR-0 finding 4: registration_date is read-only in edit mode (Task 2)
+  // ONLY because this function never emits it and updateMemberSchema is
+  // `.strict()` without the key — sending it 400s. If a future change adds
+  // registration_date to hasFieldDiff without adding it to the schema,
+  // every edit save breaks silently. Guard both halves of that invariant.
+  it('never emits a registration_date key, even when the form carries one', () => {
+    const out = buildFieldPayload(
+      makeValues({ registration_date: '2025-06-15' }),
+    );
+    expect(out).not.toHaveProperty('registration_date');
   });
 });
 

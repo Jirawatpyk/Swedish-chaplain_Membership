@@ -1322,7 +1322,7 @@
           "planPlaceholder": "Select a plan…",
           "planYear": "Plan year",
           "registrationDate": "Registration date",
-          "registrationDateHint": "Counted from the date the member is created in the system.",
+          "registrationDateHint": "Defaults to today. This date anchors the renewal cycle — back-date it for a member who joined earlier.",
           "registrationDateReadOnly": "Set at member creation and cannot be changed here.",
           "firstName": "First name",
           "lastName": "Last name",

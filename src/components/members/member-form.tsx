@@ -729,24 +729,33 @@ export function MemberForm({
             readOnly={mode === 'edit'}
             aria-describedby={
               mode === 'edit'
-                ? 'registration_date-hint registration_date-readonly'
+                ? 'registration_date-readonly'
                 : 'registration_date-hint'
             }
-            className={mode === 'edit' ? 'bg-muted' : undefined}
+            // Tailwind-merge only dedupes WITHIN the same variant group —
+            // `bg-muted` (no modifier) and `dark:bg-input/30` from the base
+            // Input class list (input.tsx) don't collide, so the dark
+            // variant wins and the read-only cue disappears in dark mode.
+            // Pin the dark variant explicitly.
+            className={mode === 'edit' ? 'bg-muted dark:bg-muted' : undefined}
             {...register('registration_date')}
           />
-          <p
-            id="registration_date-hint"
-            className="mt-1 text-xs text-muted-foreground"
-          >
-            {tf('registrationDateHint')}
-          </p>
-          {mode === 'edit' && (
+          {/* Each mode gets the copy that is true for it — create honours a
+            * back-dated value verbatim (it anchors the F8 renewal cycle);
+            * edit discards any change, so only the read-only note applies. */}
+          {mode === 'edit' ? (
             <p
               id="registration_date-readonly"
               className="mt-1 text-xs text-muted-foreground"
             >
               {tf('registrationDateReadOnly')}
+            </p>
+          ) : (
+            <p
+              id="registration_date-hint"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {tf('registrationDateHint')}
             </p>
           )}
         </div>
