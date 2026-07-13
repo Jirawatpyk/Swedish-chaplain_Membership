@@ -1336,6 +1336,7 @@
           "postalCodeAmbiguousProvince": "{count} provinces match postcode {code}. Choose one below.",
           "postalCodeUnknownHint": "No match for this postcode. Enter province, district and sub-district manually.",
           "postalCodeUnknownAnnouncement": "No match found for postcode {code}. Enter the address manually.",
+          "useTypedValueLabel": "Use \"{value}\"",
           "addressIncompleteBanner": "Address incomplete — required before a tax invoice can be issued.",
           "addressIncompleteJumpLink": "Complete the address",
           "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",

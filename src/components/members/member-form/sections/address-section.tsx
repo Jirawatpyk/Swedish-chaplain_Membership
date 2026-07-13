@@ -39,8 +39,31 @@
  * `LiveRegion` (SC 4.1.3 Status Messages) is mounted UNCONDITIONALLY with
  * empty content from the first render — its own docblock is explicit that a
  * conditionally-mounted live region is not announced by most screen readers.
+ *
+ * Trade-off, NOT "preserved verbatim" (review-round-2 correction — the first
+ * implementation report claimed `autoComplete` was preserved verbatim on
+ * every field; that was wrong for these three): `province`, `city` and
+ * `sub_district` are each a button-based `Combobox` (`role="combobox"`, not
+ * an `<input>`), so Chrome's `autoComplete="address-level1"/"address-
+ * level2"` autofill CANNOT act on them — a `<button>` is never an autofill
+ * target, independent of anything the lookup effect does. Only
+ * `address_line1` / `address_line2` / `postal_code` (still plain `<Input>`s)
+ * carry working autofill. This is the same trade-off Task 5 already made for
+ * the country field; it is accepted, not accidental — but it must be
+ * documented honestly, not asserted away.
+ *
+ * `allowCustomValue` (review-round-2 Critical 1 fix): a `Combobox` with zero
+ * matching options is otherwise a dead end — the trigger is a `<button>`,
+ * there is no way to type a value the option list doesn't already contain.
+ * Of 955 postcodes, an unresolved/mistyped/uncovered one is not rare, and
+ * blocking on it would make Thai member CREATE impossible and imported
+ * members' addresses unfixable. `province`/`city`/`sub_district` therefore
+ * pass `allowCustomValue` + a translated `customValueLabel` — see
+ * `ui/combobox.tsx`'s file-header comment for how the "Use «text»" item
+ * itself works. `postalCodeUnknownHint`'s promise of manual entry depends on
+ * this being wired.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { AlertTriangleIcon } from 'lucide-react';
@@ -142,6 +165,33 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   const [announcement, setAnnouncement] = useState('');
   const [autoFill, setAutoFill] = useState<AutoFillSnapshot | null>(null);
 
+  // Review-round-2 Critical 2 fix: `postalCodeValue`/`countryIsTH` from
+  // `useWatch` (no `defaultValue`, per the comment above) read RHF's
+  // `defaultValues` on the very FIRST render — in edit mode that is the
+  // member's already-SAVED postcode, not something the admin just typed.
+  // Without this guard, the effect below fired ~300ms after every edit-form
+  // load, and for any unambiguous saved postcode (≈82% of them) silently
+  // overwrote province/city/sub_district with "auto-filled" values, marked
+  // them dirty, and announced a change the admin never made — the exact
+  // failure this whole feature exists to prevent, on its most common
+  // non-create interaction. Skip the effect's first invocation; only react
+  // to a value that changed AFTER mount (an actual admin edit).
+  //
+  // Deliberately NOT reset in a cleanup function: a cleanup that flips this
+  // back to `false` would also fire on the FIRST genuine post-mount
+  // dependency change (React always runs the previous invocation's cleanup
+  // right before the next one) and re-arm the skip on every single
+  // invocation forever, silently breaking the lookup for every admin
+  // keystroke, not just the mount one — worse than the bug being fixed. The
+  // one known trade-off: React 19 `reactStrictMode: true` (next.config.ts)
+  // replays effects once in dev (setup → cleanup → setup again) on the SAME
+  // mount, and since this ref has no cleanup to undo it, that replay's
+  // second invocation sees `hasMountedRef.current` already `true` and runs
+  // the lookup body once against the mount-time value — dev-only console
+  // noise (an extra fetch call), not a data-loss risk, and Vitest/RTL's
+  // `render()` doesn't wrap in StrictMode so it isn't visible in this suite.
+  const hasMountedRef = useRef(false);
+
   // Debounced postcode → candidates lookup, PLUS the country-switch-away/
   // malformed-code reset. All of it is routed through the scheduled
   // `setTimeout` callback below (never a bare synchronous `setState` in the
@@ -151,6 +201,11 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // a callback function"). A 300ms delay on the reset path is imperceptible
   // (it is a state cleanup, not something the admin is waiting to see).
   useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
     let cancelled = false;
     const controller = new AbortController();
 
@@ -159,6 +214,12 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
         setCandidates([]);
         setLookupStatus('idle');
         setAutoFill(null);
+        // Important 3 fix: the sub-district FIELD unmounts in the non-TH
+        // branch below, but the form VALUE it held survives unless cleared
+        // here — `create-member-client.tsx`'s `toPayload` forwards
+        // `sub_district` unconditionally, so a stale Thai sub-district would
+        // otherwise ride along on a non-TH member's submit.
+        setValue('sub_district', '', { shouldDirty: true });
         return;
       }
       const code = postalCodeValue.trim();
@@ -403,6 +464,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                 [
                   errors.postal_code ? 'postal_code-error' : null,
                   'postal_code-instruction',
+                  lookupStatus === 'unknown' ? 'postal_code-unknown-hint' : null,
                   activeAutoFill ? 'postal_code-autofill-hint' : null,
                 ]
                   .filter(Boolean)
@@ -413,7 +475,9 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
               {tf('postalCodeInstruction')}
             </p>
             {lookupStatus === 'unknown' && (
-              <p className="mt-1 text-xs text-muted-foreground">{tf('postalCodeUnknownHint')}</p>
+              <p id="postal_code-unknown-hint" className="mt-1 text-xs text-muted-foreground">
+                {tf('postalCodeUnknownHint')}
+              </p>
             )}
             {activeAutoFill && (
               <p
@@ -425,7 +489,13 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                   type="button"
                   variant="link"
                   size="sm"
-                  className="h-auto p-0 text-xs"
+                  // Review-round-2 Important 4 fix: `h-auto p-0` collapsed the
+                  // hit area to the 12px text's own line-height (WCAG 2.5.8
+                  // wants ≥24×24, this project's bar is 44×44). `min-h-11`
+                  // restores the tap target; `-mx-2 px-2` keeps the visible
+                  // chrome compact without shifting the surrounding text
+                  // horizontally (same pattern as copy-charge-id-button.tsx).
+                  className="h-auto min-h-11 -mx-2 px-2 text-xs"
                   onClick={handleUndoAutoFill}
                 >
                   {tf('postalCodeUndo')}
@@ -457,6 +527,12 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                     aria-required={isCreate}
                     aria-invalid={Boolean(errors.province)}
                     aria-describedby={errors.province ? 'province-error' : undefined}
+                    // Review-round-2 Critical 1 fix: the 97 KB postal dataset
+                    // doesn't enumerate every Thai province spelling/typo —
+                    // manual entry must be a REAL escape hatch, matching
+                    // `postalCodeUnknownHint`'s promise below.
+                    allowCustomValue
+                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />
@@ -483,6 +559,8 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                     aria-required={isCreate}
                     aria-invalid={Boolean(errors.city)}
                     aria-describedby={errors.city ? 'city-error' : undefined}
+                    allowCustomValue
+                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />
@@ -509,6 +587,8 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
                     aria-required={isCreate}
                     aria-invalid={Boolean(errors.sub_district)}
                     aria-describedby={errors.sub_district ? 'sub_district-error' : undefined}
+                    allowCustomValue
+                    customValueLabel={(typed) => tf('useTypedValueLabel', { value: typed })}
                   />
                 )}
               />

@@ -35,6 +35,18 @@
  *     react's useDismiss / FloatingFocusManager), no custom handling needed.
  *   - `@/components/ui/command` (cmdk) for search + listbox.
  *   - `@/components/ui/button` for the trigger.
+ *
+ * `allowCustomValue` (PR-B task 6 review fix, Critical 1): this trigger is a
+ * `<button>`, not an `<input>` — with no matching option there is otherwise
+ * NO way to commit a value at all (Enter on an empty filtered list is a
+ * no-op). Off by default, since a combobox backed by a closed enumerable
+ * set (e.g. the ISO country list below) must never accept free text. Opt in
+ * only where the option list is a legitimately incomplete filter over a
+ * larger domain (e.g. Thai province/district/sub-district names narrowed by
+ * postcode) — there, "no match" must never mean "no way forward". The
+ * search box is CONTROLLED (`CommandInput value/onValueChange`) so the
+ * typed text is available to render a "Use «text»" `CommandItem`; that item
+ * is `forceMount`ed so cmdk's own relevance filter can never hide it.
  */
 import * as React from 'react';
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
@@ -77,7 +89,19 @@ export type ComboboxProps = {
   readonly 'aria-invalid'?: boolean | undefined;
   readonly 'aria-required'?: boolean | undefined;
   readonly disabled?: boolean | undefined;
+  /** Opt-in creatable-combobox affordance — see the file-header comment.
+   * Off by default. */
+  readonly allowCustomValue?: boolean | undefined;
+  /** Formats the "commit the typed text" item's label, e.g.
+   * `(typed) => tf('useTypedValueLabel', { value: typed })`. Falls back to
+   * an untranslated `Use "<text>"` if `allowCustomValue` is set without
+   * this — every real call site should pass a translated one. */
+  readonly customValueLabel?: ((typed: string) => string) | undefined;
 };
+
+function defaultCustomValueLabel(typed: string): string {
+  return `Use "${typed}"`;
+}
 
 export function Combobox({
   options,
@@ -92,9 +116,16 @@ export function Combobox({
   'aria-invalid': ariaInvalid,
   'aria-required': ariaRequired,
   disabled,
+  allowCustomValue,
+  customValueLabel,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const [listboxId, setListboxId] = React.useState<string | undefined>(undefined);
+  // Controlled search text (only needed to power `allowCustomValue`'s "Use
+  // «text»" item below) — reset on every close via `captureListboxId`'s
+  // unmount branch so reopening the popover always starts from a blank
+  // search, matching cmdk's own uncontrolled behaviour.
+  const [search, setSearch] = React.useState('');
   const selected = options.find((o) => o.value === value);
 
   // Ref callback (not useRef+useEffect) so this fires in the SAME commit
@@ -104,10 +135,17 @@ export function Combobox({
   const captureListboxId = React.useCallback((node: HTMLDivElement | null) => {
     if (!node) {
       setListboxId(undefined);
+      setSearch('');
       return;
     }
     setListboxId(node.querySelector<HTMLElement>('[cmdk-list]')?.id);
   }, []);
+
+  const trimmedSearch = search.trim();
+  const showCustomValueItem =
+    Boolean(allowCustomValue) &&
+    trimmedSearch !== '' &&
+    !options.some((o) => o.value === trimmedSearch);
 
   // Preserve first-appearance order of each group (Map iteration order
   // matches insertion order in JS) — the caller controls group order by
@@ -161,9 +199,16 @@ export function Combobox({
             layout (see file-header comment). */}
         <div ref={captureListboxId} className="contents">
           <Command>
-            <CommandInput placeholder={searchPlaceholder} />
+            <CommandInput
+              placeholder={searchPlaceholder}
+              value={search}
+              onValueChange={setSearch}
+            />
             <CommandList>
-              <CommandEmpty>{emptyMessage}</CommandEmpty>
+              {/* Suppressed once the custom-value item is showing — "No
+                  district found." next to "Use «text»" is redundant noise,
+                  not information. */}
+              {!showCustomValueItem && <CommandEmpty>{emptyMessage}</CommandEmpty>}
               {groups.map(([group, opts]) => (
                 <CommandGroup key={group ?? '__ungrouped'} heading={group}>
                   {opts.map((o) => (
@@ -196,6 +241,23 @@ export function Combobox({
                   ))}
                 </CommandGroup>
               ))}
+              {showCustomValueItem && (
+                // `forceMount`: cmdk's own relevance filter would otherwise
+                // hide this item whenever the typed text doesn't fuzzy-match
+                // its own value string — it must ALWAYS be selectable while
+                // visible, that's the whole point (Critical 1 fix).
+                <CommandItem
+                  value={`__custom-value__${trimmedSearch}`}
+                  forceMount
+                  onSelect={() => {
+                    onChange(trimmedSearch);
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer italic"
+                >
+                  {(customValueLabel ?? defaultCustomValueLabel)(trimmedSearch)}
+                </CommandItem>
+              )}
             </CommandList>
           </Command>
         </div>

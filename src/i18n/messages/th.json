@@ -1336,6 +1336,7 @@
           "postalCodeAmbiguousProvince": "รหัสไปรษณีย์ {code} ตรงกับ {count} จังหวัด กรุณาเลือกด้านล่าง",
           "postalCodeUnknownHint": "ไม่พบรหัสไปรษณีย์นี้ กรุณากรอกจังหวัด อำเภอ/เขต และแขวง/ตำบลด้วยตนเอง",
           "postalCodeUnknownAnnouncement": "ไม่พบข้อมูลรหัสไปรษณีย์ {code} กรุณากรอกที่อยู่ด้วยตนเอง",
+          "useTypedValueLabel": "ใช้ \"{value}\"",
           "addressIncompleteBanner": "ที่อยู่ไม่สมบูรณ์ — จำเป็นต้องกรอกก่อนออกใบกำกับภาษี",
           "addressIncompleteJumpLink": "กรอกที่อยู่ให้ครบถ้วน",
           "isHeadOffice": "สมาชิกรายนี้เป็นสำนักงานใหญ่",

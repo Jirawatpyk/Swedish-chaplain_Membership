@@ -344,6 +344,70 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
   });
 });
 
+describe('AddressSection — edit mode must not fire the lookup ceremony on mount (Critical 2 regression)', () => {
+  it('does not call the lookup, announce anything, or show Undo for a pre-populated resolvable postcode', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={PLANS}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+          mode="edit"
+          initialValues={{
+            company_name: 'Acme',
+            country: 'TH',
+            address_line1: '99 Nimman Rd',
+            postal_code: '10330',
+            // Deliberately a DIFFERENT (but real) Thai address than what
+            // 10330 resolves to (UNAMBIGUOUS = Bangkok/Pathum Wan/Wang Mai)
+            // so a silent overwrite is unmistakable if the bug reproduces.
+            province: 'เชียงใหม่',
+            city: 'อำเภอเมืองเชียงใหม่',
+            sub_district: 'ศรีภูมิ',
+          }}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // Give the 300ms debounce every chance to fire — RED against the old
+    // code (which watches `postal_code`'s mount-time value via `useWatch`
+    // and treats it as a change) needs this to actually observe the bug.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(liveRegionText()).toBe('');
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
+    expect(byId('province')).toHaveTextContent('เชียงใหม่');
+    expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
+    expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+  });
+});
+
+describe('AddressSection — manual entry when the postcode has no candidates (Critical 1 regression)', () => {
+  it('lets the admin type a province directly into the combobox and commit it', async () => {
+    renderForm();
+
+    fireEvent.click(byId('province'));
+    const searchInput = await screen.findByPlaceholderText(/search provinces/i);
+
+    fireEvent.change(searchInput, { target: { value: 'Farmland Province' } });
+
+    const useItem = await screen.findByText(/use.*farmland province/i);
+    fireEvent.click(useItem);
+
+    await waitFor(() => expect(byId('province')).toHaveTextContent('Farmland Province'));
+  });
+});
+
 describe('AddressSection — edit mode never blocks; shows an incomplete-address banner instead', () => {
   it('shows a banner with a jump link when the address is incomplete on edit, and does not render it in create mode', () => {
     const { unmount } = render(

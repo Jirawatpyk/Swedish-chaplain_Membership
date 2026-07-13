@@ -1336,6 +1336,7 @@
           "postalCodeAmbiguousProvince": "{count} län matchar postnummer {code}. Välj ett nedan.",
           "postalCodeUnknownHint": "Inget resultat för detta postnummer. Ange län, distrikt och stadsdel manuellt.",
           "postalCodeUnknownAnnouncement": "Inget resultat för postnummer {code}. Ange adressen manuellt.",
+          "useTypedValueLabel": "Använd \"{value}\"",
           "addressIncompleteBanner": "Adressen är ofullständig — krävs innan en skattefaktura kan utfärdas.",
           "addressIncompleteJumpLink": "Fyll i adressen",
           "isHeadOffice": "Denna medlem är huvudkontoret (สำนักงานใหญ่)",
