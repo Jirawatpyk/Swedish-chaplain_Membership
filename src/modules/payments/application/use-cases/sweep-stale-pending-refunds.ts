@@ -216,7 +216,10 @@ function maybeEscalate(
   tenantId: string,
   row: StaleRefundRow,
   nowMs: number,
-  reason: 'stripe_pending' | 'missing_processor_refund_id',
+  reason:
+    | 'stripe_pending'
+    | 'missing_processor_refund_id'
+    | 'credit_note_bridge_declined',
 ): boolean {
   const ageMs = nowMs - row.initiatedAt.getTime();
   if (ageMs <= ESCALATION_AGE_MS) return false;
@@ -532,6 +535,29 @@ export async function sweepStalePendingRefunds(
         errKind: cause instanceof Error ? cause.constructor.name : 'unknown',
       });
       skippedCount += 1;
+      // Round-2 review fix (#35): a `SweepFinalizeError` is the F4 credit-note
+      // bridge DECLINING on a Stripe-CONFIRMED `succeeded` refund (FEATURE_F4_
+      // INVOICING off, invoice hard-deleted, or a durable F4 fault). The money
+      // is refunded at Stripe but NO §86/4/§87 credit note is booked, and the
+      // row retries forever. Escalate it once aged past the threshold — the
+      // SAME ops signal the two other stuck-forever classes (missing_processor_
+      // refund_id / stripe_pending) already fire. A transient decline that
+      // clears on the next sweep never ages in, so no false page. A generic DB
+      // fault (non-SweepFinalizeError) is NOT escalated — it is most likely a
+      // transient Neon blip that the next sweep retries cleanly.
+      if (cause instanceof SweepFinalizeError) {
+        if (
+          maybeEscalate(
+            logger,
+            input.tenantId,
+            row,
+            iterNowMs,
+            'credit_note_bridge_declined',
+          )
+        ) {
+          escalatedCount += 1;
+        }
+      }
     }
   }
 

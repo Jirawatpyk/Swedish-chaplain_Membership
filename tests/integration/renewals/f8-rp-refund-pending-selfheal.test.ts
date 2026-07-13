@@ -13,10 +13,15 @@
  *      `pending_admin_reactivation`; a refund row is `pending`, NO credit note.
  *   2. `processRefundUpdated(succeeded)` settles the refund → exactly ONE F4
  *      credit note (§87 +1), refund `succeeded`, payment `refunded`.
- *   3. `reconcilePendingReactivations` (now past the 30-day timeout) → the F5
- *      bridge sees the payment fully refunded → `no_payment_found` (NO second
- *      refund) → the cycle self-heals to `lapsed`
- *      (`closed_reason='pending_reactivation_timed_out'`).
+ *   3. `reconcilePendingReactivations` → the cycle still carries the reject-
+ *      refund marker (stamped in step 1), so `processCycle` routes it to the
+ *      MARKED branch (`processMarkedRejectRefund`), which resolves the settled
+ *      refund and converges the cycle to CANCELLED
+ *      (`closed_reason='admin_rejected_with_refund'`) with the admin as actor +
+ *      a post_refund_review task. An explicit admin reject is NEVER recorded as
+ *      a system timeout/lapse. (Round-2 review corrected this test's earlier
+ *      `lapsed`/`timed_out` expectation, which contradicted the marked-branch
+ *      convergence shipped in the same PR.)
  *
  * MONEY-SAFETY: exactly ONE succeeded refund + ONE credit note survive the
  * whole round-trip (no double-refund, no CN loss). Every assertion reads DB
@@ -369,7 +374,7 @@ describe('F8-RP refund_pending → settle → reconcile self-heal — live Neon 
     return row?.status ?? 'MISSING';
   }
 
-  it('reject→refund_pending (cycle stays pending) → settle → reconcile self-heals to lapsed; no double-refund, no CN loss', async () => {
+  it('reject→refund_pending (cycle stays pending) → settle → reconcile converges to CANCELLED via marked branch; no double-refund, no CN loss', async () => {
     // Step 1 — admin rejects; F5 refund settles async → refund_pending.
     const reject = await adminRejectReactivation(
       { ...makeRenewalsDeps(tenant.ctx.slug), f5RefundBridge },
@@ -429,9 +434,17 @@ describe('F8-RP refund_pending → settle → reconcile self-heal — live Neon 
     // Cycle still pending (F5 settlement does not touch the F8 cycle).
     expect((await cycleRow()).status).toBe('pending_admin_reactivation');
 
-    // Step 3 — next reconcile pass (past the 30-day timeout). The bridge sees
-    // the payment fully refunded → no_payment_found (NO second refund) → the
-    // cycle self-heals to lapsed.
+    // Step 3 — next reconcile pass. The cycle still carries the reject-refund
+    // marker (stamped in step 1), so `processCycle` routes it to the MARKED
+    // branch (`processMarkedRejectRefund`), NOT the timeout path. That branch
+    // resolves the now-settled refund and converges the cycle to CANCELLED
+    // (`admin_rejected_with_refund`) with the rejecting admin as actor + a
+    // post_refund_review task. An admin who explicitly rejected must NEVER be
+    // recorded as a system timeout/lapse. (Round-2 review, HIGH: the timeout
+    // path must never lapse a marked cycle — see reconcile Step-1/Step-3 marker
+    // guards. Superseded the earlier `timed_out`/`lapsed` expectation of this
+    // test, which contradicted the marked-branch convergence shipped in the
+    // same PR and would have re-introduced exactly that misattribution bug.)
     const reconcile = await reconcilePendingReactivations(
       { ...makeRenewalsDeps(tenant.ctx.slug), f5RefundBridge },
       {
@@ -442,17 +455,19 @@ describe('F8-RP refund_pending → settle → reconcile self-heal — live Neon 
     );
     expect(reconcile.ok).toBe(true);
     if (!reconcile.ok) return;
-    expect(reconcile.value.timedOut).toBe(1);
+    expect(reconcile.value.asyncRejectSettledCancelled).toBe(1);
+    expect(reconcile.value.timedOut).toBe(0);
     expect(reconcile.value.timeoutRefundPending).toBe(0);
     expect(reconcile.value.timeoutRefundFailures).toBe(0);
 
-    // Cycle self-healed to lapsed (system timeout, not admin reject).
+    // Cycle converged to CANCELLED via the admin-reject marked branch (NOT
+    // lapsed) — attributed to the admin, distinct from a system timeout.
     const healed = await cycleRow();
-    expect(healed.status).toBe('lapsed');
-    expect(healed.closedReason).toBe('pending_reactivation_timed_out');
+    expect(healed.status).toBe('cancelled');
+    expect(healed.closedReason).toBe('admin_rejected_with_refund');
 
     // MONEY-SAFETY: exactly ONE succeeded refund + ONE credit note survive; no
-    // double-refund on the self-heal; payment stays fully refunded.
+    // double-refund on the convergence; payment stays fully refunded.
     expect(await succeededRefundCount()).toBe(1);
     expect(await cnCountForInvoice()).toBe(1);
     expect(await paymentStatus()).toBe('refunded');

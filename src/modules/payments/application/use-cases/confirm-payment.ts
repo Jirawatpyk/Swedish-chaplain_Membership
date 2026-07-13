@@ -948,6 +948,17 @@ async function confirmPaymentBody(
         ? ('payment_auto_refunded_concurrent_manual_mark' as const)
         : ('payment_auto_refunded_stale_invoice' as const);
 
+    // Round-2 review fix (MED — #1 status discrimination, parity with
+    // issueRefund): `createRefund` returned ok, but the Refund may have settled
+    // `failed`/`canceled` SYNCHRONOUSLY at creation — the money was NOT
+    // returned. The optimistic `auto_refunded` flip + init money-trail below
+    // match the async-pending path (which also flips before the outcome is
+    // known), but a synchronously-failed refund has NO reliable follow-up
+    // webhook, so we must raise the manual-reconcile forensic + page metric
+    // NOW rather than waiting on one that may never arrive.
+    const refundFailedAtCreation =
+      refund.value.status === 'failed' || refund.value.status === 'canceled';
+
     // A.13 (#3 / CRITICAL-2) — terminalise the stuck-pending payment in
     // ONE tx: flip `pending → auto_refunded` + stamp the durable marker
     // (`re_…` id) + emit the money-trail audit + markProcessed, all
@@ -996,6 +1007,31 @@ async function confirmPaymentBody(
           },
           retentionYears: retentionFor(auditEventType),
         });
+        if (refundFailedAtCreation) {
+          // Money-not-returned forensic — the SAME event process-refund-updated
+          // emits when a pending auto-refund later settles failed via webhook,
+          // so the admin auto-refund-failed alert + "mark reconciled" resolve
+          // surface (findStaleInvoiceAutoRefund: init-event AND failure-event)
+          // fires here too. 10y retention (RD §87 / GDPR 6(1)(c)).
+          await deps.audit.emit(tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId,
+            eventType: 'auto_refund_failed_needs_manual_reconcile',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Auto-refund for payment ${payment.id} settled ${refund.value.status} at creation — money NOT returned; manual reconciliation required`,
+            payload: {
+              payment_id: payment.id,
+              invoice_id: payment.invoiceId,
+              auto_refund_processor_refund_id: refund.value.id,
+              refund_status: refund.value.status,
+              amount_satang: payment.amountSatang.toString(),
+              runbook_url: 'docs/runbooks/out-of-band-refund.md',
+            },
+            retentionYears: retentionFor(
+              'auto_refund_failed_needs_manual_reconcile',
+            ),
+          });
+        }
         await markProcessedIfPresent(deps, input, tx);
         if (flipped === null) {
           // `markAutoRefunded`'s `status='pending'` guard matched ZERO rows —
@@ -1072,6 +1108,12 @@ async function confirmPaymentBody(
       // F5R1-E15 — metric AFTER the tx commits so a Phase B failure does
       // NOT bump it (the Stripe retry that recovers WILL bump it cleanly).
       paymentsMetrics.autoRefundedStaleCount(input.tenantId);
+      if (refundFailedAtCreation) {
+        // Page ops on the money-not-returned path (mirrors process-refund-
+        // updated's failed-webhook metric). AFTER commit so a Phase B failure
+        // does not over-count; a Stripe retry re-runs cleanly.
+        paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+      }
       /* v8 ignore start — best-effort Phase B catch; rare DB-outage
        * race window. Recovery is automatic via Stripe retry idempotency
        * key (nothing committed → Phase A re-runs against the still-pending
@@ -1225,6 +1267,12 @@ async function confirmPaymentBody(
       });
     }
 
+    // Round-2 review fix (MED — #1 status discrimination): Stripe accepted the
+    // refund, but it may have settled `failed`/`canceled` synchronously (money
+    // NOT returned). Same discipline as the stale-invoice path above.
+    const lateChargeRefundFailedAtCreation =
+      refund.value.status === 'failed' || refund.value.status === 'canceled';
+
     // Stripe accepted the refund. In ONE tx: durably stamp the `re_…` id on
     // the STILL-`failed` row (RR-6 recognition marker; F-9 — status NOT
     // changed) + emit the 10y forensic money-trail + markProcessed.
@@ -1250,6 +1298,29 @@ async function confirmPaymentBody(
           },
           retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
         });
+        if (lateChargeRefundFailedAtCreation) {
+          // Money-not-returned forensic — surfaces the admin manual-reconcile
+          // alert immediately (no reliable follow-up webhook for a
+          // synchronously-failed refund). Same event as the webhook path.
+          await deps.audit.emit(tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId,
+            eventType: 'auto_refund_failed_needs_manual_reconcile',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Late-charge auto-refund for payment ${payment.id} settled ${refund.value.status} at creation — money NOT returned; manual reconciliation required`,
+            payload: {
+              payment_id: payment.id,
+              invoice_id: payment.invoiceId,
+              auto_refund_processor_refund_id: refund.value.id,
+              refund_status: refund.value.status,
+              amount_satang: payment.amountSatang.toString(),
+              runbook_url: 'docs/runbooks/out-of-band-refund.md',
+            },
+            retentionYears: retentionFor(
+              'auto_refund_failed_needs_manual_reconcile',
+            ),
+          });
+        }
         await markProcessedIfPresent(deps, input, tx);
         if (marked === null) {
           // Guard miss: the marker was already stamped (Stripe retry
@@ -1270,6 +1341,10 @@ async function confirmPaymentBody(
       // Metric AFTER the tx commits so a Phase B failure does NOT bump it
       // (the Stripe retry that recovers WILL bump it cleanly).
       paymentsMetrics.lateChargeAutoRefundedCount(input.tenantId);
+      if (lateChargeRefundFailedAtCreation) {
+        // Page ops on the money-not-returned path (mirrors the webhook metric).
+        paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+      }
       /* v8 ignore start — best-effort Phase B catch; rare DB-outage race.
        * Recovery is automatic via Stripe retry idempotency (nothing committed
        * → Phase A re-runs against the still-`failed` row → same refund id →

@@ -1159,16 +1159,33 @@ async function processTimeout(
       cycle.tenantId,
       cycleId,
     );
-    return reread !== null && reread.status === 'pending_admin_reactivation';
+    // Round-2 review fix (HIGH — reject-marker race): also bail if an async
+    // reject-with-refund marker was stamped AFTER this pass's list snapshot.
+    // The marker leaves `status = pending_admin_reactivation` unchanged, so
+    // `processCycle` routed the STALE (unmarked) snapshot object here instead
+    // of to the marked branch. The marked branch (`processMarkedRejectRefund`)
+    // OWNS convergence to `cancelled` with the rejecting admin as actor + the
+    // post_refund_review task; the timeout path must never lapse a marked
+    // cycle or issue a redundant refund. Leaving the row pending+marked lets
+    // the NEXT pass's fresh snapshot route it to the marked branch. Mirrors
+    // the marked-branch re-read's third condition (there:
+    // `rejectRefundInitiatedAt === null` ⇒ skip; here the inverse ⇒ bail).
+    return (
+      reread !== null &&
+      reread.status === 'pending_admin_reactivation' &&
+      reread.rejectRefundInitiatedAt === null
+    );
   });
   if (!stillPending) {
     // A concurrent admin approve (T136 → `completed`) or reject (T137 →
-    // `cancelled`, refund already issued) won the race before our lock.
+    // `cancelled`, refund already issued), OR an async reject-with-refund
+    // marker stamped after the snapshot, won the race before our lock.
     // Skip silently — no refund, no transition. Counted as
-    // `admin_race_skipped` (NOT a timeout, NOT a refund failure).
+    // `admin_race_skipped` (NOT a timeout, NOT a refund failure). A marked
+    // cycle self-heals to `cancelled` via the marked branch next pass.
     logger.info(
       { cycleId, tenantId: cycle.tenantId },
-      '[reconcile-pending-reactivations] cycle no longer pending at lock — admin action won race; skipping refund',
+      '[reconcile-pending-reactivations] cycle not cleanly pending at lock (admin approve/reject won, or async reject-marker stamped after snapshot) — skipping refund',
     );
     return 'admin_race_skipped';
   }
@@ -1304,6 +1321,32 @@ async function processTimeout(
           refundIssued
             ? '[reconcile-pending-reactivations] POST-refund admin race — refund issued against a now-non-pending cycle (accepted residual #6); cycle is already terminal, no further cron action'
             : '[reconcile-pending-reactivations] admin won the Step-3 window before tx2 lock (no_payment cycle — no money moved); skipping transition',
+        );
+        return;
+      }
+      // Round-2 review fix (HIGH — reject-marker race): status is still
+      // `pending_admin_reactivation` but an async reject-with-refund marker was
+      // stamped AFTER Step 1's re-read. Do NOT write the timeout lapse — the
+      // marked branch owns convergence to `cancelled` (admin actor +
+      // post_refund_review). Leave the row pending+marked so the next pass's
+      // fresh snapshot routes it to the marked branch. `refundIssued=true` here
+      // is essentially unreachable (an admin reject issues its refund BEFORE
+      // stamping the marker, so our Step-2 issueRefundForInvoice would have hit
+      // refund_in_progress → `refund_pending`, or the prior refund already
+      // succeeded → no_payment_found → refundIssued=false), but if it ever
+      // occurs F5 idempotency + the marked branch's settlement resolution
+      // reconcile the money; classify defensively as a money-window race.
+      if (reread.rejectRefundInitiatedAt !== null) {
+        tx2Outcome = refundIssued ? 'post_refund_admin_race' : 'admin_race_skipped';
+        logger[refundIssued ? 'warn' : 'info'](
+          {
+            cycleId,
+            tenantId: cycle.tenantId,
+            refundIssued,
+          },
+          refundIssued
+            ? '[reconcile-pending-reactivations] async reject-marker stamped after Step 1 AND timeout refund moved money — money-window race; leaving cycle pending+marked for the marked branch to converge to cancelled next pass'
+            : '[reconcile-pending-reactivations] async reject-marker stamped after Step 1 (no timeout money moved) — leaving cycle pending+marked; marked branch converges to cancelled next pass',
         );
         return;
       }

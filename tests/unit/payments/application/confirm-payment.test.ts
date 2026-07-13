@@ -311,6 +311,46 @@ describe('confirmPayment (T057)', () => {
     expect(autoRefundAudit?.[1].payload.processor_refund_id).toBe('re_test_auto');
   });
 
+  // Round-2 review (MED — #1 status discrimination): createRefund returns ok
+  // but the Refund settled `failed` SYNCHRONOUSLY at creation (money NOT
+  // returned). Pre-fix the stale path flipped to auto_refunded + emitted ONLY
+  // the "money returned" init trail, with no reliable follow-up webhook to
+  // correct it. Fix: ALSO emit the `auto_refund_failed_needs_manual_reconcile`
+  // forensic (drives the admin reconcile alert) — same event the webhook path
+  // emits when the failure arrives async.
+  it('Round-2 (MED) — stale auto-refund createRefund ok+status=failed → also emits auto_refund_failed_needs_manual_reconcile', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({ id: 're_test_auto', status: 'failed', amountSatang: asSatang(5_350_000n) }),
+    );
+    const result = await confirmPayment(deps, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    // BOTH the init money-trail AND the money-not-returned forensic land.
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'payment_auto_refunded_stale_invoice'),
+    ).toBe(true);
+    const failureAudit = auditCalls.find(
+      (c) => c[1].eventType === 'auto_refund_failed_needs_manual_reconcile',
+    );
+    expect(failureAudit).toBeDefined();
+    expect(failureAudit?.[1].payload.refund_status).toBe('failed');
+    expect(failureAudit?.[1].payload.auto_refund_processor_refund_id).toBe('re_test_auto');
+    expect(failureAudit?.[1].retentionYears).toBe(10);
+  });
+
   // A.13 — guard-miss sub-case (i): a concurrent writer terminalised the row
   // (Phase A saw `pending`) to a DIFFERENT status between Phase A and the
   // Phase B flip. markAutoRefunded returns null; the use-case STILL emits the

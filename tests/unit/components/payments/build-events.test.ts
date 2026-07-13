@@ -181,6 +181,41 @@ describe('buildEvents', () => {
     expect(paid?.actorUserId).toBe('system:stripe-webhook');
   });
 
+  it('Round-2 (MED): a refunded payment keeps its payment_succeeded + invoice_paid rows', () => {
+    // A card payment succeeded (invoice paid) then was fully refunded → the
+    // payment row flips to `refunded` (completedAt stays set). The timeline
+    // MUST still show payment_succeeded AND invoice_paid; the refund surfaces
+    // via its own refund rows. Pre-fix `refunded` matched no terminal branch
+    // and hasSucceeded tested exact 'succeeded', so BOTH milestones vanished —
+    // a refunded payment looked like it never succeeded.
+    const events = buildEvents(
+      [makeCardPayment({ status: 'refunded', completedAt: T1 })],
+      [makeRefund({ status: 'succeeded', completedAt: T2 })],
+      T1.toISOString(),
+      null,
+    );
+    expect(events.find((e) => e.type === 'payment_succeeded')).toBeDefined();
+    expect(events.find((e) => e.type === 'invoice_paid')).toBeDefined();
+    expect(events.find((e) => e.type === 'refund_succeeded')).toBeDefined();
+  });
+
+  it('Round-2 (MED): a partially_refunded payment keeps its payment_succeeded + invoice_paid rows', () => {
+    const events = buildEvents(
+      [makeCardPayment({ status: 'partially_refunded', completedAt: T1 })],
+      [
+        makeRefund({
+          status: 'succeeded',
+          completedAt: T2,
+          amountSatang: asSatang(50_000n),
+        }),
+      ],
+      T1.toISOString(),
+      null,
+    );
+    expect(events.find((e) => e.type === 'payment_succeeded')).toBeDefined();
+    expect(events.find((e) => e.type === 'invoice_paid')).toBeDefined();
+  });
+
   it('emits refund_initiated for each refund row', () => {
     const events = buildEvents([], [makeRefund(), makeRefund({ refundId: 'rfnd_test_2' })], null, null);
     const inits = events.filter((e) => e.type === 'refund_initiated');

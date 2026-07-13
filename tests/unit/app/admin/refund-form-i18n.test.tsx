@@ -8,7 +8,7 @@
  * surface as MISSING_MESSAGE.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { AlertDialog } from '@/components/ui/alert-dialog';
@@ -70,5 +70,46 @@ describe('RefundForm — localised validation messages', () => {
     expect(error).toBeTruthy();
     expect(error.getAttribute('role')).toBe('alert');
     expect(screen.queryByText('reasonRequired')).toBeNull();
+  });
+
+  it('Round-2 (#36): a refund_exceeds_remaining server error renders the localised balance message, not the raw key', async () => {
+    // The refundable balance shrank between page load and submit (a concurrent
+    // refund settled) → /api/refunds/initiate returns 409 code
+    // `refund_exceeds_remaining`, whose message needs a {remaining} ICU arg.
+    // Pre-fix the server-error path called tError(code) with NO param, so
+    // next-intl surfaced the raw key. The fix supplies {remaining}.
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'refund_exceeds_remaining' } }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      // Valid PARTIAL refund (< 5,350.00 remaining) so Confirm enables without
+      // the full-refund typed-phrase gate.
+      fireEvent.change(screen.getByTestId('refund-form-amount'), {
+        target: { value: '100' },
+      });
+      fireEvent.change(screen.getByTestId('refund-form-reason'), {
+        target: { value: 'duplicate charge' },
+      });
+      fireEvent.blur(screen.getByTestId('refund-form-reason'));
+
+      const confirm = screen.getByTestId('refund-form-confirm');
+      await waitFor(() => expect(confirm.hasAttribute('disabled')).toBe(false));
+      fireEvent.click(confirm);
+
+      const errorBox = await screen.findByTestId('refund-form-error');
+      // Interpolated, localised message — proves the placeholder resolved.
+      expect(errorBox.textContent).toContain(
+        'exceeds the remaining refundable balance',
+      );
+      // Never the raw message key / developer token.
+      expect(errorBox.textContent).not.toContain('refund_exceeds_remaining');
+      expect(errorBox.textContent).not.toContain('admin.refund.error');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

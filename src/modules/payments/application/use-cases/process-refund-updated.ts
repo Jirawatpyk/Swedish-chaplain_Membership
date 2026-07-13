@@ -104,6 +104,14 @@ export interface ProcessRefundUpdatedInput {
    * though this value is forensic-only (never arithmetic-folded here).
    */
   readonly amountSatang: Satang;
+  /**
+   * Round-2 review fix (#32) — true iff the verifier's amount projection failed
+   * (malformed / NaN / fractional / missing Refund `amount`). When true the
+   * 10-year OOB / auto-refund-failed forensics write the `'projection_failed'`
+   * sentinel for `amount_satang` instead of a known-wrong `0` — mirrors the
+   * dispute branch's F5R3v3 H-4 discipline. Optional; defaults false.
+   */
+  readonly amountProjectionFailed?: boolean;
   /** `event.livemode` → env label for the OOB per-env counter. */
   readonly processorEnv: 'test' | 'live';
 }
@@ -183,6 +191,13 @@ export async function processRefundUpdated(
   input: ProcessRefundUpdatedInput,
 ): Promise<Result<ProcessRefundUpdatedOutcome, ProcessRefundUpdatedError>> {
   const incoming = classifyIncoming(input.refundStatus);
+  // Round-2 review fix (#32): a retained (10y) forensic must never carry a
+  // known-wrong 0. Write the 'projection_failed' sentinel when the verifier
+  // flagged the amount projection as failed (mirrors the dispute branch's
+  // amountProjectionFailed philosophy in process-webhook-event).
+  const amountSatangForAudit = input.amountProjectionFailed
+    ? 'projection_failed'
+    : input.amountSatang.toString();
   try {
     const outcome = await deps.paymentsRepo.withTx(
       async (tx): Promise<ProcessRefundUpdatedOutcome> => {
@@ -210,7 +225,14 @@ export async function processRefundUpdated(
           if (autoRefund !== null) {
             if (incoming.kind === 'failed') {
               // CRITICAL-2 — the auto-refund did NOT reach the customer.
-              // Emit the 10y forensic (money-not-returned). NEVER suppress.
+              // Emit the 10y forensic (money-not-returned). NEVER suppress the
+              // AUDIT: like the OOB forensic it is emitted REDUNDANTLY across
+              // both charge.refund.updated + refund.updated deliveries (SPOF
+              // avoidance — a single-owner emit that failed its whole retry
+              // window would leave ZERO durable 10y record) and deduped on READ
+              // by `auto_refund_processor_refund_id`. The admin alert reads via
+              // a bare EXISTS (findFailedAutoRefundForInvoice), so duplicate
+              // forensic rows do not affect the alert/resolve lifecycle.
               await deps.audit.emit(tx, {
                 tenantId: input.tenantId,
                 requestId: input.requestId,
@@ -222,7 +244,7 @@ export async function processRefundUpdated(
                   invoice_id: autoRefund.invoiceId,
                   auto_refund_processor_refund_id: input.processorRefundId,
                   refund_status: incoming.status,
-                  amount_satang: input.amountSatang.toString(),
+                  amount_satang: amountSatangForAudit,
                   runbook_url: OOB_RUNBOOK_URL,
                 },
                 retentionYears: retentionFor(
@@ -230,11 +252,20 @@ export async function processRefundUpdated(
                 ),
               });
               // A.16 (H-e) — paging counter for the money-not-returned path.
-              // Fires INSIDE the tx (same trade-off as `outOfBandRefundRejected`
-              // below): OTel buffers until process-flush, so a tx rollback yields
-              // at most a tiny over-count window; consistency with the forensic
-              // audit above matters more than that window.
-              paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+              // Round-2 review fix (#33): single-owner paging. Stripe delivers
+              // BOTH charge.refund.updated (deprecated) AND refund.updated for a
+              // charged auto-refund; bumping on both would double-page ONE
+              // incident. refund.updated is the forward-path universal event
+              // (required subscription, OP-2), so it owns the page; the
+              // deprecated charge.refund.updated delivery is suppressed. The 10y
+              // forensic above stays redundant (SPOF-safe). Legacy callers/tests
+              // that omit sourceEventType keep firing — the guard suppresses ONLY
+              // the explicit deprecated event. Fires INSIDE the tx (same trade-
+              // off as `outOfBandRefundRejected`): OTel buffers until flush, so a
+              // rollback yields at most a tiny over-count window.
+              if (input.sourceEventType !== 'charge.refund.updated') {
+                paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+              }
               await deps.processorEventsRepo.markProcessed(tx, input.eventId);
               return {
                 kind: 'auto_refund_failed',
@@ -314,7 +345,7 @@ export async function processRefundUpdated(
               // an explicit sentinel over a misleading value (mirrors the
               // dispute branch's amountProjectionFailed philosophy).
               processor_charge_id: input.chargeId ?? 'unknown',
-              amount_satang: input.amountSatang.toString(),
+              amount_satang: amountSatangForAudit,
               runbook_url: OOB_RUNBOOK_URL,
             },
             retentionYears: retentionFor('out_of_band_refund_detected'),
@@ -328,7 +359,16 @@ export async function processRefundUpdated(
           // trade-off as the sibling counters): a rollback yields at most a tiny
           // over-count window, and consistency with the forensic audit above
           // matters more than that window.
-          if (input.chargeId === null) {
+          //
+          // Round-2 review fix (#34): a charge-less async OOB refund settles via
+          // MULTIPLE refund.updated deliveries (pending → succeeded, distinct
+          // event ids that each pass the per-event-id idempotency insert), so
+          // bumping on every delivery would double-page ONE refund. Gate the
+          // page on the TERMINAL transition (`incoming.kind !== 'pending'`) — it
+          // fires exactly once, at settlement (succeeded or failed). The 10y
+          // forensic above still records the detection on every delivery
+          // (redundant, deduped on read), so nothing is lost if it never settles.
+          if (input.chargeId === null && incoming.kind !== 'pending') {
             paymentsMetrics.outOfBandRefundRejected(
               input.tenantId,
               input.processorEnv,

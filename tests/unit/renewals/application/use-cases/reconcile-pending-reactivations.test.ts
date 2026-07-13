@@ -534,6 +534,77 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
       expect(r.value.timeoutAdminRaceSkipped).toBe(1);
     }
   });
+
+  it('Round-2 (HIGH reject-marker race): Step-1 re-read observes an async reject-marker stamped AFTER the snapshot → admin_race_skipped, NO refund, NO lapse', async () => {
+    // Round-2 review (HIGH). The cron lists an UNMARKED day-30 cycle (so
+    // processCycle routes the STALE snapshot to processTimeout), but an admin
+    // async-rejects it mid-pass: adminRejectReactivation stamps
+    // rejectRefundInitiatedAt while status stays pending_admin_reactivation.
+    // processTimeout's Step-1 re-read MUST observe the fresh marker and bail —
+    // NOT lapse the cycle (which would drop the admin's reject intent, the
+    // post_refund_review finance task, and stamp a cron-actor timeout audit
+    // instead of the rejecting admin). Leaving the row pending+marked lets the
+    // marked branch converge to `cancelled` next pass. Pre-fix the Step-1
+    // re-read checked ONLY status, so the marker was ignored and the cycle was
+    // lapsed (timed_out) instead of cancelled — permanently, with no self-heal.
+    const snapshot = pendingCycle({ daysPending: 30, marked: false });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [snapshot],
+      findByIdInTxImpl: (_callIndex, c) => ({
+        ...c,
+        rejectRefundInitiatedAt: new Date(
+          NOW.getTime() - 86_400_000,
+        ).toISOString(),
+        rejectRefundId: REJECT_REFUND_ID,
+        rejectActorUserId: REJECT_ADMIN_ID,
+      }),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Bailed at Step 1 — no Stripe refund, no lapse transition, no timed_out audit.
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+
+  it('Round-2 (HIGH reject-marker race): marker becomes visible only at the Step-3 re-read → admin_race_skipped, NO lapse', async () => {
+    // Narrower window: Step-1 observed a clean pending cycle and proceeded; the
+    // F5 refund returned no_payment_found (the admin's own reject-refund had
+    // already settled the money), so refundIssued=false; THEN the marker
+    // becomes visible at the Step-3 re-read. The timeout lapse MUST be skipped
+    // so the marked branch — not the timeout path — owns convergence to
+    // cancelled next pass.
+    const snapshot = pendingCycle({ daysPending: 30, marked: false });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [snapshot],
+      refundResult: { status: 'no_payment_found' as const },
+      findByIdInTxImpl: (callIndex, c) =>
+        callIndex === 0
+          ? c
+          : {
+              ...c,
+              rejectRefundInitiatedAt: new Date(
+                NOW.getTime() - 86_400_000,
+              ).toISOString(),
+              rejectRefundId: REJECT_REFUND_ID,
+              rejectActorUserId: REJECT_ADMIN_ID,
+            },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Step 2 ran (refund consulted) but returned no_payment_found; no lapse.
+    expect(refundMock).toHaveBeenCalledTimes(1);
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
 });
 
 describe('reconcilePendingReactivations (H1 reliability) — loop-level per-cycle backstop', () => {

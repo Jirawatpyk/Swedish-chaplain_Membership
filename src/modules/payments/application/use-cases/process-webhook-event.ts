@@ -720,6 +720,11 @@ async function processWebhookEventBody(
           // `Satang`; the projection-failed case yields `asSatang(0n)`
           // (runtime-identical to `0n`, forensic-only value).
           amountSatang: dataObject.amountSatang ?? asSatang(0n),
+          // Round-2 review fix (#32): thread the projection-failed flag so the
+          // 10y OOB / auto-refund-failed forensics write the 'projection_failed'
+          // sentinel instead of a known-wrong 0 when the verifier could not
+          // parse the Refund amount (mirrors the dispute branch). Defaults false.
+          amountProjectionFailed: dataObject.amountProjectionFailed ?? false,
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
            * livemode value at a time. Cross-livemode coverage lives in the
            * contract tests for /api/webhooks/stripe. */

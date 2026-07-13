@@ -281,6 +281,59 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
   });
 
+  it('Round-2 (#35): succeeded + F4 CN bridge declines + aged past 3d → escalation signal (credit_note_bridge_declined)', async () => {
+    // Money is refunded at Stripe but the CN bridge persistently declines
+    // (FEATURE_F4_INVOICING off / invoice hard-deleted / durable F4 fault), so
+    // the row retries forever with NO §86/4/§87 credit note. Pre-fix this class
+    // NEVER escalated (unlike missing_processor_refund_id / stripe_pending), so
+    // SRE never saw the unrecoverable money-refunded-but-no-CN condition.
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
+      makeStaleRow({ id: 'rfnd_cn_stuck', ageHours: 120 }), // 5 days
+    ]);
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    mockFinalize.mockResolvedValueOnce(
+      err({ code: 'invoice_not_creditable', detail: 'x' }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.sweptCount).toBe(0);
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(1);
+    }
+    expect(
+      asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).toHaveBeenCalledWith(TENANT_ID);
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.escalation',
+      expect.objectContaining({ reason: 'credit_note_bridge_declined' }),
+    );
+    // Stripe DEFINITIVELY succeeded → never mark failed.
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+  });
+
+  it('Round-2 (#35): succeeded + CN declines but YOUNG (<3d) → skip, NO escalation (transient decline never pages)', async () => {
+    const deps = makeDeps(); // default row age 30h (< 3d threshold)
+    asMock(deps.processorGateway.retrieveRefund).mockResolvedValueOnce(
+      retrievedRefund('succeeded'),
+    );
+    mockFinalize.mockResolvedValueOnce(
+      err({ code: 'invoice_not_creditable', detail: 'x' }),
+    );
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    if (r.ok) {
+      expect(r.value.skippedCount).toBe(1);
+      expect(r.value.escalatedCount).toBe(0);
+    }
+    expect(
+      asMock(paymentsMetrics.stalePendingRefundEscalated),
+    ).not.toHaveBeenCalled();
+  });
+
   // --- failed / canceled → inline flip -------------------------------------
   it('retrieve failed → inline flip refund→failed + refund_failed audit (no CN) → swept', async () => {
     const deps = makeDeps();

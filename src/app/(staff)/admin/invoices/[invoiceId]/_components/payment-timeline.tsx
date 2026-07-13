@@ -161,6 +161,20 @@ function buildStripeDashboardUrl(
   return `https://dashboard.stripe.com/${segment}payments/${chargeOrIntentId}`;
 }
 
+/**
+ * A payment status that implies the payment SUCCEEDED (was captured) at some
+ * point: `succeeded`, or `partially_refunded`/`refunded` (a refund presupposes
+ * a captured payment). `auto_refunded` is deliberately EXCLUDED — that path
+ * reverses a stale/late capture and never marked the invoice paid.
+ */
+function isSucceededLike(status: string): boolean {
+  return (
+    status === 'succeeded' ||
+    status === 'partially_refunded' ||
+    status === 'refunded'
+  );
+}
+
 export function buildEvents(
   payments: LoadInvoicePaymentActivityOutput['payments'],
   refunds: readonly RefundActivityDto[],
@@ -179,7 +193,14 @@ export function buildEvents(
     });
     if (p.completedAt !== null) {
       let terminalType: SyntheticEventType | null = null;
-      if (p.status === 'succeeded') terminalType = 'payment_succeeded';
+      // Round-2 review fix (MED): a payment that is now `partially_refunded`
+      // or `refunded` SUCCEEDED first (a refund presupposes a captured
+      // payment), so its terminal milestone is still `payment_succeeded` — the
+      // refund itself surfaces via the refund rows below. Pre-fix these two
+      // statuses matched NONE of the branches, so a refunded payment lost its
+      // payment_succeeded row (and, via `hasSucceeded`, its invoice_paid row),
+      // making a refunded payment look like it never succeeded on the timeline.
+      if (isSucceededLike(p.status)) terminalType = 'payment_succeeded';
       else if (p.status === 'failed') terminalType = 'payment_failed';
       else if (p.status === 'canceled') terminalType = 'payment_canceled';
       // Gap C — the stale-invoice / late-charge auto-refund (migration 0240)
@@ -187,7 +208,6 @@ export function buildEvents(
       // terminal event has to come from the payment. Excluded from the
       // succeeded lineage below (`hasSucceeded`), so no invoice_paid row.
       else if (p.status === 'auto_refunded') terminalType = 'auto_refunded';
-      // 'partially_refunded' / 'refunded' surface via their refund rows;
       // 'pending' has no completedAt.
       if (terminalType !== null) {
         events.push({
@@ -205,8 +225,12 @@ export function buildEvents(
   }
 
   // Surface the F4 invoice_paid transition once if any payment succeeded
-  // AND the F4 row has paidAt populated.
-  const hasSucceeded = payments.some((p) => p.status === 'succeeded');
+  // AND the F4 row has paidAt populated. Round-2 review fix (MED): include
+  // `partially_refunded`/`refunded` — the invoice WAS paid (paidAt set) before
+  // the refund; the historical invoice_paid milestone must remain on the audit
+  // timeline. If a full refund later un-pays the invoice (paidAt cleared), the
+  // `invoicePaidAtIso !== null` guard drops the row anyway.
+  const hasSucceeded = payments.some((p) => isSucceededLike(p.status));
   if (hasSucceeded && invoicePaidAtIso !== null) {
     events.push({
       id: 'invoice-paid',
