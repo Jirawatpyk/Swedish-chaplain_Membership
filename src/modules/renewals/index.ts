@@ -80,11 +80,14 @@ export {
   isOverdue,
   daysUntilExpiry,
   isMembershipLapsed,
+  deriveMembershipAccess,
   type CycleId,
   type CycleIdError,
   type ClosedReason,
   type RenewalCycle,
   type CycleInvariantError,
+  type MembershipAccessDecision,
+  type MembershipAccessReason,
 } from './domain/renewal-cycle';
 
 export {

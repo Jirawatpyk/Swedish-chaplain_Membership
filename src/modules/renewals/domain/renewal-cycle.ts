@@ -310,6 +310,67 @@ export function daysUntilExpiry(cycle: RenewalCycle, now: Date): number {
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
 }
 
+export type MembershipAccessReason =
+  | 'in_good_standing'
+  | 'unpaid'
+  | 'pending_review'
+  | 'grace_expired'
+  | 'cancelled';
+
+export interface MembershipAccessDecision {
+  readonly access: 'full' | 'suspended' | 'terminated';
+  readonly reason: MembershipAccessReason;
+}
+
+/**
+ * Single source of truth for a member's benefit-access state.
+ *
+ *  - `terminated`: an ENDED-terminal cycle — `lapsed`/`cancelled` AND
+ *    `expiresAt` in the past (mirrors `isMembershipLapsed`'s two-condition
+ *    rule; a `cancelled` cycle whose period has NOT ended is not ended
+ *    coverage → `full`). `completed` is NEVER terminated (057 R2: the member
+ *    paid; re-prompting payment causes a duplicate).
+ *  - `suspended`: `awaiting_payment`/`pending_admin_reactivation`, OR a
+ *    NON-terminal cycle (`upcoming`/`reminded`) whose period already ended
+ *    (closes the 06:15-cron gap — correct the instant the period ends, no
+ *    cron dependency).
+ *  - `full`: everything else, including a member with no cycle.
+ *
+ * Comparison is instant-vs-instant on `expiresAt` (the trigger-maintained
+ * mirror of `period_to`); a malformed `expiresAt` on a terminal cycle is
+ * treated as ended. `now` is injected — no wall-clock read.
+ */
+export function deriveMembershipAccess(
+  cycle: RenewalCycle | null,
+  now: Date,
+): MembershipAccessDecision {
+  if (cycle === null) return { access: 'full', reason: 'in_good_standing' };
+
+  if (cycle.status === 'pending_admin_reactivation') {
+    return { access: 'suspended', reason: 'pending_review' };
+  }
+  if (cycle.status === 'awaiting_payment') {
+    return { access: 'suspended', reason: 'unpaid' };
+  }
+  if (cycle.status === 'completed') {
+    return { access: 'full', reason: 'in_good_standing' };
+  }
+
+  const expiresMs = Date.parse(cycle.expiresAt);
+  const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
+
+  if (cycle.status === 'lapsed' || cycle.status === 'cancelled') {
+    return expired
+      ? { access: 'terminated', reason: cycle.status === 'lapsed' ? 'grace_expired' : 'cancelled' }
+      : { access: 'full', reason: 'in_good_standing' };
+  }
+
+  // upcoming | reminded
+  return expired
+    ? { access: 'suspended', reason: 'unpaid' }
+    : { access: 'full', reason: 'in_good_standing' };
+}
+
 /**
  * A membership has LAPSED when its most-recent cycle is ended-terminal
  * (`lapsed` or `cancelled` — NOT `completed`, which means the member
@@ -321,11 +382,10 @@ export function daysUntilExpiry(cycle: RenewalCycle, now: Date): number {
  * must check the status FIRST, before the expiry. This is the single source
  * of truth for "lapsed", consumed by both the portal dashboard's
  * `deriveMembershipStat` and the admin member-table badge.
+ *
+ * Redefined in terms of the canonical `deriveMembershipAccess` predicate —
+ * one good-standing rule, not two.
  */
 export function isMembershipLapsed(cycle: RenewalCycle, now: Date): boolean {
-  if (!isTerminalCycleStatus(cycle.status) || cycle.status === 'completed') {
-    return false;
-  }
-  const expiresMs = Date.parse(cycle.expiresAt);
-  return !Number.isFinite(expiresMs) || expiresMs < now.getTime();
+  return deriveMembershipAccess(cycle, now).access === 'terminated';
 }
