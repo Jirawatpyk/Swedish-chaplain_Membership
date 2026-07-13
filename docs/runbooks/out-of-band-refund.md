@@ -4,7 +4,7 @@
 **Severity**: HIGH (financial reconciliation drift)
 **Owner**: Chamber-OS maintainer + tenant admin (joint resolution)
 **Source spec**: F5 (`specs/009-online-payment/spec.md` Q2 / FR-011 / FR-011a)
-**Last updated**: 2026-04-23 (initial draft as part of F5 `/speckit.plan`)
+**Last updated**: 2026-07-12 (F5 refund-lifecycle fix-wave — § 1.1 guard-miss sub-case (i) CLOSED (commit `5fe09559`, status-agnostic marker-attach), both-webhook marker check (Finding 2), § 1.4 redundant-audit / single-owner-metric design (Finding 4); § 1.5 CF-2 failed-auto-refund resolve/acknowledge action; § 1.6 `refund.updated` forward-path subscription — deprecated `charge.refund.updated`, PromptPay async settlement)
 
 ---
 
@@ -15,6 +15,63 @@ A `charge.refunded` webhook event arrived from Stripe whose `processor_refund_id
 Per Q2 / FR-011a, Chamber-OS **explicitly does not auto-reconcile** out-of-band refunds — no F4 credit note is created, no invoice-status transition occurs. The result is **ledger drift**: Chamber-OS thinks the invoice is still `paid`, while Stripe has actually refunded it.
 
 This is a **safety net**, not a normal operating mode. It exists because (a) admin training takes time, (b) emergencies happen (Stripe support sometimes processes refunds on the merchant's behalf), and (c) our refund flow may be temporarily unavailable.
+
+### 1.1 Recognised class — stale-invoice auto-refund guard-miss (CLOSED; NOT a real OOB)
+
+A stale-invoice auto-refund is **never** a real dashboard refund. Historically a guard-miss could leave the auto-refund unmarked, so a later webhook raised a benign-but-noisy `out_of_band_refund_detected`. **Both guard-miss sub-cases are now CLOSED** — a stale-invoice auto-refund no longer raises a false OOB on either webhook. This section stays as a recognition guide (the description below is recognised-not-open): if you ever see an OOB alert whose `re_…` id maps to an auto-refund, use the on-call recognition step to confirm the refund is correctly issued.
+
+- **Root cause (how the marker works)**: when a stuck-`pending` payment on a stale invoice is auto-refunded, the use-case stamps a **durable marker** (`payments.auto_refund_processor_refund_id`) — via `markAutoRefunded` when the row is still `pending`, or the **status-agnostic** `attachAutoRefundMarkerIfAbsent` when a concurrent writer already terminalised the row to any other status — so a later `charge.refund.updated` / `charge.refunded` webhook recognises the refund as "already known" (via `findAutoRefundByProcessorRefundId`) instead of raising a false OOB alert.
+- **Sub-case (ii) — a `failed` row**: FIXED in commit `44b394a3` (guard-miss ii). The marker is stamped even when the payment row was already `failed` (a late captured charge on a non-payable invoice routes through the stale Step-3 path, which `markAutoRefunded`'s `status='pending'` guard could never match).
+- **Sub-case (i) — a concurrently-`succeeded` (or any non-`failed`) row**: FIXED in commit `5fe09559` (guard-miss i). The concurrent-manual-mark race — an admin mark-paid flip / another webhook flips the payment off `pending` in the narrow window between the auto-refund decision and the marker write — previously left the row unmarked (the else branch was log-only). The marker-attach is now status-agnostic (guards ONLY on `auto_refund_processor_refund_id IS NULL`), so the marker lands regardless of which status the row was raced to — symmetric to sub-case (ii).
+- **How to recognise this class on-call**: map any `re_…` id on the alert back to `payments.auto_refund_processor_refund_id` (or the `payment_auto_refunded_stale_invoice` / `payment_auto_refunded_concurrent_manual_mark` audit rows for that payment). If it resolves to an auto-refund payment, **the refund IS correctly issued and audited** — do not treat this as a missing-refund incident. No F4 credit note is auto-created here either (same as any OOB alert); reconcile per § 2.3 Option A if the ledger needs a credit note, but there is no "lost" money to find. (Post-fix, an OOB alert for an auto-refund should only arise on the **give-up path** — the Stripe refund call itself failed past the 48h retry window, using the Stripe event id as the refund identifier; that IS a genuine reconcile item, not a marker guard-miss.)
+- **Both webhooks consult the marker (F5 refund-lifecycle fix-wave, Finding 2)**: the `charge.refunded` handler ALSO checks `payments.auto_refund_processor_refund_id` before raising OOB (previously only `charge.refund.updated` did). Combined with the two guard-miss fixes above, a durably-marked auto-refund no longer raises a false OOB on EITHER webhook, and there is no remaining guard-miss false-OOB class.
+
+### 1.2 Known residual race — B.1 manual F4 credit note vs. F5 refund pre-flight (narrow window, low risk)
+
+A manual F4 credit note issued in the narrow window between the F5 refund pre-flight `getInvoiceCreditedTotal` read and the Stripe `createRefund` call can make the pre-flight's credited-total cap stale. Sequence:
+
+1. Admin A opens the refund dialog; F5 reads the invoice's currently-credited total (pre-flight cap check, FR-011b).
+2. Admin B issues a manual F4 credit note on the SAME invoice, in between A's read and A's Stripe call.
+3. F5 proceeds using the now-stale cap, calls Stripe `createRefund` — **money moves**.
+4. F5's post-refund F4 credit-note booking is then rejected by F4 as an over-credit (the invoice is already credited past the amount F5's stale cap allowed for).
+
+This is **much narrower** than the original #4 finding (which had no invoice-side check at all — this residual only exists in the sub-second window between the pre-flight read and the Stripe call). At SweCham's scale (low refund volume, few admin users) two credit actions landing on the same invoice within seconds of each other is very unlikely.
+
+- **Operational mitigation**: the operator reconciles the resulting stuck/orphaned refund via this runbook (§ 2–3) — Stripe DID move the money (this is the post-Stripe `f4_bridge_error` case, not the pre-flight `f4_preflight_read_error` case — see `specs/009-online-payment/contracts/payments-api.md` § 3), so treat it exactly like any other successfully-issued-but-not-yet-booked refund.
+- **Full close is out of scope for F5 MVP**: requires a cross-module F4↔F5 lock (e.g. a shared advisory lock namespace spanning both `invoicing:` and `payments:` for the invoice) so a manual F4 credit note and an F5 refund cannot interleave on the same invoice. Tracked as a follow-up, not a launch blocker given the narrow window + low volume.
+
+### 1.3 Known residual — F8 async-reject marker-commit crash window (narrow, money-safe)
+
+`adminRejectReactivation` (F8) stamps the async reject-with-refund marker (`reject_refund_initiated_at`/`reject_refund_id`/`reject_actor_user_id`) in a **separate transaction** from the F5 call that returns `refund_pending` — unavoidable, since F5 is an external Stripe call and cannot be atomic with an F8 write. If the process crashes in the narrow window between F5 returning `refund_pending` and that marker-commit landing, the cycle stays `pending_admin_reactivation` **without** the marker. The F8 reconcile cron (`reconcilePendingReactivations`) then has no way to distinguish it from an ordinary pending cycle, so its 30-day timeout eventually `lapsed`s it instead of converging it to `cancelled`/`admin_rejected_with_refund` — the wrong terminal LABEL, but money-safe (the refund itself already succeeded via F5 independently of the marker write). This is strictly better than the pre-F8-RP-2 baseline, where **every** async reject-with-refund lapsed (no marker existed at all); the 30-day timeout safety net still resolves the cycle either way. No operator action required — noted here for on-call context if a lapsed cycle is later found to have had a settled reject-refund.
+
+### 1.4 Redundant OOB audit + single-owner metric (by design — expect ≥1 audit row per refund)
+
+A genuine dashboard OOB refund on an **async** payment method (e.g. PromptPay) is delivered by Stripe as up to THREE events: `charge.refunded`, the deprecated `charge.refund.updated` (only when the refund has a legacy charge), and the forward-path `refund.updated` (see § 1.6). The `charge.refunded` and both refund-lifecycle handlers emit `out_of_band_refund_detected` **on purpose** — the 10-year money-trail forensic is written redundantly so it survives any one webhook failing its whole retry window (no single point of failure for the forensic). Consequences for on-call:
+
+- **Expect up to one audit row per delivered webhook event** for the same refund. **Deduplicate on `processor_refund_id`** when counting distinct OOB refunds — the same group-by-`processor_refund_id` convention the webhook dispatcher already mandates. Multiple `out_of_band_refund_detected` rows with the same `processor_refund_id` are ONE incident, not many. The `summary` names the delivering channel (`via charge.refund.updated` vs `via refund.updated`) for triage.
+- **The paging metric `out_of_band_refund_rejected_total` is single-owner on the `charge.refunded` handler — for refunds that HAVE a charge.** `charge.refunded` is the universal detector for **charged** refunds (it fires on every `amount_refunded` change), so the metric counts each such refund **once** and is NOT doubled for async refunds, even though the audit may appear as ≥1 row. For charged refunds the `refund.updated` / `charge.refund.updated` handlers emit only the redundant forensic audit, never the metric.
+  - **Charge-less exception (Fix 1):** a genuine OOB refund on a **charge-less** async method (PromptPay / GrabPay / bank transfer — no `charge` object) **never** fires `charge.refunded`, so it arrives ONLY via `refund.updated`. For that case the `refund.updated` handler (`processRefundUpdated`, `chargeId === null`) **does** emit `out_of_band_refund_rejected_total` — it is the sole detector, so it must page in real time. There is still no double-count: the two disjoint classes (has-charge → paged by `charge.refunded`; charge-less → paged by `refund.updated`) are counted by exactly one handler each.
+
+### 1.5 Failed stale-invoice auto-refund — resolve/acknowledge after reconciliation (CF-2)
+
+When a stale-invoice auto-refund **fails** at Stripe (`charge.refund.updated(failed|canceled)` — the money did NOT reach the customer while the payment reads `auto_refunded`), `processRefundUpdated` emits the 10-year forensic `auto_refund_failed_needs_manual_reconcile` and pages ops. This is the genuine give-up/failed reconcile item referenced in § 1.1 (it is NOT a marker guard-miss). The admin invoice detail page shows a destructive `AutoRefundFailedAlert` and the member's void banner reads "being reconciled".
+
+- **Reconcile the money out-of-band first** (issue a manual F4 credit note per § 2.3 Option A, or refund via the Stripe Dashboard), exactly as for any stuck refund.
+- **Then close the loop** — on `/admin/invoices/<id>`, click **"Mark as reconciled"** on the failed-auto-refund alert (confirm dialog). This appends the append-only `auto_refund_reconciled` event (10y) via `POST /api/refunds/resolve-auto-refund-failure` (admin-only). It is **idempotent** (a second click is a benign no-op) and **refuses** when no failure forensic exists.
+- **Effect**: `findStaleInvoiceAutoRefund.failed` becomes failure-AND-NOT-reconciled, so the admin alert clears and the member banner reverts to the (now-true) "refunded" copy. The forensic + the reconcile event both remain in the append-only audit log for the 10-year trail — the acknowledgement does NOT erase the failure record.
+
+### 1.6 Required Stripe webhook event subscriptions (`charge.refund.updated` + `refund.updated`)
+
+The async refund lifecycle depends on the Stripe endpoint subscribing to BOTH refund-lifecycle events. Missing `refund.updated` is the most likely silent cause of async refunds stuck `pending`:
+
+- **`charge.refund.updated`** — **DEPRECATED** by Stripe: *"This event is only sent for refunds with a corresponding charge; listen to `refund.updated` for updates on all refunds instead."* Still fires for card refunds (which have a legacy charge). Keep it subscribed — the OOB forensic redundancy (§ 1.4) relies on it firing alongside `charge.refunded`.
+- **`refund.updated`** — the **forward path** on the pinned Stripe API version (`STRIPE_API_VERSION`, currently `2025-09-30.clover`). Fires on ANY `Refund` update (incl. `status → succeeded | failed | canceled`) for ALL refunds, including **charge-less async refunds** (PromptPay / GrabPay / bank transfers) that never emit `charge.refund.updated`. **This is the settlement signal for PromptPay refunds.**
+
+Both events carry a `Stripe.Refund` `data.object` and are routed to the **same** `processRefundUpdated` use-case (idempotent across both: `markProcessed` is per-event-id, the finaliser guards on `expectedCurrentStatus='pending'`, and the F4 credit note is idempotent per `(tenant, source_refund_id)` — so exactly ONE credit note is booked even when both fire for the same settlement).
+
+`refund.failed` is deliberately **not** subscribed: `refund.updated` already carries the `status → failed` transition; the stale-pending sweep (`sweep-stale-pending-refunds`) backstops any single-event delivery gap.
+
+**Symptom of a missing `refund.updated` subscription**: `payments_refund_pending_awaiting_processor_total` climbs and stays > 0 for async (PromptPay) refunds; the refund row sits `pending` until the sweep cron reconciles it via a direct `retrieveRefund`. Fix: add `refund.updated` to the endpoint's event list in the Stripe Dashboard.
 
 ---
 
@@ -112,7 +169,7 @@ Reference: docs/runbooks/out-of-band-refund.md
 
 ### 3.2 Update the metric
 
-Verify `out_of_band_refund_rejected_total{tenant, processor_env}` incremented. If it's > 0 for two consecutive months, escalate per spec FR-021 — re-evaluate the Q2 design choice (currently "in-app only + reject"; alternative is "auto-reconcile both paths").
+Verify `out_of_band_refund_rejected_total{tenant, processor_env}` incremented (this metric is **single-owner** on the `charge.refunded` handler — it counts once per refund even though the `out_of_band_refund_detected` audit may appear as ≥1 row per refund; see § 1.4). If it's > 0 for two consecutive months, escalate per spec FR-021 — re-evaluate the Q2 design choice (currently "in-app only + reject"; alternative is "auto-reconcile both paths").
 
 ### 3.3 Document the incident
 
@@ -166,5 +223,9 @@ If the Stripe refund itself was a mistake:
 
 - `specs/009-online-payment/spec.md` — Q2 + FR-011a + FR-020 (`out_of_band_refund_detected` audit event)
 - `specs/009-online-payment/security.md` § T-06
+- `specs/009-online-payment/contracts/payments-api.md` § 3 — `f4_preflight_read_error` (pre-Stripe, money NOT moved, safe retry) vs `f4_bridge_error` (post-Stripe, money moved, this runbook applies) route error codes
 - F4 manual credit note: `src/modules/invoicing/application/issue-credit-note.ts`
 - Future post-MVP escape hatch: tracked in Q2 follow-up backlog
+- § 1.1 guard-miss false-OOB class: `44b394a3` (sub-case ii fix) + `5fe09559` (sub-case i fix — status-agnostic marker-attach); `src/modules/payments/application/use-cases/confirm-payment.ts` (`markAutoRefunded` / `attachAutoRefundMarkerIfAbsent`)
+- § 1.2 B.1 residual race: `src/modules/payments/application/use-cases/issue-refund.ts` (pre-flight `getInvoiceCreditedTotal` read vs. `createRefund` call)
+- § 1.3 F8 marker-commit crash window: `src/modules/renewals/application/use-cases/admin-reject-reactivation.ts` (F5 call vs. marker-write tx boundary); `src/modules/renewals/application/use-cases/reconcile-pending-reactivations.ts` (`processMarkedRejectRefund`)

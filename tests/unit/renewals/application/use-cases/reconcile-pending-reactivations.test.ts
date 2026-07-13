@@ -12,6 +12,7 @@ import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import type {
   F5RefundBridge,
+  GetRefundOutcomeResult,
   IssueRefundForInvoiceResult,
 } from '@/modules/renewals/application/ports/f5-refund-bridge';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
@@ -19,6 +20,8 @@ import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 const TENANT_ID = 'tenantA';
 const NOW = new Date('2026-05-07T00:00:00Z');
 const INVOICE_UUID = '00000000-0000-0000-0000-0000000bbbb1';
+const REJECT_ADMIN_ID = 'admin-reject-1';
+const REJECT_REFUND_ID = 'rfnd_async_reject_1';
 
 vi.mock('@/lib/db', () => ({
   // 2026-05-17 polish — stub `db` to fix collection error.
@@ -31,6 +34,13 @@ function pendingCycle(overrides: {
   cycleSuffix?: string;
   daysPending: number;
   linkedInvoiceId?: string | null;
+  /**
+   * F8-RP follow-up — when true, stamp the async reject-with-refund marker
+   * (rejectRefundInitiatedAt/rejectRefundId/rejectActorUserId) so the cycle
+   * flows through the reconcile cron's marked-settlement branch instead of the
+   * timeout/reminder branches.
+   */
+  marked?: boolean;
 }): RenewalCycle {
   const cycleSuffix = overrides.cycleSuffix ?? 'c001';
   const enteredAt = new Date(
@@ -45,6 +55,15 @@ function pendingCycle(overrides: {
       overrides.linkedInvoiceId === undefined
         ? INVOICE_UUID
         : overrides.linkedInvoiceId,
+    ...(overrides.marked
+      ? {
+          rejectRefundInitiatedAt: new Date(
+            NOW.getTime() - (overrides.daysPending - 1) * 86_400_000,
+          ).toISOString(),
+          rejectRefundId: REJECT_REFUND_ID,
+          rejectActorUserId: REJECT_ADMIN_ID,
+        }
+      : {}),
   });
 }
 
@@ -72,6 +91,20 @@ function fakeDeps(args: {
   emitInTxImpl?: () => Promise<void>;
   transitionImpl?: () => Promise<RenewalCycle>;
   /**
+   * F8-RP follow-up — the F5 settlement lookup result for the marked
+   * reject-with-refund branch. Defaults to `not_found` (never called on the
+   * non-marked timeout/reminder paths).
+   */
+  getRefundOutcomeResult?: GetRefundOutcomeResult;
+  getRefundOutcomeImpl?: () => Promise<GetRefundOutcomeResult>;
+  /**
+   * F8-RP-2 review (Finding 1) — override the guarded marker-CLEAR result on
+   * the settled-`failed` branch. Set to a throwing impl to prove the FAILED
+   * branch is per-cycle error-isolated (a persistent clear-tx throw must NOT
+   * 500 the whole reconcile pass).
+   */
+  clearRejectRefundImpl?: () => Promise<boolean>;
+  /**
    * T138 catch-up review-fix: per-cycleId mapping of which reminder
    * audits already exist. Defaults to empty (cron-skip never happened
    * before — fire all crossed thresholds). Set to a populated set to
@@ -89,6 +122,10 @@ function fakeDeps(args: {
   refundMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   reminderAuditQueryMock: ReturnType<typeof vi.fn>;
+  getRefundOutcomeMock: ReturnType<typeof vi.fn>;
+  markRejectRefundMock: ReturnType<typeof vi.fn>;
+  clearRejectRefundMock: ReturnType<typeof vi.fn>;
+  insertTaskMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -124,8 +161,28 @@ function fakeDeps(args: {
   );
   const emitMock = vi.fn(args.emitImpl ?? (async () => {}));
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));
+  const getRefundOutcomeMock = vi.fn(
+    args.getRefundOutcomeImpl ??
+      (async () =>
+        args.getRefundOutcomeResult ?? { status: 'not_found' as const }),
+  );
+  // F8-RP follow-up — marker write/clear + escalation-task mocks. Defaults:
+  // the guarded marker writes succeed (return true); the escalation task is
+  // newly created. Threaded onto cyclesRepo / a new escalationTaskRepo dep.
+  const markRejectRefundMock = vi.fn(async () => true);
+  const clearRejectRefundMock = vi.fn(
+    args.clearRejectRefundImpl ?? (async () => true),
+  );
+  const insertTaskMock = vi.fn(async () => ({
+    created: true,
+    row: { taskId: 'task-async-reject-1' },
+  }));
   const f5Bridge: F5RefundBridge = {
     issueRefundForInvoice: refundMock as never,
+    getRefundOutcomeForInvoice: getRefundOutcomeMock as never,
+    // The reconcile cron never calls the in-flight-refund resolver (Finding 3
+    // is the admin-reject path); stub it so the mock satisfies the port.
+    findPendingRefundForInvoice: vi.fn(async () => ({ status: 'none' as const })),
   };
   const reminderAuditQueryMock = vi.fn(
     args.reminderAuditQueryImpl ??
@@ -139,11 +196,16 @@ function fakeDeps(args: {
       findByIdInTx: findByIdInTxMock,
       transitionStatus: transitionMock,
       acquireCycleLockInTx: acquireLockMock,
+      markRejectRefundInitiatedInTx: markRejectRefundMock,
+      clearRejectRefundMarkerInTx: clearRejectRefundMock,
     } as unknown as ReconcilePendingReactivationsDeps['cyclesRepo'],
     auditEmitter: {
       emit: emitMock,
       emitInTx: emitInTxMock,
     } as unknown as ReconcilePendingReactivationsDeps['auditEmitter'],
+    escalationTaskRepo: {
+      insertIfAbsent: insertTaskMock,
+    } as unknown as ReconcilePendingReactivationsDeps['escalationTaskRepo'],
     f5RefundBridge: f5Bridge,
     reminderAuditQuery: {
       findReminderAuditsForCycle:
@@ -157,6 +219,10 @@ function fakeDeps(args: {
     refundMock,
     transitionMock,
     reminderAuditQueryMock,
+    getRefundOutcomeMock,
+    markRejectRefundMock,
+    clearRejectRefundMock,
+    insertTaskMock,
   };
 }
 
@@ -380,8 +446,42 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     if (r.ok) {
       expect(r.value.timedOut).toBe(0);
       expect(r.value.timeoutRefundFailures).toBe(1);
+      // F8-RP REGRESSION: a genuine failure MUST NOT bump the new pending
+      // counter — the two are distinct money outcomes.
+      expect(r.value.timeoutRefundPending).toBe(0);
     }
     expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it('F8-RP: refund_pending — cycle stays pending, counted as timeoutRefundPending (NOT a failure)', async () => {
+    // The F5 bridge returned `refund_pending` (async Stripe refund created,
+    // row `pending`, awaiting the `charge.refund.updated` webhook). The cron
+    // MUST leave the cycle in `pending_admin_reactivation` and NOT transition
+    // it, MUST NOT count it as a timeout or a refund failure, and MUST surface
+    // it via the distinct informational `timeoutRefundPending` counter. The
+    // next cron run self-heals once the webhook/sweep settles the refund
+    // (bridge then returns `no_payment_found` → normal lapse transition).
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      refundResult: {
+        status: 'refund_pending',
+        refundId: 'rfnd-async-1',
+        processorRefundId: 're_async_1',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.timeoutRefundPending).toBe(1);
+      // Not a timeout (no transition), not a refund failure (nothing failed).
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutRefundOrphaned).toBe(0);
+    }
+    // Cycle stays pending — no transition, no timed_out audit.
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
   it('admin-approve-before-lock — re-confirm UNDER lock shows completed → NO refund, no transition (money safety)', async () => {
@@ -432,6 +532,158 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     if (r.ok) {
       expect(r.value.timedOut).toBe(0);
       expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+
+  it('Round-2 (HIGH reject-marker race): Step-1 re-read observes an async reject-marker stamped AFTER the snapshot → admin_race_skipped, NO refund, NO lapse', async () => {
+    // Round-2 review (HIGH). The cron lists an UNMARKED day-30 cycle (so
+    // processCycle routes the STALE snapshot to processTimeout), but an admin
+    // async-rejects it mid-pass: adminRejectReactivation stamps
+    // rejectRefundInitiatedAt while status stays pending_admin_reactivation.
+    // processTimeout's Step-1 re-read MUST observe the fresh marker and bail —
+    // NOT lapse the cycle (which would drop the admin's reject intent, the
+    // post_refund_review finance task, and stamp a cron-actor timeout audit
+    // instead of the rejecting admin). Leaving the row pending+marked lets the
+    // marked branch converge to `cancelled` next pass. Pre-fix the Step-1
+    // re-read checked ONLY status, so the marker was ignored and the cycle was
+    // lapsed (timed_out) instead of cancelled — permanently, with no self-heal.
+    const snapshot = pendingCycle({ daysPending: 30, marked: false });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [snapshot],
+      findByIdInTxImpl: (_callIndex, c) => ({
+        ...c,
+        rejectRefundInitiatedAt: new Date(
+          NOW.getTime() - 86_400_000,
+        ).toISOString(),
+        rejectRefundId: REJECT_REFUND_ID,
+        rejectActorUserId: REJECT_ADMIN_ID,
+      }),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Bailed at Step 1 — no Stripe refund, no lapse transition, no timed_out audit.
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+
+  it('Round-2 (HIGH reject-marker race): marker becomes visible only at the Step-3 re-read → admin_race_skipped, NO lapse', async () => {
+    // Narrower window: Step-1 observed a clean pending cycle and proceeded; the
+    // F5 refund returned no_payment_found (the admin's own reject-refund had
+    // already settled the money), so refundIssued=false; THEN the marker
+    // becomes visible at the Step-3 re-read. The timeout lapse MUST be skipped
+    // so the marked branch — not the timeout path — owns convergence to
+    // cancelled next pass.
+    const snapshot = pendingCycle({ daysPending: 30, marked: false });
+    const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [snapshot],
+      refundResult: { status: 'no_payment_found' as const },
+      findByIdInTxImpl: (callIndex, c) =>
+        callIndex === 0
+          ? c
+          : {
+              ...c,
+              rejectRefundInitiatedAt: new Date(
+                NOW.getTime() - 86_400_000,
+              ).toISOString(),
+              rejectRefundId: REJECT_REFUND_ID,
+              rejectActorUserId: REJECT_ADMIN_ID,
+            },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    // Step 2 ran (refund consulted) but returned no_payment_found; no lapse.
+    expect(refundMock).toHaveBeenCalledTimes(1);
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(1);
+    }
+  });
+});
+
+describe('reconcilePendingReactivations (H1 reliability) — loop-level per-cycle backstop', () => {
+  it('timeout Step-1 re-read THROWS persistently → isolated as cycleProcessingErrors, cron does NOT reject, a second healthy cycle still processes', async () => {
+    // H1 reliability fix. `processTimeout` Step-1 (the validate-under-lock
+    // re-read: `acquireCycleLockInTx` + `findByIdInTx`) opens an UNGUARDED
+    // `runInTenant`. A persistent NON-conflict throw there (DB blip / RLS
+    // regression / poison row) escaped `processTimeout` → the caller for-loop
+    // (which had NO top-level per-cycle guard) → the route 500'd the WHOLE
+    // reconcile pass, blocking every other marked/timeout/reminder cycle for
+    // the tenant — the SAME self-DoS class the marked branch's own outer
+    // try/catch already closes, but on the timeout branch's Step-1. The
+    // loop-level backstop isolates ANY unclassified escaped throw to its one
+    // cycle: counts it in the distinct, alertable `cycleProcessingErrors`
+    // outcome, logs at ERROR (PCI-safe ids + error constructor name only), and
+    // continues.
+    //
+    // A SECOND, otherwise-processable cycle (a day-23 reminder-due cycle) is
+    // seeded AFTER the poison cycle to prove the loop keeps going past the
+    // throw. (A day-23 reminder cycle never calls `findByIdInTx`, so ONLY the
+    // poison timeout cycle reaches the Step-1 re-read.)
+    const poisonCycle = pendingCycle({ daysPending: 31, cycleSuffix: 'ca01' });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'ca02' });
+    const { deps, refundMock, transitionMock, emitMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      findByIdInTxImpl: (_callIndex, cycle) => {
+        if (cycle.cycleId === poisonCycle.cycleId) {
+          throw new Error('renewal_cycles: connection reset mid-Step-1-reread');
+        }
+        return cycle;
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (b) the poison cycle is isolated into the distinct alertable counter,
+      // NEVER a classified timeout outcome (the throw escaped Step-1 BEFORE
+      // any per-branch classification could run).
+      expect(r.value.cycleProcessingErrors).toBe(1);
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+      expect(r.value.timeoutAdminRaceSkipped).toBe(0);
+      // (c) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // Step-1 threw BEFORE the refund, so no Stripe call + no transition ran
+    // for the poison cycle.
+    expect(refundMock).not.toHaveBeenCalled();
+    expect(transitionMock).not.toHaveBeenCalled();
+    // The reminder path's `emit` fires once for the second cycle — unaffected
+    // by the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
+  });
+
+  it('a classified per-branch outcome is NEVER re-labelled by the backstop (refund_failed stays refund_failed, cycleProcessingErrors=0)', async () => {
+    // Guard the "backstop must not mask/re-label a classified outcome"
+    // invariant: a branch that RETURNS a classified outcome (here the timeout
+    // branch's `refund_failed`, which returns — never throws) must land in its
+    // own counter and leave `cycleProcessingErrors` at 0. The backstop fires
+    // ONLY on genuine escaped throws.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      refundResult: {
+        status: 'refund_failed',
+        errorCode: 'processor_unavailable',
+        detail: 'Stripe 503',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.timeoutRefundFailures).toBe(1);
+      expect(r.value.cycleProcessingErrors).toBe(0);
     }
   });
 });
@@ -686,6 +938,314 @@ describe('reconcilePendingReactivations (063 follow-up) — NO-MONEY Step-3 clas
       expect(r.value.timeoutAdminRaceSkipped).toBe(1);
       expect(r.value.timeoutRefundOrphaned).toBe(0);
     }
+  });
+});
+
+describe('reconcilePendingReactivations (F8-RP) — async reject-with-refund settlement', () => {
+  it('marked cycle, refund SETTLED (day 5, NOT timeout) → cancelled byte-identical to sync reject (audit + task + admin actor)', async () => {
+    // A cycle an admin rejected-with-refund on day ~4 whose async refund has
+    // now settled. daysPending=5 is FAR below the 30-day timeout — the marked
+    // branch runs EVERY pass, so the cycle converges to `cancelled` NOW, not
+    // after a 30-day wait. Terminal MUST mirror the sync reject exactly.
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const {
+      deps,
+      refundMock,
+      transitionMock,
+      emitInTxMock,
+      getRefundOutcomeMock,
+      insertTaskMock,
+    } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: {
+        status: 'succeeded',
+        creditNoteId: 'cn-settled-async-1',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectSettledCancelled).toBe(1);
+      // NOT a timeout — the marked branch never reaches processTimeout.
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+    }
+    // The settlement lookup (NOT a second issueRefund) drove the decision.
+    expect(getRefundOutcomeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ refundId: REJECT_REFUND_ID }),
+    );
+    expect(refundMock).not.toHaveBeenCalled();
+    // Transition byte-identical to the sync reject terminal.
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'pending_admin_reactivation',
+      to: 'cancelled',
+      closedReason: 'admin_rejected_with_refund',
+      closedAt: NOW.toISOString(),
+    });
+    // `lapsed_member_admin_reactivation_rejected` audit with the settled CN id
+    // AND the REPLAYED admin actor (NOT the cron).
+    const rejectedEmit = emitInTxMock.mock.calls.find(
+      (c) => c[1]?.type === 'lapsed_member_admin_reactivation_rejected',
+    );
+    expect(rejectedEmit).toBeTruthy();
+    expect(rejectedEmit?.[1].payload).toMatchObject({
+      actor_user_id: REJECT_ADMIN_ID,
+      refund_credit_note_id: 'cn-settled-async-1',
+    });
+    expect(rejectedEmit?.[2]).toMatchObject({
+      actorUserId: REJECT_ADMIN_ID,
+      actorRole: 'admin',
+    });
+    // post_refund_review escalation task inserted (finance parity).
+    expect(insertTaskMock).toHaveBeenCalledOnce();
+    expect(insertTaskMock.mock.calls[0]?.[1]).toMatchObject({
+      taskType: 'post_refund_review',
+    });
+  });
+
+  it('marked cycle, refund STILL pending → skip (stays pending, no transition), still_pending counter', async () => {
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const { deps, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: { status: 'pending' },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectRefundStillPending).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('marked cycle, refund SETTLED FAILED → clears marker + alerting counter, NEVER cancelled, NEVER lapsed', async () => {
+    // The admin rejected-with-refund but the async refund settled failed — the
+    // money never returned. The cycle must NOT converge to cancelled and must
+    // NOT lapse; the cron clears the marker (reverting to an ordinary pending
+    // cycle) + fires the alerting outcome.
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const { deps, transitionMock, emitInTxMock, clearRejectRefundMock } =
+      fakeDeps({
+        cycles: [cycle],
+        getRefundOutcomeResult: {
+          status: 'failed',
+          failureReasonCode: 'stripe_refund_failed',
+        },
+      });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectRefundFailed).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.timedOut).toBe(0);
+    }
+    expect(clearRejectRefundMock).toHaveBeenCalledOnce();
+    // Finding 5: the clear is GUARDED on the SAME refund id this branch resolved
+    // (the marker's R1, `REJECT_REFUND_ID`) so a concurrent re-reject that
+    // overwrote the marker with a fresh R2 in the read→clear window is a no-op
+    // rather than clobbering R2's live marker. Signature:
+    // (tx, tenantId, cycleId, refundId).
+    expect(clearRejectRefundMock.mock.calls[0]?.[3]).toBe(REJECT_REFUND_ID);
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('Finding 1 (per-cycle isolation): marked FAILED-branch marker-clear tx THROWS (non-conflict) → settle_failed, cron does NOT reject, next cycle still processed', async () => {
+    // Sibling of the succeeded-settle THROW test above, for the settled-FAILED
+    // branch. BEFORE this fix that branch cleared the marker inside a BARE
+    // `runInTenant` with NO try/catch — a persistent throw from
+    // `acquireCycleLockInTx` / `clearRejectRefundMarkerInTx` escaped
+    // `processMarkedRejectRefund`, propagated through the caller's unguarded
+    // for-loop, and 500'd the WHOLE reconcile pass (self-DoS), blocking every
+    // other marked/timeout/reminder cycle for the tenant. A SECOND,
+    // otherwise-processable cycle (a day-23 reminder-due cycle) is seeded AFTER
+    // the poison cycle to prove the loop keeps going past the throw.
+    const poisonCycle = pendingCycle({
+      daysPending: 5,
+      marked: true,
+      cycleSuffix: 'c093',
+    });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'c094' });
+    const { deps, transitionMock, emitMock, clearRejectRefundMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      getRefundOutcomeResult: {
+        status: 'failed',
+        failureReasonCode: 'stripe_refund_failed',
+      },
+      clearRejectRefundImpl: async () => {
+        throw new Error('renewal_cycles: connection reset mid-clear-tx');
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (c) the failing cycle is classified `settle_failed` (self-heals next
+      // pass, same discipline as the succeeded-settle blip), NEVER
+      // `refund_failed` (which would imply the marker was cleared + the cycle
+      // reverted) and never a settled/lapse counter.
+      expect(r.value.asyncRejectSettleFailed).toBe(1);
+      expect(r.value.asyncRejectRefundFailed).toBe(0);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.timedOut).toBe(0);
+      // (b) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // The clear was attempted (and threw); the succeeded-path transition never runs.
+    expect(clearRejectRefundMock).toHaveBeenCalledOnce();
+    expect(transitionMock).not.toHaveBeenCalled();
+    // The reminder path's `emit` (distinct from the marked-branch writes) fires
+    // once for the second cycle — unaffected by the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
+  });
+
+  it('marked cycle, F5 settlement lookup FAILED → lookup_failed counter, cycle untouched (retry next pass)', async () => {
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const { deps, transitionMock, clearRejectRefundMock } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: {
+        status: 'lookup_failed',
+        detail: 'repo_unavailable',
+      },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.asyncRejectLookupFailed).toBe(1);
+    expect(transitionMock).not.toHaveBeenCalled();
+    // Marker is NOT cleared on a transient lookup failure — retry next pass.
+    expect(clearRejectRefundMock).not.toHaveBeenCalled();
+  });
+
+  it('marked cycle, refund settled but admin won the tx re-read race → admin_race_skipped, no transition', async () => {
+    // The settle lookup returns succeeded, but the tx-bound re-read under the
+    // lock finds the cycle no longer pending (a concurrent admin approve won
+    // between list + lock). The cron must NOT write the cancel transition.
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const { deps, transitionMock, emitInTxMock } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: {
+        status: 'succeeded',
+        creditNoteId: 'cn-race-1',
+      },
+      reReadCycle: () =>
+        ({ ...cycle, status: 'completed' } as unknown as typeof cycle),
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectAdminRaceSkipped).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('F8-RP-2 review fix: marked cycle settle-tx THROWS a non-conflict error (emitInTx blip) → settle_failed, cron does NOT reject, next cycle still processed', async () => {
+    // Resilience regression guard (F8-RP-2 review). BEFORE this fix, the
+    // succeeded-settle tx only caught `CycleTransitionConflictError` /
+    // `CycleNotFoundError` — a NON-conflict throw from `emitInTx` (or
+    // `escalationTaskRepo.insertIfAbsent` / the 2nd `emitInTx`) escaped
+    // `processMarkedRejectRefund` uncaught, propagated through the caller's
+    // for-loop (which has no try/catch of its own — same shape as
+    // `processTimeout`'s caller), and rejected the WHOLE
+    // `reconcilePendingReactivations` call. A single poison marked cycle
+    // could 500 the entire cron pass, blocking every other marked/timeout/
+    // reminder cycle for the tenant in the same run — a self-DoS. A SECOND,
+    // otherwise-processable cycle (a day-23 reminder-due cycle) is seeded
+    // AFTER the poison cycle to prove the loop keeps going past the throw.
+    const poisonCycle = pendingCycle({
+      daysPending: 5,
+      marked: true,
+      cycleSuffix: 'c091',
+    });
+    const secondCycle = pendingCycle({ daysPending: 23, cycleSuffix: 'c092' });
+    const { deps, transitionMock, emitInTxMock, emitMock } = fakeDeps({
+      cycles: [poisonCycle, secondCycle],
+      getRefundOutcomeResult: {
+        status: 'succeeded',
+        creditNoteId: 'cn-throw-1',
+      },
+      emitInTxImpl: async () => {
+        throw new Error('audit_log: connection reset mid-tx');
+      },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+
+    // (a) the cron does NOT reject (no 500) — the Result is still ok(...).
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      // (c) the failing cycle is classified `settle_failed`, NEVER
+      // `settled_cancelled` (which would imply the cycle was cancelled) and
+      // never a timeout/lapse counter — it stays marked + pending for the
+      // next cron pass to retry (the tx that would have written `cancelled`
+      // rolled back on the throw; nothing here landed a partial write).
+      expect(r.value.asyncRejectSettleFailed).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.timedOut).toBe(0);
+      // (b) the SECOND cycle is still processed in the same run (its T-7
+      // reminder fires) — the poison cycle did not abort the batch.
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.cyclesProcessed).toBe(2);
+    }
+    // The transition was attempted (it runs before the emitInTx throw inside
+    // the same tx) — only the poison cycle reaches it (the second cycle is
+    // below the 30-day timeout threshold, so it never calls transitionStatus).
+    expect(transitionMock).toHaveBeenCalledOnce();
+    expect(emitInTxMock).toHaveBeenCalledOnce();
+    // The reminder path's `emit` (distinct from `emitInTx`) is unaffected by
+    // the poison cycle's failure.
+    expect(emitMock).toHaveBeenCalledOnce();
+  });
+
+  it('marked cycle PAST timeout (day 35) with pending refund → stays pending, does NOT lapse (marker shields from timeout)', async () => {
+    // REGRESSION guard for the divergence invariant: a marked reject cycle
+    // whose refund is still settling at day 35 must NOT time out to `lapsed`
+    // — its intended terminal is `cancelled`. The marked branch takes it
+    // BEFORE processTimeout can lapse it.
+    const cycle = pendingCycle({ daysPending: 35, marked: true });
+    const { deps, transitionMock } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: { status: 'pending' },
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.asyncRejectRefundStillPending).toBe(1);
+      // MUST NOT lapse — the marker shields it from the timeout branch.
+      expect(r.value.timedOut).toBe(0);
+      expect(r.value.timeoutRefundFailures).toBe(0);
+    }
+    expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it('REGRESSION: UNMARKED genuine timeout (day 30) still → lapsed, async counters all 0', async () => {
+    // The terminal-state divergence: an UNMARKED pending cycle with no admin
+    // action still lapses at 30 days. It MUST NOT be pulled into the marked
+    // branch (no marker) and MUST NOT reach `cancelled`.
+    const cycle = pendingCycle({ daysPending: 30 });
+    const { deps, transitionMock, getRefundOutcomeMock } = fakeDeps({
+      cycles: [cycle],
+    });
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.timedOut).toBe(1);
+      expect(r.value.asyncRejectSettledCancelled).toBe(0);
+      expect(r.value.asyncRejectRefundStillPending).toBe(0);
+      expect(r.value.asyncRejectRefundFailed).toBe(0);
+    }
+    // The settlement lookup is never consulted for an unmarked cycle.
+    expect(getRefundOutcomeMock).not.toHaveBeenCalled();
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      to: 'lapsed',
+      closedReason: 'pending_reactivation_timed_out',
+    });
   });
 });
 

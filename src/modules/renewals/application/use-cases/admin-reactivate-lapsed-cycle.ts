@@ -17,6 +17,18 @@
  * Other statuses yield `cycle_not_pending`. After the lock acquires we
  * re-read via `findByIdInTx` to defeat TOCTOU between read + lock.
  *
+ * Reject-refund guard (UX-A Bug 1): a `pending_admin_reactivation` cycle
+ * that ALSO carries the async reject-with-refund marker
+ * (`rejectRefundInitiatedAt !== null`, migration 0243) has already been
+ * REJECTED by an admin — an F5 refund is settling asynchronously and the
+ * reconcile cron will converge the cycle → `cancelled`. Approving it here
+ * would reactivate the member (pending → completed/admin_reactivated) WHILE
+ * their money is being refunded — a contradictory, non-self-healing state
+ * (the reconcile cron is pending-only, so the marker would strand on a now-
+ * `completed` cycle). So the marker read runs under the SAME per-cycle lock
+ * as the status check (atomic CAS on the tx-bound re-read) and REFUSES with
+ * `reject_refund_in_progress` → the route maps it to 409 Conflict.
+ *
  * Audit: `lapsed_member_admin_reactivated` is in the F8 catalogue
  * (pgEnum value added in migration 0109). Emit-in-tx per Constitution
  * Principle VIII.
@@ -71,6 +83,11 @@ export type AdminReactivateLapsedCycleError =
       readonly kind: 'cycle_not_pending';
       readonly currentStatus: CycleStatus | 'unknown';
     }
+  // UX-A Bug 1: the cycle IS still `pending_admin_reactivation` but an admin
+  // has already REJECTED it with an async F5 refund in flight (marker set).
+  // Approving a marked cycle is refused (route → 409 Conflict) so the member
+  // is never reactivated-AND-refunded.
+  | { readonly kind: 'reject_refund_in_progress' }
   | { readonly kind: 'server_error'; readonly message: string };
 
 export async function adminReactivateLapsedCycle(
@@ -114,6 +131,16 @@ export async function adminReactivateLapsedCycle(
         kind: 'cycle_not_pending',
         currentStatus: cycle.status,
       });
+    }
+    // UX-A Bug 1: the cycle is pending, but a prior admin REJECT already
+    // initiated an async F5 refund (marker set). The reject decision is made;
+    // the reconcile cron will converge this cycle → `cancelled` once the refund
+    // settles. Refuse the approval — reactivating now would leave the member
+    // reactivated AND refunded (a stranded, non-self-healing state). Checked
+    // here under the per-cycle lock alongside the status guard (atomic CAS on
+    // the tx-bound re-read), mirroring how admin-reject re-checks state.
+    if (cycle.rejectRefundInitiatedAt !== null) {
+      return err({ kind: 'reject_refund_in_progress' });
     }
 
     const closedAt = new Date().toISOString();

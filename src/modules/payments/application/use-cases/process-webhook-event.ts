@@ -48,8 +48,10 @@ import { confirmPayment } from './confirm-payment';
 import { failPayment } from './fail-payment';
 import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
+import { processRefundUpdated } from './process-refund-updated';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { paymentsMetrics } from '@/lib/metrics';
+import { asSatang } from '@/lib/money';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 
@@ -672,6 +674,89 @@ async function processWebhookEventBody(
       break;
     }
 
+    // PR-A follow-up (2026-07-12) — `charge.refund.updated` is DEPRECATED by
+    // Stripe ("only sent for refunds with a corresponding charge; listen to
+    // `refund.updated` for updates on all refunds instead"). Charge-less async
+    // refunds (PromptPay / GrabPay / bank transfers) settle via `refund.updated`
+    // ONLY. Both carry a `Stripe.Refund` `data.object` and route to the SAME
+    // use-case. `refund.updated` fires on any Refund update INCL. status→failed,
+    // so it covers the failure transition too — no separate `refund.failed`
+    // subscription (the A.14 stale-pending sweep backstops any delivery gap).
+    // Idempotent across BOTH events for one refund: markProcessed is
+    // per-event-id, the finaliser guards on `expectedCurrentStatus='pending'`
+    // (a sibling-won race → already_finalized no-op), and the F4 credit note is
+    // idempotent per `(tenant, source_refund_id)` — so exactly one CN is booked.
+    case 'charge.refund.updated':
+    case 'refund.updated': {
+      // A.11 — async refund-lifecycle reconciliation. Mirrors the
+      // charge.refunded branch shape: the sub-use-case's `dispatch_failed`
+      // Result maps to this branch's `dispatch_threw` error variant, and it
+      // folds `markProcessed` into its own withTx. `dataObject.id` is the
+      // Stripe Refund id (`re_…`), `latestChargeId` the parent charge, and
+      // `refundStatus` the projected Refund `status` (verifier A.10).
+      const refundUpdatedResult = await processRefundUpdated(
+        {
+          paymentsRepo: deps.paymentsRepo,
+          refundsRepo: deps.refundsRepo,
+          processorEventsRepo: deps.processorEventsRepo,
+          invoicingBridge: deps.invoicingBridge,
+          audit: deps.audit,
+          clock: deps.clock,
+          ...(deps.logger ? { logger: deps.logger } : {}),
+        },
+        {
+          tenantId,
+          requestId: input.requestId,
+          eventId: event.id,
+          // The concrete Stripe event that carried this settlement
+          // (`charge.refund.updated` | `refund.updated`) — threaded so the
+          // 10-year OOB / refund_failed forensic summaries name the real
+          // channel instead of a hardcoded (possibly wrong) event type.
+          sourceEventType: event.type,
+          processorRefundId: dataObject.id,
+          chargeId: dataObject.latestChargeId ?? null,
+          refundStatus: dataObject.refundStatus ?? null,
+          // Branded fallback — ProcessRefundUpdatedInput.amountSatang is
+          // `Satang`; the projection-failed case yields `asSatang(0n)`
+          // (runtime-identical to `0n`, forensic-only value).
+          amountSatang: dataObject.amountSatang ?? asSatang(0n),
+          // Round-2 review fix (#32): thread the projection-failed flag so the
+          // 10y OOB / auto-refund-failed forensics write the 'projection_failed'
+          // sentinel instead of a known-wrong 0 when the verifier could not
+          // parse the Refund amount (mirrors the dispute branch). Defaults false.
+          amountProjectionFailed: dataObject.amountProjectionFailed ?? false,
+          /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
+           * livemode value at a time. Cross-livemode coverage lives in the
+           * contract tests for /api/webhooks/stripe. */
+          processorEnv: event.livemode ? 'live' : 'test',
+          /* v8 ignore stop */
+        },
+      );
+      if (!refundUpdatedResult.ok) {
+        return err<ProcessWebhookEventError>({
+          code: 'dispatch_failed',
+          kind: 'dispatch_threw',
+          eventType: event.type,
+          // Class name only — Stripe/Postgres error text can carry partial
+          // keys / row data (PCI SAQ-A). Route logs the full error downstream.
+          detail: formatDispatchErrorDetail(refundUpdatedResult.error.cause),
+          // A thrown-error class doesn't carry permanent/transient semantics;
+          // transient lets Stripe retry (the A.14 sweep is the backstop).
+          permanence: 'transient',
+        });
+      }
+      // A.11 outcomes that derive an invoice id forward it for surgical
+      // revalidation; `out_of_band` (no DB refund/auto-refund) does not.
+      outcome = {
+        kind: 'processed',
+        dispatched: envelope.type,
+        ...('invoiceId' in refundUpdatedResult.value && {
+          invoiceId: refundUpdatedResult.value.invoiceId,
+        }),
+      };
+      break;
+    }
+
     case 'charge.dispute.created': {
       // same try/catch wrap as charge.refunded above.
       try {
@@ -681,10 +766,21 @@ async function processWebhookEventBody(
             requestId: input.requestId,
             eventType: 'dispute_created',
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-            summary: `Dispute created on charge ${dataObject.id}`,
+            // Bug #6 follow-up (Task C.2 review) — same bug class as the
+            // `payload.charge_id` fix directly below: `dataObject.id` on a
+            // dispute event is the DISPUTE's own id (dp_…), not the charge
+            // it disputes. Cite `latestChargeId` (the real ch_… id) in the
+            // prose summary too, matching the `?? null` fallback style used
+            // for the structured field.
+            summary: `Dispute created on charge ${dataObject.latestChargeId ?? 'unknown'}`,
             payload: {
               dispute_id: dataObject.disputeId ?? null,
-              charge_id: dataObject.id,
+              // Bug #6 fix (Task C.2) — `dataObject.id` on a dispute
+              // event is the DISPUTE's own id (dp_…), not the charge
+              // it disputes. `latestChargeId` is the real ch_… id,
+              // defensively extracted from `raw['charge']` by the
+              // verifier (mirrors `extractLatestChargeId`).
+              charge_id: dataObject.latestChargeId ?? null,
               // F5R3v3 H-4 (2026-05-16) — when the verifier flagged
               // amount projection as failed, write a 'projection_failed'
               // sentinel rather than the misleading '0' default. This

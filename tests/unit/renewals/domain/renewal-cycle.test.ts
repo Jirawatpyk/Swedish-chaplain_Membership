@@ -89,6 +89,9 @@ const baseFields = {
   linkedCreditNoteId: null,
   anchoredAt: null,
   anchorInvoiceId: null,
+  rejectRefundInitiatedAt: null,
+  rejectRefundId: null,
+  rejectActorUserId: null,
   createdAt: '2026-05-01T00:00:00Z',
   updatedAt: '2026-05-01T00:00:00Z',
 } as const;

@@ -51,16 +51,37 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
     expect(typeof bridge.issueRefundForInvoice).toBe('function');
   });
 
-  it('F5RefundBridge port has exactly one method (`issueRefundForInvoice`)', () => {
-    // Defence against accidental scope creep on the bridge port. F8's
-    // view of F5 should remain narrow — the only operation F8 needs is
-    // "issue a refund for the renewal invoice that was held in
-    // pending_admin_reactivation". Adding methods here would couple
-    // F8 to additional F5 surfaces — a code-review red flag.
+  it('F5RefundBridge port has exactly three methods (issue + settlement lookup + in-flight resolver)', () => {
+    // Defence against accidental scope creep on the bridge port. F8's view of
+    // F5 stays narrow — three read/write operations only: (1)
+    // `issueRefundForInvoice` (issue a refund for the renewal invoice held in
+    // `pending_admin_reactivation`); (2) `getRefundOutcomeForInvoice` (the
+    // F8-RP follow-up settlement lookup — read-only; resolve whether a
+    // previously-initiated async refund SETTLED so the reconcile cron can
+    // converge the cycle to `cancelled`); (3) `findPendingRefundForInvoice`
+    // (F8-RP-2 Finding 3 — read-only; resolve the invoice's single in-flight
+    // refund id so the reject use-case can stamp the marker on F5's id-less
+    // `refund_in_progress` path, preventing a cron-timeout refund from silently
+    // dropping the admin's reject → `lapsed`). Adding a FOURTH method would
+    // couple F8 to additional F5 surfaces — a code-review red flag. The
+    // `satisfies` below forces this list to stay in lock-step with the port.
     const portKeys = Object.keys({
       issueRefundForInvoice: null,
+      getRefundOutcomeForInvoice: null,
+      findPendingRefundForInvoice: null,
     } satisfies Record<keyof F5RefundBridge, null>);
-    expect(portKeys).toEqual(['issueRefundForInvoice']);
+    expect(portKeys.sort()).toEqual(
+      [
+        'findPendingRefundForInvoice',
+        'getRefundOutcomeForInvoice',
+        'issueRefundForInvoice',
+      ].sort(),
+    );
+  });
+
+  it('production adapter implements getRefundOutcomeForInvoice', () => {
+    const bridge: F5RefundBridge = f5RefundBridge;
+    expect(typeof bridge.getRefundOutcomeForInvoice).toBe('function');
   });
 
   it('IssueRefundForInvoiceInput requires branded TenantId + InvoiceId (compile-time arg-swap protection)', () => {
@@ -88,11 +109,13 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
     expect(validInput.requestId).toBeNull();
   });
 
-  it('IssueRefundForInvoiceResult discriminated union covers 3 outcomes', () => {
+  it('IssueRefundForInvoiceResult discriminated union covers 4 outcomes', () => {
     // The result union must cover: refunded (success) + no_payment_found
     // (cycle without linked payment — admin can still reject) +
     // refund_failed (transient/processor error — F8 cycle stays pending
-    // for retry per admin-reject-reactivation.ts:204-227).
+    // for retry per admin-reject-reactivation.ts) + refund_pending
+    // (F8-RP: async Stripe refund settling via webhook/sweep — the row
+    // stays `pending`, no CN yet; the cycle stays pending and self-heals).
     const refunded: IssueRefundForInvoiceResult = {
       status: 'refunded',
       refundId: 'ref-123',
@@ -107,13 +130,19 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
       errorCode: 'processor_unavailable',
       detail: 'Stripe API timeout',
     };
-    // Exhaustive switch — adding a 4th status without updating
-    // admin-reject-reactivation.ts:204+ would type-check as
-    // `never` here.
+    const refundPending: IssueRefundForInvoiceResult = {
+      status: 'refund_pending',
+      refundId: 'ref-789',
+      processorRefundId: 're_async_1',
+    };
+    // Exhaustive switch — adding a 5th status without updating
+    // admin-reject-reactivation.ts + reconcile-pending-reactivations.ts
+    // would type-check as `never` here.
     const outcomes: ReadonlyArray<IssueRefundForInvoiceResult> = [
       refunded,
       noPayment,
       refundFailed,
+      refundPending,
     ];
     for (const outcome of outcomes) {
       switch (outcome.status) {
@@ -127,6 +156,11 @@ describe('F8 → F5 refund bridge contract — Phase 10 / CHK039 close', () => {
         case 'refund_failed':
           expect(outcome.errorCode).toBeTruthy();
           expect(outcome.detail).toBeTruthy();
+          break;
+        case 'refund_pending':
+          // Ids are OPTIONAL: present on the F5 `kind:'pending'` path,
+          // absent on the `refund_in_progress` retry path.
+          expect(outcome.processorRefundId).toBe('re_async_1');
           break;
         default: {
           const _exhaustive: never = outcome;

@@ -132,7 +132,8 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
   ],
   // +lapsed: a money-hold that times out (reconcile-pending-reactivations.ts)
   // passively expires to `lapsed` — distinct from an explicit admin reject
-  // (→ `cancelled`). See the terminal-state divergence note below.
+  // (→ `cancelled`), which the cron ALSO drives for async-settled reject-with-
+  // refund cycles (F8-RP follow-up). See the terminal-state divergence note below.
   pending_admin_reactivation: ['completed', 'cancelled', 'lapsed'],
   // Lapsed members can re-enter the cycle when they pay — branches per
   // member.blocked_from_auto_reactivation flag (FR-005b).
@@ -143,25 +144,41 @@ const TRANSITIONS: Record<CycleStatus, readonly CycleStatus[]> = {
 };
 
 /**
- * Terminal-state divergence (INTENTIONAL — do NOT converge).
+ * Terminal-state divergence (INTENTIONAL — do NOT converge by ACTION, only
+ * by INTENT).
  *
- * Two paths leave `pending_admin_reactivation`, and they MUST land in
- * different terminal states:
- *   - admin REJECT (explicit refusal, admin-reject-reactivation.ts)
- *     → `cancelled`. The member was actively declined; they LEAVE the
- *     re-engagement funnel.
- *   - reconcile TIMEOUT (30-day passive expiry with no admin action,
- *     reconcile-pending-reactivations.ts) → `lapsed`. The member simply
- *     never got reviewed; they STAY in the at-risk / lapsed re-engagement
- *     funnel for follow-up.
+ * `pending_admin_reactivation` leaves to a terminal state by the ADMIN'S
+ * INTENT, not by the code path that writes the transition:
  *
- * Converging these (routing both to `lapsed`, or both to `cancelled`) would
- * silently shift members between the at-risk and lapsed reporting buckets:
- * the `URGENCY_CASE_SQL` expression in `drizzle-renewal-cycle-repo.ts`
- * short-circuits the urgency computation on `status = 'lapsed'`, and the
- * admin lapsed-tab + at-risk funnel bucket members by these terminal states.
- * The split is a reporting invariant, not an accident — keep
- * `reject → cancelled` and `timeout → lapsed` distinct.
+ *   - admin REJECT (explicit refusal, admin-reject-reactivation.ts) →
+ *     `cancelled`/`admin_rejected_with_refund`. The member was actively
+ *     declined; they LEAVE the re-engagement funnel. This holds whether the
+ *     refund settled SYNCHRONOUSLY (the reject use-case writes `cancelled`
+ *     inline) OR ASYNCHRONOUSLY (F8-RP follow-up): an async reject stamps the
+ *     reject-refund marker (`rejectRefundInitiatedAt`), stays
+ *     `pending_admin_reactivation` until the refund settles, and the
+ *     reconcile-pending cron then converges the MARKED cycle → `cancelled`
+ *     with the SAME closed_reason. So the CRON writes `cancelled` for a marked
+ *     reject cycle — the terminal is dictated by the admin's reject intent,
+ *     NOT by which process (route vs cron) commits it.
+ *   - reconcile TIMEOUT (30-day passive expiry, NO admin action — the cycle is
+ *     UNMARKED, reconcile-pending-reactivations.ts) → `lapsed`. The member
+ *     simply never got reviewed; they STAY in the at-risk / lapsed
+ *     re-engagement funnel for follow-up.
+ *
+ * The load-bearing discriminator is the reject-refund MARKER:
+ *   - MARKED pending cycle (admin rejected with an async refund) → `cancelled`.
+ *   - UNMARKED pending cycle (genuine no-action timeout) → `lapsed`.
+ *
+ * Converging these by ACTION (routing every cron-driven pending transition to
+ * `lapsed`, or every one to `cancelled`) would silently shift members between
+ * the at-risk and lapsed reporting buckets: the `URGENCY_CASE_SQL` expression
+ * in `drizzle-renewal-cycle-repo.ts` short-circuits the urgency computation on
+ * `status = 'lapsed'`, and the admin lapsed-tab + at-risk funnel bucket
+ * members by these terminal states. The split is a reporting invariant: a
+ * genuine (UNMARKED) timeout MUST still reach `cancelled` only via a real
+ * reject intent — an UNMARKED cycle wrongly reaching `cancelled`, or a MARKED
+ * reject cycle wrongly lapsing, is the regression this invariant guards.
  */
 
 export function canTransition(from: CycleStatus, to: CycleStatus): boolean {

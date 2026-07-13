@@ -2273,6 +2273,22 @@
             "body": "The automatic receipt email to {recipient} could not be delivered (it bounced, was rejected, or the email provider was unavailable). The payment record itself is unaffected.",
             "resend": "Resend receipt email"
           }
+        },
+        "autoRefundFailed": {
+          "title": "Auto-refund failed — needs manual reconciliation",
+          "body": "An automatic refund for this invoice's online payment did not complete at the payment provider, so the funds have not been returned to the member. Reconcile this manually.",
+          "ref": "Processor refund reference: {ref}",
+          "runbook": "Follow the reconciliation runbook: {path}",
+          "resolve": "Mark as reconciled",
+          "resolveConfirm": {
+            "title": "Mark this auto-refund as reconciled?",
+            "body": "Do this only after you have returned the funds to the member out-of-band (a Stripe Dashboard refund or a manual credit note). It clears this alert, updates the member's invoice to show the payment as refunded, and is recorded in the audit log.",
+            "cancel": "Cancel",
+            "confirm": "Yes, mark as reconciled",
+            "pending": "Recording…"
+          },
+          "resolveSuccess": "Auto-refund marked as reconciled.",
+          "resolveError": "Could not mark as reconciled. Please try again."
         }
       },
       "issue": {
@@ -2886,6 +2902,8 @@
           "action": "Action"
         },
         "openAction": "Review",
+        "viewAction": "View",
+        "settlingPill": "Refund settling",
         "loadFailed": "Couldn't load the pending-review list. Please try again."
       },
       "tierBadge": {
@@ -3252,6 +3270,9 @@
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
+        "refundSettlingBadge": "Refund settling",
+        "refundSettlingNoticeTitle": "Rejected — refund settling",
+        "refundSettlingNoticeBody": "This reactivation was rejected and the refund is settling with the payment processor. This closes automatically once it confirms — no action is needed.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Approve reactivation",
@@ -3261,7 +3282,8 @@
             "cancel": "Cancel",
             "submitting": "Approving…",
             "successToast": "Reactivation approved — the membership is now active.",
-            "errorToast": "Couldn't approve the reactivation. Please try again."
+            "errorToast": "Couldn't approve the reactivation. Please try again.",
+            "errorRefundInProgressToast": "This reactivation was already rejected — a refund is settling, so it can no longer be approved."
           },
           "reject": {
             "button": "Reject & refund",
@@ -3275,6 +3297,7 @@
             "submitting": "Rejecting…",
             "successRefundedToast": "Reactivation rejected and the payment was refunded.",
             "successNoRefundToast": "Reactivation rejected. There was no payment to refund.",
+            "successPendingToast": "Refund submitted — it's settling with the payment processor. This reactivation stays in the pending list until the refund confirms.",
             "error": {
               "cycle_not_pending": "This cycle is no longer awaiting review — it may have already been handled.",
               "refund_failed": "The refund could not be processed. The cycle was left as-is — please retry.",
@@ -3630,7 +3653,9 @@
       "title": "Issue refund",
       "button": {
         "label": "Issue refund",
-        "ariaLabel": "Issue a refund for this invoice"
+        "ariaLabel": "Issue a refund for this invoice",
+        "settlingLabel": "Refund settling…",
+        "settlingHint": "A refund is settling — no action needed until it completes."
       },
       "dialog": {
         "title": "Issue refund?",
@@ -3669,16 +3694,18 @@
         }
       },
       "success": {
-        "toast": "Refund processed — credit note {number} issued and emailed to member"
+        "toast": "Refund processed — credit note {number} issued and emailed to member",
+        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles."
       },
       "error": {
         "title": "Couldn't issue the refund",
         "payment_not_found": "Payment not found.",
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
-        "refund_in_progress": "Another refund is in progress for this payment. Please retry shortly.",
+        "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
+        "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
         "internal_error": "An unexpected error occurred. Please try again."
       },
       "cmdk": {
@@ -3714,11 +3741,14 @@
           "payment_succeeded": "Payment succeeded",
           "payment_failed": "Payment failed",
           "payment_canceled": "Payment canceled",
+          "auto_refunded": "Payment auto-refunded",
           "invoice_paid": "Invoice marked paid",
           "refund_initiated": "Refund initiated",
+          "refund_pending": "Refund settling — awaiting processor confirmation",
           "refund_succeeded": "Refund completed",
           "refund_failed": "Refund failed"
         },
+        "refundPendingHint": "A credit note will be issued once the refund settles.",
         "chargeId": {
           "label": "Charge id",
           "copyAction": "Copy charge id",
@@ -4773,6 +4803,9 @@
           "autoRefundHeading": "Your payment has been refunded",
           "autoRefundBody": "We've returned your payment because this invoice was voided. The refund will appear on your card or bank statement within 5–10 business days.",
           "autoRefundContact": "If you don't see the refund after 10 business days, please contact your chamber administrator with the reference below.",
+          "autoRefundFailedHeading": "We're reconciling your payment",
+          "autoRefundFailedBody": "Your payment was recorded, and a refund is being reconciled by our team. We'll follow up with you as soon as it's resolved.",
+          "autoRefundFailedContact": "If you have any questions in the meantime, please contact your chamber administrator with the reference below.",
           "autoRefundRef": "Refund reference: {ref}"
         }
       }
@@ -5285,6 +5318,8 @@
       "notYetOpenBody": "Your renewal isn't due yet. We'll email you when it's time to renew — there's nothing to do here for now.",
       "pendingReviewTitle": "Awaiting admin verification",
       "pendingReviewBody": "We've received your renewal and our team is verifying it. You'll be notified once it's confirmed — no further action is needed right now.",
+      "rejectedRefundTitle": "Reactivation not approved",
+      "rejectedRefundBody": "Your reactivation request was not approved. A refund is being processed to your original payment method. No further action is needed.",
       "loading": {
         "announce": "Loading your renewal details…"
       },
@@ -5533,6 +5568,8 @@
       "payment_acknowledged_terminal_state": "Payment already in final state",
       "dispute_created": "Payment dispute opened",
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",
+      "auto_refund_failed_needs_manual_reconcile": "Auto-refund failed — needs manual reconciliation",
+      "auto_refund_reconciled": "Auto-refund reconciled manually",
       "webhook_dispatch_permanent_failure": "Webhook processing permanently failed",
       "registration_cross_tenant_probe": "Cross-tenant probe (event registrations)",
       "event_buyer_pii_redacted": "Event buyer PII redacted",
@@ -5840,6 +5877,7 @@
       "failed": "Payment failed",
       "refunded": "Payment refunded",
       "partially_refunded": "Payment partially refunded",
+      "auto_refunded": "Payment auto-refunded",
       "canceled": "Payment canceled"
     },
     "event": {

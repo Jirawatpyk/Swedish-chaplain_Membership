@@ -204,6 +204,15 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     anchoredAt: r.cycleAnchoredAt,
     anchorInvoiceId: r.cycleAnchorInvoiceId,
     linkedCreditNoteId: r.cycleLinkedCreditNoteId,
+    // F8-RP follow-up (migration 0243) — the async reject-with-refund marker
+    // is ONLY ever set on a `pending_admin_reactivation` cycle. The dispatch-
+    // candidate query lists cycles in OPEN states (upcoming/reminded/
+    // awaiting_payment) only, so a candidate cycle is definitionally unmarked.
+    // The projection does not SELECT the marker columns; pass null (faithful
+    // for every dispatcher-eligible cycle).
+    rejectRefundInitiatedAt: null,
+    rejectRefundId: null,
+    rejectActorUserId: null,
     closedAt: r.cycleClosedAt,
     closedReason: r.cycleClosedReason,
     createdAt: r.cycleCreatedAt,

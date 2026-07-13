@@ -5,6 +5,14 @@
  * `pending_admin_reactivation`. Renders NOTHING unless the cycle is in
  * that state (a cycle in any other status has no pending decision).
  *
+ * UX-A Bug 2: also renders NOTHING when the cycle carries the async
+ * reject-with-refund marker (`rejectRefundInitiatedAt !== null`). Such a
+ * cycle has ALREADY been rejected — the refund is settling and the reconcile
+ * cron will converge it to `cancelled` — so offering Approve/Reject overstates
+ * open work AND (for Approve) would hit the 409 `reject_refund_in_progress`
+ * guard. The page renders a distinct "refund settling" notice instead. This
+ * component-level gate is belt-and-suspenders with the page-level gate.
+ *
  * Two actions, mirroring the dialog/fetch/toast/`router.refresh()` shape
  * of `at-risk/_components/outreach-dialog.tsx`:
  *
@@ -54,6 +62,12 @@ const REASON_MAX = 500;
 export interface PendingReactivationActionsProps {
   readonly cycleId: string;
   readonly status: string;
+  /**
+   * UX-A Bug 2 — async reject-with-refund marker (ISO 8601 UTC, migration
+   * 0243). Non-null means the cycle was already rejected and its refund is
+   * settling; this component then renders nothing (the decision is made).
+   */
+  readonly rejectRefundInitiatedAt: string | null;
 }
 
 interface RejectSuccessBody {
@@ -73,6 +87,7 @@ async function readErrorCode(res: Response): Promise<string> {
 export function PendingReactivationActions({
   cycleId,
   status,
+  rejectRefundInitiatedAt,
 }: PendingReactivationActionsProps) {
   const t = useTranslations(
     'admin.renewals.cycleDetail.pendingReactivation',
@@ -92,6 +107,12 @@ export function PendingReactivationActions({
   if (status !== 'pending_admin_reactivation') {
     return null;
   }
+  // UX-A Bug 2: a marked (already-rejected, refund-settling) cycle has no
+  // remaining decision — hide both actions. The page renders the
+  // "refund settling" notice instead.
+  if (rejectRefundInitiatedAt !== null) {
+    return null;
+  }
 
   const trimmedReason = reason.trim();
   const reasonInvalid =
@@ -109,6 +130,17 @@ export function PendingReactivationActions({
           },
         );
         if (!res.ok) {
+          // UX-A Bug 2: a 409 `reject_refund_in_progress` means the cycle was
+          // rejected (async refund in flight) between page render and this
+          // click — surface the specific reason and refresh so the page
+          // re-renders into the settling state (the Approve button disappears).
+          const code = await readErrorCode(res);
+          if (code === 'reject_refund_in_progress') {
+            toast.error(t('reactivate.errorRefundInProgressToast'));
+            setReactivateOpen(false);
+            router.refresh();
+            return;
+          }
           toast.error(t('reactivate.errorToast'));
           return;
         }
@@ -139,6 +171,18 @@ export function PendingReactivationActions({
           toast.error(
             t.has(key) ? t(key) : t('reject.error.server_error'),
           );
+          return;
+        }
+        // F8-RP: a 202 means the F5 refund is settling ASYNCHRONOUSLY — the
+        // cycle intentionally stays in the pending list until the refund
+        // confirms. Handle it BEFORE parsing the 200 body: the 202 has no
+        // `refund_credit_note_id`, so the default parse would wrongly render
+        // the "no payment to refund" toast for an in-flight refund.
+        if (res.status === 202) {
+          toast.success(t('reject.successPendingToast'));
+          setRejectOpen(false);
+          setReason('');
+          router.refresh();
           return;
         }
         const body = (await res.json()) as RejectSuccessBody;

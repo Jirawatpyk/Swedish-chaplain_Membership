@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Stripe from 'stripe';
 import { stripeWebhookVerifier } from '@/modules/payments/infrastructure/stripe/stripe-webhook-verifier';
 import { WebhookSignatureError } from '@/modules/payments/infrastructure/stripe/errors';
+import { F5_HANDLED_EVENT_TYPES_SET } from '@/modules/payments/application/ports/webhook-verifier-port';
 import { logger } from '@/lib/logger';
 
 const ENDPOINT_SECRET = 'whsec_test_group_e3_fixture_secret';
@@ -56,6 +57,12 @@ describe('stripeWebhookVerifier — verify + project', () => {
     expect(envelope.type).toBe('payment_intent.succeeded');
     expect(envelope.dataObject.id).toBe('pi_test_e3');
     // Allow-list hygiene — no raw Stripe fields beyond the declared set.
+    // Kept in sync with the projector's full optional-field set in
+    // `project()` (stripe-webhook-verifier.ts) — `refundStatus` (A.10,
+    // `charge.refund.updated`) + `amountProjectionFailed` (F5R3v3 C-1/H-3/
+    // H-4) don't appear on THIS fixture's `payment_intent.succeeded` event,
+    // but belong in the positive allow-list so it stays complete rather
+    // than merely "not yet proven wrong" by this one event shape.
     const allowedKeys = new Set([
       'id',
       'type',
@@ -64,6 +71,8 @@ describe('stripeWebhookVerifier — verify + project', () => {
       'lastPaymentErrorCode',
       'disputeId',
       'amountSatang',
+      'refundStatus',
+      'amountProjectionFailed',
     ]);
     for (const k of Object.keys(envelope.dataObject)) {
       expect(allowedKeys.has(k), `disallowed key '${k}' leaked into envelope`).toBe(true);
@@ -402,5 +411,268 @@ describe('stripeWebhookVerifier — C-1 fallback coverage (H-4 flag + M-6 log)',
     expect(envelope.dataObject.amountSatang).toBe(535_000n);
     expect(envelope.dataObject.amountProjectionFailed).toBeUndefined();
     expect(loggerErrorSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Task C.2 (#6, PCI-2, 2026-07-11) — dispute `charge` field defensive
+// extraction. A Stripe Dispute's `charge` property is normally a
+// `ch_…` string but Stripe CAN return it EXPANDED (a full Charge
+// object carrying `payment_method_details.card.last4/brand`) — the
+// same shape hazard the `payment_intent.latest_charge` branch above
+// already guards against. Before this fix the dispute branch of
+// `project()` never read `raw['charge']` at all, so `latestChargeId`
+// stayed `undefined` and the dispute_created audit recorded the
+// DISPUTE id (dp_…) as `charge_id` instead of the real charge id.
+// The expanded-object case ALSO pins the PCI-2 requirement: only the
+// `id` may be extracted — `payment_method_details`/`card`/`last4`
+// must never reach the envelope (which feeds a 10-year-retained
+// audit row per RD §87 / GDPR Art. 6(1)(c)).
+describe('stripeWebhookVerifier — dispute charge extraction (PCI-2, #6)', () => {
+  it('string charge: latestChargeId === the real ch_ id, disputeId === the dp_ id', () => {
+    const body = JSON.stringify({
+      id: 'evt_dp_string_charge',
+      type: 'charge.dispute.created',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'dp_x',
+          object: 'dispute',
+          charge: 'ch_x',
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.disputeId).toBe('dp_x');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+  });
+
+  it('expanded Charge object: latestChargeId === the id field, and NO card field reaches the envelope', () => {
+    const body = JSON.stringify({
+      id: 'evt_dp_expanded_charge',
+      type: 'charge.dispute.created',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'dp_x',
+          object: 'dispute',
+          charge: {
+            id: 'ch_x',
+            object: 'charge',
+            payment_method_details: {
+              card: { last4: '4242', brand: 'visa' },
+            },
+          },
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.disputeId).toBe('dp_x');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    // PCI-2: negative-assert at the serialized-JSON level so a future
+    // field addition to the expanded Charge object (not just `last4`)
+    // is also caught, not merely the one field this fixture happens
+    // to include.
+    const serialized = JSON.stringify(envelope);
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('visa');
+  });
+});
+
+// Task A.10 (PCI-1, 2026-07-11) — `charge.refund.updated` envelope
+// projection. Mirrors the dispute arm's defensive `charge` extraction
+// (string vs expanded Charge object) above: a Stripe Refund's `charge`
+// field is normally a `ch_…` string but Stripe CAN return it EXPANDED.
+// The refund arm is a positive allow-list — ONLY `id` (re_…),
+// `refundStatus` (from the Refund's `status`), `latestChargeId`
+// (defensive), and `amountSatang` (via the shared `projectAmountSafely`)
+// may reach the envelope. `F5_HANDLED_EVENT_TYPES_SET` must also carry
+// the new event type so the route's revalidate-path allow-list + the
+// use-case dispatcher both recognize it.
+describe('stripeWebhookVerifier — refund envelope (PCI-1, A.10)', () => {
+  it('subscribes charge.refund.updated in F5_HANDLED_EVENT_TYPES_SET', () => {
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('charge.refund.updated')).toBe(true);
+  });
+
+  it('string charge: projects id/refundStatus/latestChargeId/amountSatang, nothing else', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_string_charge',
+      type: 'charge.refund.updated',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_x',
+          object: 'refund',
+          status: 'succeeded',
+          charge: 'ch_x',
+          amount: 50_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.id).toBe('re_x');
+    expect(envelope.dataObject.refundStatus).toBe('succeeded');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    expect(envelope.dataObject.amountSatang).toBe(50_000n);
+    // Allow-list hygiene — the refund arm must not leak any other key.
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    for (const k of Object.keys(envelope.dataObject)) {
+      expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund envelope`).toBe(true);
+    }
+  });
+
+  it('expanded Charge object: latestChargeId === the id field, and NO card field reaches the envelope', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_expanded_charge',
+      type: 'charge.refund.updated',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_x',
+          object: 'refund',
+          status: 'pending',
+          charge: {
+            id: 'ch_x',
+            object: 'charge',
+            payment_method_details: {
+              card: { last4: '4242', brand: 'visa' },
+            },
+          },
+          amount: 25_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.id).toBe('re_x');
+    expect(envelope.dataObject.refundStatus).toBe('pending');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_x');
+    expect(envelope.dataObject.amountSatang).toBe(25_000n);
+    // PCI-1: negative-assert at the serialized-JSON level so a future
+    // field addition to the expanded Charge object is also caught, not
+    // merely the one field this fixture happens to include.
+    // (BigInt replacer: `amountSatang` is a branded bigint, which
+    // `JSON.stringify` cannot serialize natively.)
+    const serialized = JSON.stringify(envelope, (_k, v) =>
+      typeof v === 'bigint' ? v.toString() : v,
+    );
+    expect(serialized).not.toContain('4242');
+    expect(serialized).not.toContain('payment_method_details');
+    expect(serialized).not.toContain('visa');
+    expect(serialized).not.toContain('destination_details');
+  });
+});
+
+// PR-A follow-up (2026-07-12) — modern `refund.updated` event. Stripe
+// DEPRECATED `charge.refund.updated` ("This event is only sent for refunds
+// with a corresponding charge; listen to `refund.updated` for updates on all
+// refunds instead"). PromptPay/async refunds whose Refund object carries no
+// legacy charge settle via `refund.updated`. The verifier's `project()` keys
+// the Refund allow-list on `data.object.object === 'refund'`, so ALL
+// refund-carrying events (`charge.refund.updated` | `refund.updated` |
+// `refund.failed`) share the SAME projection with ZERO per-event-type
+// branching — these tests pin the allow-list membership + the reuse invariant.
+describe('stripeWebhookVerifier — modern refund.updated event (async refund forward path)', () => {
+  it('subscribes refund.updated in F5_HANDLED_EVENT_TYPES_SET', () => {
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('refund.updated')).toBe(true);
+  });
+
+  it('refund.updated(succeeded): projects the SAME envelope as charge.refund.updated (allow-list only, no async-rail metadata leak)', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_updated_succeeded',
+      type: 'refund.updated',
+      api_version: '2025-09-30.basil',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_async_pp',
+          object: 'refund',
+          status: 'succeeded',
+          charge: 'ch_async_pp',
+          amount: 53_500,
+          // Async settlement-rail metadata — the reason `refund.updated`
+          // exists (charge-less async refunds). Only the allow-listed keys
+          // may reach the envelope; this whole subtree must be dropped.
+          destination_details: { promptpay: { reference: 'PP-XYZ-123' } },
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.type).toBe('refund.updated');
+    expect(envelope.dataObject.id).toBe('re_async_pp');
+    expect(envelope.dataObject.refundStatus).toBe('succeeded');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_async_pp');
+    expect(envelope.dataObject.amountSatang).toBe(53_500n);
+    // Same allow-list hygiene as the charge.refund.updated arm.
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    for (const k of Object.keys(envelope.dataObject)) {
+      expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund.updated envelope`).toBe(true);
+    }
+    const serialized = JSON.stringify(envelope, (_k, v) =>
+      typeof v === 'bigint' ? v.toString() : v,
+    );
+    expect(serialized).not.toContain('destination_details');
+    expect(serialized).not.toContain('PP-XYZ-123');
+  });
+
+  it('refund.updated(failed): projects refundStatus=failed (the failure transition arrives on refund.updated too)', () => {
+    const body = JSON.stringify({
+      id: 'evt_refund_updated_failed',
+      type: 'refund.updated',
+      api_version: '2025-09-30.basil',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 're_async_fail',
+          object: 'refund',
+          status: 'failed',
+          charge: 'ch_async_fail',
+          amount: 10_000,
+        },
+      },
+    });
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      makeSigHeader(body),
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.refundStatus).toBe('failed');
+    expect(envelope.dataObject.latestChargeId).toBe('ch_async_fail');
+    expect(envelope.dataObject.amountSatang).toBe(10_000n);
   });
 });

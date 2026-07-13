@@ -9,7 +9,7 @@
 import type { PaymentId } from '../../domain/payment';
 // Single source of truth — Domain owns the status enum so a future
 // `'voided'` addition (post-MVP) cannot drift between Domain + Port.
-import type { RefundStatus } from '../../domain/refund';
+import type { Refund, RefundStatus } from '../../domain/refund';
 import type { Satang } from '@/lib/money';
 export type { RefundStatus };
 
@@ -52,19 +52,27 @@ export interface RefundsRepo {
       readonly creditNoteId?: string | null;
       readonly completedAt: Date;
       /**
-       * Optional optimistic-concurrency guard (S5). When set, the
+       * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
        * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
-       * Zero rows matched → repo throws → caller's tx rolls back.
+       * Zero rows matched → repo returns `null` (NOT throw) so the caller
+       * can distinguish a lost race from a genuine error. When omitted,
+       * the adapter throws on zero-match (preserves throw-on-zero
+       * semantics for callers that re-check under their own lock).
        *
        * Used by `sweepStalePendingRefunds` to ensure the sweep does
        * not flip a row that has been concurrently finalised to
-       * `succeeded` by a different writer (e.g. a future webhook
-       * `charge.refunded` branch wired to the real adapter — the
-       * F5 webhook gap noted in `infrastructure/di.ts`).
+       * `succeeded`/`failed` by a different writer (e.g. the webhook
+       * `charge.refunded` branch or issueRefund's Phase B).
+       *
+       * CONTRACT (mirrors `payments-repo.updateStatus` H-4): every
+       * caller passing `expectedCurrentStatus` MUST handle the `null`
+       * return branch. The sweep re-throws a sentinel on `null` so its
+       * per-row tx rolls back and no `stale_pending_refund_detected`
+       * audit commits.
        */
       readonly expectedCurrentStatus?: RefundStatus;
     },
-  ): Promise<RefundRow>;
+  ): Promise<RefundRow | null>;
 
   /** Look up an existing refund by Stripe refund id (dedupe webhook re-delivery). */
   findByProcessorRefundId(
@@ -72,6 +80,59 @@ export interface RefundsRepo {
     tenantId: string,
     processorRefundId: string,
   ): Promise<RefundRow | null>;
+
+  /**
+   * A.6 — narrow write: set ONLY `processor_refund_id`, leaving
+   * `status` and `completed_at` untouched (a refund row is inserted
+   * `status='pending'` before Stripe assigns a refund id; this method
+   * durably records that id as soon as the processor accepts the
+   * request, ahead of the eventual succeeded/failed outcome).
+   *
+   * CHECK-safe by design: `refunds_succeeded_iff_complete` is the
+   * biconditional `(status='succeeded') = (processor_refund_id IS NOT
+   * NULL AND credit_note_id IS NOT NULL)`. With `status` still
+   * `'pending'` the LHS is `false`; `credit_note_id` remains NULL so
+   * the RHS is also `false` — `false = false` satisfies the
+   * constraint regardless of `processor_refund_id`.
+   *
+   * Throws on zero-match — `refundId` is expected to already exist
+   * (the row is inserted via `insert` before this is ever called).
+   */
+  attachProcessorRefundId(
+    tx: unknown,
+    input: {
+      readonly refundId: string;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+    },
+  ): Promise<void>;
+
+  /**
+   * A.6 — `SELECT … WHERE tenant_id = ? AND processor_refund_id = ?
+   * FOR NO KEY UPDATE`. Serialises concurrent writers reconciling the same
+   * Stripe refund (e.g. a `refund.updated` webhook racing the
+   * stale-pending sweep or `issueRefund` Phase B).
+   *
+   * A.18 — the strength is `FOR NO KEY UPDATE`, NOT `FOR UPDATE`. The caller
+   * holds this lock across `finalizeSucceededRefund`, whose F4 credit-note
+   * bridge INSERTs `credit_notes.source_refund_id → refunds.id` from a
+   * SEPARATE connection; that FK check needs `FOR KEY SHARE` on this row.
+   * `FOR UPDATE` conflicts with `FOR KEY SHARE` → an undetectable
+   * cross-connection hang; `FOR NO KEY UPDATE` does not (and still serialises
+   * concurrent reconcilers). Safe because the reconciler only mutates
+   * non-key columns. See the adapter for the full rationale + repro.
+   *
+   * Returns the full Domain `Refund` aggregate (NOT the port's slim
+   * `RefundRow`) — the webhook reconcile use-case needs every
+   * state-machine-relevant field (`reason`, `failureReasonCode`,
+   * `creditNoteId`, timestamps) to decide the next transition, not
+   * just the aggregate-context subset `RefundRow` carries.
+   */
+  lockForUpdateByProcessorRefundId(
+    tx: unknown,
+    tenantId: string,
+    processorRefundId: string,
+  ): Promise<Refund | null>;
 
   /**
    * Combined aggregate snapshot for a (tenant, payment) tuple,
@@ -118,6 +179,15 @@ export interface RefundsRepo {
    * Returns the minimum fields the sweep + audit emit need; the row
    * is updated in a separate `updateStatus` call inside the same
    * tx as the audit emit for atomicity.
+   *
+   * A.14 — `processorRefundId` (the Stripe `re_…` id, nullable) is
+   * surfaced so the Stripe-aware sweep can `retrieveRefund` the real
+   * outcome and finalise the row instead of blind-failing it. It is
+   * NULL only in the rare window where `issueRefund` inserted the
+   * pending row + Stripe accepted the refund but the `attachProcessorRefundId`
+   * tx crashed before persisting the id — those rows cannot be
+   * reconciled against Stripe and are skipped by the sweep (never
+   * blind-failed — a real refund may exist).
    */
   listPendingOlderThan(
     tx: unknown,
@@ -132,6 +202,7 @@ export interface RefundsRepo {
       readonly initiatedAt: Date;
       readonly correlationId: string;
       readonly initiatorUserId: string;
+      readonly processorRefundId: string | null;
     }>
   >;
 }

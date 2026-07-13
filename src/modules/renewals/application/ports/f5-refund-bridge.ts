@@ -65,10 +65,156 @@ export type IssueRefundForInvoiceResult =
       /** F5 error code (`processor_unavailable`, `f4_bridge_error`, etc.). */
       readonly errorCode: string;
       readonly detail: string;
+    }
+  | {
+      /**
+       * F8-RP (2026-07-11): the F5 refund is settling ASYNCHRONOUSLY — a
+       * NON-terminal, non-failure state. Two paths land here:
+       *   1. `issueRefund` → `kind:'pending'` — Stripe created the refund
+       *      (`pending`/`requires_action`); the row is `pending` with its
+       *      `re_…` id attached and NO credit note yet. The
+       *      `charge.refund.updated` webhook (A.11) / Stripe-aware sweep
+       *      (A.14) finalises it later.
+       *   2. `issueRefund` → `refund_in_progress` — a prior refund for this
+       *      payment is ALREADY pending/settling (F5's Phase-A pending-row
+       *      guard). No ids are available from that error, so they are
+       *      omitted here.
+       *
+       * MONEY-SAFETY: the refund row stays `pending`, so any retry hits the
+       * F5 `refund_in_progress` guard → NO double refund. The F8 cycle stays
+       * `pending_admin_reactivation` and self-heals on a later cron pass once
+       * the refund settles (bridge then returns `no_payment_found` → normal
+       * lapse transition). Distinct from `refund_failed` (genuine Stripe
+       * failed/canceled, which the admin must retry).
+       */
+      readonly status: 'refund_pending';
+      /** F5 refund row id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly refundId?: string;
+      /** Stripe `re_…` id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly processorRefundId?: string;
+    };
+
+/**
+ * F8-RP follow-up (2026-07-12) — settlement lookup for a previously-initiated
+ * async reject-with-refund. When `adminRejectReactivation` records
+ * `refund_pending` it stamps the F5 refund id on the cycle marker; the
+ * reconcile-pending cron later calls this to learn whether that specific
+ * refund has SETTLED, so it can converge the cycle → `cancelled` (parity with
+ * the SYNC reject path) rather than let the 30-day timeout lapse it.
+ */
+export interface GetRefundOutcomeInput {
+  readonly tenantId: TenantId;
+  readonly invoiceId: InvoiceId;
+  /** The F5 refund row id (`rfnd_…`) stamped on the cycle at reject time. */
+  readonly refundId: string;
+}
+
+export type GetRefundOutcomeResult =
+  | {
+      /**
+       * The refund SETTLED successfully. The F4 credit note is now attached
+       * (F5 domain invariant: `status='succeeded'` ⟺ `credit_note_id NOT NULL`),
+       * so `creditNoteId` is present for byte-identical audit parity with the
+       * sync reject path. `null` only in the pathological case of a settled
+       * refund whose CN row is missing (referential drift) — the cron still
+       * converges to cancelled (money is back) and records a null CN, mirroring
+       * the sync path's `no_payment_found` null-CN tolerance.
+       */
+      readonly status: 'succeeded';
+      readonly creditNoteId: string | null;
+    }
+  | {
+      /** Still settling — the cron waits for a later pass. */
+      readonly status: 'pending';
+    }
+  | {
+      /**
+       * The refund settled `failed`/`canceled` (F5 collapses Stripe `canceled`
+       * → `failed`). The async refund did NOT return the money — the cron must
+       * NOT converge to cancelled. Carries the F5 failure reason for forensics.
+       */
+      readonly status: 'failed';
+      readonly failureReasonCode: string | null;
+    }
+  | {
+      /**
+       * The refund id could not be located in the invoice's F5 activity
+       * (defensive — should not happen for a marked cycle). The cron leaves
+       * the cycle marked + pending for a later pass / manual handling.
+       */
+      readonly status: 'not_found';
+    }
+  | {
+      /** F5 read failed (repo unavailable) — transient; the cron retries next pass. */
+      readonly status: 'lookup_failed';
+      readonly detail: string;
+    };
+
+/**
+ * F8-RP-2 review (Finding 3) — locate the SINGLE in-flight (`pending`) refund
+ * for an invoice and return its F5 refund id.
+ *
+ * WHY: when `adminRejectReactivation` hits F5's `refund_in_progress` guard, the
+ * error carries NO ids — a prior refund is already settling, but the reject use-
+ * case does not know which. That in-flight refund is NOT necessarily from a
+ * prior reject on this cycle: the reconcile cron's `processTimeout` (day-30) path
+ * also issues an async refund that returns `refund_in_progress` and leaves the
+ * cycle UNMARKED. Without a marker, the next cron pass re-times-out the cycle →
+ * `lapsed` (actor=cron), silently dropping the admin's explicit reject. This
+ * read-only lookup lets the reject use-case resolve that in-flight refund's id
+ * and stamp the marker so the reconcile marked branch converges → `cancelled`.
+ *
+ * The one-active-payment-per-invoice + one-pending-refund-per-payment F5
+ * invariants make "the pending refund for this invoice" unambiguous.
+ */
+export interface FindPendingRefundForInvoiceInput {
+  readonly tenantId: TenantId;
+  readonly invoiceId: InvoiceId;
+}
+
+export type FindPendingRefundForInvoiceResult =
+  | {
+      /** A single `pending` refund exists; its ids are the marker key. */
+      readonly status: 'found';
+      readonly refundId: string;
+      readonly processorRefundId: string | null;
+    }
+  | {
+      /**
+       * No `pending` refund in the invoice's F5 activity. Either it already
+       * settled between F5's `refund_in_progress` guard and this lookup (TOCTOU),
+       * or none exists. The caller does NOT stamp — it surfaces `refund_pending`
+       * and lets the sweep/webhook + a later cron pass reconcile.
+       */
+      readonly status: 'none';
+    }
+  | {
+      /** F5 read failed (repo unavailable) — transient; caller does not stamp. */
+      readonly status: 'lookup_failed';
+      readonly detail: string;
     };
 
 export interface F5RefundBridge {
   issueRefundForInvoice(
     input: IssueRefundForInvoiceInput,
   ): Promise<IssueRefundForInvoiceResult>;
+
+  /**
+   * F8-RP follow-up — resolve the settlement status of a specific refund
+   * (matched by `refundId` within the invoice's F5 activity). Read-only; no
+   * Stripe call, no mutation. See `GetRefundOutcomeResult`.
+   */
+  getRefundOutcomeForInvoice(
+    input: GetRefundOutcomeInput,
+  ): Promise<GetRefundOutcomeResult>;
+
+  /**
+   * F8-RP-2 review (Finding 3) — find the invoice's single in-flight
+   * (`pending`) refund + its id, so the reject use-case can stamp the marker on
+   * the `refund_in_progress` path. Read-only; no Stripe call, no mutation.
+   * See `FindPendingRefundForInvoiceResult`.
+   */
+  findPendingRefundForInvoice(
+    input: FindPendingRefundForInvoiceInput,
+  ): Promise<FindPendingRefundForInvoiceResult>;
 }

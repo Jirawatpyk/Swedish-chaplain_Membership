@@ -132,10 +132,23 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
           amountSatang: asSatang(0n),
         }),
       ),
+      retrieveRefund: vi.fn(),
     },
     invoicingBridge: {
       getInvoiceForPayment: vi.fn(),
       markPaidFromProcessor: vi.fn(),
+      // B.1 (#4) — the refund pre-flight reads the invoice credited/total.
+      // Stub: credited=0 + total===payment.amount (TOTAL_SATANG) so the
+      // invoice-credit cap never binds tighter than the payment-based cap —
+      // the multi-partial + FR-011b assertions below stay on the payment path.
+      getInvoiceCreditedTotal: vi.fn(async () =>
+        ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(TOTAL_SATANG) }),
+      ),
+      // tax#5 (B.2) — the shared finaliser reads F4's authoritative post-CN
+      // invoice status. The F4 CN chain is stubbed here (no real invoice-status
+      // flip), so stub the status too: partial refunds → `partially_credited`;
+      // the exhausting (full) refund overrides to `credited` before r4 below.
+      getInvoiceStatus: vi.fn(async () => ok('partially_credited' as const)),
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({
           // F4 credit_notes.credit_note_id is uuid; satisfy the
@@ -401,7 +414,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r1',
     });
     expect(r1.ok).toBe(true);
-    if (r1.ok) {
+    if (r1.ok && r1.value.kind === 'succeeded') {
       expect(r1.value.payment.status).toBe('partially_refunded');
       expect(r1.value.payment.refundedAmountSatang).toBe(1_000_000n);
       expect(r1.value.payment.remainingRefundableSatang).toBe(4_350_000n);
@@ -421,7 +434,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r2',
     });
     expect(r2.ok).toBe(true);
-    if (r2.ok) {
+    if (r2.ok && r2.value.kind === 'succeeded') {
       expect(r2.value.payment.status).toBe('partially_refunded');
       expect(r2.value.payment.refundedAmountSatang).toBe(2_500_000n);
       expect(r2.value.payment.remainingRefundableSatang).toBe(2_850_000n);
@@ -456,6 +469,11 @@ describe('issueRefund — multi-partial + race (T102)', () => {
 
     // ---- Exhausting refund — 2,850,000 satang → cumulative = TOTAL → 'refunded' ----
     rebindBridgeForNextRefund(deps, cnIds[2]!, 'TC-2026-100003');
+    // tax#5 (B.2) — this refund fully credits the invoice; F4 flips it to
+    // `credited`, and the finaliser reports THAT authoritative status.
+    deps.invoicingBridge.getInvoiceStatus = vi.fn(async () =>
+      ok('credited' as const),
+    );
     const r4 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
@@ -466,7 +484,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       requestId: 'req-r4',
     });
     expect(r4.ok).toBe(true);
-    if (r4.ok) {
+    if (r4.ok && r4.value.kind === 'succeeded') {
       expect(r4.value.payment.status).toBe('refunded');
       expect(r4.value.payment.refundedAmountSatang).toBe(TOTAL_SATANG);
       expect(r4.value.payment.remainingRefundableSatang).toBe(0n);

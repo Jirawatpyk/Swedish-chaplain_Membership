@@ -254,13 +254,21 @@ export default async function RenewalPortalPage({
           </CardContent>
         </Card>
       ) : summary.status === 'pending_admin_reactivation' ? (
+        /* UX-A Bug 2: when the async reject-with-refund marker is set, the
+           reactivation was NOT approved — a refund is being processed — so the
+           "our team is verifying it / no action needed" copy is factually
+           false during that window. Show the rejected-refund copy instead. */
         <Card role="region" aria-labelledby="renewal-gate-heading">
           <CardContent className="flex flex-col gap-2">
             <h2 id="renewal-gate-heading" className="text-h4">
-              {tGate('pendingReviewTitle')}
+              {summary.rejectRefundInitiatedAt !== null
+                ? tGate('rejectedRefundTitle')
+                : tGate('pendingReviewTitle')}
             </h2>
             <p className="text-sm text-muted-foreground">
-              {tGate('pendingReviewBody')}
+              {summary.rejectRefundInitiatedAt !== null
+                ? tGate('rejectedRefundBody')
+                : tGate('pendingReviewBody')}
             </p>
           </CardContent>
         </Card>

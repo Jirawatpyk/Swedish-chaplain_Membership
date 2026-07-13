@@ -16,7 +16,7 @@
  * III). The `toDomain` helper owns the card-metadata null triage
  * (promptpay → null; card+pending+all-NULL → null; otherwise full VO).
  */
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
@@ -319,6 +319,82 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return toDomain(updated as PaymentRow);
     },
 
+    /**
+     * A.13 (#3 / CRITICAL-2) — flip a stuck-pending payment to the
+     * terminal `auto_refunded` status + durable marker, guarded on the
+     * row still being `pending`. See the port docstring for the full
+     * contract. Threads the caller's `tx` (never the pool-global `db`)
+     * so the flip commits atomically with the caller's audit +
+     * markProcessed under the same RLS context.
+     *
+     * The `WHERE status = 'pending'` predicate is the
+     * `expectedCurrentStatus`-style guard: zero rows matched → a
+     * concurrent writer already terminalised the row → return `null`
+     * (mirrors `updateStatus`'s null-return). `completed_at` is set to
+     * satisfy `payments_completed_at_iff_not_pending` (migration 0033);
+     * card metadata is deliberately left NULL-safe (migration 0240
+     * relaxed the card CHECK for `auto_refunded`).
+     */
+    async markAutoRefunded(txUnknown, input): Promise<Payment | null> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(payments)
+        .set({
+          status: 'auto_refunded',
+          completedAt: input.completedAt,
+          autoRefundProcessorRefundId: input.processorRefundId,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(payments.tenantId, input.tenantId),
+            eq(payments.id, input.paymentId),
+            eq(payments.status, 'pending'),
+          ),
+        )
+        .returning();
+      // Guard miss (row already terminalised by a concurrent writer) →
+      // null. Unlike `updateStatus`, there is no throw-on-zero fallback:
+      // this method is ALWAYS the guarded form (the pending→auto_refunded
+      // edge is only ever driven from a Phase-A-observed pending row).
+      return updated ? toDomain(updated as PaymentRow) : null;
+    },
+
+    /**
+     * A.15 (#8 resume-race) — status-PRESERVING, status-AGNOSTIC durable
+     * marker write. See the port docstring for the full contract + F-9
+     * rationale + the two guard-miss sub-cases it serves. Threads the
+     * caller's `tx` (never the pool-global `db`) so the marker commits
+     * atomically with the caller's forensic audit + markProcessed under the
+     * same RLS context.
+     *
+     * Guard `auto_refund_processor_refund_id IS NULL` ONLY (no `status`
+     * coupling): `status` is left untouched (no forced status edge — F-9),
+     * `completed_at` is untouched (every non-`pending` row the callers reach
+     * here already satisfies migration 0033's
+     * `payments_completed_at_iff_not_pending`), and the `IS NULL` predicate
+     * makes a Stripe retry a no-op. Zero rows matched → `null` (marker
+     * already present).
+     */
+    async attachAutoRefundMarkerIfAbsent(txUnknown, input): Promise<Payment | null> {
+      const tx = txUnknown as TenantTx;
+      const [updated] = await tx
+        .update(payments)
+        .set({
+          autoRefundProcessorRefundId: input.processorRefundId,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(payments.tenantId, input.tenantId),
+            eq(payments.id, input.paymentId),
+            isNull(payments.autoRefundProcessorRefundId),
+          ),
+        )
+        .returning();
+      return updated ? toDomain(updated as PaymentRow) : null;
+    },
+
     async findPendingByInvoiceAndActor(
       tenantIdArg: string,
       invoiceId: string,
@@ -468,29 +544,185 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
 
     /**
      * H-8 — read the most-recent auto-refund audit row for this
-     * invoice. Tenant scoping comes from the factory-bound `ctx`
-     * (RLS+FORCE) — defence-in-depth WHERE on `tenant_id` mirrors
+     * invoice (member-portal display lookup, keyed by invoiceId).
+     * Tenant scoping comes from the factory-bound `ctx` (RLS+FORCE) —
+     * defence-in-depth WHERE on `tenant_id` mirrors
      * `lockForUpdateByPaymentIntentId` (line 188).
+     *
+     * M1 — the initiation subquery matches EITHER auto-refund init
+     * event (`payment_auto_refunded_stale_invoice` OR
+     * `payment_auto_refunded_concurrent_manual_mark`); both are emitted
+     * from the same confirm-payment.ts block with identical payload
+     * keys, so both must surface the admin alert + CF-2 resolve action.
+     *
+     * F5 UX D1/D2 — the `failed` column is a correlated `EXISTS` over
+     * the CRITICAL-2 forensic (`auto_refund_failed_needs_manual_reconcile`,
+     * emitted by `processRefundUpdated` when Stripe settles the
+     * auto-refund `failed`/`canceled` — money NOT returned). Keyed on
+     * `invoice_id`, mirroring the initiation-marker lookup; the void →
+     * single-auto-refund money-path means "a failure forensic exists
+     * for this invoice" is the decisive outcome signal. The member
+     * banner uses it to avoid a false "refunded" assurance; the admin
+     * invoice detail uses it to raise a manual-reconciliation alert.
+     *
+     * PERMANENT — retained for its live caller (member-portal invoice
+     * detail page). See the port docstring
+     * (`src/modules/payments/application/ports/payments-repo.ts`) for
+     * why this is not superseded by `findAutoRefundByProcessorRefundId`
+     * below.
      */
     async findStaleInvoiceAutoRefund(
       invoiceId: string,
-    ): Promise<{ readonly processorRefundId: string | null } | null> {
+    ): Promise<{
+      readonly processorRefundId: string | null;
+      readonly failed: boolean;
+    } | null> {
       return runInTenant(ctx, async (tx) => {
         const result = await tx.execute(sql`
-          SELECT payload->>'processor_refund_id' AS processor_refund_id
-            FROM audit_log
-           WHERE tenant_id = ${tenantId}
-             AND event_type = 'payment_auto_refunded_stale_invoice'
-             AND payload->>'invoice_id' = ${invoiceId}
-           ORDER BY timestamp DESC
-           LIMIT 1
+          SELECT init.processor_refund_id AS processor_refund_id,
+                 (EXISTS (
+                   SELECT 1
+                     FROM audit_log fail
+                    WHERE fail.tenant_id = ${tenantId}
+                      AND fail.event_type = 'auto_refund_failed_needs_manual_reconcile'
+                      AND fail.payload->>'invoice_id' = ${invoiceId}
+                 )
+                 -- CF-2 failure-AND-NOT-reconciled: once the admin acknowledges
+                 -- the manual reconciliation (an auto_refund_reconciled event is
+                 -- appended for this invoice), failed flips false so the admin
+                 -- alert clears + the member banner reverts. Keyed on invoice_id
+                 -- (one auto-refund per invoice; safest match toward NOT-failed).
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM audit_log rec
+                    WHERE rec.tenant_id = ${tenantId}
+                      AND rec.event_type = 'auto_refund_reconciled'
+                      AND rec.payload->>'invoice_id' = ${invoiceId}
+                 )) AS failed
+            FROM (
+              -- M1 - BOTH auto-refund INITIATION events surface here. The
+              -- pending-row path emits payment_auto_refunded_stale_invoice;
+              -- the concurrent-manual-mark path (admin marked the invoice paid
+              -- while a member payment was in-flight) emits
+              -- payment_auto_refunded_concurrent_manual_mark. Both are emitted
+              -- from the SAME confirm-payment.ts block with identical payload
+              -- keys (invoice_id / processor_refund_id), so either qualifies as
+              -- the initiation marker whose refund the admin alert + CF-2
+              -- resolve action act on. Keying on only the first left a failed
+              -- concurrent-manual-mark auto-refund off the admin alert.
+              SELECT payload->>'processor_refund_id' AS processor_refund_id
+                FROM audit_log
+               WHERE tenant_id = ${tenantId}
+                 AND event_type IN (
+                   'payment_auto_refunded_stale_invoice',
+                   'payment_auto_refunded_concurrent_manual_mark'
+                 )
+                 AND payload->>'invoice_id' = ${invoiceId}
+               ORDER BY timestamp DESC
+               LIMIT 1
+            ) AS init
         `);
         const rows = Array.from(
-          result as unknown as Iterable<{ processor_refund_id: string | null }>,
+          result as unknown as Iterable<{
+            processor_refund_id: string | null;
+            failed: boolean;
+          }>,
         );
         if (rows.length === 0) return null;
-        return { processorRefundId: rows[0]!.processor_refund_id };
+        return {
+          processorRefundId: rows[0]!.processor_refund_id,
+          // postgres.js parses `bool` → JS boolean; `=== true` guards
+          // against any driver-level surprise (fails toward "not failed"
+          // only if the DB genuinely reports false).
+          failed: rows[0]!.failed === true,
+        };
       });
+    },
+
+    /**
+     * CF-2 — resolve-path read for `resolveFailedAutoRefund`. See the port
+     * docstring for the contract. Threads the caller's `tx` (read + reconcile
+     * emit run in ONE tenant-scoped tx). Defence-in-depth `tenant_id =` WHERE
+     * mirrors `findAutoRefundByProcessorRefundId`; RLS is the primary backstop.
+     * The `already_reconciled` correlated EXISTS is keyed on `invoice_id` (one
+     * auto-refund per invoice) — the same key the failure forensic uses.
+     */
+    async findFailedAutoRefundForInvoice(
+      txUnknown,
+      tenantIdArg: string,
+      invoiceId: string,
+    ): Promise<{
+      readonly paymentId: string;
+      readonly processorRefundId: string;
+      readonly alreadyReconciled: boolean;
+    } | null> {
+      const tx = txUnknown as TenantTx;
+      const result = await tx.execute(sql`
+        SELECT fail.payload->>'payment_id' AS payment_id,
+               fail.payload->>'auto_refund_processor_refund_id' AS processor_refund_id,
+               EXISTS (
+                 SELECT 1
+                   FROM audit_log rec
+                  WHERE rec.tenant_id = ${tenantIdArg}
+                    AND rec.event_type = 'auto_refund_reconciled'
+                    AND rec.payload->>'invoice_id' = ${invoiceId}
+               ) AS already_reconciled
+          FROM audit_log fail
+         WHERE fail.tenant_id = ${tenantIdArg}
+           AND fail.event_type = 'auto_refund_failed_needs_manual_reconcile'
+           AND fail.payload->>'invoice_id' = ${invoiceId}
+         ORDER BY fail.timestamp DESC
+         LIMIT 1
+      `);
+      const rows = Array.from(
+        result as unknown as Iterable<{
+          payment_id: string | null;
+          processor_refund_id: string | null;
+          already_reconciled: boolean;
+        }>,
+      );
+      if (rows.length === 0) return null;
+      const row = rows[0]!;
+      // Fail-safe: the RR-8 failure payload always carries both id fields; if
+      // either is somehow NULL (data corruption / hand-patched row), return
+      // null rather than emit a reconcile carrying null ids.
+      if (row.payment_id === null || row.processor_refund_id === null) {
+        return null;
+      }
+      return {
+        paymentId: row.payment_id,
+        processorRefundId: row.processor_refund_id,
+        alreadyReconciled: row.already_reconciled === true,
+      };
+    },
+
+    /**
+     * A.6 — durable auto-refund lookup (migration 0240 column) for
+     * the webhook reconcile path, keyed by `processorRefundId`. See
+     * the port docstring for why this is a separate, permanent lookup
+     * from `findStaleInvoiceAutoRefund` above rather than a
+     * replacement for it (different key, different purpose). Explicit
+     * `tx` param — callers run this inside their own
+     * webhook-reconciliation tx. Defence-in-depth `tenant_id =` WHERE
+     * mirrors the rest of this file; RLS is the primary backstop.
+     */
+    async findAutoRefundByProcessorRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      processorRefundId: string,
+    ): Promise<{ readonly paymentId: PaymentId; readonly invoiceId: string } | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({ id: payments.id, invoiceId: payments.invoiceId })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.tenantId, tenantIdArg),
+            eq(payments.autoRefundProcessorRefundId, processorRefundId),
+          ),
+        )
+        .limit(1);
+      return row ? { paymentId: asPaymentId(row.id), invoiceId: row.invoiceId } : null;
     },
   };
 }

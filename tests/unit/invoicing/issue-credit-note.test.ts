@@ -1126,4 +1126,98 @@ describe('issueCreditNote — US6 credited annotation re-targets the tax receipt
     if (r.ok) throw new Error('expected receipt_not_creditable, got ok');
     expect(r.error.code).toBe('receipt_not_creditable');
   });
+
+  // ---- A.7 review fix #2 — sourceRefundId idempotency ownership guard ----
+
+  it('A.7 review fix #2 — REJECTS with concurrent_state_change when the under-lock idempotency read returns a CN for a DIFFERENT invoice (fail-loud, not a silent wrong-CN return)', async () => {
+    // `findBySourceRefundId` is keyed on (tenant, sourceRefundId) ONLY — it
+    // cannot itself verify the returned CN belongs to the invoice under
+    // lock. Not reachable via either real caller today (a refund row binds
+    // refundId+invoiceId 1:1 and both callers derive them from the same
+    // row), but a mis-wired future caller must get a typed error, never a
+    // silent CN for the WRONG invoice.
+    const invoice = makeIssuedEventInvoice(); // invoiceId === INVOICE_ID
+    const OTHER_INVOICE_ID = '00000000-0000-0000-0000-0000000000ff';
+    const mismatchedCn: CreditNote = {
+      ...makeCreditNote(
+        Money.fromSatangUnsafe(1_000n),
+        Money.fromSatangUnsafe(70n),
+        Money.fromSatangUnsafe(1_070n),
+        null,
+      ),
+      originalInvoiceId: asInvoiceId(OTHER_INVOICE_ID), // belongs to a DIFFERENT invoice
+      sourceRefundId: 'rfnd-mismatched',
+    };
+    const findBySourceRefundId = vi.fn(async () => mismatchedCn);
+    const deps = makeDeps(invoice, makeSettings(), {
+      creditNoteRepo: {
+        insertCreditNote: vi.fn(),
+        findById: vi.fn(),
+        findByOriginalInvoice: vi.fn(),
+        findByOriginalInvoiceInTx: vi.fn(async () => []),
+        listPaged: vi.fn(),
+        findBySourceRefundId,
+      } as unknown as IssueCreditNoteDeps['creditNoteRepo'],
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-mismatched-refund',
+      creditTotalSatang: 1_000n,
+      reason: 'refund',
+      sourceRefundId: 'rfnd-mismatched',
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error('expected concurrent_state_change, got ok');
+    expect(r.error.code).toBe('concurrent_state_change');
+
+    // Caught BEFORE any side effect — no §87 number burned, no PDF
+    // rendered, no insert, no rollup, no email.
+    expect(findBySourceRefundId).toHaveBeenCalledTimes(1);
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('sourceRefundId idempotency — SAME-invoice repeat is unaffected by the ownership guard (returns the existing CN as before)', async () => {
+    // Regression guard for fix #2: the legitimate same-invoice repeat path
+    // (the only reachable path today) must stay byte-for-byte unchanged.
+    const invoice = makeIssuedEventInvoice(); // invoiceId === INVOICE_ID
+    const sameCn: CreditNote = {
+      ...makeCreditNote(
+        Money.fromSatangUnsafe(1_000n),
+        Money.fromSatangUnsafe(70n),
+        Money.fromSatangUnsafe(1_070n),
+        null,
+      ),
+      originalInvoiceId: asInvoiceId(INVOICE_ID), // SAME invoice — matches
+      sourceRefundId: 'rfnd-match',
+    };
+    const findBySourceRefundId = vi.fn(async () => sameCn);
+    const deps = makeDeps(invoice, makeSettings(), {
+      creditNoteRepo: {
+        insertCreditNote: vi.fn(),
+        findById: vi.fn(),
+        findByOriginalInvoice: vi.fn(),
+        findByOriginalInvoiceInTx: vi.fn(async () => []),
+        listPaged: vi.fn(),
+        findBySourceRefundId,
+      } as unknown as IssueCreditNoteDeps['creditNoteRepo'],
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-matched-refund',
+      creditTotalSatang: 1_000n,
+      reason: 'refund',
+      sourceRefundId: 'rfnd-match',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.creditNote.creditNoteId).toBe(sameCn.creditNoteId);
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+  });
 });

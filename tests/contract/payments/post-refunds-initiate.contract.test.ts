@@ -164,6 +164,9 @@ const VALID_BODY = {
 };
 
 const SUCCESS_PAYLOAD = {
+  // #1 (2026-07-11) — the use-case success is now a discriminated union;
+  // a synchronous `succeeded` Stripe refund carries the full envelope.
+  kind: 'succeeded' as const,
   refund: {
     id: 'rfnd_01JREFUND0',
     paymentId: VALID_PAYMENT_ID,
@@ -260,6 +263,42 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(payment['status']).toBe('refunded');
     expect(payment['remainingRefundableSatang']).toBe('0');
     expect(invoice['status']).toBe('credited');
+  });
+
+  it('202 — async refund (kind:pending): pending envelope + message, NO credit note', async () => {
+    // #1 (2026-07-11) — a `pending`/`requires_action` Stripe refund is not
+    // booked at creation time; the route returns 202 Accepted and the
+    // `charge.refund.updated` webhook finalises it later.
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(
+      ok({
+        kind: 'pending' as const,
+        refund: {
+          id: 'rfnd_01JREFUND0',
+          status: 'pending' as const,
+          processorRefundId: 're_3RASYNC0',
+        },
+      }),
+    );
+
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(202);
+
+    const body = (await res.json()) as Record<string, unknown>;
+    const refund = body['refund'] as Record<string, unknown>;
+    expect(refund['status']).toBe('pending');
+    expect(refund['processorRefundId']).toBe('re_3RASYNC0');
+    // No credit note / payment / invoice block on the async path.
+    expect(refund['creditNoteNumber']).toBeUndefined();
+    expect(body).not.toHaveProperty('payment');
+    expect(body).not.toHaveProperty('invoice');
+    // Self-describing bilingual message present.
+    expect(typeof body['message']).toBe('string');
+    expect(body['correlationId']).toBeDefined();
+    // 202 keeps the F5 header baseline.
+    const cc = res.headers.get('Cache-Control');
+    expect(cc).toContain('no-store');
   });
 
   it('400 invalid_input — paymentId missing', async () => {

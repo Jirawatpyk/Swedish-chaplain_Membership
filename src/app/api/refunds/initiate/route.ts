@@ -49,6 +49,16 @@ import { errKind } from '@/lib/log-id';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// #1 (2026-07-11) — bilingual self-describing copy for the 202 async-refund
+// response. Route-internal API strings (mirrors the `payments-errors-i18n`
+// const-table convention: kept out of the global i18n JSON to avoid
+// inflating `check:i18n`). The admin UI renders its OWN localised toast
+// (EN/TH/SV) via `admin.refund.success.pendingToast` off the 202 status.
+const REFUND_PENDING_MESSAGE_EN =
+  'Refund submitted — awaiting confirmation from the payment processor.';
+const REFUND_PENDING_MESSAGE_TH =
+  'ส่งคำขอคืนเงินแล้ว — กำลังรอการยืนยันจากผู้ให้บริการชำระเงิน';
+
 // `paymentId` length 20–40 covers the Domain `RE_ULID_LIKE` regex; the
 // use-case re-validates via `parsePaymentId` so a malformed string that
 // passes this length check still fails downstream with `invalid_payment_id`.
@@ -110,6 +120,14 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
+    case 'f4_preflight_read_error':
+      // B.1 review Fix#1: the PRE-FLIGHT F4 credited-total read failed BEFORE
+      // any Stripe call — money did NOT move, the refund is safe to retry, and
+      // NO orphaned out-of-band refund exists. Still 502 (a transient F4 read
+      // failure), but a DISTINCT route code from `f4_bridge_error` so an
+      // on-call does NOT hunt a non-existent orphaned refund via the
+      // out-of-band-refund runbook. Retrying the same request is the fix.
+      return { status: 502, routeCode: 'f4_preflight_read_error' };
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure
@@ -216,6 +234,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     if (result.ok) {
       const v = result.value;
+      // #1 (2026-07-11) — an async Stripe refund (`pending`/`requires_action`)
+      // is NOT booked at creation time. Return 202 Accepted: the refund row
+      // is `pending` with its processor id attached, and the eventual
+      // `charge.refund.updated` webhook finalises it. Bilingual `message`
+      // pair mirrors the error envelope; the admin UI shows its own
+      // localised "awaiting confirmation" toast off the 202 status.
+      if (v.kind === 'pending') {
+        return NextResponse.json(
+          {
+            refund: {
+              id: v.refund.id,
+              status: v.refund.status,
+              processorRefundId: v.refund.processorRefundId,
+            },
+            message: REFUND_PENDING_MESSAGE_EN,
+            messageThai: REFUND_PENDING_MESSAGE_TH,
+            correlationId,
+          },
+          { status: 202, headers: baseHeaders(correlationId) },
+        );
+      }
+      // v.kind === 'succeeded' — credit note booked synchronously.
       // Audit 2026-04-25 finding #20: serialise bigints as strings so
       // a future tenant exceeding the JS safe-integer window does not
       // silently lose precision in the JSON envelope.

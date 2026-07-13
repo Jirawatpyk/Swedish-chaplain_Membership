@@ -80,6 +80,9 @@ function makeNoOpGateway(): ProcessorGatewayPort {
     async createRefund() {
       throw new Error('cross-tenant-probe.test: createRefund must not be called');
     },
+    async retrieveRefund() {
+      throw new Error('cross-tenant-probe.test: retrieveRefund must not be called');
+    },
   };
 }
 

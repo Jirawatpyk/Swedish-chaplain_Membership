@@ -120,7 +120,27 @@ export type F5AuditEventType =
   // process-webhook-event.ts:156 docstring promise that pre-R2 was
   // unfulfilled (only pino-logged, which rolls off in 30d). 5y
   // forensic compliance retention.
-  | 'webhook_dispatch_permanent_failure';
+  | 'webhook_dispatch_permanent_failure'
+  // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, CRITICAL-2) —
+  // emitted by `processRefundUpdated` / the confirm-payment stale-refund tail
+  // when a `charge.refund.updated(failed|canceled)` arrives for a payment
+  // auto-refunded on a stale invoice: Stripe reports the refund did NOT reach
+  // the customer, yet the payment shows `auto_refunded`, so ops is paged for
+  // manual reconciliation via the runbook. 10y retention (money-not-returned
+  // forensic, Thai RD §87/3 tax-document-adjacent). NOTE: this value does NOT
+  // match the `refund_`/`payment_` F5 prefixes — the parity test's
+  // `F5_PREFIXES` is extended with `auto_refund_` so it stays in scope.
+  | 'auto_refund_failed_needs_manual_reconcile'
+  // CF-2 (migration 0244, 2026-07-12) — the append-only "resolved" counterpart
+  // to the failure forensic above: an admin marks a failed stale-invoice
+  // auto-refund as MANUALLY reconciled (out-of-band CN / Stripe Dashboard refund
+  // done). Emitted by `resolveFailedAutoRefund` with the acting admin as
+  // `actorUserId`. Once present, `findStaleInvoiceAutoRefund.failed` becomes
+  // failure-AND-not-reconciled → the persistent admin alert clears + the member
+  // "being reconciled" banner reverts to the "refunded" copy. 10y retention
+  // (mirrors the failure forensic — money-trail-adjacent, Thai RD §87/3). Shares
+  // the `auto_refund_` prefix so the parity test already covers it.
+  | 'auto_refund_reconciled';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -200,7 +220,24 @@ export interface F5AuditPayloadByType {
     payment_id: string;
     invoice_id: string;
     refunded_amount_satang: string;
-    cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+    /**
+     * A.13 (stale-invoice) causes derive from the F4 invoice status via
+     * `causeForInvoiceStatus`. A.15 (bug #8 resume-race) adds
+     * `payment_terminal_failed_late_charge` — the ONLY cause where the
+     * invoice is still payable (`issued`): a late `payment_intent.succeeded`
+     * captured funds against a payment row that had already committed
+     * `failed`. Reuses THIS event type (10y money-trail) rather than
+     * minting a new enum (RR-6 recognition is marker-column-keyed, not
+     * audit-type-keyed — see `findAutoRefundByProcessorRefundId`); the
+     * `cause` discriminator + the distinct `late-charge-refund-` idempotency
+     * namespace keep the scenario unambiguous in audit-log queries.
+     */
+    cause:
+      | 'invoice_already_paid'
+      | 'invoice_voided'
+      | 'invoice_credited'
+      | 'invoice_unknown_status'
+      | 'payment_terminal_failed_late_charge';
     processor_refund_id: string;
   };
   payment_auto_refunded_concurrent_manual_mark: Record<string, unknown>;
@@ -223,17 +260,22 @@ export interface F5AuditPayloadByType {
     idempotency_key: string;
   };
   /**
-   * Two emit shapes:
-   *   (a) admin-initiated refund (`issueRefund` use-case,
-   *       `path: 'admin_initiated'` emit) — creates F4 CN and flips
-   *       payment/invoice status; payload carries the full
-   *       state-transition record.
-   *   (b) webhook-driven recovery (`processChargeRefunded` use-case,
-   *       `path: 'webhook_recovery'` emit) — Stripe `charge.refunded`
-   *       event arrives for a known refund row that was stuck
-   *       `pending`; payload carries Stripe ids + recovery_path
-   *       discriminator. (R3 comment-rot fix: symbolic refs replace
-   *       precise line numbers that rotted past R1+R2.)
+   * `refund_succeeded` is emitted by the shared `finalizeSucceededRefund`
+   * helper from three trigger sites, distinguished by the `path`
+   * discriminator (all three carry the SAME full state-transition record —
+   * F4 CN minted + payment/invoice status advanced):
+   *   (a) `path: 'admin_initiated'` — admin-initiated refund (`issueRefund`
+   *       use-case).
+   *   (b) `path: 'webhook_refund_updated'` — async Stripe
+   *       `charge.refund.updated(succeeded)` webhook finalises a `pending`
+   *       refund row.
+   *   (c) `path: 'sweep_recovery'` — the stale-pending-refund sweep
+   *       reconciles a `pending` row the webhook never resolved.
+   * `processChargeRefunded` no longer emits `refund_succeeded` (A.12
+   * removed that emit site; its former `path: 'webhook_recovery'` arm was
+   * dead and removed here — final-review cleanup, 2026-07-12). (R3
+   * comment-rot fix: symbolic refs replace precise line numbers that
+   * rotted past R1+R2.)
    */
   /**
    * R3 TD-2 (2026-04-28): explicit `path` discriminator on both arms
@@ -255,22 +297,59 @@ export interface F5AuditPayloadByType {
         invoice_next_status: 'partially_credited' | 'credited';
       }
     | {
-        path: 'webhook_recovery';
-        refund_id: string;
-        processor_refund_id: string;
-        processor_charge_id: string;
-        recovery_path: 'webhook_charge_refunded';
         /**
-         * F5R3 SB-1 (2026-05-16) — when the webhook recovery flips a
-         * stuck-pending refund row, it ALSO atomically recovers the
-         * parent Payment.status (mirrors issueRefund Phase B).
-         *   `'partially_refunded' | 'refunded'` — parent was advanced
-         *   `null` — parent already at the correct status (no-op) OR
-         *     a concurrent writer raced us (race-guard returned null);
-         *     the refund-row flip still committed, parent status was
-         *     correct without our help.
+         * F5 refund-lifecycle bugfix (2026-07-11, Task A.3) — webhook
+         * `charge.refund.updated(succeeded)` finalises a `pending` refund
+         * row via the shared `finalizeSucceededRefund(…, path:
+         * 'webhook_refund_updated')`. Carries the SAME full state-transition
+         * record as `admin_initiated` (F4 CN minted + payment/invoice status
+         * advanced) because both flow through the shared finaliser; the
+         * `path` discriminator distinguishes the trigger (async Stripe
+         * webhook vs. admin-initiated) for unambiguous audit-log queries.
+         * TS-only — no enum change (reuses the `refund_succeeded` value).
          */
-        parent_payment_status_recovered_to: 'partially_refunded' | 'refunded' | null;
+        path: 'webhook_refund_updated';
+        refund_id: string;
+        payment_id: string;
+        invoice_id: string;
+        processor_refund_id: string;
+        credit_note_id: string;
+        credit_note_number: string;
+        amount_satang: string;
+        payment_next_status: 'partially_refunded' | 'refunded';
+        invoice_next_status: 'partially_credited' | 'credited';
+      }
+    | {
+        /**
+         * F5 refund-lifecycle bugfix (2026-07-11, Task A.14) — the
+         * Stripe-aware stale-pending-refund sweep's `retrieveRefund`
+         * reported `succeeded`, so the sweep finalised a stuck-`pending`
+         * refund row via the shared `finalizeSucceededRefund(…, path:
+         * 'sweep_recovery')`. Carries the SAME full state-transition record
+         * as `admin_initiated`/`webhook_refund_updated` (F4 CN minted +
+         * payment/invoice status advanced) because all three flow through
+         * the shared finaliser; the `path` discriminator distinguishes the
+         * TRIGGER — here a scheduled recovery sweep that reconciled a row
+         * the async `charge.refund.updated` webhook never resolved (the
+         * Postgres double-fault / webhook-giveup scenario) — for
+         * unambiguous audit-log forensics ("webhook was lost → sweep
+         * recovered"). The `actor_user_id` is the seeded Stripe-webhook
+         * system UUID (the F4 credit-note `issued_by_user_id` FK requires a
+         * real `users` row; the sweep reuses the existing webhook actor
+         * rather than adding a new seeded actor — see
+         * `sweep-stale-pending-refunds.ts`). TS-only — no enum change
+         * (reuses the `refund_succeeded` value).
+         */
+        path: 'sweep_recovery';
+        refund_id: string;
+        payment_id: string;
+        invoice_id: string;
+        processor_refund_id: string;
+        credit_note_id: string;
+        credit_note_number: string;
+        amount_satang: string;
+        payment_next_status: 'partially_refunded' | 'refunded';
+        invoice_next_status: 'partially_credited' | 'credited';
       };
   refund_failed: {
     refund_id: string;
@@ -353,6 +432,34 @@ export interface F5AuditPayloadByType {
     readonly stripe_event_type: string;
     readonly dispatch_failure_kind: string;
     readonly dispatch_failure_detail: string;
+  };
+  // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, RR-8 allow-list) —
+  // CRITICAL-2 failed-auto-refund forensic. ID-refs + refund status + satang
+  // amount ONLY; NO card metadata, NO raw Stripe event, NO error.message
+  // (constructor-name only, elsewhere) — keeps SAQ-A intact.
+  // `auto_refund_processor_refund_id` (`re_…`) is the only refund identifier
+  // here (non-card) — there is no internal `refunds.id` field, because the
+  // stale-invoice auto-refund path never inserts a `refunds` table row (see
+  // `payment_auto_refunded_stale_invoice` / the durable
+  // `auto_refund_processor_refund_id` marker on `payments` instead).
+  auto_refund_failed_needs_manual_reconcile: {
+    readonly payment_id: string;
+    readonly invoice_id: string;
+    readonly auto_refund_processor_refund_id: string;
+    readonly refund_status: string;
+    readonly amount_satang: string;
+    readonly runbook_url: string;
+  };
+  // CF-2 (migration 0244) — admin manual-reconciliation acknowledgement.
+  // ID-refs + acting-admin trail only; the optional `note` is a free-text
+  // admin memo (single line, bounded at the route). NO card metadata, NO raw
+  // Stripe text — keeps SAQ-A intact. `processor_refund_id` is the same `re_…`
+  // the failure forensic carried (as `auto_refund_processor_refund_id`).
+  auto_refund_reconciled: {
+    readonly invoice_id: string;
+    readonly payment_id: string;
+    readonly processor_refund_id: string;
+    readonly note?: string;
   };
 }
 
@@ -454,6 +561,13 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // F5R2 — operational/audit class events; 5y per Constitution VIII.
   refund_amount_mismatch_detected: 5,
   webhook_dispatch_permanent_failure: 5,
+  // F5 refund-lifecycle bugfix (migration 0241) — money-not-returned forensic.
+  // 10y (tax-document-adjacent, Thai RD §87/3), NOT the 5y default; mirrors
+  // refund_succeeded's 10y class.
+  auto_refund_failed_needs_manual_reconcile: 10,
+  // CF-2 (migration 0244) — manual-reconciliation acknowledgement. 10y to
+  // mirror the failure forensic it resolves (same money-trail lineage).
+  auto_refund_reconciled: 10,
 };
 
 /**

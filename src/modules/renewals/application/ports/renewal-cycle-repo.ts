@@ -312,6 +312,72 @@ export interface RenewalCycleRepo {
   ): Promise<void>;
 
   /**
+   * F8-RP follow-up (migration 0243) — stamp the async reject-with-refund
+   * marker on a cycle. Called by `adminRejectReactivation` in the same tx
+   * where F5 returned `refund_pending` (Stripe settling asynchronously): the
+   * cycle stays `pending_admin_reactivation` and these columns record that an
+   * admin REJECT initiated a refund whose settlement the reconcile-pending
+   * cron will later converge to `cancelled`/`admin_rejected_with_refund`.
+   *
+   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'
+   * AND reject_refund_initiated_at IS NULL` (CAS) — returns `true` when the
+   * marker was written, `false` when 0 rows matched. Two reasons for `false`,
+   * both handled by the caller's `!marked` warning: (1) the cycle moved out of
+   * pending in the race window between the validate tx and this write; (2) M1
+   * fix — the marker was ALREADY stamped by a concurrent FIRST writer. The
+   * `IS NULL` predicate makes the stamp first-writer-wins at the DB layer: the
+   * admin-reject caller decides "no marker yet" from a STALE app-level read
+   * (`lockedCycle.rejectRefundInitiatedAt === null`, taken before the lock was
+   * released + the refund ran), so two admins rejecting the same UNMARKED cycle
+   * concurrently could both pass that check; without `IS NULL` the second
+   * overwrote `reject_actor_user_id` to the last writer's (racy attribution —
+   * money-safe, same in-flight refund, but wrong actor). The async refund is
+   * already in flight and money-safe either way, so the caller logs + still
+   * surfaces `refund_pending`. NORMAL first stamp (marker null → true) and
+   * post-clear re-stamp (marker cleared → null → true) are unaffected. RLS
+   * scope comes from the inherited GUC (thread `tx` from `runInTenant`).
+   */
+  markRejectRefundInitiatedInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly initiatedAt: string;
+      readonly refundId: string;
+      readonly actorUserId: string;
+    },
+  ): Promise<boolean>;
+
+  /**
+   * F8-RP follow-up (migration 0243) — clear the async reject-with-refund
+   * marker. Called by the reconcile-pending cron when the marked refund
+   * settled `failed` (Stripe failed/canceled): the async refund never
+   * returned the money, so the cycle MUST NOT converge to `cancelled`. The
+   * cron clears the marker (reverting the cycle to an ordinary
+   * `pending_admin_reactivation` row the admin re-handles via the pending
+   * queue — the sync reject path's own refund-failure treatment) + emits an
+   * alerting metric.
+   *
+   * GUARDED UPDATE `WHERE cycle_id = ? AND status = 'pending_admin_reactivation'
+   * AND reject_refund_initiated_at IS NOT NULL AND reject_refund_id = ?` —
+   * idempotent (`false` when 0 rows matched: cycle moved on, or the marker was
+   * already cleared). Thread `tx` from `runInTenant`.
+   *
+   * Finding 5 (F8-RP-2 review): the `expectedRefundId` guard makes the clear a
+   * CAS on the SPECIFIC refund the caller resolved OUTSIDE the lock (R1). If a
+   * concurrent admin re-reject overwrote the marker with a fresh refund (R2) in
+   * the caller's read→clear window, the clear matches 0 rows (no-op, `false`)
+   * instead of wiping R2's live marker — so R2's own settlement still converges
+   * the cycle rather than the cycle being silently unmarked → lapsed.
+   */
+  clearRejectRefundMarkerInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedRefundId: string,
+  ): Promise<boolean>;
+
+  /**
    * T115a Phase 5 wave K24 — eligibility cursor for the daily
    * `lapseCyclesOnGraceExpiry` cron (FR-004 + AS3 closed-reason
    * differentiation). Returns cycles still in `awaiting_payment`

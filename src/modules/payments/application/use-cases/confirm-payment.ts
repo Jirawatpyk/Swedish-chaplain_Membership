@@ -15,7 +15,10 @@
  *      `auto_refunded` outcome.
  *   4. canTransition(payment.status, 'succeeded'):
  *      - terminal state: this is a Stripe retry of a row we already
- *        advanced. Return `already_succeeded` (no-op, NOT an error).
+ *        advanced. Return `already_succeeded` (no-op, NOT an error) —
+ *        EXCEPT terminal `failed` + a genuine late-captured charge (A.15 /
+ *        bug #8 resume-race): reconcile in Phase B — auto-refund the
+ *        captured funds + forensic audit, leaving the row `failed` (F-9).
  *      - illegal from pending → err (unexpected state).
  *   5. enforceOneSucceededPerInvoice(siblingStatuses) — 1-per-invoice
  *      invariant. Violation → err.
@@ -250,6 +253,19 @@ interface StalePending {
 }
 
 /**
+ * A.15 (#8 resume-race) — Phase-A sentinel for the `failed → succeeded`
+ * late-charge reconcile. Captured inside the withTx when the locked row is
+ * terminal `failed` and a `payment_intent.succeeded` arrived; the external
+ * `retrievePaymentIntent` + `createRefund` are deferred to Phase B (outside
+ * the row lock), mirroring the A.13 stale-refund split. Only ONE of
+ * `stalePending` / `lateChargePending` is ever non-null (the stale-invoice
+ * check at Step 3 returns before the Step-4 transition check).
+ */
+interface LateChargePending {
+  readonly payment: Payment;
+}
+
+/**
  * F5R3 SIMPLIFY-H5 (2026-05-16) — auto-refund cause derivation.
  *
  * Extracted from a 35-line inline IIFE (with v8-ignore overhead +
@@ -303,6 +319,12 @@ async function confirmPaymentBody(
   // sentinel so the surrounding code runs Stripe + Phase B OUTSIDE the
   // tx.
   let stalePending: StalePending | null = null;
+
+  // A.15 (#8) — captured by closure inside withTx when the locked row is
+  // terminal `failed` and a genuine `payment_intent.succeeded` arrived; the
+  // late-charge auto-refund (retrieve + createRefund + marker) runs in
+  // Phase B OUTSIDE the tx (mirrors `stalePending`).
+  let lateChargePending: LateChargePending | null = null;
 
   const phaseA = await deps.paymentsRepo.withTx(async (tx) => {
     // R4 polish (M1): the `markProcessedIfPresent(deps, input, tx)` triple
@@ -520,6 +542,29 @@ async function confirmPaymentBody(
       // no-op ok (reliability F-01 — DO NOT return err or route 5xx-s
       // back at Stripe triggering a retry storm).
       if (transition.error.kind === 'terminal_state') {
+        // A.15 (#8 resume-race) — the ONE terminal state that must NOT be a
+        // silent no-op: a payment row that committed `failed` (Stripe
+        // `payment_intent.payment_failed`) then received a LATE
+        // `payment_intent.succeeded`. If Stripe genuinely CAPTURED the money
+        // (confirmed via `retrievePaymentIntent` in Phase B), leaving the
+        // invoice unpaid while the customer was charged is the bug. Capture
+        // the Phase-A sentinel + return early (NO markProcessed here — Phase
+        // B folds it in after the auto-refund, mirroring `stalePending`).
+        // Trigger is `failed`-ONLY: `succeeded` never reaches this branch
+        // (`succeeded → succeeded` is `illegal_transition`, not
+        // `terminal_state`); `canceled`/`refunded`/`auto_refunded` fall
+        // through to the untouched no-op below (architect F-9 scope: #8 is
+        // strictly the terminal-`failed` late-charge case).
+        if (payment.status === 'failed') {
+          lateChargePending = { payment };
+          // Sentinel return — the surrounding code reads `lateChargePending`
+          // and computes the real outcome in Phase B; this value is ignored
+          // when `lateChargePending` is non-null.
+          return ok<ConfirmPaymentOutcome>({
+            kind: 'auto_refunded_stale_invoice',
+            invoiceId: payment.invoiceId,
+          });
+        }
         // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
         await markProcessed();
         return ok<ConfirmPaymentOutcome>({
@@ -891,21 +936,6 @@ async function confirmPaymentBody(
       });
     }
 
-    // Audit on `null` tx — independent commit (R3 I-6 design).
-    //
-    // R3 H3-1 known operational artifact (2026-04-28): if the process
-    // crashes BETWEEN this audit emit committing and Phase B's
-    // markProcessed committing, the next Stripe webhook retry will
-    // re-enter Phase A → find invoice still stale → call Stripe with
-    // same idempotency key (`auto-refund-${payment.id}` — returns SAME
-    // refund) → re-emit this audit. Result: TWO audit rows for one
-    // logical refund, both with identical `processor_refund_id`.
-    // Operational dedup: queries that aggregate refund forensics MUST
-    // group by `payload->>'processor_refund_id'` (canonical dedup key).
-    // The trade-off accepts duplicate audit rows in exchange for
-    // forensic survival across Phase B rollback — no financial loss
-    // because Stripe idempotency-key prevents double refund.
-    //
     // R3 CRIT-A (2026-04-28): when cause is `invoice_already_paid`
     // (admin marked the invoice paid manually while a member's online
     // payment was in-flight), emit the dedicated
@@ -917,56 +947,414 @@ async function confirmPaymentBody(
       cause === 'invoice_already_paid'
         ? ('payment_auto_refunded_concurrent_manual_mark' as const)
         : ('payment_auto_refunded_stale_invoice' as const);
-    await deps.audit.emit(null, {
-      tenantId: input.tenantId,
-      requestId: input.requestId,
-      eventType: auditEventType,
-      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-      /* v8 ignore next -- defensive nullish coalesce; invoiceStatus always defined on this path */
-      summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
-      payload: {
-        payment_id: payment.id,
-        invoice_id: payment.invoiceId,
-        refunded_amount_satang: payment.amountSatang.toString(),
-        cause,
-        processor_refund_id: refund.value.id,
-      },
-      retentionYears: retentionFor(auditEventType),
-    });
 
-    // R3 H3-2 (2026-04-28): Phase B markProcessedIfPresent inside
-    // try/catch — if it throws (DB outage), the next Stripe webhook
-    // retry re-runs Phase A → finds invoice still stale → calls
-    // Stripe with same idempotency key → returns the same refund →
-    // audit emits a SECOND time → double-emission. We ALSO defensively
-    // log the error so ops have a forensic trail; the sweep cron is
-    // the recovery path.
-    // F5R1-E15 — metric INSIDE the try block so a Phase B failure
-    // does NOT bump it (and the Stripe retry that recovers Phase B
-    // WILL bump it cleanly on the next attempt). Pre-fix the metric
-    // was outside, so chronic mid-flight crashes over-counted the
-    // auto-refund rate and triggered false-alert fatigue. Trade-off
-    // accepted: under-count by 1 on Phase B failure (recovered next
-    // retry) vs. over-count on every retry (false alarm).
+    // Round-2 review fix (MED — #1 status discrimination, parity with
+    // issueRefund): `createRefund` returned ok, but the Refund may have settled
+    // `failed`/`canceled` SYNCHRONOUSLY at creation — the money was NOT
+    // returned. The optimistic `auto_refunded` flip + init money-trail below
+    // match the async-pending path (which also flips before the outcome is
+    // known), but a synchronously-failed refund has NO reliable follow-up
+    // webhook, so we must raise the manual-reconcile forensic + page metric
+    // NOW rather than waiting on one that may never arrive.
+    const refundFailedAtCreation =
+      refund.value.status === 'failed' || refund.value.status === 'canceled';
+
+    // A.13 (#3 / CRITICAL-2) — terminalise the stuck-pending payment in
+    // ONE tx: flip `pending → auto_refunded` + stamp the durable marker
+    // (`re_…` id) + emit the money-trail audit + markProcessed, all
+    // atomic. Pre-fix the row stayed `pending` FOREVER (stuck) and the
+    // marker was never written, so a later `charge.refund.updated`
+    // fired a FALSE `out_of_band_refund_detected` alert (A.11 recognises
+    // the marker via `findAutoRefundByProcessorRefundId` instead).
+    //
+    // `completed_at` = the Stripe event time (migration 0033 CHECK
+    // `payments_completed_at_iff_not_pending` requires it on any
+    // non-pending status). Card metadata is untouched — migration 0240
+    // relaxed the card CHECK to allow `card + auto_refunded + NULL`.
+    //
+    // Idempotency: the Stripe idempotency key (`auto-refund-${payment.id}`)
+    // returns the SAME refund on retry, and `markProcessed` in THIS tx
+    // means a redelivery is caught at the `processor_events` idempotency
+    // layer BEFORE re-entering confirmPayment — so exactly ONE audit row
+    // + ONE flip land. This eliminates the pre-A.13 split-tx window (audit
+    // on null-tx committed, markProcessed in a separate tx) that produced
+    // duplicate audit rows on a mid-flight crash (old R3 H3-1 artefact).
+    const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
     try {
+      await deps.paymentsRepo.withTx(async (tx) => {
+        // Guarded flip (`WHERE status='pending'` — expectedCurrentStatus
+        // semantics). `null` → a concurrent writer (e.g. member cancel)
+        // terminalised the row between Phase A's lock release and here.
+        const flipped = await deps.paymentsRepo.markAutoRefunded(tx, {
+          paymentId: payment.id,
+          tenantId: input.tenantId,
+          processorRefundId: refund.value.id,
+          completedAt,
+        });
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: auditEventType,
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          /* v8 ignore next -- defensive nullish coalesce; invoiceStatus always defined on this path */
+          summary: `Auto-refunded payment ${payment.id} — invoice not payable (${invoiceStatus ?? 'unknown'})`,
+          payload: {
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+            refunded_amount_satang: payment.amountSatang.toString(),
+            cause,
+            processor_refund_id: refund.value.id,
+          },
+          retentionYears: retentionFor(auditEventType),
+        });
+        if (refundFailedAtCreation) {
+          // Money-not-returned forensic — the SAME event process-refund-updated
+          // emits when a pending auto-refund later settles failed via webhook,
+          // so the admin auto-refund-failed alert + "mark reconciled" resolve
+          // surface (findStaleInvoiceAutoRefund: init-event AND failure-event)
+          // fires here too. 10y retention (RD §87 / GDPR 6(1)(c)).
+          await deps.audit.emit(tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId,
+            eventType: 'auto_refund_failed_needs_manual_reconcile',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Auto-refund for payment ${payment.id} settled ${refund.value.status} at creation — money NOT returned; manual reconciliation required`,
+            payload: {
+              payment_id: payment.id,
+              invoice_id: payment.invoiceId,
+              auto_refund_processor_refund_id: refund.value.id,
+              refund_status: refund.value.status,
+              amount_satang: payment.amountSatang.toString(),
+              runbook_url: 'docs/runbooks/out-of-band-refund.md',
+            },
+            retentionYears: retentionFor(
+              'auto_refund_failed_needs_manual_reconcile',
+            ),
+          });
+        }
+        await markProcessedIfPresent(deps, input, tx);
+        if (flipped === null) {
+          // `markAutoRefunded`'s `status='pending'` guard matched ZERO rows —
+          // a concurrent writer terminalised the row off `pending`, OR the
+          // Phase-A-locked row was ALREADY terminal `failed`. BOTH sub-cases
+          // now stamp the SAME status-agnostic recognition marker (guard only
+          // on `auto_refund_processor_refund_id IS NULL`) so the auto-refund's
+          // own later `charge.refund.updated` / `charge.refunded` is
+          // RECOGNISED via `findAutoRefundByProcessorRefundId`
+          // (A.11 `auto_refund_recognized`) instead of firing a FALSE
+          // `out_of_band_refund_detected` on EITHER webhook. The refund itself
+          // is always correct; the marker only removes the false-OOB noise.
+          // The two log keys are kept distinct for on-call forensics; the
+          // branches are discriminated by the Phase-A-locked `payment.status`
+          // (stable for a terminal row — no writer moves `failed` back to
+          // `pending`).
+          if (payment.status === 'failed') {
+            // Sub-case (ii) — the locked row was ALREADY terminal `failed`. A
+            // late captured charge on a NON-payable invoice routes through
+            // Step 3 (stale-invoice), which runs BEFORE the Step 4 transition
+            // check and does NOT inspect `payment.status`, so `markAutoRefunded`
+            // (guard `status='pending'`) could never match here. Stamp the A.15
+            // marker (guard `auto_refund_processor_refund_id IS NULL`; F-9 —
+            // status UNTOUCHED).
+            const marked = await deps.paymentsRepo.attachAutoRefundMarkerIfAbsent(
+              tx,
+              {
+                paymentId: payment.id,
+                tenantId: input.tenantId,
+                processorRefundId: refund.value.id,
+              },
+            );
+            if (marked === null) {
+              // The marker was already stamped (Stripe retry idempotency; the
+              // partial-unique index is the DB backstop). The Stripe refund DID
+              // happen; the audit above is the durable money-trail.
+              /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the late-charge marker + Phase B siblings). */
+              deps.logger?.warn('confirm_payment.auto_refund_marker_on_failed_guard_miss', {
+                tenantId: input.tenantId,
+                paymentId: payment.id,
+                processorRefundId: refund.value.id,
+              });
+            }
+          } else {
+            // Sub-case (i) — concurrent-manual-mark (runbook §1.1, now CLOSED):
+            // the row was `pending` at the Phase-A lock but a concurrent writer
+            // terminalised it to a DIFFERENT status (e.g. an admin mark-paid
+            // flip, a member cancel, or a late `payment_intent.succeeded`)
+            // between Phase A's lock release and here. Stamp the SAME
+            // status-agnostic marker so the auto-refund is recognised on both
+            // later webhooks — symmetric to sub-case (ii). Pre-fix this branch
+            // was log-only, so no marker was stamped and BOTH webhooks raised a
+            // false `out_of_band_refund_detected`. The Stripe refund DID happen;
+            // the audit above is the durable money-trail.
+            const marked = await deps.paymentsRepo.attachAutoRefundMarkerIfAbsent(tx, {
+              paymentId: payment.id,
+              tenantId: input.tenantId,
+              processorRefundId: refund.value.id,
+            });
+            if (marked === null) {
+              // The marker was already stamped (Stripe retry idempotency; the
+              // partial-unique index is the DB backstop). The Stripe refund DID
+              // happen; the audit above is the durable money-trail.
+              /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the sub-case (ii) + Phase B siblings). */
+              deps.logger?.warn('confirm_payment.auto_refund_flip_guard_miss', {
+                tenantId: input.tenantId,
+                paymentId: payment.id,
+                processorRefundId: refund.value.id,
+              });
+            }
+          }
+        }
+      });
+      // F5R1-E15 — metric AFTER the tx commits so a Phase B failure does
+      // NOT bump it (the Stripe retry that recovers WILL bump it cleanly).
+      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
+      if (refundFailedAtCreation) {
+        // Page ops on the money-not-returned path (mirrors process-refund-
+        // updated's failed-webhook metric). AFTER commit so a Phase B failure
+        // does not over-count; a Stripe retry re-runs cleanly.
+        paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+      }
+      /* v8 ignore start — best-effort Phase B catch; rare DB-outage
+       * race window. Recovery is automatic via Stripe retry idempotency
+       * key (nothing committed → Phase A re-runs against the still-pending
+       * row → same refund → this tx re-attempts cleanly). */
+    } catch (phaseBErr) {
+      // F5R3 CR-6 (2026-05-16) — bump dedicated counter + structured log
+      // so chronic Phase B failures surface to alert rules (pino rolls
+      // off in 30 days). Recovery is automatic via Stripe retry
+      // idempotency.
+      paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
+      deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
+        tenantId: input.tenantId,
+        paymentId: payment.id,
+        errKind: phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',
+        recovery: 'awaiting_stripe_retry_idempotency',
+      });
+      void phaseBErr;
+    }
+    /* v8 ignore stop */
+
+    return ok<ConfirmPaymentOutcome>({
+      kind: 'auto_refunded_stale_invoice',
+      invoiceId: payment.invoiceId,
+    });
+  }
+
+  // A.15 (#8 resume-race) — Phase B: `failed → succeeded` late-charge
+  // reconcile. Runs OUTSIDE the Phase-A withTx so the Stripe retrieve +
+  // createRefund calls (10s SDK timeout each) do not hold the payment-row
+  // FOR UPDATE lock (mirrors the stale-refund split above). TS narrows the
+  // captured-let to `never` after the closure, so re-bind through a cast.
+  const lateChargeFinal = lateChargePending as LateChargePending | null;
+  if (lateChargeFinal !== null) {
+    const { payment } = lateChargeFinal;
+
+    // Confirm Stripe ACTUALLY captured the money before refunding. PCI
+    // SAQ-A: the charge id enters the trust boundary through this single
+    // gateway call, never from the webhook event payload.
+    const retrieved = await deps.processorGateway.retrievePaymentIntent(
+      input.paymentIntentId,
+      settings.processorAccountId,
+    );
+    if (!retrieved.ok) {
+      // Mirror Step 6: forensic trail + let Stripe retry. Nothing was
+      // committed for this row in Phase A (sentinel-only), so the row is
+      // still `failed`; the emit is best-effort on `null` tx.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_processor_retrieve_failed',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `retrievePaymentIntent failed during failed→succeeded reconcile of ${input.paymentIntentId}`,
+        payload: {
+          payment_intent_id: input.paymentIntentId,
+          payment_id: payment.id,
+          processor_error_kind: retrieved.error.kind,
+        },
+        retentionYears: retentionFor('payment_processor_retrieve_failed'),
+      });
+      return err<ConfirmPaymentError>({
+        code: 'processor_unavailable',
+        reason: retrieved.error.kind,
+      });
+    }
+
+    // Anomalous: a `payment_intent.succeeded` with NO captured charge. There
+    // is nothing to refund; do NOT invent one. Ack (markProcessed) so Stripe
+    // stops retrying, and warn LOUDLY — a succeeded event without a charge is
+    // a Stripe-state anomaly ops should see (sub-decision 2).
+    if (retrieved.value.latestChargeId === null) {
+      deps.logger?.warn('confirm_payment.late_charge_no_captured_charge', {
+        tenantId: input.tenantId,
+        paymentId: payment.id,
+      });
       await deps.paymentsRepo.withTx(async (tx) => {
         await markProcessedIfPresent(deps, input, tx);
       });
-      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
-      /* v8 ignore start — best-effort Phase B catch; rare DB-outage
-       * race window. Recovery is automatic via Stripe retry idempotency
-       * key. */
+      return ok<ConfirmPaymentOutcome>({
+        kind: 'already_succeeded',
+        invoiceId: payment.invoiceId,
+      });
+    }
+
+    // Auto-refund the captured funds (reuse the A.13 Stripe path). Distinct
+    // idempotency namespace `late-charge-refund-` so a Stripe retry dedupes
+    // to the SAME refund AND cannot collide with the stale path's
+    // `auto-refund-` key for the same payment id.
+    const refund = await deps.processorGateway.createRefund({
+      paymentIntentId: input.paymentIntentId,
+      metadata: {
+        invoiceId: payment.invoiceId,
+        tenantId: input.tenantId,
+        paymentId: payment.id,
+        cause: 'payment_terminal_failed_late_charge',
+      },
+      idempotencyKey: `late-charge-refund-${payment.id}`,
+      stripeAccount: settings.processorAccountId,
+    });
+    if (!refund.ok) {
+      // Mirror the A.13 give-up: bound Stripe's retry storm. If the event is
+      // already aged past 48h we are in an extended outage — 200-ack + a
+      // give-up forensic so Stripe drains; operator reconciles via runbook.
+      // The customer stays charged; the row is still `failed`.
+      const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+      const eventAgeSeconds = nowSeconds - input.eventCreatedAtUnixSeconds;
+      const LATE_CHARGE_REFUND_GIVE_UP_SECONDS = 48 * 60 * 60;
+      if (eventAgeSeconds > LATE_CHARGE_REFUND_GIVE_UP_SECONDS) {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'out_of_band_refund_detected',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Auto-refund giving up after ${Math.floor(eventAgeSeconds / 3600)}h — late-charge refund still failing on event ${input.processorEventId ?? 'unknown'} for terminal-failed payment ${payment.id}; admin must reconcile via Stripe Dashboard`,
+          payload: {
+            processor_refund_id: input.processorEventId ?? `event-${payment.id}`,
+            processor_charge_id: retrieved.value.latestChargeId,
+            amount_satang: payment.amountSatang.toString(),
+            runbook_url: 'docs/runbooks/out-of-band-refund.md',
+          },
+          retentionYears: retentionFor('out_of_band_refund_detected'),
+        });
+        try {
+          await deps.paymentsRepo.withTx(async (tx) => {
+            await markProcessedIfPresent(deps, input, tx);
+          });
+          /* v8 ignore start — Phase B markProcessed catch; rare DB-outage
+           * race after the 200-ack decision. Mirrors the stale give-up
+           * sibling. */
+        } catch (phaseBErr) {
+          paymentsMetrics.confirmPaymentGiveUpPhaseBMarkProcessedFailed();
+          deps.logger?.warn(
+            'confirm_payment.late_charge_give_up_phase_b_mark_processed_failed',
+            {
+              paymentId: payment.id,
+              errKind:
+                phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',
+            },
+          );
+        }
+        /* v8 ignore stop */
+        paymentsMetrics.autoRefundGivenUpCount(input.tenantId);
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'auto_refund_given_up',
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+        });
+      }
+      return err<ConfirmPaymentError>({
+        code: 'processor_unavailable',
+        reason: refund.error.kind,
+      });
+    }
+
+    // Round-2 review fix (MED — #1 status discrimination): Stripe accepted the
+    // refund, but it may have settled `failed`/`canceled` synchronously (money
+    // NOT returned). Same discipline as the stale-invoice path above.
+    const lateChargeRefundFailedAtCreation =
+      refund.value.status === 'failed' || refund.value.status === 'canceled';
+
+    // Stripe accepted the refund. In ONE tx: durably stamp the `re_…` id on
+    // the STILL-`failed` row (RR-6 recognition marker; F-9 — status NOT
+    // changed) + emit the 10y forensic money-trail + markProcessed.
+    try {
+      await deps.paymentsRepo.withTx(async (tx) => {
+        const marked = await deps.paymentsRepo.attachAutoRefundMarkerIfAbsent(tx, {
+          paymentId: payment.id,
+          tenantId: input.tenantId,
+          processorRefundId: refund.value.id,
+        });
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_auto_refunded_stale_invoice',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Auto-refunded late captured charge on terminal-failed payment ${payment.id} — invoice still payable; row left failed (architect F-9)`,
+          payload: {
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+            refunded_amount_satang: payment.amountSatang.toString(),
+            cause: 'payment_terminal_failed_late_charge',
+            processor_refund_id: refund.value.id,
+          },
+          retentionYears: retentionFor('payment_auto_refunded_stale_invoice'),
+        });
+        if (lateChargeRefundFailedAtCreation) {
+          // Money-not-returned forensic — surfaces the admin manual-reconcile
+          // alert immediately (no reliable follow-up webhook for a
+          // synchronously-failed refund). Same event as the webhook path.
+          await deps.audit.emit(tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId,
+            eventType: 'auto_refund_failed_needs_manual_reconcile',
+            actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+            summary: `Late-charge auto-refund for payment ${payment.id} settled ${refund.value.status} at creation — money NOT returned; manual reconciliation required`,
+            payload: {
+              payment_id: payment.id,
+              invoice_id: payment.invoiceId,
+              auto_refund_processor_refund_id: refund.value.id,
+              refund_status: refund.value.status,
+              amount_satang: payment.amountSatang.toString(),
+              runbook_url: 'docs/runbooks/out-of-band-refund.md',
+            },
+            retentionYears: retentionFor(
+              'auto_refund_failed_needs_manual_reconcile',
+            ),
+          });
+        }
+        await markProcessedIfPresent(deps, input, tx);
+        if (marked === null) {
+          // Guard miss: the marker was already stamped (Stripe retry
+          // idempotency; the partial-unique index is the DB backstop). The
+          // status-agnostic guard (`... IS NULL` only) means a concurrent
+          // status change no longer causes a miss — the marker lands
+          // regardless. The Stripe refund DID happen; the audit above is the
+          // durable money-trail. Warn so ops can confirm the refund via the
+          // runbook.
+          /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the stale Phase B siblings). */
+          deps.logger?.warn('confirm_payment.late_charge_marker_guard_miss', {
+            tenantId: input.tenantId,
+            paymentId: payment.id,
+            processorRefundId: refund.value.id,
+          });
+        }
+      });
+      // Metric AFTER the tx commits so a Phase B failure does NOT bump it
+      // (the Stripe retry that recovers WILL bump it cleanly).
+      paymentsMetrics.lateChargeAutoRefundedCount(input.tenantId);
+      if (lateChargeRefundFailedAtCreation) {
+        // Page ops on the money-not-returned path (mirrors the webhook metric).
+        paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
+      }
+      /* v8 ignore start — best-effort Phase B catch; rare DB-outage race.
+       * Recovery is automatic via Stripe retry idempotency (nothing committed
+       * → Phase A re-runs against the still-`failed` row → same refund id →
+       * this tx re-attempts cleanly). */
     } catch (phaseBErr) {
-      // Best-effort log — known race window. Recovery is automatic
-      // via Stripe retry idempotency. Structured-log so ops has a
-      // forensic trail before the retry rather than silence.
-      // F5R3 CR-6 (2026-05-16) — bump dedicated counter parallel to
-      // the give-up sibling at line ~737. Pre-fix only the optional
-      // logger.warn fired (undefined logger in tests = silent), and
-      // pino logs roll off in 30 days — chronic Phase B failures
-      // were invisible to alert rules.
-      paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
-      deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
+      // Distinct late-charge (#8) counter — mirrors the distinct SUCCESS-path
+      // metric `lateChargeAutoRefundedCount` so the two Phase B failure paths
+      // (stale-invoice vs late-charge) are not conflated on SRE dashboards.
+      paymentsMetrics.confirmPaymentLateChargePhaseBMarkFailed();
+      deps.logger?.warn('confirm_payment.late_charge_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,
         errKind: phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',

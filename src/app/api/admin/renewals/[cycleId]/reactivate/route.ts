@@ -22,6 +22,8 @@
  *   - invalid_input   → 400
  *   - cycle_not_found → 404
  *   - cycle_not_pending → 409 (+ current_status)
+ *   - reject_refund_in_progress → 409 (UX-A Bug 1: a prior admin reject is
+ *     refunding this cycle asynchronously — approving is refused)
  *   - server_error    → 500
  * Success 200 `{ cycle_status, closed_reason, closed_at }`.
  */
@@ -108,6 +110,15 @@ export async function POST(
             code: 'cycle_not_pending',
             correlationId: ctx.correlationId,
             details: { current_status: result.error.currentStatus },
+          });
+        case 'reject_refund_in_progress':
+          // UX-A Bug 1: the cycle is still pending but already rejected with an
+          // async refund in flight — 409 Conflict (the decision is made; the
+          // reconcile cron converges it to cancelled once the refund settles).
+          return errorResponse({
+            status: 409,
+            code: 'reject_refund_in_progress',
+            correlationId: ctx.correlationId,
           });
         case 'server_error':
           return errorResponse({

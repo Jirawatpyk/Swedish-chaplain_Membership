@@ -29,6 +29,7 @@ import type { HandleCancelEventDeps } from '../application/use-cases/handle-canc
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
+import type { ResolveFailedAutoRefundDeps } from '../application/use-cases/resolve-failed-auto-refund';
 
 import { systemClock } from '../application/ports/clock-port';
 import { asPaymentId, type PaymentId } from '../domain/payment';
@@ -299,6 +300,22 @@ export function makeIssueRefundDeps(tenantId: string): IssueRefundDeps {
 }
 
 // ---------------------------------------------------------------------------
+// CF-2 — resolveFailedAutoRefund composition (admin "mark as reconciled").
+//
+// Thin: the tenant-bound payments repo (whose `findFailedAutoRefundForInvoice`
+// + `withTx` the use-case uses) + the F5 audit adapter (emits the append-only
+// `auto_refund_reconciled` inside the caller's tenant-scoped tx).
+// ---------------------------------------------------------------------------
+export function makeResolveFailedAutoRefundDeps(
+  tenantId: string,
+): ResolveFailedAutoRefundDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    audit: f5AuditAdapter,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // T130a — sweepStalePendingRefunds composition.
 // ---------------------------------------------------------------------------
 import type { SweepStalePendingRefundsDeps } from '../application/use-cases/sweep-stale-pending-refunds';
@@ -309,6 +326,14 @@ export function makeSweepStalePendingRefundsDeps(
   return {
     refundsRepo: makeDrizzleRefundsRepo(tenantId),
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+    // A.14 — Stripe-aware sweep: resolve the tenant's Connect account +
+    // read the real refund status from Stripe, then finalise via the F4
+    // credit-note bridge (idempotent) instead of blind-failing. The cron
+    // route runs in a request context so the settings repo's
+    // `unstable_cache` read is valid here.
+    tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
+    processorGateway: stripeGateway,
+    invoicingBridge,
     audit: f5AuditAdapter,
     clock: systemClock,
     // R2 M-2 (2026-04-27): logger threaded through DI per Constitution

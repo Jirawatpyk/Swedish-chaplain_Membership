@@ -110,6 +110,100 @@ export interface PaymentsRepo {
   ): Promise<Payment | null>;
 
   /**
+   * A.13 (#3 / CRITICAL-2) — terminalise a stuck-pending payment as
+   * `auto_refunded` + durably record the Stripe refund id, in ONE guarded
+   * UPDATE.
+   *
+   * Used by the confirm-payment stale-invoice auto-refund tail (Phase B):
+   * after Stripe accepts the FULL refund of a payment whose invoice is no
+   * longer payable (voided / credited / paid out-of-band), this write
+   *   1. flips the row `pending → auto_refunded` (a TERMINAL state — A.4;
+   *      NOT in the succeeded lineage, so `one_succeeded_per_invoice` is
+   *      untouched and the member may retry payment on the same invoice);
+   *   2. stamps `auto_refund_processor_refund_id = processorRefundId` (the
+   *      `re_…` id) so a later `charge.refund.updated` webhook recognises
+   *      the auto-refund via `findAutoRefundByProcessorRefundId` (A.6/A.11)
+   *      instead of firing a false out-of-band alert;
+   *   3. sets `completed_at` — migration 0033's CHECK
+   *      `payments_completed_at_iff_not_pending` requires it on any
+   *      non-pending status (the flip is rejected by live Postgres without
+   *      it).
+   *
+   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND status = 'pending'`
+   * (`expectedCurrentStatus='pending'` semantics). Zero rows matched — a
+   * concurrent writer already terminalised the row between the caller's
+   * Phase-A lock release and this write — returns `null` (mirrors
+   * `updateStatus`'s `expectedCurrentStatus` null-return contract; the
+   * caller decides the recovery path). Card metadata is left untouched:
+   * migration 0240 relaxed `payments_card_metadata_iff_card` to permit
+   * `method='card' + status='auto_refunded' + NULL card metadata`, so a
+   * stuck-pending card payment (which never captured `card_*`) terminalises
+   * without a Stripe re-fetch.
+   *
+   * Runs inside the caller's webhook-dispatch tx (thread `tx`) so the flip
+   * + the `payment_auto_refunded_*` audit + `markProcessed` commit
+   * atomically.
+   */
+  markAutoRefunded(
+    tx: unknown,
+    input: {
+      readonly paymentId: PaymentId;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+      readonly completedAt: Date;
+    },
+  ): Promise<Payment | null>;
+
+  /**
+   * A.15 (#8 resume-race) — durably stamp `auto_refund_processor_refund_id`
+   * on a payment row WITHOUT changing its status, guarding ONLY on the marker
+   * being absent (status-agnostic; architect decision F-9: NO
+   * `failed → auto_refunded` edge, and by extension no forced edge for ANY
+   * concurrently-terminalised status).
+   *
+   * Two callers, both in the confirm-payment auto-refund tail (Phase B), both
+   * needing to record the `re_…` id on a NON-`pending` row that
+   * `markAutoRefunded` (guard `status='pending'`) could not flip, so the
+   * auto-refund's own later `charge.refund.updated` / `charge.refunded`
+   * webhook is recognised via `findAutoRefundByProcessorRefundId` (A.6/A.11)
+   * instead of firing a false out-of-band alert (RR-6):
+   *   - sub-case (ii) — the Phase-A-locked row was ALREADY terminal `failed`
+   *     (late captured charge routed through the stale Step-3 path), and the
+   *     `failed → succeeded` late-charge reconcile tail;
+   *   - sub-case (i) — the row was `pending` at Phase A but a concurrent
+   *     writer terminalised it to a DIFFERENT status (e.g. an admin mark-paid
+   *     flip / a late `payment_intent.succeeded`) in the window between Phase
+   *     A's lock release and this write.
+   *
+   * Guarded UPDATE `WHERE id = ? AND tenant_id = ? AND
+   * auto_refund_processor_refund_id IS NULL` (status-preserving — `status` is
+   * NOT touched, so F-9 holds; `completed_at` is untouched — every terminal
+   * status the callers reach here already satisfies migration 0033's
+   * `payments_completed_at_iff_not_pending`). The `IS NULL` predicate makes a
+   * Stripe retry idempotent (the same `re_…` id from the idempotency key does
+   * not overwrite an existing marker; the partial-unique index
+   * `payments_auto_refund_processor_refund_id_uniq` is the DB backstop).
+   *
+   * Zero rows matched — a marker was already stamped (Stripe retry / a prior
+   * attempt) — returns `null` (mirrors `markAutoRefunded`'s guard-miss
+   * contract; the caller warns, since the Stripe refund DID happen and the
+   * audit is the durable trail). Migration 0240's CHECKs are status-agnostic
+   * for this column (no CHECK ties `auto_refund_processor_refund_id` to
+   * status), so writing it on any non-`pending` row is valid.
+   *
+   * Runs inside the caller's webhook-dispatch tx (thread `tx`) so the marker
+   * write + the forensic auto-refund audit + `markProcessed` commit atomically.
+   */
+  attachAutoRefundMarkerIfAbsent(
+    tx: unknown,
+    input: {
+      readonly paymentId: PaymentId;
+      readonly tenantId: string;
+      readonly processorRefundId: string;
+    },
+  ): Promise<Payment | null>;
+
+  /**
    * Resume lookup: find the single pending payment for an (invoice, actor)
    * tuple. Returns null when no resumable attempt exists (idempotency key
    * for `POST /api/payments/initiate` resume per payments-api.md § 1).
@@ -180,24 +274,114 @@ export interface PaymentsRepo {
   }>;
 
   /**
-   * H-8 — member-facing refund-notification signal.
+   * H-8 — member-facing refund-notification signal (member-portal
+   * display lookup, keyed by invoiceId).
    *
-   * Returns the latest `payment_auto_refunded_stale_invoice` audit
-   * payload's `processor_refund_id` for `invoiceId`, or null when no
-   * matching audit row exists. The portal invoice detail page renders
-   * a refund-confirmation sub-section + the truncated refund ref so
+   * Returns the latest auto-refund initiation audit payload's
+   * `processor_refund_id` for `invoiceId`, or null when no matching
+   * audit row exists. M1 — BOTH initiation events qualify:
+   * `payment_auto_refunded_stale_invoice` (pending-row path) AND
+   * `payment_auto_refunded_concurrent_manual_mark` (admin marked the
+   * invoice paid while a member payment was in-flight). Both are
+   * emitted from the same confirm-payment.ts block with identical
+   * payload keys. The portal invoice detail page renders a
+   * refund-confirmation sub-section + the truncated refund ref so
    * the member can quote it to their bank. Tenant scoping comes from
    * the factory-bound `ctx` (RLS+FORCE) — caller does not pass tenantId.
+   *
+   * F5 UX D1/D2 — also reports `failed`: whether a
+   * `auto_refund_failed_needs_manual_reconcile` forensic (CRITICAL-2,
+   * emitted by `processRefundUpdated` when Stripe settles the
+   * auto-refund `failed`/`canceled`) exists for this invoice. That
+   * marks the money-NOT-returned outcome. The member banner branches
+   * "refunded" vs "being reconciled" on it (never asserting completion
+   * on a failure); the admin invoice detail renders a destructive
+   * "needs manual reconciliation" alert when it is true. An initiation
+   * marker (`payment_auto_refunded_stale_invoice` OR
+   * `payment_auto_refunded_concurrent_manual_mark`) always exists
+   * whenever `failed` is true, so a non-null return covers both
+   * surfaces regardless of invoice status.
+   *
+   * CF-2 — `failed` is failure-AND-NOT-reconciled: it is true only if the
+   * failure forensic exists AND no `auto_refund_reconciled` event exists for
+   * the invoice. Once an admin acknowledges the manual reconciliation (via
+   * `resolveFailedAutoRefund`), the reconcile event lands and `failed` flips
+   * false, so the persistent admin alert clears + the member banner reverts to
+   * the (now-true) "refunded" copy. Fail-safe: any ambiguity resolves toward
+   * NOT-failed (a reconcile for the invoice always clears it).
    *
    * Authoritative source: `audit_log` (append-only). The F5
    * `refunds.reason` column carries the Stripe enum
    * (`requested_by_customer`) which doesn't disambiguate auto-stale
    * vs manual refunds — the audit row is the only deterministic
    * business-cause signal until a `reason_kind` enum lands (post-MVP).
+   *
+   * PERMANENT — this is the member-portal display lookup and has a
+   * live caller (`src/app/(member)/portal/invoices/[invoiceId]/page.tsx`).
+   * It is a distinct lookup from `findAutoRefundByProcessorRefundId`
+   * below, not a duplicate pending removal: different key (invoiceId
+   * vs processorRefundId) and different purpose (display vs the
+   * reconcile-path money decision). Because it reads the append-only
+   * audit log directly, it also stays the more-complete forensic
+   * source, covering rare cases where the durable
+   * `auto_refund_processor_refund_id` marker was never stamped.
    */
   findStaleInvoiceAutoRefund(
     invoiceId: string,
-  ): Promise<{ readonly processorRefundId: string | null } | null>;
+  ): Promise<{
+    readonly processorRefundId: string | null;
+    readonly failed: boolean;
+  } | null>;
+
+  /**
+   * CF-2 — resolve-path read for `resolveFailedAutoRefund`.
+   *
+   * Returns the latest `auto_refund_failed_needs_manual_reconcile` forensic's
+   * `(payment_id, auto_refund_processor_refund_id)` for `invoiceId`, plus
+   * whether an `auto_refund_reconciled` event already exists for the invoice
+   * (`alreadyReconciled` — the idempotency signal). Returns `null` when NO
+   * failure forensic exists → the use-case refuses (`no_failed_auto_refund`).
+   *
+   * Threads the caller's `tx` (the use-case runs the read + the reconcile emit
+   * inside ONE tenant-scoped tx). Explicit `tenantId` WHERE is defence-in-depth
+   * (RLS+FORCE is the primary backstop) — mirrors
+   * `findAutoRefundByProcessorRefundId`. Fail-safe: if the failure forensic's
+   * id fields are somehow NULL (data corruption), returns `null` rather than
+   * emitting a reconcile with null ids.
+   */
+  findFailedAutoRefundForInvoice(
+    tx: unknown,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<{
+    readonly paymentId: string;
+    readonly processorRefundId: string;
+    readonly alreadyReconciled: boolean;
+  } | null>;
+
+  /**
+   * A.6 — durable auto-refund lookup (migration 0240
+   * `auto_refund_processor_refund_id` column) for the webhook
+   * reconcile path, keyed by `processorRefundId`.
+   *
+   * Reads the payments row carrying
+   * `auto_refund_processor_refund_id = processorRefundId` and returns
+   * its `(paymentId, invoiceId)` — the association the webhook
+   * reconcile path needs to locate the auto-refunded payment/invoice
+   * without depending on append-only `audit_log` JSON payload shape.
+   *
+   * Takes an explicit `tx` so callers can run this inside the same tx
+   * as their other webhook reconciliation reads/writes.
+   *
+   * This is a separate, permanent lookup from `findStaleInvoiceAutoRefund`
+   * above (different key, different purpose — see that method's
+   * docstring) — it is not a replacement that supersedes it.
+   */
+  findAutoRefundByProcessorRefundId(
+    tx: unknown,
+    tenantId: string,
+    processorRefundId: string,
+  ): Promise<{ readonly paymentId: PaymentId; readonly invoiceId: string } | null>;
 }
 
 /**

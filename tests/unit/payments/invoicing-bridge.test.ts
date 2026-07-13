@@ -31,6 +31,9 @@ const memberId = '22222222-2222-2222-2222-222222222222';
 // is hoisted alongside the import.
 const f4Mock = vi.hoisted(() => ({
   getInvoiceForPayment: vi.fn(),
+  // B.1 review Minor#1 — `getInvoiceCreditedTotal` wraps F4's `getInvoice`;
+  // mocked so the throw-path (Neon down) can be exercised.
+  getInvoice: vi.fn(),
   markPaidFromProcessor: vi.fn(),
   issueCreditNoteFromRefund: vi.fn(),
   makeGetInvoiceDeps: vi.fn(() => ({})),
@@ -229,6 +232,171 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     if (!result.ok) {
       expect(result.error.code).toBe('new_flow_bill_requires_flag_on');
     }
+  });
+});
+
+// B.1 review Minor#1 — `getInvoiceCreditedTotal` must return a graceful typed
+// `read_failed` when F4's `getInvoice` THROWS (e.g. Neon down / tx aborted /
+// externalTx tenant-mismatch guard), so the refund pre-flight gets a 502
+// (`f4_preflight_read_error`) instead of the exception escaping Phase A →
+// rollback → a raw 500. Money-safe either way (Stripe never called), but this
+// pins the intended code + observability.
+describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-throw', () => {
+  let metricsSpy: ReturnType<typeof vi.spyOn>;
+  let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    metricsSpy = vi.spyOn(paymentsMetrics, 'f4BridgeUnknownErrorShape');
+    loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    f4Mock.getInvoice.mockReset();
+  });
+
+  afterEach(() => {
+    metricsSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
+  });
+
+  it('returns Result.err({code:"read_failed"}) when F4 getInvoice THROWS (Neon down)', async () => {
+    f4Mock.getInvoice.mockRejectedValueOnce(new Error('neon connection reset'));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('read_failed');
+    }
+    // Observability: dedicated counter + structured error log (no PII / no raw
+    // error message — only the constructor name).
+    expect(metricsSpy).toHaveBeenCalledWith('getInvoiceCreditedTotal_read_threw');
+    expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceCreditedTotal_read_threw');
+    const c = ctx as Record<string, unknown>;
+    expect(c['tenantId']).toBe(tenantId);
+    expect(c['invoiceId']).toBe(invoiceId);
+    expect(c['errKind']).toBe('Error');
+  });
+
+  it('threads externalTx into makeGetInvoiceDeps (Fix#2 — shared connection)', async () => {
+    // A sentinel tx object stands in for the F5 Phase A tx. The bridge must
+    // forward it to `makeGetInvoiceDeps(tenantId, externalTx)` so F4's read
+    // runs on the SAME connection (no nested `runInTenant`).
+    const sentinelTx = Symbol('phase-a-tx');
+    f4Mock.getInvoice.mockResolvedValueOnce(
+      ok({
+        id: invoiceId,
+        total: { satang: 107_000n },
+        creditedTotal: { satang: 53_500n },
+      }),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceCreditedTotal({
+      tenantId,
+      invoiceId,
+      externalTx: sentinelTx,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.totalSatang).toBe(107_000n);
+      expect(result.value.creditedTotalSatang).toBe(53_500n);
+    }
+    // The tx is threaded as the 2nd arg of makeGetInvoiceDeps.
+    expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, sentinelTx);
+  });
+});
+
+// B.2 (tax#5) — `getInvoiceStatus` wraps F4's `getInvoice` and returns the
+// invoice's AUTHORITATIVE post-CN status, narrowed to the credited pair. A
+// non-credited status (data anomaly) OR a read throw surfaces a typed error so
+// the finaliser falls back to its payment-derived projection rather than
+// propagate a wrong tax status.
+describe('invoicingBridge.getInvoiceStatus — F4-authoritative status read', () => {
+  let metricsSpy: ReturnType<typeof vi.spyOn>;
+  let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    metricsSpy = vi.spyOn(paymentsMetrics, 'f4BridgeUnknownErrorShape');
+    loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    f4Mock.getInvoice.mockReset();
+    f4Mock.makeGetInvoiceDeps.mockClear();
+  });
+
+  afterEach(() => {
+    metricsSpy.mockRestore();
+    loggerErrorSpy.mockRestore();
+  });
+
+  it.each(['credited', 'partially_credited'] as const)(
+    'returns ok(%s) when F4 reports that credited status',
+    async (status) => {
+      f4Mock.getInvoice.mockResolvedValueOnce(ok({ id: invoiceId, status }));
+
+      const bridge = await loadBridge();
+      const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(status);
+    },
+  );
+
+  it('threads externalTx into makeGetInvoiceDeps (shared connection — B.1 lesson)', async () => {
+    const sentinelTx = Symbol('finalize-tx');
+    f4Mock.getInvoice.mockResolvedValueOnce(
+      ok({ id: invoiceId, status: 'credited' }),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({
+      tenantId,
+      invoiceId,
+      externalTx: sentinelTx,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, sentinelTx);
+  });
+
+  it('returns err({code:"not_found"}) when F4 getInvoice returns not_found', async () => {
+    f4Mock.getInvoice.mockResolvedValueOnce(err({ code: 'not_found' }));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('not_found');
+  });
+
+  it('returns err({code:"unexpected_status"}) + logs when F4 status is not a credited state', async () => {
+    // Post-CN F4 is always credited/partially_credited; a `paid` here is a data
+    // anomaly the caller must NOT report as a tax status.
+    f4Mock.getInvoice.mockResolvedValueOnce(ok({ id: invoiceId, status: 'paid' }));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('unexpected_status');
+    expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceStatus_unexpected');
+    expect((ctx as Record<string, unknown>)['status']).toBe('paid');
+  });
+
+  it('returns err({code:"read_failed"}) + counter + log when F4 getInvoice THROWS', async () => {
+    f4Mock.getInvoice.mockRejectedValueOnce(new Error('neon connection reset'));
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceStatus({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('read_failed');
+    expect(metricsSpy).toHaveBeenCalledWith('getInvoiceStatus_read_threw');
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceStatus_read_threw');
+    expect((ctx as Record<string, unknown>)['errKind']).toBe('Error');
   });
 });
 

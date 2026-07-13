@@ -85,12 +85,18 @@ function makeDeps(): ProcessWebhookEventDeps {
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(async () => []),
     nextAttemptSeq: vi.fn(),
+    // A.11 — durable auto-refund lookup used by processRefundUpdated when
+    // no in-app refund row matches; default `null` → out-of-band path.
+    findAutoRefundByProcessorRefundId: vi.fn(async () => null),
   };
   const refundsRepo = {
     insert: vi.fn(),
-    updateStatus: vi.fn(),
+    updateStatus: vi.fn(async () => ({})),
     findByProcessorRefundId: vi.fn(async () => null),
     sumSucceededForPayment: vi.fn(),
+    // A.11 — `charge.refund.updated` dispatch (processRefundUpdated) locks
+    // the refund row by processor id; default `null` → out-of-band path.
+    lockForUpdateByProcessorRefundId: vi.fn(async () => null),
     // F5R3 SB-1 (2026-05-16) — webhook recovery now reads succeeded
     // sum to compute parent payment's next status when flipping a
     // pending refund row.
@@ -151,6 +157,15 @@ function makeDeps(): ProcessWebhookEventDeps {
       }),
     ),
     markPaidFromProcessor: vi.fn(async () => ok(undefined)),
+    // A.11 — F4 credit-note bridge used by the shared finaliser on the
+    // `charge.refund.updated(succeeded)` path.
+    issueCreditNoteFromRefund: vi.fn(async () =>
+      ok({ creditNoteId: 'cn_webhook_1', creditNoteNumber: 'CN-2026-0007' }),
+    ),
+    // tax#5 (B.2) — F4-authoritative invoice-status read used by the shared
+    // finaliser on the succeeded path. Present so the real finaliser never
+    // throws if a succeeded reconcile is exercised here.
+    getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
   };
   const audit = { emit: vi.fn(async () => undefined) };
   const clock = {
@@ -331,6 +346,322 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.ok).toBe(true);
   });
 
+  // A.11 — charge.refund.updated dispatch branch (processRefundUpdated).
+  it('charge.refund.updated unknown refund + no auto-refund → processed (out_of_band; emits the redundant forensic audit, no invoiceId)', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_unknown_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // out_of_band carries no invoiceId → the dispatcher omits it.
+    expect('invoiceId' in result.value).toBe(false);
+    // Finding 4 (split ownership) — `charge.refund.updated` emits the
+    // `out_of_band_refund_detected` forensic REDUNDANTLY with `charge.refunded`
+    // so the 10y money-trail survives either handler failing (deduped on read by
+    // processor_refund_id). Only the paging metric stays single-owner on
+    // `charge.refunded`.
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
+    );
+    expect(oobCall).toBeDefined();
+    expect(oobCall![1].payload.processor_refund_id).toBe('re_async_unknown_1');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('charge.refund.updated with an already-terminal refund → processed + forwards invoiceId', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_async_1',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_async_1',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'succeeded',
+      processorRefundId: 're_async_1',
+      failureReasonCode: null,
+      creditNoteId: 'cn_prev',
+      initiatedAt: new Date(),
+      completedAt: new Date(),
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // already_finalized carries invoiceId → dispatcher forwards it for
+    // surgical revalidatePath (mirrors the charge.refunded I3 contract).
+    if (result.value.kind === 'processed') {
+      expect(result.value.invoiceId).toBe('inv_async_1');
+    }
+  });
+
+  it('charge.refund.updated with a bare dataObject (no charge/status/amount) → processed (?? fallbacks)', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_bare_1',
+        type: 'refund',
+        // latestChargeId / refundStatus / amountSatang omitted → the
+        // dispatcher's `?? null` / `?? 0n` fallbacks fire (null status
+        // classifies as pending → out_of_band). Post-Finding 4 the OOB path
+        // DEFERS (log + markProcessed, no audit), so this asserts only the
+        // processed outcome + ack — no "unknown"-charge audit sentinel exists.
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('charge.refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, no fall-through)', async () => {
+    const deps = makeDeps();
+    // Let the step-6 idempotency tx commit, then throw on the DISPATCH tx so
+    // the failure lands in processRefundUpdated's catch → dispatch_threw.
+    rejectSecondTx(deps, new Error('neon reset'));
+    const event = makeEvent({
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_async_boom_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.kind).toBe('dispatch_threw');
+    expect(result.error.eventType).toBe('charge.refund.updated');
+    // detail is the Error class name only (no message — PCI SAQ-A).
+    expect(result.error.detail).toBe('Error');
+  });
+
+  // PR-A follow-up (2026-07-12) — `refund.updated` routes to the SAME
+  // `processRefundUpdated` use-case as (deprecated) `charge.refund.updated`.
+  // Stripe: "`charge.refund.updated` is only sent for refunds with a
+  // corresponding charge; listen to `refund.updated` for updates on all
+  // refunds instead" — so a charge-less async (PromptPay) refund's terminal
+  // settlement arrives via `refund.updated`. These pin the routing +
+  // markProcessed semantics (identical to the charge.refund.updated arm).
+  it('refund.updated unknown refund + no auto-refund → processed (out_of_band; routes to processRefundUpdated, emits the redundant forensic audit)', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_1',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_1',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Routed to processRefundUpdated (NOT the default acknowledged_only branch).
+    expect(result.value.kind).toBe('processed');
+    expect('invoiceId' in result.value).toBe(false);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
+    );
+    expect(oobCall).toBeDefined();
+    expect(oobCall![1].payload.processor_refund_id).toBe('re_async_ru_1');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  it('refund.updated with an already-terminal refund → processed + forwards invoiceId', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_ru_terminal',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_ru_terminal',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'succeeded',
+      processorRefundId: 're_async_ru_2',
+      failureReasonCode: null,
+      creditNoteId: 'cn_prev',
+      initiatedAt: new Date(),
+      completedAt: new Date(),
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_2',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_2',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    if (result.value.kind === 'processed') {
+      expect(result.value.invoiceId).toBe('inv_ru_terminal');
+    }
+  });
+
+  it('refund.updated(failed) on a pending refund → reconciled_failed (routes to the failed branch, no CN)', async () => {
+    const deps = makeDeps();
+    (
+      deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce({
+      id: 'rfd_ru_pending',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_ru_failed',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'pending',
+      processorRefundId: 're_async_ru_3',
+      failureReasonCode: null,
+      creditNoteId: null,
+      initiatedAt: new Date(),
+      completedAt: null,
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    });
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_3',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_3',
+        refundStatus: 'failed',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // NO credit note on a failed refund (no §86/4 receipt was reduced).
+    expect(deps.invoicingBridge.issueCreditNoteFromRefund).not.toHaveBeenCalled();
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(auditCalls.some((c) => c[1].eventType === 'refund_failed')).toBe(true);
+  });
+
+  it('refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, eventType=refund.updated)', async () => {
+    const deps = makeDeps();
+    rejectSecondTx(deps, new Error('neon reset'));
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_async_ru_boom',
+        type: 'refund',
+        latestChargeId: 'ch_async_ru_boom',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(result.error.kind).toBe('dispatch_threw');
+    expect(result.error.eventType).toBe('refund.updated');
+    expect(result.error.detail).toBe('Error');
+  });
+
+  it('CROSS-EVENT idempotency: charge.refund.updated(succeeded) + refund.updated(succeeded) for the SAME refund → credit note issued exactly ONCE', async () => {
+    const deps = makeDeps();
+    const pendingRow = {
+      id: 'rfd_xevent',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId('pmt_1'),
+      invoiceId: 'inv_xevent',
+      amountSatang: asSatang(50_000n),
+      reason: 'requested_by_customer',
+      status: 'pending' as const,
+      processorRefundId: 're_xevent',
+      failureReasonCode: null,
+      creditNoteId: null,
+      initiatedAt: new Date(),
+      completedAt: null,
+      initiatorUserId: 'usr_1',
+      correlationId: 'corr_1',
+    };
+    // Delivery 1 finds the row pending (finalises → 1 CN); delivery 2 finds it
+    // already terminal (the DB flip the 1st delivery committed) → no-op no CN.
+    const lock = deps.refundsRepo.lockForUpdateByProcessorRefundId as ReturnType<typeof vi.fn>;
+    lock
+      .mockResolvedValueOnce(pendingRow)
+      .mockResolvedValueOnce({ ...pendingRow, status: 'succeeded', creditNoteId: 'cn_webhook_1' });
+
+    const dataObject = {
+      id: 're_xevent',
+      type: 'refund' as const,
+      latestChargeId: 'ch_xevent',
+      refundStatus: 'succeeded',
+      amountSatang: asSatang(50_000n),
+    };
+    // Different event ids (Stripe delivers the two channels as distinct events).
+    const first = await processWebhookEvent(
+      deps,
+      makeInput(makeEvent({ id: 'evt_charge_refund_updated', type: 'charge.refund.updated', dataObject })),
+    );
+    const second = await processWebhookEvent(
+      deps,
+      makeInput(makeEvent({ id: 'evt_refund_updated', type: 'refund.updated', dataObject })),
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    // BOTH deliveries route to processRefundUpdated (2nd is NOT the default
+    // acknowledged_only branch) and both forward the invoice id.
+    expect(first.value.kind).toBe('processed');
+    expect(second.value.kind).toBe('processed');
+    if (second.value.kind === 'processed') {
+      expect(second.value.invoiceId).toBe('inv_xevent');
+    }
+    // Exactly ONE credit note across BOTH deliveries: the finaliser's
+    // expectedCurrentStatus='pending' guard makes the 2nd (terminal-row)
+    // delivery an already_finalized no-op, and the F4 CN is idempotent per
+    // (tenant, source_refund_id).
+    expect(deps.invoicingBridge.issueCreditNoteFromRefund).toHaveBeenCalledTimes(1);
+    // markProcessed is per-event-id → both events acknowledged.
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(2);
+  });
+
   it('charge.dispute.created — emits dispute_created audit', async () => {
     const deps = makeDeps();
     const event = makeEvent({
@@ -339,6 +670,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_disputed',
         type: 'dispute',
         disputeId: 'dp_test_1',
+        latestChargeId: 'ch_real_charge_1',
         amountSatang: asSatang(5_350_000n),
       },
     });
@@ -346,6 +678,13 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.ok).toBe(true);
     const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     expect(auditCalls.some((c) => c[1].eventType === 'dispute_created')).toBe(true);
+    // Bug #6 follow-up (Task C.2 review) — the prose `summary` must cite the
+    // real charge id (`latestChargeId`), not the dispute's own `dp_…` id
+    // that `dataObject.id` carries on a dispute event. Mirrors the fix
+    // already applied to the structured `payload.charge_id` field.
+    const disputeCall = auditCalls.find((c) => c[1].eventType === 'dispute_created');
+    expect(disputeCall?.[1].summary).toContain('ch_real_charge_1');
+    expect(disputeCall?.[1].summary).not.toContain('dp_test_1');
   });
 
   it('unknown event type — updateOutcome acknowledged_only, markProcessed, no dispatch', async () => {

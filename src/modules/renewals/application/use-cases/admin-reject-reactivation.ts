@@ -79,13 +79,39 @@ export type AdminRejectReactivationInput = z.infer<
   typeof adminRejectReactivationInputSchema
 >;
 
-export interface AdminRejectReactivationOutput {
-  readonly cycleStatus: 'cancelled';
-  readonly closedReason: 'admin_rejected_with_refund';
-  readonly closedAt: string;
-  /** Null when no payment was found (cycle entered pending without one). */
-  readonly refundCreditNoteId: string | null;
-}
+/**
+ * F8-RP (2026-07-11): the success output is a tagged union on `outcome`
+ * (mirrors F5 `IssueRefundSuccess`'s `kind` union):
+ *
+ *   - `rejected` — the common path: the refund settled synchronously (or the
+ *     cycle had no payment), the cycle transitioned
+ *     `pending_admin_reactivation` → `cancelled`, and the audit + post-refund
+ *     escalation task were emitted. Shape is UNCHANGED from before F8-RP.
+ *   - `refund_pending` — the F5 refund is settling ASYNCHRONOUSLY (Stripe
+ *     `pending`/`requires_action`, or a prior refund already in-flight). The
+ *     cycle is LEFT in `pending_admin_reactivation` (NO transition, NO audit,
+ *     NO escalation task); the async settlement (webhook/sweep) + the
+ *     reconcile cron resolve it later. Money-safe: the pending refund row
+ *     blocks a double refund on any retry.
+ */
+export type AdminRejectReactivationOutput =
+  | {
+      readonly outcome: 'rejected';
+      readonly cycleStatus: 'cancelled';
+      readonly closedReason: 'admin_rejected_with_refund';
+      readonly closedAt: string;
+      /** Null when no payment was found (cycle entered pending without one). */
+      readonly refundCreditNoteId: string | null;
+    }
+  | {
+      readonly outcome: 'refund_pending';
+      /** The cycle is intentionally left pending until the async refund settles. */
+      readonly cycleStatus: 'pending_admin_reactivation';
+      /** F5 refund row id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly refundId?: string;
+      /** Stripe `re_…` id — present on the `kind:'pending'` path; absent on the `refund_in_progress` retry path. */
+      readonly processorRefundId?: string;
+    };
 
 export type AdminRejectReactivationError =
   | { readonly kind: 'invalid_input'; readonly message: string }
@@ -186,6 +212,11 @@ export async function adminRejectReactivation(
     // no-payment-found path (audit refund_credit_note_id stays null).
     refundCreditNoteId = null;
   } else {
+    // Capture the (here non-null) linked invoice id as a stable const: TS
+    // property narrowing on `lockedCycle.linkedInvoiceId` does NOT survive the
+    // `await` below, and the Finding-3 in-flight-refund resolver needs it after
+    // the refund call.
+    const linkedInvoiceId = lockedCycle.linkedInvoiceId;
     // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
     // boundary. The bridge input type now demands TenantId/InvoiceId
     // brands so a swapped (tenantId, invoiceId) call no longer
@@ -193,7 +224,7 @@ export async function adminRejectReactivation(
     // — adoption is incremental per S-9 scope policy.
     const refundResult = await deps.f5RefundBridge.issueRefundForInvoice({
       tenantId: asTenantId(input.tenantId),
-      invoiceId: asInvoiceId(lockedCycle.linkedInvoiceId),
+      invoiceId: asInvoiceId(linkedInvoiceId),
       reason: input.reason,
       actorUserId: input.actorUserId,
       correlationId: input.correlationId,
@@ -216,6 +247,134 @@ export async function adminRejectReactivation(
         kind: 'refund_failed',
         errorCode: refundResult.errorCode,
         detail: refundResult.detail,
+      });
+    }
+    if (refundResult.status === 'refund_pending') {
+      // F8-RP: the F5 refund is settling ASYNCHRONOUSLY (Stripe
+      // pending/requires_action, or a prior refund already in-flight →
+      // refund_in_progress). Short-circuit BEFORE the cycle-transition tx:
+      // do NOT transition to `cancelled`, do NOT emit the `_rejected` audit,
+      // and do NOT insert the post-refund escalation task. The cycle stays
+      // `pending_admin_reactivation`; the async settlement (webhook A.11 /
+      // sweep A.14) + the reconcile cron resolve it later. Money-safe: the
+      // pending refund row makes any retry hit F5's `refund_in_progress`
+      // guard, so no double refund. Surfaced as a NON-failure 202 by the
+      // route; the informational metric mirrors the F5-side telemetry.
+      logger.info(
+        {
+          cycleId: lockedCycle.cycleId,
+          invoiceId: lockedCycle.linkedInvoiceId,
+          // PCI-safe ids only (never card data); optional on the
+          // refund_in_progress path.
+          ...(refundResult.refundId
+            ? { refundId: refundResult.refundId }
+            : {}),
+          ...(refundResult.processorRefundId
+            ? { processorRefundId: refundResult.processorRefundId }
+            : {}),
+        },
+        '[admin-reject-reactivation] F5 refund settling asynchronously — cycle stays pending; async settlement + reconcile cron resolve it',
+      );
+      // F8-RP follow-up: DURABLY stamp the async reject-with-refund marker so
+      // the reconcile cron can converge this cycle → `cancelled` (parity with
+      // the sync path) once the refund settles, instead of the 30-day timeout
+      // → `lapsed`.
+      //
+      // The F5 `kind:'pending'` path carries the refund id (the settlement
+      // lookup key) directly. The `refund_in_progress` path carries NONE — F5's
+      // Phase-A guard fires for ANY pending refund on the payment.
+      //
+      // Finding 3 (F8-RP-2 review): that in-flight refund is NOT necessarily
+      // from a prior reject on THIS cycle. The reconcile cron's `processTimeout`
+      // (day-30) path also issues an async refund that returns
+      // `refund_in_progress` and leaves the cycle UNMARKED. If we skipped
+      // stamping here (the old assumption "a prior reject already stamped the
+      // marker"), the next cron pass would re-time-out the cycle → `lapsed`
+      // (actor=cron, no post_refund_review task), silently DROPPING the admin's
+      // explicit reject and misrouting the member from the cancelled bucket into
+      // the lapsed re-engagement funnel. So on the id-less path, when the cycle
+      // has NO existing marker, resolve the in-flight refund's id from F5 and
+      // stamp it. If a marker already exists (a genuine prior reject), keep the
+      // idempotent skip (preserve that reject's actor). If the resolution finds
+      // no pending refund (TOCTOU — it settled/vanished, or the lookup failed),
+      // do NOT fabricate an id and do NOT crash: leave the cycle unmarked and let
+      // the sweep/webhook + a later cron pass reconcile it (surface
+      // `refund_pending` as before).
+      let stampRefundId = refundResult.refundId;
+      if (!stampRefundId && lockedCycle.rejectRefundInitiatedAt === null) {
+        const resolved = await deps.f5RefundBridge.findPendingRefundForInvoice({
+          tenantId: asTenantId(input.tenantId),
+          invoiceId: asInvoiceId(linkedInvoiceId),
+        });
+        if (resolved.status === 'found') {
+          stampRefundId = resolved.refundId;
+        } else {
+          logger.warn(
+            {
+              cycleId: lockedCycle.cycleId,
+              tenantId: input.tenantId,
+              invoiceId: linkedInvoiceId,
+              resolveStatus: resolved.status,
+            },
+            '[admin-reject-reactivation] refund_in_progress but no resolvable in-flight refund id (TOCTOU) — marker not stamped; cycle stays pending, async settlement + reconcile cron resolve it',
+          );
+        }
+      }
+      if (stampRefundId) {
+        // Capture as a const so the non-undefined narrowing survives the
+        // `runInTenant` closure (a `let` narrowing would not).
+        const resolvedRefundId = stampRefundId;
+        const initiatedAt = (input.now ?? new Date()).toISOString();
+        // Guarded write under the per-cycle lock (CAS on
+        // status='pending_admin_reactivation'): a 0-row result means the cycle
+        // moved out of pending in the race window — the async refund is already
+        // in flight (money-safe) and the reconcile cron resolves it via F5
+        // state, so we log + still surface `refund_pending`.
+        const marked = await runInTenant(deps.tenant, async (tx) => {
+          await deps.cyclesRepo.acquireCycleLockInTx(
+            tx,
+            input.tenantId,
+            cycleId,
+          );
+          return deps.cyclesRepo.markRejectRefundInitiatedInTx(
+            tx,
+            input.tenantId,
+            cycleId,
+            {
+              initiatedAt,
+              refundId: resolvedRefundId,
+              actorUserId: input.actorUserId,
+            },
+          );
+        });
+        if (!marked) {
+          // M1 fix: `markRejectRefundInitiatedInTx` is now first-writer-wins
+          // (CAS also guards `reject_refund_initiated_at IS NULL`), so a `false`
+          // means EITHER the cycle moved out of pending in the race window OR a
+          // concurrent FIRST writer already stamped the marker (a benign
+          // idempotent no-op — that writer's actor is preserved). Both are
+          // money-safe: the async refund is in flight and the reconcile cron
+          // resolves it via F5 state.
+          logger.warn(
+            {
+              cycleId: lockedCycle.cycleId,
+              tenantId: input.tenantId,
+              refundId: resolvedRefundId,
+            },
+            '[admin-reject-reactivation] reject-refund marker not stamped (cycle no longer pending, or already stamped by a concurrent first writer) — async refund still in flight (money-safe), reconcile cron resolves via F5 state',
+          );
+        }
+      }
+      renewalsMetrics.adminRejectCompleted(input.tenantId, 'refund_pending');
+      return ok({
+        outcome: 'refund_pending' as const,
+        cycleStatus: 'pending_admin_reactivation' as const,
+        ...(refundResult.refundId
+          ? { refundId: refundResult.refundId }
+          : {}),
+        ...(refundResult.processorRefundId
+          ? { processorRefundId: refundResult.processorRefundId }
+          : {}),
       });
     }
     if (refundResult.status === 'refunded') {
@@ -413,6 +572,9 @@ export async function adminRejectReactivation(
     );
 
     return ok({
+      // F8-RP: tag the common path `rejected`. The remaining fields are
+      // UNCHANGED — the route maps this to the same byte-identical 200 body.
+      outcome: 'rejected' as const,
       cycleStatus: 'cancelled' as const,
       closedReason: 'admin_rejected_with_refund' as const,
       closedAt,

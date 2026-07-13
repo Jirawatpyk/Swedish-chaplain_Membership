@@ -31,6 +31,17 @@ const PAGE = 100;
 // portion so a partial credit reduces revenue by exactly the credited amount,
 // not by the entire invoice. ReadonlySet<string> (not the narrow literal union)
 // so `.has(inv.status)` type-checks against the wider InvoiceStatus.
+//
+// M-h — these are INVOICE statuses; F9 revenue never reads F5 `payment` status.
+// So the F5 refund TERMINALS (`refunded` / `partially_refunded` / `auto_refunded`)
+// are all excluded from revenue by construction: a succeeded refund's money
+// impact flows in via the CREDIT NOTE it issues (invoice → credited /
+// partially_credited, netted above), and an `auto_refunded` payment (reached
+// ONLY from `pending` on the stale-invoice path) NEVER settled its invoice —
+// the invoice is `void`/`credited`/paid-out-of-band, so either it is excluded
+// here or the legitimate out-of-band revenue is counted exactly ONCE (this
+// adapter sums each invoice by status, never the `payments` rows, so a
+// duplicate auto-refunded Stripe charge can neither inflate nor drop revenue).
 const PAID_REVENUE_STATUSES: ReadonlySet<string> = new Set([
   'paid',
   'partially_credited',

@@ -16,8 +16,12 @@
  *     (enforced by Application layer `issue-refund.ts` via
  *      `SELECT … FOR UPDATE` on payments(id) before INSERT;
  *      pure-domain VO `RefundableAmount` provides the arithmetic)
- *   - status='succeeded' iff processor_refund_id IS NOT NULL
- *     AND credit_note_id IS NOT NULL
+ *   - processor_refund_id is set once Stripe *accepts* the refund
+ *     request, which may happen while status is still 'pending' (the
+ *     Stripe Refund object itself can be asynchronously pending); it is
+ *     NOT a reliable status='succeeded' discriminator on its own.
+ *   - status='succeeded' iff credit_note_id IS NOT NULL (credit_note_id
+ *     is only ever attached after the refund settles)
  *   - status='failed' iff failure_reason_code IS NOT NULL
  *   - completed_at IS NULL iff status='pending'
  *
@@ -82,7 +86,7 @@ export interface Refund {
   readonly reason: string;       // 1..500 chars; sanitised (no CR/LF)
   readonly status: RefundStatus;
 
-  readonly processorRefundId: string | null; // re_…; NOT NULL iff status='succeeded'
+  readonly processorRefundId: string | null; // re_…; set once Stripe accepts (may be non-null while status='pending')
   readonly failureReasonCode: string | null; // NOT NULL iff status='failed'
   readonly creditNoteId: string | null;      // F4 CN id; NOT NULL iff status='succeeded'
 

@@ -53,6 +53,42 @@ export const F5_HANDLED_EVENT_TYPES = [
   'payment_intent.canceled',
   'charge.refunded',
   'charge.dispute.created',
+  /**
+   * PR-A Task A.10 (PCI-1, 2026-07-11) — Stripe's refund-lifecycle
+   * event, fired as a `Refund` object transitions between
+   * `pending | succeeded | failed | canceled | requires_action`. The
+   * verifier's `refund` arm (`stripe-webhook-verifier.ts`) projects
+   * `refundStatus` (added to `VerifiedStripeEvent['dataObject']` in
+   * A.9) from this event's `status` field. `processRefundUpdated`
+   * (A.11) subscribes here to finalize a `pending` refund row.
+   *
+   * DEPRECATED by Stripe: "This event is only sent for refunds with a
+   * corresponding charge; listen to `refund.updated` for updates on all
+   * refunds instead." Kept because it STILL fires for refunds that DO
+   * have a legacy charge (card refunds), and the OOB forensic redundancy
+   * (KL-7) relies on it firing alongside `charge.refunded`.
+   */
+  'charge.refund.updated',
+  /**
+   * PR-A follow-up (2026-07-12) — the FORWARD-PATH refund-lifecycle event
+   * on the pinned Stripe API version (`STRIPE_API_VERSION`, currently
+   * `2025-09-30.clover`). `refund.updated` fires on ANY
+   * `Refund` update (incl. `status → succeeded | failed | canceled`), for
+   * ALL refunds — including charge-less async refunds (PromptPay / GrabPay
+   * / bank transfers) that never emit the deprecated `charge.refund.updated`.
+   * Its `data.object` is the SAME `Stripe.Refund` the `charge.refund.updated`
+   * arm already projects, so the verifier's object-type-driven `refund` arm
+   * reuses one projection for both, and the dispatcher routes both to the
+   * SAME `processRefundUpdated` use-case (idempotent: markProcessed is
+   * per-event-id; the finaliser guards on `expectedCurrentStatus='pending'`
+   * and the F4 CN is idempotent per `(tenant, source_refund_id)`).
+   *
+   * `refund.failed` is deliberately NOT subscribed: `refund.updated`
+   * already carries the `status → failed` transition, so a separate
+   * subscription would be redundant; the stale-pending sweep (A.14)
+   * backstops any single-event delivery gap.
+   */
+  'refund.updated',
 ] as const;
 export type F5HandledEventType = (typeof F5_HANDLED_EVENT_TYPES)[number];
 
@@ -106,6 +142,18 @@ export interface VerifiedStripeEvent {
      * / sentinel paths instead of substituting a misleading 0.
      */
     readonly amountProjectionFailed?: boolean;
+    /**
+     * PR-A Task A.9 (#1) — the Stripe Refund object's `status`
+     * (`pending | succeeded | failed | canceled | requires_action`),
+     * projected by the verifier's `charge.refund.updated` arm (wired in
+     * A.10). `processRefundUpdated` (A.11) branches on this to finalize
+     * a `pending` refund row. PCI SAQ-A: a bare status string only —
+     * NEVER card metadata, `destination_details`, or the raw Refund
+     * object. Copied through the route's `reprojectDataObject` here in
+     * A.9 (ahead of A.10) so the single-projection superset guard
+     * (`webhook-reprojection-superset.test.ts`) already covers it.
+     */
+    readonly refundStatus?: string | null;
   };
 }
 

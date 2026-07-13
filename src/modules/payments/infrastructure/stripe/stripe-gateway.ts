@@ -30,6 +30,7 @@ import type {
   CreatedPaymentIntent,
   RetrievedPaymentIntent,
   CreatedRefund,
+  RetrievedRefund,
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
@@ -278,6 +279,24 @@ function extractCardMetadata(
     expMonth: card.exp_month,
     expYear: card.exp_year,
   };
+}
+
+/**
+ * Defensively extract an expandable Stripe id field (`string | {id} |
+ * null`) down to a plain `string | null`. Stripe's SDK types `charge`
+ * and `payment_intent` on a `Refund` as expandable — the retrieve call
+ * here does NOT request expansion, so in practice these arrive as
+ * plain id strings, but a future caller adding `expand` (or a Stripe
+ * response-shape change) must not silently read card fields off an
+ * expanded object. This helper only ever returns the id — never any
+ * other field of the expanded object — so it stays PCI-safe
+ * regardless of expansion state.
+ */
+function extractExpandableId(
+  field: string | { readonly id: string } | null,
+): string | null {
+  if (typeof field === 'string') return field;
+  return field?.id ?? null;
 }
 
 function extractPromptPayQrUrl(pi: Stripe.PaymentIntent): string | null {
@@ -713,6 +732,94 @@ export const stripeGateway: ProcessorGatewayPort = {
           paymentIntentId: input.paymentIntentId,
         }),
       );
+    }
+  },
+
+  async retrieveRefund(
+    refundId,
+    stripeAccount,
+  ): Promise<Result<RetrievedRefund, ProcessorGatewayError>> {
+    const client = getStripeClient();
+    try {
+      const refund = await client.refunds.retrieve(
+        refundId,
+        undefined,
+        connectOptions(stripeAccount),
+      );
+
+      // PCI allow-list — log ONLY {stripeAccount, refundId, status}.
+      // Never log `refund` itself (carries `destination_details`).
+      logger.info(
+        { stripeAccount, refundId: refund.id, status: refund.status },
+        'stripe-gateway: retrieveRefund ok',
+      );
+
+      // Same defensive amount projection as `createRefund` (F5R3v3
+      // H-2/H-3/H-5), minus the input-fallback branch: `retrieveRefund`
+      // is a pure read with no "amount we sent" to fall back on, so an
+      // invalid response shape ALWAYS returns a typed permanent error
+      // rather than persisting a possibly-wrong amount.
+      const isValidStripeAmount =
+        Number.isFinite(refund.amount) && refund.amount >= 0;
+      if (!isValidStripeAmount) {
+        paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_retrieve');
+        logger.error(
+          {
+            stripeAccount,
+            refundId: refund.id,
+            rawAmount: refund.amount,
+            reason: 'guard_failed_non_finite_or_negative',
+          },
+          'stripe-gateway.refund_amount_brand_failed',
+        );
+        return err({
+          kind: 'permanent',
+          code: 'processor_response_amount_invalid',
+          reason: `Stripe refund ${refund.id} returned non-finite-or-negative amount (${refund.amount}) on retrieve`,
+        });
+      }
+      let refundAmount: Satang;
+      try {
+        refundAmount = asSatang(BigInt(refund.amount));
+      } catch (brandErr) {
+        // Defensive — should be unreachable given isValidStripeAmount
+        // gate above (Number.isFinite + >= 0 implies BigInt-safe).
+        paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_retrieve');
+        logger.error(
+          {
+            stripeAccount,
+            refundId: refund.id,
+            rawAmount: refund.amount,
+            reason: 'asSatang_threw',
+            errKind:
+              brandErr instanceof Error
+                ? brandErr.constructor.name
+                : 'unknown',
+          },
+          'stripe-gateway.refund_amount_brand_failed',
+        );
+        return err({
+          kind: 'permanent',
+          code: 'processor_response_amount_invalid',
+          reason: `Stripe refund ${refund.id} response amount brand_failed on retrieve`,
+        });
+      }
+
+      // PCI-3 allow-list projection — ONLY these 5 fields cross the
+      // Infrastructure boundary. `destination_details` and any other
+      // Stripe Refund field are dropped here, never read again below.
+      // `charge` / `payment_intent` are expandable fields (string |
+      // {id} | null); extract defensively without ever reading a
+      // nested card field off an expanded object.
+      return ok({
+        id: refund.id,
+        status: refund.status ?? 'pending',
+        chargeId: extractExpandableId(refund.charge),
+        paymentIntentId: extractExpandableId(refund.payment_intent),
+        amountSatang: refundAmount,
+      });
+    } catch (e) {
+      return err(mapStripeError(e, { stripeAccount }));
     }
   },
 };

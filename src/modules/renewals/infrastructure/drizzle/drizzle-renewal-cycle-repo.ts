@@ -132,6 +132,14 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
     // conversion pattern as closedAt/enteredPendingAt below.
     anchoredAt: row.anchoredAt ? row.anchoredAt.toISOString() : null,
     anchorInvoiceId: row.anchorInvoiceId ?? null,
+    // F8-RP follow-up (migration 0243) — async reject-with-refund marker.
+    // Same Date-or-null conversion as anchoredAt/closedAt; the id + actor
+    // are plain text columns.
+    rejectRefundInitiatedAt: row.rejectRefundInitiatedAt
+      ? row.rejectRefundInitiatedAt.toISOString()
+      : null,
+    rejectRefundId: row.rejectRefundId ?? null,
+    rejectActorUserId: row.rejectActorUserId ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -833,6 +841,92 @@ export function makeDrizzleRenewalCycleRepo(
       await txDb.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
       );
+    },
+
+    async markRejectRefundInitiatedInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly initiatedAt: string;
+        readonly refundId: string;
+        readonly actorUserId: string;
+      },
+    ): Promise<boolean> {
+      // F8-RP follow-up (migration 0243). GUARDED write: only stamp the marker
+      // while the cycle is STILL `pending_admin_reactivation` (CAS). If the
+      // cycle moved out of pending in the race window, 0 rows match → `false`.
+      // RLS scope comes from the inherited GUC; `_tenantId` intentionally
+      // unused (same precedent as findByIdInTx — no WHERE tenant_id predicate).
+      //
+      // M1 fix (reliability review): the additional `reject_refund_initiated_at
+      // IS NULL` predicate makes the stamp FIRST-WRITER-WINS at the DB layer.
+      // The admin-reject caller decides "no marker yet" from a STALE app-level
+      // read (`lockedCycle.rejectRefundInitiatedAt === null`, taken before the
+      // lock was released + the refund ran), so two admins rejecting the same
+      // UNMARKED cycle concurrently could both pass that check and both stamp —
+      // with only the status guard, the second overwrote `reject_actor_user_id`
+      // to the LAST writer's (racy attribution; money-safe — same in-flight
+      // refund, cron still converges). With `IS NULL`, the second concurrent
+      // stamp matches 0 rows (`false`) and the caller's existing `!marked`
+      // handler logs the benign already-stamped warning. NORMAL first stamp
+      // (marker null → true) and post-clear re-stamp (marker cleared → null →
+      // true) are unaffected — `clearRejectRefundMarkerInTx` sets the column
+      // back to NULL.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          rejectRefundInitiatedAt: new Date(args.initiatedAt),
+          rejectRefundId: args.refundId,
+          rejectActorUserId: args.actorUserId,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.status, 'pending_admin_reactivation'),
+            isNull(renewalCycles.rejectRefundInitiatedAt),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
+    },
+
+    async clearRejectRefundMarkerInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      expectedRefundId: string,
+    ): Promise<boolean> {
+      // F8-RP follow-up (migration 0243) — idempotent marker clear on the
+      // settled-`failed` path. GUARDED: only clears a still-pending, still-
+      // marked cycle so a concurrent transition (admin re-handled it) is a
+      // no-op (`false`). RLS scope via inherited GUC.
+      //
+      // Finding 5 (F8-RP-2 review): the additional `reject_refund_id =
+      // expectedRefundId` predicate makes this a CAS on the SPECIFIC refund the
+      // caller resolved OUTSIDE the lock (R1). If a concurrent re-reject stamped
+      // a fresh refund (R2) via `markRejectRefundInitiatedInTx` in the caller's
+      // read→clear window, this UPDATE matches 0 rows (`false`) instead of wiping
+      // R2's marker — so R2's own settlement still converges the cycle.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          rejectRefundInitiatedAt: null,
+          rejectRefundId: null,
+          rejectActorUserId: null,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.status, 'pending_admin_reactivation'),
+            isNotNull(renewalCycles.rejectRefundInitiatedAt),
+            eq(renewalCycles.rejectRefundId, expectedRefundId),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
     },
 
     async listCyclesEligibleForLapse(

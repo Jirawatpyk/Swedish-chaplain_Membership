@@ -56,6 +56,17 @@ interface SeedPendingCycleArgs {
   readonly tenant: TestTenant;
   readonly user: TestUser;
   readonly withInvoice: boolean;
+  /**
+   * UX-A Bug 1 — optionally stamp the async reject-with-refund marker
+   * (migration 0243) so the seeded cycle models an admin-rejected cycle whose
+   * F5 refund is still settling. A marked cycle is still
+   * `pending_admin_reactivation` but must be refused by `adminReactivateLapsedCycle`.
+   */
+  readonly marker?: {
+    readonly initiatedAt: Date;
+    readonly refundId: string;
+    readonly actorUserId: string;
+  };
 }
 
 interface SeededCycle {
@@ -71,7 +82,7 @@ interface SeededCycle {
 async function seedPendingCycle(
   args: SeedPendingCycleArgs,
 ): Promise<SeededCycle> {
-  const { tenant, user, withInvoice } = args;
+  const { tenant, user, withInvoice, marker } = args;
   const memberId = randomUUID();
   const cycleId = randomUUID();
   const invoiceId = withInvoice ? randomUUID() : null;
@@ -132,9 +143,36 @@ async function seedPendingCycle(
       frozenPlanCurrency: 'THB',
       enteredPendingAt: new Date('2026-04-15T00:00:00Z'),
       ...(invoiceId !== null ? { linkedInvoiceId: invoiceId } : {}),
+      ...(marker
+        ? {
+            rejectRefundInitiatedAt: marker.initiatedAt,
+            rejectRefundId: marker.refundId,
+            rejectActorUserId: marker.actorUserId,
+          }
+        : {}),
     }),
   );
   return { memberId, cycleId, invoiceId };
+}
+
+/**
+ * F8-RP follow-up — the SYNC reject path never calls the settlement lookup
+ * (`getRefundOutcomeForInvoice` is only used by the reconcile cron for
+ * async-marked cycles). Shared stub so every F5 bridge stub below satisfies
+ * the port without duplicating the throwaway method.
+ */
+function settlementLookupUnused(): F5RefundBridge['getRefundOutcomeForInvoice'] {
+  return vi.fn(async () => ({ status: 'not_found' as const }));
+}
+
+/**
+ * F8-RP-2 Finding 3 — the in-flight-refund resolver is only consulted on the
+ * `refund_in_progress` (id-less) path; the SYNC reject stubs below use
+ * refunded/no_payment_found/refund_failed, so a throwaway `none` satisfies the
+ * port without being reached.
+ */
+function findPendingRefundUnused(): F5RefundBridge['findPendingRefundForInvoice'] {
+  return vi.fn(async () => ({ status: 'none' as const }));
 }
 
 /** Stub F5 bridge that issues a synthetic credit-note (no Stripe). */
@@ -146,6 +184,8 @@ function refundedStub(): F5RefundBridge {
       creditNoteId: randomUUID(),
       creditNoteNumber: 'CN-RR-1',
     })),
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
   };
 }
 
@@ -179,7 +219,12 @@ function refundOnceThenNoPaymentStub(): F5RefundBridge & {
       creditNoteNumber: 'CN-RR-CONCURRENT-1',
     };
   });
-  return { issueRefundForInvoice: fn, refundedCount: () => refunded };
+  return {
+    issueRefundForInvoice: fn,
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
+    refundedCount: () => refunded,
+  };
 }
 
 /** Stub F5 bridge that always reports a refund failure (NIT-2). */
@@ -190,6 +235,8 @@ function refundFailedStub(): F5RefundBridge {
       errorCode: 'processor_unavailable',
       detail: 'simulated F5 processor outage',
     })),
+    getRefundOutcomeForInvoice: settlementLookupUnused(),
+    findPendingRefundForInvoice: findPendingRefundUnused(),
   };
 }
 
@@ -320,7 +367,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     });
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.outcome === 'rejected') {
       expect(r.value.cycleStatus).toBe('cancelled');
       expect(r.value.closedReason).toBe('admin_rejected_with_refund');
       expect(r.value.refundCreditNoteId).not.toBeNull();
@@ -387,6 +434,8 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
       issueRefundForInvoice: vi.fn(async () => {
         throw new Error('refund bridge must not run without a linked invoice');
       }),
+      getRefundOutcomeForInvoice: settlementLookupUnused(),
+      findPendingRefundForInvoice: findPendingRefundUnused(),
     };
     const racedDeps = { ...deps, f5RefundBridge: neverBridge };
 
@@ -400,7 +449,7 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     });
 
     expect(r.ok).toBe(true);
-    if (r.ok) {
+    if (r.ok && r.value.outcome === 'rejected') {
       expect(r.value.cycleStatus).toBe('cancelled');
       expect(r.value.refundCreditNoteId).toBeNull();
     }
@@ -594,6 +643,63 @@ describe('F8 admin reactivate/reject pending-reactivation cycles (070)', () => {
     );
     expect(row[0]?.status).toBe('cancelled');
     expect(row[0]?.closedReason).toBe('admin_rejected_with_refund');
+  });
+
+  it('reactivate refused on a marked (async reject-refund) cycle → reject_refund_in_progress, cycle stays pending (UX-A Bug 1)', async () => {
+    // UX-A Bug 1: an admin already rejected this cycle and an F5 refund is
+    // settling asynchronously, so the cycle carries the reject-refund marker
+    // (migration 0243) while it stays `pending_admin_reactivation`. Approving
+    // it would reactivate the member WHILE their money is being refunded — a
+    // stranded, non-self-healing state (reconcile cron is pending-only). The
+    // guard must refuse under the lock; the cycle must NOT transition.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const { cycleId } = await seedPendingCycle({
+      tenant: tenantA,
+      user,
+      withInvoice: true,
+      marker: {
+        initiatedAt: new Date('2026-04-20T00:00:00Z'),
+        refundId: `rfnd_${randomUUID().slice(0, 12)}`,
+        actorUserId: user.userId,
+      },
+    });
+
+    const before = await countAudit(tenantA, 'lapsed_member_admin_reactivated');
+
+    const r = await adminReactivateLapsedCycle(deps, {
+      tenantId: tenantA.ctx.slug,
+      cycleId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('reject_refund_in_progress');
+    }
+
+    // The cycle is untouched — still pending, marker intact, no reactivation.
+    const row = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+          closedAt: renewalCycles.closedAt,
+          rejectRefundInitiatedAt: renewalCycles.rejectRefundInitiatedAt,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(row[0]?.status).toBe('pending_admin_reactivation');
+    expect(row[0]?.closedReason).toBeNull();
+    expect(row[0]?.closedAt).toBeNull();
+    expect(row[0]?.rejectRefundInitiatedAt).not.toBeNull();
+
+    // No reactivation audit was emitted (the transition never ran).
+    const after = await countAudit(tenantA, 'lapsed_member_admin_reactivated');
+    expect(after).toBe(before);
   });
 
   it('refund_failed: cycle stays pending_admin_reactivation (re-tryable, no orphan state) (NIT-2)', async () => {

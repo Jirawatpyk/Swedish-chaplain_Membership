@@ -92,11 +92,21 @@ import { RecordPaymentDialog } from '../_components/record-payment-dialog';
 import { DeleteDraftDialog } from '../_components/delete-draft-dialog';
 import { InvoiceMoreMenu } from '../_components/invoice-more-menu';
 import { EmailFailureAlert } from '../_components/email-failure-alert';
+import { AutoRefundFailedAlert } from '../_components/auto-refund-failed-alert';
 import { PaymentTimeline } from './_components/payment-timeline';
 import { PaymentTimelineSkeleton } from './_components/payment-timeline-skeleton';
 import { RefundDialog } from './_components/refund-dialog';
 import { computeRemainingRefundable } from '@/modules/payments';
+// F5 UX D2 — tenant-scoped audit read for the failed-auto-refund alert. Same
+// documented escape-hatch as the tenant-settings / credit-note reads above:
+// a tenant-scoped infra read (RLS+FORCE), no Application use-case needed.
+import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { getInvoicePaymentActivity } from './_lib/cached-payment-activity';
+
+// F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
+// path, same literal the `auto_refund_failed_needs_manual_reconcile` forensic
+// stamps into its payload). Surfaced to the admin so they can follow it.
+const OOB_RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
 
 function formatSatang(satang: bigint | null): string {
   if (satang === null) return '—';
@@ -300,6 +310,21 @@ export default async function InvoiceDetailPage({
     }));
   })();
 
+  // F5 UX D2 — surface a permanently-failed auto-refund (a
+  // `auto_refund_failed_needs_manual_reconcile` forensic exists → the stale-
+  // invoice auto-refund did NOT return the money; funds stuck pending manual
+  // reconciliation). Reuses the SAME tenant-scoped audit read as the member
+  // banner (`findStaleInvoiceAutoRefund`, which now also reports `failed`).
+  // Drafts never auto-refund, so skip the read for them; best-effort so a repo
+  // failure hides the alert rather than 500-ing the page (mirrors the void
+  // banner's graceful-degrade on the member surface).
+  const autoRefundStatus = isDraft
+    ? null
+    : await makeDrizzlePaymentsRepo(tenantCtx.slug)
+        .findStaleInvoiceAutoRefund(invoiceId)
+        .catch(() => null);
+  const autoRefundFailed = autoRefundStatus?.failed === true;
+
   // T109 — derive the presentation-only `overdue` variant + fire the
   // opportunistic `invoice_overdue_detected` audit on first detection
   // per Bangkok-local day (idempotent via migration 0021's partial
@@ -381,6 +406,7 @@ export default async function InvoiceDetailPage({
   let refundButtonProps: {
     paymentId: string;
     remainingRefundableSatang: bigint;
+    pendingRefundExists: boolean;
   } | null = null;
   if (
     isAdmin &&
@@ -393,9 +419,19 @@ export default async function InvoiceDetailPage({
     if (activity.ok) {
       const remaining = computeRemainingRefundable(activity.value);
       if (remaining) {
+        // Gap E (2026-07-12) — gate the Issue-refund action on a NON-terminal
+        // (pending/async) refund for THIS payment. Pending amounts are NOT
+        // subtracted from `remaining` (a pending refund can still FAIL, after
+        // which the balance must be refundable again); the button is disabled
+        // on pending-EXISTENCE instead, so a later failure re-enables it.
+        const pendingRefundExists = activity.value.refunds.some(
+          (r) =>
+            r.paymentId === remaining.paymentId && r.status === 'pending',
+        );
         refundButtonProps = {
           paymentId: remaining.paymentId,
           remainingRefundableSatang: remaining.remainingSatang,
+          pendingRefundExists,
         };
       }
     }
@@ -552,6 +588,9 @@ export default async function InvoiceDetailPage({
                   receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
                   // 088 FR-030 — bill-first for an 088 bill (documentNumber NULL).
                   invoiceDocumentNumber={billFirstDocumentNumber(invoice)}
+                  // Gap E — disable + show "settling" while a pending async
+                  // refund exists for this payment.
+                  pendingRefundExists={refundButtonProps.pendingRefundExists}
                 />
               </Suspense>
             )}
@@ -627,6 +666,16 @@ export default async function InvoiceDetailPage({
                 canResend={b.canResend}
               />
             ))}
+          {/* F5 UX D2 — failed stale-invoice auto-refund (money not returned);
+              admins only. Ranks with the email-failure banners as a top-of-card
+              red flag so an admin cannot miss stuck funds. */}
+          {isAdmin && autoRefundFailed && (
+            <AutoRefundFailedAlert
+              invoiceId={invoice.invoiceId}
+              processorRefundId={autoRefundStatus?.processorRefundId ?? null}
+              runbookUrl={OOB_RUNBOOK_URL}
+            />
+          )}
           <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-muted-foreground">{t('fields.memberId')}</dt>

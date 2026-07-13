@@ -103,8 +103,13 @@ vi.mock('@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo', () 
 vi.mock('@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo', () => ({
   makeDrizzleTenantPaymentSettingsRepo: () => ({ getByTenantId: async () => null }),
 }));
+// F5 UX D1 — the void auto-refund banner keys its copy on the shape returned
+// here. A module-level mutable lets each test drive the `findStaleInvoiceAutoRefund`
+// result ({ processorRefundId, failed } | null); reset to null in beforeEach so
+// the download-number / hierarchy cases (non-void) are unaffected.
+let autoRefundResult: unknown = null;
 vi.mock('@/modules/payments/infrastructure/repos/drizzle-payments-repo', () => ({
-  makeDrizzlePaymentsRepo: () => ({ findStaleInvoiceAutoRefund: async () => null }),
+  makeDrizzlePaymentsRepo: () => ({ findStaleInvoiceAutoRefund: async () => autoRefundResult }),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({
@@ -285,6 +290,7 @@ async function renderPage(): Promise<string> {
 
 beforeEach(() => {
   getInvoiceMock.mockReset();
+  autoRefundResult = null;
 });
 
 describe('PortalInvoiceDetailPage — main-download number for an unpaid 088 bill (088 FIX 4)', () => {
@@ -348,5 +354,51 @@ describe('PortalInvoiceDetailPage — §86/4 receipt stays downloadable after a 
     const html = await renderPage();
     expect(html).toContain('fields.receiptNumber');
     expect(html).toContain('RC-2026-000010');
+  });
+});
+
+/** An issued-then-voided invoice — the member auto-refund banner surface. */
+function voidedInvoice() {
+  return {
+    ...paidSeparateInvoice(),
+    status: 'void',
+    // A voided invoice never carries a §86/4 receipt.
+    receiptDocumentNumberRaw: null,
+    receiptPdf: null,
+    receiptPdfStatus: null,
+    paidAt: null,
+    voidedAt: '2026-05-20',
+    voidReason: 'Issued in error',
+  };
+}
+
+describe('PortalInvoiceDetailPage — void auto-refund banner: failed vs settling (F5 UX D1)', () => {
+  it('auto-refund SETTLING (failed=false) → definitive "refunded" copy, not the reconciliation variant', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: voidedInvoice() });
+    // Initiation marker present, no failure audit → settling.
+    autoRefundResult = { processorRefundId: 're_test_ABCD1234', failed: false };
+    const html = await renderPage();
+    expect(html).toContain('portal-invoice-auto-refund-notice');
+    expect(html).toContain('void.autoRefundHeading');
+    expect(html).toContain('void.autoRefundBody');
+    // The FAILED / reconciliation variant must NOT show on the settling path.
+    expect(html).not.toContain('void.autoRefundFailedHeading');
+    expect(html).not.toContain('void.autoRefundFailedBody');
+  });
+
+  it('auto-refund FAILED (failed=true) → calm reconciliation copy, and NEVER a "refunded" assurance', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: voidedInvoice() });
+    // Failure forensic exists → money not returned.
+    autoRefundResult = { processorRefundId: 're_test_ABCD1234', failed: true };
+    const html = await renderPage();
+    expect(html).toContain('portal-invoice-auto-refund-notice');
+    // The reconciliation (support-path) variant shows.
+    expect(html).toContain('void.autoRefundFailedHeading');
+    expect(html).toContain('void.autoRefundFailedBody');
+    // CRITICAL correctness: the member must NOT be told the money was returned.
+    expect(html).not.toContain('void.autoRefundHeading');
+    expect(html).not.toContain('void.autoRefundBody');
+    // The refund reference line still renders (useful in a support ticket).
+    expect(html).toContain('void.autoRefundRef');
   });
 });

@@ -5,12 +5,22 @@
  *
  *     pending ──┬── succeeded ──┬── partially_refunded (loop on more partials)
  *               │               └── refunded (terminal)
- *               ├── failed     (terminal)
- *               └── canceled   (terminal)
+ *               ├── failed         (terminal)
+ *               ├── canceled       (terminal)
+ *               └── auto_refunded  (terminal — stale-invoice auto-refund,
+ *                                    migration 0240; never via succeeded)
  *
- * Terminal states: failed, canceled, refunded. `succeeded` is technically
- * non-terminal (can advance to partially_refunded / refunded) but once
- * `refunded` is reached nothing moves further.
+ * Terminal states: failed, canceled, refunded, auto_refunded. `succeeded`
+ * is technically non-terminal (can advance to partially_refunded /
+ * refunded) but once `refunded` is reached nothing moves further.
+ *
+ * `auto_refunded` is reached ONLY from `pending` — the stale-invoice
+ * auto-refund path (FR-011b) fires when a webhook confirms a Stripe
+ * charge for an invoice that's no longer payable (voided/credited/paid
+ * out-of-band). It is deliberately excluded from the succeeded-lineage
+ * (`invariants/one-succeeded-payment-per-invoice.ts`) since the invoice
+ * was never actually settled by this payment attempt — a member may
+ * still retry payment on the same invoice.
  *
  * Invariants (enforced by the Application layer + paired unit tests):
  *   - status transitions pure-checked by `policies/payment-status-transitions.ts`
@@ -36,6 +46,7 @@ export const PAYMENT_STATUSES = [
   'canceled',
   'partially_refunded',
   'refunded',
+  'auto_refunded',
 ] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
@@ -44,7 +55,12 @@ export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
  * reject follow-up actions (e.g. member-initiated cancel on a refunded
  * payment).
  */
-export const TERMINAL_PAYMENT_STATUSES = ['failed', 'canceled', 'refunded'] as const;
+export const TERMINAL_PAYMENT_STATUSES = [
+  'failed',
+  'canceled',
+  'refunded',
+  'auto_refunded',
+] as const;
 export type TerminalPaymentStatus = (typeof TERMINAL_PAYMENT_STATUSES)[number];
 
 export function isTerminalPaymentStatus(

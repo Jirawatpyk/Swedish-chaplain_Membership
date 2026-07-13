@@ -404,6 +404,146 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     expect(res.status).toBe(200);
   });
 
+  // Bug #5 fix — the verifier-set `amountProjectionFailed` flag must
+  // survive the route's `dataObject` re-projection so the downstream
+  // H-4 dead-letter guard (process-charge-refunded.ts) can gate on it.
+  // In production `rawEvent` IS the verifier's already-projected
+  // envelope (stripe-webhook-verifier.ts `project()`), which is a flat
+  // object carrying a top-level `dataObject` — simulated here via the
+  // `dataObject` override (read by the route BEFORE its `data.object`
+  // fallback). PCI SAQ-A: only a boolean flag is copied, no card/amount
+  // data.
+  it('amountProjectionFailed on a charge.refunded verifier envelope reaches processWebhookEvent unchanged', async () => {
+    const event = makeStripeEvent({
+      id: 'evt_test_amount_projection_004',
+      type: 'charge.refunded',
+      dataObject: {
+        id: 'ch_test_004',
+        type: 'charge',
+        amountProjectionFailed: true,
+      },
+    });
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { outcome: 'processed' },
+    });
+
+    const rawBody = JSON.stringify(event);
+    const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makeWebhookRequest(rawBody, { 'stripe-signature': 't=1,v1=valid' }),
+    ) as Response;
+    expect(res.status).toBe(200);
+
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = processWebhookEventMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const verifiedEvent = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    const dataObject = verifiedEvent?.['dataObject'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(dataObject?.['amountProjectionFailed']).toBe(true);
+  });
+
+  // (A.11) charge.refund.updated — async refund-lifecycle reconciliation
+  // (bugs #1/#2). The route 200-acks and forwards to processWebhookEvent
+  // with the verifier-projected `refundStatus` PRESERVED through the route's
+  // `dataObject` re-projection (mirrors the amountProjectionFailed guard).
+  // `processRefundUpdated` (A.11) branches on that `refundStatus` to finalise
+  // the pending refund row, so a dropped field would silently disable
+  // reconciliation. `latestChargeId` must ALSO survive (OOB audit charge ref).
+  it('charge.refund.updated → 200 + refundStatus + latestChargeId reach processWebhookEvent unchanged', async () => {
+    const event = makeStripeEvent({
+      id: 'evt_test_refund_updated_001',
+      type: 'charge.refund.updated',
+      dataObject: {
+        id: 're_test_async_001',
+        type: 'refund',
+        latestChargeId: 'ch_test_async_001',
+        refundStatus: 'succeeded',
+      },
+    });
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { kind: 'processed', dispatched: 'charge.refund.updated' },
+    });
+
+    const rawBody = JSON.stringify(event);
+    const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makeWebhookRequest(rawBody, { 'stripe-signature': 't=1,v1=valid' }),
+    ) as Response;
+    expect(res.status).toBe(200);
+
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = processWebhookEventMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const verifiedEvent = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(verifiedEvent?.['type']).toBe('charge.refund.updated');
+    const dataObject = verifiedEvent?.['dataObject'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(dataObject?.['refundStatus']).toBe('succeeded');
+    expect(dataObject?.['latestChargeId']).toBe('ch_test_async_001');
+    // PCI SAQ-A: the raw `data` envelope (card metadata) must NOT pass through.
+    expect(Object.keys(verifiedEvent ?? {})).not.toContain('data');
+  });
+
+  // Bug #6 fix (Task C.2, PCI-2) — the verifier-set `disputeId` field
+  // must survive the route's `dataObject` re-projection so the
+  // `dispute_created` audit records the real dispute id (previously
+  // dropped entirely, landing as `dispute_id: null`). `latestChargeId`
+  // must ALSO survive so the audit's `charge_id` becomes the real
+  // ch_… id rather than the dispute's own dp_… id. Simulated verifier
+  // envelope shape (top-level `dataObject`, matching the real
+  // `project()` output for a `charge.dispute.created` event — see
+  // `stripe-webhook-verifier.ts` dispute arm).
+  it('disputeId + latestChargeId on a charge.dispute.created verifier envelope reach processWebhookEvent unchanged', async () => {
+    const event = makeStripeEvent({
+      id: 'evt_test_dispute_006',
+      type: 'charge.dispute.created',
+      dataObject: {
+        id: 'dp_test_006',
+        type: 'dispute',
+        disputeId: 'dp_test_006',
+        latestChargeId: 'ch_test_006',
+      },
+    });
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { outcome: 'processed' },
+    });
+
+    const rawBody = JSON.stringify(event);
+    const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makeWebhookRequest(rawBody, { 'stripe-signature': 't=1,v1=valid' }),
+    ) as Response;
+    expect(res.status).toBe(200);
+
+    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+    const useCaseInput = processWebhookEventMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const verifiedEvent = useCaseInput?.['event'] as
+      | Record<string, unknown>
+      | undefined;
+    const dataObject = verifiedEvent?.['dataObject'] as
+      | Record<string, unknown>
+      | undefined;
+    expect(dataObject?.['disputeId']).toBe('dp_test_006');
+    expect(dataObject?.['latestChargeId']).toBe('ch_test_006');
+  });
+
   // (h) Unknown event type → 200, acknowledged_only
   it('(h) unknown event type → 200, acknowledged_only', async () => {
     const event = makeStripeEvent({

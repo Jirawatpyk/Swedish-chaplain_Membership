@@ -23,6 +23,7 @@ import { asSatang, type Satang } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
+  getInvoice as f4GetInvoice,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
   issueCreditNoteFromRefund as f4IssueCreditNoteFromRefund,
   makeGetInvoiceDeps,
@@ -256,12 +257,17 @@ export const invoicingBridge: InvoicingBridgePort = {
    * OUTSIDE its own DB tx (Phase B/external) — F4 manages its own
    * atomicity via the wrapped use-case's internal `withTx`.
    *
-   * Returns only the new CN id + canonical document number — the F5
-   * caller derives the post-transition invoice status arithmetically
-   * (`refundedAmount === payment.amountSatang` → `'credited'`),
-   * avoiding a redundant DB roundtrip. F4 errors are summarised into
-   * the stable `{ code, detail }` shape (no PII leak — see
-   * `summariseF4Error` docstring).
+   * Returns only the new CN id + canonical document number. The F5 caller
+   * (`_finalize-succeeded-refund.ts`) separately reads the post-transition
+   * invoice status via `getInvoiceStatus` (F4-authoritative, tax#5) after
+   * this call returns — it does NOT derive the status arithmetically from
+   * the refund amount as a primary source; that projection is now only a
+   * fallback when the `getInvoiceStatus` read errors. Do NOT drop the
+   * `getInvoiceStatus` call as "redundant" — it is what makes the reported
+   * invoice status correct when a MANUAL F4 credit note already partially
+   * credited the invoice. F4 errors are summarised into the stable
+   * `{ code, detail }` shape (no PII leak — see `summariseF4Error`
+   * docstring).
    */
   async issueCreditNoteFromRefund(input) {
     const cn = await f4IssueCreditNoteFromRefund({
@@ -284,5 +290,144 @@ export const invoicingBridge: InvoicingBridgePort = {
       creditNoteId: cn.value.creditNoteId,
       creditNoteNumber: cn.value.documentNumber.raw,
     });
+  },
+
+  /**
+   * B.1 (#4) — F5 refund-pre-flight read of the invoice's F4-authoritative
+   * credited + total. Wraps F4's `getInvoice` (via `makeGetInvoiceDeps`,
+   * whose repo runs inside `runInTenant` → tenant-scoped, never pool-global
+   * `db`). No `actor` is threaded — this is an internal reconciliation read,
+   * so the underlying cross-tenant-probe audit stays dormant.
+   *
+   * See the port docstring for the money-safety rationale (prevent an over-
+   * refund that F4 would reject as an over-credit CN → orphaned Stripe
+   * refund). On any failure the caller refuses the refund BEFORE Stripe.
+   */
+  async getInvoiceCreditedTotal(input) {
+    // Fix#2 — thread the caller's tx so the read runs on the SAME pooled
+    // connection as the payment `FOR UPDATE` lock (no nested `runInTenant`).
+    const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
+    // Minor#1 — the F4 read can THROW (Neon down / tx aborted / externalTx
+    // tenant-mismatch guard). Catch it so the refund pre-flight gets a graceful
+    // typed `read_failed` (→ the use-case's `f4_preflight_read_error` → 502)
+    // instead of the exception escaping Phase A → rollback → a raw 500. Still
+    // fail-safe (Stripe never called), just the intended code.
+    let result: Awaited<ReturnType<typeof f4GetInvoice>>;
+    try {
+      result = await f4GetInvoice(deps, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape(
+        'getInvoiceCreditedTotal_read_threw',
+      );
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceCreditedTotal_read_threw',
+      );
+      return err({ code: 'read_failed' });
+    }
+    if (!result.ok) {
+      // Without an `actor` the only reachable F4 error is `not_found`
+      // (the member-mismatch `forbidden` guard requires a member actor).
+      return err({ code: 'not_found' });
+    }
+    const inv = result.value;
+    // A refundable payment's invoice is always issued/paid → `total` is
+    // non-null. A null (draft) total is a data anomaly — surface it rather
+    // than fabricating a 0 headroom that could mask an over-refund.
+    if (inv.total === null) {
+      logger.error(
+        { tenantId: input.tenantId, invoiceId: input.invoiceId },
+        'invoicing-bridge.getInvoiceCreditedTotal_null_total',
+      );
+      return err({ code: 'invalid_total' });
+    }
+    try {
+      return ok({
+        // F5R3 H-5 — brand at the Money VO escape point. `asSatang` throws on
+        // negative (dropped CHECK / OOB SQL) → the catch converts to a typed
+        // `invalid_total` instead of a raw 500 through the tracer.
+        creditedTotalSatang: asSatang(inv.creditedTotal.satang),
+        totalSatang: asSatang(inv.total.satang),
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape(
+        'getInvoiceCreditedTotal_brand_failed',
+      );
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          rawTotalSatang: String(inv.total.satang),
+          rawCreditedTotalSatang: String(inv.creditedTotal.satang),
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceCreditedTotal_brand_failed',
+      );
+      return err({ code: 'invalid_total' });
+    }
+  },
+
+  /**
+   * B.2 (tax#5) — F4-authoritative invoice status read for the shared refund
+   * finaliser. Wraps F4's `getInvoice` (via `makeGetInvoiceDeps`, whose repo
+   * runs inside `runInTenant` → tenant-scoped, never the pool-global `db`). No
+   * `actor` is threaded — internal reconciliation read, so the underlying
+   * cross-tenant-probe audit stays dormant. Threads `externalTx` (B.1 lesson)
+   * so the read shares the finaliser's pooled connection instead of opening a
+   * nested `runInTenant` while row locks are held. See the port docstring for
+   * the money-safety rationale (a status read hiccup NEVER fails an
+   * already-succeeded refund — the caller falls back to its payment-derived
+   * projection on any error).
+   */
+  async getInvoiceStatus(input) {
+    const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
+    let result: Awaited<ReturnType<typeof f4GetInvoice>>;
+    try {
+      result = await f4GetInvoice(deps, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape('getInvoiceStatus_read_threw');
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'invoicing-bridge.getInvoiceStatus_read_threw',
+      );
+      return err({ code: 'read_failed' });
+    }
+    if (!result.ok) {
+      // Without an `actor` the only reachable F4 error is `not_found`
+      // (the member-mismatch `forbidden` guard requires a member actor).
+      return err({ code: 'not_found' });
+    }
+    const status = result.value.status;
+    if (status === 'credited' || status === 'partially_credited') {
+      return ok(status);
+    }
+    // Post-CN F4 always lands on `credited`/`partially_credited` (its
+    // `applyCreditNoteRollup` set exactly one). Anything else here (paid /
+    // void / issued / draft) is a data anomaly — surface it (log + typed
+    // `unexpected_status`) so the caller falls back to its payment-derived
+    // projection rather than propagate a wrong tax status.
+    logger.error(
+      {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        status,
+      },
+      'invoicing-bridge.getInvoiceStatus_unexpected',
+    );
+    return err({ code: 'unexpected_status' });
   },
 };

@@ -83,7 +83,11 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     bMemberId = randomUUID();
     // F5R3 H-9 (2026-05-16) — bumped 5 → 6 to seed the
     // expectedCurrentStatus-mismatch SQL-guard test below.
+    // Task A.6 (2026-07-11) — bumped 6 → 8 to seed the two
+    // findAutoRefundByProcessorRefundId tests below.
     aInvoiceIds = [
+      randomUUID(),
+      randomUUID(),
       randomUUID(),
       randomUUID(),
       randomUUID(),
@@ -495,6 +499,45 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(after).not.toBeNull();
     expect(after!.processorRefundId).toBe(probeRefundId);
 
+    // (2b) F5 UX D1/D2 — with ONLY the initiation marker, the auto-refund is
+    //      still settling (no CRITICAL-2 failure forensic yet) → failed=false.
+    //      The member banner keys "refunded" vs "reconciling" copy on this;
+    //      the admin alert keys its destructive card on `failed`.
+    expect(after!.failed).toBe(false);
+
+    // (2c) Append the CRITICAL-2 failure forensic
+    //      (`auto_refund_failed_needs_manual_reconcile`) for the SAME invoice —
+    //      the auto-refund did NOT return the money. `findStaleInvoiceAutoRefund`
+    //      must now report failed=true (a failure audit exists for this invoice).
+    const failPayload = JSON.stringify({
+      payment_id: makeUlid(),
+      invoice_id: probeInvoiceId,
+      auto_refund_processor_refund_id: probeRefundId,
+      refund_status: 'failed',
+      amount_satang: '1000000',
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload,
+           tenant_id, retention_years)
+        VALUES
+          ('auto_refund_failed_needs_manual_reconcile'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000',
+           'H-8 D1/D2 failure probe',
+           ${`h8-fail-${probeInvoiceId}`},
+           ${failPayload}::jsonb,
+           ${tenantA.ctx.slug},
+           10)
+      `);
+    });
+
+    const afterFail = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(afterFail).not.toBeNull();
+    expect(afterFail!.processorRefundId).toBe(probeRefundId);
+    expect(afterFail!.failed).toBe(true);
+
     // (3) Tenant B repo asking about tenant A's invoice → null. The
     //     factory-bound tenantId predicate means this would be null
     //     even without RLS, so this assertion alone proves only the
@@ -524,6 +567,183 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
       rlsProbe.length,
       'tenant B MUST NOT see tenant A audit_log rows under RLS — Constitution Principle I clause 3',
     ).toBe(0);
+  });
+
+  it('CF-2: findStaleInvoiceAutoRefund.failed flips FALSE after a auto_refund_reconciled event; findFailedAutoRefundForInvoice reports ids + reconcile state', async () => {
+    // Failed-auto-refund resolve/acknowledge (go-live CF-2). Once the admin
+    // reconciles out-of-band, an `auto_refund_reconciled` event is appended;
+    // `findStaleInvoiceAutoRefund.failed` must become failure-AND-not-reconciled
+    // so the admin alert clears + the member banner reverts to the "refunded"
+    // copy. `findFailedAutoRefundForInvoice` feeds the resolve use-case the
+    // (payment, refund) ids + whether a reconcile already exists (idempotency).
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const probeInvoiceId = randomUUID();
+    const probePaymentId = makeUlid();
+    const probeRefundId = `re_cf2_${randomUUID().slice(0, 8)}`;
+    const { sql: rawSql } = await import('drizzle-orm');
+
+    // (1) Seed the initiation marker + the CRITICAL-2 failure forensic.
+    const initPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      refunded_amount_satang: '1000000',
+      cause: 'invoice_voided',
+      processor_refund_id: probeRefundId,
+    });
+    const failPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      auto_refund_processor_refund_id: probeRefundId,
+      refund_status: 'failed',
+      amount_satang: '1000000',
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('payment_auto_refunded_stale_invoice'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 init',
+           ${`cf2-init-${probeInvoiceId}`}, ${initPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10),
+          ('auto_refund_failed_needs_manual_reconcile'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 fail',
+           ${`cf2-fail-${probeInvoiceId}`}, ${failPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+
+    // (2) Before reconcile: failed=true; the resolve read reports the ids + not-yet-reconciled.
+    const before = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(before?.failed).toBe(true);
+    const failBefore = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, probeInvoiceId),
+    );
+    expect(failBefore).not.toBeNull();
+    expect(failBefore!.paymentId).toBe(probePaymentId);
+    expect(failBefore!.processorRefundId).toBe(probeRefundId);
+    expect(failBefore!.alreadyReconciled).toBe(false);
+
+    // (2b) S1 — Constitution Principle I clause 3: DIRECT cross-tenant negative
+    //      for the NEW CF-2 read `findFailedAutoRefundForInvoice`. Tenant A's
+    //      failure forensic exists + is unreconciled (there IS a row to leak),
+    //      yet tenant B — running the read under its OWN RLS context with its
+    //      own tenant_id filter — MUST see nothing. If RLS or the explicit
+    //      tenant_id WHERE were dropped, this returns tenant A's ids.
+    const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
+    const crossTenantFail = await runInTenant(tenantB.ctx, async (tx) =>
+      repoB.findFailedAutoRefundForInvoice(tx, tenantB.ctx.slug, probeInvoiceId),
+    );
+    expect(
+      crossTenantFail,
+      'tenant B MUST NOT read tenant A failed-auto-refund forensic — Constitution Principle I clause 3',
+    ).toBeNull();
+
+    // (3) Admin reconciles → append the append-only `auto_refund_reconciled` event.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('auto_refund_reconciled'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'cf2 reconcile',
+           ${`cf2-rec-${probeInvoiceId}`},
+           ${JSON.stringify({ invoice_id: probeInvoiceId, payment_id: probePaymentId, processor_refund_id: probeRefundId })}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+
+    // (4) After reconcile: `failed` flips FALSE (alert clears; member banner
+    //     reverts). The initiation marker still exists → non-null return keeps
+    //     the member "refunded" copy path (processorRefundId still surfaced).
+    const after = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(after?.failed).toBe(false);
+    expect(after?.processorRefundId).toBe(probeRefundId);
+    const failAfter = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, probeInvoiceId),
+    );
+    expect(failAfter!.alreadyReconciled).toBe(true);
+
+    // (5) Fresh invoice with NO failure forensic → null (the use-case refuses).
+    const freshInvoiceId = randomUUID();
+    const none = await runInTenant(tenantA.ctx, async (tx) =>
+      repoA.findFailedAutoRefundForInvoice(tx, tenantA.ctx.slug, freshInvoiceId),
+    );
+    expect(none).toBeNull();
+  });
+
+  it('M1: findStaleInvoiceAutoRefund surfaces the concurrent-manual-mark auto-refund path (not just stale-invoice)', async () => {
+    // The concurrent-manual-mark auto-refund (admin marked the invoice paid while
+    // a member online payment was in-flight) INITIATES via
+    // `payment_auto_refunded_concurrent_manual_mark`, NOT
+    // `payment_auto_refunded_stale_invoice`. When that auto-refund later FAILS at
+    // Stripe, the SAME CRITICAL-2 forensic (`auto_refund_failed_needs_manual_reconcile`)
+    // fires + pages — but pre-M1 the init-subquery keyed ONLY on the stale-invoice
+    // event, so the admin `AutoRefundFailedAlert` (+ the CF-2 resolve action) never
+    // surfaced for this path. Both init events are emitted from the SAME
+    // confirm-payment.ts block with identical payload keys (invoice_id /
+    // processor_refund_id), so the read must recognise BOTH.
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const probeInvoiceId = randomUUID();
+    const probePaymentId = makeUlid();
+    const probeRefundId = `re_cmm_${randomUUID().slice(0, 8)}`;
+    const { sql: rawSql } = await import('drizzle-orm');
+
+    // (1) Seed the CONCURRENT-MANUAL-MARK initiation marker + the failure forensic.
+    const initPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      refunded_amount_satang: '1000000',
+      cause: 'invoice_already_paid',
+      processor_refund_id: probeRefundId,
+    });
+    const failPayload = JSON.stringify({
+      payment_id: probePaymentId,
+      invoice_id: probeInvoiceId,
+      auto_refund_processor_refund_id: probeRefundId,
+      refund_status: 'failed',
+      amount_satang: '1000000',
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('payment_auto_refunded_concurrent_manual_mark'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'm1 init',
+           ${`m1-init-${probeInvoiceId}`}, ${initPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10),
+          ('auto_refund_failed_needs_manual_reconcile'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'm1 fail',
+           ${`m1-fail-${probeInvoiceId}`}, ${failPayload}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+
+    // (2) The admin alert must now surface: non-null + failed=true + the refund ref.
+    const failed = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(failed).not.toBeNull();
+    expect(failed!.processorRefundId).toBe(probeRefundId);
+    expect(failed!.failed).toBe(true);
+
+    // (3) After the admin reconciles → failed flips false (admin alert clears).
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.execute(rawSql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          ('auto_refund_reconciled'::audit_event_type,
+           '00000000-0000-0000-0000-000000000000', 'm1 reconcile',
+           ${`m1-rec-${probeInvoiceId}`},
+           ${JSON.stringify({ invoice_id: probeInvoiceId, payment_id: probePaymentId, processor_refund_id: probeRefundId })}::jsonb,
+           ${tenantA.ctx.slug}, 10)
+      `);
+    });
+    const afterReconcile = await repoA.findStaleInvoiceAutoRefund(probeInvoiceId);
+    expect(afterReconcile?.failed).toBe(false);
+    expect(afterReconcile?.processorRefundId).toBe(probeRefundId);
   });
 
   // ===========================================================================
@@ -610,5 +830,114 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
     expect(verified, 'seeded payment row must still exist').not.toBeNull();
     expect(verified!.status).toBe('succeeded');
     expect(verified!.processorChargeId).toBe('ch_test_h9_oob');
+  });
+
+  // ===========================================================================
+  // Task A.6 — findAutoRefundByProcessorRefundId (durable A4b lookup,
+  // migration 0240 `auto_refund_processor_refund_id` column). Replaces
+  // the audit_log-based `findStaleInvoiceAutoRefund` above for callers
+  // that can run inside their own tx. The orphaned method above is
+  // NOT deleted here (A.17 removes it) — this task only adds the new
+  // durable-column read.
+  // ===========================================================================
+
+  it('A.6: findAutoRefundByProcessorRefundId reads the durable auto-refund marker; null before it is set', async () => {
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const pi = `pi_test_${randomUUID().slice(0, 8)}`;
+    const autoRefundProcessorRefundId = `re_auto_${randomUUID().slice(0, 8)}`;
+
+    await repo.withTx(async (tx) => {
+      await repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: pi,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-a6-auto-refund',
+      });
+    });
+
+    // Before the marker is set → null.
+    const before = await repo.withTx((tx) =>
+      repo.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(before).toBeNull();
+
+    // Set the durable marker directly (migration 0240 column). The
+    // WRITE side (auto-refund sweep painting this column) lands in a
+    // later task (A.13) — this task builds only the READ contract, so
+    // the test seeds the column via a raw Drizzle UPDATE.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx
+        .update(payments)
+        .set({ autoRefundProcessorRefundId })
+        .where(eq(payments.id, paymentId));
+    });
+
+    const after = await repo.withTx((tx) =>
+      repo.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(after).not.toBeNull();
+    expect(after?.paymentId).toBe(paymentId);
+    expect(after?.invoiceId).toBe(invoiceId);
+  });
+
+  it('A.6 cross-tenant: findAutoRefundByProcessorRefundId — tenant B sees ZERO of tenant A auto-refund markers', async () => {
+    const invoiceId = nextInvoice();
+    const repoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const autoRefundProcessorRefundId = `re_auto_xtenant_${randomUUID().slice(0, 8)}`;
+
+    await repoA.withTx(async (tx) => {
+      await repoA.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'promptpay',
+        amountSatang: asSatang(1_000_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-a6-xtenant',
+      });
+    });
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx
+        .update(payments)
+        .set({ autoRefundProcessorRefundId })
+        .where(eq(payments.id, paymentId));
+    });
+
+    // Tenant B's repo, explicitly passing tenant A's tenantId as the
+    // app-layer filter (probing whether the DB-layer RLS backstop
+    // independently blocks it, per Constitution Principle I clause 3).
+    const repoB = makeDrizzlePaymentsRepo(tenantB.ctx.slug);
+    const crossTenant = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAutoRefundByProcessorRefundId(
+        tx,
+        tenantA.ctx.slug,
+        autoRefundProcessorRefundId,
+      ),
+    );
+    expect(crossTenant).toBeNull();
   });
 });

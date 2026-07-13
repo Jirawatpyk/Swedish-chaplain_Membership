@@ -34,13 +34,16 @@
  * RBAC: cron-only (`actorRole='cron'`, `actorUserId=null`). Route
  * handler validates Bearer `CRON_SECRET` before invoking.
  */
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { asInvoiceId } from '@/modules/invoicing';
+import type { MemberId } from '@/modules/members';
+import { asInvoiceId, asCreditNoteId } from '@/modules/invoicing';
 import { parseInput } from './_lib/parse-input';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
@@ -48,6 +51,7 @@ import type {
   CycleId,
   RenewalCycle,
 } from '../../domain/renewal-cycle';
+import { asTaskId } from '../../domain/renewal-escalation-task';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -85,6 +89,19 @@ export interface ReconcilePendingReactivationsOutput {
   readonly timedOut: number;
   /** Auto-timeouts where the F5 refund failed; cron will retry tomorrow. */
   readonly timeoutRefundFailures: number;
+  /**
+   * F8-RP (2026-07-11): auto-timeouts where the F5 refund was submitted but
+   * is settling ASYNCHRONOUSLY (Stripe `pending`/`requires_action`, or a
+   * prior refund already in-flight → `refund_in_progress`). The cycle stays
+   * `pending_admin_reactivation` (NO transition) and self-heals on a later
+   * cron pass once the `charge.refund.updated` webhook (A.11) / sweep (A.14)
+   * settles the refund (the bridge then returns `no_payment_found` → normal
+   * lapse). NOT counted in `timeoutRefundFailures` (nothing failed) and NOT
+   * in `timedOut` (no lapse written). INFORMATIONAL — surfaced via
+   * `renewalsMetrics.timeoutRefundPending`, never pages. Before F8-RP this
+   * case was mislabelled as a refund failure.
+   */
+  readonly timeoutRefundPending: number;
   /**
    * MONEY-SAFETY (063 audit): timed-out cycles SKIPPED because the
    * validate-under-lock re-read found the cycle was no longer
@@ -157,6 +174,77 @@ export interface ReconcilePendingReactivationsOutput {
    * `renewalsMetrics.reminderAuditEmitFailures`.
    */
   readonly remindersFailed: number;
+  /**
+   * F8-RP follow-up (2026-07-12) — async reject-with-refund SETTLEMENT
+   * counters. Cycles carrying the reject-refund marker
+   * (`rejectRefundInitiatedAt !== null`) are reconciled EVERY cron pass,
+   * regardless of `daysPending` and BEFORE the timeout/reminder branches —
+   * their terminal must mirror the SYNC reject path (→ `cancelled`), never the
+   * timeout (→ `lapsed`). Five terminal outcomes (parity with the timeout
+   * counters):
+   *
+   *   - `asyncRejectSettledCancelled` — the marked refund SETTLED succeeded;
+   *     the cycle converged → `cancelled`/`admin_rejected_with_refund`
+   *     (byte-identical to the sync path: same closed_reason, the `_rejected`
+   *     audit carrying the settled refund's credit-note id + the rejecting
+   *     admin as actor, and the `post_refund_review` escalation task).
+   *   - `asyncRejectRefundStillPending` — the marked refund is still settling;
+   *     the cron leaves the cycle marked + pending for a later pass.
+   *   - `asyncRejectRefundFailed` — the marked refund settled FAILED/canceled;
+   *     the async refund never returned the money, so the cron CLEARS the
+   *     marker (reverting to an ordinary pending cycle the admin re-handles)
+   *     and fires an ALERTING metric. NEVER silently → cancelled / lapsed.
+   *   - `asyncRejectLookupFailed` — the F5 settlement lookup failed (repo
+   *     unavailable) or the refund id was not found; transient — the cycle
+   *     stays marked + pending and the next cron pass retries.
+   *   - `asyncRejectAdminRaceSkipped` — the tx-bound re-read under the lock
+   *     found the cycle no longer `pending_admin_reactivation` (a concurrent
+   *     admin approve/reject won between list + lock), or the transition lost
+   *     the optimistic-lock race. Money residual surfaced (the refund may have
+   *     settled against a now-non-pending cycle); NOT counted as settled.
+   *   - `asyncRejectSettleFailed` — F8-RP-2 review fix (resilience): a
+   *     NON-conflict error (DB blip / RLS regression mid-tx) threw from EITHER
+   *     the succeeded-branch settle tx (transition + audit + escalation-task
+   *     insert) OR the settled-`failed`-branch marker-clear tx (Finding 1). The
+   *     tx rolled back — NO partial write landed — and the cycle stays
+   *     marked+pending for the next cron pass to retry. Distinct from
+   *     `asyncRejectAdminRaceSkipped` (a clean no-op race, not an error) and
+   *     from `asyncRejectRefundFailed` (the F5 refund itself failed — this
+   *     counter fires when the F5 refund SUCCEEDED but our own settle-write
+   *     blipped). Mirrors the timeout branch's
+   *     `timeoutTransitionFailedPostRefund` self-heal discipline. Per-cycle
+   *     isolation (this counter existing at all) prevents one poison marked
+   *     cycle from 500'ing the whole cron pass — parity with `processTimeout`.
+   */
+  readonly asyncRejectSettledCancelled: number;
+  readonly asyncRejectRefundStillPending: number;
+  readonly asyncRejectRefundFailed: number;
+  readonly asyncRejectLookupFailed: number;
+  readonly asyncRejectAdminRaceSkipped: number;
+  readonly asyncRejectSettleFailed: number;
+  /**
+   * H1 reliability fix — loop-level per-cycle backstop. Counts cycles whose
+   * processing threw an UNCLASSIFIED error that ESCAPED its per-cycle branch's
+   * own error handling. Each per-cycle branch already classifies its KNOWN
+   * failure modes and RETURNS a typed outcome/counter (settle_failed,
+   * refund_failed, admin_race_skipped, transition_failed_*, …) — those are
+   * returned, never thrown, so they never reach this backstop. This counter is
+   * ONLY for a genuine escaped throw: e.g. `processTimeout`'s Step-1
+   * validate-under-lock re-read (`acquireCycleLockInTx` + `findByIdInTx`) opens
+   * an UNGUARDED `runInTenant`; a persistent NON-conflict throw there (DB blip /
+   * RLS regression / poison row) escapes `processTimeout` and, without the
+   * per-cycle try/catch, propagates through the caller for-loop and 500s the
+   * WHOLE reconcile pass — blocking every OTHER marked/timeout/reminder cycle
+   * for the tenant (a self-DoS; money-safe since read-only/rolled-back, but
+   * availability-unsafe). The backstop isolates ANY such throw to its one cycle:
+   * ERROR log (PCI-safe ids + error constructor name — never `error.message`) +
+   * this distinct counter + `renewalsMetrics.cycleProcessingError` + `continue`.
+   * DISTINCT + alertable (never silently swallowed): a sustained non-zero rate
+   * means a per-cycle branch is chronically throwing an unhandled error and
+   * warrants investigation (the escaped throw is a latent unguarded path, not a
+   * classified outcome).
+   */
+  readonly cycleProcessingErrors: number;
 }
 
 export type ReconcilePendingReactivationsError = {
@@ -177,7 +265,11 @@ export type ReconcilePendingReactivationsError = {
 export interface ReconcilePendingReactivationsDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter'
+    // F8-RP follow-up: `escalationTaskRepo` added so the async reject-with-
+    // refund SETTLE branch inserts the same `post_refund_review` task the
+    // SYNC reject path emits (byte-identical parity). `makeRenewalsDeps`
+    // already provides it — the cron route wiring is unchanged.
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'escalationTaskRepo'
   > {
   readonly f5RefundBridge: F5RefundBridge;
   readonly reminderAuditQuery: ReminderAuditQueryPort;
@@ -198,6 +290,55 @@ export interface ReconcilePendingReactivationsDeps
  */
 export const PENDING_TIMEOUT_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
+
+/**
+ * F8-RP follow-up — the finance follow-up task type + due window for the async
+ * reject-with-refund SETTLE branch. Mirrors the SYNC reject path
+ * (`admin-reject-reactivation.ts`) EXACTLY so async + sync land byte-identical:
+ * idempotent on `(tenant, member, cycle, task_type) WHERE status='open'`.
+ */
+const POST_REFUND_REVIEW_TASK_TYPE = 'post_refund_review' as const;
+const POST_REFUND_REVIEW_DUE_DAYS = 3;
+
+/**
+ * F8-RP follow-up — terminal outcome of `processMarkedRejectRefund` for one
+ * marked cycle. Mirrors `ProcessTimeoutOutcome`'s independent-count discipline:
+ *   - `settled_cancelled`   — refund settled → cycle converged to `cancelled`
+ *     (sync-path exact terminal: closed_reason + `_rejected` audit w/ the
+ *     settled CN id + the REPLAYED admin actor + the `post_refund_review` task).
+ *   - `refund_pending`      — refund still settling; cron waits (no transition).
+ *   - `refund_failed`       — refund settled failed/canceled → marker CLEARED,
+ *     cycle reverts to ordinary pending (NEVER cancelled/lapsed); alerting.
+ *   - `lookup_failed`       — F5 settlement lookup unavailable / refund id not
+ *     found; cycle stays marked+pending, retry next pass (marker NOT cleared).
+ *   - `admin_race_skipped`  — the tx re-read under the lock found the cycle no
+ *     longer pending (concurrent admin approve/reject won), OR the transition
+ *     lost the optimistic-lock race. No transition; money residual surfaced.
+ *   - `settle_failed`       — F8-RP-2 review fix (resilience): a NON-conflict
+ *     error (DB blip / RLS regression mid-tx) threw from EITHER of the two
+ *     write-txs this function opens — the SUCCEEDED-branch settle tx (transition
+ *     + `emitInTx` + the `post_refund_review` task insert + its audit) OR the
+ *     settled-`failed`-branch marker-clear tx (Finding 1: `acquireCycleLockInTx`
+ *     + `clearRejectRefundMarkerInTx`). `CycleTransitionConflictError`/
+ *     `CycleNotFoundError` are handled above and never reach this outcome.
+ *     Mirrors `ProcessTimeoutOutcome`'s
+ *     `transition_failed_post_refund`/`transition_failed_no_refund`
+ *     self-heal discipline: the tx rolled back (no partial write), the
+ *     cycle stays marked+pending, and the NEXT cron pass retries the same
+ *     settle from scratch. Before this fix the throw escaped
+ *     `processMarkedRejectRefund` uncaught, propagated through the caller's
+ *     for-loop (which has no try/catch either), and 500'd the ENTIRE
+ *     reconcile pass — a single poison marked cycle could block every other
+ *     marked/timeout/reminder cycle in the same tenant's run (self-DoS;
+ *     money-safe, since the tx rolls back, but availability-unsafe).
+ */
+type ProcessMarkedRejectOutcome =
+  | 'settled_cancelled'
+  | 'refund_pending'
+  | 'refund_failed'
+  | 'lookup_failed'
+  | 'admin_race_skipped'
+  | 'settle_failed';
 
 /**
  * Round 3 review-fix (R3-S6+S7): single source of truth for the
@@ -263,14 +404,112 @@ export async function reconcilePendingReactivations(
   let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
+  let timeoutRefundPending = 0;
   let timeoutAdminRaceSkipped = 0;
   let timeoutRefundOrphaned = 0;
   let timeoutTransitionFailedPostRefund = 0;
   let timeoutTransitionFailedNoRefund = 0;
+  // F8-RP follow-up async reject-with-refund settlement counters.
+  let asyncRejectSettledCancelled = 0;
+  let asyncRejectRefundStillPending = 0;
+  let asyncRejectRefundFailed = 0;
+  let asyncRejectLookupFailed = 0;
+  let asyncRejectAdminRaceSkipped = 0;
+  let asyncRejectSettleFailed = 0;
+  // H1 reliability fix — loop-level per-cycle backstop counter.
+  let cycleProcessingErrors = 0;
 
-  for (const cycle of page.items) {
+  // H1 reliability fix — the per-cycle processing is extracted into this named
+  // unit so the caller loop can wrap EACH cycle in a TIGHT try/catch backstop.
+  // Each branch below (marked / timeout / reminder) already classifies its KNOWN
+  // failure modes and RETURNS a typed outcome (settle_failed, refund_failed,
+  // admin_race_skipped, transition_failed_*, …); those never throw, so the
+  // backstop below can NEVER mask or re-label a classified outcome. The backstop
+  // exists SOLELY to isolate an UNCLASSIFIED throw that escapes a branch — the
+  // canonical case being `processTimeout`'s Step-1 validate-under-lock re-read,
+  // which opens an UNGUARDED `runInTenant` (`acquireCycleLockInTx` +
+  // `findByIdInTx`); a persistent NON-conflict throw there would otherwise
+  // propagate out of the loop and 500 the WHOLE pass, blocking every OTHER cycle
+  // for the tenant (self-DoS). Closing it at the loop level (rather than
+  // wrapping only Step-1) also covers any FUTURE unguarded per-cycle
+  // `runInTenant`. Mutates the run-scoped counters above via closure (same
+  // pattern the inline loop used); the per-cycle skips that were `continue`
+  // become `return` (identical control flow — the loop advances to the next
+  // cycle either way).
+  async function processCycle(cycle: RenewalCycle): Promise<void> {
+    // F8-RP follow-up: a cycle carrying the async reject-with-refund marker is
+    // reconciled to its intended `cancelled` terminal EVERY pass, regardless
+    // of `daysPending` and BEFORE the timeout/reminder branches — an admin
+    // reject must never fall into the timeout → `lapsed` path. `continue`
+    // guarantees a marked cycle never reaches `processTimeout` (which would
+    // otherwise issue a redundant refund + mislabel the outcome as a timeout).
+    if (
+      cycle.status === 'pending_admin_reactivation' &&
+      cycle.rejectRefundInitiatedAt !== null
+    ) {
+      const outcome = await processMarkedRejectRefund(
+        deps,
+        cycle,
+        input.correlationId,
+        input.now,
+      );
+      switch (outcome) {
+        case 'settled_cancelled':
+          asyncRejectSettledCancelled += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'settled_cancelled',
+          );
+          break;
+        case 'refund_pending':
+          asyncRejectRefundStillPending += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'still_pending',
+          );
+          break;
+        case 'refund_failed':
+          asyncRejectRefundFailed += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'refund_failed',
+          );
+          break;
+        case 'lookup_failed':
+          asyncRejectLookupFailed += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'lookup_failed',
+          );
+          break;
+        case 'admin_race_skipped':
+          asyncRejectAdminRaceSkipped += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'admin_race_skipped',
+          );
+          break;
+        case 'settle_failed':
+          // F8-RP-2 review fix: the settle tx threw a non-conflict error
+          // (DB blip / RLS regression mid-tx) — caught INSIDE
+          // `processMarkedRejectRefund` so it never reaches this loop as an
+          // exception. The tx rolled back (no partial write); the cycle
+          // stays marked+pending and self-heals on the next cron pass.
+          asyncRejectSettleFailed += 1;
+          renewalsMetrics.asyncRejectRefundReconciled(
+            cycle.tenantId,
+            'settle_failed',
+          );
+          break;
+        default: {
+          const _exhaustive: never = outcome;
+          void _exhaustive;
+        }
+      }
+      return; // H1: was `continue` — see processCycle extraction note
+    }
     const daysPending = computeDaysPending(cycle, input.now);
-    if (daysPending === null) continue; // missing entered_pending_at — defensive
+    if (daysPending === null) return; // missing entered_pending_at — defensive (H1: was `continue`)
     if (daysPending >= PENDING_TIMEOUT_DAYS) {
       const outcome = await processTimeout(
         deps,
@@ -284,6 +523,14 @@ export async function reconcilePendingReactivations(
           break;
         case 'refund_failed':
           timeoutRefundFailures += 1;
+          break;
+        case 'refund_pending':
+          // F8-RP: the F5 refund is settling asynchronously (Stripe
+          // pending/requires_action, or a prior refund already in-flight).
+          // NOT a failure and NOT a lapse — the cycle stays pending and
+          // self-heals next run. Surfaced via its own informational counter.
+          timeoutRefundPending += 1;
+          renewalsMetrics.timeoutRefundPending(cycle.tenantId);
           break;
         case 'admin_race_skipped':
           timeoutAdminRaceSkipped += 1;
@@ -320,7 +567,7 @@ export async function reconcilePendingReactivations(
           void _exhaustive;
         }
       }
-      continue;
+      return; // H1: was `continue` — see processCycle extraction note
     }
     // T138 catch-up review-fix: instead of equality-only firing
     // (which silently drops a reminder when the cron skips that exact
@@ -373,6 +620,36 @@ export async function reconcilePendingReactivations(
     }
   }
 
+  // H1 reliability fix — TOP-LEVEL per-cycle backstop. `processCycle` handles a
+  // single cycle and reports its CLASSIFIED outcome via the run-scoped counters;
+  // any UNCLASSIFIED throw that escapes it (e.g. the timeout branch's Step-1
+  // unguarded re-read) is isolated HERE — never allowed to abort the pass and
+  // block every other cycle. Made VISIBLE (not silently swallowed) via the
+  // distinct, alertable `cycleProcessingErrors` counter +
+  // `renewalsMetrics.cycleProcessingError` + an ERROR log (PCI-safe ids + the
+  // error CONSTRUCTOR NAME only — NEVER `error.message`, which on the
+  // payment-adjacent refund path could carry processor detail) — then the loop
+  // continues to the next cycle. Classified per-branch outcomes are RETURNED,
+  // not thrown, so this never masks or re-labels one.
+  for (const cycle of page.items) {
+    try {
+      await processCycle(cycle);
+    } catch (e) {
+      cycleProcessingErrors += 1;
+      renewalsMetrics.cycleProcessingError(cycle.tenantId);
+      logger.error(
+        {
+          errorId: 'F8.RECONCILE.CYCLE_PROCESSING_ERROR',
+          cycleId: cycle.cycleId,
+          tenantId: cycle.tenantId,
+          errorName: e instanceof Error ? e.constructor.name : typeof e,
+        },
+        '[reconcile-pending-reactivations] unclassified per-cycle throw escaped branch handling — isolated to this cycle (counted + alerting); reconcile pass continues',
+      );
+      continue;
+    }
+  }
+
   return ok({
     cyclesProcessed: page.items.length,
     remindersT7: reminderCounters['lapsed_member_admin_reactivation_reminder_t-7'],
@@ -381,10 +658,18 @@ export async function reconcilePendingReactivations(
     remindersFailed,
     timedOut,
     timeoutRefundFailures,
+    timeoutRefundPending,
     timeoutAdminRaceSkipped,
     timeoutRefundOrphaned,
     timeoutTransitionFailedPostRefund,
     timeoutTransitionFailedNoRefund,
+    asyncRejectSettledCancelled,
+    asyncRejectRefundStillPending,
+    asyncRejectRefundFailed,
+    asyncRejectLookupFailed,
+    asyncRejectAdminRaceSkipped,
+    asyncRejectSettleFailed,
+    cycleProcessingErrors,
   });
 }
 
@@ -435,6 +720,15 @@ export async function reconcilePendingReactivations(
 type ProcessTimeoutOutcome =
   | 'timed_out'
   | 'refund_failed'
+  // F8-RP: the F5 refund was submitted but is settling ASYNCHRONOUSLY
+  // (Stripe `pending`/`requires_action`, or a prior refund already in-flight
+  // → `refund_in_progress`). The row stays `pending`; the cron leaves the
+  // cycle in `pending_admin_reactivation` (NO transition) and self-heals on
+  // a later pass once the webhook/sweep settles the refund. NOT a failure
+  // (money did not fail to move) and NOT a lapse. Money-safe: the pending
+  // row blocks a double refund. Classified distinctly from `refund_failed`
+  // so an in-flight refund is not mislabelled as a Stripe failure.
+  | 'refund_pending'
   | 'admin_race_skipped'
   | 'post_refund_admin_race'
   | 'transition_failed_post_refund'
@@ -534,6 +828,306 @@ async function emitReminderAudit(
   }
 }
 
+/**
+ * F8-RP follow-up — settle a MARKED (async reject-with-refund) cycle.
+ *
+ * Ordering mirrors `adminRejectReactivation` + `processTimeout`: the F5
+ * settlement lookup runs OUTSIDE any tx (read-only F5 query), then the cancel
+ * transition + audit + escalation task run in ONE tx under the per-cycle
+ * advisory lock with a tx-bound re-read (TOCTOU). The SUCCEEDED terminal is
+ * BYTE-IDENTICAL to the sync reject path — same closed_reason, the same
+ * `_rejected` audit carrying the settled refund's credit-note id and the
+ * REPLAYED rejecting admin as actor (NOT the cron), and the same
+ * `post_refund_review` finance escalation task.
+ */
+async function processMarkedRejectRefund(
+  deps: ReconcilePendingReactivationsDeps,
+  cycle: RenewalCycle,
+  correlationId: string,
+  now: Date,
+): Promise<ProcessMarkedRejectOutcome> {
+  const cycleId = cycle.cycleId as CycleId;
+
+  // Marker invariant (defensive): a marked cycle always has a linked invoice +
+  // refund id + actor (the reject use-case records the marker only when
+  // linkedInvoiceId !== null AND F5 supplied the refund id, stamping the actor
+  // in the same write). If any is missing the row is inconsistent — treat as a
+  // transient lookup failure so the marker persists for a later pass / manual
+  // handling; NEVER silently cancel or lapse. The null-guard also narrows the
+  // three fields to non-null for the audit actor + F5 lookup below.
+  if (
+    cycle.linkedInvoiceId === null ||
+    cycle.rejectRefundId === null ||
+    cycle.rejectActorUserId === null
+  ) {
+    logger.error(
+      {
+        cycleId,
+        tenantId: cycle.tenantId,
+        hasInvoice: cycle.linkedInvoiceId !== null,
+        hasRefundId: cycle.rejectRefundId !== null,
+        hasActor: cycle.rejectActorUserId !== null,
+      },
+      '[reconcile-pending-reactivations] marked reject-refund cycle missing invoice/refund-id/actor — leaving marked+pending for manual handling',
+    );
+    return 'lookup_failed';
+  }
+  const rejectActorUserId = cycle.rejectActorUserId;
+  // Capture the resolved refund id (R1) as a stable const post-guard: the
+  // FAILED-branch marker-clear guards on it (Finding 5) and passes it into a
+  // `runInTenant` closure, where property narrowing on `cycle.rejectRefundId`
+  // would NOT survive — a const keeps the non-null narrowing across the closure.
+  const rejectRefundId = cycle.rejectRefundId;
+
+  // Step 1 (read-only, outside tx): resolve the F5 refund settlement.
+  const settlement = await deps.f5RefundBridge.getRefundOutcomeForInvoice({
+    tenantId: asTenantId(cycle.tenantId),
+    invoiceId: asInvoiceId(cycle.linkedInvoiceId),
+    refundId: rejectRefundId,
+  });
+
+  if (settlement.status === 'lookup_failed' || settlement.status === 'not_found') {
+    // Transient (repo unavailable) or the refund id was not found in the F5
+    // activity. Leave the cycle marked + pending — the marker is NOT cleared,
+    // so the next cron pass retries. Do NOT cancel/lapse on an unresolved read.
+    logger.warn(
+      {
+        cycleId,
+        tenantId: cycle.tenantId,
+        lookupStatus: settlement.status,
+      },
+      '[reconcile-pending-reactivations] async reject-refund settlement unresolved — cycle stays marked+pending, retry next pass',
+    );
+    return 'lookup_failed';
+  }
+
+  if (settlement.status === 'pending') {
+    // Still settling — wait for a later pass. No transition, marker intact.
+    return 'refund_pending';
+  }
+
+  if (settlement.status === 'failed') {
+    // The async refund settled FAILED/canceled — the money never returned. The
+    // cycle MUST NOT converge to `cancelled` (which would imply the refund
+    // completed) and MUST NOT lapse. Clear the marker (revert to an ordinary
+    // pending cycle the admin re-handles via the pending queue — the SYNC
+    // reject path's own refund-failure treatment: it returns `refund_failed`
+    // and leaves the cycle pending). Fire an alerting outcome + a loud log.
+    //
+    // Finding 1 (F8-RP-2 review — per-cycle error isolation): wrap the
+    // marker-clear tx in the SAME try/catch the succeeded branch uses. A
+    // persistent NON-conflict throw from `acquireCycleLockInTx` /
+    // `clearRejectRefundMarkerInTx` (DB blip / RLS regression) would otherwise
+    // escape `processMarkedRejectRefund`, propagate through the caller's
+    // unguarded for-loop, and 500 the ENTIRE reconcile pass (self-DoS) —
+    // blocking every other marked/timeout/reminder cycle for the tenant. Isolate
+    // it: `runInTenant` rolled the tx back (no partial write; the marker stays
+    // intact), so the cycle is untouched and the NEXT cron pass re-resolves
+    // settlement=failed and retries the clear. Classified `settle_failed`
+    // (money-safe, self-heals) — parity with the succeeded branch's outer catch.
+    let cleared: boolean;
+    try {
+      cleared = await runInTenant(deps.tenant, async (tx) => {
+        await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
+        // Finding 5: guard the clear on the SAME refund id we resolved above
+        // (R1). If a concurrent re-reject overwrote the marker with a fresh R2
+        // in the read→clear window, the guarded UPDATE matches 0 rows (no-op)
+        // rather than wiping R2's live marker — so R2's own settlement still
+        // converges the cycle instead of being silently unmarked → lapsed.
+        return deps.cyclesRepo.clearRejectRefundMarkerInTx(
+          tx,
+          cycle.tenantId,
+          cycleId,
+          rejectRefundId,
+        );
+      });
+    } catch (e) {
+      logger.error(
+        {
+          cycleId,
+          tenantId: cycle.tenantId,
+          refundId: rejectRefundId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        '[reconcile-pending-reactivations] async reject-refund FAILED-branch marker-clear tx threw (non-conflict) — tx rolled back, cycle stays marked+pending; next cron pass retries',
+      );
+      return 'settle_failed';
+    }
+    logger.error(
+      {
+        cycleId,
+        tenantId: cycle.tenantId,
+        refundId: rejectRefundId,
+        failureReasonCode: settlement.failureReasonCode,
+        markerCleared: cleared,
+      },
+      '[reconcile-pending-reactivations] async reject-refund SETTLED FAILED — money not returned; marker cleared, cycle reverts to pending for admin re-handling (alerting)',
+    );
+    return 'refund_failed';
+  }
+
+  // settlement.status === 'succeeded' — converge → `cancelled`, byte-identical
+  // to the SYNC reject path. Lock + tx-bound re-read (TOCTOU) then transition +
+  // audit + escalation task, all atomic in one tx (Constitution Principle VIII).
+  const creditNoteId = settlement.creditNoteId;
+  const closedAt = now.toISOString();
+  // F8-RP-2 review fix (resilience — per-cycle error isolation): mirror
+  // `processTimeout`'s tx2 outer try/catch EXACTLY. `CycleTransitionConflictError`
+  // / `CycleNotFoundError` are already caught INSIDE the tx (below) and return
+  // `admin_race_skipped` — this outer catch exists solely to stop a NON-conflict
+  // throw from `emitInTx`, `escalationTaskRepo.insertIfAbsent`, the 2nd `emitInTx`,
+  // or any other unexpected DB blip mid-tx from escaping this function. Before this
+  // fix, such a throw propagated through the caller's for-loop (which has no
+  // try/catch of its own — same as `processTimeout`'s caller) and 500'd the ENTIRE
+  // reconcile pass, so one poison marked cycle could block every other marked/
+  // timeout/reminder cycle for the tenant. Money-safe either way (the tx rolls
+  // back — no partial write lands), but NOT availability-safe without this guard.
+  try {
+    return await runInTenant(
+      deps.tenant,
+      async (tx): Promise<ProcessMarkedRejectOutcome> => {
+        await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);
+        const reread = await deps.cyclesRepo.findByIdInTx(
+          tx,
+          cycle.tenantId,
+          cycleId,
+        );
+        if (
+          !reread ||
+          reread.status !== 'pending_admin_reactivation' ||
+          reread.rejectRefundInitiatedAt === null
+        ) {
+          // A concurrent admin approve/reject (or a marker clear) won between
+          // list + lock. The refund already settled against a now-non-pending
+          // cycle — surface the money residual (do NOT write the cancel).
+          logger.warn(
+            {
+              cycleId,
+              tenantId: cycle.tenantId,
+              observedStatus: reread?.status ?? 'not_found',
+            },
+            '[reconcile-pending-reactivations] async reject-refund settled but cycle no longer pending/marked at lock — admin race; skipping cancel transition',
+          );
+          return 'admin_race_skipped';
+        }
+
+        let updated: RenewalCycle;
+        try {
+          updated = await deps.cyclesRepo.transitionStatus(
+            tx,
+            cycle.tenantId,
+            cycleId,
+            {
+              from: 'pending_admin_reactivation',
+              to: 'cancelled',
+              closedAt,
+              closedReason: 'admin_rejected_with_refund',
+            },
+          );
+        } catch (e) {
+          if (
+            e instanceof CycleTransitionConflictError ||
+            e instanceof CycleNotFoundError
+          ) {
+            logger.warn(
+              { cycleId, tenantId: cycle.tenantId, err: e.message },
+              '[reconcile-pending-reactivations] async reject-refund cancel transition lost optimistic-lock race — admin/conflict won; skipping',
+            );
+            return 'admin_race_skipped';
+          }
+          throw e;
+        }
+
+        // `lapsed_member_admin_reactivation_rejected` audit — byte-identical to
+        // the sync path: same payload (cycle_id + actor + refund_credit_note_id)
+        // and the REPLAYED admin as actor (actorRole='admin'), NOT the cron.
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'lapsed_member_admin_reactivation_rejected' as const,
+            payload: {
+              cycle_id: updated.cycleId,
+              actor_user_id: asUserId(rejectActorUserId),
+              refund_credit_note_id:
+                creditNoteId === null ? null : asCreditNoteId(creditNoteId),
+            },
+          },
+          {
+            tenantId: cycle.tenantId,
+            actorUserId: rejectActorUserId,
+            actorRole: 'admin',
+            correlationId,
+            requestId: null,
+          },
+        );
+
+        // post_refund_review escalation task — inserted only when a credit note
+        // materialised (parity with the sync path, which inserts only when
+        // refundCreditNoteId !== null). Idempotent on the open-task index.
+        if (creditNoteId !== null) {
+          const dueAt = new Date(
+            now.getTime() + POST_REFUND_REVIEW_DUE_DAYS * MS_PER_DAY,
+          ).toISOString();
+          const taskInsert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
+            tenantId: cycle.tenantId,
+            taskId: asTaskId(randomUUID()),
+            memberId: cycle.memberId,
+            cycleId,
+            taskType: POST_REFUND_REVIEW_TASK_TYPE,
+            assignedToRole: 'admin',
+            dueAt,
+          });
+          if (taskInsert.created) {
+            await deps.auditEmitter.emitInTx(
+              tx,
+              {
+                type: 'escalation_task_created' as const,
+                payload: {
+                  task_id: taskInsert.row.taskId,
+                  task_type: POST_REFUND_REVIEW_TASK_TYPE,
+                  member_id: cycle.memberId as MemberId,
+                  cycle_id: cycleId as CycleId,
+                  trigger_reason: 'admin_reject_with_refund',
+                  refund_credit_note_id: asCreditNoteId(creditNoteId),
+                },
+              },
+              {
+                tenantId: cycle.tenantId,
+                actorUserId: rejectActorUserId,
+                actorRole: 'admin',
+                correlationId,
+                requestId: null,
+                summary: `post_refund_review task created for credit-note ${creditNoteId}`,
+              },
+            );
+          }
+        }
+
+        return 'settled_cancelled';
+      },
+    );
+  } catch (e) {
+    // F8-RP-2 review fix: a NON-conflict throw from anywhere in the settle
+    // tx above (`emitInTx`, `escalationTaskRepo.insertIfAbsent`, the 2nd
+    // `emitInTx`, or an unexpected DB blip) lands here. `runInTenant` has
+    // already rolled the tx back, so NO partial write landed — the cycle is
+    // untouched, still `pending_admin_reactivation` with the marker intact.
+    // The next cron pass re-resolves the settlement and retries this same
+    // branch from scratch (self-heals, same discipline as
+    // `transition_failed_post_refund` on the timeout branch).
+    logger.error(
+      {
+        cycleId,
+        tenantId: cycle.tenantId,
+        refundId: cycle.rejectRefundId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[reconcile-pending-reactivations] async reject-refund settle tx threw (non-conflict) — tx rolled back, cycle stays marked+pending; next cron pass retries',
+    );
+    return 'settle_failed';
+  }
+}
+
 async function processTimeout(
   deps: ReconcilePendingReactivationsDeps,
   cycle: RenewalCycle,
@@ -565,16 +1159,33 @@ async function processTimeout(
       cycle.tenantId,
       cycleId,
     );
-    return reread !== null && reread.status === 'pending_admin_reactivation';
+    // Round-2 review fix (HIGH — reject-marker race): also bail if an async
+    // reject-with-refund marker was stamped AFTER this pass's list snapshot.
+    // The marker leaves `status = pending_admin_reactivation` unchanged, so
+    // `processCycle` routed the STALE (unmarked) snapshot object here instead
+    // of to the marked branch. The marked branch (`processMarkedRejectRefund`)
+    // OWNS convergence to `cancelled` with the rejecting admin as actor + the
+    // post_refund_review task; the timeout path must never lapse a marked
+    // cycle or issue a redundant refund. Leaving the row pending+marked lets
+    // the NEXT pass's fresh snapshot route it to the marked branch. Mirrors
+    // the marked-branch re-read's third condition (there:
+    // `rejectRefundInitiatedAt === null` ⇒ skip; here the inverse ⇒ bail).
+    return (
+      reread !== null &&
+      reread.status === 'pending_admin_reactivation' &&
+      reread.rejectRefundInitiatedAt === null
+    );
   });
   if (!stillPending) {
     // A concurrent admin approve (T136 → `completed`) or reject (T137 →
-    // `cancelled`, refund already issued) won the race before our lock.
+    // `cancelled`, refund already issued), OR an async reject-with-refund
+    // marker stamped after the snapshot, won the race before our lock.
     // Skip silently — no refund, no transition. Counted as
-    // `admin_race_skipped` (NOT a timeout, NOT a refund failure).
+    // `admin_race_skipped` (NOT a timeout, NOT a refund failure). A marked
+    // cycle self-heals to `cancelled` via the marked branch next pass.
     logger.info(
       { cycleId, tenantId: cycle.tenantId },
-      '[reconcile-pending-reactivations] cycle no longer pending at lock — admin action won race; skipping refund',
+      '[reconcile-pending-reactivations] cycle not cleanly pending at lock (admin approve/reject won, or async reject-marker stamped after snapshot) — skipping refund',
     );
     return 'admin_race_skipped';
   }
@@ -628,6 +1239,31 @@ async function processTimeout(
         '[reconcile-pending-reactivations] F5 refund failed — cycle stays pending; cron will retry tomorrow',
       );
       return 'refund_failed';
+    }
+    if (refundResult.status === 'refund_pending') {
+      // F8-RP: the refund was submitted but is settling ASYNCHRONOUSLY
+      // (Stripe pending/requires_action, or a prior refund already in-flight
+      // → refund_in_progress). Leave the cycle pending and skip the Step-3
+      // transition entirely — the refund row is `pending`, so the
+      // `charge.refund.updated` webhook (A.11) / sweep (A.14) settles it and
+      // the NEXT cron run self-heals (the bridge then returns
+      // `no_payment_found` → normal lapse). Money-safe: the pending row
+      // blocks a double refund. Classified distinctly from `refund_failed`
+      // (nothing failed) via its own informational counter.
+      logger.info(
+        {
+          cycleId: cycle.cycleId,
+          tenantId: cycle.tenantId,
+          // `refundId`/`processorRefundId` are optional (absent on the
+          // refund_in_progress path); PCI-safe ids only — never card data.
+          ...(refundResult.refundId ? { refundId: refundResult.refundId } : {}),
+          ...(refundResult.processorRefundId
+            ? { processorRefundId: refundResult.processorRefundId }
+            : {}),
+        },
+        '[reconcile-pending-reactivations] F5 refund settling asynchronously — cycle stays pending; next cron run self-heals once the refund confirms',
+      );
+      return 'refund_pending';
     }
     // `refunded` → money moved; `no_payment_found` → nothing to claw back
     // (cycle entered pending without a settled charge). Only the former
@@ -685,6 +1321,32 @@ async function processTimeout(
           refundIssued
             ? '[reconcile-pending-reactivations] POST-refund admin race — refund issued against a now-non-pending cycle (accepted residual #6); cycle is already terminal, no further cron action'
             : '[reconcile-pending-reactivations] admin won the Step-3 window before tx2 lock (no_payment cycle — no money moved); skipping transition',
+        );
+        return;
+      }
+      // Round-2 review fix (HIGH — reject-marker race): status is still
+      // `pending_admin_reactivation` but an async reject-with-refund marker was
+      // stamped AFTER Step 1's re-read. Do NOT write the timeout lapse — the
+      // marked branch owns convergence to `cancelled` (admin actor +
+      // post_refund_review). Leave the row pending+marked so the next pass's
+      // fresh snapshot routes it to the marked branch. `refundIssued=true` here
+      // is essentially unreachable (an admin reject issues its refund BEFORE
+      // stamping the marker, so our Step-2 issueRefundForInvoice would have hit
+      // refund_in_progress → `refund_pending`, or the prior refund already
+      // succeeded → no_payment_found → refundIssued=false), but if it ever
+      // occurs F5 idempotency + the marked branch's settlement resolution
+      // reconcile the money; classify defensively as a money-window race.
+      if (reread.rejectRefundInitiatedAt !== null) {
+        tx2Outcome = refundIssued ? 'post_refund_admin_race' : 'admin_race_skipped';
+        logger[refundIssued ? 'warn' : 'info'](
+          {
+            cycleId,
+            tenantId: cycle.tenantId,
+            refundIssued,
+          },
+          refundIssued
+            ? '[reconcile-pending-reactivations] async reject-marker stamped after Step 1 AND timeout refund moved money — money-window race; leaving cycle pending+marked for the marked branch to converge to cancelled next pass'
+            : '[reconcile-pending-reactivations] async reject-marker stamped after Step 1 (no timeout money moved) — leaving cycle pending+marked; marked branch converges to cancelled next pass',
         );
         return;
       }

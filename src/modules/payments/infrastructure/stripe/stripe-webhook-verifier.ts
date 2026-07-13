@@ -76,6 +76,7 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
   let refundIds: readonly string[] | undefined;
   let lastPaymentErrorCode: string | null | undefined;
   let disputeId: string | null | undefined;
+  let refundStatus: string | null | undefined;
   // F5R3 H-5 (2026-05-16) — projected as branded Satang at the
   // Stripe→Application boundary; downstream code never re-validates.
   // F5R3v3 C-1 + H-3 + H-4 (2026-05-16) — defensive projection:
@@ -157,8 +158,64 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     }
   } else if (objectType === 'dispute') {
     disputeId = rawId;
+    // Task C.2 #6 / PCI-2 (2026-07-11) — a Dispute's `charge` field is
+    // normally a `ch_…` string, but Stripe CAN return it EXPANDED (a
+    // full Charge object carrying `payment_method_details.card.last4/
+    // brand`) — the same shape hazard `latest_charge` above already
+    // guards against. Mirror that defensive extraction: pull ONLY the
+    // `id`, never copy `raw['charge']` verbatim into the envelope —
+    // that would leak card data into the `dispute_created` audit row
+    // (10-year retention, RD §87 / GDPR Art. 6(1)(c)). Before this fix
+    // `latestChargeId` was never set on the dispute branch at all, so
+    // the audit's `charge_id` fell back to the DISPUTE id (dp_…)
+    // instead of the real charge id.
+    const ch = raw['charge'];
+    if (typeof ch === 'string') {
+      latestChargeId = ch;
+    } else if (
+      ch !== null &&
+      typeof ch === 'object' &&
+      typeof (ch as Record<string, unknown>)['id'] === 'string'
+    ) {
+      latestChargeId = (ch as Record<string, unknown>)['id'] as string;
+    } else {
+      latestChargeId = null;
+    }
     if (typeof raw['amount'] === 'number') {
       projectAmountSafely('dispute', raw['amount'] as number);
+    }
+  } else if (objectType === 'refund') {
+    // Task A.10 (PCI-1, 2026-07-11) — refund-lifecycle envelope. This arm is
+    // keyed on `data.object.object === 'refund'`, NOT on the event `type`, so
+    // it projects EVERY refund-carrying event with ONE shared projection:
+    // the deprecated `charge.refund.updated` AND the forward-path
+    // `refund.updated` (PR-A follow-up, 2026-07-12) — both deliver a
+    // `Stripe.Refund` as `data.object`. Positive allow-list ONLY:
+    // `refundStatus` (from the Refund's
+    // `status`), `latestChargeId` (defensive expandable-id extraction —
+    // mirrors the payment_intent/dispute arms above; a Refund's
+    // `charge` field is normally a `ch_…` string but Stripe CAN return
+    // it EXPANDED, carrying `payment_method_details.card.last4/brand`),
+    // and `amountSatang`. NEVER copy `destination_details`, card
+    // metadata, or the raw Refund object — `refundStatus`/`charge_id`/
+    // `amount_satang` feed the `refund_succeeded`/`refund_failed` audit
+    // rows (10-year retention, RD §87 / GDPR Art. 6(1)(c)).
+    refundStatus =
+      typeof raw['status'] === 'string' ? (raw['status'] as string) : null;
+    const ch = raw['charge'];
+    if (typeof ch === 'string') {
+      latestChargeId = ch;
+    } else if (
+      ch !== null &&
+      typeof ch === 'object' &&
+      typeof (ch as Record<string, unknown>)['id'] === 'string'
+    ) {
+      latestChargeId = (ch as Record<string, unknown>)['id'] as string;
+    } else {
+      latestChargeId = null;
+    }
+    if (typeof raw['amount'] === 'number') {
+      projectAmountSafely('refund', raw['amount'] as number);
     }
   }
 
@@ -178,6 +235,7 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
       ...(disputeId !== undefined ? { disputeId } : {}),
       ...(amountSatang !== undefined ? { amountSatang } : {}),
       ...(amountProjectionFailed ? { amountProjectionFailed: true } : {}),
+      ...(refundStatus !== undefined ? { refundStatus } : {}),
     },
   };
 

@@ -903,6 +903,42 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments.late_charge_auto_refunded.count{tenant}` — A.15 (#8
+   * resume-race) guard-rail anomaly. Fires when a late
+   * `payment_intent.succeeded` captures funds against a payment row that had
+   * already committed `failed` (invoice still payable), and the system
+   * auto-refunds the captured charge while leaving the row `failed` (F-9).
+   * DISTINCT from `autoRefundedStaleCount` so this rare bug-path is not
+   * conflated with the routine stale-invoice flow — any sustained non-zero
+   * rate signals a Stripe fail-then-succeed race worth investigating.
+   */
+  lateChargeAutoRefundedCount(tenantId: string): void {
+    counter(
+      'payments_late_charge_auto_refunded_count',
+      'Auto-refunds of a late captured charge on a terminal-failed payment (bug #8 resume-race)',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `payments_auto_refund_failed_needs_manual_reconcile_total{tenant}` —
+   * A.16 (H-e) PAGING counter. Fires from `processRefundUpdated` when a
+   * `charge.refund.updated` webhook reports that a system-initiated
+   * stale-invoice AUTO-refund settled `failed`/`canceled` on Stripe — i.e.
+   * the money was NEVER returned to the customer and manual reconciliation
+   * (Stripe dashboard) is required. Emitted ALONGSIDE the 10y
+   * `auto_refund_failed_needs_manual_reconcile` forensic audit; the audit is
+   * the durable evidence, this counter is the alerting anchor (pino logs roll
+   * off in 30 days). Alert: PAGE on any non-zero rate — a customer is owed
+   * money and the automated refund did not land.
+   */
+  autoRefundFailedNeedsReconcile(tenantId: string): void {
+    counter(
+      'payments_auto_refund_failed_needs_manual_reconcile_total',
+      'Stale-invoice auto-refund settled failed/canceled on Stripe — money not returned, manual reconciliation required (page on any non-zero rate)',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
    * `refunds.initiate.count{tenant, method, partial:bool}` — refund volume.
    */
   refundInitiateCount(tenantId: string, method: 'card' | 'promptpay', partial: boolean): void {
@@ -1107,6 +1143,25 @@ export const paymentsMetrics = {
   },
 
   /**
+   * A.15 (#8 late-charge) — fires when the failed→succeeded late-charge
+   * reconcile's Phase B catch swallows (the attachAutoRefundMarkerIfAbsent +
+   * audit + markProcessed tx threw AFTER the Stripe refund committed).
+   * DISTINCT from `confirmPaymentStaleRefundPhaseBMarkFailed` (the Step-3
+   * stale-invoice variant) so SRE can tell the two Phase B failure paths
+   * apart — the SUCCESS-path counter `lateChargeAutoRefundedCount` is already
+   * distinct, so this makes the FAILURE side symmetric. Recovery is automatic
+   * via Stripe retry idempotency; the structured log key
+   * `confirm_payment.late_charge_phase_b_mark_failed` already distinguishes
+   * the path. Alert on >0 over 1h.
+   */
+  confirmPaymentLateChargePhaseBMarkFailed(): void {
+    counter(
+      'payments_confirm_payment_late_charge_phase_b_mark_failed_total',
+      'Late-charge (#8) Phase B mark throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
    * F5R3 CR-7 (2026-05-16) — fires inside `issueRefund`'s
    * finaliseFailedRefund double-fault catch. Money already moved
    * (Stripe + F4 CN succeeded), local row stuck pending, sweep cron
@@ -1227,6 +1282,56 @@ export const paymentsMetrics = {
       { tenant: tenantId },
       count,
     );
+  },
+
+  /**
+   * `payments_stale_pending_refund_escalated_total{tenant}` — counter
+   * incremented (A.14 / M-i) by the Stripe-aware stale-pending-refund
+   * sweep for each stale refund it could NOT terminalise this run because
+   * Stripe still reports the refund `pending`/`requires_action` OR the row
+   * has no `processor_refund_id` to reconcile against — AND the row has
+   * aged past the escalation threshold. This is an operational SIGNAL for
+   * manual reconciliation (Stripe dashboard), NOT a state change: the
+   * refund row stays `pending`. A sustained non-zero rate means a refund
+   * has been stuck beyond the async settlement window and ops must
+   * intervene. Fires alongside a structured `logger.warn`.
+   */
+  stalePendingRefundEscalated(tenantId: string): void {
+    counter(
+      'payments_stale_pending_refund_escalated_total',
+      'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `payments_refund_pending_awaiting_processor_total{tenant}` — A.16 (H-e)
+   * monitoring signal for the `charge.refund.updated` subscription health. A
+   * refund left `pending` awaits Stripe's async settlement webhook; if that
+   * webhook is NOT enabled on the Stripe endpoint, every async refund hangs
+   * forever (design H-e). Emitted at both moments a refund is (still) awaiting
+   * the processor's async confirmation:
+   *   - `issueRefund` returns `kind:'pending'` (a refund was created but Stripe
+   *     reported `pending`/`requires_action` — awaiting the webhook), AND
+   *   - the stale-pending-refund sweep finds Stripe STILL reports `pending`
+   *     (the webhook has not reconciled it yet).
+   *
+   * TYPE — COUNTER (whose RATE is the alert signal), NOT an observable gauge,
+   * despite the "gauge" label in the A.16 brief. Both emit sites are PER-EVENT
+   * (a single refund transitioning/remaining in the awaiting state) and carry
+   * NO total-count; the codebase's `observeGauge` idiom is a LAST-VALUE
+   * observation that REQUIRES a real count (see `stalePendingCount`, fed by a
+   * counting cron). A per-event `.add(1)` matches the established
+   * `outbox_stuck_rows_total` / sibling `stalePendingRefundEscalated` idiom for
+   * sweep-emitted stuck-row signals. Alert: `rate(...[15m]) > 0` sustained →
+   * the `charge.refund.updated` delivery is likely disabled/broken (go-live
+   * gate H-e). We do NOT `.add(0)` on healthy ticks — absence of rate is the
+   * healthy signal.
+   */
+  refundPendingAwaitingProcessor(tenantId: string): void {
+    counter(
+      'payments_refund_pending_awaiting_processor_total',
+      'Refund awaiting the async charge.refund.updated webhook (issue-refund pending return + sweep still-pending) — alert on sustained rate>0: subscription likely disabled (H-e)',
+    ).add(1, { tenant: tenantId });
   },
 } as const;
 
@@ -2351,12 +2456,21 @@ export const renewalsMetrics = {
    *     pre-payment path); cycle cancelled without refund.
    *   - `failed` — cycle never transitioned (refund_failed or
    *     transition lost race).
+   *   - `refund_pending` — F8-RP (2026-07-11): the F5 refund is settling
+   *     ASYNCHRONOUSLY (Stripe `pending`/`requires_action`, or a prior
+   *     refund already in-flight). The cycle stays `pending_admin_
+   *     reactivation` and self-heals when the webhook/sweep confirms the
+   *     refund. NOT a failure — informational, does NOT page.
    *
    * Alert rule: a sustained `failed` rate >0 for 15 min pages on-call —
    * indicates F5 refund pipeline is degraded and admins are getting
-   * stuck cycles. Steady-state `refunded` is informational only.
+   * stuck cycles. Steady-state `refunded` / `refund_pending` is
+   * informational only.
    */
-  adminRejectCompleted(tenantId: string, outcome: 'refunded' | 'no_payment' | 'failed'): void {
+  adminRejectCompleted(
+    tenantId: string,
+    outcome: 'refunded' | 'no_payment' | 'failed' | 'refund_pending',
+  ): void {
     safeMetric(() => {
       counter(
         'renewals_admin_reject_total',
@@ -3387,6 +3501,130 @@ export const renewalsMetrics = {
       counter(
         'renewals_reconcile_timeout_transition_failed_no_refund_total',
         'F8 reconcile-pending-reactivations timeout — tx2 transition threw (non-conflict) but NO refund issued; no money at stake, next cron run self-heals (informational, NOT paging)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_timeout_refund_pending_total{tenant}` — F8-RP
+   * (2026-07-11) async-refund-settling observability.
+   *
+   * Incremented in `processTimeout` when the F5 bridge returned
+   * `refund_pending` — the timeout refund was submitted to Stripe but is
+   * settling ASYNCHRONOUSLY (`pending`/`requires_action`), or a prior
+   * refund for the payment is already in-flight (`refund_in_progress`).
+   * The cron leaves the cycle in `pending_admin_reactivation` and does NOT
+   * write the lapse transition; the NEXT cron run self-heals once the
+   * `charge.refund.updated` webhook (A.11) / Stripe-aware sweep (A.14)
+   * settles the refund (the bridge then returns `no_payment_found` and the
+   * transition completes).
+   *
+   * Distinct from `timeoutRefundFailures` (the Stripe refund itself FAILED
+   * — money did not move, admin/cron must retry). BEFORE F8-RP the async
+   * case was mislabelled as a refund failure (bridge mapped it to
+   * `refund_failed('refund_pending_async')`), inflating the failure counter
+   * and hiding the in-flight refund.
+   *
+   * Alert rule: INFORMATIONAL (mirrors `timeoutRefundOrphaned` /
+   * `timeoutTransitionFailedNoRefund`) — a non-zero rate is expected while
+   * async refunds settle and NEVER pages. A SUSTAINED rate warrants
+   * checking that the F5 webhook/sweep pipeline is settling refunds (the
+   * self-heal is not clearing), but on its own it is not money-at-risk.
+   */
+  timeoutRefundPending(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_timeout_refund_pending_total',
+        'F8 reconcile-pending-reactivations timeout — F5 refund settling asynchronously (pending/requires_action or refund_in_progress); cycle stays pending, next cron run self-heals (informational, NOT paging)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_async_reject_refund_total{tenant, outcome}` — F8-RP
+   * follow-up (2026-07-12).
+   *
+   * The reconcile-pending cron reconciles cycles carrying the async
+   * reject-with-refund marker (an admin REJECTED with a refund that F5 settled
+   * asynchronously). The cycle's terminal must mirror the SYNC reject path
+   * (→ `cancelled`), never the timeout (→ `lapsed`). `outcome` partitions:
+   *
+   *   - `settled_cancelled` — the refund settled succeeded → the cycle
+   *     converged to `cancelled`/`admin_rejected_with_refund`. INFORMATIONAL.
+   *   - `still_pending` — the refund is still settling; cron waits. INFORMATIONAL.
+   *   - `refund_failed` — the async refund settled FAILED/canceled (money not
+   *     returned). The cron cleared the marker; the admin must re-handle the
+   *     cycle. **ALERTING** — a sustained rate means admins are getting stuck
+   *     rejected cycles whose refunds never completed.
+   *   - `lookup_failed` — the F5 settlement lookup failed OR the refund id was
+   *     not found; transient, retried next pass. INFORMATIONAL.
+   *   - `admin_race_skipped` — a concurrent admin approve/reject (or an
+   *     optimistic-lock conflict) moved the cycle out of pending before the
+   *     cron's settle transition. Money residual surfaced. INFORMATIONAL.
+   *   - `settle_failed` — F8-RP-2 review fix (resilience): the settle tx
+   *     (transition + audit + escalation-task insert) threw a NON-conflict
+   *     error (DB blip / RLS regression mid-tx). The tx rolled back — no
+   *     partial write landed — and the cycle stays marked+pending for the
+   *     next cron pass to retry (self-heals). Distinct from `refund_failed`
+   *     (the F5 refund itself failed — no money moved) because here the F5
+   *     refund SUCCEEDED and only our own write blipped. Per-cycle isolation
+   *     (this outcome existing at all, instead of the throw escaping and
+   *     500'ing the whole reconcile pass) is the fix itself — parity with
+   *     `timeoutTransitionFailedPostRefund` on the sibling timeout branch.
+   *
+   * Alert rule: sustained `refund_failed` > 0 for 15 min pages on-call
+   * (parity with `adminRejectCompleted{outcome=failed}`). `settle_failed`
+   * is INFORMATIONAL (mirrors `timeoutTransitionFailedPostRefund` — a
+   * transient-DB signal, not a money-at-risk page); a SUSTAINED rate
+   * warrants investigating chronic settle-tx failures (the self-heal is not
+   * clearing). Other outcomes are informational and never page.
+   */
+  asyncRejectRefundReconciled(
+    tenantId: string,
+    outcome:
+      | 'settled_cancelled'
+      | 'still_pending'
+      | 'refund_failed'
+      | 'lookup_failed'
+      | 'admin_race_skipped'
+      | 'settle_failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_async_reject_refund_total',
+        'F8 reconcile-pending-reactivations — async reject-with-refund settlement reconciliation, partitioned by terminal outcome',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_cycle_processing_error_total{tenant}` — H1 reliability
+   * fix (loop-level per-cycle backstop).
+   *
+   * Incremented by the `reconcilePendingReactivations` caller for-loop when a
+   * per-cycle branch (marked / timeout / reminder) threw an UNCLASSIFIED error
+   * that ESCAPED its own error handling. Every branch already classifies its
+   * KNOWN failure modes and RETURNS a typed outcome (settle_failed,
+   * refund_failed, admin_race_skipped, transition_failed_*, …) — those are
+   * returned, never thrown, so they never reach this counter. This one fires
+   * ONLY on a genuine escaped throw — the canonical case being
+   * `processTimeout`'s Step-1 validate-under-lock re-read (`acquireCycleLockInTx`
+   * + `findByIdInTx`), an UNGUARDED `runInTenant` whose persistent NON-conflict
+   * throw (DB blip / RLS regression / poison row) would otherwise propagate out
+   * of the loop and 500 the WHOLE reconcile pass, blocking every OTHER cycle for
+   * the tenant (a self-DoS). The backstop isolates it to that one cycle (ERROR
+   * log with PCI-safe ids + error constructor name, then `continue`).
+   *
+   * Alert rule: ALERTING — unlike the informational per-branch race/pending
+   * counters, a non-zero rate here means an UNHANDLED per-cycle throw is
+   * recurring (a latent unguarded path), NOT an expected admin–cron race. A
+   * sustained rate warrants investigating which branch is chronically throwing.
+   */
+  cycleProcessingError(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_cycle_processing_error_total',
+        'F8 reconcile-pending-reactivations — unclassified per-cycle throw isolated by the loop-level backstop (would otherwise 500 the whole pass)',
       ).add(1, { tenant: tenantId });
     });
   },

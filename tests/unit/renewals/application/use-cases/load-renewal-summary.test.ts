@@ -221,6 +221,34 @@ describe('loadRenewalSummary (T121)', () => {
     if (r.ok) expect(r.value.isFirstTimeRenewer).toBe(false);
   });
 
+  it('threads rejectRefundInitiatedAt onto the summary DTO (UX-A Bug 2)', async () => {
+    // A pending cycle whose admin reject initiated an async F5 refund carries
+    // the marker; the member portal must be able to distinguish it from a
+    // fresh "awaiting review" cycle, so the read-only marker rides the DTO.
+    const cycle = buildCycle({
+      status: 'pending_admin_reactivation',
+      enteredPendingAt: '2026-04-01T00:00:00Z',
+      rejectRefundInitiatedAt: '2026-04-05T00:00:00Z',
+      rejectRefundId: 'rfnd_01H',
+      rejectActorUserId: 'admin-2',
+    });
+    const { deps } = fakeDeps({ cycle });
+    const r = await loadRenewalSummary(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.status).toBe('pending_admin_reactivation');
+      expect(r.value.rejectRefundInitiatedAt).toBe('2026-04-05T00:00:00Z');
+    }
+  });
+
+  it('rejectRefundInitiatedAt is null for an unmarked cycle (UX-A Bug 2)', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({ cycle });
+    const r = await loadRenewalSummary(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.rejectRefundInitiatedAt).toBeNull();
+  });
+
   it('summary_not_found + emits cross_tenant_probe audit when cycle is null', async () => {
     const { deps, emitMock, benefitReadMock } = fakeDeps({ cycle: null });
     const r = await loadRenewalSummary(deps, baseInput);

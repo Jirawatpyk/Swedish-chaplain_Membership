@@ -46,6 +46,18 @@ import { adminRejectReactivation, makeRenewalsDeps } from '@/modules/renewals';
 const RL_LIMIT = 30;
 const RL_WINDOW_SECONDS = 300;
 
+// F8-RP (2026-07-11) — bilingual self-describing copy for the 202
+// async-refund response, mirroring the F5 refunds-route 202
+// (`src/app/api/refunds/initiate/route.ts`). Route-internal API strings
+// (kept out of the global i18n JSON to avoid inflating `check:i18n`); the
+// admin UI renders its OWN localised toast (EN/TH/SV) via
+// `admin.renewals.cycleDetail.pendingReactivation.reject.successPendingToast`
+// off the 202 status.
+const REFUND_PENDING_MESSAGE_EN =
+  'Refund submitted — awaiting confirmation from the payment processor. The reactivation stays pending until the refund settles.';
+const REFUND_PENDING_MESSAGE_TH =
+  'ส่งคำขอคืนเงินแล้ว — กำลังรอการยืนยันจากผู้ให้บริการชำระเงิน คำขอฟื้นฟูสถานะจะยังคงรอดำเนินการจนกว่าการคืนเงินจะเสร็จสมบูรณ์';
+
 const BodySchema = z.object({
   reason: z.string().trim().min(1).max(500),
 });
@@ -171,15 +183,58 @@ export async function POST(
       }
     }
 
-    return successResponse(
-      {
-        cycle_status: result.value.cycleStatus,
-        closed_reason: result.value.closedReason,
-        closed_at: result.value.closedAt,
-        refund_credit_note_id: result.value.refundCreditNoteId,
-      },
-      ctx.correlationId,
-    );
+    // F8-RP: success is a tagged union. `rejected` = the common path (cycle
+    // cancelled + refunded/no-payment) → byte-identical 200 body. The new
+    // `refund_pending` = the F5 refund is settling asynchronously → 202
+    // "settling asynchronously", cycle intentionally left pending.
+    switch (result.value.outcome) {
+      case 'rejected':
+        return successResponse(
+          {
+            cycle_status: result.value.cycleStatus,
+            closed_reason: result.value.closedReason,
+            closed_at: result.value.closedAt,
+            refund_credit_note_id: result.value.refundCreditNoteId,
+          },
+          ctx.correlationId,
+        );
+      case 'refund_pending': {
+        // 202 Accepted (mirrors the F5 refunds-route 202). The `refund`
+        // object is included ONLY when F5 supplied the ids (the
+        // `kind:'pending'` path); the `refund_in_progress` retry path carries
+        // none. PCI-clean: ids + status only, never card data.
+        const refundEnvelope =
+          result.value.refundId && result.value.processorRefundId
+            ? {
+                refund: {
+                  id: result.value.refundId,
+                  status: 'pending' as const,
+                  processor_refund_id: result.value.processorRefundId,
+                },
+              }
+            : {};
+        return successResponse(
+          {
+            outcome: 'refund_pending' as const,
+            ...refundEnvelope,
+            message: REFUND_PENDING_MESSAGE_EN,
+            message_thai: REFUND_PENDING_MESSAGE_TH,
+            correlationId: ctx.correlationId,
+          },
+          ctx.correlationId,
+          202,
+        );
+      }
+      default: {
+        const _exhaustive: never = result.value;
+        void _exhaustive;
+        return errorResponse({
+          status: 500,
+          code: 'server_error',
+          correlationId: ctx.correlationId,
+        });
+      }
+    }
   } catch (e) {
     logger.error(
       {

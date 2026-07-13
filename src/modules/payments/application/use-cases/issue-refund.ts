@@ -51,6 +51,7 @@ import type {
   TenantPaymentSettingsRepo,
 } from '../ports';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
+import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import {
   asPaymentId,
   parsePaymentId,
@@ -77,30 +78,48 @@ export interface IssueRefundInput {
   readonly requestId: string | null;
 }
 
-export interface IssueRefundSuccess {
-  readonly refund: {
-    readonly id: string;
-    readonly paymentId: string;
-    readonly invoiceId: string;
-    readonly amountSatang: Satang;
-    readonly reason: string;
-    readonly status: 'succeeded';
-    readonly processorRefundId: string;
-    readonly creditNoteId: string;
-    readonly creditNoteNumber: string;
-    readonly completedAt: string;
-  };
-  readonly payment: {
-    readonly id: string;
-    readonly status: 'partially_refunded' | 'refunded';
-    readonly refundedAmountSatang: Satang;
-    readonly remainingRefundableSatang: Satang;
-  };
-  readonly invoice: {
-    readonly id: string;
-    readonly status: 'partially_credited' | 'credited';
-  };
-}
+/**
+ * #1 (2026-07-11) — `issueRefund` now discriminates on the Stripe refund
+ * status. A synchronous `succeeded` books the credit note immediately
+ * (`kind: 'succeeded'`, existing envelope). An async `pending` /
+ * `requires_action` refund is NOT booked — the row stays `pending` with
+ * its `processor_refund_id` attached, and the eventual
+ * `charge.refund.updated` webhook (A.11) finalises it (`kind: 'pending'`).
+ */
+export type IssueRefundSuccess =
+  | {
+      readonly kind: 'succeeded';
+      readonly refund: {
+        readonly id: string;
+        readonly paymentId: string;
+        readonly invoiceId: string;
+        readonly amountSatang: Satang;
+        readonly reason: string;
+        readonly status: 'succeeded';
+        readonly processorRefundId: string;
+        readonly creditNoteId: string;
+        readonly creditNoteNumber: string;
+        readonly completedAt: string;
+      };
+      readonly payment: {
+        readonly id: string;
+        readonly status: 'partially_refunded' | 'refunded';
+        readonly refundedAmountSatang: Satang;
+        readonly remainingRefundableSatang: Satang;
+      };
+      readonly invoice: {
+        readonly id: string;
+        readonly status: 'partially_credited' | 'credited';
+      };
+    }
+  | {
+      readonly kind: 'pending';
+      readonly refund: {
+        readonly id: string;
+        readonly status: 'pending';
+        readonly processorRefundId: string;
+      };
+    };
 
 export type IssueRefundError =
   | { readonly code: 'invalid_payment_id'; readonly raw: string }
@@ -120,6 +139,16 @@ export type IssueRefundError =
       readonly kind: 'retryable' | 'idempotency_conflict' | 'permanent';
       readonly reason: string;
     }
+  /**
+   * B.1 review Fix#1 (2026-07-12) — the PRE-FLIGHT F4 credited-total read
+   * failed (`getInvoiceCreditedTotal` errored). Money did NOT move — the
+   * refund is rejected BEFORE any Stripe `createRefund` call, so it is safe to
+   * retry and NO orphaned Stripe refund exists. DISTINCT from
+   * `f4_bridge_error` (which means Stripe DID succeed but the POST-Stripe F4
+   * credit-note bridge failed → the out-of-band-refund runbook). Keeping the
+   * two apart stops an on-call from hunting a non-existent orphaned refund.
+   */
+  | { readonly code: 'f4_preflight_read_error'; readonly detail: string }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   | { readonly code: 'tenant_settings_missing' };
 
@@ -154,6 +183,16 @@ async function finaliseFailedRefund(
     readonly actorUserId: string;
     readonly failureReasonCode: string;
     readonly summary: string;
+    /**
+     * #1 (2026-07-11) — when Stripe DID create the refund but it later
+     * settled `failed`/`canceled`, persist the `re_…` id on the failed
+     * row (forensic completeness + webhook-matchable). Omitted when the
+     * `createRefund` call itself failed (no processor id exists).
+     * CHECK-safe: `refunds_succeeded_iff_complete` holds because the
+     * `failed` status keeps `credit_note_id` NULL (biconditional
+     * `false = false`).
+     */
+    readonly processorRefundId?: string;
     readonly extraPayload?: Readonly<Record<string, unknown>>;
   },
 ): Promise<void> {
@@ -164,6 +203,9 @@ async function finaliseFailedRefund(
       tenantId: input.tenantId,
       nextStatus: 'failed',
       failureReasonCode: input.failureReasonCode,
+      ...(input.processorRefundId !== undefined
+        ? { processorRefundId: input.processorRefundId }
+        : {}),
       completedAt: failedAt,
     });
     await deps.audit.emit(tx, {
@@ -298,10 +340,50 @@ async function issueRefundBody(
       return { kind: 'rejected', error: { code: 'refund_in_progress' } } as const;
     }
 
+    // B.1 (#4) — fetch the invoice's F4-authoritative credited + total so the
+    // pre-flight caps the refundable at the invoice's un-credited headroom
+    // (`total − credited`) IN ADDITION to the payment-based cap. A refund that
+    // passes the payment cap but exceeds this headroom (e.g. a manual F4 credit
+    // note already reduced it) would move money at Stripe that F4 then refuses
+    // as an over-credit CN → an orphaned Stripe refund. The invoiceId comes
+    // from the locked payment row. On a read failure we REFUSE the refund
+    // (never proceed blind to Stripe). This runs INSIDE the FOR UPDATE window,
+    // BEFORE the pending-row insert, so a rejected refund writes no row and no
+    // `refund_initiated` audit (AS6).
+    //
+    // B.1 review Fix#2 — thread THIS Phase A tx into the F4 read (externalTx)
+    // so the credited-total read runs on the SAME pooled connection that holds
+    // the payment `FOR UPDATE` lock, instead of `makeGetInvoiceDeps` opening a
+    // 2nd `runInTenant` (a second pooled connection acquired while connection
+    // #1 is still held → self-deadlock risk on pool acquisition under
+    // concurrent refunds). Mirrors the mutation bridge `markPaidFromProcessor`
+    // (which already threads its caller tx to avoid the nested connection).
+    // The tenant context (`SET LOCAL app.current_tenant`) is already set on
+    // this connection by `paymentsRepo.withTx` (= `runInTenant`), so the F4
+    // read stays correctly tenant-scoped on it.
+    const invoiceCredited = await deps.invoicingBridge.getInvoiceCreditedTotal({
+      tenantId: input.tenantId,
+      invoiceId: payment.invoiceId,
+      externalTx: tx,
+    });
+    if (!invoiceCredited.ok) {
+      // Fix#1 — DISTINCT pre-flight code (money did NOT move; safe to retry;
+      // no out-of-band refund exists), NOT the post-Stripe `f4_bridge_error`.
+      return {
+        kind: 'rejected',
+        error: {
+          code: 'f4_preflight_read_error',
+          detail: `invoice_credited_total_read_failed:${invoiceCredited.error.code}`,
+        },
+      } as const;
+    }
+
     const invariant = checkRefundNotExceedingRemainder({
       paymentAmountSatang: payment.amountSatang,
       succeededSumSatang: ctx.succeededSumSatang,
       newRefundSatang: input.amountSatang,
+      invoiceCreditedTotalSatang: invoiceCredited.value.creditedTotalSatang,
+      invoiceTotalSatang: invoiceCredited.value.totalSatang,
     });
     if (!invariant.ok) {
       return {
@@ -413,22 +495,48 @@ async function issueRefundBody(
   }
 
   // -------------------------------------------------------------------------
-  // External Step — F4 bridge issueCreditNoteFromRefund
+  // A.6 / #2 — attach the Stripe refund id onto the still-`pending` row
+  // (short tx) so it is webhook-matchable BEFORE we branch on status. A
+  // `charge.refund.updated` for this refund then resolves to the app row
+  // instead of the out-of-band path. GUARD: run ONLY here — the row was
+  // just inserted `pending` and no flip has happened, so this never
+  // touches a possibly-terminal row (`attachProcessorRefundId` has no
+  // pending precondition).
   // -------------------------------------------------------------------------
-  const cnResult = await deps.invoicingBridge.issueCreditNoteFromRefund({
-    tenantId: input.tenantId,
-    invoiceId: prepared.payment.invoiceId,
-    refundId: prepared.refundId,
-    amountSatang: input.amountSatang,
-    reason: input.reason,
-    actorUserId: input.actorUserId,
-    requestId: input.requestId,
+  await deps.paymentsRepo.withTx(async (tx) => {
+    await deps.refundsRepo.attachProcessorRefundId(tx, {
+      refundId: prepared.refundId,
+      tenantId: input.tenantId,
+      processorRefundId: stripeRefund.value.id,
+    });
   });
 
-  if (!cnResult.ok) {
-    // Stripe refund already succeeded — Stripe-refund-without-CN
-    // reconciliation is owned by the `out_of_band_refund_detected`
-    // runbook (`docs/runbooks/out-of-band-refund.md`).
+  // Phase A snapshot arithmetic (unchanged) — drives the payment-status
+  // flip + the success envelope's refunded/remaining amounts. F5R3 H-5:
+  // branded helpers preserve the `Satang` brand. A.11 moves the
+  // equivalent read INTO `finalizeSucceededRefund` for the webhook
+  // consumer; the admin path keeps the Phase A snapshot here.
+  const newSucceededSum = addSatang(
+    prepared.succeededSumBefore,
+    input.amountSatang,
+  );
+  const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
+  const nextPaymentStatus: 'partially_refunded' | 'refunded' = isFullyRefunded
+    ? 'refunded'
+    : 'partially_refunded';
+
+  // -------------------------------------------------------------------------
+  // #1 — branch on the Stripe refund status. ONLY `succeeded` books the
+  // F4 credit note + flips payment. `pending`/`requires_action` await the
+  // `charge.refund.updated` webhook (A.11); `failed`/`canceled` mark the
+  // refund failed. This is the fix for bug #1 (previously EVERY Stripe
+  // response was treated as success at creation time).
+  // -------------------------------------------------------------------------
+  const refundStatus = stripeRefund.value.status;
+
+  if (refundStatus === 'failed' || refundStatus === 'canceled') {
+    // Stripe created the refund but it settled failed/canceled. Mark the
+    // row failed (no CN) + persist the `re_…` id (forensic + matchable).
     await finaliseFailedRefund(deps, {
       refundId: prepared.refundId,
       paymentId,
@@ -436,97 +544,82 @@ async function issueRefundBody(
       tenantId: input.tenantId,
       requestId: input.requestId,
       actorUserId: input.actorUserId,
-      failureReasonCode: `f4_bridge_${cnResult.error.code}`,
-      summary: `F4 credit-note issuance failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
-      extraPayload: {
-        processor_refund_id: stripeRefund.value.id,
-        f4_detail: cnResult.error.detail,
+      processorRefundId: stripeRefund.value.id,
+      failureReasonCode: `stripe_refund_${refundStatus}`,
+      summary: `Stripe refund settled ${refundStatus} for refund ${prepared.refundId} (${stripeRefund.value.id})`,
+    });
+    return err({
+      code: 'processor_unavailable',
+      kind: 'permanent',
+      reason: refundStatus,
+    });
+  }
+
+  if (refundStatus !== 'succeeded') {
+    // `pending` | `requires_action` | any unexpected status → the refund
+    // is in flight. Leave the row `pending` (with `processor_refund_id`
+    // attached); the `charge.refund.updated` webhook (A.11) or the
+    // Stripe-aware sweep (A.14) finalises it by real status. NEVER book
+    // success or a CN here. An unexpected status is treated the same
+    // (safest: never books success) + logged for drift detection.
+    if (refundStatus !== 'pending' && refundStatus !== 'requires_action') {
+      deps.logger?.warn('issue_refund.unexpected_stripe_refund_status', {
+        tenantId: input.tenantId,
+        refundId: prepared.refundId,
+        paymentId,
+        // Bounded status string only — never card/raw-event data (SAQ-A).
+        stripeRefundStatus: refundStatus,
+      });
+    }
+    // A.16 (H-e) — the refund is now awaiting Stripe's async
+    // `charge.refund.updated` webhook; emit the monitoring signal so a disabled
+    // subscription (async refunds hang forever) is alertable.
+    paymentsMetrics.refundPendingAwaitingProcessor(input.tenantId);
+    return ok({
+      kind: 'pending',
+      refund: {
+        id: prepared.refundId,
+        status: 'pending',
+        processorRefundId: stripeRefund.value.id,
       },
     });
-    return err({ code: 'f4_bridge_error', detail: cnResult.error.detail });
   }
 
   // -------------------------------------------------------------------------
-  // Phase B (success) — finalise refund + payment status + audit succeeded
+  // `succeeded` — finalise via the shared `finalizeSucceededRefund` helper
+  // inside a Phase B tx. C2 (unchanged intent): wrap in try/catch so a DB
+  // outage AFTER Stripe + F4 CN success flips the row to `failed` (+
+  // double-fault handling) rather than leaving it stuck `pending` (which
+  // would block all future refunds via the `refund_in_progress` guard).
+  // The `expectedCurrentStatus='pending'` guard inside the helper closes
+  // bug #1's double-book window (fixes the old `:474` missing guard); a
+  // `null` return there is a benign sibling-won no-op (helper returns ok).
   // -------------------------------------------------------------------------
-  const completedAt = new Date(deps.clock.nowMs());
-  // F5R3 H-5 (2026-05-16) — use branded arithmetic helpers; addSatang
-  // preserves the brand so downstream comparisons stay typed.
-  const newSucceededSum = addSatang(
-    prepared.succeededSumBefore,
-    input.amountSatang,
-  );
-  const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
-  const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
-
-  // C2: wrap Phase B in try/catch so a DB outage
-  // post-Stripe + post-F4 success does not leave the refund row
-  // permanently `pending` (which would block all future refunds on
-  // this payment via the `refund_in_progress` guard). On Phase B
-  // throw, flip the row to `failed` via `finaliseFailedRefund`
-  // (separate tx — the outer one already rolled back), audit
-  // `refund_failed` with `f4_bridge_phase_b_db_error`, and surface
-  // the failure to the caller as `f4_bridge_error`. Stripe + F4 CN
-  // already succeeded so the out-of-band-refund runbook is the
-  // recovery path for ops.
+  let finalizeResult: Awaited<ReturnType<typeof finalizeSucceededRefund>>;
   try {
-    await deps.paymentsRepo.withTx(async (tx) => {
-      await deps.refundsRepo.updateStatus(tx, {
+    finalizeResult = await deps.paymentsRepo.withTx((tx) =>
+      finalizeSucceededRefund(deps, tx, {
         refundId: prepared.refundId,
         tenantId: input.tenantId,
-        nextStatus: 'succeeded',
-        processorRefundId: stripeRefund.value.id,
-        creditNoteId: cnResult.value.creditNoteId,
-        completedAt,
-      });
-
-      await deps.paymentsRepo.updateStatus(tx, {
         paymentId,
-        tenantId: input.tenantId,
-        nextStatus: nextPaymentStatus,
-        completedAt,
-      });
-
-      // Invoice status derived arithmetically: F5 invariant is "one
-      // PaymentIntent per invoice covers the whole invoice" so
-      // `payment.amountSatang === invoice.totalSatang`. When the
-      // cumulative refund equals the payment amount, the invoice is
-      // fully credited; otherwise partially credited. Avoids a second
-      // DB roundtrip to F4.
-      const nextInvoiceStatus: 'credited' | 'partially_credited' = isFullyRefunded
-        ? 'credited'
-        : 'partially_credited';
-
-      await deps.audit.emit(tx, {
-        tenantId: input.tenantId,
-        requestId: input.requestId,
-        eventType: 'refund_succeeded',
+        invoiceId: prepared.payment.invoiceId,
+        amountSatang: input.amountSatang,
+        reason: input.reason,
+        processorRefundId: stripeRefund.value.id,
+        paymentNextStatus: nextPaymentStatus,
         actorUserId: input.actorUserId,
-        summary: `Refund ${prepared.refundId} succeeded — credit note ${cnResult.value.creditNoteNumber} issued for ${input.amountSatang.toString()} satang`,
-        payload: {
-          path: 'admin_initiated',
-          refund_id: prepared.refundId,
-          payment_id: paymentId,
-          invoice_id: prepared.payment.invoiceId,
-          processor_refund_id: stripeRefund.value.id,
-          credit_note_id: cnResult.value.creditNoteId,
-          credit_note_number: cnResult.value.creditNoteNumber,
-          amount_satang: input.amountSatang.toString(),
-          payment_next_status: nextPaymentStatus,
-          invoice_next_status: nextInvoiceStatus,
-        },
-        retentionYears: retentionFor('refund_succeeded'),
-      });
-    });
-    // T141 metric: refund → CN throughput. Emitted AFTER Phase B tx
-    // commits so a Phase B rollback (caught below) does not bump the
-    // counter when the row stays pending.
-    paymentsMetrics.refundSucceededCount(input.tenantId);
+        requestId: input.requestId,
+        path: 'admin_initiated',
+      }),
+    );
   } catch (phaseBError) {
-    // H-5 (review 2026-04-27): use error constructor name only — raw
-    // Postgres error.message can carry SQL fragments, column values,
-    // or row data into the audit_log payload (data hygiene).
-    // `detail` returned to the caller follows the same scrubbing rule.
+    // H-5 (review 2026-04-27): constructor name only — raw Postgres
+    // error.message can carry SQL fragments / row data into the audit.
+    // NOTE: the F4 CN was issued INSIDE the helper (F4's own tx, already
+    // committed) but its id is unavailable here (the helper threw before
+    // returning it) — the out-of-band-refund runbook resolves the CN via
+    // `credit_notes.source_refund_id`, and F4 emits its own CN-issued
+    // audit, so the id is still traceable.
     const detailKind =
       phaseBError instanceof Error ? phaseBError.constructor.name : 'unknown';
     await finaliseFailedRefund(deps, {
@@ -536,30 +629,19 @@ async function issueRefundBody(
       tenantId: input.tenantId,
       requestId: input.requestId,
       actorUserId: input.actorUserId,
+      processorRefundId: stripeRefund.value.id,
       failureReasonCode: 'f4_bridge_phase_b_db_error',
-      summary: `Phase B finalisation failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} + F4 CN ${cnResult.value.creditNoteId} both succeeded — ops follow up via out-of-band-refund runbook)`,
+      summary: `Phase B finalisation failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
       extraPayload: {
         processor_refund_id: stripeRefund.value.id,
-        credit_note_id: cnResult.value.creditNoteId,
-        credit_note_number: cnResult.value.creditNoteNumber,
         phase_b_error_kind: detailKind,
       },
     }).catch(async (finaliseError) => {
-      // If even the failure-finalise tx throws, the pending row
-      // stays — the T130a stale-pending-refund sweep cron is the
-      // last-resort recovery (Phase 9 polish). R2 reliability fix:
-      // emit a structured warn before suppressing so ops have a
-      // signal to act on between sweeps. Constructor name only —
-      // raw Postgres `error.message` may carry SQL fragments.
-      // F5R3 CR-7 (2026-05-16) — pre-fix only the optional logger
-      // fired (undefined logger in tests = silent), and pino logs
-      // roll off in 30 days. Money already moved (Stripe + F4 CN
-      // succeeded), local row stuck pending, sweep cron is the
-      // recovery (12h cadence). Bump dedicated counter + emit the
-      // `stale_pending_refund_detected` audit row SYNCHRONOUSLY
-      // so the forensic 10y-retention trail appears immediately
-      // (not waiting up to 12h for the sweep). Triggers the
-      // existing observability.md SRE alert on `>0 over 1h`.
+      // Double-fault: even the failure-finalise tx threw → the row stays
+      // pending; the T130a stale-pending-refund sweep cron is the
+      // last-resort recovery. F5R3 CR-7: bump a counter + emit the
+      // `stale_pending_refund_detected` audit SYNCHRONOUSLY (10y forensic
+      // trail immediately, not up to 12h later) + a structured warn.
       const finaliseErrKind =
         finaliseError instanceof Error
           ? finaliseError.constructor.name
@@ -571,28 +653,21 @@ async function issueRefundBody(
         paymentId,
         invoiceId: prepared.payment.invoiceId,
         processorRefundId: stripeRefund.value.id,
-        creditNoteId: cnResult.value.creditNoteId,
         finaliseErrKind,
         recovery: 'awaiting_stale_pending_refund_sweep',
       });
-      // Best-effort emit on null tx — outer tx is gone. Adapter
-      // log-and-swallows on failure so this never re-throws back
-      // into the .catch.
       await deps.audit
         .emit(null, {
           tenantId: input.tenantId,
           requestId: input.requestId,
           eventType: 'stale_pending_refund_detected',
           actorUserId: input.actorUserId,
-          summary: `Double-fault: issueRefund Phase B + finaliseFailedRefund both threw — refund ${prepared.refundId} stuck pending; Stripe ${stripeRefund.value.id} + F4 CN ${cnResult.value.creditNoteId} both succeeded; ops follow up via runbook`,
+          summary: `Double-fault: issueRefund Phase B + finaliseFailedRefund both threw — refund ${prepared.refundId} stuck pending; Stripe ${stripeRefund.value.id} succeeded; ops follow up via runbook`,
           payload: {
             refund_id: prepared.refundId,
             payment_id: paymentId,
             invoice_id: prepared.payment.invoiceId,
             amount_satang: input.amountSatang.toString(),
-            // Age 0 — fired immediately at the double-fault, not
-            // by the sweep. Distinguishes this audit class from
-            // the sweep's age-driven detections.
             age_minutes: 0,
             original_initiator_user_id: input.actorUserId,
             original_correlation_id: input.requestId ?? 'no-request-id',
@@ -601,15 +676,48 @@ async function issueRefundBody(
           retentionYears: retentionFor('stale_pending_refund_detected'),
         })
         .catch(() => {
-          // Triple-fault swallow — the audit adapter already log-
-          // and-swallows + bumps useCaseAuditEmitFailed. No further
-          // action available.
+          // Triple-fault swallow — the audit adapter already log-and-
+          // swallows + bumps useCaseAuditEmitFailed.
         });
     });
     return err({ code: 'f4_bridge_error', detail: detailKind });
   }
 
+  if (!finalizeResult.ok) {
+    // F4 credit-note bridge declined. Stripe refund already succeeded →
+    // Stripe-refund-without-CN reconciliation is owned by the
+    // `out_of_band_refund_detected` runbook. Mark the refund failed.
+    await finaliseFailedRefund(deps, {
+      refundId: prepared.refundId,
+      paymentId,
+      invoiceId: prepared.payment.invoiceId,
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      actorUserId: input.actorUserId,
+      processorRefundId: stripeRefund.value.id,
+      failureReasonCode: `f4_bridge_${finalizeResult.error.code}`,
+      summary: `F4 credit-note issuance failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
+      extraPayload: {
+        processor_refund_id: stripeRefund.value.id,
+        f4_detail: finalizeResult.error.detail,
+      },
+    });
+    return err({ code: 'f4_bridge_error', detail: finalizeResult.error.detail });
+  }
+
+  // T141 metric: refund → CN throughput. AFTER the Phase B tx commits so
+  // a rollback (caught above) does not bump the counter.
+  // A.9 review fix (#1): gate on `siblingWon === false` — when a
+  // concurrent writer (A.11's webhook consumer) already finalised this
+  // refund first, THAT writer owns the increment; counting it here too
+  // would double-book `refundSucceededCount` for a single refund.
+  if (!finalizeResult.value.siblingWon) {
+    paymentsMetrics.refundSucceededCount(input.tenantId);
+  }
+
+  const completedAt = new Date(deps.clock.nowMs());
   return ok({
+    kind: 'succeeded',
     refund: {
       id: prepared.refundId,
       paymentId,
@@ -618,8 +726,8 @@ async function issueRefundBody(
       reason: input.reason,
       status: 'succeeded',
       processorRefundId: stripeRefund.value.id,
-      creditNoteId: cnResult.value.creditNoteId,
-      creditNoteNumber: cnResult.value.creditNoteNumber,
+      creditNoteId: finalizeResult.value.creditNoteId,
+      creditNoteNumber: finalizeResult.value.creditNoteNumber,
       completedAt: completedAt.toISOString(),
     },
     payment: {
@@ -634,7 +742,10 @@ async function issueRefundBody(
     },
     invoice: {
       id: prepared.payment.invoiceId,
-      status: isFullyRefunded ? 'credited' : 'partially_credited',
+      // tax#5 (B.2): F4-AUTHORITATIVE — the shared helper sourced this from
+      // F4's post-CN invoice status (`getInvoiceStatus`), not the F5 payment
+      // arithmetic, so a pre-existing manual F4 credit note is reflected.
+      status: finalizeResult.value.invoiceStatus,
     },
   });
 }

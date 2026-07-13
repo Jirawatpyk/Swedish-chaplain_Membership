@@ -2273,6 +2273,22 @@
             "body": "Det automatiska kvittomejlet till {recipient} kunde inte levereras (det studsade, avvisades eller så var e-postleverantören otillgänglig). Betalningsposten påverkas inte.",
             "resend": "Skicka kvittomejl igen"
           }
+        },
+        "autoRefundFailed": {
+          "title": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
+          "body": "En automatisk återbetalning för denna fakturas onlinebetalning slutfördes inte hos betalningsleverantören, så medlen har inte återförts till medlemmen. Stäm av detta manuellt.",
+          "ref": "Betalningsleverantörens återbetalningsreferens: {ref}",
+          "runbook": "Följ avstämningsrunboken: {path}",
+          "resolve": "Markera som avstämd",
+          "resolveConfirm": {
+            "title": "Markera denna automatiska återbetalning som avstämd?",
+            "body": "Gör detta först efter att du har återfört medlen till medlemmen på annat sätt (en återbetalning via Stripe Dashboard eller en manuell kreditnota). Det rensar denna varning, uppdaterar medlemmens faktura till att visa betalningen som återbetald och registreras i granskningsloggen.",
+            "cancel": "Avbryt",
+            "confirm": "Ja, markera som avstämd",
+            "pending": "Registrerar…"
+          },
+          "resolveSuccess": "Automatisk återbetalning markerad som avstämd.",
+          "resolveError": "Kunde inte markera som avstämd. Försök igen."
         }
       },
       "issue": {
@@ -2886,6 +2902,8 @@
           "action": "Åtgärd"
         },
         "openAction": "Granska",
+        "viewAction": "Visa",
+        "settlingPill": "Återbetalning behandlas",
         "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen."
       },
       "tierBadge": {
@@ -3252,6 +3270,9 @@
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
+        "refundSettlingBadge": "Återbetalning behandlas",
+        "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
+        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas — ingen åtgärd behövs.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Godkänn återaktivering",
@@ -3261,7 +3282,8 @@
             "cancel": "Avbryt",
             "submitting": "Godkänner…",
             "successToast": "Återaktivering godkänd – medlemskapet är nu aktivt.",
-            "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen."
+            "errorToast": "Det gick inte att godkänna återaktiveringen. Försök igen.",
+            "errorRefundInProgressToast": "Den här återaktiveringen har redan avslagits — en återbetalning behandlas och den kan därför inte längre godkännas."
           },
           "reject": {
             "button": "Avslå och återbetala",
@@ -3275,6 +3297,7 @@
             "submitting": "Avslår…",
             "successRefundedToast": "Återaktivering avslagen och betalningen återbetalades.",
             "successNoRefundToast": "Återaktivering avslagen. Det fanns ingen betalning att återbetala.",
+            "successPendingToast": "Återbetalning inskickad — den behandlas hos betalningsleverantören. Den här återaktiveringen ligger kvar i väntelistan tills återbetalningen bekräftas.",
             "error": {
               "cycle_not_pending": "Den här cykeln väntar inte längre på granskning – den kan redan ha hanterats.",
               "refund_failed": "Återbetalningen kunde inte genomföras. Cykeln lämnades oförändrad – försök igen.",
@@ -3630,7 +3653,9 @@
       "title": "Utfärda återbetalning",
       "button": {
         "label": "Utfärda återbetalning",
-        "ariaLabel": "Utfärda en återbetalning för denna faktura"
+        "ariaLabel": "Utfärda en återbetalning för denna faktura",
+        "settlingLabel": "Återbetalning behandlas…",
+        "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar."
       },
       "dialog": {
         "title": "Utfärda återbetalning?",
@@ -3669,16 +3694,18 @@
         }
       },
       "success": {
-        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen"
+        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen",
+        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts."
       },
       "error": {
         "title": "Det gick inte att utfärda återbetalningen",
         "payment_not_found": "Betalning hittades inte.",
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
-        "refund_in_progress": "En annan återbetalning pågår för denna betalning. Försök igen om en stund.",
+        "refund_in_progress": "En återbetalning behandlas redan för den här betalningen — ingen åtgärd behövs. Den slutförs av sig själv när betalningsleverantören bekräftar.",
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
+        "f4_preflight_read_error": "Det gick inte att verifiera det återbetalningsbara saldot just nu. Inga pengar flyttades — försök igen.",
         "internal_error": "Ett oväntat fel uppstod. Försök igen."
       },
       "cmdk": {
@@ -3714,11 +3741,14 @@
           "payment_succeeded": "Betalning genomförd",
           "payment_failed": "Betalning misslyckades",
           "payment_canceled": "Betalning avbruten",
+          "auto_refunded": "Betalning automatiskt återbetald",
           "invoice_paid": "Faktura markerad som betald",
           "refund_initiated": "Återbetalning påbörjad",
+          "refund_pending": "Återbetalning behandlas — inväntar bekräftelse från betalningsleverantören",
           "refund_succeeded": "Återbetalning genomförd",
           "refund_failed": "Återbetalning misslyckades"
         },
+        "refundPendingHint": "En kreditnota utfärdas när återbetalningen har genomförts.",
         "chargeId": {
           "label": "Transaktions-id",
           "copyAction": "Kopiera transaktions-id",
@@ -4773,6 +4803,9 @@
           "autoRefundHeading": "Vi har återbetalat din betalning",
           "autoRefundBody": "Vi har återbetalat din betalning eftersom denna faktura annullerades. Återbetalningen visas på ditt kort eller bankutdrag inom 5–10 arbetsdagar.",
           "autoRefundContact": "Om du inte ser återbetalningen efter 10 arbetsdagar, kontakta din kammaradministratör med referensen nedan.",
+          "autoRefundFailedHeading": "Vi stämmer av din betalning",
+          "autoRefundFailedBody": "Din betalning har registrerats och en återbetalning håller på att stämmas av av vårt team. Vi återkommer så snart det är löst.",
+          "autoRefundFailedContact": "Om du har frågor under tiden, kontakta din kammaradministratör med referensen nedan.",
           "autoRefundRef": "Återbetalningsreferens: {ref}"
         }
       }
@@ -5288,6 +5321,8 @@
       "notYetOpenBody": "Din förnyelse förfaller inte ännu. Vi mejlar dig när det är dags att förnya — det finns inget att göra här just nu.",
       "pendingReviewTitle": "Inväntar administratörsgranskning",
       "pendingReviewBody": "Vi har tagit emot din förnyelse och vårt team verifierar den. Du meddelas när den är bekräftad — ingen ytterligare åtgärd krävs just nu.",
+      "rejectedRefundTitle": "Återaktivering ej godkänd",
+      "rejectedRefundBody": "Din begäran om återaktivering godkändes inte. En återbetalning behandlas till din ursprungliga betalningsmetod. Ingen ytterligare åtgärd krävs.",
       "fields": {
         "plan": "Plan",
         "tier": "Nivå",
@@ -5533,6 +5568,8 @@
       "payment_acknowledged_terminal_state": "Betalning redan i slutläge",
       "dispute_created": "Betalningstvist öppnad",
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",
+      "auto_refund_failed_needs_manual_reconcile": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
+      "auto_refund_reconciled": "Automatisk återbetalning manuellt avstämd",
       "webhook_dispatch_permanent_failure": "Webhook-bearbetning permanent misslyckad",
       "registration_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (evenemangsregistreringar)",
       "event_buyer_pii_redacted": "Personuppgifter för biljettköpare maskerade",
@@ -5840,6 +5877,7 @@
       "failed": "Betalning misslyckades",
       "refunded": "Betalning återbetald",
       "partially_refunded": "Betalning delvis återbetald",
+      "auto_refunded": "Betalning automatiskt återbetald",
       "canceled": "Betalning avbruten"
     },
     "event": {

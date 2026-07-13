@@ -55,6 +55,11 @@ export function buildCycle(
     linkedCreditNoteId: null,
     anchoredAt: null,
     anchorInvoiceId: null,
+    // F8-RP follow-up (migration 0243) — async reject-with-refund marker
+    // (default unmarked; tests exercising the settle path override these).
+    rejectRefundInitiatedAt: null,
+    rejectRefundId: null,
+    rejectActorUserId: null,
     closedAt: null,
     closedReason: null,
     createdAt: '2026-05-01T00:00:00Z',

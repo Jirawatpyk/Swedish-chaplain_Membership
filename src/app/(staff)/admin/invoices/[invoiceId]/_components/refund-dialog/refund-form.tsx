@@ -195,6 +195,26 @@ export function RefundForm({
         // dialog.
         const msg = (() => {
           try {
+            // Round-2 review fix (#36): `refund_exceeds_remaining` (409 —
+            // returned when the refundable balance shrank between page load and
+            // submit, e.g. a concurrent refund settled) is the ONE server error
+            // code whose message needs a {remaining} ICU arg. Pre-fix this path
+            // called tError(code) with NO param, so next-intl could not format
+            // the placeholder and surfaced the raw message key. Supply the arg,
+            // mirroring the client-side zod `amountMessage` path below. The
+            // client's `remainingRefundableSatang` may be slightly stale in the
+            // race, but the definitive guard is server-side; showing the
+            // localised balance text beats a raw token. Every other route code
+            // has no placeholder, so `tError(code)` is correct for them.
+            if (code === 'refund_exceeds_remaining') {
+              return tError('refund_exceeds_remaining', {
+                remaining: formatSatangThb(
+                  remainingRefundableSatang,
+                  locale,
+                  currencyCode,
+                ),
+              });
+            }
             return tError(code);
           } catch {
             return tError('internal_error');
@@ -205,11 +225,20 @@ export function RefundForm({
         return;
       }
       const body = (await res.json()) as {
-        refund: { creditNoteNumber: string };
+        refund: { status?: string; creditNoteNumber?: string };
       };
-      toast.success(
-        t('success.toast', { number: body.refund.creditNoteNumber }),
-      );
+      // #1 (2026-07-11) — an async Stripe refund returns 202 with a
+      // `pending` row (no credit note yet). Show an "awaiting confirmation"
+      // toast; the `charge.refund.updated` webhook books the credit note
+      // once the refund settles. A synchronous `succeeded` refund (201)
+      // carries the credit-note number.
+      if (res.status === 202 || body.refund.status === 'pending') {
+        toast.success(t('success.pendingToast'));
+      } else {
+        toast.success(
+          t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
+        );
+      }
       succeeded = true;
       onClose();
       router.refresh();

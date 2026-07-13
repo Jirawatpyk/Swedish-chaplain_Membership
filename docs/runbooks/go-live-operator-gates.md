@@ -114,7 +114,7 @@ echo -n "<paste-generated-value>" | vercel env add AUTH_COOKIE_SIGNING_SECRET pr
 | `STRIPE_SECRET_KEY` | `sk_test_`\|`sk_live_` | **required even with F5 dark** — use `sk_test_` until §11 |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_`\|`pk_live_` | `NEXT_PUBLIC_` prefix mandatory (client bundle) |
 | `STRIPE_WEBHOOK_SECRET` | starts `whsec_` | |
-| `STRIPE_API_VERSION` | ≥8 chars | pinned, e.g. `2025-09-30.basil` |
+| `STRIPE_API_VERSION` | ≥8 chars | pinned, e.g. `2025-09-30.clover` (matches `.env.example`) |
 | `STRIPE_ACCOUNT_ID_SWECHAM` | ≥10 chars | connected-account id (stable test↔live) |
 | `RESEND_BROADCASTS_API_KEY` | starts `re_` | **required even with F7 dark** (may equal `RESEND_API_KEY`) |
 | `RESEND_BROADCASTS_WEBHOOK_SECRET` | ≥32 chars | distinct Resend Broadcasts webhook secret |

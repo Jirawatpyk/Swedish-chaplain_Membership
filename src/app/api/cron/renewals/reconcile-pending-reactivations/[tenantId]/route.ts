@@ -114,6 +114,11 @@ export async function POST(
         reminders_failed: result.value.remindersFailed,
         timed_out: result.value.timedOut,
         timeout_refund_failures: result.value.timeoutRefundFailures,
+        // F8-RP: refund submitted but settling asynchronously (Stripe
+        // pending/requires_action or a prior refund already in-flight). Cycle
+        // stays pending + self-heals next run. NOT a failure — split out from
+        // `timeout_refund_failures` so an in-flight refund is not mislabelled.
+        timeout_refund_pending: result.value.timeoutRefundPending,
         // MONEY-SAFETY (063): cycles skipped because an admin approve/
         // reject won the per-cycle lock race BEFORE the refund (Step-1;
         // no money moved).
@@ -133,6 +138,29 @@ export async function POST(
         // post-refund counter so a no-money DB blip does not falsely page.
         timeout_transition_failed_no_refund:
           result.value.timeoutTransitionFailedNoRefund,
+        // F8-RP follow-up: async reject-with-refund SETTLEMENT reconciliation.
+        // A cycle an admin REJECTED with a refund that F5 settled
+        // asynchronously converges → `cancelled` (parity with the sync reject),
+        // NOT the timeout → `lapsed`. `async_reject_refund_failed` is the
+        // ALERTING outcome (the async refund never returned the money).
+        async_reject_settled_cancelled:
+          result.value.asyncRejectSettledCancelled,
+        async_reject_refund_still_pending:
+          result.value.asyncRejectRefundStillPending,
+        async_reject_refund_failed: result.value.asyncRejectRefundFailed,
+        async_reject_lookup_failed: result.value.asyncRejectLookupFailed,
+        async_reject_admin_race_skipped:
+          result.value.asyncRejectAdminRaceSkipped,
+        // F8-RP-2 review fix: the settle tx threw a non-conflict error (DB
+        // blip); the tx rolled back, the cycle stays marked+pending and
+        // self-heals next pass. INFORMATIONAL — never pages on its own.
+        async_reject_settle_failed: result.value.asyncRejectSettleFailed,
+        // H1 reliability fix: an UNCLASSIFIED per-cycle throw (e.g. the timeout
+        // branch's Step-1 unguarded re-read) that the loop-level backstop
+        // isolated to its one cycle instead of letting it 500 the whole pass.
+        // ALERTING — a non-zero value means an unhandled per-cycle path is
+        // throwing, distinct from the informational race/pending counters.
+        cycle_processing_errors: result.value.cycleProcessingErrors,
         duration_ms: Date.now() - startedAt,
       });
     });

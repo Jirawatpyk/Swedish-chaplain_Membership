@@ -83,6 +83,24 @@ export const renewalCycles = pgTable(
     anchorInvoiceId: uuid('anchor_invoice_id'),
     linkedCreditNoteId: uuid('linked_credit_note_id'),
 
+    // F8-RP follow-up (migration 0243) — async reject-with-refund marker.
+    // Stamped by `adminRejectReactivation` when F5 returns `refund_pending`
+    // (Stripe settling asynchronously): the cycle stays
+    // `pending_admin_reactivation` and these three columns record that an
+    // admin REJECT initiated a refund that has not settled yet. The
+    // reconcile-pending cron detects the settled refund and converges the
+    // cycle → `cancelled`/`admin_rejected_with_refund` (byte-identical to the
+    // SYNC reject path) instead of letting the 30-day timeout lapse it.
+    // `rejectRefundId` is TEXT (F5 `rfnd_<ulid>` ids, not uuid);
+    // `rejectActorUserId` replays the rejecting admin for audit parity. All
+    // three nullable, no CHECK — advisory/forensic, left set on the resulting
+    // cancelled row. See docs/superpowers/sdd/task-f8rp-hook-report.md.
+    rejectRefundInitiatedAt: timestamp('reject_refund_initiated_at', {
+      withTimezone: true,
+    }),
+    rejectRefundId: text('reject_refund_id'),
+    rejectActorUserId: text('reject_actor_user_id'),
+
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedReason: text('closed_reason'),
 

@@ -72,6 +72,21 @@ describe('enforceOneSucceededPerInvoice', () => {
       ['partially_refunded', 'refunded', 'succeeded'].sort(),
     );
   });
+
+  // A.4 — `auto_refunded` (migration 0240) is a stale-invoice auto-refund
+  // outcome reached directly from `pending`; it never implies the invoice
+  // was settled via a succeeded charge, so it must NOT count toward the
+  // one-succeeded-per-invoice invariant (a member can still retry payment
+  // on an invoice whose prior attempt was auto-refunded).
+  it('ok when auto_refunded exists (not in succeeded lineage)', () => {
+    expect(enforceOneSucceededPerInvoice(['auto_refunded']).ok).toBe(true);
+  });
+
+  it('SUCCEEDED_LINEAGE does not include auto_refunded', () => {
+    expect((SUCCEEDED_LINEAGE as readonly string[]).includes('auto_refunded')).toBe(
+      false,
+    );
+  });
 });
 
 describe('enforceOneSucceededPerInvoice — properties', () => {

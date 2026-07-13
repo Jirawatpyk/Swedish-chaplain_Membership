@@ -161,6 +161,16 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const c = v.cycle;
   const shortId = c.cycleId.slice(0, 8);
 
+  // UX-A Bug 2: a `pending_admin_reactivation` cycle that ALSO carries the
+  // async reject-with-refund marker (migration 0243) has already been rejected
+  // by an admin — an F5 refund is settling and the reconcile cron will converge
+  // it to `cancelled`. Surface this as a DISTINCT persistent state (amber
+  // notice + badge, actions hidden) so it never reads as a fresh, undecided
+  // cycle awaiting an approve/reject decision.
+  const rejectRefundSettling =
+    c.status === 'pending_admin_reactivation' &&
+    c.rejectRefundInitiatedAt !== null;
+
   // Parallel F3 member + F2 plan display lookups. Plan lookup uses
   // the SAME query shape as production `loadPlanFrozenFields`
   // (`plan-lookup-for-renewal-drizzle.ts`):
@@ -326,6 +336,14 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                   : null
               }
             />
+            {/* UX-A Bug 2: distinct badge treatment for a marked
+                (already-rejected, refund-settling) pending cycle so the
+                header doesn't read as an undecided cycle. */}
+            {rejectRefundSettling && (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-600">
+                {t('refundSettlingBadge')}
+              </span>
+            )}
           </span>
         }
         // I-1 (UX R3): subtitle anchors on the most-relevant date for
@@ -354,14 +372,31 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           arriving here from breadcrumb / direct URL need the next
           action spelled out — approve/reject lives on the row-action
           dropdown back in the pipeline (no list surface for this
-          status yet). */}
-      {c.status === 'pending_admin_reactivation' && (
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{t('pendingNoticeTitle')}</AlertTitle>
-          <AlertDescription>{t('pendingNoticeBody')}</AlertDescription>
-        </Alert>
-      )}
+          status yet).
+          UX-A Bug 2: when the reject-refund marker is set the decision is
+          already made, so we swap the "approve or reject" copy for a DISTINCT
+          amber "refund settling" notice. `role="status"` so a screen reader
+          announces it as real page text on load (not only the fire-once
+          toast). */}
+      {c.status === 'pending_admin_reactivation' &&
+        (rejectRefundSettling ? (
+          <Alert
+            role="status"
+            className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+          >
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t('refundSettlingNoticeTitle')}</AlertTitle>
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              {t('refundSettlingNoticeBody')}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>{t('pendingNoticeTitle')}</AlertTitle>
+            <AlertDescription>{t('pendingNoticeBody')}</AlertDescription>
+          </Alert>
+        ))}
 
       {/* 070 F8 item #18 — admin approve / reject-with-refund actions.
           The client component renders nothing unless the cycle is in
@@ -372,7 +407,14 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           a manager POST with 403 + f8_role_violation_blocked audit). */}
       {c.status === 'pending_admin_reactivation' &&
         currentUser.role === 'admin' && (
-          <PendingReactivationActions cycleId={c.cycleId} status={c.status} />
+          <PendingReactivationActions
+            cycleId={c.cycleId}
+            status={c.status}
+            // UX-A Bug 2: the component hides both actions when this is set
+            // (already-rejected, refund settling). Belt-and-suspenders with
+            // the amber notice above.
+            rejectRefundInitiatedAt={c.rejectRefundInitiatedAt}
+          />
         )}
 
       {/* DV-5 — admin cancel-cycle + mark-paid-offline actions. The client

@@ -22,12 +22,16 @@ function makeStubRepo(override: Partial<PaymentsRepo> = {}): PaymentsRepo {
     lockForUpdateByPaymentIntentId: vi.fn(),
     insert: vi.fn(),
     updateStatus: vi.fn(),
+    markAutoRefunded: vi.fn(),
+    attachAutoRefundMarkerIfAbsent: vi.fn(),
     findPendingByInvoiceAndActor: vi.fn(),
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),
     listSucceededMethodByInvoiceIds: vi.fn(),
     listInvoiceActivity: vi.fn().mockResolvedValue({ payments: [], refunds: [] }),
     findStaleInvoiceAutoRefund: vi.fn().mockResolvedValue(null),
+    findFailedAutoRefundForInvoice: vi.fn().mockResolvedValue(null),
+    findAutoRefundByProcessorRefundId: vi.fn().mockResolvedValue(null),
     ...override,
   };
 }

@@ -181,14 +181,123 @@ export interface InvoicingBridgePort {
       { readonly code: string; readonly detail: string }
     >
   >;
+
+  /**
+   * B.1 (#4) — read the invoice's F4-authoritative credited + total amounts
+   * so the F5 refund pre-flight (`issueRefund` Phase A) can cap the
+   * refundable at the invoice's UN-credited headroom (`total − credited`)
+   * IN ADDITION to the payment-based cap (`payment.amount − Σ F5 succeeded
+   * refunds`). The effective remaining is `min(payment-based, invoice-credit-
+   * based)`.
+   *
+   * Without this cap a refund that clears the payment-based limit but exceeds
+   * `invoice.total − invoice.creditedTotal` (e.g. a manual F4 credit note was
+   * already issued against the invoice) would move money at Stripe that F4
+   * then REFUSES as an over-credit credit note → an orphaned Stripe refund
+   * with no CN (bug #4). The caller REJECTS such a refund BEFORE any
+   * `createRefund` call.
+   *
+   * Tenant-scoped read: the adapter wraps F4's `getInvoice` via
+   * `makeGetInvoiceDeps(tenantId)`, whose repo runs inside `runInTenant`
+   * (Principle I — never the pool-global `db`). No actor is threaded — this
+   * is an internal reconciliation read (like the webhook payability path), so
+   * it emits no cross-tenant-probe audit.
+   *
+   * Returns the two branded amounts on success. `not_found` = the invoice
+   * could not be resolved in the actor tenant (a data-integrity anomaly — a
+   * refundable payment always FK-references a live invoice). `invalid_total`
+   * = the F4 money field failed `asSatang` (null `total` on a draft, or a
+   * negative value from a dropped CHECK / manual SQL). `read_failed` (B.1
+   * review Minor#1) = the underlying F4 read THREW (e.g. Neon down / tx
+   * aborted / tenant-context mismatch) — the adapter catches it so the caller
+   * gets a graceful `Result.err` (→ 502) instead of an unhandled 500. On ANY
+   * error the caller refuses the refund rather than proceeding blind to Stripe.
+   *
+   * B.1 review Fix#2 — optional `externalTx`: when the caller is already
+   * inside a `runInTenant`-based tx (the F5 refund Phase A holds the payment
+   * `FOR UPDATE` on it), it threads that tx here so the F4 read runs on the
+   * SAME pooled connection instead of the adapter opening a 2nd `runInTenant`
+   * (a nested pooled-connection acquisition that can self-deadlock under
+   * concurrent refunds). The connection already carries `SET LOCAL
+   * app.current_tenant`, so the read stays tenant-scoped. Omit it for standalone
+   * reads (the adapter opens its own tenant-bound tx, unchanged behaviour).
+   */
+  getInvoiceCreditedTotal(input: {
+    readonly tenantId: string;
+    readonly invoiceId: string;
+    readonly externalTx?: unknown;
+  }): Promise<
+    Result<
+      {
+        readonly creditedTotalSatang: Satang;
+        readonly totalSatang: Satang;
+      },
+      { readonly code: 'not_found' | 'invalid_total' | 'read_failed' }
+    >
+  >;
+
+  /**
+   * B.2 (tax#5) — read the invoice's F4-AUTHORITATIVE status AFTER the refund's
+   * credit note has been issued, so the shared `finalizeSucceededRefund` helper
+   * reports the tax-document system's own recorded status instead of a
+   * projection of the F5 payment status.
+   *
+   * Why this matters: the F5 payment status only knows about F5 refunds. When
+   * an invoice already carries a MANUAL F4 credit note that — together with the
+   * F5 refund's credit note — FULLY credits it, the payment may still read
+   * `partially_refunded` (the F5 refunds alone don't cover the whole payment)
+   * while F4 has flipped the invoice to `credited`. The old
+   * `refunded → 'credited', else 'partially_credited'` projection reported the
+   * wrong status in that case. This read echoes F4's decision (F4 owns the
+   * credited/partially_credited boundary in `issueCreditNote`), so all three
+   * finaliser callers (admin, webhook, sweep) report identically.
+   *
+   * Post-CN the invoice is ALWAYS `credited` or `partially_credited` (F4's
+   * `applyCreditNoteRollup` set exactly one of those); the adapter narrows to
+   * `CreditedInvoiceStatus` and returns `unexpected_status` for anything else
+   * (data anomaly) so the caller can fall back to its payment-derived
+   * projection rather than surface a wrong status. `not_found` = the invoice
+   * could not be resolved in the actor tenant. `read_failed` = the underlying
+   * F4 read THREW (Neon down / tx aborted). On ANY error the caller falls back
+   * to the payment-derived projection — a refund that already succeeded (CN +
+   * Stripe both committed) is NEVER failed just because this status READ hiccuped.
+   *
+   * Tenant-scoped read: wraps F4's `getInvoice` via `makeGetInvoiceDeps`, whose
+   * repo runs inside `runInTenant` (Principle I — never the pool-global `db`).
+   * No actor is threaded — internal reconciliation read, so no cross-tenant
+   * probe audit.
+   *
+   * `externalTx` (B.1 lesson): when the caller is already inside a
+   * `runInTenant`-based tx (the finaliser holds the refund/payment rows on it),
+   * it threads that tx here so the F4 read runs on the SAME pooled connection
+   * instead of opening a 2nd nested `runInTenant` (a nested pooled-connection
+   * acquisition that can self-deadlock while holding row locks). The finalise
+   * tx is READ COMMITTED, so the read sees F4's just-committed CN status flip
+   * (F4 owns its own tx; it commits before this read runs). Omit `externalTx`
+   * for standalone reads (the adapter opens its own tenant-bound tx).
+   */
+  getInvoiceStatus(input: {
+    readonly tenantId: string;
+    readonly invoiceId: string;
+    readonly externalTx?: unknown;
+  }): Promise<
+    Result<
+      CreditedInvoiceStatus,
+      { readonly code: 'not_found' | 'unexpected_status' | 'read_failed' }
+    >
+  >;
 }
 
 /**
- * Post-CN invoice status. The F5 caller derives this from the refund
- * arithmetic (`refundedAmountSatang === payment.amountSatang` →
- * `'credited'` else `'partially_credited'`) — `payment.amountSatang`
- * equals `invoice.totalSatang` under F5's "one PaymentIntent covers
- * the whole invoice" invariant, so re-reading the invoice for the
- * status would be a redundant DB roundtrip.
+ * Post-CN invoice status. F5 reads this F4-authoritative value via
+ * `getInvoiceStatus` (tx-threaded, see that method's docstring) AFTER the
+ * credit note is issued — F4 owns the `credited`/`partially_credited`
+ * boundary, including cases where a pre-existing MANUAL F4 credit note
+ * already partially credited the invoice (tax#5). The refund-arithmetic
+ * projection (`refundedAmountSatang === payment.amountSatang` → `'credited'`)
+ * is used ONLY as a fallback when the `getInvoiceStatus` read errors, so an
+ * already-succeeded refund is never failed over a status-read hiccup. Do NOT
+ * remove `getInvoiceStatus` in favour of the arithmetic projection alone —
+ * that reintroduces tax#5.
  */
 export type CreditedInvoiceStatus = 'partially_credited' | 'credited';

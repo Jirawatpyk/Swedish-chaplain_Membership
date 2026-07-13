@@ -69,6 +69,14 @@ export interface LoadRenewalSummaryOutput {
   readonly memberId: string;
   /** Cycle status — UI branches on `awaiting_payment` vs `lapsed` etc. */
   readonly status: RenewalCycle['status'];
+  /**
+   * UX-A Bug 2 — async reject-with-refund marker (ISO 8601 UTC, migration
+   * 0243), read-only. Non-null ONLY on a `pending_admin_reactivation` cycle
+   * whose admin REJECT initiated an F5 refund that is still settling. The
+   * portal branches on this to show "reactivation not approved — refund being
+   * processed" instead of the (now factually-false) "awaiting review" copy.
+   */
+  readonly rejectRefundInitiatedAt: string | null;
   readonly planIdAtCycleStart: string;
   readonly tierAtCycleStart: RenewalCycle['tierAtCycleStart'];
   /**
@@ -288,6 +296,7 @@ export async function loadRenewalSummary(
     cycleId: cycle.cycleId,
     memberId: cycle.memberId,
     status: cycle.status,
+    rejectRefundInitiatedAt: cycle.rejectRefundInitiatedAt,
     planIdAtCycleStart: cycle.planIdAtCycleStart,
     tierAtCycleStart: cycle.tierAtCycleStart,
     frozenPlanPriceThb: cycle.frozenPlanPriceThb,
