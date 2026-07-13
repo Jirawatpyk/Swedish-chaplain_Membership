@@ -265,6 +265,24 @@ describe('create-member integration (T041, US1)', () => {
     if (!result.ok) expect(result.error.type).toBe('invalid_email');
   });
 
+  it('persists notes supplied at create time', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = { ...goodInput(planId), notes: 'Introduced by the Swedish embassy' };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-notes` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.notes).toBe('Introduced by the Swedish embassy');
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {

@@ -62,6 +62,7 @@ function toPayload(
     tax_id: values.tax_id?.trim() || null,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
+    notes: values.notes ? values.notes.trim() || null : null,
     address_line1: values.address_line1?.trim() || null,
     address_line2: values.address_line2?.trim() || null,
     city: values.city?.trim() || null,

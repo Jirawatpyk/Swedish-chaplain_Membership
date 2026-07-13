@@ -191,3 +191,9 @@ specs/012-eventcreate-integration/perf-results/local-*.json
 # Visual-companion brainstorm mockups (superpowers)
 # ============================================
 .superpowers/
+
+# Service-account credentials — never commit (present untracked at repo root)
+google-credentials.json
+*-credentials.json
+*credentials*.json
+service-account*.json

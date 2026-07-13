@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   VALID_VALUES: {
     company_name: 'Acme Co',
     country: 'TH',
-    notes: null,
+    notes: 'Renewal handled by finance',
     plan_id: 'premium',
     plan_year: 2026,
     primary_contact: {
@@ -178,5 +178,17 @@ describe('CreateMemberClient orchestration', () => {
       expect(h.toast.error).toHaveBeenCalledWith('errors.serverBusy'),
     );
     expect(h.toast.error).not.toHaveBeenCalledWith('errors.generic');
+  });
+
+  it('forwards notes into the create payload (Task 1: notes accepted on create)', async () => {
+    fetchMock.mockResolvedValueOnce(res(201, { member_id: 'm-notes' }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(body.notes).toBe('Renewal handled by finance');
   });
 });

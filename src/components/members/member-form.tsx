@@ -416,17 +416,26 @@ export function MemberForm({
   // every error with a jump link, and announces via role="alert".
   const summaryEntries: ReadonlyArray<readonly [string, string | undefined]> = [
     ['company_name', errors.company_name?.message],
+    ['legal_entity_type', errors.legal_entity_type?.message],
     ['country', errors.country?.message],
     ['tax_id', errors.tax_id?.message],
     ['website', errors.website?.message],
+    ['description', errors.description?.message],
+    ['notes', errors.notes?.message],
     ['founded_year', errors.founded_year?.message],
     ['turnover_thb', errors.turnover_thb?.message],
     ['plan_id', errors.plan_id?.message],
     ['plan_year', errors.plan_year?.message],
+    ['address_line1', errors.address_line1?.message],
+    ['address_line2', errors.address_line2?.message],
+    ['city', errors.city?.message],
+    ['province', errors.province?.message],
+    ['postal_code', errors.postal_code?.message],
     ['first_name', errors.primary_contact?.first_name?.message],
     ['last_name', errors.primary_contact?.last_name?.message],
     ['contact_email', errors.primary_contact?.email?.message],
     ['contact_phone', errors.primary_contact?.phone?.message],
+    ['role_title', errors.primary_contact?.role_title?.message],
     // Only when the DOB field is actually rendered (needsDob) — otherwise a
     // stale DOB error after switching to a non-DOB plan would make the summary
     // jump-link point at an unmounted #date_of_birth.
@@ -501,6 +510,14 @@ export function MemberForm({
               id="legal_entity_type"
               {...register('legal_entity_type')}
               maxLength={100}
+              aria-invalid={Boolean(errors.legal_entity_type)}
+              aria-describedby={
+                errors.legal_entity_type ? 'legal_entity_type-error' : undefined
+              }
+            />
+            <FieldError
+              id="legal_entity_type-error"
+              message={errors.legal_entity_type?.message}
             />
           </div>
           <div>
@@ -602,7 +619,12 @@ export function MemberForm({
             {...register('description')}
             rows={3}
             maxLength={2000}
+            aria-invalid={Boolean(errors.description)}
+            aria-describedby={
+              errors.description ? 'description-error' : undefined
+            }
           />
+          <FieldError id="description-error" message={errors.description?.message} />
         </div>
 
         <div>
@@ -613,11 +635,15 @@ export function MemberForm({
             rows={3}
             maxLength={4000}
             placeholder={tf('notesPlaceholder')}
-            aria-describedby="notes-hint"
+            aria-invalid={Boolean(errors.notes)}
+            aria-describedby={
+              errors.notes ? 'notes-error notes-hint' : 'notes-hint'
+            }
           />
           <p id="notes-hint" className="mt-1 text-xs text-muted-foreground">
             {tf('notesHint')}
           </p>
+          <FieldError id="notes-error" message={errors.notes?.message} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -700,8 +726,38 @@ export function MemberForm({
           <Input
             id="registration_date"
             type="date"
+            readOnly={mode === 'edit'}
+            aria-describedby={
+              mode === 'edit'
+                ? 'registration_date-readonly'
+                : 'registration_date-hint'
+            }
+            // Tailwind-merge only dedupes WITHIN the same variant group —
+            // `bg-muted` (no modifier) and `dark:bg-input/30` from the base
+            // Input class list (input.tsx) don't collide, so the dark
+            // variant wins and the read-only cue disappears in dark mode.
+            // Pin the dark variant explicitly.
+            className={mode === 'edit' ? 'bg-muted dark:bg-muted' : undefined}
             {...register('registration_date')}
           />
+          {/* Each mode gets the copy that is true for it — create honours a
+            * back-dated value verbatim (it anchors the F8 renewal cycle);
+            * edit discards any change, so only the read-only note applies. */}
+          {mode === 'edit' ? (
+            <p
+              id="registration_date-readonly"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {tf('registrationDateReadOnly')}
+            </p>
+          ) : (
+            <p
+              id="registration_date-hint"
+              className="mt-1 text-xs text-muted-foreground"
+            >
+              {tf('registrationDateHint')}
+            </p>
+          )}
         </div>
       </fieldset>
 
@@ -717,6 +773,14 @@ export function MemberForm({
             {...register('address_line1')}
             maxLength={200}
             autoComplete="address-line1"
+            aria-invalid={Boolean(errors.address_line1)}
+            aria-describedby={
+              errors.address_line1 ? 'address_line1-error' : undefined
+            }
+          />
+          <FieldError
+            id="address_line1-error"
+            message={errors.address_line1?.message}
           />
         </div>
         <div>
@@ -726,6 +790,14 @@ export function MemberForm({
             {...register('address_line2')}
             maxLength={200}
             autoComplete="address-line2"
+            aria-invalid={Boolean(errors.address_line2)}
+            aria-describedby={
+              errors.address_line2 ? 'address_line2-error' : undefined
+            }
+          />
+          <FieldError
+            id="address_line2-error"
+            message={errors.address_line2?.message}
           />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -736,7 +808,10 @@ export function MemberForm({
               {...register('city')}
               maxLength={100}
               autoComplete="address-level2"
+              aria-invalid={Boolean(errors.city)}
+              aria-describedby={errors.city ? 'city-error' : undefined}
             />
+            <FieldError id="city-error" message={errors.city?.message} />
           </div>
           <div>
             <Label htmlFor="province">{tf('province')}</Label>
@@ -745,7 +820,10 @@ export function MemberForm({
               {...register('province')}
               maxLength={100}
               autoComplete="address-level1"
+              aria-invalid={Boolean(errors.province)}
+              aria-describedby={errors.province ? 'province-error' : undefined}
             />
+            <FieldError id="province-error" message={errors.province?.message} />
           </div>
           <div>
             <Label htmlFor="postal_code">{tf('postalCode')}</Label>
@@ -754,6 +832,14 @@ export function MemberForm({
               {...register('postal_code')}
               maxLength={20}
               autoComplete="postal-code"
+              aria-invalid={Boolean(errors.postal_code)}
+              aria-describedby={
+                errors.postal_code ? 'postal_code-error' : undefined
+              }
+            />
+            <FieldError
+              id="postal_code-error"
+              message={errors.postal_code?.message}
             />
           </div>
         </div>
@@ -924,6 +1010,14 @@ export function MemberForm({
               {...register('primary_contact.role_title')}
               maxLength={100}
               autoComplete="organization-title"
+              aria-invalid={Boolean(errors.primary_contact?.role_title)}
+              aria-describedby={
+                errors.primary_contact?.role_title ? 'role_title-error' : undefined
+              }
+            />
+            <FieldError
+              id="role_title-error"
+              message={errors.primary_contact?.role_title?.message}
             />
           </div>
           <div>

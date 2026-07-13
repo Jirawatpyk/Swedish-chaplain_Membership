@@ -1322,6 +1322,8 @@
           "planPlaceholder": "Välj paket…",
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
+          "registrationDateHint": "Standard är dagens datum. Detta datum är ankaret för förnyelsecykeln — backdatera det för en medlem som gick med tidigare.",
+          "registrationDateReadOnly": "Anges när medlemmen skapas och kan inte ändras här.",
           "firstName": "Förnamn",
           "lastName": "Efternamn",
           "email": "E-post",
