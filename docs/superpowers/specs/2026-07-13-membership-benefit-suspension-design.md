@@ -1,7 +1,7 @@
 # Membership Benefit Suspension + Lapse Enforcement — Design
 
 **Date**: 2026-07-13 (rev 2 — post 5-agent adversarial review; every Blocker/High resolved inline)
-**Status**: Approved design, rev 2 awaiting maintainer re-confirmation
+**Status**: Approved (rev 2, maintainer-confirmed 2026-07-13) — ready for implementation plan
 **Branch**: `059-membership-suspension` (worktree, off `origin/main`)
 **Owner modules**: `src/modules/renewals` (F8) · `src/modules/broadcasts` (F7) · `src/modules/events` (F6) · `src/modules/insights` (F9) · `src/lib/lapsed-portal-scope.ts` + `src/lib/member-context.ts` (presentation composition)
 **Provenance**: TSCC policy update received 2026-07-13 (supersedes the "no fixed lapse policy — board discretion per case" note in `docs/runbooks/cron-jobs.md:1056`).
@@ -122,7 +122,7 @@ period must stay `full`, or the member is prompted to pay a **second** time — 
 | `upcoming` · `reminded` | future | `full` / `in_good_standing` |
 | `upcoming` · `reminded` | **past** | `suspended` / `unpaid` ← closes the 06:15-cron gap |
 | `awaiting_payment` | any | `suspended` / `unpaid` |
-| `pending_admin_reactivation` | any | `suspended` / `pending_review` |
+| `pending_admin_reactivation` | any | `suspended` / `pending_review` ← paid but admin deliberately held for review; benefits stay off until the admin approves (maintainer-confirmed 2026-07-13) |
 | `completed` | any (incl. past) | **`full`** / `in_good_standing` ← 057 R2: never re-prompt payment |
 | `lapsed` | any | `terminated` / `grace_expired` |
 | `cancelled` | **past** | `terminated` / `cancelled` |
@@ -288,10 +288,10 @@ payment-month anchor. "Re-anchor at the payment month" means Bangkok-month trunc
 
 A member who pays on day 89 gets a gapless period that began 89 days ago → they were suspended
 ~89 days **and** the freshly-paid year is already 89 days spent. At the old 30-day grace this
-was tolerable; at 90 it triples. This is **intended** under the new policy (benefits genuinely
-pause; paying late costs usable time — the incentive to pay on time), but it must be stated so
-TSCC confirms it, and the member-facing copy must show *"benefits paused · N days used of your
-new period"* rather than hide it.
+was tolerable; at 90 it triples. This is **intended and TSCC-acknowledged** (2026-07-13):
+benefits genuinely pause and paying late costs usable time — the incentive to pay on time.
+"Pay late = lose usable months, not lose the anniversary." The member-facing copy must show
+*"benefits paused · N days used of your new period"* rather than hide it.
 
 ## User-facing surfaces
 
