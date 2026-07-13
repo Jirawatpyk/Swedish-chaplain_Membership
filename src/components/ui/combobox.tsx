@@ -257,23 +257,34 @@ export function Combobox({
                         onChange(o.value);
                         setOpen(false);
                       }}
-                      className="flex cursor-pointer items-center justify-between gap-2"
+                      className="flex cursor-pointer items-start gap-2"
                     >
-                      <span className="flex items-center gap-2">
-                        <CheckIcon
-                          className={cn(
-                            'size-4',
-                            value === o.value ? 'opacity-100' : 'opacity-0',
-                          )}
-                          aria-hidden="true"
-                        />
-                        {o.label}
+                      <CheckIcon
+                        className={cn(
+                          'mt-0.5 size-4 shrink-0',
+                          value === o.value ? 'opacity-100' : 'opacity-0',
+                        )}
+                        aria-hidden="true"
+                      />
+                      {/* Label over detail, not side by side. The popup is
+                          `--anchor-width` — the trigger's width — and the
+                          address fields sit in a 3-column grid, so a Thai
+                          sub-district and its English romanisation on one
+                          line ("คลองตันเหนือ  Khlong Tan Nuea") collide at
+                          ~280px. Widening the popup past the anchor is not
+                          an option: a `min-w-[20rem]` once overflowed a
+                          320px viewport (searchable-combobox.tsx:82-84).
+                          `min-w-0` is what actually lets `truncate` work —
+                          a flex child's default `min-width:auto` refuses to
+                          shrink below its content. */}
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{o.label}</span>
+                        {o.detail && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {o.detail}
+                          </span>
+                        )}
                       </span>
-                      {o.detail && (
-                        <span className="ml-auto text-xs text-muted-foreground">
-                          {o.detail}
-                        </span>
-                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
