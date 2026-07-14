@@ -401,6 +401,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           sub_district: member.subDistrict ?? undefined,
           // 088 US3 — §86/4 branch particular (seed the head-office toggle +
           // branch code so the admin sees the present value before Save).
+          // 059 / PR-A — and the VAT-registrant flag that gates them both.
+          is_vat_registered: member.isVatRegistered ?? false,
           is_head_office: member.isHeadOffice ?? true,
           branch_code: member.branchCode ?? null,
           // Round-4 R4-I3: the form schema now accepts `null` on input

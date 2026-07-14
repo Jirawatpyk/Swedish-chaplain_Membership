@@ -8,7 +8,6 @@
 
 import { z } from 'zod';
 import type { Path } from 'react-hook-form';
-import { isVatRegistrantEntityType } from '@/lib/legal-entity';
 // Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
@@ -102,6 +101,12 @@ export function buildMemberFormSchema(
   // (สำนักงานใหญ่); a branch carries a 5-digit `branch_code`. The 5-digit +
   // registrant checks live in the superRefine so a blank code on a head office
   // never trips the base rule.
+  //
+  // 059 / PR-A — `is_vat_registered` is the RECORDED §86/4 discriminator (it was
+  // guessed from `legal_entity_type` until migration 0246). Same EDIT-only
+  // posture as the pair above: it gates the branch line and the buyer-TIN
+  // requirement, so it belongs with them in the tax fieldset.
+  is_vat_registered: z.boolean().optional(),
   is_head_office: z.boolean().optional(),
   branch_code: z.string().nullable().optional(),
   founded_year: z
@@ -364,11 +369,13 @@ export function buildMemberFormSchema(
       }
     }
     // 088 US3 (FR-008) — §86/4 branch cross-field validation. A branch (NOT head
-    // office) requires a 5-digit code AND is only valid for a VAT-registrant
-    // juristic buyer (legal_entity_type set and ≠ 'individual'; the same
-    // discriminator the identity adapter uses for `buyer_is_vat_registrant`).
-    // A head office skips this (its code is cleared before submit). Mirrors the
-    // server updateMember superRefine + the `members_branch_pairing_ck` DB CHECK.
+    // office) requires a 5-digit code AND is only valid for a VAT registrant —
+    // read from the RECORDED `is_vat_registered` flag, the SAME fact the identity
+    // adapter pins onto `buyer_is_vat_registrant` at issue (059 / PR-A; it used
+    // to be guessed from `legal_entity_type`, which is why the two could
+    // disagree). A head office skips this (its code is cleared before submit).
+    // Mirrors the server updateMember superRefine + the `members_branch_pairing_ck`
+    // DB CHECK.
     if (data.is_head_office === false) {
       const code = data.branch_code?.trim() ?? '';
       if (!/^\d{5}$/.test(code)) {
@@ -378,7 +385,7 @@ export function buildMemberFormSchema(
           message: tf('errors.branchCodeFormat'),
         });
       }
-      if (!isVatRegistrantEntityType(data.legal_entity_type)) {
+      if (data.is_vat_registered !== true) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['branch_code'],

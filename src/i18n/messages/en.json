@@ -1346,6 +1346,8 @@
           "useTypedValueLabel": "Use \"{value}\"",
           "addressIncompleteBanner": "Address incomplete — required before a tax invoice can be issued.",
           "addressIncompleteJumpLink": "Complete the address",
+          "isVatRegistered": "This member is registered for VAT",
+          "isVatRegisteredHint": "VAT registration follows turnover (over 1.8M THB/year), not legal form — a sole proprietor can be registered and a company need not be. Record what is true, do not infer it from the entity type.",
           "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",
           "branchCode": "Branch code",
           "branchCodeHint": "5-digit RD branch code, e.g. 00001",
@@ -1382,7 +1384,7 @@
             "turnover": "Enter a non-negative amount.",
             "registeredCapital": "Enter a non-negative amount.",
             "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
-            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first.",
+            "branchOnNonRegistrant": "A branch code applies only to a VAT registrant. Tick \"This member is registered for VAT\" first.",
             "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact."
           },
           "notes": "Notes (admin only)",
@@ -2348,8 +2350,7 @@
           },
           "branchLine": {
             "headOffice": "สำนักงานใหญ่ (Head Office)",
-            "noneIndividual": "No branch line (individual buyer)",
-            "noneUnset": "No branch line (legal entity type not set)"
+            "noneNotRegistrant": "No branch line (buyer is not a VAT registrant)"
           },
           "vatTreatmentValue": {
             "standard": "Standard — VAT 7%",
@@ -2361,7 +2362,7 @@
           },
           "warnings": {
             "noPaymentPath": "This ใบแจ้งหนี้ will have NO payment path — online payment is off and no bank-transfer details are configured, so the member cannot pay it. Configure a payment method before issuing, or proceed knowing the bill is currently unpayable.",
-            "nullEntityType": "No §86/4 Head Office / Branch line will print — this buyer's legal entity type is not set. Set it on the member record first if this is a VAT-registrant company."
+            "notVatRegistrant": "No §86/4 Head Office / Branch line will print — this buyer is not recorded as a VAT registrant. If they are registered, tick \"This member is registered for VAT\" on the member record first."
           }
         },
         "form": {

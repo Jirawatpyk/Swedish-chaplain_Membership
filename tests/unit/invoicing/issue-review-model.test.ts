@@ -1,14 +1,22 @@
 /**
- * Unit tests for `computeIssueReviewModel` — 088 T017a / FR-027.
+ * Unit tests for `computeIssueReviewModel` — 088 T017a / FR-027, re-pointed by
+ * 059 / PR-A Task 3.
  *
  * The pre-issue review dialog surfaces the consequential §86/4 fields before
  * the admin pins an IMMUTABLE tax snapshot. This pure model decides:
- *   - the Head-Office / Branch line that will print (fail-closed on a
- *     NULL/unset `legal_entity_type` — US3 rule: individual/NULL → no line);
- *   - the non-blocking WARNINGS the dialog must raise (FR-027):
+ *   - the Head-Office / Branch line that WILL print, gated on the RECORDED
+ *     `members.is_vat_registered` flag (ประกาศอธิบดีฯ ฉบับที่ 199);
+ *   - the non-blocking WARNINGS the dialog raises (FR-027):
  *     (a) the bill will render with NO payment path, and
- *     (b) no §86/4 branch line prints because the buyer's legal_entity_type
- *         is UNSET (null) — silent post-cutover otherwise.
+ *     (b) no §86/4 branch line prints because the buyer is not a recorded VAT
+ *         registrant — otherwise silent post-cutover.
+ *
+ * This model USED to take `legalEntityType: string | null` and re-implement the
+ * discriminator by hand (`norm === 'individual'`), independently of the adapter
+ * that produces the snapshot the PDF actually renders. Two copies of one rule is
+ * how a preview comes to contradict the document. There is no third state now:
+ * with a recorded boolean, `unset` and `individual` collapse into
+ * `not_registrant`.
  *
  * Pure — no framework/DB/network — so every branch is exercised here.
  */
@@ -16,63 +24,50 @@ import { describe, expect, it } from 'vitest';
 import { computeIssueReviewModel } from '@/app/(staff)/admin/invoices/_lib/issue-review';
 
 describe('computeIssueReviewModel (FR-027)', () => {
-  it('juristic (non-individual, non-null) buyer → head-office branch line, VAT-registrant, no warnings', () => {
-    const m = computeIssueReviewModel({ legalEntityType: 'company_limited' });
-    expect(m.branchLine.kind).toBe('head_office');
-    expect(m.buyerIsVatRegistrantJuristic).toBe(true);
-    expect(m.warnings).toEqual([]);
+  it('a VAT registrant previews the head-office line', () => {
+    const m = computeIssueReviewModel({ buyerIsVatRegistrant: true });
+    expect(m.branchLine).toEqual({ kind: 'head_office' });
+    expect(m.warnings).not.toContain('no_branch_line_not_vat_registrant');
   });
 
-  it('individual buyer → no branch line (not a warning), not VAT-registrant juristic', () => {
-    const m = computeIssueReviewModel({ legalEntityType: 'individual' });
-    expect(m.branchLine.kind).toBe('none');
-    if (m.branchLine.kind === 'none') {
-      expect(m.branchLine.reason).toBe('individual');
-    }
-    expect(m.buyerIsVatRegistrantJuristic).toBe(false);
-    // Individual with no branch line is expected/legal — NOT warned.
-    expect(m.warnings).not.toContain('no_branch_line_null_entity_type');
+  it('a non-registrant previews NO line, and says why', () => {
+    const m = computeIssueReviewModel({ buyerIsVatRegistrant: false });
+    expect(m.branchLine).toEqual({ kind: 'none', reason: 'not_registrant' });
+    expect(m.warnings).toContain('no_branch_line_not_vat_registrant');
   });
 
-  it('individual is matched case-insensitively / trimmed', () => {
-    const m = computeIssueReviewModel({ legalEntityType: '  Individual ' });
-    expect(m.branchLine.kind).toBe('none');
-    expect(m.warnings).not.toContain('no_branch_line_null_entity_type');
-  });
-
-  it('NULL legal_entity_type → no branch line + WARN(b) (fail-closed, unset)', () => {
-    const m = computeIssueReviewModel({ legalEntityType: null });
-    expect(m.branchLine.kind).toBe('none');
-    if (m.branchLine.kind === 'none') {
-      expect(m.branchLine.reason).toBe('unset');
-    }
-    expect(m.buyerIsVatRegistrantJuristic).toBe(false);
-    expect(m.warnings).toContain('no_branch_line_null_entity_type');
-  });
-
-  it('empty-string legal_entity_type is treated as unset → WARN(b)', () => {
-    const m = computeIssueReviewModel({ legalEntityType: '   ' });
-    expect(m.branchLine.kind).toBe('none');
-    expect(m.warnings).toContain('no_branch_line_null_entity_type');
+  it('a registrant with a payment path raises NO warnings at all', () => {
+    expect(
+      computeIssueReviewModel({ buyerIsVatRegistrant: true }).warnings,
+    ).toEqual([]);
   });
 
   it('WARN(a) no_payment_path fires only when hasNoPaymentPath === true', () => {
     expect(
-      computeIssueReviewModel({ legalEntityType: 'company_limited', hasNoPaymentPath: true }).warnings,
+      computeIssueReviewModel({
+        buyerIsVatRegistrant: true,
+        hasNoPaymentPath: true,
+      }).warnings,
     ).toContain('no_payment_path');
     // Undefined (caller cannot determine yet — US5 bank block unbuilt) → dormant.
     expect(
-      computeIssueReviewModel({ legalEntityType: 'company_limited' }).warnings,
+      computeIssueReviewModel({ buyerIsVatRegistrant: true }).warnings,
     ).not.toContain('no_payment_path');
     // Explicit false (payment path present) → no warn.
     expect(
-      computeIssueReviewModel({ legalEntityType: 'company_limited', hasNoPaymentPath: false }).warnings,
+      computeIssueReviewModel({
+        buyerIsVatRegistrant: true,
+        hasNoPaymentPath: false,
+      }).warnings,
     ).not.toContain('no_payment_path');
   });
 
-  it('both warnings compose (null entity type AND no payment path)', () => {
-    const m = computeIssueReviewModel({ legalEntityType: null, hasNoPaymentPath: true });
-    expect(m.warnings).toContain('no_branch_line_null_entity_type');
+  it('both warnings compose (non-registrant AND no payment path)', () => {
+    const m = computeIssueReviewModel({
+      buyerIsVatRegistrant: false,
+      hasNoPaymentPath: true,
+    });
+    expect(m.warnings).toContain('no_branch_line_not_vat_registrant');
     expect(m.warnings).toContain('no_payment_path');
     expect(m.warnings).toHaveLength(2);
   });

@@ -44,6 +44,9 @@ export type MemberInitialValues = {
   // null`). The diff helpers normalise both sides with the same defaults.
   readonly isHeadOffice?: boolean;
   readonly branchCode?: string | null;
+  // 059 / PR-A — the RECORDED §86/4 VAT-registrant flag that gates the branch
+  // pair above. Same optional posture, same default-normalising diff.
+  readonly isVatRegistered?: boolean;
 };
 
 export type EditablePrimaryContact = {
@@ -93,6 +96,9 @@ export function buildFieldPayload(
     branch_code: (values.is_head_office ?? true)
       ? null
       : values.branch_code?.trim() || null,
+    // 059 / PR-A — the RECORDED §86/4 discriminator. Sent on every field PATCH
+    // so an admin ticking ONLY this box still persists (see hasFieldDiff).
+    is_vat_registered: values.is_vat_registered ?? false,
   };
 }
 
@@ -128,7 +134,10 @@ export function hasFieldDiff(
     (values.is_head_office ?? true) !== (member.isHeadOffice ?? true) ||
     ((values.is_head_office ?? true)
       ? null
-      : values.branch_code?.trim() || null) !== (member.branchCode ?? null)
+      : values.branch_code?.trim() || null) !== (member.branchCode ?? null) ||
+    // 059 / PR-A — without this leg, ticking ONLY the VAT box produces no diff,
+    // so no PATCH fires and the flag silently fails to save.
+    (values.is_vat_registered ?? false) !== (member.isVatRegistered ?? false)
   );
 }
 

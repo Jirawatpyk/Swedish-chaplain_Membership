@@ -42,6 +42,38 @@ export function TaxBranchSection({
         {t('sections.taxBranch')}
       </legend>
       <p className="text-xs text-muted-foreground">{tf('branchHint')}</p>
+      {/* 059 / PR-A — the §86/4 discriminator, RECORDED not guessed. Gates both
+          the "สำนักงานใหญ่ / สาขาที่ NNNNN" line (ประกาศ 199) and the buyer-TIN
+          requirement (ประกาศ 196) on every tax document this member receives.
+          It was previously INFERRED from `legal_entity_type` ("anything not
+          'individual'") — wrong in law (VAT registration follows turnover, not
+          legal form) and, with that column NULL on every row, false for
+          everyone. Defaults to the stored value on edit; false on create. */}
+      <div className="flex items-start gap-2">
+        <Controller
+          control={control}
+          name="is_vat_registered"
+          render={({ field }) => (
+            <Checkbox
+              id="is_vat_registered"
+              className="mt-0.5"
+              // See the is_head_office note below — base-ui Checkbox.Root needs
+              // the accessible name set directly.
+              aria-label={tf('isVatRegistered')}
+              checked={field.value ?? false}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+            />
+          )}
+        />
+        <div>
+          <Label htmlFor="is_vat_registered" className="font-normal">
+            {tf('isVatRegistered')}
+          </Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {tf('isVatRegisteredHint')}
+          </p>
+        </div>
+      </div>
       <div className="flex items-start gap-2">
         <Controller
           control={control}

@@ -203,7 +203,14 @@ describe('buildMemberFormSchema — conditional DOB requirement (requireDob=true
 // 088 US3 (FR-008) — branch pairing + registrant cross-field rules. US3-review
 // finding: these were wired in the form (member-form.tsx superRefine) but had
 // ZERO coverage — a regression weakening the /^\d{5}$/ regex or dropping the
-// individual guard would have passed the whole suite undetected.
+// registrant guard would have passed the whole suite undetected.
+//
+// 059 / PR-A Task 3 — the registrant half of the rule now reads the RECORDED
+// `is_vat_registered` flag, the same fact the identity adapter pins onto the
+// §86/4 snapshot at issue. It used to be GUESSED from `legal_entity_type`
+// ("anything that is not 'individual'"), which is why the form and the document
+// could disagree. `legal_entity_type` no longer participates in this rule at
+// all — hence no more casing/whitespace cases.
 describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)', () => {
   it('accepts a head office (is_head_office=true, no branch_code)', () => {
     expect(issuePaths({ ...BASE, is_head_office: true })).toEqual([]);
@@ -215,42 +222,57 @@ describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)'
         ...BASE,
         is_head_office: false,
         branch_code: '123',
+        is_vat_registered: true,
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('flags a branch on a non-registrant (branchOnNonRegistrant)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
+        is_vat_registered: false,
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('flags a branch when the registrant flag is UNSET — fail-closed', () => {
+    // `is_vat_registered` is `.optional()` on the schema, so `undefined` is
+    // reachable. It must NOT be treated as "probably a registrant".
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
+      }),
+    ).toContain('branch_code');
+  });
+
+  it('flags a branch on a JURISTIC entity that is not VAT-registered — the legal form does NOT decide', () => {
+    // The regression guard for the deleted `isVatRegistrantEntityType` guess:
+    // it returned TRUE for 'company' and would have accepted this branch, then
+    // printed a §86/4 Head-Office line for a non-registrant. A company below the
+    // §85/1 turnover threshold is an ordinary, real case.
+    expect(
+      issuePaths({
+        ...BASE,
+        is_head_office: false,
+        branch_code: '00042',
         legal_entity_type: 'company',
+        is_vat_registered: false,
       }),
     ).toContain('branch_code');
   });
 
-  it('flags a branch on a non-registrant — individual in ANY casing (branchOnNonRegistrant)', () => {
-    // Shares the same normalizer the adapter fail-open was fixed with, so the
-    // capital-I variant that broke the §86/4 render is caught at the form too.
+  it('accepts a valid branch (is_head_office=false + 5-digit code + recorded registrant)', () => {
     expect(
       issuePaths({
         ...BASE,
         is_head_office: false,
         branch_code: '00042',
-        legal_entity_type: 'Individual',
-      }),
-    ).toContain('branch_code');
-  });
-
-  it('flags a branch on an empty legal_entity_type (branchOnNonRegistrant)', () => {
-    expect(
-      issuePaths({
-        ...BASE,
-        is_head_office: false,
-        branch_code: '00042',
-        legal_entity_type: '',
-      }),
-    ).toContain('branch_code');
-  });
-
-  it('accepts a valid branch (is_head_office=false + 5-digit code + juristic type)', () => {
-    expect(
-      issuePaths({
-        ...BASE,
-        is_head_office: false,
-        branch_code: '00042',
-        legal_entity_type: 'company',
+        is_vat_registered: true,
       }),
     ).toEqual([]);
   });
