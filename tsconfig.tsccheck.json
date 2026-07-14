@@ -1,0 +1,35 @@
+{
+  // Typecheck config for the CI/agent gate: `npx tsc -p tsconfig.tsccheck.json --noEmit`.
+  //
+  // WHY THIS EXISTS SEPARATELY FROM tsconfig.json:
+  //
+  // Next generates `next-env.d.ts` containing `import
+  // "./.next/dev/types/routes.d.ts";` — a real import, which tsc FOLLOWS
+  // regardless of `exclude`. That routes file is rewritten continuously by the
+  // DEV SERVER, and while the server is mid-write it is routinely syntactically
+  // invalid, so `tsc` reports ~100 TS1005 errors inside it that have nothing to
+  // do with the source.
+  //
+  // Excluding `.next` alone does NOT help (the import is followed anyway), and
+  // `next-env.d.ts` is a `.d.ts`, so the `**/*.ts` glob picks it up. It has to
+  // be excluded BY NAME.
+  //
+  // Do NOT "fix" this by pinning `compilerOptions.types` — that switches off
+  // automatic @types resolution and takes vitest's globals (`vi`, `afterEach`)
+  // with it, which fails ~every test file. The ambient types `next-env.d.ts`
+  // would have supplied (`next`, `next/image-types/global`) are resolved
+  // automatically anyway.
+  //
+  // This matters more than it looks: every task on this branch was gated on
+  // this config, and a gate that emits ~100 phantom errors is a gate that can
+  // hide a real one in the noise. If you see errors here, confirm they are in
+  // real source before believing them — and if they are all under `.next/`, the
+  // exclusion below has drifted.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "tsBuildInfoFile": "./tsconfig.tsccheck.tsbuildinfo"
+  },
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
+  "exclude": ["node_modules", ".next", "next-env.d.ts"]
+}
