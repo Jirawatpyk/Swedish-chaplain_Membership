@@ -38,6 +38,7 @@ function fixture(
     legalEntityType: null,
     country: 'TH' as Member['country'],
     taxId: null,
+    isVatRegistered: false,
     website: null,
     description: null,
     foundedYear: null,

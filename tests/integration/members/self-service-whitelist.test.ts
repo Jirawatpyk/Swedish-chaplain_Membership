@@ -39,6 +39,7 @@ const baseMember: Member = {
   legalEntityType: null,
   country: 'TH' as Member['country'],
   taxId: null,
+  isVatRegistered: false,
   website: 'https://old.com',
   description: 'Old desc',
   foundedYear: null,

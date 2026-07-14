@@ -25,7 +25,7 @@ describe('legal entity type catalogue', () => {
     }
   });
 
-  it('association, foundation and government have NO VAT default', () => {
+  it('association and foundation have NO VAT default', () => {
     // VAT registration is a function of turnover (>1.8M THB/yr, พ.ร.ฎ. 432),
     // not of legal form. TSCC is ITSELF a VAT-registered association — a `false`
     // default here would under-print the §86/4 line on the members most like the
