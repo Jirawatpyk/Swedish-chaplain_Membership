@@ -62,8 +62,20 @@ export async function POST(
         { status: 404 },
       );
     case 'conflict':
+      // Task 8 review-fix (Important 2) — `result.error.reason` is a
+      // `RepoConflictReason` machine token ('no_current_primary' /
+      // 'primary_contact_race'), not a sentence. Mirror the
+      // `members/route.ts` POST precedent: fixed message, token in
+      // `details.reason`. `code` is unchanged.
       return NextResponse.json(
-        { error: { code: 'conflict', message: result.error.reason } },
+        {
+          error: {
+            code: 'conflict',
+            message:
+              'Could not promote this contact to primary. Please try again.',
+            details: { reason: result.error.reason },
+          },
+        },
         { status: 409 },
       );
     case 'server_error':

@@ -67,8 +67,12 @@ function baseMember() {
     country: 'TH',
     taxId: null,
     turnoverThb: 5_000_000,
+    // 058 / PR-B — ทุนจดทะเบียน, a NEW field distinct from turnoverThb.
+    registeredCapitalThb: 2_000_000,
     addressLine1: '99 Sukhumvit',
     addressLine2: 'Unit 5',
+    // 058 / PR-B — แขวง/ตำบล.
+    subDistrict: 'คลองตันเหนือ',
     city: 'Bangkok',
     province: 'Bangkok',
     postalCode: '10110',
@@ -139,11 +143,16 @@ describe('gdprArchiveSourceAdapter.gather — PDF-fetch resilience (W1)', () => 
     expect(data!.profile).toMatchObject({
       addressLine1: '99 Sukhumvit',
       addressLine2: 'Unit 5',
+      // 058 / PR-B — แขวง/ตำบล, part of Art. 20 portability completeness.
+      subDistrict: 'คลองตันเหนือ',
       city: 'Bangkok',
       province: 'Bangkok',
       postalCode: '10110',
       // P2 Wave-0 — turnover is the member's own subject-provided data.
       turnoverThb: 5_000_000,
+      // 058 / PR-B — ทุนจดทะเบียน, a NEW field distinct from turnoverThb;
+      // subject-provided business data, part of Art. 20 portability.
+      registeredCapitalThb: 2_000_000,
     });
   });
 

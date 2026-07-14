@@ -45,9 +45,13 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 
 vi.mock('@/lib/logger', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/logger')>();
+  // Dynamic import (not a static top-level import) — sidesteps hoisting/
+  // TDZ ordering entirely, so this is safe regardless of where `@/lib/logger`
+  // first gets pulled in relative to this file's other static imports.
+  const { createMockLogger } = await import('../../../../helpers/mock-logger');
   return {
     ...actual,
-    logger: { ...actual.logger, error: loggerErrorMock },
+    logger: createMockLogger({ error: loggerErrorMock }),
   };
 });
 

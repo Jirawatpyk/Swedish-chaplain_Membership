@@ -64,12 +64,14 @@ interface MemberRaw {
   is_head_office: boolean;
   website: string | null;
   founded_year: number | null;
+  registered_capital_thb: number | null;
   plan: string | null;
   plan_year: number;
   registration_fee_paid: boolean;
   status: string;
   address_line1: string | null;
   address_line2: string | null;
+  sub_district: string | null;
   city: string | null;
   province: string | null;
   postal_code: string | null;
@@ -129,9 +131,10 @@ export const membersBackupSourceAdapter: MembersBackupSource = {
     const memberRows = (await tx.execute(sql`
       SELECT m.member_number, m.company_name, m.legal_entity_type, m.tax_id,
              m.is_head_office, m.website, m.founded_year,
+             m.registered_capital_thb,
              (mp.plan_name->>'en') AS plan, m.plan_year,
              m.registration_fee_paid, m.status,
-             m.address_line1, m.address_line2, m.city, m.province,
+             m.address_line1, m.address_line2, m.sub_district, m.city, m.province,
              m.postal_code, m.country, m.preferred_locale,
              to_char(m.last_activity_at AT TIME ZONE 'UTC', ${sql.raw(ISO_UTC)}) AS last_activity_at,
              m.risk_score_band, m.notes,
@@ -189,12 +192,14 @@ export const membersBackupSourceAdapter: MembersBackupSource = {
       isHeadOffice: r.is_head_office,
       website: r.website,
       foundedYear: r.founded_year,
+      registeredCapitalThb: r.registered_capital_thb,
       plan: r.plan,
       planYear: r.plan_year,
       registrationFeePaid: r.registration_fee_paid,
       status: r.status,
       addressLine1: r.address_line1,
       addressLine2: r.address_line2,
+      subDistrict: r.sub_district,
       city: r.city,
       province: r.province,
       postalCode: r.postal_code,

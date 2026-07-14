@@ -26,8 +26,15 @@ export type MemberInitialValues = {
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;
+  // PR-B task 6 — แขวง/ตำบล. Optional so pre-existing fixtures + the create
+  // path (which never seeded it before this task) stay non-breaking — same
+  // precedent as `isHeadOffice`/`branchCode` above.
+  readonly subDistrict?: string | null;
   readonly foundedYear: number | null;
   readonly turnoverThb: number | null;
+  // PR-B task 7 — ทุนจดทะเบียน. Optional (like `subDistrict` above) so
+  // pre-existing fixtures + the create path stay non-breaking.
+  readonly registeredCapitalThb?: number | null;
   readonly planId: string;
   readonly planYear: number;
   readonly registrationDate: string;
@@ -65,6 +72,8 @@ export function buildFieldPayload(
     city: values.city?.trim() || null,
     province: values.province?.trim() || null,
     postal_code: values.postal_code?.trim() || null,
+    // PR-B task 6 — แขวง/ตำบล.
+    sub_district: values.sub_district?.trim() || null,
     // `values.notes` is already `string | null` after the form's zod
     // transform. Safe to trim only when string.
     notes: values.notes ? values.notes.trim() || null : null,
@@ -72,6 +81,11 @@ export function buildFieldPayload(
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:
       typeof values.turnover_thb === 'number' ? values.turnover_thb : null,
+    // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnover_thb above.
+    registered_capital_thb:
+      typeof values.registered_capital_thb === 'number'
+        ? values.registered_capital_thb
+        : null,
     // 088 US3 — §86/4 branch particular. Always send a CHECK-consistent pair:
     // head office ⇒ branch_code null; branch ⇒ the trimmed 5-digit code (the
     // form's zod already validated the digit count + registrant rule).
@@ -99,6 +113,7 @@ export function hasFieldDiff(
     (values.city?.trim() || null) !== (member.city ?? null) ||
     (values.province?.trim() || null) !== (member.province ?? null) ||
     (values.postal_code?.trim() || null) !== (member.postalCode ?? null) ||
+    (values.sub_district?.trim() || null) !== (member.subDistrict ?? null) ||
     (values.description?.trim() || null) !== (member.description ?? null) ||
     (values.notes ? values.notes.trim() || null : null) !==
       (member.notes ?? null) ||
@@ -106,6 +121,9 @@ export function hasFieldDiff(
       (member.foundedYear ?? null) ||
     (typeof values.turnover_thb === 'number' ? values.turnover_thb : null) !==
       (member.turnoverThb ?? null) ||
+    (typeof values.registered_capital_thb === 'number'
+      ? values.registered_capital_thb
+      : null) !== (member.registeredCapitalThb ?? null) ||
     // 088 US3 — §86/4 branch particular (both sides default head-office / null).
     (values.is_head_office ?? true) !== (member.isHeadOffice ?? true) ||
     ((values.is_head_office ?? true)

@@ -7,11 +7,11 @@
  * directly (FR-037 archive-race guard).
  *
  * The snapshot's `address` is composed from the F3 `members` structured
- * postal columns (`address_line1/2`, `city`, `province`, `postal_code`,
- * `country`) via `composeBuyerAddress`, so the buyer block satisfies the
- * Thai Revenue Code §86/§87 full-address requirement (not just a country
- * code — the prior stub). The primary contact's first/last name + email
- * come from `contacts`.
+ * postal columns (`address_line1/2`, `sub_district`, `city`, `province`,
+ * `postal_code`, `country`) via `composeBuyerAddress`, so the buyer block
+ * satisfies the Thai Revenue Code §86/§87 full-address requirement (not
+ * just a country code — the prior stub). The primary contact's first/last
+ * name + email come from `contacts`.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { isVatRegistrantEntityType } from '@/lib/legal-entity';
@@ -51,7 +51,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       forUpdate
         ? sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
-                   m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
+                   m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.legal_entity_type, m.is_head_office, m.branch_code,
@@ -72,7 +72,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           `
         : sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
-                   m.address_line1, m.address_line2, m.city, m.province, m.postal_code,
+                   m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.legal_entity_type, m.is_head_office, m.branch_code,
@@ -97,6 +97,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       country: string;
       address_line1: string | null;
       address_line2: string | null;
+      sub_district: string | null;
       city: string | null;
       province: string | null;
       postal_code: string | null;
@@ -170,6 +171,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         address: composeBuyerAddress({
           addressLine1: m.address_line1,
           addressLine2: m.address_line2,
+          subDistrict: m.sub_district,
           city: m.city,
           province: m.province,
           postalCode: m.postal_code,

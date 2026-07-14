@@ -190,6 +190,14 @@ describe('hasFieldDiff', () => {
   it('detects an added address field', () => {
     expect(hasFieldDiff(makeValues({ city: 'Bangkok' }), member)).toBe(true);
   });
+  // PR-B task 6 — แขวง/ตำบล. `member.subDistrict` is optional (undefined
+  // on the fixture above), so this also pins the `?? null` fallback on
+  // BOTH sides of the comparison.
+  it('detects an added sub_district', () => {
+    expect(
+      hasFieldDiff(makeValues({ sub_district: 'คลองตันเหนือ' }), member),
+    ).toBe(true);
+  });
   it('does NOT treat "" vs null as a change (website blank)', () => {
     expect(hasFieldDiff(makeValues({ website: '' }), member)).toBe(false);
   });
@@ -207,6 +215,14 @@ describe('buildFieldPayload', () => {
     );
     expect(out.address_line1).toBe('99 Rd');
     expect(out.city).toBeNull();
+  });
+
+  // PR-B task 6 — แขวง/ตำบล follows the same trim + empty→null shape as
+  // every other address part.
+  it('trims sub_district and maps empty → null', () => {
+    const out = buildFieldPayload(makeValues({ sub_district: '  คลองตันเหนือ  ' }));
+    expect(out.sub_district).toBe('คลองตันเหนือ');
+    expect(buildFieldPayload(makeValues({ sub_district: '' })).sub_district).toBeNull();
   });
 
   // PR-0 finding 4: registration_date is read-only in edit mode (Task 2)

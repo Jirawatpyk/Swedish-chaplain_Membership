@@ -27,8 +27,10 @@ const data: MembersBackupData = {
     {
       memberNumber: 'SCCM-0001', companyName: 'ABC Co.', legalEntityType: null,
       taxId: null, isHeadOffice: true, website: null, foundedYear: null,
+      registeredCapitalThb: null,
       plan: 'Gold', planYear: 2026, registrationFeePaid: true, status: 'active',
-      addressLine1: null, addressLine2: null, city: null, province: null,
+      addressLine1: null, addressLine2: null, subDistrict: null, city: null,
+      province: null,
       postalCode: null, country: 'TH', preferredLocale: null,
       lastActivityAt: null, riskBand: null, notes: null,
       createdAt: '2026-01-01T00:00:00Z', archivedAt: null, erasedAt: null,

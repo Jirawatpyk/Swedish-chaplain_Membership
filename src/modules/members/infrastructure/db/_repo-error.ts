@@ -5,7 +5,10 @@
  * across every write path, including the Drizzle-0.45 cause-chain fallback.
  */
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
-import type { RepoError } from '../../application/ports/member-repo';
+import type {
+  RepoConflictReason,
+  RepoError,
+} from '../../application/ports/member-repo';
 
 /** Wrap an arbitrary caught cause as `repo.unexpected`. */
 export function unexpected(cause: unknown): RepoError {
@@ -18,7 +21,10 @@ export function unexpected(cause: unknown): RepoError {
  * checks the structured `isUniqueViolation` AND walks the Drizzle-0.45
  * wrapped-error cause chain for the SQLSTATE message text.
  */
-export function mapDbError(cause: unknown, conflictReason: string): RepoError {
+export function mapDbError(
+  cause: unknown,
+  conflictReason: RepoConflictReason,
+): RepoError {
   const msg = errorChainMessage(cause);
   if (isUniqueViolation(cause) || /duplicate key|unique constraint/i.test(msg)) {
     return { code: 'repo.conflict', reason: conflictReason };

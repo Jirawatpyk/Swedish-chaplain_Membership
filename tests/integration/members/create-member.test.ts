@@ -283,6 +283,48 @@ describe('create-member integration (T041, US1)', () => {
     expect(rows[0]!.notes).toBe('Introduced by the Swedish embassy');
   });
 
+  it('persists registered capital and sub-district (058 / PR-B)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      registered_capital_thb: 5_000_000,
+      sub_district: 'คลองตันเหนือ',
+      city: 'เขตวัฒนา',
+      province: 'กรุงเทพมหานคร',
+      postal_code: '10110',
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-capital` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.registeredCapitalThb).toBe(5_000_000);
+    expect(rows[0]!.subDistrict).toBe('คลองตันเหนือ');
+  });
+
+  it('rejects a negative registered capital at the database (058 / PR-B)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      registered_capital_thb: -1,
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-neg-capital` },
+      deps,
+    );
+    // The zod `nonnegative()` catches this first — that is fine and intended;
+    // this test pins the behaviour (create rejects), not the layer.
+    expect(result.ok).toBe(false);
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {
@@ -296,5 +338,179 @@ describe('create-member integration (T041, US1)', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.type).toBe('invalid_tax_id');
+  });
+
+  // --- PR-B task 8 — secondary contact -----------------------------------
+
+  it('creates a secondary contact alongside the primary, both audited (PR-B task 8)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      secondary_contact: {
+        first_name: 'Björn',
+        last_name: 'Svensson',
+        email: `bjorn-${randomUUID().slice(0, 8)}@example.com`,
+        preferred_language: 'sv' as const,
+      },
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-sec` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const memberRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(memberRows).toHaveLength(1);
+
+    const contactRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(contacts)
+        .where(eq(contacts.memberId, result.value.memberId)),
+    );
+    expect(contactRows).toHaveLength(2);
+    const primary = contactRows.find((c) => c.isPrimary);
+    const secondary = contactRows.find((c) => !c.isPrimary);
+    expect(primary?.email).toBe(input.primary_contact.email);
+    expect(secondary?.email).toBe(input.secondary_contact.email);
+    expect(secondary?.preferredLanguage).toBe('sv');
+
+    // Both contacts got their OWN contact_created audit row, in the SAME tx.
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'contact_created'),
+        ),
+      );
+    const payloads = auditRows.map((r) => r.payload as Record<string, unknown>);
+    const forThisMember = payloads.filter(
+      (p) => p.member_id === result.value.memberId,
+    );
+    expect(forThisMember).toHaveLength(2);
+    expect(forThisMember.some((p) => p.is_primary === true)).toBe(true);
+    expect(forThisMember.some((p) => p.is_primary === false)).toBe(true);
+  });
+
+  it('rejects when secondary_contact.email equals primary_contact.email, before touching the DB', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const sharedEmail = `same-${randomUUID().slice(0, 8)}@example.com`;
+    const input = {
+      ...goodInput(planId),
+      primary_contact: { ...goodInput(planId).primary_contact, email: sharedEmail },
+      secondary_contact: {
+        first_name: 'Dup',
+        last_name: 'Email',
+        email: sharedEmail,
+        preferred_language: 'en' as const,
+      },
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-samee` },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('secondary_email_same_as_primary');
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.companyName, input.company_name)),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('validation: malformed secondary_contact email rejected', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = {
+      ...goodInput(planId),
+      secondary_contact: {
+        first_name: 'Bad',
+        last_name: 'Email',
+        email: 'not-an-email',
+        preferred_language: 'en' as const,
+      },
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-secbad` },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.type).toBe('invalid_secondary_email');
+  });
+
+  it('rolls back the member + primary contact as a unit when secondary_contact.email collides with an EXISTING contact (PR-B task 8)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+
+    // Seed an existing member whose primary contact owns the email that
+    // will collide below.
+    const collidingEmail = `existing-${randomUUID().slice(0, 8)}@example.com`;
+    const seeded = await createMember(
+      { ...goodInput(planId), primary_contact: { ...goodInput(planId).primary_contact, email: collidingEmail } },
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-seed` },
+      deps,
+    );
+    expect(seeded.ok).toBe(true);
+
+    // Attempt to create a NEW member whose secondary contact reuses that
+    // email. The member row + the primary-contact row for the NEW member
+    // must BOTH be inserted successfully first (this is what proves the
+    // rollback, not just an early validation short-circuit) before the
+    // secondary insert hits `contacts_tenant_email_uniq` and fails.
+    const freshPrimaryEmail = `fresh-${randomUUID().slice(0, 8)}@example.com`;
+    const newCompanyName = `Rollback Co ${Date.now()}`;
+    const input = {
+      ...goodInput(planId),
+      company_name: newCompanyName,
+      primary_contact: {
+        first_name: 'Fresh',
+        last_name: 'Primary',
+        email: freshPrimaryEmail,
+        preferred_language: 'en' as const,
+      },
+      secondary_contact: {
+        first_name: 'Colliding',
+        last_name: 'Secondary',
+        email: collidingEmail,
+        preferred_language: 'en' as const,
+      },
+    };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-rollback` },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).toBe('conflict');
+      if (result.error.type === 'conflict') {
+        expect(result.error.reason).toBe('secondary_email_in_use');
+      }
+    }
+
+    // No orphan member row for the NEW company.
+    const memberRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.companyName, newCompanyName)),
+    );
+    expect(memberRows).toHaveLength(0);
+
+    // No orphan primary-contact row either — the whole tx rolled back, not
+    // just the failing secondary insert.
+    const contactRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(contacts).where(eq(contacts.email, freshPrimaryEmail)),
+    );
+    expect(contactRows).toHaveLength(0);
+
+    // The pre-existing seeded contact is untouched.
+    const existingContactRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(contacts).where(eq(contacts.email, collidingEmail)),
+    );
+    expect(existingContactRows).toHaveLength(1);
   });
 });

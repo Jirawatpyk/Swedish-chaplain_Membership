@@ -31,7 +31,7 @@ import type { MemberId } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
-import type { RepoError } from '../ports/member-repo';
+import type { RepoConflictReason, RepoError } from '../ports/member-repo';
 import { UseCaseAbort } from '../tx-abort';
 
 // --- Schemas -----------------------------------------------------------------
@@ -66,7 +66,7 @@ export type ContactCrudError =
   | { type: 'invalid_email' }
   | { type: 'invalid_phone' }
   | { type: 'not_found' }
-  | { type: 'conflict'; reason: string }
+  | { type: 'conflict'; reason: RepoConflictReason }
   | { type: 'cannot_remove_primary' }
   | { type: 'server_error'; message: string };
 

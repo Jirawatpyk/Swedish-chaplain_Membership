@@ -65,17 +65,15 @@ vi.mock('@/lib/logger', async () => {
   const actual = await vi.importActual<typeof import('@/lib/logger')>(
     '@/lib/logger',
   );
+  // Dynamic import (not a static top-level import) — sidesteps hoisting/
+  // TDZ ordering entirely, so this is safe regardless of where `@/lib/logger`
+  // first gets pulled in relative to this file's other static imports.
+  const { createMockLogger } = await import('../../helpers/mock-logger');
   return {
     ...actual,
-    logger: {
-      ...actual.logger,
+    logger: createMockLogger({
       warn: (...args: unknown[]) => loggerWarnMock(...args),
-      // Preserve other levels — route uses .info / .error / .fatal too.
-      info: actual.logger.info.bind(actual.logger),
-      error: actual.logger.error.bind(actual.logger),
-      fatal: actual.logger.fatal.bind(actual.logger),
-      debug: actual.logger.debug.bind(actual.logger),
-    },
+    }),
   };
 });
 

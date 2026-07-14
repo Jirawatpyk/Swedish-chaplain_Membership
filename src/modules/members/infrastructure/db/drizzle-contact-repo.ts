@@ -122,7 +122,7 @@ export const drizzleContactRepo: ContactRepo = {
         .returning();
       return ok(rowToContact(rows[0]!));
     } catch (e) {
-      return err(mapDbError(e, 'duplicate primary or unique email'));
+      return err(mapDbError(e, 'contact_email_in_use'));
     }
   },
 
@@ -201,7 +201,7 @@ export const drizzleContactRepo: ContactRepo = {
       if (!probe) return err({ code: 'repo.not_found' });
       return err({
         code: 'repo.conflict',
-        reason: 'contact already linked to a user',
+        reason: 'contact_already_linked',
       });
     } catch (e) {
       return err(unexpected(e));
@@ -432,7 +432,7 @@ export const drizzleContactRepo: ContactRepo = {
 
       return ok({ oldEmail: before.email as typeof newEmail });
     } catch (e) {
-      return err(mapDbError(e, 'contact email already used in this tenant'));
+      return err(mapDbError(e, 'contact_email_in_use'));
     }
   },
 
@@ -478,14 +478,14 @@ export const drizzleContactRepo: ContactRepo = {
       }
       const demotedRow = demoted[0];
       if (!demotedRow) {
-        return err({ code: 'repo.conflict', reason: 'no current primary' });
+        return err({ code: 'repo.conflict', reason: 'no_current_primary' });
       }
       return ok({
         demoted: rowToContact(demotedRow),
         promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {
-      return err(mapDbError(e, 'primary partial-index race'));
+      return err(mapDbError(e, 'primary_contact_race'));
     }
   },
 };

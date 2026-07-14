@@ -24,11 +24,11 @@ const BOM = '﻿';
 
 const MEMBERS_HEADERS = [
   'member_number', 'company_name', 'legal_entity_type', 'tax_id',
-  'is_head_office', 'website', 'founded_year', 'plan', 'plan_year',
-  'registration_fee_paid', 'status', 'address_line1', 'address_line2',
-  'city', 'province', 'postal_code', 'country', 'preferred_locale',
-  'last_activity_at', 'risk_band', 'notes', 'created_at', 'archived_at',
-  'erased_at',
+  'is_head_office', 'website', 'founded_year', 'registered_capital_thb',
+  'plan', 'plan_year', 'registration_fee_paid', 'status', 'address_line1',
+  'address_line2', 'sub_district', 'city', 'province', 'postal_code',
+  'country', 'preferred_locale', 'last_activity_at', 'risk_band', 'notes',
+  'created_at', 'archived_at', 'erased_at',
 ] as const;
 
 const CONTACTS_HEADERS = [
@@ -81,12 +81,12 @@ export function buildMembersCsv(rows: readonly MemberBackupRow[]): string {
     rows.map((m) => [
       cell(m.memberNumber), cell(m.companyName), cell(m.legalEntityType),
       cell(m.taxId), cell(m.isHeadOffice), cell(m.website),
-      cell(m.foundedYear), cell(m.plan), cell(m.planYear),
-      cell(m.registrationFeePaid), cell(m.status), cell(m.addressLine1),
-      cell(m.addressLine2), cell(m.city), cell(m.province),
-      cell(m.postalCode), cell(m.country), cell(m.preferredLocale),
-      cell(m.lastActivityAt), cell(m.riskBand), cell(m.notes),
-      cell(m.createdAt), cell(m.archivedAt), cell(m.erasedAt),
+      cell(m.foundedYear), cell(m.registeredCapitalThb), cell(m.plan),
+      cell(m.planYear), cell(m.registrationFeePaid), cell(m.status),
+      cell(m.addressLine1), cell(m.addressLine2), cell(m.subDistrict),
+      cell(m.city), cell(m.province), cell(m.postalCode), cell(m.country),
+      cell(m.preferredLocale), cell(m.lastActivityAt), cell(m.riskBand),
+      cell(m.notes), cell(m.createdAt), cell(m.archivedAt), cell(m.erasedAt),
     ]),
   );
 }

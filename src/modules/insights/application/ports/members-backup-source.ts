@@ -20,12 +20,18 @@ export interface MemberBackupRow {
   readonly isHeadOffice: boolean;
   readonly website: string | null;
   readonly foundedYear: number | null;
+  // 058 / PR-B — ทุนจดทะเบียน. A NEW field, NOT a rename of a turnover
+  // column; this module has no turnoverThb column of its own to mirror.
+  readonly registeredCapitalThb: number | null;
   readonly plan: string | null;           // plan display name (EN)
   readonly planYear: number;
   readonly registrationFeePaid: boolean;
   readonly status: string;
   readonly addressLine1: string | null;
   readonly addressLine2: string | null;
+  // 058 / PR-B — แขวง/ตำบล. Sits between address_line2 and city, mirroring
+  // the schema column order (schema-members.ts).
+  readonly subDistrict: string | null;
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;

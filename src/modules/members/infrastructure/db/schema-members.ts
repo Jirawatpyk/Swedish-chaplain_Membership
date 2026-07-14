@@ -70,6 +70,9 @@ export const members = pgTable(
     // Turnover in THB (integer THB, no decimals — spec Q5 / FR-006).
     // bigint needed because SweCham Premium turnover band goes >100M THB.
     turnoverThb: bigint('turnover_thb', { mode: 'number' }),
+    // 058 / PR-B — ทุนจดทะเบียน (registered capital). A SEPARATE field from
+    // `turnoverThb`, which gates the F2 plan turnover band + F8 tier upgrades.
+    registeredCapitalThb: bigint('registered_capital_thb', { mode: 'number' }),
 
     // Plan binding — composite FK to membership_plans (tenant_id, plan_id, plan_year)
     // expressed at the migration layer; Drizzle cannot emit composite FKs from
@@ -102,6 +105,12 @@ export const members = pgTable(
     city: text('city'),
     province: text('province'),
     postalCode: text('postal_code'),
+    // 058 / PR-B — แขวง/ตำบล. Sits BETWEEN address_line2 and city in a Thai
+    // address. Task 2 threads this onto the §86/4 buyer address via
+    // composeBuyerAddress — a Bangkok address reading "เขตคลองเตย
+    // กรุงเทพมหานคร 10110" with no แขวง is not a complete address. `city`
+    // holds the district (อำเภอ/เขต).
+    subDistrict: text('sub_district'),
 
     // State
     status: memberStatusEnum('status').notNull().default('active'),

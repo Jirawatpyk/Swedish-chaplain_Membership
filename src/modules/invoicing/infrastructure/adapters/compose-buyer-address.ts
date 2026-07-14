@@ -4,13 +4,13 @@
  *
  * Thai Revenue Code §86/§87 require a tax invoice/receipt to carry the buyer's
  * FULL address (not just a country). The F3 `members` table holds the structured
- * parts (`address_line1/2`, `city`, `province`, `postal_code`) plus the 2-letter
- * ISO `country`; this builds the human-readable block from whatever parts are
- * present. Lines:
+ * parts (`address_line1/2`, `sub_district`, `city`, `province`, `postal_code`)
+ * plus the 2-letter ISO `country`; this builds the human-readable block from
+ * whatever parts are present. Lines:
  *
  *   address_line1
  *   address_line2
- *   <city> <province> <postal_code>
+ *   <sub_district> <city> <province> <postal_code>
  *   <country>
  *
  * Empty/blank parts are dropped. The `country` (always present — required at
@@ -23,6 +23,12 @@
 export interface BuyerAddressParts {
   readonly addressLine1: string | null;
   readonly addressLine2: string | null;
+  /**
+   * แขวง/ตำบล. Sits BETWEEN address_line2 and the district on a Thai address.
+   * NULL on every legacy row, which is why the locality join must stay
+   * blank-dropping — the pre-sub-district output has to remain byte-identical.
+   */
+  readonly subDistrict: string | null;
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;
@@ -45,8 +51,16 @@ export function composeBuyerAddress(parts: BuyerAddressParts): string {
 
   // City / province / postal collapse onto ONE locality line; each part is
   // optional, joined by a single space, so "Bangkok 10110" or "Khlong Toei
-  // Bangkok 10110" render cleanly without dangling separators.
-  const locality = [clean(parts.city), clean(parts.province), clean(parts.postalCode)]
+  // Bangkok 10110" render cleanly without dangling separators. subDistrict
+  // (แขวง/ตำบล) leads the line — Thai address ordering puts it before the
+  // district (`city`) — and is dropped like every other blank part, so
+  // legacy rows (sub_district always NULL) render byte-identical.
+  const locality = [
+    clean(parts.subDistrict),
+    clean(parts.city),
+    clean(parts.province),
+    clean(parts.postalCode),
+  ]
     .filter((p) => p.length > 0)
     .join(' ');
   if (locality.length > 0) lines.push(locality);

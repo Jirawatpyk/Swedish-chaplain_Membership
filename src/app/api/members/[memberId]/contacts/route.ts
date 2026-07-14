@@ -153,8 +153,20 @@ export async function POST(
         { status: 400 },
       );
     case 'conflict':
+      // Task 8 review-fix (Important 2) — `result.error.reason` is a
+      // `RepoConflictReason` machine token (e.g. 'contact_email_in_use'),
+      // not a sentence. Task 8 narrowed the type from `string` but this
+      // route still forwarded it straight into the user-visible `message`.
+      // Mirror the `members/route.ts` POST precedent: fixed message, token
+      // in `details.reason`. `code` is unchanged.
       return NextResponse.json(
-        { error: { code: 'conflict', message: result.error.reason } },
+        {
+          error: {
+            code: 'conflict',
+            message: 'A contact with this email address already exists.',
+            details: { reason: result.error.reason },
+          },
+        },
         { status: 409 },
       );
     case 'server_error':
