@@ -87,7 +87,10 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
-import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
+import {
+  inferReceiptKind,
+  resolveBuyerIsVatRegistrant,
+} from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import {
   InvalidMemberIdentitySnapshotError,
@@ -417,12 +420,23 @@ export async function issueEventInvoiceAsPaid(
       const memberSnap: MemberIdentitySnapshot = buyerResolution.value;
 
       // §86/4 + §105 doc-kind pin — as-paid renders the COMBINED
-      // tax-invoice/receipt for TIN buyers REGARDLESS of the tenant's
-      // receiptNumberingMode (see header). No-TIN buyers get the §105
+      // tax-invoice/receipt for VAT-REGISTRANT buyers REGARDLESS of the tenant's
+      // receiptNumberingMode (see header). NON-REGISTRANT buyers get the §105
       // receipt_separate arm numbered from the RECEIPT stream (β, Task 10).
-      const pdfKind = buyerHasTin(memberSnap.tax_id)
-        ? ('receipt_combined' as const)
-        : ('receipt_separate' as const);
+      //
+      // 059 / PR-A Task 6a — this was an INLINE COPY of `inferReceiptKind`'s
+      // formula (`buyerHasTin(...) ? receipt_combined : receipt_separate`) that
+      // never called the shared function — exactly how the payment-time and
+      // issue-time gates drift apart. It now (a) calls the shared resolver and
+      // (b) keys on the RECORDED registrant flag, so a foreign member's passport
+      // in `tax_id` can no longer upgrade their §105 ใบเสร็จรับเงิน into a §86/4
+      // ใบกำกับภาษี. This is the LIVE path where that bug actually bit: as-paid is
+      // the only writer of receipt kinds.
+      const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+        memberId,
+        memberSnap,
+      );
+      const pdfKind = inferReceiptKind('event', buyerIsVatRegistrant);
       pdfKindForForensics = pdfKind;
 
       // Event Model-B invariant: as-paid event pricing is VAT-INCLUSIVE by

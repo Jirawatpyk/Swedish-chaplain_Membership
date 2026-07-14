@@ -92,8 +92,8 @@ import {
 } from '@/modules/invoicing/domain/policies/vat-treatment';
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import {
-  buyerHasTin,
   inferEventDocumentKind,
+  resolveBuyerIsVatRegistrant,
 } from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import {
@@ -430,9 +430,18 @@ export async function issueInvoice(
     if (!buyerResolution.ok) return err(buyerResolution.error);
     const memberSnap: MemberIdentitySnapshot = buyerResolution.value;
 
+    // 059 / PR-A Task 6a — the buyer's VAT-REGISTRANT status, derived ONCE
+    // through the shared Domain resolver and threaded into BOTH decisions below
+    // (the event bill-first gate and the PDF doc-kind). Matched member → the
+    // RECORDED `members.is_vat_registered` pinned on the snapshot; walk-in
+    // (memberId null) → TIN-presence, unchanged (their `tax_id` is
+    // `/^\d{13}$/`-locked at the draft boundary, so a passport cannot reach it).
+    // See document-kind.ts for the full rationale.
+    const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(memberId, memberSnap);
+
     // §86/4 doc-type gate (066-membership-no-tin) — subject-based. The PDF
     // document kind is chosen at ISSUE from `invoiceSubject` + whether the
-    // resolved BUYER snapshot carries a 13-digit TIN:
+    // resolved BUYER is a VAT REGISTRANT:
     //
     //   MEMBERSHIP + TIN     → kind 'invoice' (ใบกำกับภาษี, buyer TIN shown)
     //   MEMBERSHIP + no TIN  → kind 'invoice' (ใบกำกับภาษี, TIN line ABSENT) — a
@@ -449,8 +458,8 @@ export async function issueInvoice(
     //                          who withholds their TIN may be issued the invoice;
     //                          only THEIR input-VAT claim is forfeit — the seller
     //                          chamber is never the party at fault.)
-    //   EVENT + TIN          → kind 'invoice' (buyer can claim input VAT)
-    //   EVENT + no TIN       → kind 'receipt_separate' (ใบเสร็จรับเงิน / §105
+    //   EVENT + registrant     → kind 'invoice' (buyer can claim input VAT)
+    //   EVENT + non-registrant → kind 'receipt_separate' (ใบเสร็จรับเงิน / §105
     //                          receipt) — billed via the as-paid path, never
     //                          bill-first; the EVENT bill-first block stays below.
     //
@@ -459,15 +468,26 @@ export async function issueInvoice(
     // renderable buyer block: member `legal_name` is required at creation, and
     // `composeBuyerAddress` carries a non-empty country fallback (so the
     // template's `member.address.split('\n')` can never deref null). The buyer
-    // TIN is the ONLY optional particular — the PDF template already renders the
-    // TIN line conditionally (`{member.tax_id && …}`), so an absent TIN simply
-    // omits the line (no placeholder). `buyerHasTin` is the shared Domain
-    // discriminator (see document-kind.ts), still used by the EVENT gate below.
+    // TIN is the ONLY optional particular — the PDF template renders the TIN line
+    // conditionally, so an absent TIN simply omits the line (no placeholder).
     //
-    // 064 §105 ROOT FIX — a no-TIN event buyer can never be billed first:
+    // 064 §105 ROOT FIX — a NON-REGISTRANT event buyer can never be billed first:
     // the only legal document for them is a §105 receipt, which may exist
     // only at the moment payment is recorded (issueEventInvoiceAsPaid).
-    if (draft.invoiceSubject === 'event' && !buyerHasTin(memberSnap.tax_id)) {
+    //
+    // 059 / PR-A Task 6a — RE-KEYED off `buyerHasTin(memberSnap.tax_id)` onto the
+    // registrant flag, in lockstep with `inferEventDocumentKind` below. These two
+    // MUST agree: if this gate let a non-registrant member through (because their
+    // `tax_id` holds a passport, so `buyerHasTin` was true) the doc-kind below
+    // would resolve 'receipt_separate' while `applyIssue` hardcodes
+    // `pdfDocKind: 'invoice'` — rendering a §105 ใบเสร็จรับเงิน for an UNPAID
+    // bill, re-opening the exact violation the 064 root fix closed.
+    //
+    // The error CODE keeps its `_no_tin_` name (it is load-bearing across ~15
+    // sites — route map, i18n ×3, payments bridge, portal gate, tests); its
+    // MEANING widens from "no TIN" to "not a VAT registrant". Renaming it is a
+    // separate, mechanical change.
+    if (draft.invoiceSubject === 'event' && !buyerIsVatRegistrant) {
       return err({ code: 'event_no_tin_requires_paid_issue' });
     }
     // 064 S1 — refunded re-check at ISSUANCE (TOCTOU close). The draft-time
@@ -511,7 +531,7 @@ export async function issueInvoice(
     // receipt kinds).
     const pdfKind: PdfDocKind = inferEventDocumentKind(
       draft.invoiceSubject,
-      memberSnap.tax_id,
+      buyerIsVatRegistrant,
     );
 
     // Domain invariant — exactly one subject-defining line required before issue

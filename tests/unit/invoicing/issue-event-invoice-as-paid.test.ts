@@ -238,6 +238,13 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       primary_contact_email: 'john@acme.example',
       member_number: null,
       member_number_display: null,
+      // 059 / PR-A Task 6a — a MATCHED MEMBER's receipt kind now follows the
+      // RECORDED `members.is_vat_registered`, never the presence of `tax_id`.
+      // This fixture models a VAT-registrant company buyer — which is WHY it
+      // receives the COMBINED §86/4 + §105ทวิ tax receipt (RC stream) rather than
+      // a §105 ใบเสร็จรับเงิน (RE stream). A foreign member's passport in `tax_id`
+      // used to satisfy the same condition; now it cannot.
+      buyer_is_vat_registrant: true,
     }),
     ...overrides,
   };

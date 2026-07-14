@@ -685,6 +685,12 @@ describe('issueEventInvoiceAsPaid — use-case end-to-end (TIN buyer, live Neon)
         companyName: 'Simulated Matched Corp',
         country: 'TH',
         taxId: '3210987654321',
+        // 059 / PR-A Task 6a — the RECORDED registrant flag now decides the
+        // document class (never the mere presence of `tax_id`, which may hold a
+        // foreign natural person's passport). This seed models a VAT-registrant
+        // company — which is WHY it receives the COMBINED §86/4 + §105ทวิ tax
+        // receipt (RC stream) instead of a §105 ใบเสร็จรับเงิน (RE stream).
+        isVatRegistered: true,
         addressLine1: '1 Simulated Avenue',
         city: 'Pathum Wan',
         province: 'Bangkok',

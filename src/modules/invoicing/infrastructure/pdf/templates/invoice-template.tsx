@@ -374,6 +374,32 @@ const WHT_NOTE_WRAP_FIX_MIN_VERSION = 9;
 export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
 
 /**
+ * 059 / PR-A Task 6a — first template version that prints the BUYER's Tax ID
+ * line ONLY for a VAT REGISTRANT.
+ *
+ * A buyer TIN is a §86/4 particular required only of a VAT registrant
+ * (ประกาศอธิบดีฯ ฉบับที่ 196). A NON-registrant's identifier — a foreign
+ * organisation number, or now a foreign natural person's PASSPORT /
+ * work-permit number, which `members.tax_id` legitimately accepts — has no
+ * place on the document, and printing it is a FALSE PARTICULAR. Pre-v11 the
+ * line printed on any non-blank `tax_id`, with no registrant check at all.
+ *
+ * THE GATE IS LOAD-BEARING, NOT DECORATION. An issued PDF is NOT write-once:
+ * `void-invoice.ts` and `issue-credit-note.ts` (the credited-annotation overlay)
+ * both RE-RENDER with the CURRENTLY DEPLOYED template code against the FROZEN
+ * snapshot, at the document's PINNED `templateVersion`, and re-upload to the
+ * SAME blobKey with `allowOverwrite: true`. And
+ * `member-identity-snapshot.ts` declares `buyer_is_vat_registrant` as
+ * `.optional().default(false)` — so EVERY snapshot written before that field
+ * existed omits the key and reads back FALSE. Un-gated, this change would
+ * silently DROP the Tax ID line from an already-issued document the moment
+ * someone voids or credit-notes it. Gated, a document pinned to v<=10 keeps its
+ * legacy unconditional print and reproduces its original bytes — the SC-003
+ * guarantee, exactly like the v3-v10 gates. Registry log: template-registry.ts v11.
+ */
+const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
+
+/**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
  * the template's shaped-Thai + English-gloss convention — the PDF carries no
  * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
@@ -481,11 +507,24 @@ function renderPageBody({
     </Text>
   );
   // 066-membership-no-tin — render the buyer Tax ID line ONLY when a non-blank
-  // TIN is present, via the SHARED `buyerHasTin` discriminator (the same one the
-  // issue/pay/credit gates use). Byte-identical for a real TIN (renders) and
-  // null (omitted) — only whitespace changes.
+  // TIN is present, via the SHARED `buyerHasTin` discriminator ("is there a
+  // number to print").
+  //
+  // 059 / PR-A Task 6a — AND, at v>=11, only for a VAT REGISTRANT. A buyer TIN is
+  // a §86/4 particular required only of a registrant (ประกาศอธิบดีฯ ฉบับที่ 196);
+  // a non-registrant's identifier — a foreign org number, a PASSPORT — is a false
+  // particular on a tax document. Gated on `templateVersion` exactly the way
+  // `buyerBranchEl` is (below): a document pinned to v<=10 keeps the legacy
+  // unconditional print, so voiding / credit-noting it still reproduces its
+  // ORIGINAL bytes (SC-003) — a pre-v11 snapshot reads
+  // `buyer_is_vat_registrant` back as the `.optional().default(false)` FALSE, so
+  // un-gated this would silently ERASE the Tax ID line from documents that
+  // legitimately carry one.
   const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
-    <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+    input.templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION &&
+    input.member.buyer_is_vat_registrant !== true ? null : (
+      <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+    )
   ) : null;
   // 055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
   // pinned on the snapshot at ISSUE time. Guarded `!== null` (NOT truthy) so a

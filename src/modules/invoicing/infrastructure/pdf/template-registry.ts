@@ -158,11 +158,44 @@
  *     invoice / bill / receipt / credit-note document) renders byte-identical at
  *     v10 as at v9 (proven: standard receipt v9↔v10 byte-length equal —
  *     zero-rate-pdf-golden §C + status-stamp-opacity.integration.test.ts).
+ *   - **v11** (2026-07-14, 059-member-tax-correctness / PR-A Task 6a) — the BUYER
+ *     Tax ID line now prints ONLY for a VAT REGISTRANT. A buyer TIN is a §86/4
+ *     particular required only of a ผู้ประกอบการจดทะเบียน (ประกาศอธิบดีฯ ฉบับที่
+ *     196); pre-v11 the template printed ANY non-blank `tax_id` with no registrant
+ *     check. That became unsafe when `members.tax_id` began accepting a foreign
+ *     natural person's PASSPORT / work-permit number (they have no Thai TIN):
+ *     their identifier would have been printed on a legal tax document as a
+ *     taxpayer number — a FALSE PARTICULAR. From v11 the line requires
+ *     `buyer_is_vat_registrant === true` on the pinned snapshot (the RECORDED
+ *     `members.is_vat_registered`, migration 0246 — never `buyerHasTin`, the same
+ *     rule the v5 branch line already follows).
+ *
+ *     Gated on `templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION` (=11, see
+ *     templates/invoice-template.tsx). THE GATE IS LOAD-BEARING: an issued PDF is
+ *     NOT write-once — void-invoice.ts and issue-credit-note.ts (credited
+ *     annotation) both re-render with the CURRENTLY DEPLOYED template against the
+ *     frozen snapshot at the document's PINNED version and overwrite the same
+ *     blobKey. Because `buyer_is_vat_registrant` is `.optional().default(false)`,
+ *     every snapshot written before that field existed reads back FALSE — so an
+ *     UN-gated change would have silently DROPPED the Tax ID line from an
+ *     already-issued document the moment it was voided or credit-noted. A pinned
+ *     pre-v11 document keeps the legacy unconditional print and reproduces its
+ *     ORIGINAL bytes — the SC-003 guarantee, exactly like the v3–v10 gates. Only
+ *     v11+ issuances apply the registrant rule. A registrant buyer's document
+ *     renders byte-identical at v11 as at v10 (the line prints either way); only a
+ *     NON-registrant with a stored identifier differs — which is the entire point.
+ *
+ *     NOTE: the sibling country-NAME fix in `composeBuyerAddress` (raw `SV` →
+ *     "El Salvador") needs NO gate and has none — it runs at ISSUE time and its
+ *     output is frozen into the snapshot's `address` STRING. An already-issued
+ *     document re-renders from its own frozen string and is untouched. That is
+ *     DATA; this is TEMPLATE LOGIC. The distinction is the whole reason this
+ *     registry exists.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 10 as const;
+export const CURRENT_TEMPLATE_VERSION = 11 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

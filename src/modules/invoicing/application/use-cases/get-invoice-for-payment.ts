@@ -181,6 +181,12 @@ export async function getInvoiceForPayment(
   // Status-scoped to 'issued' so paid/credited legacy rows keep their
   // existing read/refund behaviour. `buyerHasTin` trims — whitespace-only
   // tax_id counts as no-TIN, mirroring the record-payment guard.
+  //
+  // 059 / PR-A Task 6a — DELIBERATELY NOT re-keyed onto the registrant flag.
+  // Like its record-payment twin this is FORENSICS: it reconstructs what a
+  // PRE-064 row's already-issued PDF ACTUALLY RENDERED AS, under the rule in
+  // force at the time (`buyerHasTin`). Re-keying it would rewrite history and
+  // misclassify legitimate old rows. Leave it.
   if (
     invoice.invoiceSubject === 'event' &&
     invoice.status === 'issued' &&

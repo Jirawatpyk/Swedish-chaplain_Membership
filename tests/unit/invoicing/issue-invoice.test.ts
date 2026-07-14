@@ -183,6 +183,13 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
       primary_contact_email: 'john@acme.example',
       member_number: null,
       member_number_display: null,
+      // 059 / PR-A Task 6a — a MATCHED MEMBER's document class now follows the
+      // RECORDED `members.is_vat_registered` (pinned here by the adapter), never
+      // the mere presence of `tax_id`. This fixture models a VAT-registrant
+      // company buyer — which is WHY it receives a §86/4 ใบกำกับภาษี. Previously
+      // that was INFERRED from the TIN being non-blank; a foreign member's
+      // passport number would have satisfied the same test. Say it explicitly.
+      buyer_is_vat_registrant: true,
     }),
     ...overrides,
   };
@@ -1149,12 +1156,141 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
   });
 
+  // ── 059 / PR-A Task 6a — the passport guards ────────────────────────────────
+  //
+  // `members.tax_id` now accepts a foreign natural person's PASSPORT /
+  // work-permit number (they have no Thai TIN). The document CLASS must NOT flip
+  // on that field being non-blank — it follows the RECORDED
+  // `members.is_vat_registered`, pinned on the snapshot as
+  // `buyer_is_vat_registrant`.
+
+  it('059: matched-member event + NON-registrant member holding a PASSPORT → STILL blocked bill-first (the passport does not open the gate)', async () => {
+    // THE DANGEROUS ONE. Under the old `buyerHasTin` key this member sailed
+    // through the bill-first gate (their `tax_id` is non-blank), and then
+    // `inferEventDocumentKind` — once re-keyed — would resolve 'receipt_separate'
+    // while `applyIssue` hardcodes `pdfDocKind: 'invoice'`. That renders a §105
+    // ใบเสร็จรับเงิน for an UNPAID bill: exactly the violation the 064 §105 root
+    // fix closed. The gate and the doc-kind MUST key on the same fact.
+    const eventLine: InvoiceLine = {
+      lineId: asInvoiceLineId('line-1'),
+      kind: 'event_fee',
+      descriptionTh: 'ค่าเข้าร่วมงาน Annual Gala (2026-09-10)',
+      descriptionEn: 'Event: Annual Gala (2026-09-10)',
+      unitPrice: Money.fromSatangUnsafe(200000n),
+      quantity: '1.0000',
+      proRateFactor: null,
+      total: Money.fromSatangUnsafe(200000n),
+      position: 1,
+    };
+    const matchedEventDraft = makeDraftInvoice({
+      memberId: 'member-1',
+      planId: 'corporate-regular',
+      planYear: 2026,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-6a',
+      eventRegistrationId: 'reg-uuid-6a',
+      memberIdentitySnapshot: null, // pinned at issue for a matched member
+      lines: [eventLine],
+    });
+    const deps = makeDeps(
+      matchedEventDraft,
+      makeSettings(),
+      makeMember({
+        snapshot: Object.freeze({
+          legal_name: 'Sven Svensson', // a foreign natural person
+          tax_id: 'AA1234567', // a PASSPORT — non-blank, but not a TIN
+          address: 'Kungsgatan 1, Stockholm',
+          primary_contact_name: 'Sven Svensson',
+          primary_contact_email: 'sven@example.se',
+          member_number: null,
+          member_number_display: null,
+          buyer_is_vat_registrant: false, // the RECORDED fact
+        }),
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('event_no_tin_requires_paid_issue');
+    // Pre-sequence guard → no §87 sequence number burned.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    // And no tax document was rendered at all.
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+  });
+
+  it('059: WALK-IN event buyer with a valid 13-digit TIN → STILL kind:invoice (no regression from the re-key)', async () => {
+    // A non-member walk-in has NO `members` row, so their snapshot's
+    // `buyer_is_vat_registrant` is always the zod default FALSE. Keying them on it
+    // would silently downgrade every walk-in with a real company TIN from a §86/4
+    // tax invoice to a §105 receipt. `resolveBuyerIsVatRegistrant` keeps them on
+    // TIN-presence — safe here because the walk-in `buyer.tax_id` is
+    // `/^\d{13}$/`-locked at the draft boundary, so a passport cannot reach it.
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
+    );
+    expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ pdfDocKind: 'invoice' }),
+    );
+  });
+
+  it("059: the WALK-IN's pinned snapshot keeps buyer_is_vat_registrant FALSE → no §86/4 branch line is asserted on a guess", async () => {
+    // The registrant DECISION is computed at the call site; the SNAPSHOT is NOT
+    // mutated. `buyer_is_vat_registrant` also drives the สำนักงานใหญ่ / สาขาที่
+    // line, and a 13-digit number is NOT evidence of VAT registration (a natural
+    // person's national ID is 13 digits too). Writing `true` onto the walk-in's
+    // snapshot would start printing a head-office particular on no evidence — the
+    // very defect class this branch deletes. The rendered document must therefore
+    // still carry a NON-registrant snapshot.
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    const renderCall = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as { member: { buyer_is_vat_registrant?: boolean } };
+    expect(renderCall.member.buyer_is_vat_registrant).not.toBe(true);
+    const applyCall = (deps.invoiceRepo.applyIssue as ReturnType<typeof vi.fn>).mock
+      .calls[0]![1] as {
+      memberIdentitySnapshot: { buyer_is_vat_registrant?: boolean };
+    };
+    expect(applyCall.memberIdentitySnapshot.buyer_is_vat_registrant).not.toBe(true);
+  });
+
   it('membership → always renders kind:invoice (never a §105 receipt, with or without a buyer TIN)', async () => {
     const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(true);
     expect(deps.pdfRender.render).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'invoice', vatInclusive: false }),
+    );
+  });
+
+  it('059: membership + NON-registrant member holding a passport → STILL kind:invoice (subject-gated; never a §105 receipt)', async () => {
+    // The re-key must not leak into MEMBERSHIP. A membership document is ALWAYS a
+    // §86/4 ใบกำกับภาษี regardless of registrant status (066 relax) — only the
+    // TIN *line* is suppressed for a non-registrant (the v11 template gate).
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({
+        snapshot: Object.freeze({
+          legal_name: 'Sven Svensson',
+          tax_id: 'AA1234567',
+          address: 'Kungsgatan 1, Stockholm',
+          primary_contact_name: 'Sven Svensson',
+          primary_contact_email: 'sven@example.se',
+          member_number: null,
+          member_number_display: null,
+          buyer_is_vat_registrant: false,
+        }),
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'invoice' }),
     );
   });
 

@@ -496,7 +496,16 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
   it('matched-member event credit note → TIMELINE audit branch (payload HAS member_id)', async () => {
     const invoice = makeIssuedEventInvoice({
       memberId: 'member-77',
-      memberIdentitySnapshot: BUYER_SNAP_WITH_EMAIL,
+      // 059 / PR-A Task 6a — this is a MATCHED MEMBER (memberId non-null), so the
+      // §86/10 creditability gate reads the RECORDED registrant flag, not the
+      // TIN's presence. Only a §86/4 ใบกำกับภาษี is creditable, and a member only
+      // receives one if they are a VAT registrant — so say so. (The base fixture
+      // is the walk-in snapshot, where TIN-presence still decides; reusing it for
+      // a matched member is what made the old TIN-keyed gate look sufficient.)
+      memberIdentitySnapshot: Object.freeze({
+        ...BUYER_SNAP_WITH_EMAIL,
+        buyer_is_vat_registrant: true,
+      }),
     });
     const deps = makeDeps(invoice, makeSettings());
 

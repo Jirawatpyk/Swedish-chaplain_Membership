@@ -20,6 +20,7 @@ import {
   makeGetInvoiceDeps,
   displayDocumentNumber,
   inferEventDocumentKind,
+  resolveBuyerIsVatRegistrant,
 } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -61,17 +62,23 @@ export default async function NewCreditNotePage({
   // §105 ใบเสร็จรับเงิน (`receipt_separate`) 404s fail-fast instead of rendering
   // a form that always rejects with `receipt_not_creditable` (a §105 receipt has
   // no input VAT to reverse — legally uncreditable). Reconstructs the verdict
-  // from the SAME inputs as the use-case (`invoiceSubject` + BUYER-snapshot TIN
-  // via the shared Domain `inferEventDocumentKind`), keeping issue-time, pay-
-  // time, and credit-time gates in lockstep. Runs BEFORE the total/display-
+  // from the SAME inputs as the use-case (`invoiceSubject` + the BUYER's
+  // VAT-registrant status via the shared Domain helpers), keeping issue-time,
+  // pay-time, and credit-time gates in lockstep. Runs BEFORE the total/display-
   // number guard: after 088 widened `displayDocumentNumber` to fall back to
-  // `receiptDocumentNumberRaw`, a β no-TIN §105 row now passes that guard, so
-  // this dedicated check is what averts the dead-end form the §87 change re-
-  // opened. `?.` fails closed: a missing snapshot → no-TIN → receipt_separate.
+  // `receiptDocumentNumberRaw`, a β §105 row now passes that guard, so this
+  // dedicated check is what averts the dead-end form the §87 change re-opened.
+  //
+  // 059 / PR-A Task 6a — re-keyed onto the recorded registrant flag. The
+  // resolver fails closed on a missing snapshot (→ non-registrant →
+  // receipt_separate → 404), preserving the old `?.` fail-closed posture.
   if (
     inferEventDocumentKind(
       invoice.invoiceSubject,
-      invoice.memberIdentitySnapshot?.tax_id,
+      resolveBuyerIsVatRegistrant(
+        invoice.memberId,
+        invoice.memberIdentitySnapshot,
+      ),
     ) === 'receipt_separate'
   ) {
     notFound();

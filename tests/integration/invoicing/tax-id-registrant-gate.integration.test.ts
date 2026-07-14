@@ -1,0 +1,290 @@
+/**
+ * 059-member-tax-correctness / PR-A Task 6a — the BUYER Tax ID line is a §86/4
+ * particular of a VAT REGISTRANT ONLY (ประกาศอธิบดีฯ ฉบับที่ 196).
+ *
+ * Pre-v11 the template printed ANY non-blank `tax_id`, with no registrant check.
+ * That became unsafe the moment `members.tax_id` began accepting a foreign
+ * natural person's PASSPORT / work-permit number (they have no Thai TIN): their
+ * identifier would have been printed on a legal tax document as a taxpayer
+ * number — a FALSE PARTICULAR. From v11 the line requires
+ * `buyer_is_vat_registrant === true` on the pinned snapshot.
+ *
+ * THE VERSION GATE IS THE POINT OF THIS FILE.
+ *
+ * An issued PDF is NOT write-once. `void-invoice.ts` and `issue-credit-note.ts`
+ * (the credited-annotation overlay) both RE-RENDER with the currently deployed
+ * template code against the FROZEN snapshot, at the document's PINNED
+ * `templateVersion`, and re-upload to the SAME blobKey (`allowOverwrite: true`).
+ * And `member-identity-snapshot.ts` declares `buyer_is_vat_registrant` as
+ * `.optional().default(false)` — so EVERY snapshot written before that field
+ * existed omits the key and reads back FALSE.
+ *
+ * Un-gated, this change would therefore have silently ERASED the Tax ID line
+ * from an already-issued §86/4 tax invoice the moment someone voided or
+ * credit-noted it. The v10-pinned test below is that exact regression, and
+ * without it the gate would be decoration.
+ *
+ * Deterministic ELEMENT-TREE assertion (mirrors branch-render.integration.test.ts):
+ * `@react-pdf/renderer` maps one PDF page per `<Page>`, and the §86/4 buyer block
+ * lives on every page. No live Neon is touched.
+ */
+import { describe, it, expect } from 'vitest';
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
+import { Document, Page } from '@react-pdf/renderer';
+import { InvoiceTemplate } from '@/modules/invoicing/infrastructure/pdf/templates/invoice-template';
+import { CURRENT_TEMPLATE_VERSION } from '@/modules/invoicing/infrastructure/pdf/template-registry';
+import type { PdfDocKind, PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
+import { Money } from '@/modules/invoicing/domain/value-objects/money';
+import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
+import { asInvoiceLineId, type InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
+
+/** TAX_ID_REGISTRANT_GATE_MIN_VERSION (invoice-template.tsx). */
+const GATE_V = 11;
+/** The last version that prints a buyer TIN unconditionally. */
+const PRE_V = 10;
+
+const BUYER_TIN = '1234567890123';
+/**
+ * A foreign natural person's identifier. Not a Thai TIN, not a VAT registration
+ * — and non-blank, which is ALL the pre-v11 template checked.
+ */
+const PASSPORT = 'AA1234567';
+
+function makeLines(): InvoiceLine[] {
+  return [
+    {
+      lineId: asInvoiceLineId('00000000-0000-0000-0000-0000000000a1'),
+      kind: 'membership_fee',
+      descriptionTh: 'ค่าสมาชิก ปี 2026',
+      descriptionEn: 'Membership 2026',
+      unitPrice: Money.fromSatangUnsafe(100_000n),
+      quantity: '1.0000',
+      proRateFactor: '1.0000',
+      total: Money.fromSatangUnsafe(100_000n),
+      position: 1,
+    },
+  ];
+}
+
+function makeInput(opts: {
+  templateVersion: number;
+  kind?: PdfDocKind;
+  member?: Partial<MemberIdentitySnapshot>;
+}): PdfRenderInput {
+  const docR = DocumentNumber.of('RC', 2026, 42);
+  if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
+  return {
+    kind: opts.kind ?? 'invoice',
+    templateVersion: opts.templateVersion,
+    documentNumber: docR.value,
+    issueDate: '2026-04-18',
+    dueDate: '2026-05-18',
+    tenant: {
+      legal_name_th: 'หอการค้าไทย-สวีเดน',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
+      // The SELLER TIN is unconditional (the seller is always the registrant
+      // issuing the document) and is rendered behind a Thai prefix, so the
+      // buyer-specific assertions below anchor on the bare `Tax ID: <value>`.
+      tax_id: '0994000187203',
+      address_th: 'กรุงเทพมหานคร',
+      address_en: 'Bangkok',
+      logo_blob_key: null,
+    },
+    member: {
+      legal_name: 'Acme Co., Ltd.',
+      tax_id: BUYER_TIN,
+      address: '99/1 Sukhumvit Rd',
+      primary_contact_name: 'John Doe',
+      primary_contact_email: 'john@acme.example',
+      member_number: null,
+      member_number_display: null,
+      ...opts.member,
+    },
+    lines: makeLines(),
+    subtotal: Money.fromSatangUnsafe(100_000n),
+    vatRate: VatRate.ofUnsafe('0.0700'),
+    vat: Money.fromSatangUnsafe(7_000n),
+    total: Money.fromSatangUnsafe(107_000n),
+  };
+}
+
+/** Recursively collect every string/number leaf under a React node. */
+function collectText(node: ReactNode): string[] {
+  if (node === null || node === undefined || typeof node === 'boolean') return [];
+  if (typeof node === 'string') return [node];
+  if (typeof node === 'number') return [String(node)];
+  if (Array.isArray(node)) return node.flatMap(collectText);
+  if (isValidElement(node)) {
+    return collectText((node.props as { children?: ReactNode }).children);
+  }
+  return [];
+}
+
+function pagesOf(el: ReactElement): ReactElement[] {
+  expect(el.type).toBe(Document);
+  return Children.toArray((el.props as { children?: ReactNode }).children).filter(
+    (c): c is ReactElement => isValidElement(c) && c.type === Page,
+  );
+}
+
+function pageText(page: ReactElement): string {
+  return collectText(page).join('');
+}
+
+function firstPageText(input: PdfRenderInput): string {
+  return pageText(pagesOf(InvoiceTemplate(input))[0]!);
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle === '') return 0;
+  let count = 0;
+  let idx = haystack.indexOf(needle);
+  while (idx !== -1) {
+    count += 1;
+    idx = haystack.indexOf(needle, idx + needle.length);
+  }
+  return count;
+}
+
+/**
+ * The SELLER's TIN line renders unconditionally on every tax document (the
+ * seller IS the registrant issuing it) and its label ends in the same
+ * `Tax ID: ` string as the buyer's. So `Tax ID: ` alone is NOT a buyer-specific
+ * needle — the seller always contributes exactly ONE. The buyer's line, when it
+ * prints, makes TWO. Assert on this, or on the buyer's literal value.
+ */
+const SELLER_ONLY = 1;
+const SELLER_AND_BUYER = 2;
+const TAX_ID_LABEL = 'Tax ID: ';
+
+describe('059 Task 6a — buyer Tax ID prints only for a VAT registrant (v11 gate)', () => {
+  it('v11 + REGISTRANT buyer → the Tax ID line prints (§86/4 particular, ประกาศ 196)', () => {
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: { tax_id: BUYER_TIN, buyer_is_vat_registrant: true },
+      }),
+    );
+    expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
+  });
+
+  it('v11 + NON-registrant buyer holding a TIN-shaped number → NO buyer Tax ID line', () => {
+    // A 13-digit number is NOT proof of VAT registration — a natural person's
+    // national ID is also 13 digits. Only the recorded flag decides.
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: { tax_id: BUYER_TIN, buyer_is_vat_registrant: false },
+      }),
+    );
+    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
+    // Only the SELLER's TIN line survives.
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
+    // The buyer block still rendered (making the negative conclusive).
+    expect(text).toContain('Acme Co., Ltd.');
+  });
+
+  it('v11 + NON-registrant buyer holding a PASSPORT → the passport NEVER reaches the tax document', () => {
+    // THE WHOLE POINT. A foreign natural person has no Thai TIN; the maintainer
+    // decided to let them store a passport / work-permit number in `tax_id`. It
+    // must not be printed as a taxpayer number on a legal tax document.
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: { tax_id: PASSPORT, buyer_is_vat_registrant: false },
+      }),
+    );
+    expect(text).not.toContain(PASSPORT);
+    // Only the SELLER's TIN line survives — the buyer contributes none.
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
+    expect(text).toContain('Acme Co., Ltd.');
+  });
+
+  it('v11 + snapshot that OMITS buyer_is_vat_registrant (undefined) → NO Tax ID line (fail-closed)', () => {
+    // `!== true` (NOT a truthy check) — undefined fails closed, like buyerBranchEl.
+    const text = firstPageText(
+      makeInput({ templateVersion: GATE_V, member: { tax_id: BUYER_TIN } }),
+    );
+    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
+  });
+
+  // ── THE REGRESSION THE GATE EXISTS TO PREVENT ────────────────────────────
+  it('SC-003: a v10-PINNED document with a tax_id and buyer_is_vat_registrant=false STILL prints its Tax ID line', () => {
+    // This is the void / credit-note re-render path. The document was ISSUED at
+    // v10, when the Tax ID line printed unconditionally — so its original bytes
+    // CONTAIN it. Its snapshot pre-dates `buyer_is_vat_registrant`, so the field
+    // reads back as the zod `.default(false)`.
+    //
+    // Without the version gate, voiding or credit-noting this already-issued
+    // §86/4 tax invoice would RE-RENDER it (currently-deployed template, pinned
+    // version, same blobKey, allowOverwrite) and SILENTLY DELETE the Tax ID line
+    // from a legal document that legitimately carried one. The gate is what makes
+    // the re-render reproduce the original.
+    const text = firstPageText(
+      makeInput({
+        templateVersion: PRE_V,
+        member: { tax_id: BUYER_TIN, buyer_is_vat_registrant: false },
+      }),
+    );
+    expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
+  });
+
+  it('SC-003: a v10-pinned snapshot that OMITS the flag entirely also still prints its Tax ID line', () => {
+    const text = firstPageText(
+      makeInput({ templateVersion: PRE_V, member: { tax_id: BUYER_TIN } }),
+    );
+    expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
+  });
+
+  it('a blank / null tax_id renders no BUYER line at ANY version (buyerHasTin, unchanged)', () => {
+    // Even for a REGISTRANT: `buyerHasTin` still gates "is there a number to
+    // print". The registrant flag narrows the line; it never conjures one.
+    for (const v of [PRE_V, GATE_V]) {
+      const nullText = firstPageText(
+        makeInput({
+          templateVersion: v,
+          member: { tax_id: null, buyer_is_vat_registrant: true },
+        }),
+      );
+      expect(
+        countOccurrences(nullText, TAX_ID_LABEL),
+        `v${v}: null tax_id → seller line only`,
+      ).toBe(SELLER_ONLY);
+
+      const blankText = firstPageText(
+        makeInput({
+          templateVersion: v,
+          member: { tax_id: '   ', buyer_is_vat_registrant: true },
+        }),
+      );
+      expect(
+        countOccurrences(blankText, TAX_ID_LABEL),
+        `v${v}: whitespace tax_id → seller line only`,
+      ).toBe(SELLER_ONLY);
+    }
+  });
+
+  it('the gate applies on BOTH pages of a two-page combined receipt (the block lives in renderPageBody)', () => {
+    const pages = pagesOf(
+      InvoiceTemplate(
+        makeInput({
+          templateVersion: GATE_V,
+          kind: 'receipt_combined',
+          member: { tax_id: PASSPORT, buyer_is_vat_registrant: false },
+        }),
+      ),
+    );
+    expect(pages).toHaveLength(2); // Original + สำเนา (Copy)
+    for (const p of pages) {
+      expect(pageText(p)).not.toContain(PASSPORT);
+    }
+  });
+
+  it('CURRENT_TEMPLATE_VERSION is at/after the gate — every NEW issuance applies the registrant rule', () => {
+    expect(CURRENT_TEMPLATE_VERSION).toBeGreaterThanOrEqual(GATE_V);
+  });
+});

@@ -52,7 +52,10 @@ import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { TxAbort } from '../lib/tx-abort';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
-import { inferReceiptKind } from '@/modules/invoicing/domain/document-kind';
+import {
+  inferReceiptKind,
+  resolveBuyerIsVatRegistrant,
+} from '@/modules/invoicing/domain/document-kind';
 
 export interface RenderReceiptPdfInput {
   readonly tenantId: string;
@@ -177,13 +180,22 @@ export async function renderReceiptPdf(
       }
 
       // 088 T020 (D13) — recompute the receipt KIND from the invoice subject +
-      // buyer TIN via the shared `inferReceiptKind` resolver. The retired
-      // `receiptNumberingMode='combined'` setting no longer drives it (F.5);
-      // sourcing the kind from the row means a membership receipt on the async
-      // path can never mis-render as §105 (losing its §86/4 identity).
+      // the buyer's VAT-REGISTRANT status via the shared `inferReceiptKind`
+      // resolver. The retired `receiptNumberingMode='combined'` setting no longer
+      // drives it (F.5); sourcing the kind from the row means a membership receipt
+      // on the async path can never mis-render as §105 (losing its §86/4 identity).
+      //
+      // 059 / PR-A Task 6a — re-keyed off the raw `tax_id` onto the RECORDED
+      // registrant flag (shared resolver), so this async worker stays in lockstep
+      // with the record-payment call that enqueued it. If the two disagreed the
+      // worker would render a DIFFERENT document kind than the one whose §87
+      // number record-payment already minted.
       const receiptKind = inferReceiptKind(
         loaded.invoiceSubject,
-        loaded.memberIdentitySnapshot.tax_id,
+        resolveBuyerIsVatRegistrant(
+          loaded.memberId,
+          loaded.memberIdentitySnapshot,
+        ),
       );
 
       // Receipt number resolution (§87 NO-GAPS — the worker NEVER re-allocates;
