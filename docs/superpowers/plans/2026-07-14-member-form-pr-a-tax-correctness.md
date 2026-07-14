@@ -923,7 +923,35 @@ export function inferEventDocumentKind(
     ) : null;
 ```
 
-**Decide the `templateVersion` question explicitly and write the answer in the commit message.** The branch line is gated on `templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION` (=5) so historical documents re-render byte-identical. This change *removes* a line from a document whose snapshot has `buyer_is_vat_registrant: false` — and every historical snapshot defaults it to `false` (`member-identity-snapshot.ts:135`). **So an un-gated change would silently alter already-issued documents.** Either gate it on a new min-version, or prove that no issued document has both a `tax_id` and a `false` flag. Do not guess.
+**The `templateVersion` gate is REQUIRED. This was investigated and settled 2026-07-14 — do not re-litigate it, and do not ship the change un-gated.**
+
+The evidence: an issued PDF is **not** write-once. `void-invoice.ts:308-350` and `:396-429` re-render and then upload with `allowOverwrite: true` to the *same* `blobKey` (`:606`); `issue-credit-note.ts:920-969` (the J2 credit-annotation overlay) does the same. Both re-render with the **currently deployed template code** against the frozen snapshot, at the document's **pinned** `templateVersion`. That is exactly the property the seven existing `_MIN_VERSION` gates protect — `template-registry.ts:53-69` names it: *"a pinned pre-v5 document … reproduces its original bytes — the SC-003 guarantee"*.
+
+And `member-identity-snapshot.ts:135` declares `buyer_is_vat_registrant: z.boolean().optional().default(false)` — so every snapshot written before the field existed **omits the key and reads back `false`**. An un-gated change would therefore silently **drop the Tax ID line from an already-issued document** the moment it is voided or credit-noted.
+
+So:
+
+```tsx
+// invoice-template.tsx — with the other *_MIN_VERSION constants (~line 285)
+const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
+```
+
+```tsx
+  // A buyer TIN is a §86/4 particular required only of a VAT REGISTRANT
+  // (ประกาศ 196). A non-registrant's identifier — a foreign org number, a
+  // passport — has no place on the document, and printing it is a false
+  // particular. Gated exactly the way the branch line is: a document pinned to
+  // v≤10 keeps the legacy unconditional print, so voiding or credit-noting it
+  // still reproduces its original bytes (SC-003).
+  const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
+    input.templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION &&
+    input.member.buyer_is_vat_registrant !== true ? null : (
+      <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+    )
+  ) : null;
+```
+
+Then in `template-registry.ts`: bump `CURRENT_TEMPLATE_VERSION` **10 → 11** (`:163`), extend the `TEMPLATE_VERSIONS` tuple, and add the v11 changelog entry in the same voice as v5–v10.
 
 - [ ] **Guard 3 — the audit diff must not carry a raw TIN**
 
