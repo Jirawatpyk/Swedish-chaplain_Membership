@@ -142,7 +142,29 @@ export function buildMemberFormSchema(
       (v) => v === undefined || (Number.isInteger(v) && v >= 0),
       tf('errors.registeredCapital'),
     ),
-  plan_id: z.string().min(1, tf('errors.required')),
+  // `z.preprocess` here is NOT cosmetic — it fixes a real bug (058
+  // member-form-ux maintainer report). `plan_id` is bound to a
+  // react-hook-form `Controller` (membership-section.tsx's plan `<Select>`)
+  // with no entry in `useForm`'s `defaultValues` on a fresh CREATE, so on
+  // the very first submit of an empty form its value is genuinely
+  // `undefined` — not `''`. A bare `z.string().min(1, …)` given `undefined`
+  // fails zod's TYPE check (`invalid_type`), which is a different, more
+  // severe failure mode than a `.min()` failure: it makes THIS FIELD's
+  // parse result "aborted" rather than "dirty", and zod propagates
+  // "aborted" up to the whole object — which makes the `.superRefine()`
+  // block below (address completeness, Thai tax-id checksum, country ISO
+  // check, DOB-required gate, branch/registrant cross-field rules) SILENTLY
+  // NEVER RUN, because `ZodEffects` only invokes a refinement when its inner
+  // schema's status isn't "aborted". Coercing `undefined`/`null` to `''`
+  // BEFORE the type check keeps the failure a `.min(1)` "dirty" issue
+  // (same visible error) without aborting the whole object, so every other
+  // required-field validator still runs on the very first submit — see
+  // `member-form-schema.test.ts` "superRefine must still run when plan_id
+  // is UNSET, not just empty".
+  plan_id: z.preprocess(
+    (v) => (v === undefined || v === null ? '' : v),
+    z.string().min(1, tf('errors.required')),
+  ),
   plan_year: z.coerce
     .number({ invalid_type_error: tf('errors.planYear') })
     .int(tf('errors.planYear'))

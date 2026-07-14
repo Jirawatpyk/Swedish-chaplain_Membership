@@ -330,3 +330,71 @@ describe('buildMemberFormSchema — address completeness gate (PR-B task 6)', ()
     ).toEqual([]);
   });
 });
+
+// Maintainer bug report (058-member-form-ux) — every EXISTING test above
+// keeps `plan_id: 'p'` (a valid, non-empty string) from BASE. That never
+// exercises the form's actual first-submit shape: `plan_id` is bound to a
+// react-hook-form `Controller` (membership-section.tsx's `<Select>`) with NO
+// entry in `useForm`'s `defaultValues` on a fresh CREATE — so on the very
+// first submit of an empty form it is genuinely `undefined`, not `''`.
+//
+// Root cause: zod's `.superRefine()` compiles to a `ZodEffects` wrapper
+// around the base `z.object({...})`. `ZodEffects._parse` only invokes the
+// refinement callback when the INNER object's own parse status is NOT
+// "aborted". A field failing a `.min()`/`.max()`/`.email()` check produces
+// "dirty" (refinement continues), but a field whose VALUE doesn't match its
+// declared TYPE at all (`z.string()` given `undefined`) produces
+// "invalid_type" — which is "aborted", not "dirty" — and an aborted status
+// on ANY key propagates to the whole object. The practical effect: with
+// `plan_id` merely UNSET (not just empty), the ENTIRE superRefine block
+// silently never runs — swallowing the address-completeness gate, the Thai
+// tax-id checksum, the country ISO check, the DOB-required gate, and the
+// branch/registrant cross-field rules all at once. This is exactly what
+// happened in production: an admin's first click of Submit on a fresh
+// (plan not yet picked) CREATE form showed 5 flat "required" errors and NO
+// mention of the equally-missing address.
+describe('buildMemberFormSchema — superRefine must still run when plan_id is UNSET, not just empty', () => {
+  it('flags the missing address even though plan_id is `undefined` (first-submit shape)', () => {
+    // Both plan_id AND the address are unset — the real empty-CREATE-form
+    // shape a fresh admin's first Submit click actually produces.
+    const {
+      plan_id: _omitPlan,
+      address_line1: _omitLine1,
+      city: _omitCity,
+      province: _omitProvince,
+      sub_district: _omitSubDistrict,
+      postal_code: _omitPostal,
+      ...rest
+    } = BASE;
+    const paths = issuePaths(rest);
+    // plan_id itself must still fail (it is required)…
+    expect(paths).toContain('plan_id');
+    // …but that must NOT suppress the superRefine-only checks below. Prior
+    // to the fix, `paths` was exactly ['plan_id'] with every
+    // superRefine-added path (including these) silently absent.
+    expect(paths).toContain('address_line1');
+    expect(paths).toContain('city');
+    expect(paths).toContain('province');
+    expect(paths).toContain('sub_district');
+    expect(paths).toContain('postal_code');
+  });
+
+  it('still flags a bad Thai tax-id checksum even though plan_id is `undefined`', () => {
+    const { plan_id: _omit, ...rest } = BASE;
+    expect(
+      issuePaths({ ...rest, tax_id: '0105556012345' }),
+    ).toContain('tax_id');
+  });
+
+  it('still flags a bad branch pairing even though plan_id is `undefined`', () => {
+    const { plan_id: _omit, ...rest } = BASE;
+    expect(
+      issuePaths({
+        ...rest,
+        is_head_office: false,
+        branch_code: '123',
+        legal_entity_type: 'company',
+      }),
+    ).toContain('branch_code');
+  });
+});

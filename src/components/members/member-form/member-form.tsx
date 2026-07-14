@@ -191,6 +191,8 @@ export function MemberForm({
     needsDob,
     mode,
     isHeadOffice,
+    tf: tf as (key: string) => string,
+    secondaryContactLabel: t('sections.secondaryContact'),
   });
 
   return (

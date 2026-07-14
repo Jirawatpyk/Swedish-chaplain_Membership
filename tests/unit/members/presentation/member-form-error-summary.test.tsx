@@ -189,4 +189,86 @@ describe('MemberForm error summary (XF-09)', () => {
       expect(container.querySelector(`a[href="#${id}"]`)).not.toBeNull();
     },
   );
+
+  // Root-cause regression (maintainer bug report): every empty required
+  // field resolves to the SAME generic zod message ("This field is
+  // required."), so a summary built from the message alone rendered a stack
+  // of identical, anonymous lines — the admin had to click each link to
+  // find out which field it even referred to. Fixed by naming the field in
+  // the link text.
+  it('renders distinguishable summary lines that each name their own field, even though the underlying message is identical', async () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={[]}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+        />
+      </NextIntlClientProvider>,
+    );
+    const form = container.querySelector('form');
+    if (!form) throw new Error('member form did not render');
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(container.querySelector('a[href="#company_name"]')).not.toBeNull();
+    });
+
+    // company_name and first_name both fail their bare min(1) rule — SAME
+    // zod message — but must read as two different lines.
+    const companyLink = container.querySelector('a[href="#company_name"]');
+    const firstNameLink = container.querySelector('a[href="#first_name"]');
+    expect(companyLink).not.toBeNull();
+    expect(firstNameLink).not.toBeNull();
+    expect(companyLink?.textContent).not.toBe(firstNameLink?.textContent);
+    expect(companyLink).toHaveTextContent(/company name/i);
+    expect(firstNameLink).toHaveTextContent(/first name/i);
+  });
+
+  // PR-B task 8 rendered `ContactFields` twice (primary + secondary), both
+  // sharing the SAME `admin.members.create.fields.*` label keys (Email,
+  // Phone, …). Without disambiguation, two empty `email` fields would
+  // collide on an identical line — "Email — This field is required." twice
+  // — exactly the bug this whole fix exists to prevent.
+  it('disambiguates the secondary contact from the primary contact when both share the same missing field', async () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={[]}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+        />
+      </NextIntlClientProvider>,
+    );
+    // Expand the secondary contact fieldset so its (also-empty) required
+    // fields register too.
+    fireEvent.click(
+      screen.getByRole('button', { name: /add a secondary contact/i }),
+    );
+
+    const form = container.querySelector('form');
+    if (!form) throw new Error('member form did not render');
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('a[href="#secondary_contact_email"]'),
+      ).not.toBeNull();
+    });
+
+    const primaryEmailLink = container.querySelector('a[href="#contact_email"]');
+    const secondaryEmailLink = container.querySelector(
+      'a[href="#secondary_contact_email"]',
+    );
+    expect(primaryEmailLink).not.toBeNull();
+    expect(secondaryEmailLink).not.toBeNull();
+    // Both lines fail the identical "This field is required." rule on an
+    // "Email" field — the rendered text must still differ, and the
+    // secondary line must clearly name itself as the secondary contact.
+    expect(primaryEmailLink?.textContent).not.toBe(secondaryEmailLink?.textContent);
+    expect(secondaryEmailLink).toHaveTextContent(/secondary contact/i);
+    expect(secondaryEmailLink).toHaveTextContent(/email/i);
+  });
 });
