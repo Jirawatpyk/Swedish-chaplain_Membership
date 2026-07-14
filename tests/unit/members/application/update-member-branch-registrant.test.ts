@@ -254,3 +254,104 @@ describe('updateMember — branch ⇒ VAT-registrant invariant, checked against 
     expect(updateFieldsInTx).toHaveBeenCalledOnce();
   });
 });
+
+describe('updateMember — branch_code-ONLY patches, pre-existing since 0232/0236, surfaced by 0248 (Task 5 gate widened to fire on branch_code too)', () => {
+  // Prior to this fix, the Task 5 gate above tested ONLY
+  // `patch.isHeadOffice !== undefined || patch.isVatRegistered !== undefined`
+  // — a patch touching ONLY `branch_code` sailed past it AND past
+  // updateMemberSchema's superRefine (which fires only when `is_head_office`
+  // is present), straight through to `updateFieldsInTx`. Against a real DB
+  // that violates `members_branch_pairing_ck` (migration 0248) with a raw
+  // constraint-violation 500 — see .superpowers/sdd/task-5-fix-report.md.
+  beforeEach(() => vi.clearAllMocks());
+
+  it('6. `{ branch_code }` ALONE on a head-office member is rejected with a typed error, NOT allowed through to the repo', async () => {
+    const current = baseMember({
+      isHeadOffice: true,
+      branchCode: null,
+      isVatRegistered: false,
+    });
+    const { deps, updateFieldsInTx } = depsFor(current);
+
+    const result = await updateMember(
+      memberId,
+      { branch_code: '00001' },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Must be a typed domain-validation error, never the catch-all
+      // `server_error` a raw Postgres CHECK violation would otherwise
+      // produce (see drizzle-member-repo.ts's updateFieldsInTx, which has
+      // no CHECK-violation classifier).
+      expect(result.error.type).not.toBe('server_error');
+      expect(result.error.type).toBe('head_office_branch_code_mismatch');
+    }
+    // The write must NEVER be attempted once the resulting state is invalid.
+    expect(updateFieldsInTx).not.toHaveBeenCalled();
+  });
+
+  it('7. `{ branch_code: null }` ALONE on a branch member is rejected (would strand a branch with no code)', async () => {
+    const current = baseMember({
+      isHeadOffice: false,
+      branchCode: '00001',
+      isVatRegistered: true,
+    });
+    const { deps, updateFieldsInTx } = depsFor(current);
+
+    const result = await updateMember(
+      memberId,
+      { branch_code: null },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.type).not.toBe('server_error');
+      expect(result.error.type).toBe('head_office_branch_code_mismatch');
+    }
+    expect(updateFieldsInTx).not.toHaveBeenCalled();
+  });
+
+  it('a legitimate `{ is_head_office: false, branch_code, is_vat_registered: true }` patch still succeeds (no regression)', async () => {
+    const current = baseMember({
+      isHeadOffice: true,
+      branchCode: null,
+      isVatRegistered: false,
+      taxId: dummyTaxId,
+    });
+    const { deps, updateFieldsInTx } = depsFor(current);
+
+    const result = await updateMember(
+      memberId,
+      { is_head_office: false, branch_code: '00001', is_vat_registered: true },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(updateFieldsInTx).toHaveBeenCalledOnce();
+  });
+
+  it('an unrelated-field-only patch on a member already carrying a valid branch is NOT blocked', async () => {
+    const current = baseMember({
+      isHeadOffice: false,
+      branchCode: '00001',
+      isVatRegistered: true,
+    });
+    const { deps, updateFieldsInTx } = depsFor(current);
+
+    const result = await updateMember(
+      memberId,
+      { company_name: 'Renamed Co' },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(updateFieldsInTx).toHaveBeenCalledOnce();
+  });
+});

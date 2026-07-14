@@ -95,6 +95,17 @@ export function mapMemberCreateServerError(
           field: 'branch_code',
           messageKey: 'fields.errors.branchOnNonRegistrant',
         };
+      // 059 / PR-A Task 5 fix — update-member.ts's use-case-body head-office
+      // ⇔ branch-code structural pairing check (defense-in-depth only: the
+      // admin form always sends `is_head_office` + `branch_code` together,
+      // so buildMemberFormSchema's own superRefine blocks this before submit
+      // in the normal UI flow — this is reachable only via a direct API call
+      // that patches `branch_code` in isolation).
+      case 'head_office_branch_code_mismatch':
+        return {
+          field: 'branch_code',
+          messageKey: 'fields.errors.headOfficeBranchCodeMismatch',
+        };
       case 'invalid_phone':
         return { field: 'primary_contact.phone', messageKey: 'fields.phoneError' };
       case 'invalid_country':

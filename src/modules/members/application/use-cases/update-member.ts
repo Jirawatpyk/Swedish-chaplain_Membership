@@ -113,6 +113,18 @@ export type UpdateMemberError =
   // against the RESULTING state for the exact same reason as the invariant
   // above — see the check in the use-case body below.
   | { type: 'branch_requires_vat_registrant' }
+  // Pre-existing since 0232/0236 (latent), surfaced by the 0248 tightening —
+  // the head-office ⇔ branch-code STRUCTURAL pairing (leg 1: a head office
+  // must carry NO branch code; leg 2's code half: a branch must carry one),
+  // checked against the RESULTING state. Distinct from
+  // `branch_requires_vat_registrant` above, which only covers leg 2's
+  // `is_vat_registered` half. Mirrors updateMemberSchema's superRefine,
+  // which validates the SAME relationship but only on the patch in
+  // isolation (and only fires when `is_head_office` is present) — a PATCH
+  // touching ONLY `branch_code` used to sail past both that superRefine and
+  // the narrower `branch_requires_vat_registrant` gate straight into a raw
+  // Postgres CHECK-violation 500. See the check in the use-case body below.
+  | { type: 'head_office_branch_code_mismatch' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -286,37 +298,72 @@ export async function updateMember(
         }
       }
 
-      // 059 / PR-A Task 5 — branch ⇒ VAT-registrant invariant (mirrors DB
-      // CHECK `members_branch_pairing_ck`, migration 0248 — a branch member
-      // that is not a VAT registrant renders NO §86/4 head-office/branch
-      // line at all, a silent under-print).
+      // 059 / PR-A Task 5 — branch-pairing invariants, mirrors the DB CHECK
+      // `members_branch_pairing_ck` (migration 0248) in full: leg 1 (a head
+      // office carries NO branch code), and leg 2 (a branch carries BOTH a
+      // 5-digit code AND the VAT-registrant flag). Checked against the
+      // RESULTING state for the exact same reason as the registrant ⇒ TIN
+      // check above.
       //
       // Deliberately NOT expressed in updateMemberSchema's superRefine — same
-      // reasoning as the registrant ⇒ TIN check above. `is_head_office` and
-      // `is_vat_registered` may each be absent from any given partial patch:
-      // a patch that only flips `is_vat_registered: false` looks fine in
-      // isolation (is_head_office isn't part of THIS request), but if the
-      // member is ALREADY a branch, the resulting row is a non-registrant
-      // branch. Only the RESULTING state (current merged with the patch) can
-      // tell, and only the use case has `current` in scope.
+      // reasoning as the registrant ⇒ TIN check above. `is_head_office`,
+      // `branch_code`, and `is_vat_registered` may each be absent from any
+      // given partial patch: a patch that only flips `is_vat_registered:
+      // false` looks fine in isolation (is_head_office isn't part of THIS
+      // request), but if the member is ALREADY a branch, the resulting row
+      // is a non-registrant branch. Only the RESULTING state (current
+      // merged with the patch) can tell, and only the use case has `current`
+      // in scope.
       //
-      // Gated on the patch actually touching one of the two fields (same
-      // "fires only when present" posture as the checks above) so an edit to
-      // an unrelated field is never blocked by a member already in a
-      // legacy-violating state.
-      if (patch.isHeadOffice !== undefined || patch.isVatRegistered !== undefined) {
+      // FIX (pre-existing since 0232/0236, surfaced by the 0248 tightening)
+      // — this gate used to trigger only on `is_head_office` /
+      // `is_vat_registered`, and updateMemberSchema's superRefine only
+      // trigger on `is_head_office`. A patch touching ONLY `branch_code`
+      // (e.g. `{ branch_code: '00001' }` on a head-office member, or
+      // `{ branch_code: null }` on a branch) sailed past BOTH gates straight
+      // into `updateFieldsInTx` and a raw Postgres CHECK violation → 500.
+      // The gate now fires whenever the patch touches ANY of the three
+      // fields in the pairing rule, and validates the FULL resulting triple.
+      if (
+        patch.isHeadOffice !== undefined ||
+        patch.branchCode !== undefined ||
+        patch.isVatRegistered !== undefined
+      ) {
         const resultingIsHeadOffice =
           patch.isHeadOffice !== undefined
             ? patch.isHeadOffice
             : (current.isHeadOffice ?? true);
+        const resultingBranchCode =
+          patch.branchCode !== undefined
+            ? patch.branchCode
+            : (current.branchCode ?? null);
         const resultingIsVatRegisteredForBranch =
           patch.isVatRegistered !== undefined
             ? patch.isVatRegistered
             : current.isVatRegistered;
-        if (resultingIsHeadOffice === false && !resultingIsVatRegisteredForBranch) {
-          throw new UseCaseAbort<UpdateMemberError>({
-            type: 'branch_requires_vat_registrant',
-          });
+
+        if (resultingIsHeadOffice === true) {
+          // Leg 1 — a head office must not carry a branch code.
+          if (resultingBranchCode != null) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'head_office_branch_code_mismatch',
+            });
+          }
+        } else {
+          // Leg 2 — a branch requires BOTH a 5-digit code AND the
+          // registrant flag. Code-presence is checked first so a
+          // stranded-branch patch (code cleared, registrant untouched)
+          // reports the structural mismatch rather than the registrant one.
+          if (resultingBranchCode == null) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'head_office_branch_code_mismatch',
+            });
+          }
+          if (!resultingIsVatRegisteredForBranch) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'branch_requires_vat_registrant',
+            });
+          }
         }
       }
 

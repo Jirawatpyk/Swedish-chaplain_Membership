@@ -1402,6 +1402,7 @@
             "registeredCapital": "Enter a non-negative amount.",
             "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
             "branchOnNonRegistrant": "A branch code applies only to a VAT registrant. Tick \"This member is registered for VAT\" first.",
+            "headOfficeBranchCodeMismatch": "A head office must not have a branch code, and a branch must have a 5-digit branch code. Check the head-office/branch setting together with the branch code.",
             "taxIdRequiredForRegistrant": "A VAT-registered member must have a Tax ID.",
             "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact."
           },
