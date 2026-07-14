@@ -1402,6 +1402,7 @@
             "registeredCapital": "Ange ett icke-negativt belopp.",
             "branchCodeFormat": "Ange en 5-siffrig filialkod, t.ex. 00001.",
             "branchOnNonRegistrant": "En filialkod gäller endast en momsregistrerad. Kryssa först i \"Denna medlem är momsregistrerad\".",
+            "taxIdRequiredForRegistrant": "En momsregistrerad medlem måste ha ett skatte-ID.",
             "secondaryEmailSameAsPrimary": "Denna e-postadress är samma som den primära kontaktens. Använd en annan adress, eller ta bort den sekundära kontakten."
           },
           "notes": "Anteckningar (endast administratörer)",

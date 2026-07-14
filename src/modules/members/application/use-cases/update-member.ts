@@ -104,6 +104,10 @@ export type UpdateMemberError =
     }
   | { type: 'invalid_country' }
   | { type: 'invalid_tax_id'; code: string }
+  // 059 / PR-A Task 4 — registrant ⇒ TIN invariant, enforced against the
+  // RESULTING state (current merged with the patch) — see the check in the
+  // use-case body below for why this cannot live in updateMemberSchema.
+  | { type: 'vat_registrant_requires_tax_id' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -242,6 +246,40 @@ export async function updateMember(
         draft.registeredCapitalThb = data.registered_capital_thb;
       if (data.notes !== undefined) draft.notes = data.notes;
       const patch = draft as MemberPatch;
+
+      // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 +
+      // 199 are a PAIR: a VAT-registrant buyer must carry BOTH the TIN and
+      // the head-office/branch line, or a §86/4 document prints defective).
+      //
+      // Deliberately NOT expressed in updateMemberSchema's superRefine —
+      // updateMemberSchema validates a PARTIAL patch, where `is_vat_registered`
+      // and `tax_id` may each be absent from any given request. A patch that
+      // only flips `is_vat_registered: true` looks fine in isolation (tax_id
+      // simply isn't part of THIS request); a patch that only clears `tax_id`
+      // looks fine too (is_vat_registered isn't part of THIS request either)
+      // — but either can leave the member registrant-with-no-TIN. Only the
+      // RESULTING state (current merged with the patch) can tell, and only
+      // the use case has `current` in scope (read above, before patching). If
+      // a future refactor "helpfully" moves this into the schema, it
+      // reintroduces the hole this closes — keep it here.
+      //
+      // Gated on the patch actually touching one of the two fields (same
+      // "fires only when present" posture as the is_head_office/branch_code
+      // superRefine above) so an edit to an unrelated field is never blocked
+      // by a member already in a legacy-violating state.
+      if (patch.isVatRegistered !== undefined || patch.taxId !== undefined) {
+        const resultingIsVatRegistered =
+          patch.isVatRegistered !== undefined
+            ? patch.isVatRegistered
+            : current.isVatRegistered;
+        const resultingTaxId =
+          patch.taxId !== undefined ? patch.taxId : current.taxId;
+        if (resultingIsVatRegistered && resultingTaxId === null) {
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'vat_registrant_requires_tax_id',
+          });
+        }
+      }
 
       const { fieldsChanged, diff } = buildDiff(current, patch);
       if (fieldsChanged.length === 0) {

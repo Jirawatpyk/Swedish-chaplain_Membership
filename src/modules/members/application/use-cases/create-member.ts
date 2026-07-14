@@ -112,6 +112,23 @@ export const createMemberSchema = z.object({
   override_reason_code: z.enum(OVERRIDE_REASON_CODES).nullable().optional(),
   override_reason_note: z.string().max(500).nullable().optional(),
   confirm_soft_duplicate: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 + 199
+  // are a PAIR): a member created as a VAT registrant must also carry a
+  // tax_id, or the §86/4 buyer block on a future tax document would print
+  // the branch line with no taxpayer number. CREATE supplies the full
+  // record in one request (unlike updateMemberSchema's PARTIAL patch, where
+  // this same rule has to live in the use-case body instead — see
+  // update-member.ts), so it fits cleanly on the schema here. The Domain
+  // value-object (member-identity-snapshot.ts) is the last, load-bearing
+  // gate at issue time; this is UX that surfaces the problem at create time.
+  if (data.is_vat_registered === true && !data.tax_id?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['tax_id'],
+      message: 'a VAT-registrant member must have a tax_id',
+    });
+  }
 });
 
 export type CreateMemberInput = z.infer<typeof createMemberSchema>;

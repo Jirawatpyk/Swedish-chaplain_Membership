@@ -274,8 +274,50 @@ describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)'
         is_head_office: false,
         branch_code: '00042',
         is_vat_registered: true,
+        // 059 / PR-A Task 4 — a registrant now also requires a tax_id (see
+        // the describe block below), so this "accepts" fixture needs one.
+        tax_id: '0105556012341',
       }),
     ).toEqual([]);
+  });
+});
+
+// 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 + 199 are
+// a PAIR): a member marked as VAT-registered must also carry a tax_id, or the
+// §86/4 buyer block on a tax document would print the branch line with no
+// taxpayer number. Mirrors the server-side create/update-member checks and
+// the member-identity-snapshot Domain VO (the LAST, load-bearing gate).
+describe('buildMemberFormSchema — registrant ⇒ TIN invariant (059 / PR-A Task 4)', () => {
+  it('flags is_vat_registered:true with no tax_id on the tax_id field', () => {
+    expect(
+      issuePaths({ ...BASE, is_vat_registered: true }),
+    ).toContain('tax_id');
+  });
+
+  it('flags is_vat_registered:true with a blank/whitespace-only tax_id', () => {
+    expect(
+      issuePaths({ ...BASE, is_vat_registered: true, tax_id: '   ' }),
+    ).toContain('tax_id');
+  });
+
+  it('accepts is_vat_registered:true WITH a tax_id', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        is_vat_registered: true,
+        tax_id: '0105556012341',
+      }),
+    ).not.toContain('tax_id');
+  });
+
+  it('accepts is_vat_registered:false with no tax_id — the common case', () => {
+    expect(
+      issuePaths({ ...BASE, is_vat_registered: false }),
+    ).not.toContain('tax_id');
+  });
+
+  it('accepts is_vat_registered omitted entirely with no tax_id', () => {
+    expect(issuePaths(BASE)).not.toContain('tax_id');
   });
 });
 

@@ -533,3 +533,84 @@ describe('buyer branch + VAT-registrant fields (088-invoice-tax-flow-redesign)',
     ).toThrow(InvalidMemberIdentitySnapshotError);
   });
 });
+
+// ── 059 / PR-A Task 4 — the registrant ⇒ TIN invariant ──
+// ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่/สาขาที่ NNNNN) are a PAIR —
+// both mandatory when the buyer is a VAT registrant. THIS is the last gate
+// before an immutable tax document exists (create-member.ts / update-member.ts
+// / the form schema are UX that surface the problem earlier — none of them
+// replaces this one). A snapshot with `buyer_is_vat_registrant: true` and
+// `tax_id: null` must fail loud, not degrade into a defective §86/4 document.
+describe('registrant ⇒ TIN invariant (059 / PR-A Task 4)', () => {
+  it('rejects buyer_is_vat_registrant=true with a null tax_id on the raw schema', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: true,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === 'tax_id')).toBe(true);
+    }
+  });
+
+  it('accepts buyer_is_vat_registrant=true WITH a tax_id on the raw schema', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: '0105562000123',
+      buyer_is_vat_registrant: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts buyer_is_vat_registrant=false with a null tax_id on the raw schema', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a VAT registrant with no TIN', () => {
+    // ประกาศ 196 + 199 are a PAIR: a registrant buyer must carry BOTH the
+    // 13-digit TIN and the head-office/branch line. Printing one without the
+    // other is a defective §86/4 document. This must fail LOUD at issue — it
+    // is the last gate before the document exists.
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        legal_name: 'ACME Co., Ltd.',
+        tax_id: null,
+        address: '123 Sukhumvit',
+        primary_contact_name: 'Somchai',
+        primary_contact_email: 'a@b.com',
+        buyer_is_vat_registrant: true,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('accepts a NON-registrant with no TIN', () => {
+    // The common case: a foreign member, or a Thai member below the threshold.
+    // No TIN is required of them, and no branch line prints.
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        legal_name: 'Nordic AB',
+        tax_id: null,
+        address: 'Stockholm',
+        primary_contact_name: 'Anders',
+        primary_contact_email: 'a@b.se',
+        buyer_is_vat_registrant: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts a VAT registrant WITH a TIN', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        tax_id: '0105562000123',
+        buyer_is_vat_registrant: true,
+      }),
+    ).not.toThrow();
+  });
+});

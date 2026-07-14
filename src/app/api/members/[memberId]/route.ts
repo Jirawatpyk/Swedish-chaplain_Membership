@@ -314,6 +314,10 @@ export async function PATCH(
       );
     case 'invalid_country':
     case 'invalid_tax_id':
+    // 059 / PR-A Task 4 — the registrant ⇒ TIN invariant, checked in the
+    // use-case body against the RESULTING (current + patch) state. Same 400
+    // validation_error shape as the other domain-validation rejections above.
+    case 'vat_registrant_requires_tax_id':
       return NextResponse.json(
         {
           error: {

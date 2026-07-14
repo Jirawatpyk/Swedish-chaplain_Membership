@@ -172,6 +172,21 @@ export const memberIdentitySnapshotSchema = z.object({
       message: 'branch buyer must carry a 5-digit branch_code',
     });
   }
+  // 059 / PR-A Task 4 — ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่ /
+  // สาขา) are a PAIR — both are mandatory when the buyer is a VAT registrant.
+  // A snapshot with the flag set and no TIN would print the branch line with
+  // no taxpayer number: a defective §86/4 document. THIS is the last gate
+  // before an immutable tax document exists (create-member's/update-member's
+  // own guards are UX that surface the problem earlier — this one fails loud
+  // rather than degrading, because there is no later chance to catch it).
+  if (data.buyer_is_vat_registrant === true && data.tax_id === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['tax_id'],
+      message:
+        'a VAT-registrant buyer must carry a tax_id (ประกาศอธิบดีฯ 196 + 199)',
+    });
+  }
 });
 
 export class MalformedSnapshotError extends Error {

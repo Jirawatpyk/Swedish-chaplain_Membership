@@ -75,6 +75,17 @@ export function mapMemberCreateServerError(
         };
       case 'invalid_tax_id':
         return { field: 'tax_id', messageKey: 'errors.taxIdInvalid' };
+      // 059 / PR-A Task 4 — update-member.ts's use-case-body registrant ⇒ TIN
+      // check (defense-in-depth only: buildMemberFormSchema's own superRefine
+      // blocks this before submit in the normal UI flow). Reuses the SAME
+      // i18n key the form's inline rule uses (mirrors the invalid_email /
+      // invalid_secondary_email precedent above, not the dedicated
+      // errors.taxIdInvalid used for a checksum failure).
+      case 'vat_registrant_requires_tax_id':
+        return {
+          field: 'tax_id',
+          messageKey: 'fields.errors.taxIdRequiredForRegistrant',
+        };
       case 'invalid_phone':
         return { field: 'primary_contact.phone', messageKey: 'fields.phoneError' };
       case 'invalid_country':

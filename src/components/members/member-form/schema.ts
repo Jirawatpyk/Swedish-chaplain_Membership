@@ -405,6 +405,21 @@ export function buildMemberFormSchema(
         });
       }
     }
+    // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 + 199
+    // are a PAIR): a member marked as VAT-registered must also carry a
+    // tax_id, or the §86/4 buyer block on a tax document would print the
+    // branch line with no taxpayer number. Mirrors the server-side check
+    // (create-member.ts's superRefine / update-member.ts's use-case-body
+    // check) and the member-identity-snapshot Domain VO — the LAST, load-
+    // bearing gate at issue time. This is UX: it surfaces the problem inline
+    // before the admin ever submits.
+    if (data.is_vat_registered === true && !data.tax_id?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tax_id'],
+        message: tf('errors.taxIdRequiredForRegistrant'),
+      });
+    }
   });
 }
 
