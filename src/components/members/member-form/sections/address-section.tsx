@@ -219,13 +219,26 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // first, including StrictMode's double-render) with the mount-time
   // `countryIsTH|postalCode` pair. The effect recomputes the same key on
   // every invocation and compares: the initial setup sees its own
-  // just-seeded key and skips (no cleanup scheduled); a StrictMode replay
+  // just-seeded key (`isMountRun = true` below) and a StrictMode replay
   // recomputes an IDENTICAL key (nothing in the deps actually changed
-  // between the two invocations) and also skips — idempotent, no
-  // cleanup-based reset needed. Only a REAL change (the admin edits the
-  // postcode, or `country` flips) produces a different key, which updates
-  // the ref and lets the body run. The reset/clear paths still fire,
-  // because clearing the field changes the key too.
+  // between the two invocations) — also `isMountRun = true`. Only a REAL
+  // change (the admin edits the postcode, or `country` flips) produces a
+  // different key, which updates the ref and flips `isMountRun` to `false`
+  // from then on. The reset/clear paths still fire, because clearing the
+  // field changes the key too.
+  //
+  // I1 fix (whole-branch review): `isMountRun` used to make the effect
+  // `return` immediately — which skipped the FETCH, not just the write.
+  // `candidates` then never populated on the Edit form, so the province/
+  // district/sub-district pickers narrowed to nothing: for the ~132
+  // imported TSCC members (`sub_district` is NULL on every one) the
+  // sub-district combobox opened with ZERO options, forcing hand-typed
+  // แขวง — exactly what committing the 367 KB postal dataset was meant to
+  // avoid. The fetch (and `setCandidates`/`setLookupStatus`) must run on
+  // every key, mount or not; only the WRITE side — `setValue`,
+  // `setAutoFill`, `setAnnouncement` — is gated on `isMountRun`. That
+  // preserves the anti-overwrite guarantee (nothing is silently written or
+  // announced on load) while letting the option lists populate.
   const lastLookupKeyRef = useRef<string | null>(null);
   lastLookupKeyRef.current ??= `${countryIsTH}|${postalCodeValue.trim()}`;
 
@@ -239,7 +252,11 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   // (it is a state cleanup, not something the admin is waiting to see).
   useEffect(() => {
     const key = `${countryIsTH}|${postalCodeValue.trim()}`;
-    if (key === lastLookupKeyRef.current) return; // mount value, or a no-op replay
+    // I1 fix: this used to `return` here, skipping the fetch entirely on
+    // mount/StrictMode-replay. Now it only marks the run as a mount run —
+    // the fetch still executes below; `isMountRun` instead gates the WRITE
+    // side (setValue/setAutoFill/setAnnouncement) inside `run()`.
+    const isMountRun = key === lastLookupKeyRef.current;
     lastLookupKeyRef.current = key;
 
     let cancelled = false;
@@ -254,8 +271,13 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
         // branch below, but the form VALUE it held survives unless cleared
         // here — `create-member-client.tsx`'s `toPayload` forwards
         // `sub_district` unconditionally, so a stale Thai sub-district would
-        // otherwise ride along on a non-TH member's submit.
-        setValue('sub_district', '', { shouldDirty: true });
+        // otherwise ride along on a non-TH member's submit. Skipped on a
+        // mount run (I1) — a member loaded with country already ≠ TH must
+        // not have its sub_district silently dirtied before the admin has
+        // touched anything.
+        if (!isMountRun) {
+          setValue('sub_district', '', { shouldDirty: true });
+        }
         return;
       }
       const code = postalCodeValue.trim();
@@ -278,7 +300,9 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
           if (res.status === 404) {
             setCandidates([]);
             setLookupStatus('unknown');
-            setAnnouncement(tf('postalCodeUnknownAnnouncement', { code }));
+            if (!isMountRun) {
+              setAnnouncement(tf('postalCodeUnknownAnnouncement', { code }));
+            }
             return;
           }
           if (!res.ok) {
@@ -301,44 +325,56 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
             // always; additionally set sub-district only when IT is also
             // unique within that district (many single-district postcodes
             // still cover several sub-districts).
+            //
+            // I1 fix: on a mount run, `candidates` (set above,
+            // unconditionally) is enough to narrow the option lists — the
+            // WRITE side below (setValue × 3 / setAutoFill / setAnnouncement)
+            // must NOT run, or loading the Edit form would silently
+            // overwrite/dirty/announce a change the admin never made (the
+            // exact Critical 2 bug the mount guard exists to prevent).
             const subDistricts = new Set(found.map((c) => c.subDistrict.en));
             const fillSub = subDistricts.size === 1;
-            const previous = {
-              province: getValues('province') ?? '',
-              city: getValues('city') ?? '',
-              subDistrict: getValues('sub_district') ?? '',
-            };
-            setValue('province', first.province.en, { shouldDirty: true });
-            setValue('city', first.district.en, { shouldDirty: true });
-            if (fillSub) {
-              setValue('sub_district', first.subDistrict.en, { shouldDirty: true });
+            if (!isMountRun) {
+              const previous = {
+                province: getValues('province') ?? '',
+                city: getValues('city') ?? '',
+                subDistrict: getValues('sub_district') ?? '',
+              };
+              setValue('province', first.province.en, { shouldDirty: true });
+              setValue('city', first.district.en, { shouldDirty: true });
+              if (fillSub) {
+                setValue('sub_district', first.subDistrict.en, { shouldDirty: true });
+              }
+              setAutoFill({
+                code,
+                filledSubDistrict: fillSub,
+                previous,
+                filled: {
+                  province: first.province.en,
+                  city: first.district.en,
+                  subDistrict: fillSub ? first.subDistrict.en : null,
+                },
+              });
+              setAnnouncement(
+                fillSub
+                  ? tf('postalCodeAutoFilledFull', { code })
+                  : tf('postalCodeAutoFilledPartial', { code }),
+              );
             }
-            setAutoFill({
-              code,
-              filledSubDistrict: fillSub,
-              previous,
-              filled: {
-                province: first.province.en,
-                city: first.district.en,
-                subDistrict: fillSub ? first.subDistrict.en : null,
-              },
-            });
             setLookupStatus('unambiguous');
-            setAnnouncement(
-              fillSub
-                ? tf('postalCodeAutoFilledFull', { code })
-                : tf('postalCodeAutoFilledPartial', { code }),
-            );
           } else {
-            // Ambiguous — set NOTHING. Narrow the option lists instead.
+            // Ambiguous — set NOTHING. Narrow the option lists instead
+            // (`candidates` is already set above, mount run or not).
             setAutoFill(null);
             setLookupStatus('ambiguous');
-            const provinces = new Set(found.map((c) => c.province.en));
-            setAnnouncement(
-              provinces.size > 1
-                ? tf('postalCodeAmbiguousProvince', { code, count: provinces.size })
-                : tf('postalCodeAmbiguousDistrict', { code, count: districts.size }),
-            );
+            if (!isMountRun) {
+              const provinces = new Set(found.map((c) => c.province.en));
+              setAnnouncement(
+                provinces.size > 1
+                  ? tf('postalCodeAmbiguousProvince', { code, count: provinces.size })
+                  : tf('postalCodeAmbiguousDistrict', { code, count: districts.size }),
+              );
+            }
           }
         } catch (e) {
           if (!cancelled && !(e instanceof DOMException && e.name === 'AbortError')) {

@@ -411,7 +411,14 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
   // (the field itself is gone from the DOM once non-TH, so this is the only
   // way to observe it).
   it('clears the stale sub_district VALUE (not just the widget) when the country is switched away from TH', async () => {
-    const fetchMock = vi.fn();
+    // I1 fix: the mount run now fetches (to populate candidate lists on the
+    // Edit form — see the effect's I1 docblock), so this needs a real
+    // response instead of the old no-op `vi.fn()` (which relied on the
+    // mount fetch never happening at all).
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
+      throw new Error(`unexpected fetch ${url}`);
+    });
     vi.stubGlobal('fetch', fetchMock);
     const onSubmit = vi.fn();
     render(
@@ -444,6 +451,15 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
 
     expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
 
+    // Let the mount-time lookup settle deterministically BEFORE switching
+    // country, so the fetch-count assertion below isn't a race against the
+    // 300ms debounce. Nothing is written by it (I1 anti-overwrite guarantee
+    // — proven directly above and by the dedicated I1 mount-run suite).
+    await waitFor(
+      () => expect(fetchMock).toHaveBeenCalledWith('/api/geo/postal/10330', expect.anything()),
+      { timeout: 3000 },
+    );
+
     fireEvent.click(byId('country'));
     const listbox = await screen.findByRole('listbox');
     fireEvent.click(within(listbox).getByText('Sweden'));
@@ -456,7 +472,10 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
     await act(async () => {
       await new Promise((r) => setTimeout(r, 400));
     });
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The country-switch run's `!countryIsTH` branch returns BEFORE any
+    // fetch — total calls across the whole flow stay at the single
+    // mount-time lookup above.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fireEvent.submit(document.querySelector('form') as HTMLFormElement);
 
@@ -465,13 +484,19 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
   });
 });
 
-describe('AddressSection — edit mode must not fire the lookup ceremony on mount (Critical 2 regression)', () => {
-  it('does not call the lookup, announce anything, or show Undo for a pre-populated resolvable postcode', async () => {
+describe('AddressSection — edit mode must not AUTO-FILL/announce on mount, but the lookup still runs (I1 fix, Critical 2 regression scope preserved)', () => {
+  it('DOES fetch and populate candidates for a pre-populated resolvable postcode, but writes/announces/dirties nothing', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
       throw new Error(`unexpected fetch ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
+    // "nothing is dirty" proxy: member-form.tsx only registers the
+    // `beforeunload` unsaved-changes guard once RHF's `isDirty` flips true
+    // (see member-form.tsx's own comment on why `isDirty` must be read at
+    // component top level). If the mount run silently wrote a field via
+    // `setValue({ shouldDirty: true })`, this listener would be registered.
+    const addEventListenerSpy = vi.spyOn(window, 'addEventListener');
 
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
@@ -497,33 +522,54 @@ describe('AddressSection — edit mode must not fire the lookup ceremony on moun
       </NextIntlClientProvider>,
     );
 
-    // Give the 300ms debounce every chance to fire — RED against the old
-    // code (which watches `postal_code`'s mount-time value via `useWatch`
-    // and treats it as a change) needs this to actually observe the bug.
+    // I1 fix: the mount run now DOES fetch — this is the whole point (the
+    // option lists must populate on the Edit form). RED against the
+    // pre-fix code (which skipped the fetch entirely on mount) needs this
+    // assertion to actually observe the regression.
+    await waitFor(
+      () => expect(fetchMock).toHaveBeenCalledWith('/api/geo/postal/10330', expect.anything()),
+      { timeout: 3000 },
+    );
+    // Let the resolved fetch's `.then` chain finish applying `setCandidates`.
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 50));
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    // Anti-overwrite guarantee (Critical 2 / a11y re-review) — nothing
+    // written, nothing announced, nothing dirtied, no Undo affordance.
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(byId('province')).toHaveTextContent('เชียงใหม่');
     expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
     expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+    expect(addEventListenerSpy).not.toHaveBeenCalledWith(
+      'beforeunload',
+      expect.any(Function),
+    );
+
+    // But the candidate list IS populated — the province combobox offers
+    // the fetched postcode's province (Bangkok) alongside the admin's own
+    // current value (เชียงใหม่), proving the option list narrowed instead
+    // of staying empty.
+    fireEvent.click(byId('province'));
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Bangkok')).toBeInTheDocument();
+    expect(within(listbox).getByText('เชียงใหม่')).toBeInTheDocument();
   });
 });
 
-describe('AddressSection — edit mode must not fire the lookup ceremony on mount under React StrictMode (a11y re-review, dev-server-visible regression)', () => {
-  it('does not call the lookup on the StrictMode setup→cleanup→setup mount replay', async () => {
-    // Same fixture as the plain (non-StrictMode) Critical 2 regression test
-    // above — a pre-populated, resolvable postcode paired with a DIFFERENT
-    // real Thai address, so a silent overwrite is unmistakable. The only
-    // difference is the `<StrictMode>` wrapper: `next.config.ts`'s
+describe('AddressSection — edit mode must not AUTO-FILL/announce on mount under React StrictMode (a11y re-review, dev-server-visible regression)', () => {
+  it('fetches exactly ONCE (not twice) on the StrictMode setup→cleanup→setup mount replay, and still writes/announces nothing', async () => {
+    // Same fixture as the plain (non-StrictMode) test above — a
+    // pre-populated, resolvable postcode paired with a DIFFERENT real Thai
+    // address, so a silent overwrite is unmistakable. The only difference
+    // is the `<StrictMode>` wrapper: `next.config.ts`'s
     // `reactStrictMode: true` replays every effect once on mount (setup →
     // cleanup → setup again) on the dev server — which is where UAT runs
     // (:3100) — and RTL's plain `render()` does NOT reproduce that replay,
     // so the test above alone cannot catch a guard that only survives a
-    // SINGLE setup.
+    // SINGLE setup, nor a double-fetch regression only StrictMode's replay
+    // would expose.
     const fetchMock = vi.fn(async (url: string) => {
       if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
       throw new Error(`unexpected fetch ${url}`);
@@ -553,17 +599,79 @@ describe('AddressSection — edit mode must not fire the lookup ceremony on moun
       </StrictMode>,
     );
 
-    // Give the 300ms debounce every chance to fire, same as the plain test.
+    await waitFor(
+      () => expect(fetchMock).toHaveBeenCalledWith('/api/geo/postal/10330', expect.anything()),
+      { timeout: 3000 },
+    );
+    // Give any (incorrect) second fetch every chance to fire before
+    // asserting the call count stayed at exactly one.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 500));
     });
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(liveRegionText()).toBe('');
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
     expect(byId('province')).toHaveTextContent('เชียงใหม่');
     expect(byId('city')).toHaveTextContent('อำเภอเมืองเชียงใหม่');
     expect(byId('sub_district')).toHaveTextContent('ศรีภูมิ');
+  });
+});
+
+describe('AddressSection — edit mode: the postcode picker is NOT inert (I1 headline regression)', () => {
+  it('narrows the sub-district combobox for an existing TH member whose sub_district is NULL (the ~132 imported TSCC members shape)', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <MemberForm
+          plans={PLANS}
+          defaultPlanYear={2026}
+          onSubmit={vi.fn()}
+          submitting={false}
+          mode="edit"
+          initialValues={{
+            company_name: 'Acme',
+            country: 'TH',
+            address_line1: '99 Nimman Rd',
+            postal_code: '10330',
+            // Province/city already resolved+English (per the file-header
+            // "Data" fact — the 132 imported members are 100% English) so
+            // they match the fetched candidate's province/district and the
+            // cascade actually narrows city → sub-district. sub_district
+            // itself is EMPTY — the exact shape of every imported member.
+            province: 'Bangkok',
+            city: 'Pathum Wan',
+            sub_district: '',
+          }}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    await waitFor(
+      () => expect(fetchMock).toHaveBeenCalledWith('/api/geo/postal/10330', expect.anything()),
+      { timeout: 3000 },
+    );
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Anti-overwrite guarantee still holds: sub_district was NOT written,
+    // nothing announced, no Undo offered.
+    expect(byId('sub_district')).toHaveTextContent(/select a sub-district/i);
+    expect(liveRegionText()).toBe('');
+    expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
+
+    // The headline behaviour: opening the sub-district combobox offers
+    // THIS postcode's real sub-district — not an empty list forcing the
+    // admin to hand-type the แขวง.
+    fireEvent.click(byId('sub_district'));
+    const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Wang Mai')).toBeInTheDocument();
   });
 });
 

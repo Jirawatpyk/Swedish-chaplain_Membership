@@ -169,7 +169,11 @@ describe('changeContactEmail — transaction port failures', () => {
   it('returns conflict when contactRepo.updateEmailInTx throws repo.conflict', async () => {
     const result = await changeContactEmail(
       makeDeps({
-        contactUpdateResult: err({ code: 'repo.conflict', reason: 'email_taken' }),
+        // I2 fix — `'email_taken'` was not a member of `RepoConflictReason`;
+        // the real producer (`ContactRepo.updateEmailInTx`) maps its
+        // unique-index violation to `contact_email_in_use` (see
+        // member-repo.ts's docstring — grouped with `addInTx`).
+        contactUpdateResult: err({ code: 'repo.conflict', reason: 'contact_email_in_use' }),
       }),
       baseInput,
     );
@@ -177,7 +181,7 @@ describe('changeContactEmail — transaction port failures', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('conflict');
       if (result.error.code === 'conflict') {
-        expect(result.error.reason).toBe('email_taken');
+        expect(result.error.reason).toBe('contact_email_in_use');
       }
     }
   });
