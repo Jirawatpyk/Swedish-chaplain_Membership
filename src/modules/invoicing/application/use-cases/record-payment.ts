@@ -610,10 +610,14 @@ export async function recordPayment(
     // the issue-time and credit-time gates. A matched member's `tax_id` may hold
     // a passport / work-permit number, which is not a VAT registration and must
     // not decide the document class.
-    const receiptKind = inferReceiptKind(
-      loaded.invoiceSubject,
-      resolveBuyerIsVatRegistrant(memberId, loaded.memberIdentitySnapshot),
+    // 059 / PR-A Task 6b — computed ONCE and threaded to BOTH the receipt-kind
+    // decision below AND the PDF render input, so the Tax ID line's print
+    // decision can never disagree with the kind decision that chose it.
+    const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+      memberId,
+      loaded.memberIdentitySnapshot,
     );
+    const receiptKind = inferReceiptKind(loaded.invoiceSubject, buyerIsVatRegistrant);
     const forceSeparate = receiptKind === 'receipt_separate';
     const taxAtPayment = deps.taxAtPayment === 'on';
     const reuseInvoiceNumber = !taxAtPayment && !forceSeparate;
@@ -743,6 +747,7 @@ export async function recordPayment(
                 tenant: loaded.tenantIdentitySnapshot,
                 tenantLogo,
                 member: loaded.memberIdentitySnapshot,
+                buyerIsVatRegistrant,
                 lines: loaded.lines,
                 subtotal: loaded.subtotal,
                 vatRate: loaded.vatRate,

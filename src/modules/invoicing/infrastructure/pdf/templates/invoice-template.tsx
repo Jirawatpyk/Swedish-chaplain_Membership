@@ -396,6 +396,18 @@ export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
  * someone voids or credit-notes it. Gated, a document pinned to v<=10 keeps its
  * legacy unconditional print and reproduces its original bytes — the SC-003
  * guarantee, exactly like the v3-v10 gates. Registry log: template-registry.ts v11.
+ *
+ * 059 / PR-A Task 6b (bug fix) — the gate reads `input.buyerIsVatRegistrant`
+ * (top-level on `PdfRenderInput`), NOT `input.member.buyer_is_vat_registrant`.
+ * The snapshot field is the RECORDED fact for a matched member, but a WALK-IN
+ * buyer's snapshot NEVER carries it (there is no `members` row to read it
+ * from) — their registrant status is instead INFERRED from TIN-presence by
+ * `resolveBuyerIsVatRegistrant`, which is exactly what chose this document's
+ * CLASS (`kind: 'invoice'`) in the first place. Reading the snapshot field
+ * directly silently suppressed a walk-in registrant's own TIN from the
+ * document their TIN produced — see pdf-render-port.ts for the full
+ * rationale. Every caller threads the SAME resolved value it used for its
+ * kind decision; see PdfRenderInput.buyerIsVatRegistrant.
  */
 const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
 
@@ -516,13 +528,19 @@ function renderPageBody({
   // particular on a tax document. Gated on `templateVersion` exactly the way
   // `buyerBranchEl` is (below): a document pinned to v<=10 keeps the legacy
   // unconditional print, so voiding / credit-noting it still reproduces its
-  // ORIGINAL bytes (SC-003) — a pre-v11 snapshot reads
-  // `buyer_is_vat_registrant` back as the `.optional().default(false)` FALSE, so
-  // un-gated this would silently ERASE the Tax ID line from documents that
-  // legitimately carry one.
+  // ORIGINAL bytes (SC-003).
+  //
+  // 059 / PR-A Task 6b (bug fix) — reads `input.buyerIsVatRegistrant`
+  // (top-level, RESOLVED by the caller via the shared `resolveBuyerIsVatRegistrant`
+  // — see pdf-render-port.ts), NOT `input.member.buyer_is_vat_registrant`. The
+  // snapshot field is ALWAYS false for a walk-in buyer (no `members` row to
+  // record it on); reading it directly here silently suppressed a walk-in
+  // registrant's own TIN from the very document that TIN classed as an invoice.
+  // A pre-v11 pinned render never evaluates this arm (short-circuited by the
+  // version check below) so a pre-v11 re-render is unaffected either way.
   const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
     input.templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION &&
-    input.member.buyer_is_vat_registrant !== true ? null : (
+    input.buyerIsVatRegistrant !== true ? null : (
       <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
     )
   ) : null;
@@ -552,6 +570,20 @@ function renderPageBody({
   // (fail-closed). Gated on templateVersion so pre-v5 documents re-render
   // byte-stable (SC-003). Its own gate (v>=5) is ⊆ the v6 polish gate, so the
   // v6 reorder never resurrects it on a pre-v5 pin.
+  //
+  // 059 / PR-A Task 6b — CRITICAL: this reads `input.member.buyer_is_vat_registrant`
+  // (the snapshot's RECORDED fact), and MUST NEVER be switched to
+  // `input.buyerIsVatRegistrant` (the resolved value `buyerTaxIdEl` now reads,
+  // above). The two fields answer different questions for a WALK-IN buyer:
+  // `buyerIsVatRegistrant` is derived from TIN-PRESENCE (`resolveBuyerIsVatRegistrant`'s
+  // walk-in branch), and a 13-digit number is NOT proof of VAT registration — a
+  // Thai natural person's national ID is also 13 digits. Printing a walk-in's own
+  // TIN back to them (buyerTaxIdEl) is safe; asserting their head-office/branch
+  // status (ประกาศอธิบดีฯ ฉบับที่ 199) on that same guess is not — it would print a
+  // §86/4 particular the seller cannot evidence. A walk-in's snapshot never sets
+  // `buyer_is_vat_registrant`, so this line correctly NEVER draws for a walk-in
+  // (a known, pre-existing gap — 088 US3 — not fixed here). Do not "helpfully"
+  // unify the two conditions.
   const buyerBranchEl =
     input.member.buyer_is_vat_registrant === true &&
     input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION ? (

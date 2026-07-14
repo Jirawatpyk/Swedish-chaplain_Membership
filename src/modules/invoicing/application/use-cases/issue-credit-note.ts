@@ -458,14 +458,17 @@ export async function issueCreditNote(
       // never burns a §87 credit-note sequence number — the §87 CN stream
       // stays gap-free. Mirrors the issue-invoice rule that the doc-type gate
       // precedes sequence allocation.
+      // 059 / PR-A Task 6b — computed ONCE and threaded to the doc-kind gate
+      // AND both PDF re-renders below (the credit-note itself + the J2
+      // credited-annotation overlay), so the Tax ID line's print decision can
+      // never disagree with the kind decision that gated this credit.
+      const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+        loaded.memberId,
+        loaded.memberIdentitySnapshot,
+      );
       const isReceiptSeparate =
-        inferEventDocumentKind(
-          loaded.invoiceSubject,
-          resolveBuyerIsVatRegistrant(
-            loaded.memberId,
-            loaded.memberIdentitySnapshot,
-          ),
-        ) === 'receipt_separate';
+        inferEventDocumentKind(loaded.invoiceSubject, buyerIsVatRegistrant) ===
+        'receipt_separate';
       if (isReceiptSeparate) {
         return err({ code: 'receipt_not_creditable' });
       }
@@ -749,6 +752,7 @@ export async function issueCreditNote(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo,
             member: loaded.memberIdentitySnapshot,
+            buyerIsVatRegistrant,
             lines: [syntheticLine],
             // Money fields carry the credit-note's own amounts — the
             // template reads these for the totals block.
@@ -945,6 +949,7 @@ export async function issueCreditNote(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo: annotationTenantLogo,
             member: loaded.memberIdentitySnapshot,
+            buyerIsVatRegistrant,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
             vatRate: loaded.vatRate,

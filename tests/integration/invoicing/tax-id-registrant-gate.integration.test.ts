@@ -33,6 +33,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { Document, Page } from '@react-pdf/renderer';
 import { InvoiceTemplate } from '@/modules/invoicing/infrastructure/pdf/templates/invoice-template';
 import { CURRENT_TEMPLATE_VERSION } from '@/modules/invoicing/infrastructure/pdf/template-registry';
+import { resolveBuyerIsVatRegistrant } from '@/modules/invoicing/domain/document-kind';
 import type { PdfDocKind, PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -72,9 +73,29 @@ function makeInput(opts: {
   templateVersion: number;
   kind?: PdfDocKind;
   member?: Partial<MemberIdentitySnapshot>;
+  /**
+   * 059 / PR-A Task 6b — the RESOLVED top-level field `buyerTaxIdEl` now reads.
+   * Defaults to the snapshot's OWN `buyer_is_vat_registrant` flag, matching
+   * every test in this file written before Task 6b (which modelled the buyer
+   * generically, with no matched-member/walk-in distinction). The Task 6b
+   * regression test below overrides this explicitly with the REAL resolver's
+   * output for a walk-in, while the snapshot's own flag stays at its real
+   * (always-false) walk-in value — that mismatch IS the bug being proven.
+   */
+  buyerIsVatRegistrant?: boolean;
 }): PdfRenderInput {
   const docR = DocumentNumber.of('RC', 2026, 42);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
+  const member = {
+    legal_name: 'Acme Co., Ltd.',
+    tax_id: BUYER_TIN,
+    address: '99/1 Sukhumvit Rd',
+    primary_contact_name: 'John Doe',
+    primary_contact_email: 'john@acme.example',
+    member_number: null,
+    member_number_display: null,
+    ...opts.member,
+  };
   return {
     kind: opts.kind ?? 'invoice',
     templateVersion: opts.templateVersion,
@@ -92,16 +113,8 @@ function makeInput(opts: {
       address_en: 'Bangkok',
       logo_blob_key: null,
     },
-    member: {
-      legal_name: 'Acme Co., Ltd.',
-      tax_id: BUYER_TIN,
-      address: '99/1 Sukhumvit Rd',
-      primary_contact_name: 'John Doe',
-      primary_contact_email: 'john@acme.example',
-      member_number: null,
-      member_number_display: null,
-      ...opts.member,
-    },
+    member,
+    buyerIsVatRegistrant: opts.buyerIsVatRegistrant ?? member.buyer_is_vat_registrant === true,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),
@@ -286,5 +299,82 @@ describe('059 Task 6a — buyer Tax ID prints only for a VAT registrant (v11 gat
 
   it('CURRENT_TEMPLATE_VERSION is at/after the gate — every NEW issuance applies the registrant rule', () => {
     expect(CURRENT_TEMPLATE_VERSION).toBeGreaterThanOrEqual(GATE_V);
+  });
+});
+
+describe('059 Task 6b — WALK-IN buyer: the resolver that classed this document must be what prints', () => {
+  // BUG regression (found by Thai-tax-compliance audit of d3497ea0): Guard 1 (the
+  // document CLASS) and Guard 2 (the Tax ID LINE) were reading two DIFFERENT
+  // sources of truth for a walk-in (non-member) buyer.
+  //
+  //   Guard 1 — `resolveBuyerIsVatRegistrant(memberId=null, snapshot)` infers
+  //     registrant status from TIN-PRESENCE for a walk-in (there is no `members`
+  //     row to read a recorded flag from). THIS is what chose `kind: 'invoice'`
+  //     for the document below.
+  //   Guard 2 (pre-fix) — `invoice-template.tsx` read
+  //     `input.member.buyer_is_vat_registrant` straight off the frozen snapshot.
+  //     `create-event-invoice-draft.ts` NEVER sets that field on a walk-in
+  //     snapshot (by design — see document-kind.ts), so it is ALWAYS the zod
+  //     default `false` for a walk-in, regardless of what Guard 1 decided.
+  //
+  // Net effect pre-fix: a walk-in whose OWN 13-digit TIN classified the document
+  // as a §86/4 tax invoice got that exact TIN silently dropped from the line
+  // printed for the input-VAT claim it was supplied to make.
+  it('BUG regression: a walk-in whose 13-digit TIN classed the document as invoice must see that TIN print', () => {
+    // A walk-in's snapshot NEVER carries `buyer_is_vat_registrant=true` — this is
+    // the exact shape `create-event-invoice-draft.ts` produces for a non-member
+    // buyer (the field is omitted; zod resolves it to `false`).
+    const walkInSnapshotParts = {
+      tax_id: BUYER_TIN,
+      buyer_is_vat_registrant: false as const,
+    };
+    // Sanity — this is the REAL resolver, and it is what chose `kind: 'invoice'`
+    // for this exact document (the walk-in branch infers from TIN-presence).
+    const resolvedRegistrant = resolveBuyerIsVatRegistrant(null, walkInSnapshotParts);
+    expect(resolvedRegistrant).toBe(true);
+
+    // The render input carries the RESOLVED value at the top level (what every
+    // real call site threads via `resolveBuyerIsVatRegistrant`) — this is the
+    // join: Guard 1's decision is what Guard 2 must read, NOT the snapshot's own
+    // (always-false-for-a-walk-in) flag.
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: walkInSnapshotParts,
+        buyerIsVatRegistrant: resolvedRegistrant,
+      }),
+    );
+    // The buyer supplied this exact TIN to claim input VAT on the §86/4 tax
+    // invoice their own TIN produced — it must print.
+    expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
+  });
+
+  it('a matched-member NON-registrant with a stored identifier still gets NO Tax ID line at v11 (Guard 2 survives)', () => {
+    // A MATCHED member (memberId non-null): resolveBuyerIsVatRegistrant reads the
+    // RECORDED `buyer_is_vat_registrant` flag, not TIN-presence. A non-registrant
+    // whose `tax_id` happens to be a 13-digit number (a passport-equivalent or an
+    // unregistered company id) must still show no Tax ID line — the ORIGINAL
+    // point of the v11 gate, which Task 6b's fix must not regress.
+    const matchedMemberId = '00000000-0000-0000-0000-0000000000b2';
+    const matchedNonRegistrantSnapshot = {
+      tax_id: BUYER_TIN,
+      buyer_is_vat_registrant: false as const,
+    };
+    const resolvedRegistrant = resolveBuyerIsVatRegistrant(
+      matchedMemberId,
+      matchedNonRegistrantSnapshot,
+    );
+    expect(resolvedRegistrant).toBe(false);
+
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: matchedNonRegistrantSnapshot,
+        buyerIsVatRegistrant: resolvedRegistrant,
+      }),
+    );
+    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
   });
 });

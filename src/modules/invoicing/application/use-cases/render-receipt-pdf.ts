@@ -190,13 +190,15 @@ export async function renderReceiptPdf(
       // with the record-payment call that enqueued it. If the two disagreed the
       // worker would render a DIFFERENT document kind than the one whose §87
       // number record-payment already minted.
-      const receiptKind = inferReceiptKind(
-        loaded.invoiceSubject,
-        resolveBuyerIsVatRegistrant(
-          loaded.memberId,
-          loaded.memberIdentitySnapshot,
-        ),
+      // 059 / PR-A Task 6b — computed ONCE and threaded to BOTH the receipt-kind
+      // decision AND the PDF render input, so the async worker's Tax ID line
+      // print decision can never disagree with the kind decision that chose it
+      // (and stays in lockstep with the sync record-payment render).
+      const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+        loaded.memberId,
+        loaded.memberIdentitySnapshot,
       );
+      const receiptKind = inferReceiptKind(loaded.invoiceSubject, buyerIsVatRegistrant);
 
       // Receipt number resolution (§87 NO-GAPS — the worker NEVER re-allocates;
       // record-payment.ts minted + persisted the number in-tx with the `paid`
@@ -258,6 +260,7 @@ export async function renderReceiptPdf(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo,
             member: loaded.memberIdentitySnapshot,
+            buyerIsVatRegistrant,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
             vatRate: loaded.vatRate,

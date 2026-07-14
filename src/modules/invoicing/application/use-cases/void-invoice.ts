@@ -91,6 +91,7 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { loadTenantLogo } from '../lib/load-tenant-logo';
+import { resolveBuyerIsVatRegistrant } from '@/modules/invoicing/domain/document-kind';
 
 export const voidInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -257,6 +258,15 @@ export async function voidInvoice(
       }
       if (!settings) return err({ code: 'settings_missing' });
 
+      // 059 / PR-A Task 6b — the retained §87/3 evidence copy must reproduce the
+      // registrant status the ORIGINAL document was issued under. Both Target A
+      // (main blob) and Target B (separate receipt blob, when present) share the
+      // SAME buyer, so this is computed once and threaded to both re-renders.
+      const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+        memberId,
+        loaded.memberIdentitySnapshot,
+      );
+
       // 088 T068 — resolve the number the MAIN blob prints under. It is
       // whatever number the main document was ORIGINALLY issued with:
       //   - `documentNumber`         → legacy §87 §86/4 invoice / as-paid TIN combined
@@ -323,6 +333,7 @@ export async function voidInvoice(
           tenant: loaded.tenantIdentitySnapshot,
           tenantLogo: tenantLogoA,
           member: loaded.memberIdentitySnapshot,
+          buyerIsVatRegistrant,
           lines: loaded.lines,
           subtotal: loaded.subtotal,
           vatRate: loaded.vatRate,
@@ -415,6 +426,7 @@ export async function voidInvoice(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo: tenantLogoB,
             member: loaded.memberIdentitySnapshot,
+            buyerIsVatRegistrant,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
             vatRate: loaded.vatRate,

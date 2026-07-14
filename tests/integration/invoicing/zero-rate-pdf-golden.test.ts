@@ -89,6 +89,12 @@ function makeInput(
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — `false` preserves this fixture's existing semantics:
+    // the embassy buyer carries a `tax_id` but is modelled as a NON-registrant
+    // (see the T058 §C comment below) — matching the pre-Task-6b behaviour
+    // where the template read the snapshot's own (always-undefined here)
+    // `buyer_is_vat_registrant` directly.
+    buyerIsVatRegistrant: false,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(1_200_000n),
     // vat_treatment DRIVES the rate — a zero-rated document is 0% / 0.00.

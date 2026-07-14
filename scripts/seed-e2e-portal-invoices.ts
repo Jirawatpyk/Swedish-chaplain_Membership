@@ -319,6 +319,10 @@ async function renderAndUploadPdf(
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate,
+    // so this value is inert for the rendered bytes; `false` matches the
+    // fixture's snapshot (buyer_is_vat_registrant unset above).
+    buyerIsVatRegistrant: false,
     lines: [
       {
         lineId: asInvoiceLineId(randomUUID()),

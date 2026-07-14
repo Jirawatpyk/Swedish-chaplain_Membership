@@ -620,6 +620,9 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
         logo_blob_key: null,
       },
       member,
+      // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate
+      // (this file's subject is PII redaction, not the Tax ID line).
+      buyerIsVatRegistrant: false,
       lines: [line],
       subtotal: Money.fromSatangUnsafe(9_350n),
       vatRate: VatRate.ofUnsafe('0.0700'),

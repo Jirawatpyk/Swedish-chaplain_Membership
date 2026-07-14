@@ -185,6 +185,20 @@
  *     renders byte-identical at v11 as at v10 (the line prints either way); only a
  *     NON-registrant with a stored identifier differs — which is the entire point.
  *
+ *     "Registrant" here means the RESOLVED value every caller derives through
+ *     `resolveBuyerIsVatRegistrant` (domain/document-kind.ts) — the RECORDED
+ *     `members.is_vat_registered` for a matched member, TIN-PRESENCE for a
+ *     WALK-IN (no `members` row to record it on). PR-A Task 6b (2026-07-15) fixed
+ *     a bug in the initial v11 shipment where the template read the snapshot's
+ *     OWN `buyer_is_vat_registrant` field directly — always `false` for a
+ *     walk-in by design (see document-kind.ts) — instead of that resolved value.
+ *     That silently suppressed a walk-in registrant's own TIN from the exact
+ *     document their TIN classed as a §86/4 tax invoice. `PdfRenderInput` now
+ *     carries the resolved value as a top-level `buyerIsVatRegistrant` field
+ *     (never part of `member`, so it cannot be mistaken for the frozen
+ *     snapshot); the claim above holds for BOTH buyer shapes once the correct
+ *     source is read.
+ *
  *     NOTE: the sibling country-NAME fix in `composeBuyerAddress` (raw `SV` →
  *     "El Salvador") needs NO gate and has none — it runs at ISSUE time and its
  *     output is frozen into the snapshot's `address` STRING. An already-issued
