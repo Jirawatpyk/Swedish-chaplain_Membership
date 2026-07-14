@@ -2136,7 +2136,7 @@
           "pending": "Dokumenttyp sätts vid utfärdande",
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
           "ariaTaxInvoiceReceipt": "Ett kombinerat dokument (skattefaktura/kvitto) utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
-          "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
+          "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen inte är registrerad som momsregistrerad.",
           "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas.",
           "bill088": "ใบแจ้งหนี้ (Faktura)",
           "ariaBill088": "Utfärdas som en ใบแจ้งหนี้ (faktura); §86/4-skattefakturan/kvittot utfärdas när betalningen registreras."
@@ -2175,7 +2175,7 @@
             "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID.",
             "hint088": "Utfärda en ใบแจ้งหนี้ (faktura) nu och registrera betalningen senare; §86/4-skattekvittot utfärdas vid betalning. Kräver köparens skatte-ID."
           },
-          "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
+          "billFirstNeedsTin": "Köparen är inte registrerad som momsregistrerad — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning. Om köparen är momsregistrerad, markera det på medlemsposten först.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
           "refundedBlockedTitle": "Registreringen är återbetald",
           "refundedBlocked": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
@@ -2443,7 +2443,7 @@
           "failed": "Kunde inte utfärda",
           "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",
           "refreshAction": "Uppdatera",
-          "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
+          "event_no_tin_requires_paid_issue": "Köparen är inte registrerad som momsregistrerad — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg. Om köparen är momsregistrerad, markera det på medlemsposten först.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du utfärdar.",
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",

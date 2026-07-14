@@ -61,17 +61,22 @@ export type AttendeeRow = {
   readonly paymentStatus: string;
   readonly isPseudonymised: boolean;
   /**
-   * 064 remediation B5 — server-truth tax-id PRESENCE for MATCHED members
-   * (derived server-side from the F3 member's tax_id; only the boolean
-   * crosses the wire, never the raw TIN):
-   *   - `true` / `false` — matched member, presence resolved;
-   *   - `null`           — non-member (the manual buyer tax-id field rules
-   *                        there) OR a matched id the lookup couldn't
-   *                        resolve (degraded enrichment);
-   *   - absent           — an older API response shape; callers fall back
-   *                        to the legacy "matched ⇒ has TIN" guess.
+   * 059 / PR-A Task 6c — server-truth VAT-REGISTRANT status for MATCHED
+   * members, read from the recorded `members.is_vat_registered` flag (only the
+   * boolean crosses the wire; the raw tax-id is never even read):
+   *   - `true` / `false` — matched member, flag resolved;
+   *   - `null`           — non-member (the manual buyer's tax-id field rules
+   *                        there) OR a matched id the lookup couldn't resolve
+   *                        (degraded enrichment);
+   *   - absent           — an older API response shape.
+   *
+   * REPLACES the 064-remediation-B5 `buyerHasTin` field. Issuance decides the
+   * event document class on the registrant flag, not on "is tax_id non-blank"
+   * (a foreign member may store a passport there). While this asked the TIN
+   * question, a TIN-bearing NON-registrant was offered bill_first and then
+   * refused at issue with "this buyer has no tax ID" — while visibly having one.
    */
-  readonly buyerHasTin?: boolean | null;
+  readonly buyerIsVatRegistrant?: boolean | null;
 };
 
 /** A matched member is any attendee with a resolved `matchedMemberId`. */

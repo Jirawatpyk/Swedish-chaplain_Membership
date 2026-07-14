@@ -36,7 +36,7 @@ import { logger } from '@/lib/logger';
 import type {
   runListEvents,
   runLoadEventDetail,
-  runListMemberTinPresenceByIds,
+  runListMemberVatRegistrantByIds,
 } from '@/lib/events-admin-deps';
 import type {
   EventId,
@@ -62,10 +62,10 @@ const conId = (s: string) => s as ContactId;
 // breaks tests at compile time, not at runtime.
 const listEventsMock = vi.fn<typeof runListEvents>();
 const loadEventDetailMock = vi.fn<typeof runLoadEventDetail>();
-// 064 remediation B5 — buyerHasTin enrichment seam. Defaults to an empty
+// 064 remediation B5 — buyerIsVatRegistrant enrichment seam. Defaults to an empty
 // map in beforeEach (matched rows then enrich to `null` → the picker's
 // legacy-guess fallback); tests override per-case.
-const tinPresenceMock = vi.fn<typeof runListMemberTinPresenceByIds>();
+const tinPresenceMock = vi.fn<typeof runListMemberVatRegistrantByIds>();
 // R003 (staff-review fix 2026-05-13): routes now call `getCurrentSession`
 // (returns null on no-session, throws on infra failure) instead of
 // `requireSession(...).catch(() => null)` (swallowed all errors as null).
@@ -150,8 +150,8 @@ vi.mock('@/lib/events-admin-deps', () => ({
     listEventsMock(...args),
   runLoadEventDetail: (...args: Parameters<typeof runLoadEventDetail>) =>
     loadEventDetailMock(...args),
-  runListMemberTinPresenceByIds: (
-    ...args: Parameters<typeof runListMemberTinPresenceByIds>
+  runListMemberVatRegistrantByIds: (
+    ...args: Parameters<typeof runListMemberVatRegistrantByIds>
   ) => tinPresenceMock(...args),
 }));
 
@@ -754,15 +754,15 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     expect(body.pagination.totalCount).toBe(47);
   });
 
-  // ── 064 remediation B5 — buyerHasTin enrichment contract ─────────────────
+  // ── 064 remediation B5 — buyerIsVatRegistrant enrichment contract ─────────────────
   // The route enriches each registration with server-truth tax-id PRESENCE
   // for MATCHED members (one batched F3 read via the lib composition root):
   //   - matched + resolved      → the boolean from the lookup map
   //   - matched + NOT resolved  → null (picker falls back to legacy guess)
   //   - non-member / unmatched  → null (manual buyer tax-id field rules)
   // Only the boolean crosses the wire — never the raw tax-id (PII).
-  describe('buyerHasTin enrichment (064 remediation B5)', () => {
-    it('matched member resolved by the TIN lookup → buyerHasTin carries the boolean (false = TIN-less member)', async () => {
+  describe('buyerIsVatRegistrant enrichment (064 remediation B5)', () => {
+    it('matched member resolved by the TIN lookup → buyerIsVatRegistrant carries the boolean (false = TIN-less member)', async () => {
       loadEventDetailMock.mockResolvedValueOnce({
         ok: true,
         value: {
@@ -779,13 +779,13 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       });
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.registrations[0].buyerHasTin).toBe(false);
+      expect(body.registrations[0].buyerIsVatRegistrant).toBe(false);
       // ONE batched lookup with the distinct matched member ids.
       expect(tinPresenceMock).toHaveBeenCalledTimes(1);
       expect(tinPresenceMock).toHaveBeenCalledWith(TENANT_SLUG, ['mem-1']);
     });
 
-    it('matched member with a TIN → buyerHasTin true', async () => {
+    it('matched member with a TIN → buyerIsVatRegistrant true', async () => {
       loadEventDetailMock.mockResolvedValueOnce({
         ok: true,
         value: {
@@ -802,10 +802,10 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
           params: Promise.resolve({ eventId: 'evt-1' }),
         })
       ).json();
-      expect(body.registrations[0].buyerHasTin).toBe(true);
+      expect(body.registrations[0].buyerIsVatRegistrant).toBe(true);
     });
 
-    it('non-member registration → buyerHasTin null AND the TIN lookup is never called', async () => {
+    it('non-member registration → buyerIsVatRegistrant null AND the TIN lookup is never called', async () => {
       loadEventDetailMock.mockResolvedValueOnce({
         ok: true,
         value: {
@@ -828,12 +828,12 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
           params: Promise.resolve({ eventId: 'evt-1' }),
         })
       ).json();
-      expect(body.registrations[0].buyerHasTin).toBeNull();
+      expect(body.registrations[0].buyerIsVatRegistrant).toBeNull();
       // No matched ids on the page → zero extra DB cost.
       expect(tinPresenceMock).not.toHaveBeenCalled();
     });
 
-    it('matched member ABSENT from the lookup map (lookup degraded) → buyerHasTin null (legacy-guess fallback)', async () => {
+    it('matched member ABSENT from the lookup map (lookup degraded) → buyerIsVatRegistrant null (legacy-guess fallback)', async () => {
       loadEventDetailMock.mockResolvedValueOnce({
         ok: true,
         value: {
@@ -842,7 +842,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
           pagination: { page: 1, pageSize: 50, totalCount: 1 },
         },
       });
-      // beforeEach default: empty map (the runListMemberTinPresenceByIds
+      // beforeEach default: empty map (the runListMemberVatRegistrantByIds
       // wrapper degrades to an empty map on lookup failure).
 
       const { GET } = await loadDetailRoute();
@@ -851,7 +851,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
           params: Promise.resolve({ eventId: 'evt-1' }),
         })
       ).json();
-      expect(body.registrations[0].buyerHasTin).toBeNull();
+      expect(body.registrations[0].buyerIsVatRegistrant).toBeNull();
     });
   });
 

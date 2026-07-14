@@ -3721,20 +3721,28 @@ export const eventcreateMetrics = {
   },
 
   /**
-   * 065 L-1 — the B5 `buyerHasTin` enrichment lookup degraded: the
-   * batched member-TIN-presence read (`runListMemberTinPresenceByIds`)
-   * threw and the F6 admin event-detail response fell back to the
-   * legacy "matched ⇒ has TIN" client guess. The picker still renders
-   * and the server-side issuance guards stay authoritative, but a
-   * TIN-less matched member gets the WRONG default issuance mode until
-   * the server rejects at issue. Alert: sustained non-zero rate per
-   * tenant (RLS drift / Neon outage scoped to the members read).
+   * 065 L-1 — the `buyerIsVatRegistrant` enrichment lookup degraded: the
+   * batched members read (`runListMemberVatRegistrantByIds`) threw, and the
+   * F6 admin event-detail response fell back to OFFERING bill_first.
+   *
+   * 059 / PR-A Task 6c — the lookup used to read tax-id PRESENCE; it now reads
+   * the recorded `members.is_vat_registered` flag, because that is what
+   * issuance decides the event document class on. The metric NAME is unchanged
+   * (`eventcreate_member_tin_enrichment_degraded_total`) deliberately: renaming
+   * a counter breaks its existing dashboards and alert rules, and the thing it
+   * measures — "this enrichment lookup failed" — has not changed.
+   *
+   * The picker still renders and the server-side issuance guards stay
+   * authoritative, but a NON-registrant matched member is offered the WRONG
+   * default issuance mode until the server rejects at issue. Alert: sustained
+   * non-zero rate per tenant (RLS drift / Neon outage scoped to the members
+   * read).
    */
   tinEnrichmentDegraded(tenantId: string): void {
     safeMetric(() => {
       counter(
         'eventcreate_member_tin_enrichment_degraded_total',
-        'F6 buyerHasTin enrichment lookup failed — registrations fell back to the legacy matched⇒has-TIN guess',
+        'F6 buyerIsVatRegistrant enrichment lookup failed — registrations fell back to offering bill_first (the server gate stays authoritative)',
       ).add(1, { tenant: tenantId });
     });
   },

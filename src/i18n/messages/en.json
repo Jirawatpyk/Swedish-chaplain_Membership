@@ -2136,7 +2136,7 @@
           "pending": "Document type set at issue",
           "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
           "ariaTaxInvoiceReceipt": "A combined tax invoice/receipt will be issued because the buyer has a tax ID and the fee is already paid.",
-          "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
+          "ariaReceipt": "This will be issued as a receipt because the buyer is not recorded as VAT-registered.",
           "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued.",
           "bill088": "Invoice / ใบแจ้งหนี้",
           "ariaBill088": "This will be issued as an invoice (ใบแจ้งหนี้); the §86/4 tax invoice/receipt is issued when payment is recorded."
@@ -2175,7 +2175,7 @@
             "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
             "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
-          "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
+          "billFirstNeedsTin": "This buyer is not recorded as VAT-registered — the fee must be recorded as already paid; an invoice cannot be issued before payment. If they are VAT-registered, tick that on the member record first.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
           "refundedBlockedTitle": "Registration refunded",
           "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
@@ -2443,7 +2443,7 @@
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
           "refreshAction": "Refresh",
-          "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
+          "event_no_tin_requires_paid_issue": "This buyer is not recorded as VAT-registered — the ticket fee must be recorded as paid (issuing a receipt), not billed first. If they are VAT-registered, tick that on the member record first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "settings_missing": "Invoice settings haven't been configured for this organisation yet — configure them before issuing.",
           "member_archived": "This member is archived and can't be invoiced — restore the member first.",
