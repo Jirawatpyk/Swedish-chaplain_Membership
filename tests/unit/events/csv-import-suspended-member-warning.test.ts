@@ -367,4 +367,45 @@ describe('059-membership-suspension Task 17 — suspended/terminated member CSV-
     ).toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it('membership-access lookup THROWS (port contract violation): fails open — registration still recorded, not rolled back, no warning, no audit, logs a warning', async () => {
+    vi.clearAllMocks();
+    const getMembershipAccess = vi.fn(async () => {
+      throw new Error('boom: adapter contract violated');
+    });
+    const { deps, auditEmit } = makeFakeDeps({ getMembershipAccess });
+
+    const outcome = await importCsv(
+      {
+        tenantId: asTenantId('test-chamber-susp'),
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000306'),
+        bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
+      },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('completed');
+    if (outcome.kind !== 'completed') return;
+
+    // The throw must NOT propagate to the savepoint catch-all and roll
+    // back the already-inserted registration — the row stays recorded,
+    // not failed/skipped.
+    expect(outcome.summary.rowsProcessed).toBe(1);
+    expect(outcome.summary.rowsFailed).toBe(0);
+    expect(outcome.summary.rowsSkipped).toBe(0);
+
+    // No warning added (same fail-open shape as the `err(...)` case).
+    expect(outcome.summary.suspendedMemberWarnings).toHaveLength(0);
+
+    // No forensic audit event either — the throw happened before the
+    // audit-emit try/catch further down ever ran.
+    expect(
+      auditEmit.mock.calls.find(
+        (c) => c[0]?.eventType === 'event_attendance_by_suspended_member',
+      ),
+    ).toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalled();
+  });
 });

@@ -1145,10 +1145,41 @@ async function checkSuspendedMemberWarning(
   readonly memberId: MemberId;
   readonly accessState: 'suspended' | 'terminated';
 } | null> {
-  const access = await ports.membershipAccess.getMembershipAccess(
-    input.tenantId,
-    matchedMemberId,
-  );
+  // Fail-open guard (2026-07-14 review finding): the port contract says
+  // "never throws" and the concrete adapter
+  // (`membership-access-bridge.ts`) wraps its body accordingly, but this
+  // is pure observability layered AFTER `processAttendeeInTx` already
+  // committed the attendance row inside the savepoint. If this call
+  // somehow threw (contract violation), letting the exception escape
+  // would propagate to the savepoint catch-all at the bottom of
+  // `processOneRowInSavepoint` and roll back the just-inserted
+  // registration — reporting the row as `row_failed` and destroying
+  // already-recorded attendance data. That is the opposite of this
+  // function's invariant (never block/undo recording), so the lookup
+  // gets its OWN try/catch here — separate from the audit-emit
+  // try/catch below — and a throw is handled exactly like the
+  // `!access.ok` branch: log + return null (no warning, no audit).
+  let access: Awaited<
+    ReturnType<typeof ports.membershipAccess.getMembershipAccess>
+  >;
+  try {
+    access = await ports.membershipAccess.getMembershipAccess(
+      input.tenantId,
+      matchedMemberId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_csv_suspended_member_check_lookup_threw',
+        tenantId: input.tenantId,
+        rowNumber,
+        matchedMemberId,
+        err: toErrMessage(e),
+      },
+      '[F6.1] suspended-member membership-access lookup THREW (port contract violation) — proceeding without a warning (fail-open; row already recorded normally)',
+    );
+    return null;
+  }
   if (!access.ok) {
     logger.warn(
       {
