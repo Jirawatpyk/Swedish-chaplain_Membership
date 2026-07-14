@@ -18,7 +18,7 @@
  *
  * Free functions (NOT MemberRepo methods) — the established narrow-read
  * pattern (`getMemberErasureStatus` / `countActiveMembersOnPlan` /
- * `memberTinPresenceByIdsInTx`) avoids widening the MemberRepo interface +
+ * `memberVatRegistrantByIdsInTx`) avoids widening the MemberRepo interface +
  * its many test stubs.
  *
  * RLS (Principle I): both reads thread the `runInTenant` tx, never the global

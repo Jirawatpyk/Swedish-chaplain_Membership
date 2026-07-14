@@ -209,7 +209,7 @@ export { memberVatRegistrantByIdsInTx } from './infrastructure/db/member-vat-reg
 
 // COMP-1 US3-A — narrow erasure-status read for the member-detail ErasedBanner.
 // Same free-function-through-the-barrel narrow-read pattern as the
-// countActiveMembersOnPlan / memberTinPresenceByIdsInTx pair above (avoids
+// countActiveMembersOnPlan / memberVatRegistrantByIdsInTx pair above (avoids
 // widening the MemberRepo interface + its many test stubs). Threads its own
 // runInTenant tx internally (Principle I).
 export {

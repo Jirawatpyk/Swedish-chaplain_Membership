@@ -7,7 +7,7 @@
  * and `completed` to decide the banner's "completion pending" line.
  *
  * Free function (NOT a MemberRepo method) — the established narrow-read pattern
- * (countActiveMembersOnPlan / memberTinPresenceByIdsInTx) avoids widening the
+ * (countActiveMembersOnPlan / memberVatRegistrantByIdsInTx) avoids widening the
  * MemberRepo interface and its many test stubs.
  *
  * RLS: `members` is RLS-scoped, so `m.member_id = <id>` inside runInTenant
