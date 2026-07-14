@@ -340,22 +340,16 @@ Both were verified against rd.go.th primary text. v2 cited 199 alone for both pa
 | **Country** | 127 Thailand · 4 Sweden · 19 N/A. |
 | Entity types **absent** | No cooperative, no representative/regional office, no government agency, no embassy. The defaults for those are therefore not urgent. |
 
-### 16.4 Two different padding questions — do not conflate them
+### 16.4 Zero-padding a foreign Tax ID — still refused
 
-**(a) The reviewer's ask: zero-pad a FOREIGN tax ID shorter than 13 digits. Still refused.**
-
-Their instruction was *"ถ้าบางประเทศน้อยกว่า 13 หลัก ให้ใช้ 0000 ข้างหน้า"* — pad a foreign identifier out to 13 digits. We do not do this, and the reasons in § 3 #2 are unchanged:
+The reviewer asked for *"ถ้าบางประเทศน้อยกว่า 13 หลัก ให้ใช้ 0000 ข้างหน้า"* — pad a foreign identifier out to 13 digits. We do not, and the reasons in § 3 #2 are unchanged:
 - A padded number lands inside the **Thai 13-digit TIN namespace** and can match a *different, real* Thai taxpayer.
 - A passport / work-permit number is alphanumeric — it cannot be padded into a digit string without fabricating one.
-- It is a **false particular on a tax document**, which is a penalty risk, not a UX preference.
+- It is a **false particular on a tax document**: a penalty risk, not a UX preference.
 
-A foreign identifier that is not 13 digits is not a *truncated* 13-digit ID — it is simply a different kind of identifier. Store it verbatim, and omit the Tax ID line on the document when the buyer is not a Thai VAT registrant (which, per ประกาศ 196, is exactly when no buyer TIN is required at all).
+A foreign identifier that is not 13 digits is not a *truncated* 13-digit ID — it is a different kind of identifier. Store it verbatim, and omit the Tax ID line on the document when the buyer is not a Thai VAT registrant (per ประกาศ 196, exactly the case where no buyer TIN is required at all).
 
-**(b) A separate, real problem the data revealed: Excel ate the leading zero on 113 Thai TINs.**
-
-A Thai juristic TIN always begins with `0`. TSCC's spreadsheet stored them as *numbers*, so `0105562087242` came out as `105562087242` — 12 digits. This is unrelated to (a): here the digit genuinely exists and Excel deleted it.
-
-**The importer must left-pad a Thai TIN back to 13 digits** — restoring a digit, not inventing one — and then verify the Mod-11 checksum, which will fail loudly if the padding assumption was ever wrong. **Foreign identifiers are still never padded.**
+> **Not this spec's problem:** TSCC's spreadsheet has a *separate* padding issue — Excel stored the Thai TINs as numbers and ate their leading zero (113 rows). That is an **importer** concern, not a form concern; it is recorded in § 16.3 and belongs to `scripts/import-members/`.
 
 ### 16.5 Tax ID is required **only when the buyer is a VAT registrant**
 
