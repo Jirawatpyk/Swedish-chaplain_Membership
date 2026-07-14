@@ -12,11 +12,14 @@
  * effect that fired on mount because `useWatch` returns `defaultValues` on
  * the first render).
  *
+ * Seeds in BOTH modes as of 059 / PR-A. It used to bail out on create, because
+ * the checkbox rendered only on edit and `toPayload` never sent the field — so
+ * seeding it would have been silent dead state. Both of those are now fixed: the
+ * checkbox renders at create and the payload carries it. Leaving the bail-out in
+ * would have been worse than useless — the admin picks "Limited company" at
+ * create, the box does not tick, and the member is born a non-registrant.
+ *
  * Returns the value to seed, or `null` when nothing should be written:
- *   - `mode !== 'edit'` — `is_vat_registered` only renders in
- *     `TaxBranchSection` (edit-only, same posture as `is_head_office` /
- *     `branch_code`); seeding it on create would be silent dead state
- *     (`create-member-client.tsx`'s `toPayload` never reads the field).
  *   - `code` has no safe default (`association` / `foundation` — see
  *     `VAT_DEFAULT_BY_CODE`'s docblock: VAT registration follows turnover,
  *     not legal form, and TSCC is itself a VAT-registered association).
@@ -35,7 +38,6 @@ export function resolveVatSeed(args: {
   readonly code: string;
   readonly vatManuallyTouched: boolean;
 }): boolean | null {
-  if (args.mode !== 'edit') return null;
   if (args.vatManuallyTouched) return null;
   if (!isLegalEntityTypeCode(args.code)) return null;
   return VAT_DEFAULT_BY_CODE[args.code];

@@ -90,7 +90,6 @@ function makeInput(
     },
     // 059 / PR-A Task 6b — irrelevant to this file's subject (page count /
     // ORIGINAL+COPY markers); `true` matches the fixture's own `tax_id`.
-    buyerIsVatRegistrant: true,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),

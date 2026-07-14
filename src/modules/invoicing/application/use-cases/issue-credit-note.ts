@@ -752,7 +752,6 @@ export async function issueCreditNote(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo,
             member: loaded.memberIdentitySnapshot,
-            buyerIsVatRegistrant,
             lines: [syntheticLine],
             // Money fields carry the credit-note's own amounts — the
             // template reads these for the totals block.
@@ -949,7 +948,6 @@ export async function issueCreditNote(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo: annotationTenantLogo,
             member: loaded.memberIdentitySnapshot,
-            buyerIsVatRegistrant,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
             vatRate: loaded.vatRate,

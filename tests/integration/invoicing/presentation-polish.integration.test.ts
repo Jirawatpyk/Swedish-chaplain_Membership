@@ -104,7 +104,6 @@ function makeInput(opts: {
       logo_blob_key: null,
     },
     member,
-    buyerIsVatRegistrant: opts.buyerIsVatRegistrant ?? member.buyer_is_vat_registrant === true,
     lines: makeLines(),
     // 1,000.00 THB net + 70.00 VAT = 1,070.00 THB total → unambiguous grouping.
     subtotal: Money.fromSatangUnsafe(100_000n),

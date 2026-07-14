@@ -542,16 +542,41 @@ describe('buyer branch + VAT-registrant fields (088-invoice-tax-flow-redesign)',
 // replaces this one). A snapshot with `buyer_is_vat_registrant: true` and
 // `tax_id: null` must fail loud, not degrade into a defective §86/4 document.
 describe('registrant ⇒ TIN invariant (059 / PR-A Task 4)', () => {
-  it('rejects buyer_is_vat_registrant=true with a null tax_id on the raw schema', () => {
+  it('the WRITE path rejects buyer_is_vat_registrant=true with a null tax_id', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        tax_id: null,
+        buyer_is_vat_registrant: true,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('the READ path ACCEPTS that shape — an already-issued document must stay readable', () => {
+    // The invariant is a WRITE rule, and it lives in `makeMemberIdentitySnapshot`,
+    // NOT in the schema's superRefine. This test is the reason.
+    //
+    // `memberIdentitySnapshotSchema` is ALSO the read boundary: DrizzleInvoiceRepo's
+    // `parseMemberIdentitySnapshot` runs it over the frozen JSONB of every invoice
+    // row, and `list()` / `listPaged()` map rows with no per-row guard. Putting the
+    // rule in the shared schema made it RETROACTIVE — a document issued under the
+    // old rules (the deleted guess inferred `buyer_is_vat_registrant` from
+    // `legal_entity_type` alone, never consulting `tax_id`) becomes unparseable,
+    // and ONE such row takes down the entire invoice list page: an unhandled 500,
+    // no error code, no audit trail. That is the exact class of silent failure this
+    // branch exists to remove, reintroduced by the branch's own new rule.
+    //
+    // Same principle the templateVersion gate encodes for rendering: a document
+    // already issued must remain readable and reproducible forever. A constraint on
+    // what we may CREATE must never invalidate what we already WROTE. Correcting a
+    // historical particular is a credit note (§86/10) — not a parse error on
+    // someone's invoice list.
     const result = memberIdentitySnapshotSchema.safeParse({
       ...validSnapshot,
       tax_id: null,
       buyer_is_vat_registrant: true,
     });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues.some((i) => i.path[0] === 'tax_id')).toBe(true);
-    }
+    expect(result.success).toBe(true);
   });
 
   it('accepts buyer_is_vat_registrant=true WITH a tax_id on the raw schema', () => {

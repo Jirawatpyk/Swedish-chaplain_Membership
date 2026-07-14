@@ -357,6 +357,41 @@ describe('create-member integration (T041, US1)', () => {
     expect(onRows[0]!.isVatRegistered).toBe(true);
   });
 
+  it('registrant ⇒ TIN: a VAT registrant with NO tax_id is REJECTED, and no row is written (059 / PR-A Task 4)', async () => {
+    // The NEGATIVE case, against the real database. Every other proof of this
+    // invariant on this branch runs against a mocked `runInTenant` — which can
+    // only show that the use case returns an error object, never that the row
+    // was not written.
+    //
+    // ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่/สาขา) are a PAIR: both are
+    // mandatory of a VAT-registrant buyer. A member stored as
+    // `is_vat_registered = true` with no `tax_id` would print the branch line on
+    // a §86/4 tax invoice with NO taxpayer number on it — a defective legal
+    // document. This is the state that must be unreachable.
+    const deps = buildMembersDeps(tenant.ctx);
+
+    const before = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.tenantId, tenant.ctx.slug)),
+    );
+
+    const result = await createMember(
+      { ...goodInput(planId), is_vat_registered: true, tax_id: null },
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-no-tin` },
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('invalid_body');
+
+    // The point of doing this on live Neon: prove nothing landed. A mocked repo
+    // cannot tell you that.
+    const after = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.tenantId, tenant.ctx.slug)),
+    );
+    expect(after).toHaveLength(before.length);
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {

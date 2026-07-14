@@ -99,7 +99,6 @@ function makeInput(opts: {
       logo_blob_key: null,
     },
     member,
-    buyerIsVatRegistrant: opts.buyerIsVatRegistrant ?? member.buyer_is_vat_registrant === true,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),
@@ -274,7 +273,6 @@ describe('088 US3 — §86/4 Head-Office / Branch on both parties (FR-008)', () 
         makeInput({
           templateVersion: 5,
           member: walkInSnapshotParts,
-          buyerIsVatRegistrant: resolvedRegistrant,
         }),
       ),
     )[0]!;

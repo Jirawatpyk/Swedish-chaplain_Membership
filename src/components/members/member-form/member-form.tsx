@@ -225,13 +225,24 @@ export function MemberForm({
         <MembershipSection plans={plans} mode={mode} onPlanIdChange={setPlanId} />
         <AddressSection mode={mode} />
 
-        {mode === 'edit' && (
-          <TaxBranchSection
-            isHeadOffice={isHeadOffice}
-            onIsHeadOfficeChange={setIsHeadOffice}
-            vatManuallyTouchedRef={vatManuallyTouchedRef}
-          />
-        )}
+        {/* 059 / PR-A — rendered on CREATE as well as edit (it used to be
+            edit-only). `is_vat_registered` is what makes the buyer's
+            "สำนักงานใหญ่ / สาขาที่ NNNNN" line print (ประกาศอธิบดีฯ 199), and with
+            the section hidden at create there was NO path — not this form, not
+            the bulk importer — that could set it when the member was created.
+            Every member was born a non-registrant and had to be edited
+            afterwards to become one, which is exactly how the original defect
+            (no member ever received the line) would have quietly returned.
+
+            The head-office / branch controls inside the section reveal
+            themselves only once the VAT box is ticked, so a natural person
+            still never sees them. */}
+        <TaxBranchSection
+          mode={mode}
+          isHeadOffice={isHeadOffice}
+          onIsHeadOfficeChange={setIsHeadOffice}
+          vatManuallyTouchedRef={vatManuallyTouchedRef}
+        />
 
         {/* --- Primary contact section --- */}
         <fieldset className="flex flex-col gap-4 rounded-md border p-4">

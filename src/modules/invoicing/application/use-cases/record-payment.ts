@@ -747,7 +747,6 @@ export async function recordPayment(
                 tenant: loaded.tenantIdentitySnapshot,
                 tenantLogo,
                 member: loaded.memberIdentitySnapshot,
-                buyerIsVatRegistrant,
                 lines: loaded.lines,
                 subtotal: loaded.subtotal,
                 vatRate: loaded.vatRate,

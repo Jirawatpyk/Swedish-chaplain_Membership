@@ -582,7 +582,6 @@ export async function issueEventInvoiceAsPaid(
             // 059 / PR-A Task 6b — the SAME resolved value used for the
             // §86/4/§105 kind decision above (`pdfKind`), so the Tax ID line's
             // print decision can never disagree with it.
-            buyerIsVatRegistrant,
             lines: draft.lines,
             subtotal,
             vatRate: settings.vatRate,

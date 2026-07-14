@@ -158,53 +158,46 @@
  *     invoice / bill / receipt / credit-note document) renders byte-identical at
  *     v10 as at v9 (proven: standard receipt v9↔v10 byte-length equal —
  *     zero-rate-pdf-golden §C + status-stamp-opacity.integration.test.ts).
- *   - **v11** (2026-07-14, 059-member-tax-correctness / PR-A Task 6a) — the BUYER
- *     Tax ID line now prints ONLY for a VAT REGISTRANT. A buyer TIN is a §86/4
- *     particular required only of a ผู้ประกอบการจดทะเบียน (ประกาศอธิบดีฯ ฉบับที่
- *     196); pre-v11 the template printed ANY non-blank `tax_id` with no registrant
- *     check. That became unsafe when `members.tax_id` began accepting a foreign
- *     natural person's PASSPORT / work-permit number (they have no Thai TIN):
- *     their identifier would have been printed on a legal tax document as a
- *     taxpayer number — a FALSE PARTICULAR. From v11 the line requires
- *     `buyer_is_vat_registrant === true` on the pinned snapshot (the RECORDED
- *     `members.is_vat_registered`, migration 0246 — never `buyerHasTin`, the same
- *     rule the v5 branch line already follows).
+ *   - **v11** (2026-07-15, 059-member-tax-correctness / PR-A) — the BUYER Tax ID
+ *     line now prints ONLY when the stored value is ACTUALLY A THAI TIN: 13
+ *     digits with a correct weighted check digit (`isThaiTaxId`,
+ *     src/lib/thai-tax-id.ts). Pre-v11 the template printed ANY non-blank
+ *     `tax_id` with no check at all.
+ *
+ *     That became unsafe when `members.tax_id` began accepting a foreign natural
+ *     person's PASSPORT / work-permit number (they have no Thai TIN): their
+ *     identifier would print on a legal tax document as a taxpayer number — a
+ *     FALSE PARTICULAR (ประกาศอธิบดีฯ ฉบับที่ 196).
+ *
+ *     THE RULE WAS CORRECTED MID-BRANCH, AND THE HISTORY IS THE POINT. v11 first
+ *     shipped keyed on VAT-REGISTRANT status, which conflated the passport case
+ *     above with a completely different one: a Thai NATURAL PERSON's number. An
+ *     individual's taxpayer identification number IS their 13-digit national ID —
+ *     printing it is TRUE, and they need it on the document to claim their
+ *     personal income-tax deduction. A บุคคลธรรมดา is never a VAT registrant, so
+ *     the registrant gate silently ERASED THEIR OWN TAX NUMBER FROM THEIR OWN
+ *     DOCUMENT. The check digit separates a real Thai TIN from a passport or a
+ *     foreign registration number with near-certainty; VAT-registrant status
+ *     cannot, and never could.
+ *
+ *     Registrant status still gates the สำนักงานใหญ่/สาขา line (v5 rule,
+ *     unchanged): ประกาศ 199 requires THAT particular only of a registrant, and a
+ *     13-digit number cannot evidence head-office/branch status — a national ID
+ *     is 13 digits too. THE TWO PARTICULARS ANSWER DIFFERENT QUESTIONS AND MUST
+ *     NEVER BE UNIFIED.
  *
  *     Gated on `templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION` (=11, see
  *     templates/invoice-template.tsx). THE GATE IS LOAD-BEARING: an issued PDF is
  *     NOT write-once — void-invoice.ts and issue-credit-note.ts (credited
  *     annotation) both re-render with the CURRENTLY DEPLOYED template against the
  *     frozen snapshot at the document's PINNED version and overwrite the same
- *     blobKey. Because `buyer_is_vat_registrant` is `.optional().default(false)`,
- *     every snapshot written before that field existed reads back FALSE — so an
- *     UN-gated change would have silently DROPPED the Tax ID line from an
+ *     blobKey. An UN-gated change would silently DROP the Tax ID line from an
  *     already-issued document the moment it was voided or credit-noted. A pinned
  *     pre-v11 document keeps the legacy unconditional print and reproduces its
- *     ORIGINAL bytes — the SC-003 guarantee, exactly like the v3–v10 gates. Only
- *     v11+ issuances apply the registrant rule. A registrant buyer's document
- *     renders byte-identical at v11 as at v10 (the line prints either way); only a
- *     NON-registrant with a stored identifier differs — which is the entire point.
+ *     ORIGINAL bytes — the SC-003 guarantee, exactly like the v3–v10 gates.
  *
- *     "Registrant" here means the RESOLVED value every caller derives through
- *     `resolveBuyerIsVatRegistrant` (domain/document-kind.ts) — the RECORDED
- *     `members.is_vat_registered` for a matched member, TIN-PRESENCE for a
- *     WALK-IN (no `members` row to record it on). PR-A Task 6b (2026-07-15) fixed
- *     a bug in the initial v11 shipment where the template read the snapshot's
- *     OWN `buyer_is_vat_registrant` field directly — always `false` for a
- *     walk-in by design (see document-kind.ts) — instead of that resolved value.
- *     That silently suppressed a walk-in registrant's own TIN from the exact
- *     document their TIN classed as a §86/4 tax invoice. `PdfRenderInput` now
- *     carries the resolved value as a top-level `buyerIsVatRegistrant` field
- *     (never part of `member`, so it cannot be mistaken for the frozen
- *     snapshot); the claim above holds for BOTH buyer shapes once the correct
- *     source is read.
- *
- *     NOTE: the sibling country-NAME fix in `composeBuyerAddress` (raw `SV` →
- *     "El Salvador") needs NO gate and has none — it runs at ISSUE time and its
- *     output is frozen into the snapshot's `address` STRING. An already-issued
- *     document re-renders from its own frozen string and is untouched. That is
- *     DATA; this is TEMPLATE LOGIC. The distinction is the whole reason this
- *     registry exists.
+ *     v11 was never deployed under the earlier registrant-based rule, so
+ *     redefining it (rather than minting v12) alters no issued document.
  */
 
 export const CURRENT_TEMPLATE_VERSION = 11 as const;

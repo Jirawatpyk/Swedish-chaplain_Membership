@@ -81,4 +81,4 @@
 -- schema and contact-crud.ts's addContactSchema) — the two collection entry
 -- points, closed by construction. This column is the durable evidence of
 -- that gate having fired, not the gate itself.
-ALTER TABLE "contacts" ADD COLUMN "art14_attested_at" timestamp with time zone;
+ALTER TABLE "contacts" ADD COLUMN IF NOT EXISTS "art14_attested_at" timestamp with time zone;

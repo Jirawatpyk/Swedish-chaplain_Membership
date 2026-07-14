@@ -141,7 +141,6 @@ function makeEventRenderInput(opts: {
     // 059 / PR-A Task 6b — mirrors `resolveBuyerIsVatRegistrant`'s WALK-IN
     // branch (TIN-presence): this fixture always models a non-member event
     // buyer ("Walk-in Guest" when `buyerTaxId` is null).
-    buyerIsVatRegistrant: opts.buyerTaxId !== null,
     lines: makeEventLine(),
     subtotal: Money.fromSatangUnsafe(100_000n), // 1,000.00 net
     vatRate: VatRate.ofUnsafe('0.0700'),

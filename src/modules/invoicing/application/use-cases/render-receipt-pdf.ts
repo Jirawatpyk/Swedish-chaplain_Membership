@@ -260,7 +260,6 @@ export async function renderReceiptPdf(
             tenant: loaded.tenantIdentitySnapshot,
             tenantLogo,
             member: loaded.memberIdentitySnapshot,
-            buyerIsVatRegistrant,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
             vatRate: loaded.vatRate,

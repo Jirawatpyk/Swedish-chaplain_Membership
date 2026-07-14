@@ -123,7 +123,6 @@ export async function previewInvoiceDraft(
       // `draft.memberId` non-null), so this equals the snapshot's recorded
       // flag; routed through the shared resolver for consistency with every
       // other render call site rather than re-deriving by hand.
-      buyerIsVatRegistrant: resolveBuyerIsVatRegistrant(draft.memberId, member.snapshot),
       lines: draft.lines,
       subtotal,
       vatRate: settings.vatRate,

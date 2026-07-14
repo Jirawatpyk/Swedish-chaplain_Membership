@@ -379,40 +379,40 @@ const WHT_NOTE_WRAP_FIX_MIN_VERSION = 9;
 export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
 
 /**
- * 059 / PR-A Task 6a — first template version that prints the BUYER's Tax ID
- * line ONLY for a VAT REGISTRANT.
+ * 059 / PR-A — first template version that prints the BUYER's Tax ID line ONLY
+ * when the stored value is ACTUALLY A THAI TIN: 13 digits with a correct
+ * weighted check digit (`isThaiTaxId`, src/lib/thai-tax-id.ts).
  *
- * A buyer TIN is a §86/4 particular required only of a VAT registrant
- * (ประกาศอธิบดีฯ ฉบับที่ 196). A NON-registrant's identifier — a foreign
- * organisation number, or now a foreign natural person's PASSPORT /
- * work-permit number, which `members.tax_id` legitimately accepts — has no
- * place on the document, and printing it is a FALSE PARTICULAR. Pre-v11 the
- * line printed on any non-blank `tax_id`, with no registrant check at all.
+ * THE RULE CHANGED LATE, AND THE REASON MATTERS. It first keyed on
+ * VAT-REGISTRANT status, which conflated two unrelated things:
  *
- * THE GATE IS LOAD-BEARING, NOT DECORATION. An issued PDF is NOT write-once:
- * `void-invoice.ts` and `issue-credit-note.ts` (the credited-annotation overlay)
- * both RE-RENDER with the CURRENTLY DEPLOYED template code against the FROZEN
- * snapshot, at the document's PINNED `templateVersion`, and re-upload to the
- * SAME blobKey with `allowOverwrite: true`. And
- * `member-identity-snapshot.ts` declares `buyer_is_vat_registrant` as
- * `.optional().default(false)` — so EVERY snapshot written before that field
- * existed omits the key and reads back FALSE. Un-gated, this change would
- * silently DROP the Tax ID line from an already-issued document the moment
- * someone voids or credit-notes it. Gated, a document pinned to v<=10 keeps its
- * legacy unconditional print and reproduces its original bytes — the SC-003
- * guarantee, exactly like the v3-v10 gates. Registry log: template-registry.ts v11.
+ *   - a foreign member's PASSPORT / work-permit / foreign organisation number,
+ *     which `members.tax_id` legitimately accepts. Printing THAT under the label
+ *     "Tax ID" is a FALSE PARTICULAR (ประกาศอธิบดีฯ ฉบับที่ 196). This is the
+ *     defect the gate exists for, and it stays closed.
+ *   - a Thai NATURAL PERSON's number. An individual's taxpayer identification
+ *     number IS their 13-digit national ID, so printing it is TRUE — and they
+ *     need it on the document to claim their personal income-tax deduction. A
+ *     บุคคลธรรมดา is never a VAT registrant, so the registrant gate silently
+ *     erased their own tax number from their own document.
  *
- * 059 / PR-A Task 6b (bug fix) — the gate reads `input.buyerIsVatRegistrant`
- * (top-level on `PdfRenderInput`), NOT `input.member.buyer_is_vat_registrant`.
- * The snapshot field is the RECORDED fact for a matched member, but a WALK-IN
- * buyer's snapshot NEVER carries it (there is no `members` row to read it
- * from) — their registrant status is instead INFERRED from TIN-presence by
- * `resolveBuyerIsVatRegistrant`, which is exactly what chose this document's
- * CLASS (`kind: 'invoice'`) in the first place. Reading the snapshot field
- * directly silently suppressed a walk-in registrant's own TIN from the
- * document their TIN produced — see pdf-render-port.ts for the full
- * rationale. Every caller threads the SAME resolved value it used for its
- * kind decision; see PdfRenderInput.buyerIsVatRegistrant.
+ * The check digit separates the two with near-certainty. Registrant status still
+ * gates the สำนักงานใหญ่/สาขา line (`buyerBranchEl`) — ประกาศ 199 requires THAT
+ * particular only of a registrant, and a 13-digit number cannot evidence
+ * head-office/branch status (a national ID is 13 digits too). THE TWO MUST NEVER
+ * BE UNIFIED.
+ *
+ * THE VERSION GATE IS LOAD-BEARING, NOT DECORATION. An issued PDF is NOT
+ * write-once: `void-invoice.ts` and `issue-credit-note.ts` (the
+ * credited-annotation overlay) both RE-RENDER with the CURRENTLY DEPLOYED
+ * template code against the FROZEN snapshot, at the document's PINNED
+ * `templateVersion`, and re-upload to the SAME blobKey with
+ * `allowOverwrite: true`. Pre-v11 the line printed on any non-blank `tax_id`.
+ * Un-gated, this change would silently DROP the Tax ID line from an
+ * already-issued document the moment someone voids or credit-notes it. Gated, a
+ * document pinned to v<=10 keeps its legacy unconditional print and reproduces
+ * its original bytes — the SC-003 guarantee, exactly like the v3-v10 gates.
+ * Registry log: template-registry.ts v11.
  */
 const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
 

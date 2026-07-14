@@ -29,38 +29,27 @@ export interface PdfRenderInput {
   readonly dueDate: string | null;
   readonly tenant: TenantIdentitySnapshot;
   readonly member: MemberIdentitySnapshot;
-  /**
-   * 059 / PR-A Task 6b — the RESOLVED buyer VAT-registrant status for THIS
-   * render, i.e. exactly what `resolveBuyerIsVatRegistrant(memberId, snapshot)`
-   * returned when the caller made its document-CLASS decision (issue-time kind,
-   * receipt kind, etc.). Deliberately top-level — NOT a field on `member` — so it
-   * can never be mistaken for part of the frozen snapshot.
+  /*
+   * (removed 2026-07-15) There was a top-level `buyerIsVatRegistrant: boolean`
+   * here, carrying the value `resolveBuyerIsVatRegistrant()` returned for the
+   * caller's document-CLASS decision. It existed so `buyerTaxIdEl` could print a
+   * WALK-IN buyer's own TIN — their snapshot's `buyer_is_vat_registrant` is
+   * always `false` (no `members` row to record it on), so reading the snapshot
+   * dropped the very TIN that had classed the document as a tax invoice.
    *
-   * WHY THIS EXISTS: `member.buyer_is_vat_registrant` (the snapshot field) is the
-   * RECORDED fact for a matched member, but is ALWAYS `false` for a walk-in
-   * (non-member) buyer — `create-event-invoice-draft.ts` never writes it there,
-   * because a 13-digit number is not proof of registration and must not be
-   * asserted onto the snapshot on a guess (see document-kind.ts). The walk-in's
-   * registrant status is instead INFERRED from TIN-presence by
-   * `resolveBuyerIsVatRegistrant`, and that inference is exactly what decided
-   * this document's CLASS (e.g. `kind: 'invoice'` instead of `receipt_separate`).
-   * Before this field existed, the template read `member.buyer_is_vat_registrant`
-   * directly for the Tax ID line (`buyerTaxIdEl`) — always `false` for a walk-in
-   * — so a walk-in whose own TIN classed the document as a tax invoice had that
-   * same TIN silently dropped from the line it exists to support. Every caller
-   * MUST pass the SAME value it fed into its `inferEventDocumentKind` /
-   * `inferReceiptKind` call, via the ONE shared resolver — never re-derive.
+   * The Tax-ID line no longer asks that question at all. It asks "is this string
+   * a real Thai TIN?" (`isThaiTaxId` — 13 digits + check digit), because keying
+   * it on registrant status ALSO erased a Thai natural person's national ID,
+   * which IS their taxpayer number. That change made this field dead: nothing
+   * read it. A REQUIRED field on a port that nobody reads is worse than no field
+   * — three docblocks were still telling the next reader that the template gated
+   * on it.
    *
-   * REQUIRED (not optional) on purpose: this makes a missed call site a TS
-   * compile error instead of a silent `undefined` that only breaks at print
-   * time on live-Neon data.
-   *
-   * `buyerBranchEl` (the §86/4 สำนักงานใหญ่/สาขา line) does NOT read this field —
-   * it stays keyed on `member.buyer_is_vat_registrant` (the RECORDED fact) only.
-   * See the comment on `buyerBranchEl` in invoice-template.tsx for why the two
-   * must never be unified.
+   * The สำนักงานใหญ่/สาขา line still keys on the RECORDED
+   * `member.buyer_is_vat_registrant` (ประกาศ 199 requires that particular only of
+   * a registrant, and a 13-digit number cannot evidence head-office/branch
+   * status). Do not re-introduce a resolved flag here to serve it.
    */
-  readonly buyerIsVatRegistrant: boolean;
   readonly lines: readonly InvoiceLine[];
   readonly subtotal: Money;
   readonly vatRate: VatRate;

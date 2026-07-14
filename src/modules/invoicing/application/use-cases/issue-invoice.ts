@@ -662,7 +662,6 @@ export async function issueInvoice(
           // bill-first gate decisions above, threaded so the Tax ID line's print
           // decision can never disagree with the class decision that chose this
           // document's `kind`.
-          buyerIsVatRegistrant,
           lines: draft.lines,
           subtotal,
           // 088 US8 (FR-025) — the DERIVED rate (0% for zero-rate), never the

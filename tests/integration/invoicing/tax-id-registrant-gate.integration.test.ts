@@ -97,16 +97,6 @@ function makeInput(opts: {
   templateVersion: number;
   kind?: PdfDocKind;
   member?: Partial<MemberIdentitySnapshot>;
-  /**
-   * 059 / PR-A Task 6b — the RESOLVED top-level field `buyerTaxIdEl` now reads.
-   * Defaults to the snapshot's OWN `buyer_is_vat_registrant` flag, matching
-   * every test in this file written before Task 6b (which modelled the buyer
-   * generically, with no matched-member/walk-in distinction). The Task 6b
-   * regression test below overrides this explicitly with the REAL resolver's
-   * output for a walk-in, while the snapshot's own flag stays at its real
-   * (always-false) walk-in value — that mismatch IS the bug being proven.
-   */
-  buyerIsVatRegistrant?: boolean;
 }): PdfRenderInput {
   const docR = DocumentNumber.of('RC', 2026, 42);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
@@ -138,7 +128,6 @@ function makeInput(opts: {
       logo_blob_key: null,
     },
     member,
-    buyerIsVatRegistrant: opts.buyerIsVatRegistrant ?? member.buyer_is_vat_registrant === true,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),
@@ -390,33 +379,53 @@ describe('059 Task 6b — WALK-IN buyer: the resolver that classed this document
   // as a §86/4 tax invoice got that exact TIN silently dropped from the line
   // printed for the input-VAT claim it was supplied to make.
   it('BUG regression: a walk-in whose 13-digit TIN classed the document as invoice must see that TIN print', () => {
-    // A walk-in's snapshot NEVER carries `buyer_is_vat_registrant=true` — this is
-    // the exact shape `create-event-invoice-draft.ts` produces for a non-member
-    // buyer (the field is omitted; zod resolves it to `false`).
+    // A walk-in's snapshot NEVER carries `buyer_is_vat_registrant: true` — no
+    // `members` row exists to record it on, so `create-event-invoice-draft.ts`
+    // omits the key and zod resolves it to `false`. Their registrant status for
+    // the document-CLASS decision is inferred from TIN-presence instead.
     const walkInSnapshotParts = {
       tax_id: BUYER_TIN,
       buyer_is_vat_registrant: false as const,
     };
-    // Sanity — this is the REAL resolver, and it is what chose `kind: 'invoice'`
-    // for this exact document (the walk-in branch infers from TIN-presence).
-    const resolvedRegistrant = resolveBuyerIsVatRegistrant(null, walkInSnapshotParts);
-    expect(resolvedRegistrant).toBe(true);
 
-    // The render input carries the RESOLVED value at the top level (what every
-    // real call site threads via `resolveBuyerIsVatRegistrant`) — this is the
-    // join: Guard 1's decision is what Guard 2 must read, NOT the snapshot's own
-    // (always-false-for-a-walk-in) flag.
+    // The REAL resolver — this is what chose `kind: 'invoice'` for this document.
+    expect(resolveBuyerIsVatRegistrant(null, walkInSnapshotParts)).toBe(true);
+
+    // And the Tax ID line must print, so the buyer can claim their input VAT on
+    // the very §86/4 tax invoice their own TIN produced. An earlier version of
+    // the v11 gate read the snapshot's own (always-false-for-a-walk-in) flag and
+    // silently dropped it.
     const text = firstPageText(
-      makeInput({
-        templateVersion: GATE_V,
-        member: walkInSnapshotParts,
-        buyerIsVatRegistrant: resolvedRegistrant,
-      }),
+      makeInput({ templateVersion: GATE_V, member: walkInSnapshotParts }),
     );
-    // The buyer supplied this exact TIN to claim input VAT on the §86/4 tax
-    // invoice their own TIN produced — it must print.
     expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
     expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
+
+    // WHY THE FIX HELD, AND WHY THIS TEST IS NOT VACUOUS.
+    //
+    // The first fix threaded the RESOLVED registrant flag onto `PdfRenderInput`
+    // and had the template read that. It worked — but it was then superseded: the
+    // gate now asks "is this a real Thai TIN?" (`isThaiTaxId`), because keying on
+    // registrant status ALSO erased a Thai natural person's national ID, which IS
+    // their taxpayer number. The resolved flag became dead and was removed.
+    //
+    // That means the walk-in case above no longer passes BECAUSE of a resolver
+    // hand-off — it passes because BUYER_TIN carries a valid check digit. So the
+    // assertion that actually pins the rule is this one: the snapshot's registrant
+    // flag is irrelevant to this line, in EVERY state. If someone re-couples the
+    // two, this fails.
+    for (const flag of [true, false, undefined]) {
+      const t = firstPageText(
+        makeInput({
+          templateVersion: GATE_V,
+          member: {
+            tax_id: BUYER_TIN,
+            ...(flag === undefined ? {} : { buyer_is_vat_registrant: flag }),
+          },
+        }),
+      );
+      expect(t).toContain(`Tax ID: ${BUYER_TIN}`);
+    }
   });
 
   it('a matched member holding a PASSPORT still gets NO Tax ID line at v11 (the original point of the gate survives)', () => {
@@ -445,7 +454,6 @@ describe('059 Task 6b — WALK-IN buyer: the resolver that classed this document
       makeInput({
         templateVersion: GATE_V,
         member: matchedNonRegistrantSnapshot,
-        buyerIsVatRegistrant: resolvedRegistrant,
       }),
     );
     expect(text).not.toContain(PASSPORT);

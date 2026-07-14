@@ -97,7 +97,6 @@ function makeInput(
     // 059 / PR-A Task 6b — irrelevant to this file's subject (stamp opacity);
     // `true` matches the fixture's own `tax_id`. Set BEFORE `...extra` so a
     // caller can still override it.
-    buyerIsVatRegistrant: true,
     ...extra,
   };
 }

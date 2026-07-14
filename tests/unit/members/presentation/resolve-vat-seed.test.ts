@@ -33,10 +33,26 @@ describe('resolveVatSeed (PR-A Task 3b)', () => {
     ).toBeNull();
   });
 
-  it('never seeds on create — is_vat_registered only renders in edit mode', () => {
+  it('SEEDS ON CREATE TOO — the checkbox is no longer edit-only', () => {
+    // This test used to assert the opposite ("never seeds on create"), and it was
+    // right at the time: the VAT checkbox rendered only on edit, and the create
+    // payload never carried the field, so seeding it would have been dead state.
+    //
+    // Both of those were the bug. `is_vat_registered` is what makes the buyer's
+    // "สำนักงานใหญ่ / สาขาที่ NNNNN" line print (ประกาศอธิบดีฯ 199), and with the
+    // checkbox hidden at create there was NO path — not this form, not the bulk
+    // importer — that could make a member a registrant when they were created.
+    // Every member was born a non-registrant. That is how "no member has ever
+    // received the branch line" — the defect this entire branch exists to fix —
+    // would have quietly returned through a third door.
+    //
+    // The checkbox now renders in both modes and the payload carries it, so
+    // refusing to seed would be actively harmful: the admin picks "Limited
+    // company", the box does not tick, and the member is created as a
+    // non-registrant.
     expect(
       resolveVatSeed({ mode: 'create', code: 'company', vatManuallyTouched: false }),
-    ).toBeNull();
+    ).toBe(true);
   });
 
   it('never seeds once the admin has hand-touched the checkbox this session', () => {

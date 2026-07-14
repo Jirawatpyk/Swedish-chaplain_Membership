@@ -23,10 +23,20 @@ import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
 
 export function TaxBranchSection({
+  mode,
   isHeadOffice,
   onIsHeadOfficeChange,
   vatManuallyTouchedRef,
 }: {
+  /**
+   * 059 / PR-A — the VAT checkbox renders in BOTH modes (it is what makes the
+   * §86/4 branch line print, and with it hidden at create there was no path that
+   * could set it at birth). The head-office / branch controls stay EDIT-ONLY:
+   * the create payload and the repo's create `.values()` do not write them (they
+   * take the DB defaults, head-office/NULL), so offering them at create would be
+   * dead state — the admin would tick a branch code and it would vanish.
+   */
+  readonly mode: 'create' | 'edit';
   readonly isHeadOffice: boolean;
   readonly onIsHeadOfficeChange: (isHeadOffice: boolean) => void;
   /**
@@ -123,7 +133,7 @@ export function TaxBranchSection({
           </p>
         </div>
       </div>
-      {isVatRegistered && (
+      {mode === 'edit' && isVatRegistered && (
       <div className="flex items-start gap-2">
         <Controller
           control={control}
@@ -153,7 +163,7 @@ export function TaxBranchSection({
         </Label>
       </div>
       )}
-      {isVatRegistered && !isHeadOffice && (
+      {mode === 'edit' && isVatRegistered && !isHeadOffice && (
         <div className="max-w-xs">
           <Label htmlFor="branch_code">
             {tf('branchCode')}
