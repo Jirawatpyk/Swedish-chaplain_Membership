@@ -579,9 +579,6 @@ export async function issueEventInvoiceAsPaid(
             tenant: tenantSnap,
             tenantLogo,
             member: memberSnap,
-            // 059 / PR-A Task 6b — the SAME resolved value used for the
-            // §86/4/§105 kind decision above (`pdfKind`), so the Tax ID line's
-            // print decision can never disagree with it.
             lines: draft.lines,
             subtotal,
             vatRate: settings.vatRate,

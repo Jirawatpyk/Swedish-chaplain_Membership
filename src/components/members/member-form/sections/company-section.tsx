@@ -234,7 +234,6 @@ export function CompanySection({
                   // mount-firing path to guard against here in the first
                   // place. See resolve-vat-seed.ts for the three gates.
                   const seed = resolveVatSeed({
-                    mode,
                     code,
                     vatManuallyTouched: vatManuallyTouchedRef.current,
                   });

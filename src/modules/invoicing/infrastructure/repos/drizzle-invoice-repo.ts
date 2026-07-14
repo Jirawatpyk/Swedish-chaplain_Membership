@@ -32,7 +32,6 @@ import {
   type TenantIdentitySnapshot,
 } from '../../domain/value-objects/tenant-identity-snapshot';
 import {
-  makeMemberIdentitySnapshot,
   memberIdentitySnapshotSchema,
   MalformedSnapshotError,
   type MemberIdentitySnapshot,
@@ -293,10 +292,16 @@ function rowsToInvoice(row: InvoiceRow, lines: readonly InvoiceLine[]): Invoice 
         : makeTenantIdentitySnapshot(
             row.tenantIdentitySnapshot as TenantIdentitySnapshot,
           ),
+    // READ path — `parseMemberIdentitySnapshot` (structural, with the invoiceId
+    // on the error) is the whole job. It used to be wrapped in
+    // `makeMemberIdentitySnapshot`, which (a) re-parsed the same object for
+    // nothing and (b) applied the WRITE-only `registrant ⇒ TIN` rule to rows that
+    // were written before that rule existed — one such row threw here and 500'd
+    // the entire invoice list. See `readMemberIdentitySnapshot`'s docblock.
     memberIdentitySnapshot:
       row.memberIdentitySnapshot === null
         ? null
-        : makeMemberIdentitySnapshot(parseMemberIdentitySnapshot(row)),
+        : Object.freeze(parseMemberIdentitySnapshot(row)),
 
     paymentMethod: row.paymentMethod ?? null,
     paymentReference: row.paymentReference ?? null,

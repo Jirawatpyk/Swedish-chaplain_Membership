@@ -274,3 +274,36 @@ export function makeMemberIdentitySnapshot(
 
   return Object.freeze({ ...result.data });
 }
+
+/**
+ * READ-boundary constructor: rebuild a snapshot from a row that was ALREADY
+ * WRITTEN. Structural validation only — it deliberately does NOT enforce the
+ * `registrant ⇒ TIN` rule above.
+ *
+ * USE THIS, NOT `makeMemberIdentitySnapshot`, WHEN MAPPING A DB ROW.
+ *
+ * Getting this wrong is not hypothetical — it shipped twice on this branch. The
+ * rule first lived in the schema's `superRefine`, which the repos' row-parsers
+ * run over every invoice they load; moving it into `makeMemberIdentitySnapshot`
+ * did NOT fix that, because BOTH row-mappers were CALLING that constructor
+ * (`drizzle-invoice-repo` wrapped its own parse in it; `drizzle-credit-note-repo`
+ * used it directly). Either way a document issued under the OLD rules — the
+ * deleted guess inferred registrant status from `legal_entity_type` alone and
+ * never consulted `tax_id` — becomes unparseable, and ONE such row takes down the
+ * entire invoice list page: unhandled, no error code, no audit trail.
+ *
+ * The principle, which is the same one `templateVersion` encodes for rendering:
+ * a constraint on what we may CREATE must never invalidate what we already
+ * WROTE. A document already issued must stay readable forever. Correcting a
+ * wrong particular on it is a credit note (§86/10) — not a parse error on
+ * somebody's invoice list.
+ */
+export function readMemberIdentitySnapshot(
+  raw: unknown,
+): MemberIdentitySnapshot {
+  const result = memberIdentitySnapshotSchema.safeParse(raw);
+  if (!result.success) {
+    throw new InvalidMemberIdentitySnapshotError(result.error.issues);
+  }
+  return Object.freeze({ ...result.data });
+}

@@ -13,7 +13,7 @@ describe('resolveVatSeed (PR-A Task 3b)', () => {
     for (const code of LEGAL_ENTITY_TYPES) {
       const expected = VAT_DEFAULT_BY_CODE[code];
       expect(
-        resolveVatSeed({ mode: 'edit', code, vatManuallyTouched: false }),
+        resolveVatSeed({ code, vatManuallyTouched: false }),
       ).toBe(expected);
     }
   });
@@ -23,13 +23,13 @@ describe('resolveVatSeed (PR-A Task 3b)', () => {
   // association. Seeding either would be silently wrong.
   it('association has no safe default — never seeds', () => {
     expect(
-      resolveVatSeed({ mode: 'edit', code: 'association', vatManuallyTouched: false }),
+      resolveVatSeed({ code: 'association', vatManuallyTouched: false }),
     ).toBeNull();
   });
 
   it('foundation has no safe default — never seeds', () => {
     expect(
-      resolveVatSeed({ mode: 'edit', code: 'foundation', vatManuallyTouched: false }),
+      resolveVatSeed({ code: 'foundation', vatManuallyTouched: false }),
     ).toBeNull();
   });
 
@@ -51,29 +51,29 @@ describe('resolveVatSeed (PR-A Task 3b)', () => {
     // company", the box does not tick, and the member is created as a
     // non-registrant.
     expect(
-      resolveVatSeed({ mode: 'create', code: 'company', vatManuallyTouched: false }),
+      resolveVatSeed({ code: 'company', vatManuallyTouched: false }),
     ).toBe(true);
   });
 
   it('never seeds once the admin has hand-touched the checkbox this session', () => {
     expect(
-      resolveVatSeed({ mode: 'edit', code: 'company', vatManuallyTouched: true }),
+      resolveVatSeed({ code: 'company', vatManuallyTouched: true }),
     ).toBeNull();
     // Even for a code whose default would otherwise be non-null.
     expect(
-      resolveVatSeed({ mode: 'edit', code: 'limited_company', vatManuallyTouched: true }),
+      resolveVatSeed({ code: 'limited_company', vatManuallyTouched: true }),
     ).toBeNull();
   });
 
   it('an out-of-catalogue code never seeds (defensive — the Select cannot actually produce one)', () => {
     expect(
-      resolveVatSeed({ mode: 'edit', code: 'nonsense', vatManuallyTouched: false }),
+      resolveVatSeed({ code: 'nonsense', vatManuallyTouched: false }),
     ).toBeNull();
   });
 
   it('an empty string ("nothing picked") never seeds', () => {
     expect(
-      resolveVatSeed({ mode: 'edit', code: '', vatManuallyTouched: false }),
+      resolveVatSeed({ code: '', vatManuallyTouched: false }),
     ).toBeNull();
   });
 });

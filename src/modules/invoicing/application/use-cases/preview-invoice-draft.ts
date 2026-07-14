@@ -19,7 +19,6 @@ import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
-import { resolveBuyerIsVatRegistrant } from '@/modules/invoicing/domain/document-kind';
 
 export interface PreviewInvoiceDraftInput {
   readonly tenantId: string;
@@ -119,10 +118,6 @@ export async function previewInvoiceDraft(
       tenant: settings.identity,
       tenantLogo,
       member: member.snapshot,
-      // 059 / PR-A Task 6b — preview is membership-only (guarded above,
-      // `draft.memberId` non-null), so this equals the snapshot's recorded
-      // flag; routed through the shared resolver for consistency with every
-      // other render call site rather than re-deriving by hand.
       lines: draft.lines,
       subtotal,
       vatRate: settings.vatRate,

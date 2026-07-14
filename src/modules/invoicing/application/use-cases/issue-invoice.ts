@@ -658,10 +658,6 @@ export async function issueInvoice(
           tenant: tenantSnap,
           tenantLogo,
           member: memberSnap,
-          // 059 / PR-A Task 6b — the SAME resolved value used for the doc-kind /
-          // bill-first gate decisions above, threaded so the Tax ID line's print
-          // decision can never disagree with the class decision that chose this
-          // document's `kind`.
           lines: draft.lines,
           subtotal,
           // 088 US8 (FR-025) — the DERIVED rate (0% for zero-rate), never the

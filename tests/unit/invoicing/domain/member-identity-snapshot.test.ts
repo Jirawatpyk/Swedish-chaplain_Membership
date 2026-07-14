@@ -9,6 +9,7 @@ import {
   MalformedSnapshotError,
   InvalidMemberIdentitySnapshotError,
   makeMemberIdentitySnapshot,
+  readMemberIdentitySnapshot,
   type MemberIdentitySnapshot,
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 
@@ -550,6 +551,28 @@ describe('registrant ⇒ TIN invariant (059 / PR-A Task 4)', () => {
         buyer_is_vat_registrant: true,
       }),
     ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('readMemberIdentitySnapshot ACCEPTS that shape — this is the constructor the repos must use', () => {
+    // The row-mappers in drizzle-invoice-repo and drizzle-credit-note-repo call
+    // THIS function, not `makeMemberIdentitySnapshot`. If someone swaps them
+    // back, a document issued under the old rules becomes unreadable and one such
+    // row 500s the whole invoice list page.
+    //
+    // That is not hypothetical: it shipped TWICE on this branch. First the rule
+    // lived in the schema's `superRefine` (which the row-mappers run). Moving it
+    // into `makeMemberIdentitySnapshot` did NOT fix it, because BOTH row-mappers
+    // were still CALLING that constructor — the invoice repo wrapped its own
+    // parse in it, the credit-note repo used it directly. Only splitting the
+    // read constructor out actually closed it.
+    const snap = readMemberIdentitySnapshot({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: true,
+    });
+    expect(snap.buyer_is_vat_registrant).toBe(true);
+    expect(snap.tax_id).toBeNull();
+    expect(Object.isFrozen(snap)).toBe(true);
   });
 
   it('the READ path ACCEPTS that shape — an already-issued document must stay readable', () => {

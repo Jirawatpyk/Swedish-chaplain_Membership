@@ -34,7 +34,6 @@ import {
 } from '@/modules/members/domain/value-objects/legal-entity-type';
 
 export function resolveVatSeed(args: {
-  readonly mode: 'create' | 'edit';
   readonly code: string;
   readonly vatManuallyTouched: boolean;
 }): boolean | null {
