@@ -227,16 +227,18 @@ test.describe('059-membership-suspension — Slice 1 E2E (suspended member)', ()
       page,
       context,
     }) => {
-      // Seed NEXT_LOCALE BEFORE the first navigation — next-intl's
-      // request config honours this cookie server-side. domain+path (not
-      // a full url) so this is base-URL/port agnostic (worktree runs use
-      // a different port than the shared dev server).
+      // Sign in FIRST in the default (EN) locale. signInAsMember matches the
+      // email field via getByLabel(/email/i), which only works in English —
+      // seeding NEXT_LOCALE before auth localises that label (E-post / อีเมล)
+      // and the helper times out. Switch locale AFTER auth, then re-render the
+      // dashboard to assert the banner copy in the target locale.
+      await signInAsMember(page);
       const baseUrl = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
       const baseHost = new URL(baseUrl).hostname;
       await context.addCookies([
         { name: 'NEXT_LOCALE', value: locale, domain: baseHost, path: '/' },
       ]);
-      await signInAsMember(page);
+      await page.goto('/portal');
       await page.waitForLoadState('networkidle');
       await expect(membershipCard(page)).toContainText(expected);
     });
