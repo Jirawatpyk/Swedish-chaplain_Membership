@@ -32,6 +32,7 @@
  * non-full access) instead of accidentally granting access on an
  * unexpected error.
  */
+import { logger } from '@/lib/logger';
 import { err, ok } from '@/lib/result';
 import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 import type { TenantContext } from '@/modules/tenants';
@@ -46,7 +47,21 @@ export const membershipAccessBridge: MembershipAccessPort = {
       const cycle = await cyclesRepo.findLatestCycleForMember(tenant.slug, memberId);
       const { access, reason } = deriveMembershipAccess(cycle, new Date(systemClock.nowIso()));
       return ok({ access, reason });
-    } catch {
+    } catch (e) {
+      // SHOULD-FIX (Slice-1 whole-branch review, observability): log before
+      // mapping to the opaque `lookup_error` kind so ops can tell WHY a
+      // write use-case (F7 submit, F3 invite) failed CLOSED — DB timeout vs
+      // schema drift vs bad tenant — instead of a silent fail-closed. Kept
+      // in lockstep with the F3 sibling adapter
+      // (`src/modules/members/infrastructure/membership-access-bridge.ts`).
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantSlug: tenant.slug,
+          memberId,
+        },
+        '[membership-access-bridge] access lookup failed — failing closed',
+      );
       return err({ kind: 'membership_access.lookup_error' as const });
     }
   },
