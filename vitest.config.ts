@@ -614,13 +614,21 @@ export default defineConfig({
         },
         // T277 step 1 lists `enforce-lapsed-portal-scope.ts`;
         // implementation lives at src/lib/lapsed-portal-scope.ts.
-        // No unit test today — covered by lapsed-portal-scope IT.
-        // Threshold lowered until unit tests are authored in a
-        // follow-up commit on this branch.
+        // Unit-covered by tests/unit/lib/lapsed-portal-scope.test.ts (36
+        // cases) + tests/unit/lib/membership-suspension-policy.test.ts (12
+        // cases) — measured 2026-07-14: 99.38% lines / 92.3% branches /
+        // 100% functions. Thresholds pinned just below the measured value
+        // (not at the default 50/80/65) because this is the portal
+        // access-control gate for suspended/terminated members — a
+        // security-critical surface. The one uncovered branch is the
+        // empty `catch {}` around the fail-open `logger.warn` call in
+        // `emitFailOpen` — a defensive guard against the logging library
+        // itself throwing, unreachable by design under the mocked pino
+        // logger in tests (and not meaningfully triggerable live either).
         'src/lib/lapsed-portal-scope.ts': {
-          lines: 80,
-          branches: 70,
-          functions: 80,
+          lines: 99,
+          branches: 90,
+          functions: 100,
         },
         // **Deferred (no unit test today; integration coverage only)**:
         //
