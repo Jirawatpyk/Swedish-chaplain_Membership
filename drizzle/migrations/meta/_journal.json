@@ -1730,6 +1730,13 @@
 			"when": 1798537500000,
 			"tag": "0246_renewal_lapse_deferred_invoice_not_due",
 			"breakpoints": true
+		},
+		{
+			"idx": 250,
+			"version": "7",
+			"when": 1798537600000,
+			"tag": "0247_f6_event_attendance_by_suspended_member",
+			"breakpoints": true
 		}
 	]
 }

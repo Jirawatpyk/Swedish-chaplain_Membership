@@ -5500,6 +5500,7 @@
       "membership_suspended_action_blocked": "บล็อกการดำเนินการ — สมาชิกภาพถูกระงับ",
       "membership_access_fail_open": "ตรวจสอบสิทธิ์สมาชิกภาพล้มเหลว — อนุญาตแบบ fail-open",
       "renewal_lapse_deferred_invoice_not_due": "เลื่อนการยกเลิกสมาชิกภาพ — ใบแจ้งหนี้ยังไม่ถึงกำหนดชำระ",
+      "event_attendance_by_suspended_member": "บันทึกการเข้าร่วมงาน — สิทธิประโยชน์สมาชิกถูกระงับหรือยกเลิก",
       "invoice_draft_created": "สร้างใบแจ้งหนี้แบบร่าง",
       "invoice_draft_updated": "อัปเดตใบแจ้งหนี้แบบร่าง",
       "invoice_draft_deleted": "ลบใบแจ้งหนี้แบบร่าง",

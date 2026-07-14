@@ -5500,6 +5500,7 @@
       "membership_suspended_action_blocked": "Åtgärd blockerad — medlemskap avstängt",
       "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
       "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
+      "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "invoice_draft_created": "Fakturautkast skapat",
       "invoice_draft_updated": "Fakturautkast uppdaterat",
       "invoice_draft_deleted": "Fakturautkast borttaget",

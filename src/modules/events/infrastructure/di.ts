@@ -62,6 +62,7 @@ import { makeDrizzleAdvisoryLockAcquirer } from './drizzle-advisory-lock-acquire
 import { streamingCsvImporter } from './streaming-csv-importer';
 import { makeDrizzleCsvImportRecordsRepository } from './drizzle-csv-import-records-repo';
 import { vercelBlobErrorCsvStore } from './vercel-blob-error-csv-store';
+import { membershipAccessBridge } from './membership-access-bridge';
 
 /**
  * Minimal deps for callers that only need standalone-tx audit
@@ -179,6 +180,12 @@ export function makeImportCsvDeps(): ImportCsvDeps {
         registrationsRepo,
       ),
       advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
+      // 059-membership-suspension Task 17 — F6-owned read against F8
+      // benefit-access state. Stateless (opens its OWN `runInTenant` via
+      // `makeDrizzleRenewalCycleRepo`, same escape-hatch pattern as the
+      // F3/F7 sibling bridges) so the singleton is safe to reuse across
+      // every savepoint without binding to `tx`.
+      membershipAccess: membershipAccessBridge,
       runRowInSavepoint: async <R>(
         rowFn: (spPorts: ImportCsvTxScopedPorts) => Promise<R>,
       ) => {

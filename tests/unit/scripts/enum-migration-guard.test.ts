@@ -119,6 +119,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_membership_suspended_blocked',
           // 0246 (059-membership-suspension Task 13):
           'renewal_lapse_deferred_invoice_not_due',
+          // 0247 (059-membership-suspension Task 17):
+          'event_attendance_by_suspended_member',
         ]),
       ],
     ]);
@@ -143,6 +145,7 @@ describe('findMissingEnumValues', () => {
           'membership_access_fail_open',
           'broadcast_membership_suspended_blocked',
           'renewal_lapse_deferred_invoice_not_due',
+          'event_attendance_by_suspended_member',
         ]),
       ],
     ]);
@@ -169,6 +172,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_membership_suspended_blocked',
           // 0246 (059-membership-suspension Task 13):
           'renewal_lapse_deferred_invoice_not_due',
+          // 0247 (059-membership-suspension Task 17):
+          'event_attendance_by_suspended_member',
         ],
       },
     ]);
@@ -189,6 +194,9 @@ describe('findMissingEnumValues', () => {
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('renewal_cycle_reanchored');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain(
       'renewal_lapse_deferred_invoice_not_due',
+    );
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain(
+      'event_attendance_by_suspended_member',
     );
   });
 });

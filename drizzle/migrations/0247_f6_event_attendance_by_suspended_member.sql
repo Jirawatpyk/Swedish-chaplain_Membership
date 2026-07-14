@@ -1,0 +1,35 @@
+-- ---------------------------------------------------------------------------
+-- 059-membership-suspension Task 17 — `audit_event_type` extension (1 value).
+--
+-- Adds `event_attendance_by_suspended_member` (F6) — emitted by the F6 CSV
+-- import use-case (`importCsv`, `checkSuspendedMemberWarning` helper) when
+-- an attendee row matches a member whose F8 benefit-access state
+-- (`deriveMembershipAccess`) is `suspended` or `terminated`. The attendance
+-- row is recorded NORMALLY regardless — F6 never blocks on membership state
+-- (the event already happened; F6 event benefits are fulfilled externally,
+-- so there is nothing to gate). Alert-only observability: this event +
+-- `ImportSummary.suspendedMemberWarnings` exist purely so staff can see,
+-- after the fact, that a non-full-access member attended.
+--
+-- 5-year retention (F6 default; no tax-document overlap).
+--
+-- Pattern: `ALTER TYPE … ADD VALUE IF NOT EXISTS` (matches 0109/0245/0246
+-- precedent) so re-running is a no-op. Forward-only: enum values cannot
+-- be removed.
+--
+-- Registered in lockstep with:
+--   - `F6_AUDIT_EVENT_TYPES` (events audit port, audit-port.ts)
+--   - `AuditPayloads.event_attendance_by_suspended_member` (audit-port.ts)
+--   - `DB_ONLY_AUDIT_EVENT_TYPES` (src/modules/auth/infrastructure/db/schema.ts)
+--     — F6 hand-writes its `audit_event_type` migrations without syncing
+--     the Drizzle `auditEventTypeEnum` TS tuple (same as every other F6
+--     event), so this value is DB-only from that tuple's perspective.
+--   - `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`
+--   - i18n `audit.eventType.event_attendance_by_suspended_member` (en/th/sv)
+--     — enforced by tests/unit/insights/audit-event-label-coverage.test.ts
+--     (re-derives the DB enum from every migration and cross-checks it
+--     against `ALL_AUDIT_EVENT_TYPES`; F6 has no dedicated live-Neon
+--     enum-parity test, this is its structural equivalent)
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'event_attendance_by_suspended_member';

@@ -509,6 +509,10 @@ export const DB_ONLY_AUDIT_EVENT_TYPES: readonly string[] = [
   'escalation_task_reassigned',
   'escalation_task_skipped',
   'event_archived',
+  // 059-membership-suspension Task 17 (migration 0247) — CSV-import
+  // alert-only observability: attendance recorded for a suspended/
+  // terminated member (never blocks).
+  'event_attendance_by_suspended_member',
   'event_created',
   'event_cultural_event_toggled',
   'event_detail_not_found_probe',

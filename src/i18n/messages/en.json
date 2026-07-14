@@ -5500,6 +5500,7 @@
       "membership_suspended_action_blocked": "Action blocked — membership suspended",
       "membership_access_fail_open": "Membership-access check failed open",
       "renewal_lapse_deferred_invoice_not_due": "Lapse deferred — invoice not yet due",
+      "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
       "invoice_draft_created": "Invoice draft created",
       "invoice_draft_updated": "Invoice draft updated",
       "invoice_draft_deleted": "Invoice draft deleted",
