@@ -96,9 +96,12 @@ beforeEach(() => {
     value: { items: [], total: 0 },
   });
   resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
-  // Default: the lapsed-status read succeeds with an empty set (no badges).
-  // The S3 degradation tests override this per-test.
-  loadMembersMembershipStatusMock.mockResolvedValue({ ok: true, value: new Set() });
+  // Default: the lapsed/suspended-status read succeeds with both sets empty
+  // (no badges). The S3 degradation tests override this per-test.
+  loadMembersMembershipStatusMock.mockResolvedValue({
+    ok: true,
+    value: { lapsed: new Set(), suspended: new Set() },
+  });
 });
 
 describe('parseDirectorySort — allow-list', () => {

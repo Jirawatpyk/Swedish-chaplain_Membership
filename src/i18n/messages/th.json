@@ -984,6 +984,8 @@
         "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม",
         "membershipLapsed": "หมดอายุ",
         "membershipLapsedSr": "สมาชิกภาพหมดอายุ — ต้องต่ออายุ",
+        "membershipSuspended": "ระงับชั่วคราว",
+        "membershipSuspendedSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว",
         "tableCaption": "รายชื่อสมาชิก"
       },
       "emptyStates": {

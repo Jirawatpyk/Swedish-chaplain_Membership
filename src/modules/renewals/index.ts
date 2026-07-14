@@ -533,10 +533,13 @@ export {
   type LoadMemberRenewalStatusError,
 } from './application/use-cases/load-member-renewal-status';
 
-// Pass A · Section 5 — Members-directory batch "lapsed" badge read.
+// Pass A · Section 5 — Members-directory batch "lapsed"/"suspended" badge
+// read. Task 16 (059-membership-suspension) added the `suspended` set
+// alongside the pre-existing `lapsed` one.
 export {
   loadMembersMembershipStatus,
   type LoadMembersMembershipStatusInput,
+  type MembersMembershipStatus,
 } from './application/use-cases/load-members-membership-status';
 
 // DV-18 — read-only "Members without renewal cycle" tray for the

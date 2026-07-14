@@ -1,13 +1,16 @@
 /**
- * #4 (067) — MembersTable renders a "Lapsed" badge BESIDE the Status badge
- * when `row.membership_lapsed` is true, with screen-reader text.
+ * Task 16 (059-membership-suspension) — MembersTable renders a "Suspended"
+ * badge BESIDE the Status badge when `row.membership_suspended` is true,
+ * with screen-reader text. Mirrors the "Lapsed" badge test
+ * (members-table-lapsed-badge.test.tsx) but for the NEW amber/suspended
+ * state — distinct icon (PauseCircle vs TriangleAlert) + distinct colour
+ * token (text-warning vs text-destructive, never colour-alone) + distinct
+ * sr-only phrase.
  *
  * The badge is a SIBLING outside the InlineStatusCell button so clicking the
  * warning never fires the status toggle nor pollutes the button's accessible
- * name. Uses the real EN strings (admin.members.directory.membershipLapsed /
- * membershipLapsedSr) so `t()` resolves to the shipped copy.
- *
- * Mirrors the render setup of members-table-selection.test.tsx.
+ * name. Uses the real EN strings (admin.members.directory.membershipSuspended /
+ * membershipSuspendedSr) so `t()` resolves to the shipped copy.
  */
 import { describe, expect, it, vi, beforeAll, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -46,7 +49,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-// Real EN strings for the two keys under test (admin.members.directory).
+// Real EN strings for the keys under test (admin.members.directory).
 const messages = {
   admin: {
     members: {
@@ -75,6 +78,8 @@ const messages = {
         },
         membershipLapsed: 'Lapsed',
         membershipLapsedSr: 'Membership lapsed — needs renewal',
+        membershipSuspended: 'Suspended',
+        membershipSuspendedSr: 'Membership suspended — benefits paused',
         sortByMemberNumber: 'Sort by member number',
         sortByEngagement: 'Sort by engagement',
         engagementBand: { healthy: 'H', moderate: 'M', warning: 'W', critical: 'C' },
@@ -129,71 +134,59 @@ function renderTable(rows: MembersTableRow[]) {
   );
 }
 
-describe('MembersTable lapsed badge', () => {
-  it('renders the Lapsed badge + SR text on a lapsed row', () => {
-    renderTable([baseRow({ membership_lapsed: true })]);
-    expect(screen.getByText('Lapsed')).toBeInTheDocument();
+describe('MembersTable suspended badge', () => {
+  it('renders the Suspended badge + SR text on a suspended row', () => {
+    renderTable([baseRow({ membership_suspended: true })]);
+    expect(screen.getByText('Suspended')).toBeInTheDocument();
     expect(
-      screen.getByText('Membership lapsed — needs renewal'),
+      screen.getByText('Membership suspended — benefits paused'),
     ).toBeInTheDocument();
   });
 
-  it('renders NO Lapsed badge on a non-lapsed row', () => {
-    renderTable([baseRow({ membership_lapsed: false })]);
-    expect(screen.queryByText('Lapsed')).not.toBeInTheDocument();
+  it('renders NO Suspended badge on a non-suspended row', () => {
+    renderTable([baseRow({ membership_suspended: false })]);
+    expect(screen.queryByText('Suspended')).not.toBeInTheDocument();
   });
 
-  it('suppresses the Lapsed badge on an archived row even when lapsed (067 #4)', () => {
-    // An archived member already shows the "Archived" status badge — the
-    // lapsed warning (for active-looking-but-lapsed awareness) is redundant
-    // and must not render next to it.
-    renderTable([baseRow({ status: 'archived', membership_lapsed: true })]);
+  it('uses an amber (warning) colour token, never destructive red, for the Suspended badge', () => {
+    renderTable([baseRow({ membership_suspended: true })]);
+    const badge = screen.getByText('Suspended').closest('span[class]');
+    expect(badge).not.toBeNull();
+    expect(badge?.className).toMatch(/text-warning/);
+    expect(badge?.className).not.toMatch(/text-destructive/);
+  });
+
+  it('suppresses the Suspended badge on an archived row even when suspended', () => {
+    renderTable([baseRow({ status: 'archived', membership_suspended: true })]);
     expect(screen.getByText('Archived')).toBeInTheDocument();
-    expect(screen.queryByText('Lapsed')).not.toBeInTheDocument();
+    expect(screen.queryByText('Suspended')).not.toBeInTheDocument();
     expect(
-      screen.queryByText('Membership lapsed — needs renewal'),
+      screen.queryByText('Membership suspended — benefits paused'),
     ).not.toBeInTheDocument();
   });
 
-  it('keeps the Lapsed badge OUTSIDE the status-toggle button (admin inline-edit)', () => {
-    // With enableSelection + onInlineEdit, InlineStatusCell renders a <button>.
-    // The Lapsed badge must be a SIBLING of it — never nested inside — so
-    // clicking the warning can't fire the status toggle (a11y/interaction guard).
+  it('keeps the Suspended badge OUTSIDE the status-toggle button (admin inline-edit)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={[baseRow({ membership_lapsed: true })]}
+          rows={[baseRow({ membership_suspended: true })]}
           nextCursor={null}
           enableSelection
           onInlineEdit={vi.fn().mockResolvedValue({ ok: true })}
         />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('Lapsed').closest('button')).toBeNull();
-  });
-});
-
-describe('MembersTable invite-bounced badge (directory)', () => {
-  const bouncedContact = {
-    contact_id: 'c-1',
-    first_name: 'Jane',
-    last_name: 'Doe',
-    email: 'jane@example.com',
-    invite_bounced: true,
-  };
-
-  it('renders the "Invite bounced" badge (+ SR text) in the Contact cell when the primary contact bounced', () => {
-    renderTable([baseRow({ primary_contact: bouncedContact })]);
-    expect(screen.getByText('Invite bounced')).toBeInTheDocument();
-    expect(screen.getByText('Invitation email bounced')).toBeInTheDocument();
+    expect(screen.getByText('Suspended').closest('button')).toBeNull();
   });
 
-  it('renders NO bounce badge when the primary contact has not bounced', () => {
+  it('prefers the Lapsed (red) badge over Suspended when both flags are somehow true', () => {
+    // Mutually exclusive by construction (deriveMembershipAccess never
+    // returns both), but the render must still make a deterministic choice
+    // rather than showing two conflicting badges.
     renderTable([
-      baseRow({
-        primary_contact: { ...bouncedContact, invite_bounced: false },
-      }),
+      baseRow({ membership_lapsed: true, membership_suspended: true }),
     ]);
-    expect(screen.queryByText('Invite bounced')).not.toBeInTheDocument();
+    expect(screen.getByText('Lapsed')).toBeInTheDocument();
+    expect(screen.queryByText('Suspended')).not.toBeInTheDocument();
   });
 });
