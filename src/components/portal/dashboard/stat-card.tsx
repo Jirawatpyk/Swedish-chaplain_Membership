@@ -74,6 +74,18 @@ export interface StatCardProps {
    * caller decides the href; this primitive just renders it.
    */
   readonly action?: { readonly href: string; readonly label: string };
+  /**
+   * 059-membership-suspension — optional override for the status-row icon.
+   * Defaults to the per-`variant` icon (`VARIANT_ICON`) when omitted. Needed
+   * because `warning`/`destructive` are now each shared by TWO distinct
+   * membership-card kinds (`due` vs `suspended`; the retired `overdue` vs
+   * `lapsed`/terminated) that must stay visually distinguishable beyond
+   * colour alone — e.g. `suspended` (amber `PauseCircle`, "paused, not an
+   * accusation") vs `due` (amber `AlertTriangle`, "act soon"), and
+   * `terminated` (red `TriangleAlert`) vs a same-tone destructive kind using
+   * the default `XCircle`.
+   */
+  readonly icon?: LucideIcon;
   readonly className?: string;
 }
 
@@ -93,10 +105,11 @@ export function StatCard({
   variant = 'neutral',
   variantLabel,
   action,
+  icon,
   className,
 }: StatCardProps) {
   const showStatus = variant !== 'neutral' && Boolean(variantLabel);
-  const Icon = variant === 'neutral' ? Info : VARIANT_ICON[variant];
+  const Icon = icon ?? (variant === 'neutral' ? Info : VARIANT_ICON[variant]);
 
   return (
     <Card

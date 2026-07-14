@@ -4620,6 +4620,16 @@
         "contactToRenew": "Kontakta oss för att återaktivera",
         "lapsedMailSubject": "Begäran om återaktivering av medlemskap",
         "renewNow": "Förnya nu",
+        "suspended": {
+          "unpaidValue": "Förmåner pausade",
+          "unpaidSubWithDueDate": "Faktura förfaller {dueDate} — betala för att återställa full tillgång",
+          "unpaidSubNoDueDate": "Betala din förnyelsefaktura för att återställa full tillgång",
+          "pendingReviewValue": "Betalning mottagen",
+          "pendingReviewSub": "Vi verifierar din betalning — ingen åtgärd krävs just nu.",
+          "payCta": "Betala för att återställa förmåner",
+          "benefitsPausedTitle": "Förmånerna är pausade",
+          "benefitsPausedBody": "Dina kvoter är oförändrade — e-utskick, evenemangsbiljetter, bannerplacering och andra ingående förmåner låses upp så snart din betalning har mottagits."
+        },
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
         "emptyValue": "Välkommen",

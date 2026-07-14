@@ -41,25 +41,95 @@ describe('deriveMembershipStat', () => {
     expect(stat.daysRemaining).toBeNull();
   });
 
-  it('returns action-needed (warning) when awaiting payment within the renew threshold', () => {
-    // expires 10 days out → within the 30-day threshold
+  it('returns action-needed (warning) when renewal is due soon and not yet invoiced', () => {
+    // 059-membership-suspension — `awaiting_payment` now ALWAYS resolves to
+    // `suspended` via `deriveMembershipAccess` (an invoice has been issued;
+    // benefits pause immediately per the TSCC policy change), so the `due`
+    // ("renew soon") warning only applies to the pre-invoice `upcoming`/
+    // `reminded` statuses now. expires 10 days out → within the 30-day
+    // threshold, and the cycle is NOT yet expired → access stays `full`.
     const stat = deriveMembershipStat(
-      cycle({ status: 'awaiting_payment', expiresAt: '2026-06-16T00:00:00.000Z' }),
+      cycle({ status: 'upcoming', expiresAt: '2026-06-16T00:00:00.000Z' }),
       NOW,
     );
     expect(stat.kind).toBe('due');
     expect(stat.variant).toBe('warning');
     expect(stat.daysRemaining).toBe(10);
+    expect(stat.reason).toBeNull();
   });
 
-  it('returns overdue (destructive) when the cycle has expired and is non-terminal', () => {
+  it('returns suspended (warning, reason unpaid) when a non-terminal cycle has expired — closes the 06:15-cron gap', () => {
+    // 059-membership-suspension — a non-terminal (`upcoming`/`reminded`)
+    // cycle whose period already ended is now `suspended`/`unpaid`
+    // (benefits paused), NOT the old destructive `overdue` kind. The old
+    // `overdue` kind is retained on the type for back-compat but is no
+    // longer produced by this function — the underlying condition it used
+    // to capture (non-terminal + expired) is now fully absorbed into
+    // `suspended`.
     const stat = deriveMembershipStat(
-      cycle({ status: 'awaiting_payment', expiresAt: '2026-05-27T00:00:00.000Z' }),
+      cycle({ status: 'upcoming', expiresAt: '2026-05-27T00:00:00.000Z' }),
       NOW,
     );
-    expect(stat.kind).toBe('overdue');
-    expect(stat.variant).toBe('destructive');
+    expect(stat.kind).toBe('suspended');
+    expect(stat.kind).not.toBe('overdue');
+    expect(stat.variant).toBe('warning');
     expect(stat.daysRemaining).toBe(-10);
+    expect(stat.reason).toBe('unpaid');
+  });
+
+  it.each(['awaiting_payment', 'reminded', 'upcoming'] as const)(
+    'always resolves an unpaid-invoice %s cycle to suspended, regardless of days remaining',
+    (status) => {
+      // `awaiting_payment` means an invoice was issued and payment is
+      // awaited — per the new TSCC policy this ALWAYS pauses benefits, even
+      // when the cycle has not yet expired (a member confirming renewal
+      // early via the self-service lazy transition).
+      const future = deriveMembershipStat(
+        cycle({ status, expiresAt: '2026-12-31T00:00:00.000Z' }),
+        NOW,
+      );
+      if (status === 'awaiting_payment') {
+        expect(future.kind).toBe('suspended');
+        expect(future.reason).toBe('unpaid');
+      } else {
+        // upcoming/reminded with a FUTURE expiry stay full (due/active).
+        expect(['due', 'active']).toContain(future.kind);
+        expect(future.reason).toBeNull();
+      }
+    },
+  );
+
+  it('returns suspended (warning, reason unpaid) for an awaiting_payment cycle even with a far-future expiry', () => {
+    const stat = deriveMembershipStat(
+      cycle({ status: 'awaiting_payment', expiresAt: '2026-12-31T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(stat.kind).toBe('suspended');
+    expect(stat.variant).toBe('warning');
+    expect(stat.reason).toBe('unpaid');
+  });
+
+  it('returns suspended (warning, reason pending_review) for pending_admin_reactivation regardless of expiry', () => {
+    const stat = deriveMembershipStat(
+      cycle({ status: 'pending_admin_reactivation', expiresAt: '2026-01-01T00:00:00.000Z', enteredPendingAt: '2026-01-01T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(stat.kind).toBe('suspended');
+    expect(stat.variant).toBe('warning');
+    expect(stat.reason).toBe('pending_review');
+  });
+
+  it('returns active (neutral) for a cancelled cycle whose period has NOT yet ended', () => {
+    // A cancelled cycle with a FUTURE expiry is not ended coverage —
+    // deriveMembershipAccess resolves it to `full`, matching the pre-
+    // existing behaviour (an admin-cancelled duplicate `upcoming` cycle
+    // must not lock the member out).
+    const stat = deriveMembershipStat(
+      cycle({ status: 'cancelled', closedAt: '2026-01-01T00:00:00.000Z', closedReason: 'cancelled', expiresAt: '2026-12-31T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(stat.kind).toBe('active');
+    expect(stat.reason).toBeNull();
   });
 
   it('returns active (neutral) when renewal is far off — no stale countdown', () => {
@@ -95,6 +165,7 @@ describe('deriveMembershipStat', () => {
       expect(stat.kind).toBe('lapsed');
       expect(stat.variant).toBe('destructive');
       expect(stat.status).toBe(status);
+      expect(stat.reason).toBe(status === 'lapsed' ? 'grace_expired' : 'cancelled');
     },
   );
 
@@ -127,24 +198,29 @@ describe('deriveMembershipStat', () => {
       );
       expect(stat.kind).toBe('lapsed');
       expect(stat.variant).toBe('destructive');
+      expect(stat.reason).toBe(status === 'lapsed' ? 'grace_expired' : 'cancelled');
     },
   );
 
-  it.each(['awaiting_payment', 'reminded'] as const)(
-    'returns error (warning), NOT active, for a non-terminal %s cycle with an unparseable expiresAt (E2)',
+  it.each(['awaiting_payment', 'reminded', 'upcoming'] as const)(
+    'resolves a non-terminal %s cycle with an unparseable expiresAt to suspended, NOT active (E2, superseded by 059)',
     (status) => {
-      // E2 — a corrupt date on a non-terminal cycle (Date.parse → NaN) leaves
-      // `daysUntilExpiry` null and `isOverdue` false, so it previously fell
-      // through to `active` ("in good standing") — silencing a membership whose
-      // real standing is unknown. It must surface the honest "Status unavailable"
-      // error state instead.
+      // E2 (original intent, preserved) — a corrupt date on a non-terminal
+      // cycle must NOT silently read as "in good standing". Post-059, the
+      // fail-safe now lives in `deriveMembershipAccess` itself: an
+      // unparseable `expiresAt` on a non-terminal cycle is treated as
+      // EXPIRED (`!Number.isFinite(expiresMs) || …`), so it resolves to
+      // `suspended`/`unpaid` rather than the presentation-layer `error`
+      // kind this test asserted pre-059. This is a strictly safer outcome
+      // (benefits stay blocked) than the old "Status unavailable" copy,
+      // which conveyed no actionable path.
       const stat = deriveMembershipStat(
         cycle({ status: status as RenewalCycle['status'], expiresAt: 'not-a-date' }),
         NOW,
       );
-      expect(stat.kind).toBe('error');
+      expect(stat.kind).toBe('suspended');
       expect(stat.variant).toBe('warning');
-      expect(stat.daysRemaining).toBeNull();
+      expect(stat.reason).toBe('unpaid');
     },
   );
 
@@ -158,6 +234,7 @@ describe('deriveMembershipStat', () => {
     expect(stat.variant).toBe('warning');
     expect(stat.daysRemaining).toBeNull();
     expect(stat.status).toBeNull();
+    expect(stat.reason).toBeNull();
   });
 });
 
@@ -181,10 +258,19 @@ describe('deriveMembershipStat ⟺ isMembershipLapsed (characterization)', () =>
   });
 });
 
-describe('deriveMembershipStat overdue regression (post-refactor)', () => {
-  it('a non-terminal past-expiry cycle stays kind:overdue, NOT lapsed', () => {
+describe('deriveMembershipStat non-terminal past-expiry regression (post-059-refactor)', () => {
+  it('a non-terminal past-expiry cycle stays kind:suspended, NOT lapsed', () => {
+    // 059-membership-suspension — this used to assert kind:'overdue' (the
+    // pre-suspension destructive state for an expired-but-non-terminal
+    // cycle). That condition is now fully absorbed into `suspended`; the
+    // one invariant this regression test still guards is that an expired
+    // NON-TERMINAL cycle must never be conflated with the TERMINATED
+    // `lapsed` kind (only an ENDED-terminal status produces `lapsed`).
     const c = cycle({ status: 'awaiting_payment', expiresAt: '2026-01-01T00:00:00.000Z' });
-    expect(deriveMembershipStat(c, NOW).kind).toBe('overdue');
+    const stat = deriveMembershipStat(c, NOW);
+    expect(stat.kind).toBe('suspended');
+    expect(stat.kind).not.toBe('lapsed');
+    expect(stat.reason).toBe('unpaid');
   });
 });
 
@@ -193,12 +279,20 @@ describe('deriveOutstandingStat', () => {
   // relative to this anchor.
   const TODAY_BKK = '2026-06-06';
 
+  // 059-membership-suspension — `id` + `invoiceSubject` are needed for the
+  // smart-CTA invoice lookup (`findUnpaidMembershipInvoiceId`), not by
+  // `deriveOutstandingStat` itself; default them to arbitrary-but-valid
+  // values so these pre-existing fixtures stay minimal.
+  function inv(overrides: Partial<Parameters<typeof deriveOutstandingStat>[0][number]>) {
+    return { id: 'inv-x', invoiceSubject: 'membership' as const, status: 'issued', totalSatang: 0n, dueDate: null, ...overrides };
+  }
+
   it('sums issued totals and counts them; classifies overdue vs not-yet-due', () => {
     const stat = deriveOutstandingStat(
       [
-        { status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' }, // future → not overdue
-        { status: 'issued', totalSatang: 53_50n, dueDate: '2026-05-10' }, // past → overdue
-        { status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' },
+        inv({ status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' }), // future → not overdue
+        inv({ status: 'issued', totalSatang: 53_50n, dueDate: '2026-05-10' }), // past → overdue
+        inv({ status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' }),
       ],
       TODAY_BKK,
     );
@@ -220,8 +314,8 @@ describe('deriveOutstandingStat', () => {
     // F5 — every issued invoice is in the net-N window → warning, not red.
     const stat = deriveOutstandingStat(
       [
-        { status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' },
-        { status: 'issued', totalSatang: 53_50n, dueDate: '2026-06-30' },
+        inv({ status: 'issued', totalSatang: 1_070_00n, dueDate: '2026-06-20' }),
+        inv({ status: 'issued', totalSatang: 53_50n, dueDate: '2026-06-30' }),
       ],
       TODAY_BKK,
     );
@@ -233,7 +327,7 @@ describe('deriveOutstandingStat', () => {
 
   it('treats dueDate === today as NOT overdue (full Bangkok business day to pay)', () => {
     const stat = deriveOutstandingStat(
-      [{ status: 'issued', totalSatang: 100_00n, dueDate: TODAY_BKK }],
+      [inv({ status: 'issued', totalSatang: 100_00n, dueDate: TODAY_BKK })],
       TODAY_BKK,
     );
     expect(stat.kind).toBe('due');
@@ -242,7 +336,7 @@ describe('deriveOutstandingStat', () => {
 
   it('treats a null dueDate issued invoice as owing but not overdue', () => {
     const stat = deriveOutstandingStat(
-      [{ status: 'issued', totalSatang: 100_00n, dueDate: null }],
+      [inv({ status: 'issued', totalSatang: 100_00n, dueDate: null })],
       TODAY_BKK,
     );
     expect(stat.kind).toBe('due');
@@ -251,7 +345,7 @@ describe('deriveOutstandingStat', () => {
 
   it('returns the clear/first-run variant when nothing is owed', () => {
     const stat = deriveOutstandingStat(
-      [{ status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' }],
+      [inv({ status: 'paid', totalSatang: 99_00n, dueDate: '2026-01-01' })],
       TODAY_BKK,
     );
     expect(stat.kind).toBe('clear');

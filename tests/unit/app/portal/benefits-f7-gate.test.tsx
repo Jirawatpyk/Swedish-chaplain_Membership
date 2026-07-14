@@ -104,6 +104,15 @@ vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({ memberRepo: { findByLinkedUserId } }),
 }));
 
+// 059-membership-suspension — the page now also resolves membership access
+// for the "benefits paused" banner. Mocked to `full` (no banner) so this
+// pre-existing F7-kill-switch gate test stays isolated from the real
+// renewals DB read; the suspended-banner behaviour itself is covered by
+// `tests/unit/app/portal/benefits-suspended-banner.test.tsx`.
+vi.mock('@/lib/load-membership-access', () => ({
+  loadMembershipAccess: vi.fn().mockResolvedValue({ access: 'full', reason: 'in_good_standing' }),
+}));
+
 // Benefits-tab usage compute → a minimal valid usage (the benefits arm always
 // runs under F7-off; BenefitUsageCard is stubbed below so the shape can be
 // minimal — `quantifiable` must be an array because the page `.map`s it).

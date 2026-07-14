@@ -1,9 +1,9 @@
 import { getLocale, getTranslations } from 'next-intl/server';
 import { formatSatangThb } from '@/lib/format-thb';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { StatCard } from '@/components/portal/dashboard/stat-card';
 import { deriveOutstandingStat } from '../_lib/dashboard-stats';
+import { formatDueDate } from '../_lib/format-due-date';
 import { loadDashboardOutstanding } from './dashboard-reads';
 
 /**
@@ -14,16 +14,9 @@ import { loadDashboardOutstanding } from './dashboard-reads';
  * (no `actionHref` — that is not a StatCard prop; link to invoices is
  * conveyed in the `sub` line and the `variantLabel`).
  *
- * Display-only BE date for th-TH via `getDateFormatLocale` — storage
- * stays UTC Gregorian (Constitution Conventions § Timestamps).
+ * Display-only BE date for th-TH — storage stays UTC Gregorian
+ * (Constitution Conventions § Timestamps).
  */
-
-function formatDueDate(ymd: string, locale: string): string {
-  return new Date(`${ymd}T00:00:00.000Z`).toLocaleDateString(
-    getDateFormatLocale(locale),
-    { year: 'numeric', month: 'short', day: 'numeric' },
-  );
-}
 
 export async function OutstandingStatSection({
   tenantId,

@@ -13,7 +13,7 @@
  * audit — a member reading their own benefits is not a third-party PII access).
  */
 import type { Metadata } from 'next';
-import { UserX } from 'lucide-react';
+import { PauseCircle, UserX } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -21,11 +21,17 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
+import { loadMembershipAccess } from '@/lib/load-membership-access';
 import { computeBenefitUsage, makeComputeBenefitUsageDeps } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  InlineAlert,
+  InlineAlertDescription,
+  InlineAlertTitle,
+} from '@/components/ui/inline-alert';
 import {
   BenefitUsageCard,
   type BenefitUsageItem,
@@ -102,6 +108,15 @@ export default async function PortalBenefitsPage(props: {
   }
   const member = memberResult.value;
 
+  // 059-membership-suspension Task 9 item 6 — the Benefits page stays OPEN
+  // while suspended (design doc § User-facing surfaces): quotas render
+  // unchanged (never greyed to 0 — the entitlement is intact, only its USE
+  // is paused), and a banner names EVERY paused benefit, including the ones
+  // the platform can't technically gate (event tickets, banner, website
+  // logo) so a member isn't blindsided at an event door.
+  const membershipAccess = await loadMembershipAccess(tenant.slug, member.memberId);
+  const tSuspended = await getTranslations('portal.dashboard.membership.suspended');
+
   // Render only the ACTIVE panel server-side. The inactive panel stays null so
   // we never do the other tab's DB roundtrips on a page that won't show them.
   let benefitsPanel: React.ReactNode = null;
@@ -130,17 +145,26 @@ export default async function PortalBenefitsPage(props: {
     );
 
     benefitsPanel = (
-      <BenefitUsageCard
-        locale={locale}
-        membershipYear={usage.membershipYear}
-        elapsedYearPct={usage.elapsedYearPct}
-        quantifiable={quantifiable}
-        active={usage.active}
-        aggregateConsumedPct={usage.aggregateConsumedPct}
-        underUseWarning={usage.underUseWarning}
-        warningActionHref={EBLAST_COMPOSE_HREF}
-        headingId="benefits-panel-heading"
-      />
+      <div className="flex flex-col gap-4">
+        {membershipAccess.access === 'suspended' && (
+          <InlineAlert tone="warning" role="status">
+            <PauseCircle aria-hidden="true" />
+            <InlineAlertTitle>{tSuspended('benefitsPausedTitle')}</InlineAlertTitle>
+            <InlineAlertDescription>{tSuspended('benefitsPausedBody')}</InlineAlertDescription>
+          </InlineAlert>
+        )}
+        <BenefitUsageCard
+          locale={locale}
+          membershipYear={usage.membershipYear}
+          elapsedYearPct={usage.elapsedYearPct}
+          quantifiable={quantifiable}
+          active={usage.active}
+          aggregateConsumedPct={usage.aggregateConsumedPct}
+          underUseWarning={usage.underUseWarning}
+          warningActionHref={EBLAST_COMPOSE_HREF}
+          headingId="benefits-panel-heading"
+        />
+      </div>
     );
   }
 

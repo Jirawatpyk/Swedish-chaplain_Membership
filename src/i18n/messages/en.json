@@ -4620,6 +4620,16 @@
         "contactToRenew": "Contact us to reactivate",
         "lapsedMailSubject": "Membership reactivation request",
         "renewNow": "Renew now",
+        "suspended": {
+          "unpaidValue": "Benefits paused",
+          "unpaidSubWithDueDate": "Invoice due {dueDate} — pay to restore full access",
+          "unpaidSubNoDueDate": "Pay your renewal invoice to restore full access",
+          "pendingReviewValue": "Payment received",
+          "pendingReviewSub": "We're verifying your payment — no action is needed right now.",
+          "payCta": "Pay to restore benefits",
+          "benefitsPausedTitle": "Benefits are paused",
+          "benefitsPausedBody": "Your usage quotas are unchanged — E-Blasts, event tickets, banner placement, and other included benefits will unlock the moment your payment is received."
+        },
         "errorValue": "Status unavailable",
         "errorSub": "We couldn't load your membership status. Please try again.",
         "emptyValue": "Welcome aboard",
