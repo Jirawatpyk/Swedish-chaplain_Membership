@@ -44,6 +44,35 @@ import {
 } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
+/**
+ * 059-membership-suspension task-19b (final gate sweep) — poll/retry for
+ * the ONE assertion in this file that races a fire-and-forget audit write.
+ *
+ * `checkPortalAccess`'s fail-open branch calls `emitFailOpen()`
+ * (`src/lib/lapsed-portal-scope.ts:389-422`) WITHOUT awaiting it — by
+ * design (a logging/audit hiccup must never delay or block the
+ * already-decided fail-open response). Every OTHER audit emit in this
+ * suite (`emitTerminatedBlockedAudit`, `emitSuspendedBlockedAudit`) IS
+ * awaited by `checkPortalAccess` before it returns, so their audit-row
+ * assertions are safe to query immediately. Only the fail-open assertion
+ * needs to tolerate the row not being visible yet — this polls up to
+ * ~2s (bounded) rather than adding an `await` to production code.
+ */
+async function pollAuditRowsByRequestId(
+  requestId: string,
+  { timeoutMs = 2000, intervalMs = 100 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<Array<typeof auditLog.$inferSelect>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.requestId, requestId));
+    if (rows.length > 0 || Date.now() >= deadline) return rows;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 describe('F8 lapsed-portal-scope — integration (T146)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
@@ -319,10 +348,9 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
     expect(r.allowed).toBe(true);
     if (r.allowed) expect(r.reason).toBe('fail_open');
 
-    const rows = await db
-      .select()
-      .from(auditLog)
-      .where(eq(auditLog.requestId, correlationId));
+    // Fire-and-forget emit (see helper docstring above) — poll instead of
+    // a single immediate read to avoid a test-race in a concurrent batch.
+    const rows = await pollAuditRowsByRequestId(correlationId);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.eventType).toBe('membership_access_fail_open');
     expect(rows[0]?.payload).toMatchObject({
