@@ -1,0 +1,22 @@
+-- 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH finding, 2026-07-14).
+--
+-- Adds one new `audit_event_type` value: `invoice_buyer_identity_invalid`.
+--
+-- Commit c82924ec (059 / PR-A Task 4) added a write-time invariant on
+-- `member_identity_snapshot.ts`: a buyer marked VAT-registrant
+-- (`buyer_is_vat_registrant=true`) with no `tax_id` throws
+-- `InvalidMemberIdentitySnapshotError` at issue time (ประกาศอธิบดีฯ 196 + 199
+-- are a pair). That throw previously escaped BOTH `issueInvoice` and
+-- `issueEventInvoiceAsPaid`'s catch (neither tested for it) and surfaced as
+-- an unhandled 500 with zero audit trail. This event gives that reject a
+-- typed audit row, mirroring the existing `pdf_render_failed` forensic-audit
+-- pattern (emitted from the outer catch, tx=null, after rollback).
+--
+-- 5y retention — NOT a tax-document touch (the reject is PRE-SEQUENCE, so no
+-- §87 number is ever burned). See F4_AUDIT_RETENTION_YEARS in
+-- src/modules/invoicing/application/ports/audit-port.ts.
+--
+-- Plain `ADD VALUE IF NOT EXISTS` form (transactional-safe PG16/17 — the
+-- proven 0210/0228/0230 pattern). `IF NOT EXISTS` keeps a re-apply a no-op.
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'invoice_buyer_identity_invalid';

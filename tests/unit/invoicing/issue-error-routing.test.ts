@@ -39,6 +39,8 @@ describe('routeIssueError (FR-032)', () => {
       'member_not_found',
       'no_buyer_snapshot',
       'invalid_lines',
+      // 059 PR-A Task 4 fix — VAT-registrant buyer with no tax_id.
+      'buyer_tax_id_required_for_registrant',
     ] as const) {
       expect(routeIssueError(code)).toEqual({
         kind: 'failure',

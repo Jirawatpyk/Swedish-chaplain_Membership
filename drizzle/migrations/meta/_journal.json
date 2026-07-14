@@ -1730,6 +1730,13 @@
 			"when": 1798537700000,
 			"tag": "0246_members_is_vat_registered",
 			"breakpoints": true
+		},
+		{
+			"idx": 250,
+			"version": "7",
+			"when": 1798537800000,
+			"tag": "0247_audit_log_invoice_buyer_identity_invalid",
+			"breakpoints": true
 		}
 	]
 }

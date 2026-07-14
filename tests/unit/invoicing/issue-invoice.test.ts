@@ -34,6 +34,7 @@ import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-over
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
@@ -372,6 +373,55 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('member_archived');
+  });
+
+  // --- 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — the Domain
+  // VO's write-time invariant (member-identity-snapshot.ts ~175-189) throws
+  // `InvalidMemberIdentitySnapshotError` when the resolved buyer is a VAT
+  // registrant with no tax_id. Before this fix the throw escaped the
+  // use-case's catch (only `IssueInvoiceInternalError` was handled) and
+  // surfaced as an unhandled 500 with zero audit trail. Exercises the REAL
+  // domain VO (via the member-identity adapter's exact call shape) rather
+  // than a hand-built error fixture, so this test proves the actual
+  // production failure mode.
+  it('VAT-registrant buyer with no tax_id (Domain VO throw at issue) → buyer_tax_id_required_for_registrant err + audit, no §87 number burned', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember(), {
+      memberIdentity: {
+        getForIssue: vi.fn(async () => ({
+          memberId: 'member-1',
+          isActive: true,
+          isArchived: false,
+          memberTypeScope: 'company' as const,
+          registrationDate: '2026-01-15',
+          registrationFeePaid: true,
+          snapshot: makeMemberIdentitySnapshot({
+            legal_name: 'VAT-Registrant Co, No TIN Yet',
+            tax_id: null,
+            address: '123 Road, Bangkok',
+            primary_contact_name: 'John Doe',
+            primary_contact_email: 'john@acme.example',
+            buyer_is_vat_registrant: true,
+          }),
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      },
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('buyer_tax_id_required_for_registrant');
+    // PRE-SEQUENCE — buyer resolution (step B) runs before allocateNext
+    // (step E), so no §87 number is ever consumed by this reject.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+    // T122-style forensic audit, same posture as pdf_render_failed: the tx
+    // is already dead by the time we're in the outer catch, so tx=null.
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_buyer_identity_invalid',
+        payload: expect.objectContaining({ invoice_id: INVOICE_ID }),
+      }),
+    );
   });
 
   // --- 066-membership-no-tin — §86/4 buyer-TIN is CONDITIONAL, not required.

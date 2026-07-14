@@ -387,6 +387,15 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5 parity test's
   //     `auto_refund_` prefix already covers it. ---
   'auto_refund_reconciled',
+  // --- 059 PR-A Task 4 fix (migration 0247, 2026-07-14) — F4 write-time
+  //     buyer-identity-snapshot invariant reject. Emitted from the outer
+  //     catch of issueInvoice / issueEventInvoiceAsPaid when the resolved
+  //     buyer is a VAT registrant with no tax_id (Domain VO throw,
+  //     PRE-SEQUENCE — no §87 number burned). 5y retention (no tax-document
+  //     touch). Keep in lockstep with F4AuditEventType +
+  //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
+  //     enum↔retention parity test enforces it. ---
+  'invoice_buyer_identity_invalid',
 ]);
 
 /**

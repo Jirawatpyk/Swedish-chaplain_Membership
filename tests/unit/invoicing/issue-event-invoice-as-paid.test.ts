@@ -49,6 +49,7 @@ import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-over
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
+import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { MemberIdentityView } from '@/modules/invoicing/application/ports/member-identity-port';
 import type { EventRegistrationView } from '@/modules/invoicing/application/ports/event-registration-lookup-port';
@@ -612,6 +613,47 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('member_archived');
     expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  // --- 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — mirrors the
+  // issue-invoice.test.ts case. issueEventInvoiceAsPaid also rebuilds the
+  // buyer snapshot from live DB data via resolveInvoiceBuyerForIssue (the
+  // matched-member arm), so it can hit the SAME Domain VO throw. Exercises
+  // the REAL domain VO rather than a hand-built error fixture.
+  it('VAT-registrant buyer with no tax_id (Domain VO throw at issue) → buyer_tax_id_required_for_registrant err + audit, no §87 number burned', async () => {
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), null, {
+      memberIdentity: {
+        getForIssue: vi.fn(async () => ({
+          memberId: 'member-1',
+          isActive: true,
+          isArchived: false,
+          memberTypeScope: 'company' as const,
+          registrationDate: '2026-01-15',
+          registrationFeePaid: true,
+          snapshot: makeMemberIdentitySnapshot({
+            legal_name: 'VAT-Registrant Co, No TIN Yet',
+            tax_id: null,
+            address: '123 Road, Bangkok',
+            primary_contact_name: 'Jane Buyer',
+            primary_contact_email: 'jane@beta.example',
+            buyer_is_vat_registrant: true,
+          }),
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      },
+    });
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('buyer_tax_id_required_for_registrant');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_buyer_identity_invalid',
+        payload: expect.objectContaining({ invoice_id: INVOICE_ID }),
+      }),
+    );
   });
 
   it('no_buyer_snapshot — non-member draft with null pinned snapshot → err (data-integrity guard)', async () => {

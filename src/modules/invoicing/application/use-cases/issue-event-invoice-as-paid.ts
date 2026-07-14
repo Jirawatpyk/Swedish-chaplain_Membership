@@ -89,7 +89,10 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import { splitVatInclusive } from '@/modules/invoicing/domain/value-objects/vat-inclusive';
 import { buyerHasTin } from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
-import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
+import {
+  InvalidMemberIdentitySnapshotError,
+  type MemberIdentitySnapshot,
+} from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { addDays, bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
@@ -154,7 +157,18 @@ export type IssueEventInvoiceAsPaidError =
   | { code: 'invalid_lines'; reason: string }
   | { code: 'overflow'; fiscalYear: FiscalYear }
   | { code: 'pdf_render_failed'; reason: string }
-  | { code: 'blob_upload_failed'; reason: string };
+  | { code: 'blob_upload_failed'; reason: string }
+  /**
+   * 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — the matched-
+   * member buyer resolved at issue is a VAT registrant with no `tax_id`
+   * (ประกาศอธิบดีฯ 196 + 199 are a pair). Surfaced from the Domain VO's
+   * write-time invariant (`InvalidMemberIdentitySnapshotError`,
+   * member-identity-snapshot.ts) instead of an unhandled 500. PRE-SEQUENCE —
+   * buyer resolution runs before `allocateNext`, so no §87/receipt number is
+   * ever burned by this reject. The admin fix is either field: add the tax
+   * ID, or clear the VAT-registered checkbox if the number isn't known yet.
+   */
+  | { code: 'buyer_tax_id_required_for_registrant' };
 
 /**
  * Internal throw-carrier: aborts the transaction AND propagates a typed error
@@ -905,6 +919,39 @@ export async function issueEventInvoiceAsPaid(
         }
       }
       return err(e.error);
+    }
+    // 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — mirrors
+    // issueInvoice's identical branch: `resolveInvoiceBuyerForIssue` (the
+    // matched-member arm, PRE-SEQUENCE) resolved a buyer who is a VAT
+    // registrant with no tax_id, and `makeMemberIdentitySnapshot` THROWS
+    // rather than returning a Result. No §87/receipt number was ever
+    // burned. Audited the same way pdf_render_failed is: the tx is already
+    // dead by the time we're here, so tx=null; fire-and-forget, never mask
+    // the original error with an audit-write failure.
+    if (e instanceof InvalidMemberIdentitySnapshotError) {
+      logger.warn(
+        { invoiceId: input.invoiceId, tenantId: input.tenantId, issues: e.issues },
+        'issueEventInvoiceAsPaid: buyer identity snapshot invalid at issue time (VAT registrant with no tax_id), rolling back',
+      );
+      try {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'invoice_buyer_identity_invalid',
+          actorUserId: input.actorUserId,
+          summary: `Invoice ${input.invoiceId} issuance blocked — buyer identity snapshot invalid`,
+          payload: {
+            invoice_id: input.invoiceId,
+            issues: e.issues.map((i) => ({ path: i.path, message: i.message })),
+          },
+        });
+      } catch (auditErr) {
+        logger.warn(
+          { err: auditErr, invoiceId: input.invoiceId },
+          'issueEventInvoiceAsPaid: invoice_buyer_identity_invalid audit emit also failed',
+        );
+      }
+      return err({ code: 'buyer_tax_id_required_for_registrant' });
     }
     throw e;
   }

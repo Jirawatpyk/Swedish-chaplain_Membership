@@ -153,7 +153,29 @@ export type F4AuditEventType =
    * event marks allocation, not render). 10y retention (Thai RD §87/3
    * tax-document class), same posture as `invoice_paid` / the F4 backfill.
    */
-  | 'tax_receipt_issued';
+  | 'tax_receipt_issued'
+  /**
+   * 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH finding) — the
+   * Domain VO's write-time invariant (member-identity-snapshot.ts ~175-189)
+   * fired: the buyer resolved at issue is a VAT registrant
+   * (`buyer_is_vat_registrant=true`) with no `tax_id` (ประกาศอธิบดีฯ 196 +
+   * 199 are a pair). `makeMemberIdentitySnapshot` THROWS
+   * `InvalidMemberIdentitySnapshotError` (not a Result) — previously this
+   * escaped both `issueInvoice` and `issueEventInvoiceAsPaid`'s catch
+   * (neither tested for it) and surfaced as an unhandled 500 with ZERO audit
+   * trail. Emitted from the outer catch AFTER rollback (tx already dead,
+   * same posture as `pdf_render_failed`) — the throw lands PRE-SEQUENCE
+   * (buyer resolution runs before `allocateNext`), so no §87 number is ever
+   * burned by this reject. NOT a tax-document touch (nothing was issued) →
+   * 5y operational/reject retention, same class as `pdf_render_failed` /
+   * `registration_cross_tenant_probe`. Payload carries `invoice_id` + the
+   * raw zod issue paths/messages (no PII — the VO's messages never echo the
+   * buyer's actual data). `invoice_` prefix deliberately chosen so this
+   * lands in the `invoice_` bucket of both the F4 enum↔retention parity
+   * test (`prefixes` list) and the admin audit-viewer's category heuristic
+   * (`auditEventCategory`) with zero extra allow-list entries.
+   */
+  | 'invoice_buyer_identity_invalid';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -214,6 +236,11 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 tax-receipt first-issuance
   // signal. Tax-document class (Thai RD §87/3) → 10y.
   tax_receipt_issued: 10,
+  // 059 PR-A Task 4 fix — write-time buyer-identity-snapshot invariant reject
+  // at issue (VAT registrant, no tax_id). No tax document was produced (the
+  // reject is PRE-SEQUENCE — no §87 number burned) → 5y operational/reject
+  // retention, same class as pdf_render_failed.
+  invoice_buyer_identity_invalid: 5,
 };
 
 /** Single-source helper — call at every F4 emit site. */
