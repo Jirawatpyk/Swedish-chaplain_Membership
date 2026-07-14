@@ -2992,6 +2992,63 @@ export const renewalsMetrics = {
   },
 
   /**
+   * 059-membership-suspension Task 18 — `membership_suspended_count` gauge.
+   *
+   * Per-tenant count of members whose most-recent renewal cycle resolves to
+   * `deriveMembershipAccess(cycle, now).access === 'suspended'` (benefits
+   * temporarily paused — unpaid invoice, pending admin-reactivation review,
+   * or a non-terminal cycle whose period already lapsed into the grace
+   * window). Distinct from `observeCycleStateGauge`'s 3-state gauge because
+   * "suspended" is a Slice-3 DERIVED-access concept layered across several
+   * underlying `renewal_cycles.status` values (not a single status column
+   * value) — folding it in as a 4th `observeCycleStateGauge` state would
+   * misrepresent the state-vs-derived-access distinction the Domain layer
+   * (`deriveMembershipAccess`) deliberately draws.
+   *
+   * Fed from the SAME site as `observeCycleStateGauge` — the daily
+   * dispatch-coordinator cron
+   * (`src/app/api/cron/renewals/dispatch-coordinator/route.ts`) — via a SQL
+   * `COUNT(*) FILTER` that mirrors `deriveMembershipAccess`'s suspended
+   * branch 1:1 (see that function's docstring in
+   * `src/modules/renewals/domain/renewal-cycle.ts`); keep the two in sync if
+   * the domain rule ever changes.
+   *
+   * Mirrors `observeCycleStateGauge`'s hand-rolled lazy-registration +
+   * per-tenant accumulator + async-observer-reads-`gaugeValues` mechanism
+   * exactly (tenant slug as the direct inner-Map key, matching the sibling
+   * gauge's test/inspection contract via `__test__readGaugeValues`) — NOT
+   * the generic `observeGauge` helper, whose inner-Map key is a
+   * JSON-serialised label object rather than a bare tenant string. Only one
+   * gauge name here (no per-state variability), so the extra per-state
+   * indirection `observeCycleStateGauge` needs is not required.
+   *
+   * Cardinality bound: one label dimension (`tenant`, small-cardinality).
+   */
+  observeMembershipSuspendedCountGauge(tenantId: string, count: number): void {
+    safeMetric(() => {
+      const gaugeName = 'membership_suspended_count';
+      const bucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+      bucket.set(tenantId, count);
+      gaugeValues.set(gaugeName, bucket);
+
+      if (!observableGauges.has(gaugeName)) {
+        const gauge = meter().createObservableGauge(gaugeName, {
+          description:
+            "Members whose latest renewal cycle resolves to deriveMembershipAccess access='suspended', per tenant (059-membership-suspension)",
+        });
+        observableGauges.set(gaugeName, gauge);
+        gauge.addCallback((result) => {
+          const b = gaugeValues.get(gaugeName);
+          if (!b) return;
+          for (const [tenantLabel, value] of b.entries()) {
+            result.observe(value, { tenant: tenantLabel });
+          }
+        });
+      }
+    });
+  },
+
+  /**
    * Phase 9 verify-fix close-on-review — F8 cascade outcome counter.
    *
    * Mirrors `broadcastsMetrics.cascadeOutcome` so the F3 ↔ F8 cascade

@@ -5933,7 +5933,9 @@
       "activeHeading": "Inkluderade förmåner",
       "liveNote": "Uppdateras vid laddning · innevarande år",
       "emptyTitle": "Inga spårade förmåner",
-      "fullBenefits": "Alla förmåner"
+      "fullBenefits": "Alla förmåner",
+      "suspendedBadge": "Pausad",
+      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade"
     },
     "benefit": {
       "eblast": "E-utskick",

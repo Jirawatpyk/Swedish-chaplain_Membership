@@ -55,7 +55,12 @@ async function observeCycleStateGaugesForTenant(
 ): Promise<void> {
   try {
     const ctx = asTenantContext(tenantId);
-    type Row = { active: number; in_grace: number; lapsed_total: number };
+    type Row = {
+      active: number;
+      in_grace: number;
+      lapsed_total: number;
+      suspended_total: number;
+    };
     const rows = await runInTenant<ReadonlyArray<Row>>(ctx, async (tx) => {
       const result = await tx.execute(sql`
         SELECT
@@ -65,7 +70,19 @@ async function observeCycleStateGaugesForTenant(
           COUNT(*) FILTER (
             WHERE status = 'awaiting_payment' AND expires_at < NOW()
           )::int AS in_grace,
-          COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed_total
+          COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed_total,
+          -- 059-membership-suspension Task 18 — mirrors
+          -- deriveMembershipAccess's suspended branch 1:1
+          -- (src/modules/renewals/domain/renewal-cycle.ts): pending
+          -- admin-reactivation review, OR an unpaid awaiting_payment cycle
+          -- (regardless of grace window), OR a non-terminal upcoming/
+          -- reminded cycle whose period already ended (cron-gap suspend).
+          -- Keep this predicate in sync with that function if it changes.
+          COUNT(*) FILTER (
+            WHERE status = 'pending_admin_reactivation'
+               OR status = 'awaiting_payment'
+               OR (status IN ('upcoming','reminded') AND expires_at < NOW())
+          )::int AS suspended_total
         FROM renewal_cycles
       `);
       // Drizzle's postgres-js driver returns the rows array directly.
@@ -85,6 +102,10 @@ async function observeCycleStateGaugesForTenant(
       tenantId,
       'lapsed_total',
       row.lapsed_total,
+    );
+    renewalsMetrics.observeMembershipSuspendedCountGauge(
+      tenantId,
+      row.suspended_total,
     );
   } catch (e) {
     // Gauge observation is best-effort — never block coordinator on

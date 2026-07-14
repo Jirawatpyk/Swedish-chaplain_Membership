@@ -5933,7 +5933,9 @@
       "activeHeading": "Included benefits",
       "liveNote": "Updated on load · current year",
       "emptyTitle": "No tracked benefits",
-      "fullBenefits": "Full benefits"
+      "fullBenefits": "Full benefits",
+      "suspendedBadge": "Suspended",
+      "suspendedBadgeSr": "Membership suspended — benefits paused"
     },
     "benefit": {
       "eblast": "E-Blasts",
