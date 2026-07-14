@@ -25,8 +25,15 @@ export function isRenewalPayable(status: string, expiresAtIso: string, now: Date
   if (status === 'awaiting_payment') return true;
   if (status === 'upcoming' || status === 'reminded') {
     // Instant-vs-instant, strict `<` — same semantics as
-    // `deriveMembershipAccess` (exactly-now is NOT YET expired).
-    return Date.parse(expiresAtIso) < now.getTime();
+    // `deriveMembershipAccess` (exactly-now is NOT YET expired). A
+    // malformed/unparseable `expiresAt` is treated as EXPIRED (→ payable),
+    // mirroring `deriveMembershipAccess`'s `!Number.isFinite(expiresMs)`
+    // guard so the two predicates never disagree on a corrupt row — a
+    // disagreement would dead-end the suspended card's "pay to restore"
+    // CTA, which links to this page (the exact regression Task 9 item 4
+    // fixed for the well-formed case).
+    const expiresMs = Date.parse(expiresAtIso);
+    return !Number.isFinite(expiresMs) || expiresMs < now.getTime();
   }
   return false;
 }

@@ -13,6 +13,7 @@
  * audit — a member reading their own benefits is not a third-party PII access).
  */
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 import { PauseCircle, UserX } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
@@ -115,6 +116,22 @@ export default async function PortalBenefitsPage(props: {
   // the platform can't technically gate (event tickets, banner, website
   // logo) so a member isn't blindsided at an event door.
   const membershipAccess = await loadMembershipAccess(tenant.slug, member.memberId);
+
+  // 059-membership-suspension — page-level TERMINATED guard, defense-in-depth
+  // alongside the layout's `enforcePortalPageAccess`. That layout guard only
+  // re-runs on SSR load / refresh / direct nav — NOT on client-side
+  // navigation between sibling portal routes — so a member who deep-navigates
+  // here from an allowed page would otherwise render the full read-only
+  // benefit view even though `/portal/benefits` is OFF the terminated
+  // allowlist (`isTerminatedAllowedRoute`). Mirror that allowlist here (same
+  // pattern `broadcasts/new/page.tsx` uses for its own page-level check) so a
+  // terminated member lands on the bare dashboard's "membership ended" CTA
+  // instead. SUSPENDED members keep the page (the banner below). `redirect()`
+  // throws Next's navigation signal — it MUST stay outside any try/catch so
+  // it can unwind the render.
+  if (membershipAccess.access === 'terminated') {
+    redirect('/portal');
+  }
   const tSuspended = await getTranslations('portal.dashboard.membership.suspended');
 
   // Render only the ACTIVE panel server-side. The inactive panel stays null so

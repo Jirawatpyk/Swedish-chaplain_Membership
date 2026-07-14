@@ -3007,11 +3007,16 @@ export const renewalsMetrics = {
    *
    * Fed from the SAME site as `observeCycleStateGauge` — the daily
    * dispatch-coordinator cron
-   * (`src/app/api/cron/renewals/dispatch-coordinator/route.ts`) — via a SQL
-   * `COUNT(*) FILTER` that mirrors `deriveMembershipAccess`'s suspended
-   * branch 1:1 (see that function's docstring in
-   * `src/modules/renewals/domain/renewal-cycle.ts`); keep the two in sync if
-   * the domain rule ever changes.
+   * (`src/app/api/cron/renewals/dispatch-coordinator/route.ts`) — via a
+   * `DISTINCT ON (member_id) … ORDER BY created_at DESC, cycle_id DESC`
+   * subquery that first reduces to each member's MOST-RECENT cycle, then
+   * applies `deriveMembershipAccess`'s suspended predicate 1:1 (see that
+   * function's docstring in `src/modules/renewals/domain/renewal-cycle.ts`).
+   * The per-member reduction matters: unlike the sibling gauge's raw
+   * per-cycle status tallies, a member with a stale non-latest
+   * awaiting_payment/pending cycle who has since renewed must NOT be
+   * counted — exactly what the domain predicate's latest-cycle-only rule
+   * enforces. Keep the SQL and the domain rule in sync if either changes.
    *
    * Mirrors `observeCycleStateGauge`'s hand-rolled lazy-registration +
    * per-tenant accumulator + async-observer-reads-`gaugeValues` mechanism

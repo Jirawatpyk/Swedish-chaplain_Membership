@@ -34,11 +34,37 @@ import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
 import { makeDrizzleRenewalAuditEmitter } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-audit-emitter';
 import type { TenantContext } from '@/modules/tenants';
+import { loadLatestCycleForMember } from './load-latest-cycle';
 import type { PortalAccessContext, PortalAccessDeps } from './lapsed-portal-scope';
 
+/**
+ * Route-handler / always-on composition (`requireMemberContext` + the Task-7b
+ * bespoke routes). The cycle read is UNCACHED — each request does exactly one
+ * read, so there is nothing to dedupe and no reliance on request-scoped
+ * React `cache()` semantics outside RSC.
+ */
 export function buildPortalAccessDeps(tenant: TenantContext): PortalAccessDeps {
   return {
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
+    clock: { now: () => new Date(systemClock.nowIso()) },
+  };
+}
+
+/**
+ * RSC-ONLY variant whose cycle read goes through the shared, request-cached
+ * `loadLatestCycleForMember`, so the layout chokepoint
+ * (`enforcePortalPageAccess`) dedupes its read with `loadMembershipAccess` on
+ * the same SSR portal page — one row read per request instead of two. Use
+ * ONLY from a Server Component (`enforcePortalPageAccess`); NEVER from a
+ * route handler, where React `cache()` is not request-scoped the same way.
+ */
+export function buildCachedPortalAccessDeps(tenant: TenantContext): PortalAccessDeps {
+  return {
+    cyclesRepo: {
+      findLatestCycleForMember: (tenantId, memberId) =>
+        loadLatestCycleForMember(tenantId, memberId),
+    },
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     clock: { now: () => new Date(systemClock.nowIso()) },
   };

@@ -35,8 +35,10 @@ import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/rene
  * Allowed portal route prefixes for a `terminated` member (T134) — matched
  * against pathname via `matchesScopePrefix` (exact match, or prefix followed
  * by `/` or `?`). A terminated member can:
- *   - Land on the bare `/portal` dashboard, which renders the "membership
- *     ended" mailto-contact CTA instead of the normal widgets.
+ *   - Land on the bare `/portal` dashboard, whose Membership stat card
+ *     renders the "membership ended" mailto-contact CTA (the dashboard's
+ *     other read-only own-data cards still render — see the
+ *     `enforcePortalPageAccess` docstring).
  *   - Open `/portal/renewal/[memberId]` to renew (FR-005a)
  *   - Toggle `/portal/preferences/renewals` opt-out (FR-016)
  *   - Use the `/portal/account` hub (058 D2) — covers the FR-016 renewal
@@ -71,6 +73,19 @@ export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
   '/portal/account',
   '/api/portal/renewal',
   '/api/portal/preferences/renewals',
+  // GDPR Art. 20 / PDPA data-portability backend. The `/api/portal/account/
+  // data-export` routes (the export-job trigger + the `[jobId]/download`
+  // signed-URL route) are NOT currently wired through `checkPortalAccess`,
+  // so this entry is a no-op TODAY. It is listed defensively so the
+  // data-subject right survives a future "gate every bespoke portal route
+  // for consistency" edit (the Task-7b sweep that gated directory/logo/
+  // timeline): unlike the PAGE at `/portal/account`, the API path lives
+  // under the `/api/portal/account` prefix, which is deliberately NOT on
+  // this allowlist (member-email-change etc. under it SHOULD stay blocked
+  // for a terminated member), so a naive gate would 403 a terminated
+  // member out of their own data export. Prefix-matched, so the
+  // `[jobId]/download` child is covered too.
+  '/api/portal/account/data-export',
   // 2026-07-14 maintainer decision (task-15c, corrects the 2026-07-13
   // Task 15 spec amendment which said the opposite — see the corrected
   // FR-005 note in specs/011-renewal-reminders/spec.md): a terminated

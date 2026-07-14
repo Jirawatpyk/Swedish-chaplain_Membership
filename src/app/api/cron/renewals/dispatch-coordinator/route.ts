@@ -77,12 +77,31 @@ async function observeCycleStateGaugesForTenant(
           -- admin-reactivation review, OR an unpaid awaiting_payment cycle
           -- (regardless of grace window), OR a non-terminal upcoming/
           -- reminded cycle whose period already ended (cron-gap suspend).
-          -- Keep this predicate in sync with that function if it changes.
-          COUNT(*) FILTER (
-            WHERE status = 'pending_admin_reactivation'
-               OR status = 'awaiting_payment'
-               OR (status IN ('upcoming','reminded') AND expires_at < NOW())
-          )::int AS suspended_total
+          --
+          -- Unlike active/in_grace/lapsed_total above — which are raw
+          -- per-CYCLE status tallies (pre-existing convention) — this
+          -- gauge is per-MEMBER, counting only members whose MOST-RECENT
+          -- cycle is suspended. deriveMembershipAccess classifies a member
+          -- from their single latest cycle (findLatestCycleForMember:
+          -- created_at DESC, cycle_id DESC), so a stale non-latest
+          -- awaiting_payment/pending row on a member who has since renewed
+          -- must NOT inflate this count. DISTINCT ON collapses to each
+          -- member's latest row first, then the same predicate is applied
+          -- — keeping the gauge byte-for-byte in step with the domain
+          -- predicate. Keep both in sync if that function changes. The
+          -- subquery reads renewal_cycles under the same runInTenant GUC,
+          -- so RLS tenant-scoping applies identically to the outer FROM.
+          (
+            SELECT COUNT(*)::int
+            FROM (
+              SELECT DISTINCT ON (member_id) status, expires_at
+              FROM renewal_cycles
+              ORDER BY member_id, created_at DESC, cycle_id DESC
+            ) latest
+            WHERE latest.status = 'pending_admin_reactivation'
+               OR latest.status = 'awaiting_payment'
+               OR (latest.status IN ('upcoming','reminded') AND latest.expires_at < NOW())
+          ) AS suspended_total
         FROM renewal_cycles
       `);
       // Drizzle's postgres-js driver returns the rows array directly.

@@ -127,6 +127,12 @@ function makeFakeDeps(opts: FakeDepsOpts): {
   deps: ImportCsvDeps;
   auditEmit: ReturnType<typeof vi.fn>;
 } {
+  // `auditEmit` captures the STANDALONE emit. The suspended-member audit
+  // moved off the tx-scoped `ports.audit` onto `deps.emitStandalone` when the
+  // check was hoisted OUT of the batch tx (review finding 2026-07-15 —
+  // running the membership-access read inside the tx opened a second pooled
+  // connection while the batch tx held one). `emitStandalone` also carries
+  // `csv_import_completed`, so the assertions filter by `eventType`.
   const auditEmit = vi.fn(async () => ok('audit-id' as never));
   const fakeEventsRepo = makeFakeEventsRepo();
 
@@ -154,12 +160,11 @@ function makeFakeDeps(opts: FakeDepsOpts): {
     advisoryLockAcquirer: {
       acquire: vi.fn(async () => {}),
     } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+    // Row-level batch-tx audit path (cancellations / failures) — unused on
+    // this happy path; the suspended-member audit is on emitStandalone now.
     audit: {
-      emit: auditEmit,
+      emit: vi.fn(async () => ok('row-audit-id' as never)),
     } as unknown as ImportCsvTxScopedPorts['audit'],
-    membershipAccess: {
-      getMembershipAccess: opts.getMembershipAccess,
-    } as unknown as ImportCsvTxScopedPorts['membershipAccess'],
   } as unknown as ImportCsvTxScopedPorts;
 
   const deps = {
@@ -184,8 +189,12 @@ function makeFakeDeps(opts: FakeDepsOpts): {
           })(),
         ),
       )),
+    // Top-level (not tx-scoped) — the hoisted post-commit check reads it here.
+    membershipAccess: {
+      getMembershipAccess: opts.getMembershipAccess,
+    } as unknown as ImportCsvDeps['membershipAccess'],
     runInTenantTx: vi.fn(async (_tenantId, fn) => fn(fakeBatchPorts)),
-    emitStandalone: vi.fn(async () => ok('audit-id' as never)),
+    emitStandalone: auditEmit,
   } as unknown as ImportCsvDeps;
 
   return { deps, auditEmit };
@@ -388,9 +397,10 @@ describe('059-membership-suspension Task 17 — suspended/terminated member CSV-
     expect(outcome.kind).toBe('completed');
     if (outcome.kind !== 'completed') return;
 
-    // The throw must NOT propagate to the savepoint catch-all and roll
-    // back the already-inserted registration — the row stays recorded,
-    // not failed/skipped.
+    // The check runs POST-COMMIT (outside the batch tx), so a throw here
+    // cannot roll anything back — but it also must not escape and fail the
+    // import: `checkSuspendedMemberWarning`'s own try/catch swallows it. The
+    // row stays recorded, not failed/skipped.
     expect(outcome.summary.rowsProcessed).toBe(1);
     expect(outcome.summary.rowsFailed).toBe(0);
     expect(outcome.summary.rowsSkipped).toBe(0);

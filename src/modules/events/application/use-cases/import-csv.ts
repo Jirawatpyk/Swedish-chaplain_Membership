@@ -300,14 +300,6 @@ export interface ImportCsvInput {
 export interface ImportCsvTxScopedPorts extends ProcessAttendeeInTxPorts {
   readonly idempotencyStore: IdempotencyStore;
   /**
-   * 059-membership-suspension Task 17 — F6-owned read against F8
-   * benefit-access state (`deriveMembershipAccess`). CSV-import-only:
-   * the webhook ingest path (`TxScopedPorts` in `ingest-webhook-attendee.ts`)
-   * does not carry this port, so this field lives on
-   * `ImportCsvTxScopedPorts` rather than the shared `ProcessAttendeeInTxPorts`.
-   */
-  readonly membershipAccess: MembershipAccessPort;
-  /**
    * Run `fn` inside a Drizzle nested-tx (Postgres SAVEPOINT) scoped
    * to this batch's outer tx. On throw, the savepoint rolls back but
    * the outer tx + other rows in the batch are preserved. The fn
@@ -332,6 +324,16 @@ export interface ImportCsvDeps {
     tenantId: string,
     fn: (ports: ImportCsvTxScopedPorts) => Promise<T>,
   ) => Promise<T>;
+  /**
+   * 059-membership-suspension Task 17 — F6-owned read against F8
+   * benefit-access state (`deriveMembershipAccess`). Lives at the top level
+   * (not only on `ImportCsvTxScopedPorts`) so the alert-only suspended-member
+   * check can run AFTER the batch tx commits, OUTSIDE the held connection —
+   * the bridge opens its OWN `runInTenant`, so calling it while the batch tx
+   * holds a connection is the pool-pressure pattern the lapse use-case
+   * avoids. Same stateless singleton the tx-scoped ports expose.
+   */
+  readonly membershipAccess: MembershipAccessPort;
   /**
    * Standalone-tx audit emit for `csv_import_completed` (per-import)
    * and `csv_import_row_failed` (per failed row). Same shape as the
@@ -453,21 +455,23 @@ type RowOutcome =
        */
       readonly eventBound: boolean;
       /**
-       * 059-membership-suspension Task 17 — set when the matched
-       * member's F8 benefit access (`deriveMembershipAccess`) is
-       * `suspended` or `terminated` at import time. The row above is
-       * ALWAYS inserted normally regardless of this value — F6 never
-       * blocks on membership state (the event already happened; F6
-       * event benefits are fulfilled externally so there is nothing to
-       * gate). `null` for full-access members, non-member/unmatched rows
-       * (`matchedMemberId === null`), and when the membership-access
-       * lookup itself fails (fail-open: no warning rather than a
-       * possibly-wrong one — see `checkSuspendedMemberWarning`).
+       * 059-membership-suspension Task 17 — the matched member id +
+       * registration id for the just-inserted attendance row, carried
+       * RAW so the alert-only suspended-member check
+       * (`checkSuspendedMemberWarning`) can run AFTER the batch tx
+       * commits rather than inside the savepoint. Running it inside the
+       * tx opened a second pooled connection while the batch tx held one
+       * (+ row locks) — the pool-pressure pattern the sibling lapse
+       * use-case deliberately avoids (see CLAUDE.md Gotchas); hoisting it
+       * out keeps the whole membership-access read + its forensic audit
+       * off the held-connection path. `matchedMemberId` is `null` for
+       * non-member / unmatched rows (nothing to check). F6 NEVER blocks
+       * on membership state, so this never affects whether the row is
+       * recorded — the row is already committed by the time the check
+       * runs.
        */
-      readonly suspendedMemberWarning: {
-        readonly memberId: MemberId;
-        readonly accessState: 'suspended' | 'terminated';
-      } | null;
+      readonly matchedMemberId: MemberId | null;
+      readonly registrationId: RegistrationId;
     }
   | {
       readonly kind: 'row_failed';
@@ -1119,24 +1123,35 @@ async function resolveSelectedEvent(
 
 /**
  * 059-membership-suspension Task 17 — alert-only observability check.
- * Called AFTER `processAttendeeInTx` has already inserted the attendance
- * row above this call — this function NEVER blocks or alters that
- * outcome. It only decides whether to flag the row (import-result
- * `suspendedMemberWarnings`) + emit a forensic
+ * Called AFTER the batch tx has COMMITTED the attendance row (from
+ * `importCsv`'s outcome-consumption loop, not from inside the savepoint) —
+ * this function NEVER blocks or alters that outcome. It only decides whether
+ * to flag the row (import-result `suspendedMemberWarnings`) + emit a forensic
  * `event_attendance_by_suspended_member` audit event.
  *
- * Both failure modes are fail-open (neither ever turns an already-
- * inserted row into a failure):
+ * Runs OUTSIDE the batch tx (review finding, 2026-07-15): the
+ * `membershipAccess` bridge opens its OWN `runInTenant` connection, and
+ * calling it while the batch tx still held its connection (+ row locks) was
+ * the second-pooled-connection-inside-a-tx pattern the sibling lapse
+ * use-case (`lapseCyclesOnGraceExpiry`) deliberately avoids (CLAUDE.md
+ * Gotchas). Hoisting the whole check post-commit keeps both the access read
+ * AND its forensic audit off the held-connection path. The audit is emitted
+ * via `deps.emitStandalone` (its own tx) rather than the batch-tx-scoped
+ * `ports.audit` for the same reason — there is no batch tx to pair it with
+ * anymore.
+ *
+ * Both failure modes are fail-open (the row is ALREADY committed; neither
+ * mode can undo it):
  *   - membership-access lookup errors → log + return `null` (no warning
- *     rather than a possibly-wrong one — matches this branch's existing
- *     read-path fail-open policy, Tasks 3/6/7).
+ *     rather than a possibly-wrong one — matches this branch's read-path
+ *     fail-open policy, Tasks 3/6/7).
  *   - audit-emit failure/throw → log + still return the warning (the
  *     import-result chip is the primary signal; the audit row is a
  *     secondary forensic trail, same tier as
  *     `csv_import_row_cancelled_no_prior`).
  */
 async function checkSuspendedMemberWarning(
-  ports: ImportCsvTxScopedPorts,
+  deps: Pick<ImportCsvDeps, 'membershipAccess' | 'emitStandalone'>,
   input: ImportCsvInput,
   matchedMemberId: MemberId,
   rowNumber: number,
@@ -1145,25 +1160,17 @@ async function checkSuspendedMemberWarning(
   readonly memberId: MemberId;
   readonly accessState: 'suspended' | 'terminated';
 } | null> {
-  // Fail-open guard (2026-07-14 review finding): the port contract says
-  // "never throws" and the concrete adapter
-  // (`membership-access-bridge.ts`) wraps its body accordingly, but this
-  // is pure observability layered AFTER `processAttendeeInTx` already
-  // committed the attendance row inside the savepoint. If this call
-  // somehow threw (contract violation), letting the exception escape
-  // would propagate to the savepoint catch-all at the bottom of
-  // `processOneRowInSavepoint` and roll back the just-inserted
-  // registration — reporting the row as `row_failed` and destroying
-  // already-recorded attendance data. That is the opposite of this
-  // function's invariant (never block/undo recording), so the lookup
-  // gets its OWN try/catch here — separate from the audit-emit
-  // try/catch below — and a throw is handled exactly like the
-  // `!access.ok` branch: log + return null (no warning, no audit).
+  // Defensive fail-open guard: the port contract says "never throws" and the
+  // concrete adapter (`membership-access-bridge.ts`) wraps its body
+  // accordingly, but a contract violation here must never escape and fail the
+  // import — the row is already committed and this is pure observability. A
+  // throw is handled exactly like the `!access.ok` branch: log + return null
+  // (no warning, no audit).
   let access: Awaited<
-    ReturnType<typeof ports.membershipAccess.getMembershipAccess>
+    ReturnType<typeof deps.membershipAccess.getMembershipAccess>
   >;
   try {
-    access = await ports.membershipAccess.getMembershipAccess(
+    access = await deps.membershipAccess.getMembershipAccess(
       input.tenantId,
       matchedMemberId,
     );
@@ -1197,7 +1204,7 @@ async function checkSuspendedMemberWarning(
 
   const accessState = access.value.access;
   try {
-    const auditResult = await ports.audit.emit({
+    const auditResult = await deps.emitStandalone({
       eventType: 'event_attendance_by_suspended_member',
       tenantId: input.tenantId,
       actorType: 'csv_import',
@@ -1511,27 +1518,22 @@ async function processOneRowInSavepoint(
         return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
       }
 
-      // 059-membership-suspension Task 17 — alert-only observability:
-      // never blocks. The row above is already inserted; this only
-      // decides whether to flag it + emit a forensic audit event.
-      const suspendedMemberWarning =
-        result.matchedMemberId !== null
-          ? await checkSuspendedMemberWarning(
-              ports,
-              input,
-              result.matchedMemberId,
-              parsed.rowNumber,
-              result.registrationId,
-            )
-          : null;
-
+      // 059-membership-suspension Task 17 — carry the matched member +
+      // registration ids RAW; the alert-only suspended-member check runs
+      // POST-COMMIT in `importCsv`'s outcome loop, OUTSIDE this batch tx
+      // (the membership-access bridge opens its own connection — running it
+      // here would be a second pooled connection while the batch tx is
+      // held). F6 never blocks on membership state, so deferring the check
+      // is purely a matter of WHEN the alert is computed, not WHETHER the
+      // row is recorded.
       return {
         kind: 'inserted' as const,
         rowNumber: parsed.rowNumber,
         matchType: result.matchType,
         eventCreated: result.eventCreated,
         eventBound: result.eventBound,
-        suspendedMemberWarning,
+        matchedMemberId: result.matchedMemberId,
+        registrationId: result.registrationId,
       };
     });
   } catch (e) {
@@ -2330,13 +2332,28 @@ export async function importCsv(
                 summary.eventsUpdated += 1;
               }
             }
-            // 059-membership-suspension Task 17 — flag (never block).
-            if (outcome.suspendedMemberWarning !== null) {
-              summary.suspendedMemberWarnings.push({
-                rowNumber: outcome.rowNumber,
-                memberId: outcome.suspendedMemberWarning.memberId,
-                accessState: outcome.suspendedMemberWarning.accessState,
-              });
+            // 059-membership-suspension Task 17 — alert-only suspended-member
+            // check. Runs HERE (post-commit, after `processBatch`'s
+            // `runInTenantTx` has resolved at line ~2301) rather than inside
+            // the savepoint, so the membership-access read + its forensic
+            // audit never open a second pooled connection while the batch tx
+            // holds one (review finding). Fail-open + never blocks — the row
+            // is already recorded regardless of this result.
+            if (outcome.matchedMemberId !== null) {
+              const warning = await checkSuspendedMemberWarning(
+                deps,
+                input,
+                outcome.matchedMemberId,
+                outcome.rowNumber,
+                outcome.registrationId,
+              );
+              if (warning !== null) {
+                summary.suspendedMemberWarnings.push({
+                  rowNumber: outcome.rowNumber,
+                  memberId: warning.memberId,
+                  accessState: warning.accessState,
+                });
+              }
             }
             break;
           case 'row_failed':

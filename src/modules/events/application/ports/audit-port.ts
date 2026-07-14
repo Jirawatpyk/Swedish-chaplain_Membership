@@ -192,7 +192,7 @@ export const F6_AUDIT_EVENT_TYPES = [
   // 059-membership-suspension Task 17 — alert-only observability event.
   // Emitted when the CSV importer records attendance for a matched
   // member whose F8 benefit-access is suspended/terminated. Never
-  // blocks the import. Migration 0247 enum extension.
+  // blocks the import. Migration 0248 enum extension.
   'event_attendance_by_suspended_member',
 ] as const;
 

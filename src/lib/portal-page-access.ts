@@ -16,9 +16,14 @@
  * `requireMemberContext` does (`memberRepo.findByLinkedUserId`), reads the
  * current pathname from the `x-pathname` header `src/proxy.ts` sets on every
  * request, and calls `checkPortalAccess`. A blocked decision redirects to
- * the bare `/portal` dashboard, which renders the terminated "membership
- * ended" mailto CTA (see `(member)/portal/_components/membership-stat-
- * section.tsx`) instead of the normal widgets.
+ * the bare `/portal` dashboard, whose Membership stat card renders the
+ * terminated "membership ended" mailto CTA (see `(member)/portal/
+ * _components/membership-stat-section.tsx`). Note that `/portal` is itself
+ * on the terminated allowlist, so the dashboard's OTHER cards still render
+ * their read-only own-data (Outstanding balance — tax invoices a terminated
+ * member may still pay — and the benefit-usage summary); only the Membership
+ * card switches to the terminated state. Benefit-CONSUMING surfaces (e-blast
+ * compose, colleague invite) are blocked at the use-case layer regardless.
  *
  * Fails OPEN (logs + returns without redirecting) on:
  *   - no linked member for the session user (data inconsistency; other
@@ -43,7 +48,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { checkPortalAccess } from './lapsed-portal-scope';
-import { buildPortalAccessDeps } from './portal-access-deps';
+import { buildCachedPortalAccessDeps } from './portal-access-deps';
 
 export async function enforcePortalPageAccess(current: CurrentSession): Promise<void> {
   const blocked = await isPortalPageAccessBlocked(current);
@@ -75,7 +80,7 @@ async function isPortalPageAccessBlocked(current: CurrentSession): Promise<boole
       return false;
     }
 
-    const decision = await checkPortalAccess(buildPortalAccessDeps(tenant), {
+    const decision = await checkPortalAccess(buildCachedPortalAccessDeps(tenant), {
       tenantId: tenant.slug,
       memberId: memberResult.value.memberId,
       pathname,

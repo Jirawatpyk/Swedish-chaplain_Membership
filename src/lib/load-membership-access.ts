@@ -32,9 +32,9 @@
  */
 import { cache } from 'react';
 import { logger } from '@/lib/logger';
+import { loadLatestCycleForMember } from '@/lib/load-latest-cycle';
 import {
   deriveMembershipAccess,
-  makeRenewalsDeps,
   type MembershipAccessDecision,
 } from '@/modules/renewals';
 
@@ -46,8 +46,10 @@ const FAIL_OPEN_DECISION: MembershipAccessDecision = {
 export const loadMembershipAccess = cache(
   async (tenantId: string, memberId: string): Promise<MembershipAccessDecision> => {
     try {
-      const deps = makeRenewalsDeps(tenantId);
-      const cycle = await deps.cyclesRepo.findLatestCycleForMember(tenantId, memberId);
+      // Shared with `enforcePortalPageAccess`'s layout read via the
+      // request-cached `loadLatestCycleForMember` (one row read per SSR page
+      // instead of two — see that helper's docstring).
+      const cycle = await loadLatestCycleForMember(tenantId, memberId);
       return deriveMembershipAccess(cycle, new Date());
     } catch (e) {
       logger.warn(

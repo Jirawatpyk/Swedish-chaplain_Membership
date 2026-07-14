@@ -180,12 +180,6 @@ export function makeImportCsvDeps(): ImportCsvDeps {
         registrationsRepo,
       ),
       advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
-      // 059-membership-suspension Task 17 — F6-owned read against F8
-      // benefit-access state. Stateless (opens its OWN `runInTenant` via
-      // `makeDrizzleRenewalCycleRepo`, same escape-hatch pattern as the
-      // F3/F7 sibling bridges) so the singleton is safe to reuse across
-      // every savepoint without binding to `tx`.
-      membershipAccess: membershipAccessBridge,
       runRowInSavepoint: async <R>(
         rowFn: (spPorts: ImportCsvTxScopedPorts) => Promise<R>,
       ) => {
@@ -204,6 +198,11 @@ export function makeImportCsvDeps(): ImportCsvDeps {
 
   return {
     csvImporter: streamingCsvImporter,
+    // 059-membership-suspension Task 17 — top-level (not tx-scoped) so the
+    // alert-only suspended-member check runs POST-COMMIT, outside the batch
+    // tx's held connection. Stateless singleton (opens its OWN `runInTenant`),
+    // safe to expose here and on the tx-scoped ports alike.
+    membershipAccess: membershipAccessBridge,
     runInTenantTx: async <T>(
       tenantId: string,
       fn: (ports: ImportCsvTxScopedPorts) => Promise<T>,
