@@ -155,7 +155,7 @@ describe('AddressSection — the live region mounts empty from the start', () =>
 });
 
 describe('AddressSection — case 1: unambiguous postcode', () => {
-  it('sets province, district AND sub-district, shows an auto-filled hint with Undo, and announces it', async () => {
+  it('sets province, district AND sub-district (stored as ENGLISH — see file-header comment), shows an auto-filled hint with Undo, and announces it', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
       throw new Error(`unexpected fetch ${url}`);
@@ -170,11 +170,11 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
       { timeout: 3000 },
     );
 
-    await waitFor(() => expect(byId('province')).toHaveTextContent('กรุงเทพมหานคร'), {
+    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
       timeout: 3000,
     });
-    expect(byId('city')).toHaveTextContent('เขตปทุมวัน');
-    expect(byId('sub_district')).toHaveTextContent('วังใหม่');
+    expect(byId('city')).toHaveTextContent('Pathum Wan');
+    expect(byId('sub_district')).toHaveTextContent('Wang Mai');
 
     expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
     await waitFor(() => expect(liveRegionText()).toMatch(/auto-filled/i));
@@ -186,16 +186,16 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
     renderForm();
 
     fireEvent.change(byId('postal_code'), { target: { value: '10330' } });
-    await waitFor(() => expect(byId('province')).toHaveTextContent('กรุงเทพมหานคร'), {
+    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
       timeout: 3000,
     });
 
     fireEvent.click(screen.getByRole('button', { name: /undo/i }));
 
     await waitFor(() => expect(screen.queryByRole('button', { name: /undo/i })).toBeNull());
-    expect(byId('province')).not.toHaveTextContent('กรุงเทพมหานคร');
-    expect(byId('city')).not.toHaveTextContent('เขตปทุมวัน');
-    expect(byId('sub_district')).not.toHaveTextContent('วังใหม่');
+    expect(byId('province')).not.toHaveTextContent('Bangkok');
+    expect(byId('city')).not.toHaveTextContent('Pathum Wan');
+    expect(byId('sub_district')).not.toHaveTextContent('Wang Mai');
   });
 
   it('hides the Undo hint once the admin edits the postcode away from the code it refers to', async () => {
@@ -216,7 +216,49 @@ describe('AddressSection — case 1: unambiguous postcode', () => {
     // to resolve, and WITHOUT touching the values it already set.
     fireEvent.change(byId('postal_code'), { target: { value: '10339' } });
     expect(screen.queryByRole('button', { name: /undo/i })).toBeNull();
-    expect(byId('province')).toHaveTextContent('กรุงเทพมหานคร');
+    expect(byId('province')).toHaveTextContent('Bangkok');
+  });
+});
+
+describe('AddressSection — the picker STORES English, Thai is secondary text only (PR-B language reversal: ประกาศอธิบดีฯ ฉบับที่ 92 pre-approves English + THB tax invoices; TSCC corpus is 132/132 English addresses)', () => {
+  it('picking an unambiguous TH postcode stores the English province/district/sub-district, and the Thai name appears in the picker as secondary text', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/geo/postal/10330') return jsonResponse({ candidates: UNAMBIGUOUS });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm();
+
+    fireEvent.change(byId('postal_code'), { target: { value: '10330' } });
+
+    // The STORED (and displayed, primary-label) value is English.
+    await waitFor(() => expect(byId('province')).toHaveTextContent('Bangkok'), {
+      timeout: 3000,
+    });
+    expect(byId('city')).toHaveTextContent('Pathum Wan');
+    expect(byId('sub_district')).toHaveTextContent('Wang Mai');
+    // ...never the Thai name — it must not leak into the trigger's primary
+    // label.
+    expect(byId('province')).not.toHaveTextContent('กรุงเทพมหานคร');
+
+    // Thai is demoted to secondary `detail` text inside the picker, not
+    // dropped — open each combobox and confirm both texts are present.
+    fireEvent.click(byId('province'));
+    let listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Bangkok')).toBeInTheDocument();
+    expect(within(listbox).getByText('กรุงเทพมหานคร')).toBeInTheDocument();
+    fireEvent.keyDown(listbox, { key: 'Escape' });
+
+    fireEvent.click(byId('city'));
+    listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Pathum Wan')).toBeInTheDocument();
+    expect(within(listbox).getByText('เขตปทุมวัน')).toBeInTheDocument();
+    fireEvent.keyDown(listbox, { key: 'Escape' });
+
+    fireEvent.click(byId('sub_district'));
+    listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Wang Mai')).toBeInTheDocument();
+    expect(within(listbox).getByText('วังใหม่')).toBeInTheDocument();
   });
 });
 
@@ -238,8 +280,12 @@ describe('AddressSection — case 2: ambiguous district (single province)', () =
     expect(byId('city')).toHaveTextContent(/select a district/i);
     expect(byId('sub_district')).toHaveTextContent(/select a sub-district/i);
 
+    // The primary (stored) option label is English; the district's Thai
+    // name is available as secondary `detail` text on the same option.
     fireEvent.click(byId('city'));
     const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Khlong Toei')).toBeInTheDocument();
+    expect(within(listbox).getByText('Watthana')).toBeInTheDocument();
     expect(within(listbox).getByText('เขตคลองเตย')).toBeInTheDocument();
     expect(within(listbox).getByText('เขตวัฒนา')).toBeInTheDocument();
   });
@@ -260,8 +306,12 @@ describe('AddressSection — case 3: multi-province postcode', () => {
 
     expect(byId('province')).toHaveTextContent(/select a province/i);
 
+    // English is the primary (stored) option label; Thai renders as
+    // secondary `detail` text.
     fireEvent.click(byId('province'));
     const listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Phra Nakhon Si Ayutthaya')).toBeInTheDocument();
+    expect(within(listbox).getByText('Lopburi')).toBeInTheDocument();
     expect(within(listbox).getByText('พระนครศรีอยุธยา')).toBeInTheDocument();
     expect(within(listbox).getByText('ลพบุรี')).toBeInTheDocument();
   });
@@ -300,15 +350,20 @@ describe('AddressSection — plus: picking a district narrows sub-district optio
       timeout: 3000,
     });
 
+    // Click the ENGLISH option label — that is the primary, selectable
+    // (and stored) text now; Thai is secondary `detail` text on the item.
     fireEvent.click(byId('city'));
     let listbox = await screen.findByRole('listbox');
-    fireEvent.click(within(listbox).getByText('เขตวัฒนา'));
+    fireEvent.click(within(listbox).getByText('Watthana'));
 
-    await waitFor(() => expect(byId('city')).toHaveTextContent('เขตวัฒนา'));
+    await waitFor(() => expect(byId('city')).toHaveTextContent('Watthana'));
 
     fireEvent.click(byId('sub_district'));
     listbox = await screen.findByRole('listbox');
+    expect(within(listbox).getByText('Khlong Tan Nuea')).toBeInTheDocument();
     expect(within(listbox).getByText('คลองตันเหนือ')).toBeInTheDocument();
+    expect(within(listbox).queryByText('Khlong Tan')).toBeNull();
+    expect(within(listbox).queryByText('Khlong Toei')).toBeNull();
     expect(within(listbox).queryByText('คลองตัน')).toBeNull();
     expect(within(listbox).queryByText('คลองเตย')).toBeNull();
   });

@@ -30,11 +30,27 @@
  * lookup runs; `withCurrentValue` below guarantees the admin's own typed/
  * seeded value is never silently hidden by an empty or narrowed option list.
  *
- * Names are stored in THAI regardless of the admin's UI locale — `sub_district
- * + city + province` are frozen onto the §86/4 tax document at issue
- * (compose-buyer-address.ts), and RC §86/4 วรรคสอง requires Thai particulars.
- * The English name is shown only as secondary `detail` text inside the
- * picker (see `dedupeOptions`).
+ * Names are stored in ENGLISH regardless of the admin's UI locale (reversed
+ * from the original PR-B decision — see git history for the "store Thai"
+ * version this replaced). Two independent facts settled it:
+ *   - Legal: §86/4 วรรคสอง's Thai-language requirement is a DEFAULT, not an
+ *     absolute bar. ประกาศอธิบดีกรมสรรพากร ฉบับที่ 92 (2542) pre-approves
+ *     English-language + THB tax invoices automatically — no case-by-case
+ *     Director-General application is needed (that approval path exists
+ *     only for OTHER languages, or for foreign currency). TSCC's accountant
+ *     independently confirmed the same: an English buyer name/address on a
+ *     Thai tax invoice is fine, provided it is correct and verifiable.
+ *   - Data: TSCC's existing member data is 100% English — of 150 members in
+ *     the live spreadsheet, 132 have an address and not one contains a
+ *     single Thai character. Storing Thai for newly-created members while
+ *     the imported 132 stay English would make one chamber issue tax
+ *     documents in two different languages, for no legal benefit.
+ * `sub_district + city + province` are frozen onto the §86/4 tax document at
+ * issue (compose-buyer-address.ts) — it is language-agnostic and prints
+ * whatever is stored. The Thai name is shown only as secondary `detail` text
+ * inside the picker (see `dedupeOptions`) — a recognition aid for the admin,
+ * never what gets saved. Do NOT revert this to Thai storage without new
+ * evidence overturning both facts above.
  *
  * `LiveRegion` (SC 4.1.3 Status Messages) is mounted UNCONDITIONALLY with
  * empty content from the first render — its own docblock is explicit that a
@@ -106,9 +122,10 @@ type AutoFillSnapshot = {
   };
 };
 
-/** Dedupe candidate rows down to one option per distinct Thai name, keeping
- * the English name as secondary `detail` text (never the primary label —
- * the STORED value must stay the Thai name regardless of UI locale). */
+/** Dedupe candidate rows down to one option per distinct English name,
+ * keeping the Thai name as secondary `detail` text (never the primary label
+ * — the STORED value must stay the English name regardless of UI locale;
+ * see the file-header comment for why). */
 function dedupeOptions(
   candidates: readonly PostalCandidate[],
   pick: (c: PostalCandidate) => PostalName,
@@ -116,8 +133,8 @@ function dedupeOptions(
   const seen = new Map<string, ComboboxOption>();
   for (const c of candidates) {
     const name = pick(c);
-    if (!name.th || seen.has(name.th)) continue;
-    seen.set(name.th, { value: name.th, label: name.th, detail: name.en });
+    if (!name.en || seen.has(name.en)) continue;
+    seen.set(name.en, { value: name.en, label: name.en, detail: name.th });
   }
   return Array.from(seen.values());
 }
@@ -275,7 +292,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
           if (cancelled) return;
           setCandidates(found);
 
-          const districts = new Set(found.map((c) => c.district.th));
+          const districts = new Set(found.map((c) => c.district.en));
           const first = found[0];
 
           if (districts.size === 1 && first) {
@@ -284,26 +301,26 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
             // always; additionally set sub-district only when IT is also
             // unique within that district (many single-district postcodes
             // still cover several sub-districts).
-            const subDistricts = new Set(found.map((c) => c.subDistrict.th));
+            const subDistricts = new Set(found.map((c) => c.subDistrict.en));
             const fillSub = subDistricts.size === 1;
             const previous = {
               province: getValues('province') ?? '',
               city: getValues('city') ?? '',
               subDistrict: getValues('sub_district') ?? '',
             };
-            setValue('province', first.province.th, { shouldDirty: true });
-            setValue('city', first.district.th, { shouldDirty: true });
+            setValue('province', first.province.en, { shouldDirty: true });
+            setValue('city', first.district.en, { shouldDirty: true });
             if (fillSub) {
-              setValue('sub_district', first.subDistrict.th, { shouldDirty: true });
+              setValue('sub_district', first.subDistrict.en, { shouldDirty: true });
             }
             setAutoFill({
               code,
               filledSubDistrict: fillSub,
               previous,
               filled: {
-                province: first.province.th,
-                city: first.district.th,
-                subDistrict: fillSub ? first.subDistrict.th : null,
+                province: first.province.en,
+                city: first.district.en,
+                subDistrict: fillSub ? first.subDistrict.en : null,
               },
             });
             setLookupStatus('unambiguous');
@@ -316,7 +333,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
             // Ambiguous — set NOTHING. Narrow the option lists instead.
             setAutoFill(null);
             setLookupStatus('ambiguous');
-            const provinces = new Set(found.map((c) => c.province.th));
+            const provinces = new Set(found.map((c) => c.province.en));
             setAnnouncement(
               provinces.size > 1
                 ? tf('postalCodeAmbiguousProvince', { code, count: provinces.size })
@@ -367,7 +384,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   );
   const cityCandidates = useMemo(() => {
     const p = provinceValue.trim();
-    return p ? candidates.filter((c) => c.province.th === p) : candidates;
+    return p ? candidates.filter((c) => c.province.en === p) : candidates;
   }, [candidates, provinceValue]);
   const cityOptions = useMemo(
     () => withCurrentValue(dedupeOptions(cityCandidates, (c) => c.district), cityValue),
@@ -375,7 +392,7 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   );
   const subDistrictCandidates = useMemo(() => {
     const d = cityValue.trim();
-    return d ? cityCandidates.filter((c) => c.district.th === d) : cityCandidates;
+    return d ? cityCandidates.filter((c) => c.district.en === d) : cityCandidates;
   }, [cityCandidates, cityValue]);
   const subDistrictOptions = useMemo(
     () =>

@@ -921,7 +921,7 @@ Field order and labels for `country = TH`:
 
 For `country ≠ TH` the section falls back to plain manual fields (Address line 1/2, City, State/Province, Postal code) and the postcode does nothing. **There is no "Not based in Thailand" checkbox** — the Country field already carries that fact, and a second source of truth can contradict it.
 
-Autofilled names follow the **stored** language, not the UI language: when `country = TH`, store the **Thai** names. `compose-buyer-address.ts` freezes `city + province` onto the §86/4 document, and RC §86/4 วรรคสอง requires the particulars in Thai — so the language printed on a tax document must not depend on which admin happened to key the member in. Show the English name as secondary text inside the picker only.
+Autofilled names follow the **stored** language, not the UI language: when `country = TH`, store the **English** names. (Reversed 2026-07-14 from an earlier "store Thai" draft of this plan — see `docs/superpowers/specs/2026-07-13-member-form-redesign-design.md` § 16.1. §86/4 วรรคสอง's Thai-language requirement is a default that ประกาศอธิบดีกรมสรรพากร ฉบับที่ 92 (2542) pre-approves an English-language + THB exception to automatically; TSCC's accountant confirmed the same independently; and TSCC's live corpus is 132/132 English addresses, so storing Thai for new members would make one chamber issue tax documents in two languages for no legal benefit.) `compose-buyer-address.ts` freezes `city + province` onto the §86/4 document verbatim, whatever language is stored — so the language printed on a tax document must not depend on which admin happened to key the member in. Show the Thai name as secondary text inside the picker only.
 
 - [ ] **Step 3: The completeness gate — create blocks, edit warns**
 
@@ -947,9 +947,12 @@ Province/district/sub-district stay one editable combobox each: swapping a
 field's widget mid-keystroke destroys focus, fights paste, kills Chrome's
 address autofill, and trips WCAG 3.2.2.
 
-Thai names are stored for TH members regardless of UI locale — the address is
-frozen onto the §86/4 document and RC §86/4 วรรคสอง requires Thai particulars."
+English names are stored for TH members regardless of UI locale — the address
+is frozen onto the §86/4 document, and ประกาศอธิบดีฯ ฉบับที่ 92 pre-approves
+English particulars; the Thai name stays visible as secondary picker text."
 ```
+
+**Amended 2026-07-14** (before this commit template was ever run): the paragraph above originally said "Thai names are stored ... RC §86/4 วรรคสอง requires Thai particulars." That claim is wrong — see `docs/superpowers/specs/2026-07-13-member-form-redesign-design.md` § 16.1. The actual commit made by PR-B must store English, matching the text above, not the superseded one.
 
 ---
 
