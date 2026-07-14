@@ -955,6 +955,23 @@ export default async function MemberDetailPage({
                       : null
                   }
                 />
+                {/* 059 / PR-A — registered capital. PR-B added the column, the
+                    form field and the API serialiser, but never this page, so
+                    the value an admin typed simply never appeared anywhere. Sits
+                    beside turnover deliberately: they are the pair an admin
+                    compares, and TSCC's data has capital on 113 members versus
+                    turnover on 78. */}
+                <DetailField
+                  label={t('fields.registeredCapitalThb')}
+                  value={
+                    member.registeredCapitalThb !== null
+                      ? format.number(member.registeredCapitalThb, {
+                          style: 'currency',
+                          currency: 'THB',
+                        })
+                      : null
+                  }
+                />
               </dl>
             </div>
 
@@ -1046,7 +1063,19 @@ export default async function MemberDetailPage({
               </dl>
             </details>
             {(() => {
-              const cityLine = [member.city, member.province, member.postalCode]
+              // 059 / PR-A — sub-district (แขวง/ตำบล) LEADS the locality line.
+              // Thai addresses run sub-district → district → province → postal
+              // code, which is the order `composeBuyerAddress` already uses on
+              // the tax document. PR-B added the column, the postcode-driven
+              // picker and the API serialiser but never this page, so the value
+              // was captured and then invisible — and the address shown here did
+              // not match the one printed on the member's own invoice.
+              const cityLine = [
+                member.subDistrict,
+                member.city,
+                member.province,
+                member.postalCode,
+              ]
                 .filter((p) => p && p.trim().length > 0)
                 .join(' ');
               const addressLines = [

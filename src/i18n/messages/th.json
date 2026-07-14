@@ -1140,6 +1140,7 @@
           "address": "ที่อยู่",
           "foundedYear": "ปีที่ก่อตั้ง",
           "turnoverThb": "ยอดขายต่อปี (บาท)",
+          "registeredCapitalThb": "ทุนจดทะเบียน (บาท)",
           "planId": "รหัสแพ็กเกจ",
           "planYear": "ปีแพ็กเกจ",
           "registrationDate": "วันที่สมัคร",

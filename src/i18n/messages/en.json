@@ -1140,6 +1140,7 @@
           "address": "Address",
           "foundedYear": "Founded",
           "turnoverThb": "Annual turnover (THB)",
+          "registeredCapitalThb": "Registered capital (THB)",
           "planId": "Plan ID",
           "planYear": "Plan year",
           "registrationDate": "Registration date",

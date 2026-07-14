@@ -14,7 +14,7 @@
  */
 import type { RefObject } from 'react';
 import { useTranslations } from 'next-intl';
-import { Controller, useFormContext } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
@@ -42,8 +42,25 @@ export function TaxBranchSection({
   const {
     register,
     control,
+    setValue,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
+
+  // 059 / PR-A — the head-office / branch question is asked ONLY of a VAT
+  // registrant, because for anyone else it has no effect on any document and no
+  // meaning in law:
+  //   - ประกาศอธิบดีฯ ฉบับที่ 199 makes the "สำนักงานใหญ่ / สาขาที่ NNNNN" line a
+  //     §86/4 particular required ONLY of a registrant buyer;
+  //   - `buyerBranchEl` in the invoice template prints it only when
+  //     `buyer_is_vat_registrant === true`;
+  //   - `members_branch_pairing_ck` (migration 0248) already forbids a branch
+  //     that is not a registrant.
+  // A natural person has no head office and no branches. Asking them to confirm
+  // they ARE the head office is not just noise — it implies the answer matters,
+  // and the checkbox defaults to ticked, so it looks like a fact we recorded.
+  // Read-only here (no write), so there is no mount-fire hazard.
+  const isVatRegistered =
+    useWatch({ control, name: 'is_vat_registered' }) === true;
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -79,7 +96,20 @@ export function TaxBranchSection({
                 // their own deliberate choice, the entity-type Select stops
                 // overwriting it for the rest of this session.
                 vatManuallyTouchedRef.current = true;
-                field.onChange(checked === true);
+                const next = checked === true;
+                field.onChange(next);
+                if (!next) {
+                  // Un-ticking VAT hides the head-office / branch controls, so
+                  // reset them to the only state a non-registrant can legally
+                  // hold. Not cosmetic: `members_branch_pairing_ck` REJECTS
+                  // (is_vat_registered=false, is_head_office=false), so leaving
+                  // a branch code behind a hidden control would fail the save
+                  // with an error pointing at a field the admin cannot see.
+                  // User-initiated (a real click), so no mount-fire hazard.
+                  setValue('is_head_office', true);
+                  setValue('branch_code', '');
+                  onIsHeadOfficeChange(true);
+                }
               }}
             />
           )}
@@ -93,6 +123,7 @@ export function TaxBranchSection({
           </p>
         </div>
       </div>
+      {isVatRegistered && (
       <div className="flex items-start gap-2">
         <Controller
           control={control}
@@ -121,7 +152,8 @@ export function TaxBranchSection({
           {tf('isHeadOffice')}
         </Label>
       </div>
-      {!isHeadOffice && (
+      )}
+      {isVatRegistered && !isHeadOffice && (
         <div className="max-w-xs">
           <Label htmlFor="branch_code">
             {tf('branchCode')}

@@ -1140,6 +1140,7 @@
           "address": "Adress",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
+          "registeredCapitalThb": "Registrerat aktiekapital (THB)",
           "planId": "Paket-ID",
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
