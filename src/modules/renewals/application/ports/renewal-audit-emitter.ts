@@ -210,6 +210,18 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     storm (e.g. a partial Neon outage) was invisible in audit_log.
   'membership_suspended_action_blocked',
   'membership_access_fail_open',
+  // --- 059-membership-suspension Task 13 (migration 0246) — F8 →F4
+  //     `InvoiceDueBridge` credit-window guard (Task 12) closes the daily
+  //     lapse cron's decision branch: emitted by `lapseCyclesOnGraceExpiry`
+  //     when a member past the grace window still has an unpaid
+  //     (`status='issued'`), not-yet-past-due MEMBERSHIP invoice (F4's
+  //     90-day net terms). The cron defers the `awaiting_payment` →
+  //     `lapsed` transition instead of terminating benefit access
+  //     mid-credit-window. No state change occurs on this branch, so the
+  //     audit is emitted via the fire-and-forget `emit()` path (no
+  //     surrounding state-change tx to pair it with per Constitution
+  //     Principle VIII — deferring IS the absence of a state change). ---
+  'renewal_lapse_deferred_invoice_not_due',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -218,9 +230,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 68
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 69
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 68';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 69';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1208,6 +1220,24 @@ export interface F8AuditPayloadShapes {
     readonly member_id: string;
     readonly blocked_route: string;
     readonly error: string;
+  };
+  /**
+   * 059-membership-suspension Task 13 — emitted from
+   * `lapseCyclesOnGraceExpiry`'s `processOne` when the Task-12
+   * `InvoiceDueBridge` guard reports an unpaid, not-yet-past-due
+   * MEMBERSHIP invoice for the cycle's member. `due_date_frontier` is
+   * the Bangkok-local calendar date (`YYYY-MM-DD`) the guard checked
+   * against (`bangkokLocalDate(now)`) — NOT the invoice's own due date,
+   * which the boolean-returning bridge does not surface. `invoice_subject`
+   * is always `'membership'` (the bridge's own filter); the field exists
+   * for payload-shape symmetry should a future generalisation ever cover
+   * other invoice subjects.
+   */
+  readonly renewal_lapse_deferred_invoice_not_due: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_subject: 'membership';
+    readonly due_date_frontier: string;
   };
 }
 

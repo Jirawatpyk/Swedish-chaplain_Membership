@@ -117,6 +117,8 @@ describe('findMissingEnumValues', () => {
           'membership_suspended_action_blocked',
           'membership_access_fail_open',
           'broadcast_membership_suspended_blocked',
+          // 0246 (059-membership-suspension Task 13):
+          'renewal_lapse_deferred_invoice_not_due',
         ]),
       ],
     ]);
@@ -126,8 +128,8 @@ describe('findMissingEnumValues', () => {
   it('reports the specific missing value(s) on an existing type (the prod bug shape)', () => {
     // document_type present but WITHOUT bill / receipt_105 — exactly the
     // confirmed prod-0230 non-persistence state. audit_event_type is fully
-    // present (including the 0245 additions) so it does NOT show up here —
-    // this test's whole point is isolating a SINGLE missing type.
+    // present (including the 0245 + 0246 additions) so it does NOT show up
+    // here — this test's whole point is isolating a SINGLE missing type.
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note'])],
       [
@@ -140,6 +142,7 @@ describe('findMissingEnumValues', () => {
           'membership_suspended_action_blocked',
           'membership_access_fail_open',
           'broadcast_membership_suspended_blocked',
+          'renewal_lapse_deferred_invoice_not_due',
         ]),
       ],
     ]);
@@ -164,6 +167,8 @@ describe('findMissingEnumValues', () => {
           'membership_suspended_action_blocked',
           'membership_access_fail_open',
           'broadcast_membership_suspended_blocked',
+          // 0246 (059-membership-suspension Task 13):
+          'renewal_lapse_deferred_invoice_not_due',
         ],
       },
     ]);
@@ -182,6 +187,9 @@ describe('findMissingEnumValues', () => {
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('tax_receipt_issued');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('members_backup_exported');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('renewal_cycle_reanchored');
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain(
+      'renewal_lapse_deferred_invoice_not_due',
+    );
   });
 });
 

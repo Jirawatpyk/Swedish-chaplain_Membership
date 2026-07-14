@@ -405,6 +405,15 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F7_AUDIT_EVENT_TYPES (broadcasts audit port) — the F7 parity test's
   //     `broadcast_` prefix already covers it. ---
   'broadcast_membership_suspended_blocked',
+  // --- 059-membership-suspension Task 13 (migration 0246) — F8 →F4
+  //     `InvoiceDueBridge` credit-window guard. Emitted by
+  //     `lapseCyclesOnGraceExpiry` when a member past the grace window
+  //     still has an unpaid, not-yet-past-due MEMBERSHIP invoice — the
+  //     lapse transition is deferred instead of terminating benefit
+  //     access mid-credit-window. Keep in lockstep with
+  //     F8_AUDIT_EVENT_TYPES (renewals audit port) — the F8 audit-count
+  //     parity tests enforce it. ---
+  'renewal_lapse_deferred_invoice_not_due',
 ]);
 
 /**

@@ -17,7 +17,7 @@
  *
  * What this contract pins:
  *
- *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 66`.
+ *   1. **Catalogue size invariant** — `F8_AUDIT_EVENT_TYPES.length === 69`.
  *      Mirrors the compile-time assertion as a runtime smoke check so
  *      a future refactor that bypasses the compile-time pin (e.g. via
  *      `as readonly string[]`) still trips the test.
@@ -62,12 +62,15 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 68 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+  it('catalogue contains exactly 69 event types (matches compile-time _AssertF8AuditEventCount)', () => {
     // Renewal rolling-anchor refactor (migration 0238): 65 → 66, +1
     // `renewal_cycle_reanchored`.
     // 059-membership-suspension Task 8: 66 → 68, +2
     // (`membership_suspended_action_blocked`, `membership_access_fail_open`).
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(68);
+    // 059-membership-suspension Task 13: 68 → 69, +1
+    // (`renewal_lapse_deferred_invoice_not_due` — InvoiceDueBridge
+    // credit-window guard forensic event).
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(69);
   });
 
   it('catalogue contains no duplicate event types', () => {
@@ -217,6 +220,20 @@ describe('F8 audit-port contract (T258)', () => {
       },
     };
     expect(event.payload.route).toBe('/portal/renewal/abc');
+  });
+
+  it('renewal_lapse_deferred_invoice_not_due — canonical payload accepted (059-membership-suspension Task 13)', () => {
+    const event: F8AuditEvent<'renewal_lapse_deferred_invoice_not_due'> = {
+      type: 'renewal_lapse_deferred_invoice_not_due',
+      payload: {
+        cycle_id: '00000000-0000-0000-0000-000000000004' as never,
+        member_id: '00000000-0000-0000-0000-000000000005' as never,
+        invoice_subject: 'membership',
+        due_date_frontier: '2026-05-30',
+      },
+    };
+    expect(event.payload.invoice_subject).toBe('membership');
+    expect(event.payload.due_date_frontier).toBe('2026-05-30');
   });
 
   it('renewal_cycle_reanchored — canonical payload accepted (heal_no_cycle branch, nullable old_* + invoice_id)', () => {

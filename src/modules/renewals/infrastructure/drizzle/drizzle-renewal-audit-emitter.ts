@@ -73,6 +73,11 @@ const F8_ENUM_SHIPPED_TUPLE = [
   // from day one — no deferred window.
   'membership_suspended_action_blocked',
   'membership_access_fail_open',
+  // --- 059-membership-suspension Task 13 (migration 0246) — F8 →F4
+  // `InvoiceDueBridge` credit-window guard. The real emit site lands in
+  // this same commit (`lapse-cycles-on-grace-expiry.ts` `processOne`),
+  // so SHIPPED from day one — no deferred window.
+  'renewal_lapse_deferred_invoice_not_due',
   // --- F8-completion slice 2 — T-0 payability flip emit site -----------
   // Migration 0215 adds the pgEnum value. Emit sites:
   //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')

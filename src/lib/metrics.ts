@@ -2634,6 +2634,30 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_lapse_invoice_due_guard_errors_total{tenant}` —
+   * 059-membership-suspension Task 13: the Task-12 `InvoiceDueBridge`
+   * credit-window guard (runs BEFORE the advisory-lock tx in
+   * `lapseCyclesOnGraceExpiry`) threw. Fail-SAFE design: the member is
+   * NOT lapsed on this path (a guard failure must never terminate
+   * benefit access), so the throw is deliberately NOT folded into the
+   * generic `lapseCyclesErrors` tally — a sustained non-zero rate here
+   * means the daily lapse cron is silently deferring members it should
+   * be able to evaluate, which is its own distinct on-call signal from
+   * "a cycle transition failed". Alert rule: any non-zero rate
+   * sustained for 15 min pages on-call.
+   */
+  lapseInvoiceDueGuardErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_lapse_invoice_due_guard_errors_total',
+          'F8 lapseCyclesOnGraceExpiry InvoiceDueBridge credit-window guard threw — member fails SAFE (not lapsed); distinct from lapseCyclesErrors so a guard-availability incident is not confused with a transition-failure incident',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_enter_awaiting_cycles_errors_total{tenant}` —
    * F8-completion slice 2: per-cycle errors during the daily
    * `enterAwaitingPaymentOnExpiry` (T-0) cron (DB transition throw /
