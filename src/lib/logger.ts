@@ -97,10 +97,26 @@ export const REDACT_PATHS = [
   '*.date_of_birth',
   'dateOfBirth',
   '*.dateOfBirth',
+  // GUARD 3b (059 / member-tax-correctness) — `tax_id` needs the SAME
+  // depth-0/1/2 coverage as `legal_name`/`address`/`recipient_email` below.
+  // `update-member.ts`'s audit-diff builder places the changed value at
+  // `payload.diff.taxId` — `payload` and `diff` are the two parent
+  // segments before the field itself (the same "2 nesting levels then
+  // field" shape as the `recipient_email` precedent's `{event: {payload:
+  // {recipient_email}}}` example below, matched by `*.*.recipient_email`),
+  // reproduced when the full `member_updated` AuditEvent object is logged
+  // as the root of a log line (e.g. a future catch-block logging the
+  // event on `recordInTx` failure). A depth-1 path (`*.taxId`) does NOT
+  // reach a value nested two levels deep. The GUARD 3 fix in
+  // update-member.ts now redacts the VALUE before it ever reaches this
+  // diff, but this entry is defence-in-depth for any OTHER caller that
+  // logs a raw tax_id/taxId two levels deep.
   'tax_id',
   '*.tax_id',
+  '*.*.tax_id',
   'taxId',
   '*.taxId',
+  '*.*.taxId',
   // --- F4 invoicing PII + secrets (T005, plan § Observability) ---
   // Never log raw member-identity snapshots copied onto tax documents,
   // signed-URL tokens that grant 60s access to private PDFs, or raw

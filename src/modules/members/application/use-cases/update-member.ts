@@ -144,6 +144,20 @@ export type UpdateMemberCallMeta = {
 
 // --- Implementation ----------------------------------------------------------
 
+/**
+ * `member_updated` audit-diff fields whose VALUE must never be persisted —
+ * only the FACT that they changed (`fieldsChanged` already carries that).
+ *
+ * `taxId` — for a foreign natural person this column holds a passport /
+ * work-permit number, not a Thai TIN. `audit_log` is append-only (5-year
+ * retention; nothing in `src/` ever issues an `UPDATE` against it — grep
+ * `.update(auditLog` before assuming otherwise), so a raw value written
+ * here SURVIVES a GDPR Art. 17 / PDPA erasure: `eraseMember` NULLs
+ * `members.tax_id`, but cannot reach this audit row. GUARD 3
+ * (059 / member-tax-correctness).
+ */
+const AUDIT_DIFF_VALUE_REDACTED_FIELDS: ReadonlySet<string> = new Set(['taxId']);
+
 /** Diff helper: record only fields present in the patch that changed value. */
 function buildDiff(
   current: Member,
@@ -156,7 +170,17 @@ function buildDiff(
     const currentVal = current[key as keyof Member];
     if (currentVal !== patch[key]) {
       fieldsChanged.push(key as string);
-      diff[key as string] = { old: currentVal, new: patch[key] };
+      // GUARD 3 — record the CHANGE, never the VALUE, for fields listed in
+      // AUDIT_DIFF_VALUE_REDACTED_FIELDS. `fields_changed` above already
+      // preserves accountability (who changed WHAT field, when); the raw
+      // value adds nothing an auditor requires and is a retention liability
+      // audit_log cannot un-write.
+      diff[key as string] = AUDIT_DIFF_VALUE_REDACTED_FIELDS.has(key as string)
+        ? {
+            old: currentVal === null ? null : '<set>',
+            new: patch[key] === null ? '<cleared>' : '<set>',
+          }
+        : { old: currentVal, new: patch[key] };
     }
   }
   return { fieldsChanged, diff };
