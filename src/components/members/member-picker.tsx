@@ -240,17 +240,33 @@ export function MemberPicker({
   );
 
   const clearRef = useRef<HTMLSpanElement>(null);
-  // Separate stable IDs for the listbox region and the disabled-hint
-  // paragraph so both `aria-controls` and `aria-describedby` point to
-  // unique, never-colliding elements.
-  const listboxRegionId = `${listboxId}-list`;
+  // Separate stable ID for the disabled-hint paragraph so aria-describedby
+  // points to a unique, never-colliding element.
   const disabledHintId = `${listboxId}-disabled-hint`;
+
+  // The listbox's real id is NOT `${listboxId}-list` — cmdk generates
+  // `CommandList`'s id internally via its own `useId()` call and
+  // unconditionally overwrites any `id` prop passed to `<CommandList>`
+  // (verified against cmdk@1.1.1's source: `{...c, id: b.listId}`, the
+  // internal id always wins the prop spread). Pre-computing an id here and
+  // pointing `aria-controls` at it — as this component previously did — is
+  // a latent bug: the id never lands on the DOM, so a screen reader
+  // following `aria-controls` finds nothing. Instead, read the REAL
+  // rendered id back off cmdk's own documented `[cmdk-list]` selector via a
+  // ref callback (fires in the same commit the Command tree mounts/unmounts,
+  // so there's no timing race against Base UI's portal-mount). Same
+  // technique as `src/components/ui/combobox.tsx`.
+  const [listboxRegionId, setListboxRegionId] = useState<string | undefined>(undefined);
+  const captureListboxRegionId = useCallback((node: HTMLDivElement | null) => {
+    setListboxRegionId(node?.querySelector<HTMLElement>('[cmdk-list]')?.id);
+  }, []);
 
   return (
     <Popover open={open} onOpenChange={(nextOpen) => !disabled && setOpen(nextOpen)}>
       <PopoverTrigger
         render={
           <Button
+            id={listboxId}
             type="button"
             variant="outline"
             role="combobox"
@@ -320,101 +336,107 @@ export function MemberPicker({
         className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
         align="start"
       >
-        <Command shouldFilter={false}>
-          <CommandInput
-            ref={commandInputRef}
-            id={listboxId}
-            placeholder={t('placeholder')}
-            value={rawInput}
-            onValueChange={setRawInput}
-          />
-          {/* The CommandList is the actual listbox container. Giving it a
-              stable id allows aria-controls on the trigger to point here. */}
-          <CommandList id={listboxRegionId}>
-            {loading ? (
-              // role="status" has an implicit aria-live="polite" per the
-              // ARIA spec; explicit aria-live="polite" makes the announcement
-              // reliable across older SR implementations (VoiceOver 14,
-              // NVDA 2023).  aria-atomic ensures the full sentence is read,
-              // not just the changed text node.
-              <div
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground"
-              >
-                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-                <span>{t('loading')}</span>
-              </div>
-            ) : fetchError ? (
-              <div
-                role="alert"
-                className="px-3 py-4 text-sm text-destructive"
-              >
-                {t('fetchError')}
-              </div>
-            ) : items.length === 0 ? (
-              <CommandEmpty>{t('noMembersFound')}</CommandEmpty>
-            ) : (
-              items.map((opt) => {
-                const isSelected = value === opt.member_id;
-                // Translate the status enum so EN/TH/SV users see
-                // "Active / ใช้งาน / Aktiv" rather than the raw string.
-                // Falls back to the raw value if the backend ever emits
-                // an unknown status — safer than throwing at render time.
-                const statusKnown = isKnownStatus(opt.status);
-                const statusLabel = statusKnown
-                  ? tStatus(opt.status)
-                  : opt.status;
-                // At-risk indicator: a small coloured dot before the legal
-                // name when the member is not `active`. The picker today
-                // filters status=active at the API level, but we keep this
-                // defensive in case the filter relaxes (e.g. "show all").
-                // SR users still get the full translated status via the
-                // badge, so the dot is purely visual and aria-hidden.
-                const dotClass = statusKnown
-                  ? STATUS_DOT_CLASS[opt.status]
-                  : null;
-                return (
-                  <CommandItem
-                    key={opt.member_id}
-                    value={opt.member_id}
-                    onSelect={() => handleSelect(opt)}
-                  >
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      {dotClass ? (
-                        <span
-                          aria-hidden
-                          className={cn(
-                            'inline-block size-1.5 shrink-0 rounded-full',
-                            dotClass,
-                          )}
-                        />
+        {/* `display: contents` — purely a ref anchor to read cmdk's real
+            listbox id back (see `captureListboxRegionId` above); must not
+            participate in Command's own flex layout. */}
+        <div ref={captureListboxRegionId} className="contents">
+          <Command shouldFilter={false}>
+            <CommandInput
+              ref={commandInputRef}
+              placeholder={t('placeholder')}
+              value={rawInput}
+              onValueChange={setRawInput}
+            />
+            {/* The CommandList is the actual listbox container. Its real id
+                is generated internally by cmdk (see `captureListboxRegionId`
+                above) — do not pass an `id` prop here, cmdk overwrites it. */}
+            <CommandList>
+              {loading ? (
+                // role="status" has an implicit aria-live="polite" per the
+                // ARIA spec; explicit aria-live="polite" makes the
+                // announcement reliable across older SR implementations
+                // (VoiceOver 14, NVDA 2023). aria-atomic ensures the full
+                // sentence is read, not just the changed text node.
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground"
+                >
+                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+                  <span>{t('loading')}</span>
+                </div>
+              ) : fetchError ? (
+                <div
+                  role="alert"
+                  className="px-3 py-4 text-sm text-destructive"
+                >
+                  {t('fetchError')}
+                </div>
+              ) : items.length === 0 ? (
+                <CommandEmpty>{t('noMembersFound')}</CommandEmpty>
+              ) : (
+                items.map((opt) => {
+                  const isSelected = value === opt.member_id;
+                  // Translate the status enum so EN/TH/SV users see
+                  // "Active / ใช้งาน / Aktiv" rather than the raw string.
+                  // Falls back to the raw value if the backend ever emits
+                  // an unknown status — safer than throwing at render time.
+                  const statusKnown = isKnownStatus(opt.status);
+                  const statusLabel = statusKnown
+                    ? tStatus(opt.status)
+                    : opt.status;
+                  // At-risk indicator: a small coloured dot before the legal
+                  // name when the member is not `active`. The picker today
+                  // filters status=active at the API level, but we keep this
+                  // defensive in case the filter relaxes (e.g. "show all").
+                  // SR users still get the full translated status via the
+                  // badge, so the dot is purely visual and aria-hidden.
+                  const dotClass = statusKnown
+                    ? STATUS_DOT_CLASS[opt.status]
+                    : null;
+                  return (
+                    <CommandItem
+                      key={opt.member_id}
+                      value={opt.member_id}
+                      onSelect={() => handleSelect(opt)}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        {dotClass ? (
+                          <span
+                            aria-hidden
+                            className={cn(
+                              'inline-block size-1.5 shrink-0 rounded-full',
+                              dotClass,
+                            )}
+                          />
+                        ) : null}
+                        <span className="truncate font-medium">
+                          {opt.company_name}
+                        </span>
+                        {/* Status badges: bg-muted + text-muted-foreground
+                            passes 4.5:1 only when the muted token pair is
+                            correctly configured. The explicit text-xs class
+                            makes this "large UI component" text (≥12 px
+                            bold) which only needs 3:1 — we exceed that at
+                            4.5:1. */}
+                        <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {opt.country}
+                        </span>
+                        <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          {statusLabel}
+                        </span>
+                      </div>
+                      {isSelected ? (
+                        <CheckIcon className="ms-auto size-4" aria-hidden />
                       ) : null}
-                      <span className="truncate font-medium">
-                        {opt.company_name}
-                      </span>
-                      {/* Status badges: bg-muted + text-muted-foreground
-                          passes 4.5:1 only when the muted token pair is
-                          correctly configured.  The explicit text-xs class
-                          makes this "large UI component" text (≥12 px bold)
-                          which only needs 3:1 — we exceed that at 4.5:1. */}
-                      <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                        {opt.country}
-                      </span>
-                      <span className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                        {statusLabel}
-                      </span>
-                    </div>
-                    {isSelected ? (
-                      <CheckIcon className="ms-auto size-4" aria-hidden />
-                    ) : null}
-                  </CommandItem>
-                );
-              })
-            )}
-          </CommandList>
-        </Command>
+                    </CommandItem>
+                  );
+                })
+              )}
+            </CommandList>
+          </Command>
+        </div>
       </PopoverContent>
     </Popover>
   );

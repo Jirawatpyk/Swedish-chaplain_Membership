@@ -84,10 +84,7 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
-import {
-  SearchableCombobox,
-  type ComboboxOption,
-} from '../../_components/searchable-combobox';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import {
   EventAttendeePickerLoader,
   isMatchedMember,
@@ -1010,8 +1007,10 @@ export function EventFeeForm({
       >
         {/* 1. Event picker */}
         <div className="flex flex-col gap-[var(--field-label-gap)]">
-          <Label htmlFor="eventId">{t('eventPicker.label')}</Label>
-          <SearchableCombobox
+          <Label id="eventId-label" htmlFor="eventId">
+            {t('eventPicker.label')}
+          </Label>
+          <Combobox
             id="eventId"
             options={eventOptions}
             value={eventId}
@@ -1019,7 +1018,7 @@ export function EventFeeForm({
             placeholder={noEvents ? t('eventPicker.noEvents') : t('eventPicker.placeholder')}
             searchPlaceholder={t('eventPicker.search')}
             emptyMessage={t('eventPicker.empty')}
-            ariaLabel={t('eventPicker.label')}
+            aria-labelledby="eventId-label"
             disabled={noEvents}
           />
         </div>
