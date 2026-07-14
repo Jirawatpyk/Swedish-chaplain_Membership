@@ -276,10 +276,20 @@ describe('CompanySection — legal_entity_type is a closed Select (PR-A Task 3b)
     expect(container.querySelector('#legal_entity_type')).not.toBeNull();
   });
 
-  it('is labelled "Member Type" per the reviewer (not "Legal entity type")', () => {
+  it('is NOT labelled "Member Type" — that name is already taken', () => {
+    // This field is the member's LEGAL FORM (บริษัทจำกัด / มูลนิธิ / บุคคลธรรมดา);
+    // it exists to drive the §86/4 buyer particulars on a tax invoice. It was
+    // briefly renamed "Member Type", which is wrong on three counts:
+    //   - `admin.plans.fields.memberType` and `memberTypeScope` ALREADY render as
+    //     "Member type" and mean the PLAN's scope (company / individual / both) —
+    //     two different fields would answer to one name in the same app;
+    //   - the same form has a `Plan` field, so it would read
+    //     "Member Type: Individual" directly above "Plan: Individual";
+    //   - `scripts/import-members/columns.ts` already lists 'member type' as an
+    //     alias for `tier`, i.e. this codebase has been fooled by that name once.
     const { container } = renderEditForm({});
     const label = container.querySelector('label[for="legal_entity_type"]');
-    expect(label?.textContent).toContain('Member Type');
+    expect(label?.textContent).toContain('Legal entity type');
   });
 
   it('shows the placeholder when no type is recorded', () => {
@@ -304,7 +314,7 @@ describe('CompanySection — entity-type explanation popup (PR-A Task 3b)', () =
   it('renders a help trigger with an accessible name', () => {
     renderEditForm({});
     expect(
-      screen.getByRole('button', { name: /help.*member types explained/i }),
+      screen.getByRole('button', { name: /help.*legal entity types explained/i }),
     ).toBeInTheDocument();
   });
 
@@ -318,7 +328,7 @@ describe('CompanySection — entity-type explanation popup (PR-A Task 3b)', () =
     const onSubmit = vi.fn();
     renderEditForm({}, onSubmit);
     const help = screen.getByRole('button', {
-      name: /help.*member types explained/i,
+      name: /help.*legal entity types explained/i,
     });
     expect(help).toHaveAttribute('type', 'button');
     fireEvent.click(help);

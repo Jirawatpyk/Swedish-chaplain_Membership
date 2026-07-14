@@ -1131,7 +1131,7 @@
         "fields": {
           "memberNumber": "Medlemsnummer",
           "memberId": "Medlems-ID",
-          "legalEntityType": "Medlemstyp",
+          "legalEntityType": "Juridisk form",
           "country": "Land",
           "taxId": "Skatte-ID",
           "website": "Webbplats",
@@ -1307,10 +1307,10 @@
         },
         "fields": {
           "companyName": "Företagsnamn",
-          "legalEntityType": "Medlemstyp",
+          "legalEntityType": "Juridisk form",
           "legalEntityTypePlaceholder": "Välj en typ…",
-          "legalEntityTypeHelpAriaLabel": "Hjälp — medlemstyper förklarade",
-          "legalEntityTypeHelpTitle": "Medlemstyper förklarade",
+          "legalEntityTypeHelpAriaLabel": "Hjälp — juridiska former förklarade",
+          "legalEntityTypeHelpTitle": "Juridiska former förklarade",
           "legalEntityTypeExplanations": {
             "company": "Ett registrerat företag där den exakta typen inte anges.",
             "limited_company": "Ett privat aktiebolag (บริษัทจำกัด) registrerat hos Department of Business Development.",
@@ -5189,7 +5189,7 @@
         "memberNumber": "Medlemsnummer",
         "memberNumberCopy": "Kopiera medlemsnummer",
         "companyName": "Företagsnamn",
-        "legalEntityType": "Medlemstyp",
+        "legalEntityType": "Juridisk form",
         "country": "Land",
         "website": "Webbplats",
         "description": "Beskrivning",

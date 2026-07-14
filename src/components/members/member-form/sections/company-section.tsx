@@ -156,10 +156,19 @@ export function CompanySection({
               * explicit anyway: harmless, and it removes the dependency on
               * that Base UI internal for anyone reading this in isolation. */}
             <Popover>
+              {/* `-my-3` is load-bearing, not cosmetic. The 44×44 box is a
+                * WCAG 2.2 SC 2.5.8 target — and `members-target-size-2-2.spec.ts`
+                * asserts it via `boundingBox()`, so the ELEMENT must really be
+                * 44px (a pseudo-element hit area would measure 20px and fail the
+                * gate). But at its natural size it also makes this label row 44px
+                * tall while every sibling field's row is a bare ~20px <Label>,
+                * which pushed the whole Select ~24px below its row-mates. The
+                * negative margin pulls the surplus back out of the flow: the box
+                * stays 44px, its CONTRIBUTION to the row is 20px. */}
               <PopoverTrigger
                 type="button"
                 aria-label={tf('legalEntityTypeHelpAriaLabel')}
-                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="-my-3 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <HelpCircleIcon className="size-4" aria-hidden="true" />
               </PopoverTrigger>

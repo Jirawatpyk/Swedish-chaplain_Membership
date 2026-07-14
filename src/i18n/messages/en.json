@@ -1131,7 +1131,7 @@
         "fields": {
           "memberNumber": "Member Number",
           "memberId": "Member ID",
-          "legalEntityType": "Member Type",
+          "legalEntityType": "Legal entity type",
           "country": "Country",
           "taxId": "Tax ID",
           "website": "Website",
@@ -1307,10 +1307,10 @@
         },
         "fields": {
           "companyName": "Company name",
-          "legalEntityType": "Member Type",
+          "legalEntityType": "Legal entity type",
           "legalEntityTypePlaceholder": "Select a type…",
-          "legalEntityTypeHelpAriaLabel": "Help — member types explained",
-          "legalEntityTypeHelpTitle": "Member types explained",
+          "legalEntityTypeHelpAriaLabel": "Help — legal entity types explained",
+          "legalEntityTypeHelpTitle": "Legal entity types explained",
           "legalEntityTypeExplanations": {
             "company": "A registered company where the exact type isn't specified.",
             "limited_company": "A private limited company (บริษัทจำกัด) registered with the Department of Business Development.",
@@ -5189,7 +5189,7 @@
         "memberNumber": "Member Number",
         "memberNumberCopy": "Copy member number",
         "companyName": "Company Name",
-        "legalEntityType": "Member Type",
+        "legalEntityType": "Legal entity type",
         "country": "Country",
         "website": "Website",
         "description": "Description",

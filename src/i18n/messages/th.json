@@ -1131,7 +1131,7 @@
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",
           "memberId": "รหัสสมาชิก",
-          "legalEntityType": "ประเภทสมาชิก",
+          "legalEntityType": "ประเภทนิติบุคคล",
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "website": "เว็บไซต์",
@@ -1307,10 +1307,10 @@
         },
         "fields": {
           "companyName": "ชื่อบริษัท",
-          "legalEntityType": "ประเภทสมาชิก",
+          "legalEntityType": "ประเภทนิติบุคคล",
           "legalEntityTypePlaceholder": "เลือกประเภท…",
-          "legalEntityTypeHelpAriaLabel": "ช่วยเหลือ — คำอธิบายประเภทสมาชิก",
-          "legalEntityTypeHelpTitle": "คำอธิบายประเภทสมาชิก",
+          "legalEntityTypeHelpAriaLabel": "ช่วยเหลือ — คำอธิบายประเภทนิติบุคคล",
+          "legalEntityTypeHelpTitle": "คำอธิบายประเภทนิติบุคคล",
           "legalEntityTypeExplanations": {
             "company": "นิติบุคคลที่จดทะเบียนโดยไม่ระบุว่าเป็นบริษัทจำกัดหรือบริษัทมหาชน",
             "limited_company": "บริษัทจำกัด จดทะเบียนกับกรมพัฒนาธุรกิจการค้า",
@@ -5189,7 +5189,7 @@
         "memberNumber": "หมายเลขสมาชิก",
         "memberNumberCopy": "คัดลอกหมายเลขสมาชิก",
         "companyName": "ชื่อบริษัท",
-        "legalEntityType": "ประเภทสมาชิก",
+        "legalEntityType": "ประเภทนิติบุคคล",
         "country": "ประเทศ",
         "website": "เว็บไซต์",
         "description": "คำอธิบาย",
