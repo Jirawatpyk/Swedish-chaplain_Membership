@@ -719,6 +719,33 @@ asserts both."
 
 ---
 
+### Task 3b: The entity-type dropdown
+
+**Added 2026-07-14, after Task 3's implementer found the plan hole this sits next to.** Task 1 shipped a 12-code catalogue and **nothing renders it**. `legal_entity_type` is still a free-text `<Input>` (`company-section.tsx:104-117`, `register('legal_entity_type')`, schema `z.string().max(100).optional()`), so an admin can type any string, the label resolver fails soft, and raw snake_case lands on the member page. This was the reviewer's feedback item #3 and the original plan simply never scheduled it.
+
+Task 3 adds the VAT **checkbox** (it must, or it regresses branch-save). Task 3b adds the entity-type **dropdown** and the link between them.
+
+**Files:**
+- Modify: `src/components/members/member-form/sections/company-section.tsx` — replace the `<Input>` with a Select over `LEGAL_ENTITY_TYPES`
+- Modify: `src/components/members/member-form/schema.ts` — `legal_entity_type` becomes a closed enum, not free text
+- Modify: `src/components/members/member-form/sections/tax-branch-section.tsx` — seed the VAT checkbox from `VAT_DEFAULT_BY_CODE` when the entity type changes
+- Modify: `src/app/(member)/portal/profile/page.tsx:205-210` — it renders `value={m.legalEntityType}` **RAW**, so a member currently sees the machine code. Resolve it through the same i18n labels.
+- Modify: `src/i18n/messages/{en,th,sv}.json` — the explanation popup copy
+- Test: `tests/unit/members/presentation/member-form-schema.test.ts`, `company-section.test.tsx`
+
+**Interfaces:**
+- Consumes: `LEGAL_ENTITY_TYPES`, `LegalEntityTypeCode`, `VAT_DEFAULT_BY_CODE` (Task 1); the `is_vat_registered` form field (Task 3).
+
+**The three things that make this more than a widget swap:**
+
+1. **The schema must close.** `z.string().max(100)` becomes `z.enum(LEGAL_ENTITY_TYPES)` (`.optional()` — the field is not mandatory). Once it is closed, an out-of-catalogue value cannot be stored, which is what makes the fail-soft resolver harmless. But: the 132 imported members will have `legal_entity_type` set by Task 7's importer, and `null` for the 10 TSCC rows that say "N/A" — so `.optional()` must genuinely accept `undefined`/`''`, and the Edit form must not reject a member whose type is unset. Test that case explicitly.
+
+2. **Seeding is a suggestion, not a rule.** When the admin picks an entity type, seed the VAT checkbox from `VAT_DEFAULT_BY_CODE[code]` — but only when the default is `true` or `false`. For `association` and `foundation` the default is **`null`**: leave the checkbox untouched and let the admin decide (that is the whole point of the `null`; TSCC is itself a VAT-registered association). And **never re-seed a value the admin has already changed by hand** — seeding must not silently overwrite a deliberate choice. This is the same class of bug PR-B shipped a Critical for: an effect that fires on mount and rewrites fields the user did not touch.
+
+3. **The popup is required copy, not decoration.** The reviewer asked for an explanation of each type. Write real TH/SV, not English placeholders.
+
+---
+
 ### Task 4: The `registrant ⇒ TIN` invariant, at four layers
 
 ประกาศ 196 (buyer TIN) and 199 (สำนักงานใหญ่/สาขา) are a **pair** — both mandatory when the buyer is a registrant. Today `is_vat_registered = true` + `tax_id = NULL` **parses clean**, and the document prints "สำนักงานใหญ่" with **no buyer TIN**: a defective §86/4 invoice.
@@ -1048,7 +1075,26 @@ Follow the `countryNameToCode` pattern in `coerce.ts:110` — canonical code fir
 
 `columns.ts` — add to `HEADER_ALIASES`. **Beware:** `tier` already claims the alias `'member type'` (line 18). That alias must **move** to the new field, or the two columns fight over the same header. Read TSCC's sheet: the tier column is headed `Plan`, so removing `'member type'` from `tier`'s aliases is safe — but verify against the actual headers before you do it.
 
-`validate.ts` — `ValidatedMember` gains `legalEntityType: LegalEntityTypeCode | null` and `isVatRegistered: boolean`. Derive the flag from `VAT_DEFAULT_BY_CODE[code]`; when the default is `null` (`association` / `foundation`), import as `false` **and emit a warning** so the import report tells the admin to confirm those rows.
+`validate.ts` — `ValidatedMember` gains `legalEntityType: LegalEntityTypeCode | null` and `isVatRegistered: boolean`.
+
+**The VAT flag is NOT simply `VAT_DEFAULT_BY_CODE[code]`. It is:**
+
+```ts
+// A member cannot be a VAT registrant OF RECORD without a TIN — the flag exists
+// solely to drive the §86/4 buyer particulars (the TIN line and the
+// สำนักงานใหญ่/สาขา line, ประกาศ 196 + 199), and neither can be printed without
+// one. So the entity-type default is an upper bound, gated on actually having a
+// number.
+const isVatRegistered = VAT_DEFAULT_BY_CODE[code] === true && taxId !== null;
+```
+
+**Why this is load-bearing, not defensive:** TSCC has **7 State Enterprise members and not one of them has a Tax ID** (they sit in the 37-row "N/A" group, alongside all 15 Individuals and both Foundations). `VAT_DEFAULT_BY_CODE.state_enterprise` is `true`. A naive `isVatRegistered = VAT_DEFAULT_BY_CODE[code]` therefore produces `is_vat_registered: true` + `tax_id: null` for all seven — which **Task 4's `registrant ⇒ TIN` invariant rejects at create**. The import would fail on those rows, and "fixing" it by relaxing the invariant would be fixing the wrong end: the invariant is the law, the derivation was the bug.
+
+When TSCC later supplies a TIN for one of them, an admin ticks the box on the form. That is the correct workflow — it is a decision, not a derivation.
+
+Emit a warning for the `association` / `foundation` rows (`VAT_DEFAULT_BY_CODE[code] === null`) so the import report tells the admin to confirm them by hand.
+
+**Also fold in the two uncommitted importer bug-fixes** (`tax_id` relax + mononym `'-'`) that are sitting unstaged from the 2026-07-12 import run — if they are not carried into this task they will be lost.
 
 `import-members.ts:278-295` — add both to the `.values({…})`.
 
