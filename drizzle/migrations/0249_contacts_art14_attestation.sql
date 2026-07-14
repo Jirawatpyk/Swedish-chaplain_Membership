@@ -3,13 +3,37 @@
 -- A secondary contact (member-create form) or a contact added via the Edit
 -- page's "Add contact" dialog is a NAMED NATURAL PERSON whose data we obtain
 -- from a THIRD PARTY (the admin), not from the person themselves. GDPR
--- Art. 14 requires that person be informed within one month. We do not email
--- them (no code path contacts them), so the product decision (2026-07-14) is
--- to rest on Art. 14(5)(a) — the exception where the data subject already
--- has the information — and require the admin to ATTEST, at the moment of
--- collection, that they have informed the person. A checkbox that only lives
--- in the browser proves nothing a month later, so the attestation + its
--- timestamp are persisted here.
+-- Art. 14 requires that person be informed within one month; Thailand PDPA
+-- §25 requires it within 30 days and has NO equivalent of GDPR's
+-- "already-has-the-information" exception.
+--
+-- WHAT THIS CONTROL ACTUALLY IS (corrected 2026-07-15 after a compliance
+-- review — the first version of this comment cited the wrong article, and
+-- getting it wrong here matters because this is the pattern the next
+-- third-party-collection flow will copy):
+--
+-- This is NOT an exemption from giving notice under Art. 14(5)(a). That
+-- exemption applies where the data subject ALREADY HAS the Art. 14(1)-(2)
+-- particulars independently of anything we do at this collection — it is not
+-- a mechanism for the controller to CAUSE them to have the information
+-- through some other channel and then claim notice was never owed. Defending
+-- this control as "(5)(a) applied, so no notice was due" is an argument a
+-- regulator would reject outright.
+--
+-- What we actually do is DISCHARGE the Art. 14(1)-(2) notice duty through an
+-- OUT-OF-BAND CHANNEL: the admin informs the person directly (GDPR does not
+-- mandate email — recitals 58/60 permit any appropriate manner), and the
+-- attestation recorded here is the Art. 5(2) ACCOUNTABILITY EVIDENCE that it
+-- happened, stamped with the server's own clock at the moment of collection
+-- (which also satisfies PDPA §25's 30-day window). A checkbox that only lives
+-- in the browser proves nothing a month later, which is why the attestation
+-- and its timestamp are persisted.
+--
+-- The control is a defensible minimum, not a strong one: an attestation is
+-- self-reported and unverifiable after the fact. It is the same class of
+-- evidence as a consent checkbox, which GDPR accepts routinely — but if a data
+-- subject ever complains "nobody told me", the chamber's defence rests on this
+-- timestamp plus whatever the admin can independently corroborate.
 --
 -- NULL for the member's own primary contact (a first-party relationship —
 -- the member supplied their own representative's details; Art. 14 does not

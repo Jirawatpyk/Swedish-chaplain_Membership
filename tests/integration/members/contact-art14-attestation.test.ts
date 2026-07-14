@@ -3,9 +3,18 @@
  *
  * A secondary contact / an Edit-page "Add contact" is a named third party
  * whose data an ADMIN supplies, never the person themselves. GDPR Art. 14
- * requires notice within a month; the product decision (2026-07-14) rests
- * on Art. 14(5)(a) and requires the admin to ATTEST — at the moment of
- * collection — that they informed that person. This suite proves the
+ * requires notice within a month (Thailand PDPA §25: within 30 days, with no
+ * "already has the information" exception at all).
+ *
+ * The product decision (2026-07-14) is that the admin informs the person
+ * DIRECTLY and ATTESTS to having done so at the moment of collection. Note
+ * what that is and is not — corrected 2026-07-15 after a compliance review,
+ * because the first version of this comment cited the wrong article: it is NOT
+ * the Art. 14(5)(a) exemption (which covers a subject who already has the
+ * particulars independently of us). It is the Art. 14(1)-(2) notice duty
+ * DISCHARGED OUT-OF-BAND — GDPR mandates no particular channel — with the
+ * persisted timestamp serving as Art. 5(2) accountability evidence. This suite
+ * proves the
  * attestation is a persisted DB fact (`contacts.art14_attested_at`), not
  * just a UI gesture, across BOTH entry points:
  *

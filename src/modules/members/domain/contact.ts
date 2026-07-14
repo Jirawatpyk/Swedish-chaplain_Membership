@@ -105,10 +105,23 @@ export type Contact = {
    * GDPR Art. 14 attestation (Task 8, product decision 2026-07-14) — the
    * moment an admin confirmed they informed this THIRD PARTY (whose data
    * was collected from the admin, not from the person themselves) that
-   * their details are held by the chamber. We do not email this person
-   * (no code path contacts them), so we rest on Art. 14(5)(a) — the
-   * exception where the data subject already has the information — and
-   * require the admin to attest to that fact at the moment of collection.
+   * their details are held by the chamber.
+   *
+   * CORRECTED 2026-07-15 after a compliance review. This is NOT the
+   * Art. 14(5)(a) exemption, which the first version of this comment wrongly
+   * cited. That exemption is for when the data subject ALREADY HAS the
+   * Art. 14(1)-(2) particulars independently of this collection — it is not a
+   * way for the controller to CAUSE them to have the information via another
+   * channel and then claim no notice was owed.
+   *
+   * What this is: the Art. 14(1)-(2) notice duty DISCHARGED THROUGH AN
+   * OUT-OF-BAND CHANNEL (the admin tells the person directly; GDPR does not
+   * mandate email — recitals 58/60 allow any appropriate manner), with this
+   * timestamp as the Art. 5(2) ACCOUNTABILITY EVIDENCE that it happened.
+   * Stamped from the server's clock, never the client's, so it carries
+   * evidentiary weight. Thailand PDPA §25 wants the same notice within 30 days
+   * and offers no "already has the information" escape, so the same reading
+   * has to hold there too.
    *
    * A point-in-time COMPLIANCE RECORD of the ORIGINAL collection event,
    * not a live "is this currently a primary contact" flag:
