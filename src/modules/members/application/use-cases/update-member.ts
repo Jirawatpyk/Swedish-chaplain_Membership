@@ -108,6 +108,11 @@ export type UpdateMemberError =
   // RESULTING state (current merged with the patch) — see the check in the
   // use-case body below for why this cannot live in updateMemberSchema.
   | { type: 'vat_registrant_requires_tax_id' }
+  // 059 / PR-A Task 5 — branch ⇒ VAT-registrant invariant, mirrors the DB
+  // CHECK `members_branch_pairing_ck` (migration 0248) and is checked
+  // against the RESULTING state for the exact same reason as the invariant
+  // above — see the check in the use-case body below.
+  | { type: 'branch_requires_vat_registrant' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -277,6 +282,40 @@ export async function updateMember(
         if (resultingIsVatRegistered && resultingTaxId === null) {
           throw new UseCaseAbort<UpdateMemberError>({
             type: 'vat_registrant_requires_tax_id',
+          });
+        }
+      }
+
+      // 059 / PR-A Task 5 — branch ⇒ VAT-registrant invariant (mirrors DB
+      // CHECK `members_branch_pairing_ck`, migration 0248 — a branch member
+      // that is not a VAT registrant renders NO §86/4 head-office/branch
+      // line at all, a silent under-print).
+      //
+      // Deliberately NOT expressed in updateMemberSchema's superRefine — same
+      // reasoning as the registrant ⇒ TIN check above. `is_head_office` and
+      // `is_vat_registered` may each be absent from any given partial patch:
+      // a patch that only flips `is_vat_registered: false` looks fine in
+      // isolation (is_head_office isn't part of THIS request), but if the
+      // member is ALREADY a branch, the resulting row is a non-registrant
+      // branch. Only the RESULTING state (current merged with the patch) can
+      // tell, and only the use case has `current` in scope.
+      //
+      // Gated on the patch actually touching one of the two fields (same
+      // "fires only when present" posture as the checks above) so an edit to
+      // an unrelated field is never blocked by a member already in a
+      // legacy-violating state.
+      if (patch.isHeadOffice !== undefined || patch.isVatRegistered !== undefined) {
+        const resultingIsHeadOffice =
+          patch.isHeadOffice !== undefined
+            ? patch.isHeadOffice
+            : (current.isHeadOffice ?? true);
+        const resultingIsVatRegisteredForBranch =
+          patch.isVatRegistered !== undefined
+            ? patch.isVatRegistered
+            : current.isVatRegistered;
+        if (resultingIsHeadOffice === false && !resultingIsVatRegisteredForBranch) {
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'branch_requires_vat_registrant',
           });
         }
       }

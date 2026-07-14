@@ -86,6 +86,15 @@ export function mapMemberCreateServerError(
           field: 'tax_id',
           messageKey: 'fields.errors.taxIdRequiredForRegistrant',
         };
+      // 059 / PR-A Task 5 — update-member.ts's use-case-body branch ⇒
+      // VAT-registrant check (defense-in-depth only: buildMemberFormSchema's
+      // own superRefine blocks this before submit in the normal UI flow).
+      // Reuses the SAME i18n key the form's inline rule uses.
+      case 'branch_requires_vat_registrant':
+        return {
+          field: 'branch_code',
+          messageKey: 'fields.errors.branchOnNonRegistrant',
+        };
       case 'invalid_phone':
         return { field: 'primary_contact.phone', messageKey: 'fields.phoneError' };
       case 'invalid_country':

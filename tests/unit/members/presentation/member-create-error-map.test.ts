@@ -74,6 +74,14 @@ describe('mapMemberCreateServerError', () => {
       'tax_id',
       'fields.errors.taxIdRequiredForRegistrant',
     ],
+    // 059 / PR-A Task 5 — update-member.ts's use-case-body branch ⇒
+    // VAT-registrant check (same defense-in-depth posture as Task 4's row
+    // directly above).
+    [
+      'branch_requires_vat_registrant',
+      'branch_code',
+      'fields.errors.branchOnNonRegistrant',
+    ],
   ])('routes a 400 %s to its originating field', (type, field, messageKey) => {
     expect(mapMemberCreateServerError(400, 'validation_error', type)).toEqual({
       field,

@@ -318,6 +318,9 @@ export async function PATCH(
     // use-case body against the RESULTING (current + patch) state. Same 400
     // validation_error shape as the other domain-validation rejections above.
     case 'vat_registrant_requires_tax_id':
+    // 059 / PR-A Task 5 — the branch ⇒ VAT-registrant invariant, same
+    // resulting-state posture as Task 4's check directly above.
+    case 'branch_requires_vat_registrant':
       return NextResponse.json(
         {
           error: {
