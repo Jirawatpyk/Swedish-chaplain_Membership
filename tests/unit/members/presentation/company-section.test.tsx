@@ -257,3 +257,104 @@ describe('CompanySection — Additional details collapsible', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 059 / PR-A Task 3b — legal_entity_type is now a closed Select over
+ * LEGAL_ENTITY_TYPES, not a free-text `<Input>`. NOTE: these tests are
+ * deliberately STATIC (no simulated open-dropdown-then-click-an-item
+ * flow) — this repo has no precedent for driving a Base UI `<Select>`
+ * popup through jsdom (its popup portals + animates, the same class of
+ * thing that hangs Base UI `<Dialog>` under RTL — see
+ * base-ui-dialog-jsdom-transition-hang in project memory), and the
+ * VAT-seeding DECISION logic is separately covered exhaustively, with zero
+ * DOM risk, in resolve-vat-seed.test.ts.
+ */
+describe('CompanySection — legal_entity_type is a closed Select (PR-A Task 3b)', () => {
+  it('renders a Select trigger at #legal_entity_type, not a free-text input', () => {
+    const { container } = renderEditForm({});
+    expect(container.querySelector('input#legal_entity_type')).toBeNull();
+    expect(container.querySelector('#legal_entity_type')).not.toBeNull();
+  });
+
+  it('is labelled "Member Type" per the reviewer (not "Legal entity type")', () => {
+    const { container } = renderEditForm({});
+    const label = container.querySelector('label[for="legal_entity_type"]');
+    expect(label?.textContent).toContain('Member Type');
+  });
+
+  it('shows the placeholder when no type is recorded', () => {
+    renderEditForm({ legal_entity_type: undefined });
+    expect(screen.getByText('Select a type…')).toBeInTheDocument();
+  });
+
+  it('shows the resolved, translated label for an already-recorded type', () => {
+    const { container } = renderEditForm({ legal_entity_type: 'limited_company' });
+    const trigger = container.querySelector('#legal_entity_type');
+    expect(trigger?.textContent).toContain('Limited company');
+  });
+
+  it('is NOT aria-required — the field stays genuinely optional', () => {
+    const { container } = renderEditForm({});
+    const trigger = container.querySelector('#legal_entity_type');
+    expect(trigger?.getAttribute('aria-required')).not.toBe('true');
+  });
+});
+
+describe('CompanySection — entity-type explanation popup (PR-A Task 3b)', () => {
+  it('renders a help trigger with an accessible name', () => {
+    renderEditForm({});
+    expect(
+      screen.getByRole('button', { name: /help.*member types explained/i }),
+    ).toBeInTheDocument();
+  });
+
+  // Regression guard: the popover lives inside <form onSubmit>. A bare
+  // <button> defaults to type="submit" — clicking the help icon would
+  // otherwise submit the whole member form.
+  it('the help trigger is type=button and clicking it does NOT submit the form', () => {
+    const onSubmit = vi.fn();
+    renderEditForm({}, onSubmit);
+    const help = screen.getByRole('button', {
+      name: /help.*member types explained/i,
+    });
+    expect(help).toHaveAttribute('type', 'button');
+    fireEvent.click(help);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 059 / PR-A Task 3b — the class of bug PR-B shipped a Critical for: an
+ * effect (or, here, any mount-time write) that silently rewrites a field
+ * the admin never touched. There is no useEffect/useWatch in this seeding
+ * path at all (it lives entirely inside the Select's onValueChange — a
+ * user-initiated event that cannot fire on mount) — this test proves the
+ * ABSENCE of the bug end to end: loading the Edit form of a member whose
+ * RECORDED is_vat_registered DISAGREES with their entity type's default
+ * must not silently "correct" it.
+ */
+describe('CompanySection — VAT-registrant seeding never fires on mount (PR-A Task 3b)', () => {
+  it('loading the edit form with a mismatched recorded VAT flag leaves it untouched', () => {
+    // company's VAT_DEFAULT_BY_CODE is `true`; this member's RECORDED flag
+    // is `false`. If anything auto-seeded on mount, this would flip.
+    renderEditForm({ legal_entity_type: 'company', is_vat_registered: false });
+    const checkbox = screen.getByRole('checkbox', {
+      name: /this member is registered for vat/i,
+    });
+    expect(checkbox).not.toBeChecked();
+  });
+
+  it('loading the edit form with a recorded `true` VAT flag on a normally-false-default type leaves it untouched', () => {
+    // sole_proprietor's VAT_DEFAULT_BY_CODE is `false`; this member is
+    // RECORDED as `true` (above the turnover threshold, per the domain
+    // file's own §77/1 note). Mount must not "correct" this either.
+    renderEditForm({
+      legal_entity_type: 'sole_proprietor',
+      is_vat_registered: true,
+    });
+    const checkbox = screen.getByRole('checkbox', {
+      name: /this member is registered for vat/i,
+    });
+    expect(checkbox).toBeChecked();
+  });
+});

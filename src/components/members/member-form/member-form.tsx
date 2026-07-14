@@ -28,7 +28,7 @@
  *     confirmations + redirect.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
@@ -163,6 +163,16 @@ export function MemberForm({
     initialValues?.is_head_office ?? true,
   );
 
+  // 059 / PR-A Task 3b — the ONE piece of state shared between two SIBLING
+  // sections: CompanySection's entity-type Select (seeds is_vat_registered)
+  // and TaxBranchSection's is_vat_registered Checkbox (marks itself
+  // hand-touched). A `useRef` — not lifted `useState` — is deliberate:
+  // flipping it must never cause a re-render, and it must survive for the
+  // form's whole lifetime without being reset by anything. See
+  // `resolve-vat-seed.ts` for the read side and tax-branch-section.tsx's
+  // `onCheckedChange` for the write side.
+  const vatManuallyTouchedRef = useRef(false);
+
   // Surface a server-rejected field (email-in-use, bad tax-id checksum, …)
   // inline: highlight + focus the originating input per WCAG 3.3.1 instead of
   // the old generic toast with nothing marked. A new `serverFieldError` object
@@ -211,7 +221,7 @@ export function MemberForm({
           autoFocus={false}
         />
 
-        <CompanySection mode={mode} />
+        <CompanySection mode={mode} vatManuallyTouchedRef={vatManuallyTouchedRef} />
         <MembershipSection plans={plans} mode={mode} onPlanIdChange={setPlanId} />
         <AddressSection mode={mode} />
 
@@ -219,6 +229,7 @@ export function MemberForm({
           <TaxBranchSection
             isHeadOffice={isHeadOffice}
             onIsHeadOfficeChange={setIsHeadOffice}
+            vatManuallyTouchedRef={vatManuallyTouchedRef}
           />
         )}
 

@@ -54,9 +54,20 @@ vi.mock('@/lib/env', () => ({
 }));
 
 // next-intl server: identity translator (returns the key) + fixed locale.
+// 059 / PR-A Task 3b — the identity translator ALSO needs a `.has()` method:
+// `resolveLegalEntityTypeLabel` (portal profile page) calls
+// `tTypes.has(key)` before resolving a legal_entity_type label. Always
+// `false` here so the resolver falls back to the RAW stored value — the
+// same behaviour this file's fixtures already relied on before this
+// resolver was wired in (member.legalEntityType = 'limited', which is not
+// one of the 12 catalogue codes anyway).
 const localeRef = { current: 'en' };
+function identityTranslator(k: string): string {
+  return k;
+}
+identityTranslator.has = () => false;
 vi.mock('next-intl/server', () => ({
-  getTranslations: vi.fn().mockResolvedValue((k: string) => k),
+  getTranslations: vi.fn().mockResolvedValue(identityTranslator),
   getLocale: vi.fn().mockImplementation(async () => localeRef.current),
 }));
 

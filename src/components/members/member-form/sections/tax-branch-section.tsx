@@ -12,6 +12,7 @@
  * `<input type="checkbox">` predates `@/components/ui/checkbox.tsx` (Base
  * UI, with focus ring + aria-invalid + indeterminate) — swapped in here.
  */
+import type { RefObject } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
@@ -24,9 +25,17 @@ import { type MemberFormValues } from '../schema';
 export function TaxBranchSection({
   isHeadOffice,
   onIsHeadOfficeChange,
+  vatManuallyTouchedRef,
 }: {
   readonly isHeadOffice: boolean;
   readonly onIsHeadOfficeChange: (isHeadOffice: boolean) => void;
+  /**
+   * 059 / PR-A Task 3b — shared with CompanySection (lifted to the
+   * member-form.tsx composition root). Flipped to `true` here the moment
+   * the admin hand-toggles this checkbox, so the entity-type Select's
+   * seeding suggestion stops overwriting it. See `resolve-vat-seed.ts`.
+   */
+  readonly vatManuallyTouchedRef: RefObject<boolean>;
 }) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
@@ -61,7 +70,17 @@ export function TaxBranchSection({
               // the accessible name set directly.
               aria-label={tf('isVatRegistered')}
               checked={field.value ?? false}
-              onCheckedChange={(checked) => field.onChange(checked === true)}
+              onCheckedChange={(checked) => {
+                // 059 / PR-A Task 3b — `onCheckedChange` only fires on a
+                // real user interaction (click/keyboard), never on the
+                // seeding effect's own `setValue()` call — so this can't
+                // self-trigger. Marking the ref here is what makes seeding
+                // "a suggestion, not a rule": the moment the admin makes
+                // their own deliberate choice, the entity-type Select stops
+                // overwriting it for the rest of this session.
+                vatManuallyTouchedRef.current = true;
+                field.onChange(checked === true);
+              }}
             />
           )}
         />

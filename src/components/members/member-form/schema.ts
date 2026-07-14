@@ -17,6 +17,9 @@ import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/p
 // rejects a bad value inline instead of on a 400 round-trip.
 import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
 import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
+// 059 / PR-A Task 3b — the closed 12-code catalogue (same deep-import
+// rationale: pure TS, zero framework deps, safe in this client component).
+import { LEGAL_ENTITY_TYPES } from '@/modules/members/domain/value-objects/legal-entity-type';
 import { type Translator } from '@/lib/zod-i18n';
 
 // --- Form shape --------------------------------------------------------------
@@ -70,7 +73,16 @@ export function buildMemberFormSchema(
     .trim()
     .min(1, tf('errors.required'))
     .max(200, tv('tooLong', { max: 200 })),
-  legal_entity_type: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  // 059 / PR-A Task 3b — closed to the 12-code catalogue (was free text,
+  // which is how Task 1's catalogue ended up rendered by NOTHING: an admin
+  // could type any string, the display resolver failed soft, and raw
+  // snake_case landed on the member page). `.optional().or(z.literal(''))`
+  // mirrors `website` above: the Select's own "nothing picked" value is an
+  // empty string (no SelectItem carries `value=""` — same convention as
+  // `plan_id`'s `field.value ?? ''`), and `undefined` must ALSO stay valid —
+  // 10 of TSCC's 150 members have no recorded type, and an edit to an
+  // unrelated field on one of them must never be blocked by this field.
+  legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).optional().or(z.literal('')),
   country: z
     .string()
     .length(2, tf('errors.countryCode'))

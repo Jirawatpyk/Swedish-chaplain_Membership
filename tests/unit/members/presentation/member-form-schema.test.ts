@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Translator } from '@/lib/zod-i18n';
 import { buildMemberFormSchema } from '@/components/members/member-form';
+import { LEGAL_ENTITY_TYPES } from '@/modules/members';
 
 const tf = (k: string) => k;
 const tv = ((k: string) => k) as unknown as Translator;
@@ -275,6 +276,53 @@ describe('buildMemberFormSchema — branch cross-field rules (088 US3 / FR-008)'
         is_vat_registered: true,
       }),
     ).toEqual([]);
+  });
+});
+
+// 059 / PR-A Task 3b — legal_entity_type closes to the 12-code catalogue.
+// Task 1 shipped LEGAL_ENTITY_TYPES; nothing rendered it until this task —
+// an admin could type ANY string, and the free-text `max(100)` rule
+// happily accepted it. This pins the closed-enum replacement + the
+// "genuinely accepts unset" requirement the brief calls out explicitly:
+// 10 of TSCC's 150 members have no recorded type, and an edit to an
+// unrelated field on one of them must never be blocked by this field.
+describe('buildMemberFormSchema — legal_entity_type closed catalogue (PR-A Task 3b)', () => {
+  it('accepts every code in the 12-entry catalogue', () => {
+    for (const code of LEGAL_ENTITY_TYPES) {
+      expect(issuePaths({ ...BASE, legal_entity_type: code })).not.toContain(
+        'legal_entity_type',
+      );
+    }
+  });
+
+  it('rejects an out-of-catalogue string', () => {
+    expect(
+      issuePaths({ ...BASE, legal_entity_type: 'sole_proprietorship_ltd' }),
+    ).toContain('legal_entity_type');
+  });
+
+  it('accepts the field omitted entirely (genuinely unset)', () => {
+    expect(issuePaths(BASE)).not.toContain('legal_entity_type');
+  });
+
+  it('accepts an explicit empty string (the Select\'s "nothing picked" value)', () => {
+    expect(issuePaths({ ...BASE, legal_entity_type: '' })).not.toContain(
+      'legal_entity_type',
+    );
+  });
+
+  // The importer (Task 7) writes `null` for a member with no recorded
+  // type; edit-member-client.tsx maps that to `undefined` before it
+  // reaches this schema. Pin the EDIT-mode path specifically: unset must
+  // not block an otherwise-valid, unrelated edit.
+  it('edit mode: a member with legal_entity_type unset does not block an unrelated edit', () => {
+    const editSchema = buildMemberFormSchema(tf, tv, false, 'edit');
+    const r = editSchema.safeParse({
+      ...BASE,
+      legal_entity_type: undefined,
+      company_name: 'Renamed Co',
+    });
+    expect(r.success).toBe(true);
   });
 });
 

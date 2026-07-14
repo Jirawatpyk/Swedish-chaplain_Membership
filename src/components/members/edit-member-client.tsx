@@ -34,6 +34,9 @@ import {
   type OverrideReasonResult,
 } from './override-reason-dialog';
 import { formatOverrideWarning } from './override-warning-message';
+// 059 / PR-A Task 3b — deep import (NOT the `@/modules/members` barrel),
+// same rationale as schema.ts: pure TS, zero framework deps.
+import { isLegalEntityTypeCode } from '@/modules/members/domain/value-objects/legal-entity-type';
 import {
   buildFieldPayload,
   buildContactPayload,
@@ -387,7 +390,20 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         defaultPlanYear={member.planYear}
         initialValues={{
           company_name: member.companyName,
-          legal_entity_type: member.legalEntityType ?? undefined,
+          // 059 / PR-A Task 3b — the form's Select is now closed to the
+          // 12-code catalogue; seeding it with a value the catalogue
+          // doesn't recognise (typed via the old free-text Input, before
+          // this fix shipped) would make the zod enum reject the WHOLE
+          // form on any submit, even an edit to an unrelated field like
+          // the company name. Treat an unrecognised legacy value as unset
+          // here — resolveLegalEntityTypeLabel's fail-soft fallback still
+          // shows the raw stored string on the read-only detail/portal
+          // pages; saving this form without touching the field then
+          // cleanly normalises it to `null` instead of perpetually
+          // blocking the admin or crashing the schema.
+          legal_entity_type: isLegalEntityTypeCode(member.legalEntityType)
+            ? member.legalEntityType
+            : undefined,
           country: member.country,
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,

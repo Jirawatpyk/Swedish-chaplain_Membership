@@ -62,6 +62,7 @@ import { CopyButton } from '@/components/members/copy-button';
 import { DetailField } from '@/components/members/detail-field';
 import { MemberNumberField } from '@/components/members/member-number-field';
 import { CountryDisplay } from '@/components/members/country-display';
+import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
@@ -171,27 +172,6 @@ export async function generateMetadata({
   return {
     title: tDetail('title', { companyName }),
   };
-}
-
-/**
- * 056 fix #5 — resolve a free-text `legal_entity_type` (admin types it into
- * a free Input, so the value is NOT a fixed enum) to a localised label.
- * Normalises the stored value to a key (`lower_snake_case`) and looks it up
- * in `legalEntityTypes.*`; falls back to the raw stored value when no key
- * matches (mirrors the `t.has()` guard pattern in timeline-event-item.tsx —
- * a `t()` miss logs a noisy MISSING_MESSAGE, so guard with `.has` first).
- */
-function resolveLegalEntityTypeLabel(
-  raw: string | null,
-  tTypes: Awaited<
-    ReturnType<typeof getTranslations<'admin.members.detail.legalEntityTypes'>>
-  >,
-): string | null {
-  if (raw === null) return null;
-  const trimmed = raw.trim();
-  if (trimmed === '') return null;
-  const key = trimmed.toLowerCase().replace(/[\s-]+/g, '_');
-  return tTypes.has(key as 'company') ? tTypes(key as 'company') : trimmed;
 }
 
 /**
