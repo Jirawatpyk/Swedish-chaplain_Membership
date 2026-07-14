@@ -25,6 +25,11 @@ import {
   revenueCodeCitation,
 } from './revenue-code-citation';
 import { buyerHasTin } from '../../../domain/document-kind';
+// Pure, framework-free tax algorithm shared by F3 (validating a member's stored
+// tax_id) and F4 (deciding whether a stored identifier is a real Thai TIN it may
+// print). Lives in `src/lib` precisely so neither context has to deep-import the
+// other's domain, and so the algorithm has exactly one implementation.
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 // 088 US4 (T034/T035 / FR-009) — pure, locale-independent formatting helpers.
 // Extracted to `../format-thb` so the unit test imports them WITHOUT pulling in
 // @react-pdf/renderer. `formatThbSatang(satang, grouped)` groups the integer
@@ -522,25 +527,41 @@ function renderPageBody({
   // TIN is present, via the SHARED `buyerHasTin` discriminator ("is there a
   // number to print").
   //
-  // 059 / PR-A Task 6a — AND, at v>=11, only for a VAT REGISTRANT. A buyer TIN is
-  // a §86/4 particular required only of a registrant (ประกาศอธิบดีฯ ฉบับที่ 196);
-  // a non-registrant's identifier — a foreign org number, a PASSPORT — is a false
-  // particular on a tax document. Gated on `templateVersion` exactly the way
-  // `buyerBranchEl` is (below): a document pinned to v<=10 keeps the legacy
-  // unconditional print, so voiding / credit-noting it still reproduces its
-  // ORIGINAL bytes (SC-003).
+  // 059 / PR-A — AND, at v>=11, only when that number is ACTUALLY A THAI TIN.
   //
-  // 059 / PR-A Task 6b (bug fix) — reads `input.buyerIsVatRegistrant`
-  // (top-level, RESOLVED by the caller via the shared `resolveBuyerIsVatRegistrant`
-  // — see pdf-render-port.ts), NOT `input.member.buyer_is_vat_registrant`. The
-  // snapshot field is ALWAYS false for a walk-in buyer (no `members` row to
-  // record it on); reading it directly here silently suppressed a walk-in
-  // registrant's own TIN from the very document that TIN classed as an invoice.
-  // A pre-v11 pinned render never evaluates this arm (short-circuited by the
-  // version check below) so a pre-v11 re-render is unaffected either way.
+  // The first version of this gate keyed on VAT-REGISTRANT status, and that was
+  // too broad. It conflated two different things:
+  //
+  //   - a foreign member's PASSPORT / work-permit / foreign company number
+  //     stored in the same column: printing THAT under the label "Tax ID" is a
+  //     FALSE particular on a §86/4 document. This is the defect the gate exists
+  //     for, and it stays closed.
+  //   - a Thai NATURAL PERSON's number: in Thailand an individual's taxpayer
+  //     identification number IS their 13-digit national ID. Printing it under
+  //     the label "Tax ID" is TRUE — and they NEED it there, to claim the
+  //     personal income-tax deduction the receipt exists for. A บุคคลธรรมดา is
+  //     not a VAT registrant, so the registrant gate silently erased their own
+  //     tax number from their own document.
+  //
+  // The honest discriminator is therefore not "is this buyer a VAT registrant"
+  // but "is this string a real Thai TIN" — and the 13-digit weighted check digit
+  // answers that with near-certainty (`isThaiTaxId`). A passport does not pass
+  // it; a foreign registration number does not pass it; an individual's national
+  // ID and a juristic person's TIN both do, because both ARE taxpayer numbers.
+  //
+  // Registrant status still gates the สำนักงานใหญ่/สาขา line (`buyerBranchEl`,
+  // below) — ประกาศอธิบดีฯ ฉบับที่ 199 requires THAT particular only of a
+  // registrant, and a 13-digit number cannot evidence head-office/branch status
+  // (a natural person's national ID is 13 digits too). The two must not be
+  // unified. `input.buyerIsVatRegistrant` remains the input for that.
+  //
+  // Version-gated exactly as `buyerBranchEl` is: a document pinned to v<=10
+  // keeps the legacy unconditional print, so voiding / credit-noting it still
+  // reproduces its ORIGINAL bytes (SC-003). v11 is not deployed anywhere yet, so
+  // redefining its rule (rather than minting v12) alters no issued document.
   const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
     input.templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION &&
-    input.buyerIsVatRegistrant !== true ? null : (
+    !isThaiTaxId(input.member.tax_id) ? null : (
       <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
     )
   ) : null;

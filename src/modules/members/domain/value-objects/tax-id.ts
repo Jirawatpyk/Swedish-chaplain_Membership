@@ -17,7 +17,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { IsoCountryCode } from './iso-country-code';
-import { validateThaiTaxIdChecksum } from '../policies/thai-tax-id-checksum';
+import { validateThaiTaxIdChecksum } from '@/lib/thai-tax-id';
 
 declare const TaxIdBrand: unique symbol;
 export type TaxId = string & { readonly [TaxIdBrand]: true };

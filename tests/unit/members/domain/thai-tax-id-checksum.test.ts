@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
+import { validateThaiTaxIdChecksum } from '@/lib/thai-tax-id';
 
 describe('Thai tax-id checksum policy', () => {
   it('accepts known-good ID', () => {

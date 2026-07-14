@@ -15,7 +15,7 @@ import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/p
 // Deep imports (no framework deps — same pattern as phone) so the client
 // mirrors the server's Thai tax-id checksum + ISO-3166 country validity and
 // rejects a bad value inline instead of on a 400 round-trip.
-import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
+import { validateThaiTaxIdChecksum } from '@/lib/thai-tax-id';
 import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
 // 059 / PR-A Task 3b — the closed 12-code catalogue (same deep-import
 // rationale: pure TS, zero framework deps, safe in this client component).

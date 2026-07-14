@@ -46,12 +46,36 @@ const GATE_V = 11;
 /** The last version that prints a buyer TIN unconditionally. */
 const PRE_V = 10;
 
-const BUYER_TIN = '1234567890123';
+/**
+ * A juristic person's Thai TIN. SYNTHETIC, but the 13-digit weighted CHECK DIGIT
+ * is genuinely correct — which is load-bearing here, because the v11 gate keys
+ * on exactly that. The old fixture (`1234567890123`) does NOT pass the checksum,
+ * so under the current rule it would suppress the line and every "must print"
+ * assertion would fail — while every "must not print" assertion would pass FOR
+ * THE WRONG REASON. Never put a checksum-invalid string in this file.
+ */
+const BUYER_TIN = '0105551234567';
+/**
+ * A Thai NATURAL PERSON's taxpayer number — i.e. their 13-digit national ID.
+ * Synthetic; checksum genuinely valid.
+ *
+ * In Thailand an individual's TIN IS their national ID, so this is a real
+ * taxpayer number and it MUST print: a บุคคลธรรมดา needs it on the document to
+ * claim their personal income-tax deduction. They are not a VAT registrant, so
+ * the first version of the v11 gate erased it from their own receipt.
+ */
+const INDIVIDUAL_NATIONAL_ID = '1102000987653';
 /**
  * A foreign natural person's identifier. Not a Thai TIN, not a VAT registration
  * — and non-blank, which is ALL the pre-v11 template checked.
  */
 const PASSPORT = 'AA1234567';
+/**
+ * A foreign company-registration number: 13 characters, all digits, and yet NOT
+ * a Thai TIN — the check digit does not hold. This is the case that proves the
+ * gate is doing arithmetic and not merely counting characters.
+ */
+const FOREIGN_ORG_NUMBER = '1234567890123';
 
 function makeLines(): InvoiceLine[] {
   return [
@@ -184,16 +208,44 @@ describe('059 Task 6a — buyer Tax ID prints only for a VAT registrant (v11 gat
     expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
   });
 
-  it('v11 + NON-registrant buyer holding a TIN-shaped number → NO buyer Tax ID line', () => {
-    // A 13-digit number is NOT proof of VAT registration — a natural person's
-    // national ID is also 13 digits. Only the recorded flag decides.
+  it('v11 + a NATURAL PERSON (not VAT-registered) → their national ID DOES print', () => {
+    // The maintainer found this by looking at a real document. In Thailand an
+    // individual's taxpayer number IS their 13-digit national ID, so printing it
+    // under the label "Tax ID" is TRUE — and the บุคคลธรรมดา needs it there, to
+    // claim the personal income-tax deduction the document exists for.
+    //
+    // The first version of this gate keyed on VAT-REGISTRANT status, which no
+    // natural person has, and so erased their own tax number from their own
+    // receipt. The rule is "is this a real Thai TIN", not "is this buyer a
+    // registrant".
     const text = firstPageText(
       makeInput({
         templateVersion: GATE_V,
-        member: { tax_id: BUYER_TIN, buyer_is_vat_registrant: false },
+        member: {
+          tax_id: INDIVIDUAL_NATIONAL_ID,
+          buyer_is_vat_registrant: false,
+        },
       }),
     );
-    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(text).toContain(`Tax ID: ${INDIVIDUAL_NATIONAL_ID}`);
+    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
+  });
+
+  it('v11 + a 13-DIGIT FOREIGN number that fails the check digit → NO buyer Tax ID line', () => {
+    // The gate does ARITHMETIC, not character-counting. A 13-digit foreign
+    // registration number looks exactly like a Thai TIN until you compute the
+    // weighted check digit — and then it does not. Printing it as "Tax ID" would
+    // assert a Thai taxpayer number that does not exist.
+    const text = firstPageText(
+      makeInput({
+        templateVersion: GATE_V,
+        member: {
+          tax_id: FOREIGN_ORG_NUMBER,
+          buyer_is_vat_registrant: false,
+        },
+      }),
+    );
+    expect(text).not.toContain(`Tax ID: ${FOREIGN_ORG_NUMBER}`);
     // Only the SELLER's TIN line survives.
     expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
     // The buyer block still rendered (making the negative conclusive).
@@ -216,13 +268,30 @@ describe('059 Task 6a — buyer Tax ID prints only for a VAT registrant (v11 gat
     expect(text).toContain('Acme Co., Ltd.');
   });
 
-  it('v11 + snapshot that OMITS buyer_is_vat_registrant (undefined) → NO Tax ID line (fail-closed)', () => {
-    // `!== true` (NOT a truthy check) — undefined fails closed, like buyerBranchEl.
-    const text = firstPageText(
-      makeInput({ templateVersion: GATE_V, member: { tax_id: BUYER_TIN } }),
-    );
-    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
-    expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
+  it('v11 — the registrant flag does NOT gate the Tax ID line; a real Thai TIN prints either way', () => {
+    // The two buyer particulars answer two DIFFERENT questions, and this test
+    // exists to keep them apart:
+    //
+    //   Tax ID line          → "is this string a real Thai TIN?"  (ประกาศ 196)
+    //   สำนักงานใหญ่/สาขา line → "is this buyer a VAT registrant?" (ประกาศ 199)
+    //
+    // A 13-digit number cannot answer the second — a natural person's national ID
+    // is 13 digits too. Conflating them is what erased a บุคคลธรรมดา's own tax
+    // number from their own document. So: same TIN, all three flag states, and
+    // the Tax ID line prints in every one.
+    for (const flag of [true, false, undefined]) {
+      const text = firstPageText(
+        makeInput({
+          templateVersion: GATE_V,
+          member: {
+            tax_id: BUYER_TIN,
+            ...(flag === undefined ? {} : { buyer_is_vat_registrant: flag }),
+          },
+        }),
+      );
+      expect(text).toContain(`Tax ID: ${BUYER_TIN}`);
+      expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
+    }
   });
 
   // ── THE REGRESSION THE GATE EXISTS TO PREVENT ────────────────────────────
@@ -350,15 +419,20 @@ describe('059 Task 6b — WALK-IN buyer: the resolver that classed this document
     expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_AND_BUYER);
   });
 
-  it('a matched-member NON-registrant with a stored identifier still gets NO Tax ID line at v11 (Guard 2 survives)', () => {
-    // A MATCHED member (memberId non-null): resolveBuyerIsVatRegistrant reads the
-    // RECORDED `buyer_is_vat_registrant` flag, not TIN-presence. A non-registrant
-    // whose `tax_id` happens to be a 13-digit number (a passport-equivalent or an
-    // unregistered company id) must still show no Tax ID line — the ORIGINAL
-    // point of the v11 gate, which Task 6b's fix must not regress.
+  it('a matched member holding a PASSPORT still gets NO Tax ID line at v11 (the original point of the gate survives)', () => {
+    // The gate's original purpose — a foreign natural person's passport must
+    // never print as a taxpayer number — is unaffected by the later correction
+    // that lets a Thai natural person's national ID through. A passport fails
+    // the 13-digit check digit (it is not even 13 digits), so it is suppressed
+    // whatever the registrant flag says.
+    //
+    // NOTE the fixture: this test used to seed a 13-digit number and rely on the
+    // REGISTRANT flag to suppress it. That number is now a checksum-valid Thai
+    // TIN and prints — correctly. Seeding a passport is what actually exercises
+    // the rule this test is named for.
     const matchedMemberId = '00000000-0000-0000-0000-0000000000b2';
     const matchedNonRegistrantSnapshot = {
-      tax_id: BUYER_TIN,
+      tax_id: PASSPORT,
       buyer_is_vat_registrant: false as const,
     };
     const resolvedRegistrant = resolveBuyerIsVatRegistrant(
@@ -374,7 +448,7 @@ describe('059 Task 6b — WALK-IN buyer: the resolver that classed this document
         buyerIsVatRegistrant: resolvedRegistrant,
       }),
     );
-    expect(text).not.toContain(`Tax ID: ${BUYER_TIN}`);
+    expect(text).not.toContain(PASSPORT);
     expect(countOccurrences(text, TAX_ID_LABEL)).toBe(SELLER_ONLY);
   });
 });
