@@ -81,6 +81,15 @@ function currentMember(over: Record<string, unknown> = {}) {
     legalEntityType: 'company',
     country: 'TH',
     taxId: null,
+    // 059 / PR-A Task 5 — a branch implies a VAT registrant (ประกาศอธิบดีฯ 199:
+    // the สำนักงานใหญ่/สาขา line is a §86/4 particular required only of a
+    // registrant, so a non-registrant branch would render NO branch line at all).
+    // This fixture predates the recorded flag: it carried only
+    // `legalEntityType: 'company'`, and the old GUESS — "any entity type that is
+    // not 'individual'" — read that as registrant, which is exactly the inference
+    // this branch deleted. Without the flag the member is a non-registrant, and
+    // promoting it to a branch is now correctly REFUSED. State the fact.
+    isVatRegistered: true,
     isHeadOffice: true,
     branchCode: null,
     website: null,
