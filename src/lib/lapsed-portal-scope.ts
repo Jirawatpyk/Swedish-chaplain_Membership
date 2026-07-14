@@ -41,11 +41,15 @@ import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/rene
  *   - Toggle `/portal/preferences/renewals` opt-out (FR-016)
  *   - Use the `/portal/account` hub (058 D2) — covers the FR-016 renewal
  *     opt-out + the GDPR/PDPA data export at `/portal/account/data-export`
+ *   - Read (not pay) their own `/portal/invoices` + `/portal/credit-notes`
+ *     — Thai tax records, not a benefit (2026-07-14 maintainer decision,
+ *     task-15c). Online payment stays blocked (`/api/payments/initiate`
+ *     is a separate, still-gated route).
  *   - Sign out from anywhere (auth-public sign-out endpoint)
  *   - View `/portal/sign-in` and `/forgot-password` (auth-public)
  *
- * Everything else (member dashboard widgets, billing, broadcasts, events)
- * is blocked until they renew.
+ * Everything else (member dashboard widgets, broadcasts, events) is
+ * blocked until they renew.
  *
  * NOTE: `'/portal'` is intentionally NOT prefix-matched against its
  * children — see the `isTerminatedAllowedRoute` docstring below. It is
@@ -67,6 +71,33 @@ export const LAPSED_PORTAL_ALLOWED_PREFIXES: readonly string[] = [
   '/portal/account',
   '/api/portal/renewal',
   '/api/portal/preferences/renewals',
+  // 2026-07-14 maintainer decision (task-15c, corrects the 2026-07-13
+  // Task 15 spec amendment which said the opposite — see the corrected
+  // FR-005 note in specs/011-renewal-reminders/spec.md): a terminated
+  // member's own invoices + credit-notes are Thai tax records (§86/4
+  // receipts / RD retention obligations), NOT a membership benefit, so
+  // read access MUST survive grace expiry. Covers both the list + detail
+  // pages and their read APIs (PDF download, receipt PDF/status, the
+  // cmdk invoice-search backend). `/api/portal/invoices` is a BROAD
+  // prefix — it also reaches `[invoiceId]/resend` (POST, emails a copy
+  // of the invoice to the member). That's a deliberate, documented
+  // trade-off: `matchesScopePrefix` only supports prefix+boundary
+  // matching, and `resend` shares the same `/api/portal/invoices/{id}/…`
+  // prefix as the read routes (the `{id}` segment is dynamic, so there
+  // is no narrower literal prefix that reaches the PDF/receipt routes
+  // without also reaching resend). Excluding just `resend` would need a
+  // suffix-matching mechanism this allowlist doesn't have. Accepted
+  // because a terminated member re-sending their OWN invoice email to
+  // themselves is low-risk — no cross-member exposure, no financial
+  // mutation, no benefit consumption. Online PAYMENT is a separate route
+  // (`/api/payments/initiate`, gated by the same `requireMemberContext`
+  // chokepoint) that is intentionally NOT on this allowlist — a
+  // terminated member can view an unpaid invoice's Pay-now button, but
+  // clicking it still 403s, exactly as before this change.
+  '/portal/invoices',
+  '/api/portal/invoices',
+  '/portal/credit-notes',
+  '/api/portal/credit-notes',
   // Sign-out + auth-public routes are NOT under /portal/* by default —
   // they live under /sign-out + /forgot-password etc. (auth-public
   // group). Listed here for completeness but won't match the prefix
