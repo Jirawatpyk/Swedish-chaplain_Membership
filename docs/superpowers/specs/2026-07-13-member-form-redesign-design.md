@@ -217,9 +217,11 @@ v1 had province/district each switching between input, read-only, and select dep
 
 Keeping one widget per field also keeps SC 3.2.2 (On Input) satisfied, which the widget-swap violated.
 
-### Language: store Thai, always, when country = TH
+### ~~Language: store Thai, always, when country = TH~~ — **REVERSED, see § 16.1**
 
-`compose-buyer-address.ts:49-52` freezes `city + province + postal_code` into the immutable buyer address on the §86/4 document. v1 said autofill follows the **UI locale** — which would make the language printed on a tax document depend on which admin happened to key the member in and what language they had selected. **RC §86/4 วรรคสอง requires the particulars in Thai.** So: country = TH ⇒ store the **canonical Thai** names; show the English name as secondary text inside the picker only. The generated dataset is bilingual, so both are available.
+~~`compose-buyer-address.ts:49-52` freezes `city + province + postal_code` into the immutable buyer address on the §86/4 document. v1 said autofill follows the **UI locale** — which would make the language printed on a tax document depend on which admin happened to key the member in and what language they had selected. RC §86/4 วรรคสอง requires the particulars in Thai. So: country = TH ⇒ store the canonical Thai names; show the English name as secondary text inside the picker only. The generated dataset is bilingual, so both are available.~~
+
+**Superseded (2026-07-14) — store English, always, when country = TH.** ประกาศอธิบดีกรมสรรพากร ฉบับที่ 92 (2542) pre-approves English-language + THB tax invoices without a case-by-case application, TSCC's accountant confirmed the same independently, and TSCC's live corpus is 132/132 English addresses. See § 16.1 for the full reasoning. Implemented in `src/components/members/member-form/sections/address-section.tsx` (PR-B) — the Thai name is kept as secondary `detail` text inside the picker, never dropped.
 
 ### Sub-district is required for TH
 
@@ -300,7 +302,7 @@ Five fieldsets: Company · Address · Membership · Primary contact · Secondary
 **All of the blocking questions are now closed.** See § 16.
 
 **To the reviewer** (for the record — these are the three places we did not do what they asked):
-1. **Zero-padding Tax ID.** We refuse it *for foreign identifiers* — a padded passport number is a fabricated identifier, and a padded short number can collide with a real Thai taxpayer's 13-digit ID. **But see § 16.4: their instruction was right for a reason we had not understood** — Excel had eaten the leading zero from 113 Thai TINs, and those genuinely do need left-padding to 13.
+1. **Zero-padding a foreign Tax ID.** We refuse it. A padded number lands inside the Thai 13-digit TIN namespace and can match a *different, real* taxpayer; a passport number cannot be padded into a digit string without fabricating one; and it is a false particular on a tax document. See § 16.4(a) — and note § 16.4(b), a **separate** padding issue (Excel ate the leading zero from 113 Thai TINs) which does need fixing, but in the importer and only for Thai TINs.
 2. **"Not based in Thailand" checkbox** — folded into the Country field; two sources of truth can contradict each other.
 3. **"Member Type"** — renamed to "Entity type"; the term collides with the plan's `member_type_scope`.
 4. The entity list needed **two additions** the source table lacked: `government` (already in our vocabulary) and `embassy_intl_org` (088 US8 zero-rating buyers). Note § 16.3: TSCC has **no members of either type**, so neither is urgent.
@@ -338,11 +340,22 @@ Both were verified against rd.go.th primary text. v2 cited 199 alone for both pa
 | **Country** | 127 Thailand · 4 Sweden · 19 N/A. |
 | Entity types **absent** | No cooperative, no representative/regional office, no government agency, no embassy. The defaults for those are therefore not urgent. |
 
-### 16.4 The reviewer's "pad with 0000" instruction was right — for a reason nobody stated
+### 16.4 Two different padding questions — do not conflate them
 
-We pushed back on zero-padding because a padded *passport* number is a fabrication. That still holds. But the actual data shows the real problem: **Excel destroyed the leading zero on 113 Thai TINs.** A Thai juristic TIN always begins with `0`.
+**(a) The reviewer's ask: zero-pad a FOREIGN tax ID shorter than 13 digits. Still refused.**
 
-**The importer must left-pad a Thai TIN to 13 digits.** That is restoring a digit Excel deleted, not inventing one. It remains true that a **foreign** identifier must never be padded.
+Their instruction was *"ถ้าบางประเทศน้อยกว่า 13 หลัก ให้ใช้ 0000 ข้างหน้า"* — pad a foreign identifier out to 13 digits. We do not do this, and the reasons in § 3 #2 are unchanged:
+- A padded number lands inside the **Thai 13-digit TIN namespace** and can match a *different, real* Thai taxpayer.
+- A passport / work-permit number is alphanumeric — it cannot be padded into a digit string without fabricating one.
+- It is a **false particular on a tax document**, which is a penalty risk, not a UX preference.
+
+A foreign identifier that is not 13 digits is not a *truncated* 13-digit ID — it is simply a different kind of identifier. Store it verbatim, and omit the Tax ID line on the document when the buyer is not a Thai VAT registrant (which, per ประกาศ 196, is exactly when no buyer TIN is required at all).
+
+**(b) A separate, real problem the data revealed: Excel ate the leading zero on 113 Thai TINs.**
+
+A Thai juristic TIN always begins with `0`. TSCC's spreadsheet stored them as *numbers*, so `0105562087242` came out as `105562087242` — 12 digits. This is unrelated to (a): here the digit genuinely exists and Excel deleted it.
+
+**The importer must left-pad a Thai TIN back to 13 digits** — restoring a digit, not inventing one — and then verify the Mod-11 checksum, which will fail loudly if the padding assumption was ever wrong. **Foreign identifiers are still never padded.**
 
 ### 16.5 Tax ID is required **only when the buyer is a VAT registrant**
 
