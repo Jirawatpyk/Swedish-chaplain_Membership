@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
  * possibly the correction table in the generator needs re-checking).
  */
 const EXPECTED_SHA256 =
-  'a72b5ab688786e4581d15e7a41618a41719030e35b70967fb6c34433d63b9b21';
+  'd3bad3387b73d865cbfba4cff9ae73f8a433fa1119e56430082e29ba2a6021f1';
 
 /**
  * Genuine RTGS homographs: two DIFFERENT Thai names that both correctly
@@ -80,6 +80,42 @@ describe('thai-postal data.json', () => {
         expect(en.trim(), `sub-district ${th} has an empty/blank English name`).not.toBe('');
       }
     }
+  });
+
+  /**
+   * Would have caught `"(Nong Ian"` (a stray leading `(`) instantly, without
+   * needing a human to notice or a v1 cross-check to happen to disagree. It
+   * also caught two rows the v1 cross-check COULDN'T — `"*Suwannakarm"` and
+   * `"*Khao Niphan"` — because `api/v1` shared the identical stray-`*`
+   * corruption (see `scripts/generate-thai-postal-data.ts` `ADJUDICATION_TABLE`
+   * for both). Allows spaces, ASCII letters, periods (none currently used but
+   * harmless), apostrophes (none currently used — Thai romanisation doesn't
+   * produce them — but harmless if RTGS ever does), and hyphens (real: e.g.
+   * "Tha Sa-at").
+   */
+  it('every English name contains only [A-Za-z .\'-] — no stray punctuation, digits, or Thai characters', () => {
+    const data = loadData();
+    const ALLOWED = /^[A-Za-z .'-]+$/;
+
+    const unexpected: string[] = [];
+    for (const [th, en] of data.provinces) {
+      if (!ALLOWED.test(en)) unexpected.push(`province ${th}: "${en}"`);
+    }
+    for (const [th, en] of data.districts) {
+      if (!ALLOWED.test(en)) unexpected.push(`district ${th}: "${en}"`);
+    }
+    for (const rows of Object.values(data.byZip)) {
+      for (const [th, en] of rows) {
+        if (!ALLOWED.test(en)) unexpected.push(`sub-district ${th}: "${en}"`);
+      }
+    }
+
+    expect(
+      unexpected,
+      `English names with characters outside [A-Za-z .'-] (likely upstream corruption ` +
+        `both api/latest and api/v1 share — the v1 cross-check cannot catch this class; see ` +
+        `generator CORRECTIONS):\n${unexpected.join('\n')}`,
+    ).toEqual([]);
   });
 
   it('district English names are unique within their province, except the documented RTGS homographs', () => {
