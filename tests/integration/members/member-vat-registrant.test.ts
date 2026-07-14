@@ -1,21 +1,28 @@
 /**
- * 064 remediation B5 — `memberTinPresenceByIdsInTx` + the
- * `runListMemberTinPresenceByIds` lib wrapper (live Neon Singapore via
+ * 059 / PR-A Task 6c — `memberVatRegistrantByIdsInTx` + the
+ * `runListMemberVatRegistrantByIds` lib wrapper (live Neon Singapore via
  * .env.local).
  *
- * The read backs the F6 admin event-detail `buyerHasTin` enrichment (the
- * /admin/invoices/new attendee picker's server-truth TIN presence for
- * MATCHED members). Pins:
+ * Backs the F6 admin event-detail `buyerIsVatRegistrant` enrichment (the
+ * /admin/invoices/new attendee picker's server-truth registrant status for
+ * MATCHED members). REPLACES the 064-remediation-B5 tax-id-PRESENCE read.
  *
- *   1. presence semantics — non-blank tax_id → true; NULL → false;
- *      whitespace-only → false (mirrors the F4 Domain `buyerHasTin` trim);
+ * WHY THE QUESTION CHANGED: issuance decides the event document class on the
+ * RECORDED `members.is_vat_registered` flag, not on "is tax_id non-blank" — a
+ * foreign member may store a passport / work-permit number there. While the
+ * picker still asked the TIN question the two disagreed: a TIN-bearing
+ * NON-registrant was OFFERED bill_first, then refused at issue with "this buyer
+ * has no tax ID" — while visibly having one on screen.
+ *
+ * Pins:
+ *   1. the flag is READ, never inferred — including the case that broke the old
+ *      lookup: a member WITH a tax_id who is NOT VAT-registered → false;
  *   2. batching — one call resolves many ids; unknown ids are absent;
- *   3. Principle I — a member seeded in tenant B is INVISIBLE (absent from
- *      the map) when the lookup runs under tenant A's RLS context;
+ *   3. Principle I — a member seeded in tenant B is INVISIBLE (absent from the
+ *      map) when the lookup runs under tenant A's RLS context;
  *   4. wrapper ergonomics — empty input short-circuits to an empty map.
  *
- * All seeded PII is SIMULATED (fake names + fake TINs) — never real
- * member data.
+ * All seeded PII is SIMULATED (fake names + fake TINs) — never real member data.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -23,8 +30,8 @@ import { runInTenant } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
-import { memberTinPresenceByIdsInTx } from '@/modules/members';
-import { runListMemberTinPresenceByIds } from '@/lib/events-admin-deps';
+import { memberVatRegistrantByIdsInTx } from '@/modules/members';
+import { runListMemberVatRegistrantByIds } from '@/lib/events-admin-deps';
 import {
   createTwoTestTenants,
   type TestTenant,
@@ -50,13 +57,12 @@ const MATRIX: BenefitMatrix = {
   partnership: null,
 };
 
-const PLAN_ID = 'tin-presence-plan';
+const PLAN_ID = 'vat-registrant-plan';
 
 async function seedMember(
   tenant: TestTenant,
   taxId: string | null,
-  // `members_th_tax_id_format` CHECK forces TH tax ids to ^[0-9]{13}$ —
-  // the whitespace-only case is only representable on a non-TH member.
+  isVatRegistered: boolean,
   country: 'TH' | 'SE' = 'TH',
 ): Promise<string> {
   const memberId = randomUUID();
@@ -65,10 +71,11 @@ async function seedMember(
       tenantId: tenant.ctx.slug,
       memberId,
       memberNumber: nextSeedMemberNumber(),
-      companyName: `Simulated TIN Probe Co ${memberId.slice(0, 8)}`,
+      companyName: `Simulated VAT Probe Co ${memberId.slice(0, 8)}`,
       country,
       taxId,
-      addressLine1: '1 Simulated TIN Road',
+      isVatRegistered,
+      addressLine1: '1 Simulated VAT Road',
       city: 'Pathum Wan',
       province: 'Bangkok',
       postalCode: '10330',
@@ -79,13 +86,13 @@ async function seedMember(
   return memberId;
 }
 
-describe('memberTinPresenceByIdsInTx + runListMemberTinPresenceByIds (064 B5, live Neon)', () => {
+describe('memberVatRegistrantByIdsInTx + runListMemberVatRegistrantByIds (059 Task 6c, live Neon)', () => {
   let a: TestTenant;
   let b: TestTenant;
   let user: TestUser;
-  let withTin: string;
-  let withoutTin: string;
-  let whitespaceTin: string;
+  let registrant: string;
+  let nonRegistrant: string;
+  let tinButNotRegistrant: string;
   let foreignMember: string; // seeded in tenant B
 
   beforeAll(async () => {
@@ -99,8 +106,8 @@ describe('memberTinPresenceByIdsInTx + runListMemberTinPresenceByIds (064 B5, li
           tenantId: t.ctx.slug,
           planId: PLAN_ID,
           planYear: 2026,
-          planName: { en: 'TIN Presence Probe Plan' },
-          description: { en: 'Simulated plan for the B5 TIN-presence probe' },
+          planName: { en: 'VAT Registrant Probe Plan' },
+          description: { en: 'Simulated plan for the VAT-registrant probe' },
           sortOrder: 12,
           planCategory: 'corporate',
           memberTypeScope: 'company',
@@ -117,10 +124,14 @@ describe('memberTinPresenceByIdsInTx + runListMemberTinPresenceByIds (064 B5, li
         });
       });
     }
-    withTin = await seedMember(a, '1234567890123'); // SIMULATED TIN
-    withoutTin = await seedMember(a, null);
-    whitespaceTin = await seedMember(a, '   ', 'SE'); // whitespace-only — non-TH (TH CHECK forbids it)
-    foreignMember = await seedMember(b, '9876543210123'); // SIMULATED TIN
+    registrant = await seedMember(a, '1234567890123', true); // SIMULATED TIN
+    nonRegistrant = await seedMember(a, null, false);
+    // THE CASE THAT BROKE THE OLD LOOKUP: a real, non-blank tax id on a member
+    // who is NOT a VAT registrant. The tax-id-presence read answered `true`
+    // here, so the picker offered bill_first — and issuance, which asks the
+    // registrant question, refused it.
+    tinButNotRegistrant = await seedMember(a, '9999999999999', false);
+    foreignMember = await seedMember(b, '9876543210123', true); // SIMULATED TIN
   }, 60_000);
 
   afterAll(async () => {
@@ -129,38 +140,40 @@ describe('memberTinPresenceByIdsInTx + runListMemberTinPresenceByIds (064 B5, li
     await deleteTestUser(user).catch(() => {});
   });
 
-  it('batched presence: non-blank → true, NULL → false, whitespace-only → false, unknown id absent', async () => {
+  it('reads the RECORDED flag — a member WITH a tax id but NOT registered is false', async () => {
     const unknownId = randomUUID();
     const map = await runInTenant(a.ctx, (tx) =>
-      memberTinPresenceByIdsInTx(tx, a.ctx.slug, [
-        withTin,
-        withoutTin,
-        whitespaceTin,
+      memberVatRegistrantByIdsInTx(tx, a.ctx.slug, [
+        registrant,
+        nonRegistrant,
+        tinButNotRegistrant,
         unknownId,
       ]),
     );
-    expect(map.get(withTin)).toBe(true);
-    expect(map.get(withoutTin)).toBe(false);
-    // Whitespace-only is NOT a TIN — mirrors the F4 Domain buyerHasTin trim
-    // so the picker preview agrees with what issuance will decide.
-    expect(map.get(whitespaceTin)).toBe(false);
+    expect(map.get(registrant)).toBe(true);
+    expect(map.get(nonRegistrant)).toBe(false);
+    // The regression this task closes. The old tax-id-PRESENCE read returned
+    // `true` for this member — it only saw a non-blank string — so the picker
+    // offered bill_first, and issuance then refused it with "this buyer has no
+    // tax ID" while the admin was looking at one on screen.
+    expect(map.get(tinButNotRegistrant)).toBe(false);
     expect(map.has(unknownId)).toBe(false);
     expect(map.size).toBe(3);
   });
 
   it("Principle I — tenant B's member is ABSENT when looked up under tenant A's RLS context", async () => {
-    const map = await runListMemberTinPresenceByIds(a.ctx.slug, [
-      withTin,
+    const map = await runListMemberVatRegistrantByIds(a.ctx.slug, [
+      registrant,
       foreignMember,
     ]);
-    expect(map.get(withTin)).toBe(true);
+    expect(map.get(registrant)).toBe(true);
     // Cross-tenant probe: RLS hides the row — absent, never `false` with a
-    // leaked presence signal.
+    // leaked signal.
     expect(map.has(foreignMember)).toBe(false);
   });
 
   it('wrapper short-circuits an empty id list to an empty map (no DB roundtrip needed)', async () => {
-    const map = await runListMemberTinPresenceByIds(a.ctx.slug, []);
+    const map = await runListMemberVatRegistrantByIds(a.ctx.slug, []);
     expect(map.size).toBe(0);
   });
 }, 120_000);
