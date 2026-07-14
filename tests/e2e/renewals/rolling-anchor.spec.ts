@@ -99,7 +99,9 @@ test.describe('rolling-anchor admin flow @renewals', () => {
 
       const suffix = Date.now().toString(36);
       await fillField(page.locator('#company_name'), `Rolling Anchor E2E ${suffix}`);
-      await fillField(page.locator('#country'), 'TH');
+      // PR-B task 5 — #country is now a searchable combobox trigger <button>
+      // (not a fillable text <input>); no explicit selection needed since
+      // the form already defaults it to 'TH' (schema default).
       await page.locator('#plan_id').click();
       await page.getByRole('option').first().click();
       await fillField(page.locator('#first_name'), 'Anchor');

@@ -15,7 +15,7 @@
  *      submission never reaches the quota counter (the bug class this
  *      gate exists to close: a check that compiles but is never wired
  *      into the actual submit path). Task 8 wires the audit emit
- *      (migration 0245 adds the pgEnum value).
+ *      (migration 0246 adds the pgEnum value).
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
  *   b. quota → broadcast_quota_blocked  (enforced for all actors incl admin_proxy — T-10)
@@ -81,7 +81,7 @@ export type SubmitBroadcastError =
   // from the halt-flag reject: a halt is an admin-imposed hold, while
   // this is a member benefit-access state derived from F8's renewal
   // cycle (suspended/terminated). Audit emit + enum value shipped in
-  // Task 8 (migration 0245) — see the `emitReject` call at the emit site
+  // Task 8 (migration 0246) — see the `emitReject` call at the emit site
   // below.
   | {
       readonly kind: 'broadcast_membership_suspended_blocked';

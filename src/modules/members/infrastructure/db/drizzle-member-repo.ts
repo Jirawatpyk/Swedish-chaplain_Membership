@@ -59,7 +59,7 @@ import {
   type TenantId,
   type PlanId,
 } from '../../domain/member';
-import type { ContactId } from '../../domain/contact';
+import type { Contact, ContactId } from '../../domain/contact';
 import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
@@ -89,6 +89,7 @@ function rowToMember(row: MemberRow): Member {
     description: row.description,
     foundedYear: row.foundedYear,
     turnoverThb: row.turnoverThb,
+    registeredCapitalThb: row.registeredCapitalThb,
     planId: row.planId as PlanId,
     planYear: row.planYear,
     registrationDate: new Date(row.registrationDate),
@@ -100,6 +101,7 @@ function rowToMember(row: MemberRow): Member {
     city: row.city,
     province: row.province,
     postalCode: row.postalCode,
+    subDistrict: row.subDistrict,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     // M5: narrow into the correlated lifecycle union (status ⟺ archivedAt).
@@ -131,12 +133,15 @@ function applyMemberPatch(
   if (patch.notes !== undefined) set.notes = patch.notes;
   if (patch.taxId !== undefined) set.taxId = patch.taxId;
   if (patch.turnoverThb !== undefined) set.turnoverThb = patch.turnoverThb;
+  if (patch.registeredCapitalThb !== undefined)
+    set.registeredCapitalThb = patch.registeredCapitalThb;
   if (patch.foundedYear !== undefined) set.foundedYear = patch.foundedYear;
   if (patch.addressLine1 !== undefined) set.addressLine1 = patch.addressLine1;
   if (patch.addressLine2 !== undefined) set.addressLine2 = patch.addressLine2;
   if (patch.city !== undefined) set.city = patch.city;
   if (patch.province !== undefined) set.province = patch.province;
   if (patch.postalCode !== undefined) set.postalCode = patch.postalCode;
+  if (patch.subDistrict !== undefined) set.subDistrict = patch.subDistrict;
   if (patch.country !== undefined) set.country = patch.country;
   if (patch.planId !== undefined) set.planId = patch.planId;
   if (patch.planYear !== undefined) set.planYear = patch.planYear;
@@ -236,6 +241,41 @@ function directoryPlanNameSubquery(tx: RepoTx) {
       ),
     )
     .limit(1);
+}
+
+/**
+ * PR-B task 8 — insert one `contacts` row on the given tx, factored out of
+ * `createWithPrimaryContactInTx` so the primary and secondary contact
+ * inserts share the exact same column mapping (only `isPrimary` differs).
+ * Callers wrap this in their OWN try/catch so a unique-violation on the
+ * primary insert vs the secondary insert maps to a DISTINCT
+ * `RepoConflictReason` — see the port doc.
+ */
+async function insertContactRow(
+  tx: RepoTx,
+  memberId: string,
+  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>,
+  isPrimary: boolean,
+) {
+  const inserted = await tx
+    .insert(contacts)
+    .values({
+      tenantId: contact.tenantId,
+      contactId: contact.contactId,
+      memberId,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      email: contact.email,
+      phone: contact.phone,
+      roleTitle: contact.roleTitle,
+      preferredLanguage: contact.preferredLanguage,
+      isPrimary,
+      dateOfBirth: contact.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+      linkedUserId: contact.linkedUserId,
+      removedAt: null,
+    })
+    .returning();
+  return inserted[0]!;
 }
 
 /** Map a `{ row, planDisplayName }` page row → DirectoryRow. */
@@ -492,8 +532,20 @@ export const drizzleMemberRepo: MemberRepo = {
   },
 
   async createWithPrimaryContactInTx(tx, draft) {
+    // PR-B task 8 — THREE separate try/catch blocks (member, primary
+    // contact, secondary contact), each mapping a unique-violation to its
+    // OWN `RepoConflictReason`. The former single try/catch around the
+    // whole method could only ever say 'duplicate' regardless of which
+    // insert actually collided — a secondary-email collision would report
+    // as if the PRIMARY email were taken. All three inserts still run on
+    // the SAME `tx` (threaded from the caller's `runInTenant`), so a
+    // failure on insert 2 or 3 still rolls back insert 1 — "one
+    // transaction, or none" is a property of the CALLER's tx boundary, not
+    // of how many try/catch blocks sit inside this method.
+
+    // 1. Insert member
+    let memberRow: typeof members.$inferSelect;
     try {
-      // 1. Insert member
       const insertedMembers = await tx
         .insert(members)
         .values({
@@ -509,6 +561,7 @@ export const drizzleMemberRepo: MemberRepo = {
           description: draft.member.description,
           foundedYear: draft.member.foundedYear,
           turnoverThb: draft.member.turnoverThb,
+          registeredCapitalThb: draft.member.registeredCapitalThb,
           planId: draft.member.planId,
           planYear: draft.member.planYear,
           registrationDate: draft.member.registrationDate
@@ -521,46 +574,59 @@ export const drizzleMemberRepo: MemberRepo = {
           city: draft.member.city,
           province: draft.member.province,
           postalCode: draft.member.postalCode,
+          subDistrict: draft.member.subDistrict,
           status: draft.member.status,
           archivedAt: draft.member.archivedAt,
         })
         .returning();
-      const memberRow = insertedMembers[0]!;
-
-      // 2. Insert primary contact (bound to the inserted member's id)
-      const insertedContacts = await tx
-        .insert(contacts)
-        .values({
-          tenantId: draft.primaryContact.tenantId,
-          contactId: draft.primaryContact.contactId,
-          memberId: memberRow.memberId,
-          firstName: draft.primaryContact.firstName,
-          lastName: draft.primaryContact.lastName,
-          email: draft.primaryContact.email,
-          phone: draft.primaryContact.phone,
-          roleTitle: draft.primaryContact.roleTitle,
-          preferredLanguage: draft.primaryContact.preferredLanguage,
-          isPrimary: true,
-          dateOfBirth:
-            draft.primaryContact.dateOfBirth?.toISOString().slice(0, 10) ??
-            null,
-          linkedUserId: draft.primaryContact.linkedUserId,
-          removedAt: null,
-        })
-        .returning();
-      const contactRow = insertedContacts[0]!;
-
-      const result = { memberRow, contactRow };
-
-      const persistedMember = rowToMember(result.memberRow);
-      // Reuse the canonical row→Contact mapper (handles the M5 primacy union
-      // narrowing) instead of duplicating the field-by-field literal.
-      const persistedContact = rowToContact(result.contactRow);
-
-      return ok({ member: persistedMember, contact: persistedContact });
+      memberRow = insertedMembers[0]!;
     } catch (e) {
-      return err(mapDbError(e, 'duplicate'));
+      return err(mapDbError(e, 'member_duplicate'));
     }
+
+    // 2. Insert primary contact (bound to the inserted member's id)
+    let contactRow: typeof contacts.$inferSelect;
+    try {
+      contactRow = await insertContactRow(
+        tx,
+        memberRow.memberId,
+        draft.primaryContact,
+        true,
+      );
+    } catch (e) {
+      return err(mapDbError(e, 'primary_email_in_use'));
+    }
+
+    // 3. Insert secondary contact — OPTIONAL (PR-B task 8). isPrimary is
+    // always false: `contacts_one_primary_per_member` (a partial unique
+    // index) would reject a second isPrimary:true row for this member.
+    let secondaryContactRow: typeof contacts.$inferSelect | null = null;
+    if (draft.secondaryContact) {
+      try {
+        secondaryContactRow = await insertContactRow(
+          tx,
+          memberRow.memberId,
+          draft.secondaryContact,
+          false,
+        );
+      } catch (e) {
+        return err(mapDbError(e, 'secondary_email_in_use'));
+      }
+    }
+
+    const persistedMember = rowToMember(memberRow);
+    // Reuse the canonical row→Contact mapper (handles the M5 primacy union
+    // narrowing) instead of duplicating the field-by-field literal.
+    const persistedContact = rowToContact(contactRow);
+    const persistedSecondaryContact = secondaryContactRow
+      ? rowToContact(secondaryContactRow)
+      : null;
+
+    return ok({
+      member: persistedMember,
+      contact: persistedContact,
+      secondaryContact: persistedSecondaryContact,
+    });
   },
 
   async updateStatus(ctx, memberId, next) {
@@ -677,6 +743,8 @@ export const drizzleMemberRepo: MemberRepo = {
           city: null,
           province: null,
           postalCode: null,
+          subDistrict: null,
+          registeredCapitalThb: null,
           // 088 US3 — reset the §86/4 Head-Office / Branch particular to its
           // head-office DEFAULT on erasure (drops the RD branch identifier). The
           // pair stays CHECK-consistent (`members_branch_pairing_ck`): head

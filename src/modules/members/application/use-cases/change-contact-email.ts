@@ -47,6 +47,7 @@ import type { EmailPort } from '../ports/email-port';
 import type { SessionRevocationPort } from '../ports/session-revocation-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
+import type { RepoConflictReason, RepoError } from '../ports/member-repo';
 import {
   generateToken,
   hashEmail,
@@ -76,7 +77,7 @@ export type ChangeContactEmailInput = {
 
 export type ChangeContactEmailError =
   | { code: 'not_found' }
-  | { code: 'conflict'; reason: string }
+  | { code: 'conflict'; reason: RepoConflictReason }
   | { code: 'invalid_input'; field: string }
   | { code: 'server_error'; cause?: unknown };
 
@@ -345,14 +346,18 @@ export async function changeContactEmail(
  * Internal error wrapper so port-layer failures (which are Result-typed)
  * can abort the runInTenant transaction via throw → rollback, and be
  * mapped back to a typed use-case error at the outer catch.
+ *
+ * I2 fix — this used to re-declare its own `{ code: 'repo.conflict';
+ * reason: string }` union instead of importing `RepoError`. Every port
+ * this file calls (`ContactRepo`, `UserEmailPort`, `SessionRevocationPort`,
+ * `EmailChangeTokenPort`, `EmailPort`) already returns `Result<_, RepoError>`
+ * — the hand-rolled copy only WIDENED `RepoConflictReason` back to `string`
+ * on its way through this wrapper, silently undoing the PR-B task 8
+ * narrowing for every caller of `changeContactEmail`. Using `RepoError`
+ * directly keeps this in sync by construction.
  */
 class PortError extends Error {
-  constructor(
-    public readonly repoError:
-      | { code: 'repo.not_found' }
-      | { code: 'repo.conflict'; reason: string }
-      | { code: 'repo.unexpected'; cause?: unknown },
-  ) {
+  constructor(public readonly repoError: RepoError) {
     super(`port error: ${repoError.code}`);
   }
 }

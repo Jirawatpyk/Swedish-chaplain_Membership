@@ -30,8 +30,8 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { addMonthsUtc, bangkokDateOnly } from '@/lib/dates';
-import { SearchableCombobox } from './searchable-combobox';
-import type { ComboboxOption } from './searchable-combobox';
+import { Combobox } from '@/components/ui/combobox';
+import type { ComboboxOption } from '@/components/ui/combobox';
 
 export type MemberOption = {
   readonly memberId: string;
@@ -320,8 +320,10 @@ export function CreateDraftForm({
       className="flex flex-col gap-[var(--page-section-gap)]"
     >
       <div className="flex flex-col gap-[var(--field-label-gap)]">
-        <Label htmlFor="memberId">{t('fields.memberId')}</Label>
-        <SearchableCombobox
+        <Label id="memberId-label" htmlFor="memberId">
+          {t('fields.memberId')}
+        </Label>
+        <Combobox
           id="memberId"
           options={memberOptions}
           value={memberId}
@@ -329,7 +331,7 @@ export function CreateDraftForm({
           placeholder={noMembers ? tPicker('noActiveMembers') : tPicker('placeholder')}
           searchPlaceholder={tPicker('search')}
           emptyMessage={tPicker('empty')}
-          ariaLabel={t('fields.memberId')}
+          aria-labelledby="memberId-label"
           disabled={noMembers}
         />
       </div>

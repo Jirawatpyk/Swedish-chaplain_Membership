@@ -288,7 +288,7 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
   });
 
   // 059-membership-suspension Task 8 — proves the `membership_suspended_
-  // action_blocked` enum value exists live (migration 0245) AND that it is
+  // action_blocked` enum value exists live (migration 0246) AND that it is
   // discriminated from `lapsed_member_action_blocked` (which the earlier
   // "terminated member" test above still exercises).
   it('cycle in awaiting_payment (suspended) + denylisted /portal/broadcasts/new → blocked + emits membership_suspended_action_blocked (Task 8)', async () => {
@@ -322,7 +322,7 @@ describe('F8 lapsed-portal-scope — integration (T146)', () => {
   });
 
   // 059-membership-suspension Task 8 — proves the `membership_access_
-  // fail_open` enum value exists live (migration 0245). Forces the
+  // fail_open` enum value exists live (migration 0246). Forces the
   // cyclesRepo read to throw while keeping every OTHER dep (crucially
   // `auditEmitter`) real, so the emit round-trips through the actual
   // Drizzle F8 audit adapter into Postgres.

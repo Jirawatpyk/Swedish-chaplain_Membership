@@ -48,7 +48,10 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
     // Use stable element ids from member-form.tsx — labels are
     // i18n-driven and brittle across locales.
     await fillField(page.locator('#company_name'), companyName);
-    await fillField(page.locator('#country'), 'TH');
+    // PR-B task 5 — #country is now a searchable combobox trigger <button>
+    // (not a fillable text <input>); no explicit selection is needed here
+    // since the form already defaults it to 'TH' (schema default in
+    // member-form.tsx), matching what this line used to type by hand.
     // Plan select trigger has id="plan_id"; pick the first option.
     await page.locator('#plan_id').click();
     await page.getByRole('option').first().click();

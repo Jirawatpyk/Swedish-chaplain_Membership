@@ -78,7 +78,13 @@ const registered = new Set<string>();
 i18nIsoCountries.registerLocale(enLocale as never);
 registered.add('en');
 
-async function ensureLocaleLoaded(locale: string): Promise<void> {
+/**
+ * Exported for `CountryCombobox` (PR-B task 5) — the country picker needs
+ * the SAME registration lifecycle so `i18nIsoCountries.getNames(locale)`
+ * resolves real names instead of `{}` (its return value before
+ * `registerLocale` has run for that locale).
+ */
+export async function ensureLocaleLoaded(locale: string): Promise<void> {
   if (registered.has(locale)) return;
   if (!KNOWN_LOCALES.has(locale)) return;
   try {
@@ -94,6 +100,13 @@ async function ensureLocaleLoaded(locale: string): Promise<void> {
   }
 }
 
+/** Exported alongside `ensureLocaleLoaded` — the same `ready` gate both
+ * `CountryDisplay` and `CountryCombobox` use to know whether
+ * `i18nIsoCountries.getNames(locale)` will return real names yet. */
+export function isLocaleRegistered(locale: string): boolean {
+  return registered.has(locale);
+}
+
 export function CountryDisplay({
   code,
   variant = 'full',
@@ -101,12 +114,12 @@ export function CountryDisplay({
 }: Props) {
   const locale = useLocale();
   const baseLocale = locale.split('-')[0] ?? 'en';
-  const [ready, setReady] = useState(registered.has(baseLocale));
+  const [ready, setReady] = useState(isLocaleRegistered(baseLocale));
 
   useEffect(() => {
     let cancelled = false;
     ensureLocaleLoaded(baseLocale).then(() => {
-      if (!cancelled) setReady(registered.has(baseLocale));
+      if (!cancelled) setReady(isLocaleRegistered(baseLocale));
     });
     return () => {
       cancelled = true;

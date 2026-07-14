@@ -210,7 +210,7 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     storm (e.g. a partial Neon outage) was invisible in audit_log.
   'membership_suspended_action_blocked',
   'membership_access_fail_open',
-  // --- 059-membership-suspension Task 13 (migration 0246) — F8 →F4
+  // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
   //     `InvoiceDueBridge` credit-window guard (Task 12) closes the daily
   //     lapse cron's decision branch: emitted by `lapseCyclesOnGraceExpiry`
   //     when a member past the grace window still has an unpaid

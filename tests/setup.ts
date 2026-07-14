@@ -35,29 +35,11 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   // need live Blob / Cron behaviour override these locally.
   BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_token',
   CRON_SECRET: 'cron-secret-test-placeholder-16+',
-  FEATURE_F4_INVOICING: 'true',
-  // F8 Renewals — match canonical post-flag-flip production state so
-  // the test environment exercises the same wiring as prod (notably
-  // `onPaidCallbacks` injection in F5 webhook + confirm-payment deps).
-  // Without this, CI without `.env.local` would default to false and
-  // diverge from the local-dev/prod-with-flag-on shape.
-  FEATURE_F8_RENEWALS: 'true',
   RENEWAL_LINK_TOKEN_SECRET_PRIMARY:
     'test-renewal-link-token-secret-32-chars-min-padding',
-  // F6 EventCreate — admin route handlers (T060) gate on the global
-  // flag for the same surface-disclosure pattern as F8's dashboard
-  // 404. Phase 3 webhook route uses tenant-config gating instead, so
-  // before Phase 4 the flag had no effect on the test environment.
-  //
-  // **Side-effect note** (verify-finding F6, 2026-05-12): with the
-  // flag forced to 'true' in the unit/contract suite, any future test
-  // that wants to assert the kill-switch-OFF behaviour MUST override
-  // it via `vi.stubEnv('FEATURE_F6_EVENTCREATE','false')` (or pass it
-  // through `process.env` BEFORE `import 'src/lib/env'` resolves).
-  // The schema's transform-time validation reads from `process.env` at
-  // module load, so a runtime `delete process.env[…]` after env.ts
-  // imports has no effect.
-  FEATURE_F6_EVENTCREATE: 'true',
+  // NOTE: FEATURE_F4_INVOICING / FEATURE_F8_RENEWALS / FEATURE_F6_EVENTCREATE
+  // used to live here. They do NOT belong in a gap-filling map — see the
+  // forced-flag block below the loop.
   EVENTCREATE_PII_PSEUDONYM_SALT:
     'dGVzdC1mNi1zYWx0LXBsYWNlaG9sZGVyLWF0LWxlYXN0LTMyLWJ5dGVzLWxvbmctZW5vdWdoLWFhYQo=',
 };
@@ -67,6 +49,26 @@ for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {
     process.env[key] = value;
   }
 }
+
+// --- Feature flags the suite PINS (forced, not gap-filled) -------------------
+// These three were in TEST_PLACEHOLDERS above, which only fills a key that is
+// ABSENT. That silently failed to do what its own comment claimed: a developer
+// whose `.env.local` says `FEATURE_F6_EVENTCREATE=false` puts the *string*
+// `'false'` into process.env — which is truthy — so the `'true'` placeholder
+// was never applied and the flag stayed off.
+//
+// That is exactly what happened (2026-07-14): the flag was switched off locally
+// while testing the nav gating work, and 41 events/cron tests went red on a
+// clean checkout with no code change behind it. A test whose result depends on
+// the contents of an individual developer's `.env.local` is not a test — it
+// will disagree between CI and every machine.
+//
+// So: FORCE them, the way STRIPE_API_VERSION below already is. The suite
+// asserts the flag-ON wiring; a test that wants the flag-OFF path mocks
+// `@/lib/env` for itself (see tests/contract/events/admin-events-api.test.ts).
+process.env['FEATURE_F4_INVOICING'] = 'true';
+process.env['FEATURE_F8_RENEWALS'] = 'true';
+process.env['FEATURE_F6_EVENTCREATE'] = 'true';
 
 // Pin STRIPE_API_VERSION for unit/contract tests to match the
 // fixture `PINNED_API_VERSION` in tests/contract/payments/*.

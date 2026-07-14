@@ -51,6 +51,12 @@ const SCRUBBED = new Set<string>([
   'city',
   'province',
   'postalCode',
+  // Postal address (PII). แขวง/ตำบล — the Thai sub-district level; part of
+  // the §86/4 buyer address frozen onto the tax document at issue.
+  'subDistrict',
+  // Business quasi-identifier (GDPR Recital 26 at small-chamber scale) —
+  // same class as turnoverThb / foundedYear.
+  'registeredCapitalThb',
   // F8-era admin free-text + behavioral/financial risk cluster (H1 additions).
   // The blocked-reactivation cluster scrubs AS A UNIT: the 0094 consistency
   // CHECK forbids `blocked=TRUE` once the provenance (`set_by_user_id`) is

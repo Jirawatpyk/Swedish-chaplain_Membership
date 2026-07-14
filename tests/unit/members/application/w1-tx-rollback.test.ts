@@ -94,7 +94,13 @@ describe('W1 — audit atomicity regression (throw-to-rollback)', () => {
 
   it('addContact: returns err when addInTx fails (throws inside tx)', async () => {
     const deps = makeDeps({
-      addInTxResult: err({ code: 'repo.conflict' as const, reason: 'dup' }),
+      // I2 fix — `'dup'` was not a member of `RepoConflictReason`; the real
+      // producer (`ContactRepo.addInTx`) maps its unique-index violation to
+      // `contact_email_in_use` (see member-repo.ts's docstring).
+      addInTxResult: err({
+        code: 'repo.conflict' as const,
+        reason: 'contact_email_in_use' as const,
+      }),
       auditResult: ok(undefined),
     });
     const result = await addContact(memberId, validInput, meta, deps);
@@ -558,7 +564,13 @@ describe('W1 — createMember throw-to-rollback', () => {
 
   it('returns err when createWithPrimaryContactInTx fails (no audits attempted)', async () => {
     const deps = makeCreateMemberDeps({
-      createResult: err({ code: 'repo.conflict' as const, reason: 'dup' }),
+      // I2 fix — `'dup'` was not a member of `RepoConflictReason`; the real
+      // producer (`MemberRepo.createWithPrimaryContactInTx`'s member insert)
+      // maps its unique-index violation to `member_duplicate`.
+      createResult: err({
+        code: 'repo.conflict' as const,
+        reason: 'member_duplicate' as const,
+      }),
       auditResults: [ok(undefined), ok(undefined)],
     });
     const result = await createMember(createMemberInput, createMemberMeta, deps);

@@ -1,1742 +1,1749 @@
 {
-	"version": "7",
-	"dialect": "postgresql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "7",
-			"when": 1775751243588,
-			"tag": "0000_high_firestar",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1775751343914,
-			"tag": "0001_audit_log_append_only",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1775752000000,
-			"tag": "0002_add_password_reset_failed_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1775752100000,
-			"tag": "0003_last_admin_protection_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "7",
-			"when": 1775752200000,
-			"tag": "0004_fix_last_admin_trigger_delete_return",
-			"breakpoints": true
-		},
-		{
-			"idx": 5,
-			"version": "7",
-			"when": 1775838981946,
-			"tag": "0005_unusual_thena",
-			"breakpoints": true
-		},
-		{
-			"idx": 6,
-			"version": "7",
-			"when": 1775909755863,
-			"tag": "0006_plans_and_fee_config",
-			"breakpoints": true
-		},
-		{
-			"idx": 7,
-			"version": "7",
-			"when": 1775909936285,
-			"tag": "0007_audit_log_f2_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 8,
-			"version": "7",
-			"when": 1775915326091,
-			"tag": "0008_money_columns_to_bigint",
-			"breakpoints": true
-		},
-		{
-			"idx": 9,
-			"version": "7",
-			"when": 1776252552934,
-			"tag": "0009_members_contacts",
-			"breakpoints": true
-		},
-		{
-			"idx": 10,
-			"version": "7",
-			"when": 1776252600000,
-			"tag": "0010_audit_log_f3_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 11,
-			"version": "7",
-			"when": 1776252700000,
-			"tag": "0011_notifications_outbox",
-			"breakpoints": true
-		},
-		{
-			"idx": 12,
-			"version": "7",
-			"when": 1776252800000,
-			"tag": "0012_email_change_tokens",
-			"breakpoints": true
-		},
-		{
-			"idx": 13,
-			"version": "7",
-			"when": 1776252900000,
-			"tag": "0013_requires_password_reset",
-			"breakpoints": true
-		},
-		{
-			"idx": 14,
-			"version": "7",
-			"when": 1776350000000,
-			"tag": "0014_audit_event_portal_invite_queued",
-			"breakpoints": true
-		},
-		{
-			"idx": 15,
-			"version": "7",
-			"when": 1776350100000,
-			"tag": "0015_add_missing_audit_enum_values",
-			"breakpoints": true
-		},
-		{
-			"idx": 16,
-			"version": "7",
-			"when": 1776400000000,
-			"tag": "0016_invitations_revoke_grant",
-			"breakpoints": true
-		},
-		{
-			"idx": 17,
-			"version": "7",
-			"when": 1776410000000,
-			"tag": "0017_invitations_revoke_tighten",
-			"breakpoints": true
-		},
-		{
-			"idx": 18,
-			"version": "7",
-			"when": 1776439610984,
-			"tag": "0018_soft_franklin_richards",
-			"breakpoints": true
-		},
-		{
-			"idx": 19,
-			"version": "7",
-			"when": 1776720000000,
-			"tag": "0019_invoicing_tables",
-			"breakpoints": true
-		},
-		{
-			"idx": 20,
-			"version": "7",
-			"when": 1776720001000,
-			"tag": "0020_audit_log_f4_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 21,
-			"version": "7",
-			"when": 1776720002000,
-			"tag": "0021_audit_overdue_idempotency",
-			"breakpoints": true
-		},
-		{
-			"idx": 22,
-			"version": "7",
-			"when": 1776720003000,
-			"tag": "0022_invoicing_chamber_app_grants",
-			"breakpoints": true
-		},
-		{
-			"idx": 23,
-			"version": "7",
-			"when": 1776720004000,
-			"tag": "0023_notification_type_f4",
-			"breakpoints": true
-		},
-		{
-			"idx": 24,
-			"version": "7",
-			"when": 1776581490367,
-			"tag": "0024_invoicing_receipt_pdf_split",
-			"breakpoints": true
-		},
-		{
-			"idx": 25,
-			"version": "7",
-			"when": 1776837600000,
-			"tag": "0025_invoices_payment_date",
-			"breakpoints": true
-		},
-		{
-			"idx": 26,
-			"version": "7",
-			"when": 1776855600000,
-			"tag": "0026_invoice_settings_consolidation",
-			"breakpoints": true
-		},
-		{
-			"idx": 27,
-			"version": "7",
-			"when": 1776870000000,
-			"tag": "0027_credit_notes_immutability",
-			"breakpoints": true
-		},
-		{
-			"idx": 28,
-			"version": "7",
-			"when": 1776884400000,
-			"tag": "0028_invoice_settings_backfill_from_fee_config",
-			"breakpoints": true
-		},
-		{
-			"idx": 29,
-			"version": "7",
-			"when": 1776895200000,
-			"tag": "0029_drop_tenant_fee_config",
-			"breakpoints": true
-		},
-		{
-			"idx": 30,
-			"version": "7",
-			"when": 1776628800000,
-			"tag": "0030_audit_invoice_pdf_regenerated",
-			"breakpoints": true
-		},
-		{
-			"idx": 31,
-			"version": "7",
-			"when": 1776988800000,
-			"tag": "0031_audit_tenant_invoice_settings_cross_tenant_probe",
-			"breakpoints": true
-		},
-		{
-			"idx": 32,
-			"version": "7",
-			"when": 1777248000000,
-			"tag": "0032_audit_contact_linked_to_user",
-			"breakpoints": true
-		},
-		{
-			"idx": 33,
-			"version": "7",
-			"when": 1777334400000,
-			"tag": "0033_create_payments",
-			"breakpoints": true
-		},
-		{
-			"idx": 34,
-			"version": "7",
-			"when": 1777334401000,
-			"tag": "0034_create_refunds",
-			"breakpoints": true
-		},
-		{
-			"idx": 35,
-			"version": "7",
-			"when": 1777334402000,
-			"tag": "0035_create_tenant_payment_settings",
-			"breakpoints": true
-		},
-		{
-			"idx": 36,
-			"version": "7",
-			"when": 1777334403000,
-			"tag": "0036_create_processor_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 37,
-			"version": "7",
-			"when": 1777334404000,
-			"tag": "0037_seed_swecham_payment_settings",
-			"breakpoints": true
-		},
-		{
-			"idx": 38,
-			"version": "7",
-			"when": 1777334405000,
-			"tag": "0038_credit_notes_add_source_refund_id",
-			"breakpoints": true
-		},
-		{
-			"idx": 39,
-			"version": "7",
-			"when": 1777334406000,
-			"tag": "0039_audit_log_add_retention_years",
-			"breakpoints": true
-		},
-		{
-			"idx": 40,
-			"version": "7",
-			"when": 1777334407000,
-			"tag": "0040_audit_log_f5_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 41,
-			"version": "7",
-			"when": 1777334408000,
-			"tag": "0041_seed_system_actors",
-			"breakpoints": true
-		},
-		{
-			"idx": 42,
-			"version": "7",
-			"when": 1777334409000,
-			"tag": "0042_relax_payment_card_metadata_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 43,
-			"version": "7",
-			"when": 1777334410000,
-			"tag": "0043_audit_log_rate_limit_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 44,
-			"version": "7",
-			"when": 1777420800000,
-			"tag": "0044_fix_card_metadata_check_canceled_failed",
-			"breakpoints": true
-		},
-		{
-			"idx": 45,
-			"version": "7",
-			"when": 1777507200000,
-			"tag": "0045_invoice_snapshot_email_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 46,
-			"version": "7",
-			"when": 1777593600000,
-			"tag": "0046_audit_log_webhook_unknown_state_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 47,
-			"version": "7",
-			"when": 1777680000000,
-			"tag": "0047_audit_log_processor_retrieve_failed",
-			"breakpoints": true
-		},
-		{
-			"idx": 48,
-			"version": "7",
-			"when": 1777766400000,
-			"tag": "0048_audit_log_invoice_not_found",
-			"breakpoints": true
-		},
-		{
-			"idx": 49,
-			"version": "7",
-			"when": 1777852800000,
-			"tag": "0049_audit_log_payment_method_switched",
-			"breakpoints": true
-		},
-		{
-			"idx": 50,
-			"version": "7",
-			"when": 1777939200000,
-			"tag": "0050_audit_log_stale_pending_refund",
-			"breakpoints": true
-		},
-		{
-			"idx": 51,
-			"version": "7",
-			"when": 1778025600000,
-			"tag": "0051_audit_log_f4_retention_rebackfill",
-			"breakpoints": true
-		},
-		{
-			"idx": 52,
-			"version": "7",
-			"when": 1778112000000,
-			"tag": "0052_audit_log_payment_terminal_ack",
-			"breakpoints": true
-		},
-		{
-			"idx": 53,
-			"version": "7",
-			"when": 1778198400000,
-			"tag": "0053_audit_log_dispute_created",
-			"breakpoints": true
-		},
-		{
-			"idx": 54,
-			"version": "7",
-			"when": 1778284800000,
-			"tag": "0054_payments_pi_partial_unique",
-			"breakpoints": true
-		},
-		{
-			"idx": 55,
-			"version": "7",
-			"when": 1778371200000,
-			"tag": "0055_audit_log_retention_default_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 56,
-			"version": "7",
-			"when": 1778457600000,
-			"tag": "0056_async_receipt_pdf",
-			"breakpoints": true
-		},
-		{
-			"idx": 57,
-			"version": "7",
-			"when": 1778544000000,
-			"tag": "0057_audit_log_receipt_rendered",
-			"breakpoints": true
-		},
-		{
-			"idx": 58,
-			"version": "7",
-			"when": 1778630400000,
-			"tag": "0058_notification_type_receipt_pdf_render",
-			"breakpoints": true
-		},
-		{
-			"idx": 59,
-			"version": "7",
-			"when": 1778716800000,
-			"tag": "0059_invoice_receipt_doc_num",
-			"breakpoints": true
-		},
-		{
-			"idx": 60,
-			"version": "7",
-			"when": 1778803200000,
-			"tag": "0060_invoice_receipt_doc_num_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 61,
-			"version": "7",
-			"when": 1778889600000,
-			"tag": "0061_invoice_separate_mode_pending_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 62,
-			"version": "7",
-			"when": 1778976000000,
-			"tag": "0062_drop_invoice_pending_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 63,
-			"version": "7",
-			"when": 1779062400000,
-			"tag": "0063_audit_log_extend_retention_default_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 64,
-			"version": "7",
-			"when": 1779148800000,
-			"tag": "0064_create_broadcasts",
-			"breakpoints": true
-		},
-		{
-			"idx": 65,
-			"version": "7",
-			"when": 1779148801000,
-			"tag": "0065_create_broadcast_deliveries",
-			"breakpoints": true
-		},
-		{
-			"idx": 66,
-			"version": "7",
-			"when": 1779148802000,
-			"tag": "0066_create_marketing_unsubscribes",
-			"breakpoints": true
-		},
-		{
-			"idx": 67,
-			"version": "7",
-			"when": 1779148803000,
-			"tag": "0067_create_broadcast_segment_definitions",
-			"breakpoints": true
-		},
-		{
-			"idx": 68,
-			"version": "7",
-			"when": 1779148804000,
-			"tag": "0068_seed_default_segment_definitions",
-			"breakpoints": true
-		},
-		{
-			"idx": 69,
-			"version": "7",
-			"when": 1779148805000,
-			"tag": "0069_audit_log_extend_retention_default_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 70,
-			"version": "7",
-			"when": 1779148806000,
-			"tag": "0070_alter_members_add_broadcasts_halted_until_admin_review",
-			"breakpoints": true
-		},
-		{
-			"idx": 71,
-			"version": "7",
-			"when": 1779148807000,
-			"tag": "0071_alter_members_add_broadcasts_acknowledged_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 72,
-			"version": "7",
-			"when": 1779148808000,
-			"tag": "0072_audit_log_f7_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 73,
-			"version": "7",
-			"when": 1779148809000,
-			"tag": "0073_notification_type_f7_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 74,
-			"version": "7",
-			"when": 1779235200000,
-			"tag": "0074_alter_broadcasts_plan_id_snapshot_text",
-			"breakpoints": true
-		},
-		{
-			"idx": 75,
-			"version": "7",
-			"when": 1779235260000,
-			"tag": "0075_alter_broadcasts_immutability_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 76,
-			"version": "7",
-			"when": 1779321600000,
-			"tag": "0076_audit_log_f7_audience_drift",
-			"breakpoints": true
-		},
-		{
-			"idx": 77,
-			"version": "7",
-			"when": 1786060800000,
-			"tag": "0077_broadcasts_member_history_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 78,
-			"version": "7",
-			"when": 1786147200000,
-			"tag": "0078_audit_log_member_plan_changed_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 79,
-			"version": "7",
-			"when": 1786233600000,
-			"tag": "0079_notification_type_f7_us5_extension",
-			"breakpoints": true
-		},
-		{
-			"idx": 80,
-			"version": "7",
-			"when": 1788393600000,
-			"tag": "0080_notification_type_f7_dispatch_failure",
-			"breakpoints": true
-		},
-		{
-			"idx": 81,
-			"version": "7",
-			"when": 1788480000000,
-			"tag": "0081_audit_log_f7_phase8_verify_fix",
-			"breakpoints": true
-		},
-		{
-			"idx": 82,
-			"version": "7",
-			"when": 1788566400000,
-			"tag": "0082_members_preferred_locale",
-			"breakpoints": true
-		},
-		{
-			"idx": 83,
-			"version": "7",
-			"when": 1788652800000,
-			"tag": "0083_audit_log_member_preferred_locale_changed",
-			"breakpoints": true
-		},
-		{
-			"idx": 84,
-			"version": "7",
-			"when": 1788825600000,
-			"tag": "0084_audit_log_marketing_consent_retention",
-			"breakpoints": true
-		},
-		{
-			"idx": 85,
-			"version": "7",
-			"when": 1788912000000,
-			"tag": "0085_audit_log_f7_r6_staff_review",
-			"breakpoints": true
-		},
-		{
-			"idx": 86,
-			"version": "7",
-			"when": 1789000000000,
-			"tag": "0086_f8_create_scheduled_plan_changes_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 87,
-			"version": "7",
-			"when": 1789086400000,
-			"tag": "0087_f8_create_renewal_cycles_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 88,
-			"version": "7",
-			"when": 1789172800000,
-			"tag": "0088_f8_create_renewal_reminder_events_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 89,
-			"version": "7",
-			"when": 1789259200000,
-			"tag": "0089_f8_create_tenant_renewal_config_tables",
-			"breakpoints": true
-		},
-		{
-			"idx": 90,
-			"version": "7",
-			"when": 1789345600000,
-			"tag": "0090_f8_create_at_risk_outreach_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 91,
-			"version": "7",
-			"when": 1789432000000,
-			"tag": "0091_f8_create_tier_upgrade_suggestions_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 92,
-			"version": "7",
-			"when": 1789518400000,
-			"tag": "0092_f8_create_renewal_escalation_tasks_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 93,
-			"version": "7",
-			"when": 1789604800000,
-			"tag": "0093_f8_create_consumed_link_tokens_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 94,
-			"version": "7",
-			"when": 1789691200000,
-			"tag": "0094_f8_extend_members_and_plans_columns",
-			"breakpoints": true
-		},
-		{
-			"idx": 95,
-			"version": "7",
-			"when": 1789777600000,
-			"tag": "0095_f8_extend_audit_event_type_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 96,
-			"version": "7",
-			"when": 1789864000000,
-			"tag": "0096_f8_membership_plans_renewal_tier_bucket_default",
-			"breakpoints": true
-		},
-		{
-			"idx": 97,
-			"version": "7",
-			"when": 1789950400000,
-			"tag": "0097_f8_phase10_a_email_change_tokens_rls",
-			"breakpoints": true
-		},
-		{
-			"idx": 98,
-			"version": "7",
-			"when": 1790036800000,
-			"tag": "0098_f8_phase10_a_notifications_outbox_rls",
-			"breakpoints": true
-		},
-		{
-			"idx": 99,
-			"version": "7",
-			"when": 1790123200000,
-			"tag": "0099_f8_phase3_audit_event_type_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 100,
-			"version": "7",
-			"when": 1790381824000,
-			"tag": "0100_f8_renewal_cycles_lapsed_tier_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 101,
-			"version": "7",
-			"when": 1791532800000,
-			"tag": "0101_f8_phase4_audit_event_type_enum_schedule_policy",
-			"breakpoints": true
-		},
-		{
-			"idx": 102,
-			"version": "7",
-			"when": 1791619200000,
-			"tag": "0102_f8_phase4_audit_event_type_enum_escalation_task_completed",
-			"breakpoints": true
-		},
-		{
-			"idx": 103,
-			"version": "7",
-			"when": 1791705600000,
-			"tag": "0103_f8_phase4_audit_event_type_enum_dispatch",
-			"breakpoints": true
-		},
-		{
-			"idx": 104,
-			"version": "7",
-			"when": 1791792000000,
-			"tag": "0104_f8_phase4_audit_event_type_enum_bounce_threshold",
-			"breakpoints": true
-		},
-		{
-			"idx": 105,
-			"version": "7",
-			"when": 1791878400000,
-			"tag": "0105_f8_phase4_renewal_reminder_events_retry_budget",
-			"breakpoints": true
-		},
-		{
-			"idx": 106,
-			"version": "7",
-			"when": 1791964800000,
-			"tag": "0106_f1_email_delivery_events_bounce_type",
-			"breakpoints": true
-		},
-		{
-			"idx": 107,
-			"version": "7",
-			"when": 1792051200000,
-			"tag": "0107_f8_phase4_audit_event_type_enum_cron_orchestrated",
-			"breakpoints": true
-		},
-		{
-			"idx": 108,
-			"version": "7",
-			"when": 1792137600000,
-			"tag": "0108_f8_renewal_cycles_closed_reason_grace_payment",
-			"breakpoints": true
-		},
-		{
-			"idx": 109,
-			"version": "7",
-			"when": 1792224000000,
-			"tag": "0109_f8_phase5_us3_audit_event_type_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 110,
-			"version": "7",
-			"when": 1792224000001,
-			"tag": "0110_f8_wave_k24_renewal_lapsed_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 111,
-			"version": "7",
-			"when": 1792224000002,
-			"tag": "0111_f8_phase6_us4_audit_event_type_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 112,
-			"version": "7",
-			"when": 1792224000003,
-			"tag": "0112_f8_phase6_review_cron_bearer_auth_rejected",
-			"breakpoints": true
-		},
-		{
-			"idx": 113,
-			"version": "7",
-			"when": 1792224000004,
-			"tag": "0113_f8_t149_fix_plan_id_at_cycle_start_text",
-			"breakpoints": true
-		},
-		{
-			"idx": 114,
-			"version": "7",
-			"when": 1792310400000,
-			"tag": "0114_f8_repair_renewal_tier_bucket_seed",
-			"breakpoints": true
-		},
-		{
-			"idx": 115,
-			"version": "7",
-			"when": 1792396800000,
-			"tag": "0115_f8_audit_log_member_plan_changed_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 116,
-			"version": "7",
-			"when": 1792483200000,
-			"tag": "0116_f8_phase7_tier_upgrade_audit_event_type_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 117,
-			"version": "7",
-			"when": 1792569600000,
-			"tag": "0117_f8_phase7_tier_upgrade_plan_id_text",
-			"breakpoints": true
-		},
-		{
-			"idx": 118,
-			"version": "7",
-			"when": 1792656000000,
-			"tag": "0118_f8_phase7_renewal_schedule_rescheduled_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 119,
-			"version": "7",
-			"when": 1792742400000,
-			"tag": "0119_f8_phase7_silent_skip_audit_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 120,
-			"version": "7",
-			"when": 1792828800000,
-			"tag": "0120_f8_phase7_round2_silent_skip_audits",
-			"breakpoints": true
-		},
-		{
-			"idx": 121,
-			"version": "7",
-			"when": 1792915200000,
-			"tag": "0121_f8_phase8_escalation_lifecycle_audit_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 122,
-			"version": "7",
-			"when": 1793001600000,
-			"tag": "0122_f8_phase8_escalation_year_in_cycle",
-			"breakpoints": true
-		},
-		{
-			"idx": 123,
-			"version": "7",
-			"when": 1793088000000,
-			"tag": "0123_f8_round6_tier_upgrade_suppressed_member_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 124,
-			"version": "7",
-			"when": 1793174400000,
-			"tag": "0124_pr24_trigger_search_path_hardening",
-			"breakpoints": true
-		},
-		{
-			"idx": 125,
-			"version": "7",
-			"when": 1793260800000,
-			"tag": "0125_pr24_scheduled_plan_changes_fk",
-			"breakpoints": true
-		},
-		{
-			"idx": 126,
-			"version": "7",
-			"when": 1793347200000,
-			"tag": "0126_pr24_renewal_cycles_expires_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 127,
-			"version": "7",
-			"when": 1793433600000,
-			"tag": "0127_f6_events_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 128,
-			"version": "7",
-			"when": 1793520000000,
-			"tag": "0128_f6_event_registrations_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 129,
-			"version": "7",
-			"when": 1793606400000,
-			"tag": "0129_f6_tenant_webhook_configs_table",
-			"breakpoints": true
-		},
-		{
-			"idx": 130,
-			"version": "7",
-			"when": 1793692800000,
-			"tag": "0130_f6_events_indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 131,
-			"version": "7",
-			"when": 1793779200000,
-			"tag": "0131_f6_registrations_indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 132,
-			"version": "7",
-			"when": 1793865600000,
-			"tag": "0132_f6_audit_event_types",
-			"breakpoints": true
-		},
-		{
-			"idx": 133,
-			"version": "7",
-			"when": 1793952000000,
-			"tag": "0133_f6_rls_force_policies",
-			"breakpoints": true
-		},
-		{
-			"idx": 134,
-			"version": "7",
-			"when": 1794038400000,
-			"tag": "0134_f6_eventcreate_idempotency_receipts",
-			"breakpoints": true
-		},
-		{
-			"idx": 135,
-			"version": "7",
-			"when": 1794124800000,
-			"tag": "0135_f6_force_expire_grace_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 136,
-			"version": "7",
-			"when": 1794211200000,
-			"tag": "0136_f6_event_registrations_non_member_no_contact_check",
-			"breakpoints": true
-		},
-		{
-			"idx": 137,
-			"version": "7",
-			"when": 1794297600000,
-			"tag": "0137_f6_webhook_ingest_precondition_failed_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 138,
-			"version": "7",
-			"when": 1794384000000,
-			"tag": "0138_f6_wizard_privacy_notice_acknowledged_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 139,
-			"version": "7",
-			"when": 1794470400000,
-			"tag": "0139_csv_import_records",
-			"breakpoints": true
-		},
-		{
-			"idx": 140,
-			"version": "7",
-			"when": 1794556800000,
-			"tag": "0140_event_registrations_attendee_pdpa_consent",
-			"breakpoints": true
-		},
-		{
-			"idx": 141,
-			"version": "7",
-			"when": 1794643200000,
-			"tag": "0141_f6_csv_import_audit_event_types",
-			"breakpoints": true
-		},
-		{
-			"idx": 142,
-			"version": "7",
-			"when": 1794729600000,
-			"tag": "0142_tenant_invoice_settings_receipt_number_prefix",
-			"breakpoints": true
-		},
-		{
-			"idx": 143,
-			"version": "7",
-			"when": 1794816000000,
-			"tag": "0143_audit_receipt_pdf_downloaded",
-			"breakpoints": true
-		},
-		{
-			"idx": 144,
-			"version": "7",
-			"when": 1794902400000,
-			"tag": "0144_f6_event_created_audit_type",
-			"breakpoints": true
-		},
-		{
-			"idx": 145,
-			"version": "7",
-			"when": 1794988800000,
-			"tag": "0145_audit_receipt_prefix_changed",
-			"breakpoints": true
-		},
-		{
-			"idx": 146,
-			"version": "7",
-			"when": 1795075200000,
-			"tag": "0146_tenant_invoice_settings_receipt_prefix_constraints",
-			"breakpoints": true
-		},
-		{
-			"idx": 147,
-			"version": "7",
-			"when": 1795248000000,
-			"tag": "0147_audit_invoice_pdf_downloaded",
-			"breakpoints": true
-		},
-		{
-			"idx": 148,
-			"version": "7",
-			"when": 1795334400000,
-			"tag": "0148_audit_payment_cancel_attempt_failed",
-			"breakpoints": true
-		},
-		{
-			"idx": 149,
-			"version": "7",
-			"when": 1795420800000,
-			"tag": "0149_audit_invoices_csv_exported",
-			"breakpoints": true
-		},
-		{
-			"idx": 150,
-			"version": "7",
-			"when": 1795680000000,
-			"tag": "0150_f6_csv_import_audit_events_r1",
-			"breakpoints": true
-		},
-		{
-			"idx": 151,
-			"version": "7",
-			"when": 1795766400000,
-			"tag": "0151_audit_f5r2_event_types",
-			"breakpoints": true
-		},
-		{
-			"idx": 152,
-			"version": "7",
-			"when": 1795852800000,
-			"tag": "0152_events_source_allow_admin_manual",
-			"breakpoints": true
-		},
-		{
-			"idx": 153,
-			"version": "7",
-			"when": 1795939200000,
-			"tag": "0153_csv_import_records_rows_state_changed",
-			"breakpoints": true
-		},
-		{
-			"idx": 154,
-			"version": "7",
-			"when": 1796025600000,
-			"tag": "0154_csv_import_records_running_outcome",
-			"breakpoints": true
-		},
-		{
-			"idx": 155,
-			"version": "7",
-			"when": 1796112000000,
-			"tag": "0155_audit_csv_import_error_csv_manually_erased",
-			"breakpoints": true
-		},
-		{
-			"idx": 156,
-			"version": "7",
-			"when": 1796198400000,
-			"tag": "0156_event_registrations_pdpa_consent_comment",
-			"breakpoints": true
-		},
-		{
-			"idx": 157,
-			"version": "7",
-			"when": 1796284800000,
-			"tag": "0157_audit_event_detail_not_found_probe",
-			"breakpoints": true
-		},
-		{
-			"idx": 158,
-			"version": "7",
-			"when": 1796371200000,
-			"tag": "0158_audit_f1_post_ship_event_types",
-			"breakpoints": true
-		},
-		{
-			"idx": 159,
-			"version": "7",
-			"when": 1796457600000,
-			"tag": "0159_hash_session_and_token_ids",
-			"breakpoints": true
-		},
-		{
-			"idx": 160,
-			"version": "7",
-			"when": 1796544000000,
-			"tag": "0160_event_registrations_payment_status_extend",
-			"breakpoints": true
-		},
-		{
-			"idx": 161,
-			"version": "7",
-			"when": 1796630400000,
-			"tag": "0161_f71a_broadcast_templates",
-			"breakpoints": true
-		},
-		{
-			"idx": 162,
-			"version": "7",
-			"when": 1796716800000,
-			"tag": "0162_f71a_broadcast_extensions",
-			"breakpoints": true
-		},
-		{
-			"idx": 163,
-			"version": "7",
-			"when": 1796803200000,
-			"tag": "0163_f71a_broadcast_batch_manifests",
-			"breakpoints": true
-		},
-		{
-			"idx": 164,
-			"version": "7",
-			"when": 1796889600000,
-			"tag": "0164_f71a_tenant_image_source_allowlist",
-			"breakpoints": true
-		},
-		{
-			"idx": 165,
-			"version": "7",
-			"when": 1796976000000,
-			"tag": "0165_f71a_tenant_broadcast_settings",
-			"breakpoints": true
-		},
-		{
-			"idx": 166,
-			"version": "7",
-			"when": 1797062400000,
-			"tag": "0166_f71a_rls_policies",
-			"breakpoints": true
-		},
-		{
-			"idx": 167,
-			"version": "7",
-			"when": 1797148800000,
-			"tag": "0167_f71a_audit_event_grants",
-			"breakpoints": true
-		},
-		{
-			"idx": 168,
-			"version": "7",
-			"when": 1797235200000,
-			"tag": "0168_f71a_default_template_seed",
-			"breakpoints": true
-		},
-		{
-			"idx": 169,
-			"version": "7",
-			"when": 1797321600000,
-			"tag": "0169_f71a_broadcast_status_partially_sent",
-			"breakpoints": true
-		},
-		{
-			"idx": 170,
-			"version": "7",
-			"when": 1797408000000,
-			"tag": "0170_f71a_batch_provider_broadcast_id",
-			"breakpoints": true
-		},
-		{
-			"idx": 171,
-			"version": "7",
-			"when": 1797494400000,
-			"tag": "0171_f71a_estimated_recipient_cap_50k",
-			"breakpoints": true
-		},
-		{
-			"idx": 172,
-			"version": "7",
-			"when": 1797580800000,
-			"tag": "0172_f71a_chamber_app_grants",
-			"breakpoints": true
-		},
-		{
-			"idx": 173,
-			"version": "7",
-			"when": 1797667200000,
-			"tag": "0173_f71a_webhook_batch_missing_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 174,
-			"version": "7",
-			"when": 1797753600000,
-			"tag": "0174_membership_plans_en_locale_non_empty",
-			"breakpoints": true
-		},
-		{
-			"idx": 175,
-			"version": "7",
-			"when": 1797840000000,
-			"tag": "0175_f71a_template_snapshotted_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 176,
-			"version": "7",
-			"when": 1797926400000,
-			"tag": "0176_f71a_template_seed_skipped_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 177,
-			"version": "7",
-			"when": 1798012800000,
-			"tag": "0177_f71a_image_unsafe_event_sweep",
-			"breakpoints": true
-		},
-		{
-			"idx": 178,
-			"version": "7",
-			"when": 1798099200000,
-			"tag": "0178_f71a_template_snapshot_refused_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 179,
-			"version": "7",
-			"when": 1798185600000,
-			"tag": "0179_f71a_broadcasts_template_provenance_xor",
-			"breakpoints": true
-		},
-		{
-			"idx": 180,
-			"version": "7",
-			"when": 1798272000000,
-			"tag": "0180_f3_contact_invite_bounced_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 181,
-			"version": "7",
-			"when": 1798358400000,
-			"tag": "0181_seed_resend_webhook_system_actor",
-			"breakpoints": true
-		},
-		{
-			"idx": 182,
-			"version": "7",
-			"when": 1798444800000,
-			"tag": "0182_contacts_lower_email_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 183,
-			"version": "7",
-			"when": 1798531200000,
-			"tag": "0183_chamber_app_invitation_insert",
-			"breakpoints": true
-		},
-		{
-			"idx": 184,
-			"version": "7",
-			"when": 1798531300000,
-			"tag": "0184_revoke_chamber_app_invitation_insert",
-			"breakpoints": true
-		},
-		{
-			"idx": 185,
-			"version": "7",
-			"when": 1798531400000,
-			"tag": "0185_f9_dashboard_metrics_cache",
-			"breakpoints": true
-		},
-		{
-			"idx": 186,
-			"version": "7",
-			"when": 1798531500000,
-			"tag": "0186_f9_smart_insight_dismissals",
-			"breakpoints": true
-		},
-		{
-			"idx": 187,
-			"version": "7",
-			"when": 1798531600000,
-			"tag": "0187_f9_directory_listings",
-			"breakpoints": true
-		},
-		{
-			"idx": 188,
-			"version": "7",
-			"when": 1798531700000,
-			"tag": "0188_f9_export_jobs",
-			"breakpoints": true
-		},
-		{
-			"idx": 189,
-			"version": "7",
-			"when": 1798531800000,
-			"tag": "0189_f9_member_timeline_view",
-			"breakpoints": true
-		},
-		{
-			"idx": 190,
-			"version": "7",
-			"when": 1798531900000,
-			"tag": "0190_f9_audit_indexes_and_stale_trigger",
-			"breakpoints": true
-		},
-		{
-			"idx": 191,
-			"version": "7",
-			"when": 1798532000000,
-			"tag": "0191_f9_audit_event_types",
-			"breakpoints": true
-		},
-		{
-			"idx": 192,
-			"version": "7",
-			"when": 1798532100000,
-			"tag": "0192_f9_timeline_view_audit_enrich",
-			"breakpoints": true
-		},
-		{
-			"idx": 193,
-			"version": "7",
-			"when": 1798532200000,
-			"tag": "0193_f9_member_timeline_viewed_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 194,
-			"version": "7",
-			"when": 1798532300000,
-			"tag": "0194_f9_export_jobs_requester_locale",
-			"breakpoints": true
-		},
-		{
-			"idx": 195,
-			"version": "7",
-			"when": 1798532400000,
-			"tag": "0195_member_address",
-			"breakpoints": true
-		},
-		{
-			"idx": 196,
-			"version": "7",
-			"when": 1798532500000,
-			"tag": "0196_f9_timeline_sargability_actorkind",
-			"breakpoints": true
-		},
-		{
-			"idx": 197,
-			"version": "7",
-			"when": 1798532600000,
-			"tag": "0197_f9_timeline_round2_indexes",
-			"breakpoints": true
-		},
-		{
-			"idx": 198,
-			"version": "7",
-			"when": 1798532700000,
-			"tag": "0198_account_creation_compensated_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 199,
-			"version": "7",
-			"when": 1798532800000,
-			"tag": "0199_refund_initiate_rate_limit_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 200,
-			"version": "7",
-			"when": 1798532900000,
-			"tag": "0200_event_fee_invoice_line_kind",
-			"breakpoints": true
-		},
-		{
-			"idx": 201,
-			"version": "7",
-			"when": 1798533000000,
-			"tag": "0201_event_fee_invoices_generalise",
-			"breakpoints": true
-		},
-		{
-			"idx": 202,
-			"version": "7",
-			"when": 1798533100000,
-			"tag": "0202_event_fee_registration_probe_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 203,
-			"version": "7",
-			"when": 1798533200000,
-			"tag": "0203_event_invoice_non_draft_snapshots_relax",
-			"breakpoints": true
-		},
-		{
-			"idx": 204,
-			"version": "7",
-			"when": 1798533300000,
-			"tag": "0204_event_buyer_pii_redacted_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 205,
-			"version": "7",
-			"when": 1798533400000,
-			"tag": "0205_invoices_immutability_pii_redaction_exemption",
-			"breakpoints": true
-		},
-		{
-			"idx": 206,
-			"version": "7",
-			"when": 1798533500000,
-			"tag": "0206_invoices_lock_event_cols_and_pii_blob_purged_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 207,
-			"version": "7",
-			"when": 1798533600000,
-			"tag": "0207_invoices_redaction_raise_msg_includes_purge_marker",
-			"breakpoints": true
-		},
-		{
-			"idx": 208,
-			"version": "7",
-			"when": 1798533700000,
-			"tag": "0208_invoices_subject_fields_forbid_illegal_states",
-			"breakpoints": true
-		},
-		{
-			"idx": 209,
-			"version": "7",
-			"when": 1798533800000,
-			"tag": "0209_member_number_schema",
-			"breakpoints": true
-		},
-		{
-			"idx": 210,
-			"version": "7",
-			"when": 1798533900000,
-			"tag": "0210_member_number_audit_enum",
-			"breakpoints": true
-		},
-		{
-			"idx": 211,
-			"version": "7",
-			"when": 1798534000000,
-			"tag": "0211_invoices_pdf_doc_kind",
-			"breakpoints": true
-		},
-		{
-			"idx": 212,
-			"version": "7",
-			"when": 1798534100000,
-			"tag": "0212_as_paid_no_tin_number_relax",
-			"breakpoints": true
-		},
-		{
-			"idx": 213,
-			"version": "7",
-			"when": 1798534200000,
-			"tag": "0213_invoices_receipt_raw_uniq",
-			"breakpoints": true
-		},
-		{
-			"idx": 214,
-			"version": "7",
-			"when": 1798534300000,
-			"tag": "0214_invoices_immutability_lock_pdf_doc_kind",
-			"breakpoints": true
-		},
-		{
-			"idx": 215,
-			"version": "7",
-			"when": 1798534400000,
-			"tag": "0215_f8_renewal_cycles_member_recency_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 216,
-			"version": "7",
-			"when": 1798534500000,
-			"tag": "0216_f8_renewal_entered_awaiting_payment",
-			"breakpoints": true
-		},
-		{
-			"idx": 217,
-			"version": "7",
-			"when": 1798534600000,
-			"tag": "0217_f71a_state_machine_partially_sent",
-			"breakpoints": true
-		},
-		{
-			"idx": 218,
-			"version": "7",
-			"when": 1798534700000,
-			"tag": "0218_f71a_batch_webhook_dedup",
-			"breakpoints": true
-		},
-		{
-			"idx": 219,
-			"version": "7",
-			"when": 1798534800000,
-			"tag": "0219_f71a_batch_dedup_grant",
-			"breakpoints": true
-		},
-		{
-			"idx": 220,
-			"version": "7",
-			"when": 1798534900000,
-			"tag": "0220_f71a_broadcast_partially_sent_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 221,
-			"version": "7",
-			"when": 1798535000000,
-			"tag": "0221_members_erasure_columns_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 222,
-			"version": "7",
-			"when": 1798535100000,
-			"tag": "0222_auth_user_erased_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 223,
-			"version": "7",
-			"when": 1798535200000,
-			"tag": "0223_outbox_delete_grant_erasure",
-			"breakpoints": true
-		},
-		{
-			"idx": 224,
-			"version": "7",
-			"when": 1798535300000,
-			"tag": "0224_broadcasts_redaction_guc",
-			"breakpoints": true
-		},
-		{
-			"idx": 225,
-			"version": "7",
-			"when": 1798535400000,
-			"tag": "0225_broadcast_deliveries_redaction_guc",
-			"breakpoints": true
-		},
-		{
-			"idx": 226,
-			"version": "7",
-			"when": 1798535500000,
-			"tag": "0226_members_erased_at_reconciler_idx",
-			"breakpoints": true
-		},
-		{
-			"idx": 227,
-			"version": "7",
-			"when": 1798535600000,
-			"tag": "0227_credit_notes_pii_redaction_exemption",
-			"breakpoints": true
-		},
-		{
-			"idx": 228,
-			"version": "7",
-			"when": 1798535700000,
-			"tag": "0228_subprocessor_erasure_propagated_audit",
-			"breakpoints": true
-		},
-		{
-			"idx": 229,
-			"version": "7",
-			"when": 1798535800000,
-			"tag": "0229_broadcasts_audience_deleted_at",
-			"breakpoints": true
-		},
-		{
-			"idx": 230,
-			"version": "7",
-			"when": 1798535900000,
-			"tag": "0230_document_type_add_bill",
-			"breakpoints": true
-		},
-		{
-			"idx": 231,
-			"version": "7",
-			"when": 1798536000000,
-			"tag": "0231_invoices_bill_number_and_checks",
-			"breakpoints": true
-		},
-		{
-			"idx": 235,
-			"version": "7",
-			"when": 1798536100000,
-			"tag": "0235_invoices_freeze_receipt_number",
-			"breakpoints": true
-		},
-		{
-			"idx": 236,
-			"version": "7",
-			"when": 1798536200000,
-			"tag": "0232_members_branch_fields",
-			"breakpoints": true
-		},
-		{
-			"idx": 237,
-			"version": "7",
-			"when": 1798536300000,
-			"tag": "0233_tenant_invoice_settings_wht_and_seller_branch",
-			"breakpoints": true
-		},
-		{
-			"idx": 238,
-			"version": "7",
-			"when": 1798536400000,
-			"tag": "0236_members_branch_pairing_ck_fix",
-			"breakpoints": true
-		},
-		{
-			"idx": 239,
-			"version": "7",
-			"when": 1798536500000,
-			"tag": "0234_invoices_vat_treatment_zero_rate",
-			"breakpoints": true
-		},
-		{
-			"idx": 240,
-			"version": "7",
-			"when": 1798536600000,
-			"tag": "0237_members_backup_exported_event",
-			"breakpoints": true
-		},
-		{
-			"idx": 241,
-			"version": "7",
-			"when": 1798536700000,
-			"tag": "0238_renewal_rolling_anchor",
-			"breakpoints": true
-		},
-		{
-			"idx": 242,
-			"version": "7",
-			"when": 1798536800000,
-			"tag": "0239_broadcast_templates_partial_uniq",
-			"breakpoints": true
-		},
-		{
-			"idx": 243,
-			"version": "7",
-			"when": 1798536900000,
-			"tag": "0240_payments_auto_refunded_status",
-			"breakpoints": true
-		},
-		{
-			"idx": 244,
-			"version": "7",
-			"when": 1798537000000,
-			"tag": "0241_audit_log_refund_reconcile_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 245,
-			"version": "7",
-			"when": 1798537100000,
-			"tag": "0242_credit_notes_source_refund_uniq",
-			"breakpoints": true
-		},
-		{
-			"idx": 246,
-			"version": "7",
-			"when": 1798537200000,
-			"tag": "0243_renewal_cycles_reject_refund_marker",
-			"breakpoints": true
-		},
-		{
-			"idx": 247,
-			"version": "7",
-			"when": 1798537300000,
-			"tag": "0244_audit_log_auto_refund_reconciled",
-			"breakpoints": true
-		},
-		{
-			"idx": 248,
-			"version": "7",
-			"when": 1798537400000,
-			"tag": "0245_membership_suspension_audit_events",
-			"breakpoints": true
-		},
-		{
-			"idx": 249,
-			"version": "7",
-			"when": 1798537500000,
-			"tag": "0246_renewal_lapse_deferred_invoice_not_due",
-			"breakpoints": true
-		},
-		{
-			"idx": 250,
-			"version": "7",
-			"when": 1798537600000,
-			"tag": "0247_f6_event_attendance_by_suspended_member",
-			"breakpoints": true
-		}
-	]
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1775751243588,
+      "tag": "0000_high_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775751343914,
+      "tag": "0001_audit_log_append_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775752000000,
+      "tag": "0002_add_password_reset_failed_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775752100000,
+      "tag": "0003_last_admin_protection_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775752200000,
+      "tag": "0004_fix_last_admin_trigger_delete_return",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775838981946,
+      "tag": "0005_unusual_thena",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775909755863,
+      "tag": "0006_plans_and_fee_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775909936285,
+      "tag": "0007_audit_log_f2_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775915326091,
+      "tag": "0008_money_columns_to_bigint",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776252552934,
+      "tag": "0009_members_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1776252600000,
+      "tag": "0010_audit_log_f3_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1776252700000,
+      "tag": "0011_notifications_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776252800000,
+      "tag": "0012_email_change_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776252900000,
+      "tag": "0013_requires_password_reset",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1776350000000,
+      "tag": "0014_audit_event_portal_invite_queued",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1776350100000,
+      "tag": "0015_add_missing_audit_enum_values",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1776400000000,
+      "tag": "0016_invitations_revoke_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1776410000000,
+      "tag": "0017_invitations_revoke_tighten",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1776439610984,
+      "tag": "0018_soft_franklin_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1776720000000,
+      "tag": "0019_invoicing_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1776720001000,
+      "tag": "0020_audit_log_f4_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1776720002000,
+      "tag": "0021_audit_overdue_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1776720003000,
+      "tag": "0022_invoicing_chamber_app_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1776720004000,
+      "tag": "0023_notification_type_f4",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1776581490367,
+      "tag": "0024_invoicing_receipt_pdf_split",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1776837600000,
+      "tag": "0025_invoices_payment_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1776855600000,
+      "tag": "0026_invoice_settings_consolidation",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1776870000000,
+      "tag": "0027_credit_notes_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1776884400000,
+      "tag": "0028_invoice_settings_backfill_from_fee_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1776895200000,
+      "tag": "0029_drop_tenant_fee_config",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1776628800000,
+      "tag": "0030_audit_invoice_pdf_regenerated",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1776988800000,
+      "tag": "0031_audit_tenant_invoice_settings_cross_tenant_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1777248000000,
+      "tag": "0032_audit_contact_linked_to_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1777334400000,
+      "tag": "0033_create_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1777334401000,
+      "tag": "0034_create_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1777334402000,
+      "tag": "0035_create_tenant_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1777334403000,
+      "tag": "0036_create_processor_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1777334404000,
+      "tag": "0037_seed_swecham_payment_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1777334405000,
+      "tag": "0038_credit_notes_add_source_refund_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1777334406000,
+      "tag": "0039_audit_log_add_retention_years",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1777334407000,
+      "tag": "0040_audit_log_f5_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1777334408000,
+      "tag": "0041_seed_system_actors",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1777334409000,
+      "tag": "0042_relax_payment_card_metadata_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1777334410000,
+      "tag": "0043_audit_log_rate_limit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1777420800000,
+      "tag": "0044_fix_card_metadata_check_canceled_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1777507200000,
+      "tag": "0045_invoice_snapshot_email_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0046_audit_log_webhook_unknown_state_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0047_audit_log_processor_retrieve_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1777766400000,
+      "tag": "0048_audit_log_invoice_not_found",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1777852800000,
+      "tag": "0049_audit_log_payment_method_switched",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1777939200000,
+      "tag": "0050_audit_log_stale_pending_refund",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1778025600000,
+      "tag": "0051_audit_log_f4_retention_rebackfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1778112000000,
+      "tag": "0052_audit_log_payment_terminal_ack",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1778198400000,
+      "tag": "0053_audit_log_dispute_created",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1778284800000,
+      "tag": "0054_payments_pi_partial_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1778371200000,
+      "tag": "0055_audit_log_retention_default_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1778457600000,
+      "tag": "0056_async_receipt_pdf",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1778544000000,
+      "tag": "0057_audit_log_receipt_rendered",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1778630400000,
+      "tag": "0058_notification_type_receipt_pdf_render",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1778716800000,
+      "tag": "0059_invoice_receipt_doc_num",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1778803200000,
+      "tag": "0060_invoice_receipt_doc_num_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1778889600000,
+      "tag": "0061_invoice_separate_mode_pending_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1778976000000,
+      "tag": "0062_drop_invoice_pending_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1779062400000,
+      "tag": "0063_audit_log_extend_retention_default_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1779148800000,
+      "tag": "0064_create_broadcasts",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1779148801000,
+      "tag": "0065_create_broadcast_deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1779148802000,
+      "tag": "0066_create_marketing_unsubscribes",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1779148803000,
+      "tag": "0067_create_broadcast_segment_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1779148804000,
+      "tag": "0068_seed_default_segment_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1779148805000,
+      "tag": "0069_audit_log_extend_retention_default_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1779148806000,
+      "tag": "0070_alter_members_add_broadcasts_halted_until_admin_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1779148807000,
+      "tag": "0071_alter_members_add_broadcasts_acknowledged_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1779148808000,
+      "tag": "0072_audit_log_f7_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1779148809000,
+      "tag": "0073_notification_type_f7_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1779235200000,
+      "tag": "0074_alter_broadcasts_plan_id_snapshot_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1779235260000,
+      "tag": "0075_alter_broadcasts_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1779321600000,
+      "tag": "0076_audit_log_f7_audience_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1786060800000,
+      "tag": "0077_broadcasts_member_history_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1786147200000,
+      "tag": "0078_audit_log_member_plan_changed_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1786233600000,
+      "tag": "0079_notification_type_f7_us5_extension",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1788393600000,
+      "tag": "0080_notification_type_f7_dispatch_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788480000000,
+      "tag": "0081_audit_log_f7_phase8_verify_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1788566400000,
+      "tag": "0082_members_preferred_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788652800000,
+      "tag": "0083_audit_log_member_preferred_locale_changed",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788825600000,
+      "tag": "0084_audit_log_marketing_consent_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1788912000000,
+      "tag": "0085_audit_log_f7_r6_staff_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0086_f8_create_scheduled_plan_changes_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1789086400000,
+      "tag": "0087_f8_create_renewal_cycles_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1789172800000,
+      "tag": "0088_f8_create_renewal_reminder_events_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789259200000,
+      "tag": "0089_f8_create_tenant_renewal_config_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789345600000,
+      "tag": "0090_f8_create_at_risk_outreach_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1789432000000,
+      "tag": "0091_f8_create_tier_upgrade_suggestions_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789518400000,
+      "tag": "0092_f8_create_renewal_escalation_tasks_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789604800000,
+      "tag": "0093_f8_create_consumed_link_tokens_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789691200000,
+      "tag": "0094_f8_extend_members_and_plans_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789777600000,
+      "tag": "0095_f8_extend_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789864000000,
+      "tag": "0096_f8_membership_plans_renewal_tier_bucket_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789950400000,
+      "tag": "0097_f8_phase10_a_email_change_tokens_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790036800000,
+      "tag": "0098_f8_phase10_a_notifications_outbox_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790123200000,
+      "tag": "0099_f8_phase3_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790381824000,
+      "tag": "0100_f8_renewal_cycles_lapsed_tier_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791532800000,
+      "tag": "0101_f8_phase4_audit_event_type_enum_schedule_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1791619200000,
+      "tag": "0102_f8_phase4_audit_event_type_enum_escalation_task_completed",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791705600000,
+      "tag": "0103_f8_phase4_audit_event_type_enum_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791792000000,
+      "tag": "0104_f8_phase4_audit_event_type_enum_bounce_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791878400000,
+      "tag": "0105_f8_phase4_renewal_reminder_events_retry_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791964800000,
+      "tag": "0106_f1_email_delivery_events_bounce_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1792051200000,
+      "tag": "0107_f8_phase4_audit_event_type_enum_cron_orchestrated",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1792137600000,
+      "tag": "0108_f8_renewal_cycles_closed_reason_grace_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1792224000000,
+      "tag": "0109_f8_phase5_us3_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1792224000001,
+      "tag": "0110_f8_wave_k24_renewal_lapsed_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1792224000002,
+      "tag": "0111_f8_phase6_us4_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1792224000003,
+      "tag": "0112_f8_phase6_review_cron_bearer_auth_rejected",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1792224000004,
+      "tag": "0113_f8_t149_fix_plan_id_at_cycle_start_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1792310400000,
+      "tag": "0114_f8_repair_renewal_tier_bucket_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792396800000,
+      "tag": "0115_f8_audit_log_member_plan_changed_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1792483200000,
+      "tag": "0116_f8_phase7_tier_upgrade_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1792569600000,
+      "tag": "0117_f8_phase7_tier_upgrade_plan_id_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792656000000,
+      "tag": "0118_f8_phase7_renewal_schedule_rescheduled_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1792742400000,
+      "tag": "0119_f8_phase7_silent_skip_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1792828800000,
+      "tag": "0120_f8_phase7_round2_silent_skip_audits",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1792915200000,
+      "tag": "0121_f8_phase8_escalation_lifecycle_audit_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1793001600000,
+      "tag": "0122_f8_phase8_escalation_year_in_cycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793088000000,
+      "tag": "0123_f8_round6_tier_upgrade_suppressed_member_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1793174400000,
+      "tag": "0124_pr24_trigger_search_path_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1793260800000,
+      "tag": "0125_pr24_scheduled_plan_changes_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1793347200000,
+      "tag": "0126_pr24_renewal_cycles_expires_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1793433600000,
+      "tag": "0127_f6_events_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1793520000000,
+      "tag": "0128_f6_event_registrations_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1793606400000,
+      "tag": "0129_f6_tenant_webhook_configs_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1793692800000,
+      "tag": "0130_f6_events_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1793779200000,
+      "tag": "0131_f6_registrations_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1793865600000,
+      "tag": "0132_f6_audit_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1793952000000,
+      "tag": "0133_f6_rls_force_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1794038400000,
+      "tag": "0134_f6_eventcreate_idempotency_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1794124800000,
+      "tag": "0135_f6_force_expire_grace_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1794211200000,
+      "tag": "0136_f6_event_registrations_non_member_no_contact_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1794297600000,
+      "tag": "0137_f6_webhook_ingest_precondition_failed_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1794384000000,
+      "tag": "0138_f6_wizard_privacy_notice_acknowledged_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1794470400000,
+      "tag": "0139_csv_import_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1794556800000,
+      "tag": "0140_event_registrations_attendee_pdpa_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1794643200000,
+      "tag": "0141_f6_csv_import_audit_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1794729600000,
+      "tag": "0142_tenant_invoice_settings_receipt_number_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1794816000000,
+      "tag": "0143_audit_receipt_pdf_downloaded",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1794902400000,
+      "tag": "0144_f6_event_created_audit_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1794988800000,
+      "tag": "0145_audit_receipt_prefix_changed",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1795075200000,
+      "tag": "0146_tenant_invoice_settings_receipt_prefix_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1795248000000,
+      "tag": "0147_audit_invoice_pdf_downloaded",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1795334400000,
+      "tag": "0148_audit_payment_cancel_attempt_failed",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1795420800000,
+      "tag": "0149_audit_invoices_csv_exported",
+      "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1795680000000,
+      "tag": "0150_f6_csv_import_audit_events_r1",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1795766400000,
+      "tag": "0151_audit_f5r2_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1795852800000,
+      "tag": "0152_events_source_allow_admin_manual",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1795939200000,
+      "tag": "0153_csv_import_records_rows_state_changed",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1796025600000,
+      "tag": "0154_csv_import_records_running_outcome",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1796112000000,
+      "tag": "0155_audit_csv_import_error_csv_manually_erased",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1796198400000,
+      "tag": "0156_event_registrations_pdpa_consent_comment",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1796284800000,
+      "tag": "0157_audit_event_detail_not_found_probe",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1796371200000,
+      "tag": "0158_audit_f1_post_ship_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1796457600000,
+      "tag": "0159_hash_session_and_token_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1796544000000,
+      "tag": "0160_event_registrations_payment_status_extend",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1796630400000,
+      "tag": "0161_f71a_broadcast_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1796716800000,
+      "tag": "0162_f71a_broadcast_extensions",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1796803200000,
+      "tag": "0163_f71a_broadcast_batch_manifests",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1796889600000,
+      "tag": "0164_f71a_tenant_image_source_allowlist",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1796976000000,
+      "tag": "0165_f71a_tenant_broadcast_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1797062400000,
+      "tag": "0166_f71a_rls_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1797148800000,
+      "tag": "0167_f71a_audit_event_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1797235200000,
+      "tag": "0168_f71a_default_template_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1797321600000,
+      "tag": "0169_f71a_broadcast_status_partially_sent",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1797408000000,
+      "tag": "0170_f71a_batch_provider_broadcast_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1797494400000,
+      "tag": "0171_f71a_estimated_recipient_cap_50k",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1797580800000,
+      "tag": "0172_f71a_chamber_app_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1797667200000,
+      "tag": "0173_f71a_webhook_batch_missing_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1797753600000,
+      "tag": "0174_membership_plans_en_locale_non_empty",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1797840000000,
+      "tag": "0175_f71a_template_snapshotted_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1797926400000,
+      "tag": "0176_f71a_template_seed_skipped_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1798012800000,
+      "tag": "0177_f71a_image_unsafe_event_sweep",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1798099200000,
+      "tag": "0178_f71a_template_snapshot_refused_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1798185600000,
+      "tag": "0179_f71a_broadcasts_template_provenance_xor",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1798272000000,
+      "tag": "0180_f3_contact_invite_bounced_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1798358400000,
+      "tag": "0181_seed_resend_webhook_system_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1798444800000,
+      "tag": "0182_contacts_lower_email_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1798531200000,
+      "tag": "0183_chamber_app_invitation_insert",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1798531300000,
+      "tag": "0184_revoke_chamber_app_invitation_insert",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1798531400000,
+      "tag": "0185_f9_dashboard_metrics_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1798531500000,
+      "tag": "0186_f9_smart_insight_dismissals",
+      "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1798531600000,
+      "tag": "0187_f9_directory_listings",
+      "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1798531700000,
+      "tag": "0188_f9_export_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1798531800000,
+      "tag": "0189_f9_member_timeline_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 190,
+      "version": "7",
+      "when": 1798531900000,
+      "tag": "0190_f9_audit_indexes_and_stale_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1798532000000,
+      "tag": "0191_f9_audit_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1798532100000,
+      "tag": "0192_f9_timeline_view_audit_enrich",
+      "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1798532200000,
+      "tag": "0193_f9_member_timeline_viewed_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "7",
+      "when": 1798532300000,
+      "tag": "0194_f9_export_jobs_requester_locale",
+      "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1798532400000,
+      "tag": "0195_member_address",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1798532500000,
+      "tag": "0196_f9_timeline_sargability_actorkind",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1798532600000,
+      "tag": "0197_f9_timeline_round2_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1798532700000,
+      "tag": "0198_account_creation_compensated_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1798532800000,
+      "tag": "0199_refund_initiate_rate_limit_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1798532900000,
+      "tag": "0200_event_fee_invoice_line_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1798533000000,
+      "tag": "0201_event_fee_invoices_generalise",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1798533100000,
+      "tag": "0202_event_fee_registration_probe_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "7",
+      "when": 1798533200000,
+      "tag": "0203_event_invoice_non_draft_snapshots_relax",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1798533300000,
+      "tag": "0204_event_buyer_pii_redacted_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "7",
+      "when": 1798533400000,
+      "tag": "0205_invoices_immutability_pii_redaction_exemption",
+      "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "7",
+      "when": 1798533500000,
+      "tag": "0206_invoices_lock_event_cols_and_pii_blob_purged_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "7",
+      "when": 1798533600000,
+      "tag": "0207_invoices_redaction_raise_msg_includes_purge_marker",
+      "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1798533700000,
+      "tag": "0208_invoices_subject_fields_forbid_illegal_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 209,
+      "version": "7",
+      "when": 1798533800000,
+      "tag": "0209_member_number_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "7",
+      "when": 1798533900000,
+      "tag": "0210_member_number_audit_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 211,
+      "version": "7",
+      "when": 1798534000000,
+      "tag": "0211_invoices_pdf_doc_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 212,
+      "version": "7",
+      "when": 1798534100000,
+      "tag": "0212_as_paid_no_tin_number_relax",
+      "breakpoints": true
+    },
+    {
+      "idx": 213,
+      "version": "7",
+      "when": 1798534200000,
+      "tag": "0213_invoices_receipt_raw_uniq",
+      "breakpoints": true
+    },
+    {
+      "idx": 214,
+      "version": "7",
+      "when": 1798534300000,
+      "tag": "0214_invoices_immutability_lock_pdf_doc_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 215,
+      "version": "7",
+      "when": 1798534400000,
+      "tag": "0215_f8_renewal_cycles_member_recency_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 216,
+      "version": "7",
+      "when": 1798534500000,
+      "tag": "0216_f8_renewal_entered_awaiting_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1798534600000,
+      "tag": "0217_f71a_state_machine_partially_sent",
+      "breakpoints": true
+    },
+    {
+      "idx": 218,
+      "version": "7",
+      "when": 1798534700000,
+      "tag": "0218_f71a_batch_webhook_dedup",
+      "breakpoints": true
+    },
+    {
+      "idx": 219,
+      "version": "7",
+      "when": 1798534800000,
+      "tag": "0219_f71a_batch_dedup_grant",
+      "breakpoints": true
+    },
+    {
+      "idx": 220,
+      "version": "7",
+      "when": 1798534900000,
+      "tag": "0220_f71a_broadcast_partially_sent_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 221,
+      "version": "7",
+      "when": 1798535000000,
+      "tag": "0221_members_erasure_columns_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 222,
+      "version": "7",
+      "when": 1798535100000,
+      "tag": "0222_auth_user_erased_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 223,
+      "version": "7",
+      "when": 1798535200000,
+      "tag": "0223_outbox_delete_grant_erasure",
+      "breakpoints": true
+    },
+    {
+      "idx": 224,
+      "version": "7",
+      "when": 1798535300000,
+      "tag": "0224_broadcasts_redaction_guc",
+      "breakpoints": true
+    },
+    {
+      "idx": 225,
+      "version": "7",
+      "when": 1798535400000,
+      "tag": "0225_broadcast_deliveries_redaction_guc",
+      "breakpoints": true
+    },
+    {
+      "idx": 226,
+      "version": "7",
+      "when": 1798535500000,
+      "tag": "0226_members_erased_at_reconciler_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 227,
+      "version": "7",
+      "when": 1798535600000,
+      "tag": "0227_credit_notes_pii_redaction_exemption",
+      "breakpoints": true
+    },
+    {
+      "idx": 228,
+      "version": "7",
+      "when": 1798535700000,
+      "tag": "0228_subprocessor_erasure_propagated_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 229,
+      "version": "7",
+      "when": 1798535800000,
+      "tag": "0229_broadcasts_audience_deleted_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1798535900000,
+      "tag": "0230_document_type_add_bill",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1798536000000,
+      "tag": "0231_invoices_bill_number_and_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 235,
+      "version": "7",
+      "when": 1798536100000,
+      "tag": "0235_invoices_freeze_receipt_number",
+      "breakpoints": true
+    },
+    {
+      "idx": 236,
+      "version": "7",
+      "when": 1798536200000,
+      "tag": "0232_members_branch_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1798536300000,
+      "tag": "0233_tenant_invoice_settings_wht_and_seller_branch",
+      "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1798536400000,
+      "tag": "0236_members_branch_pairing_ck_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1798536500000,
+      "tag": "0234_invoices_vat_treatment_zero_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1798536600000,
+      "tag": "0237_members_backup_exported_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1798536700000,
+      "tag": "0238_renewal_rolling_anchor",
+      "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1798536800000,
+      "tag": "0239_broadcast_templates_partial_uniq",
+      "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1798536900000,
+      "tag": "0240_payments_auto_refunded_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1798537000000,
+      "tag": "0241_audit_log_refund_reconcile_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1798537100000,
+      "tag": "0242_credit_notes_source_refund_uniq",
+      "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1798537200000,
+      "tag": "0243_renewal_cycles_reject_refund_marker",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1798537300000,
+      "tag": "0244_audit_log_auto_refund_reconciled",
+      "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1798537400000,
+      "tag": "0245_members_registered_capital_and_sub_district",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1798537500000,
+      "tag": "0246_membership_suspension_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 250,
+      "version": "7",
+      "when": 1798537600000,
+      "tag": "0247_renewal_lapse_deferred_invoice_not_due",
+      "breakpoints": true
+    },
+    {
+      "idx": 251,
+      "version": "7",
+      "when": 1798537700000,
+      "tag": "0248_f6_event_attendance_by_suspended_member",
+      "breakpoints": true
+    }
+  ]
 }

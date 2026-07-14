@@ -155,7 +155,7 @@ describe('submitBroadcast — membership-access wiring (live Neon, 059 Task 5)',
 
     // 059-membership-suspension Task 8 — proves the
     // `broadcast_membership_suspended_blocked` enum value exists live
-    // (migration 0245) AND that the real `f7AuditAdapter` (wired via
+    // (migration 0246) AND that the real `f7AuditAdapter` (wired via
     // `makeSubmitBroadcastDeps`, no mock) actually persisted the row.
     const auditRows = await db
       .select()

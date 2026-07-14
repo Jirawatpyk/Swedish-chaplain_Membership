@@ -397,6 +397,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           city: member.city ?? undefined,
           province: member.province ?? undefined,
           postal_code: member.postalCode ?? undefined,
+          // PR-B task 6 — แขวง/ตำบล.
+          sub_district: member.subDistrict ?? undefined,
           // 088 US3 — §86/4 branch particular (seed the head-office toggle +
           // branch code so the admin sees the present value before Save).
           is_head_office: member.isHeadOffice ?? true,
@@ -408,6 +410,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           notes: member.notes,
           founded_year: member.foundedYear ?? undefined,
           turnover_thb: member.turnoverThb ?? undefined,
+          // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnover_thb.
+          registered_capital_thb: member.registeredCapitalThb ?? undefined,
           plan_id: member.planId,
           plan_year: member.planYear,
           registration_date: member.registrationDate,

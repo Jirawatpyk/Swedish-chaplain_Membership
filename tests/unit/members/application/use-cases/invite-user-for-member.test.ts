@@ -211,7 +211,10 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
     addInTx: vi.fn(async () => {
       switch (overrides.addInTxResult ?? 'ok') {
         case 'conflict':
-          return err({ code: 'repo.conflict' as const, reason: 'email already exists' });
+          // I2 fix — `'email already exists'` was not a member of
+          // `RepoConflictReason`; the real producer (`ContactRepo.addInTx`)
+          // maps its unique-index violation to `contact_email_in_use`.
+          return err({ code: 'repo.conflict' as const, reason: 'contact_email_in_use' as const });
         case 'throw':
           // Simulate an infra-level throw (e.g. PG connection drop) instead
           // of a graceful err — the use case must still surface server_error
@@ -224,7 +227,11 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
     }),
     linkUserInTx: vi.fn(async () => {
       if (overrides.linkUserInTxResult === 'conflict') {
-        return err({ code: 'repo.conflict' as const, reason: 'already linked' });
+        // I2 fix — `'already linked'` was not a member of
+        // `RepoConflictReason`; the real producer (`ContactRepo.linkUserInTx`
+        // finding the contact already bound to a user) maps to
+        // `contact_already_linked`.
+        return err({ code: 'repo.conflict' as const, reason: 'contact_already_linked' as const });
       }
       return ok(makeContact());
     }),

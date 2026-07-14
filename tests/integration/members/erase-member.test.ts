@@ -133,11 +133,13 @@ async function seedMemberWithContacts(
       notes: 'VIP — board contact',
       foundedYear: 1995,
       turnoverThb: 250_000_000,
+      registeredCapitalThb: 5_000_000,
       addressLine1: '99 Rama IV Rd',
       addressLine2: 'Floor 12',
       city: 'Bangkok',
       province: 'Bangkok',
       postalCode: '10500',
+      subDistrict: 'คลองเตยเหนือ',
       preferredLocale: 'sv',
       planId: PLAN_ID,
       planYear: 2026,
@@ -182,11 +184,13 @@ async function rawSelectMember(memberId: string) {
       notes: members.notes,
       founded_year: members.foundedYear,
       turnover_thb: members.turnoverThb,
+      registered_capital_thb: members.registeredCapitalThb,
       address_line1: members.addressLine1,
       address_line2: members.addressLine2,
       city: members.city,
       province: members.province,
       postal_code: members.postalCode,
+      sub_district: members.subDistrict,
       erased_at: members.erasedAt,
     })
     .from(members)
@@ -275,11 +279,13 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     expect(m.notes).toBeNull();
     expect(m.founded_year).toBeNull();
     expect(m.turnover_thb).toBeNull();
+    expect(m.registered_capital_thb).toBeNull();
     expect(m.address_line1).toBeNull();
     expect(m.address_line2).toBeNull();
     expect(m.city).toBeNull();
     expect(m.province).toBeNull();
     expect(m.postal_code).toBeNull();
+    expect(m.sub_district).toBeNull();
     expect(m.legal_entity_type).toBeNull();
     expect(m.erased_at).not.toBeNull();
     // Identity preserved.

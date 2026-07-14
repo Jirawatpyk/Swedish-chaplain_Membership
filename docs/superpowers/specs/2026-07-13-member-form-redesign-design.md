@@ -1,7 +1,7 @@
-# Member Form Redesign — Design (v2)
+# Member Form Redesign — Design (v3)
 
-**Date**: 2026-07-13
-**Status**: v2 — rewritten after a 6-agent review (architecture · Thai tax · UX · migration · PDPA/GDPR · QA). Every agent returned blocking findings against v1; all are folded in below.
+**Date**: 2026-07-13, amended 2026-07-14
+**Status**: v3 — **§ 16 supersedes anything it contradicts in §§ 1–15.** v2 was rewritten after a 6-agent review (architecture · Thai tax · UX · migration · PDPA/GDPR · QA), every one of which returned blocking findings against v1. v3 then folds in three things that only arrived later: TSCC's accountant answering the tax-language question, legal research verifying every citation against rd.go.th primary text, and TSCC's actual 150-member spreadsheet. **Every blocking question is now closed — PR-A is unblocked.**
 **Origin**: Reviewer feedback on the admin member create/edit form (SweCham / TSCC)
 **Ship shape**: **three PRs** — see § 2.
 
@@ -217,9 +217,11 @@ v1 had province/district each switching between input, read-only, and select dep
 
 Keeping one widget per field also keeps SC 3.2.2 (On Input) satisfied, which the widget-swap violated.
 
-### Language: store Thai, always, when country = TH
+### ~~Language: store Thai, always, when country = TH~~ — **REVERSED, see § 16.1**
 
-`compose-buyer-address.ts:49-52` freezes `city + province + postal_code` into the immutable buyer address on the §86/4 document. v1 said autofill follows the **UI locale** — which would make the language printed on a tax document depend on which admin happened to key the member in and what language they had selected. **RC §86/4 วรรคสอง requires the particulars in Thai.** So: country = TH ⇒ store the **canonical Thai** names; show the English name as secondary text inside the picker only. The generated dataset is bilingual, so both are available.
+~~`compose-buyer-address.ts:49-52` freezes `city + province + postal_code` into the immutable buyer address on the §86/4 document. v1 said autofill follows the **UI locale** — which would make the language printed on a tax document depend on which admin happened to key the member in and what language they had selected. RC §86/4 วรรคสอง requires the particulars in Thai. So: country = TH ⇒ store the canonical Thai names; show the English name as secondary text inside the picker only. The generated dataset is bilingual, so both are available.~~
+
+**Superseded (2026-07-14) — store English, always, when country = TH.** ประกาศอธิบดีกรมสรรพากร ฉบับที่ 92 (2542) pre-approves English-language + THB tax invoices without a case-by-case application, TSCC's accountant confirmed the same independently, and TSCC's live corpus is 132/132 English addresses. See § 16.1 for the full reasoning. Implemented in `src/components/members/member-form/sections/address-section.tsx` (PR-B) — the Thai name is kept as secondary `detail` text inside the picker, never dropped.
 
 ### Sub-district is required for TH
 
@@ -245,8 +247,12 @@ A secondary contact is a `contacts` row with `is_primary = false`, inserted in t
 - **Fields**: first/last name, email, phone, role title, preferred language. No date of birth (that gate is primary-only and plan-driven).
 - **409 attribution.** `member-create-error-map.ts:39-50` hard-maps *any* 409 `conflict` on create to `primary_contact.email` — and documents the assumption that this is the only unique index that can fire. A secondary contact breaks that assumption: a collision on the secondary email would highlight and focus the **wrong field**. → the repo must wrap each contact insert in its own try/catch and return a discriminated reason (`primary_contact_email_taken` / `secondary_contact_email_taken`); the error map keys off it. Add the cheap client + server rule `secondary.email !== primary.email` for the common case.
 - **Audit**: reuse the existing `contact_created` emit (`create-member.ts:433-444`) in the same tx. **No new audit event type** — the 4-place enum change is not needed.
-- **Art. 14 notice (GDPR).** The secondary contact is a named natural person whose data we obtain from a third party (the admin) and who is never told they are in the system — `create-member.ts` sends no email to them. Either send an Art. 14 notice on creation, or add an admin attestation ("you confirm this person has been informed") plus a collection notice in the form, recorded with a timestamp. **Decide before PR-B ships.**
-- **Known residual**: `gdpr-archive-source-adapter.ts:313-324` puts *all* contacts into `contacts.json`, so one contact's Art. 15 export discloses the other's PII. This is the pre-existing org-as-subject issue from the F9 audit; the secondary contact makes it routine rather than incidental. Track it explicitly.
+- **Art. 14 notice (GDPR) — DECIDED 2026-07-14: an admin attestation.** The secondary contact is a named natural person whose data we obtain from a third party (the admin) and who is never told they are in the system — no code path emails them. The chosen remedy is a **required attestation checkbox** on the contact fieldset — *"I confirm this person has been informed that their details are being shared with the chamber"* — persisted with a timestamp. It rests on **Art. 14(5)(a)** (the subject already has the information) and leaves a defensible record.
+
+  **It must cover BOTH entry points.** The gap is about the *collection*, not the form: the Edit page's existing "Add contact" flow (`contact-crud.ts:89`) emails the new contact nothing either. This branch does not *introduce* the gap — it makes it routine rather than incidental, because a second natural person is now captured on the majority create path. Fixing only the create form would not be a fix.
+- **Known residual — Art. 15(4), the org-as-subject question.** `gdpr-archive-source-adapter.ts:313-324` maps *every* contact into `contacts.json`, so a subject-access request routed through contact A ships contact B's name, email, phone and date of birth. Pre-existing (F9 audit, 2026-06-15); the secondary contact makes it routine rather than incidental.
+
+  **Two acceptable resolutions, and the status quo is neither:** scope the archive to the requesting contact, *or* write down an explicit org-as-subject position (the data subject is the member *organisation*, and the archive is delivered to its authorised representative). The second is defensible — but right now it is an unwritten assumption doing load-bearing work, which is the one thing it must not be. **Owner: PR-A or a follow-up; not this branch.**
 
 ## 11. Form UX
 
@@ -297,17 +303,83 @@ Five fieldsets: Company · Address · Membership · Primary contact · Secondary
 
 ## 15. Questions to send out
 
-**To the accountant (blocking PR-A):**
-1. `cooperative` — VAT-registrant default? (§91 specific-business tax vs VAT depends on the line of business.)
-2. Is an **English** buyer name/address block acceptable on a bilingual tax invoice, or does §86/4 วรรคสอง require Thai buyer particulars? (Affects whether `company_name_th` becomes necessary.)
-3. Confirm the citation: ประกาศอธิบดีฯ (VAT) ฉบับที่ 199 as the authority for buyer TIN + head-office/branch being mandatory only for VAT-registrant buyers.
+**All of the blocking questions are now closed.** See § 16.
 
-**To the reviewer:**
-4. **Zero-padding Tax ID** — we refuse it. A padded number can collide with a real Thai taxpayer's 13-digit ID.
-5. **"Not based in Thailand" checkbox** — folded into the Country field.
-6. **"Member Type"** — renamed to "Entity type"; the term collides with the plan's `member_type_scope`.
-7. The entity list needed **two additions** the source table lacked: `government` (already in our vocabulary) and `embassy_intl_org` (088 US8 zero-rating buyers).
+**To the reviewer** (for the record — these are the three places we did not do what they asked):
+1. **Zero-padding a foreign Tax ID.** We refuse it. A padded number lands inside the Thai 13-digit TIN namespace and can match a *different, real* taxpayer; a passport number cannot be padded into a digit string without fabricating one; and it is a false particular on a tax document. See § 16.4(a) — and note § 16.4(b), a **separate** padding issue (Excel ate the leading zero from 113 Thai TINs) which does need fixing, but in the importer and only for Thai TINs.
+2. **"Not based in Thailand" checkbox** — folded into the Country field; two sources of truth can contradict each other.
+3. **"Member Type"** — renamed to "Entity type"; the term collides with the plan's `member_type_scope`.
+4. The entity list needed **two additions** the source table lacked: `government` (already in our vocabulary) and `embassy_intl_org` (088 US8 zero-rating buyers). Note § 16.3: TSCC has **no members of either type**, so neither is urgent.
 
-**To TSCC (non-blocking, drives the checkbox defaults):**
-8. Does TSCC hold ภ.พ.20 (VAT registration) status for its members? Are any members **บุคคลธรรมดา who are VAT-registered**? They are the case the old guess got dangerously wrong.
-9. Membership tiers are banded on **turnover** today. Is that intended to stay, or eventually re-band on registered capital?
+---
+
+## 16. Amendments (2026-07-14) — the blocking questions, answered
+
+Three things landed after v2 was written: TSCC's accountant answered the language question, legal research verified the citations against rd.go.th primary sources, and we read TSCC's actual member spreadsheet (`docs/import/Membership Database_Since 2025(...)_v2_Excel.xlsx`, sheet `Member Data New`, **150 members**). Several v2 decisions are reversed or sharpened below. **Where this section contradicts §§ 1–15, this section wins.**
+
+### 16.1 English buyer particulars are legal — `company_name_th` is NOT needed
+
+§86/4 วรรคสอง does say the particulars shall be in Thai — **but ประกาศอธิบดีกรมสรรพากร ฉบับที่ 92 (2542) pre-approves English-language + THB tax invoices automatically**, with no case-by-case Director-General application. (Case-by-case approval is needed only for a language other than English, or for a foreign currency.) TSCC's accountant confirmed the same independently: the buyer's name and address may be English, provided the data is correct and verifiable.
+
+**Consequences:**
+- **`company_name_th` is dropped.** It was the largest scope risk in PR-A; it is gone.
+- **The Thai-address-storage rule in § 9 is REVERSED.** v2 said "when `country = TH`, store the Thai names". We now store **English** — because English is legal, and because TSCC's existing corpus is entirely English (§ 16.3). Storing Thai for new members while the imported 132 stay English would make one chamber issue tax documents in two languages, for no legal benefit. (Implemented in PR-B.)
+
+### 16.2 Citation correction — it is **196 + 199**, not 199 alone
+
+- **ประกาศอธิบดีฯ (VAT) ฉบับที่ 196** (eff. 1 Jan 2014) — requires the **buyer's 13-digit TIN**, only when the buyer is a VAT registrant.
+- **ฉบับที่ 199** (eff. 1 Jan 2015) — requires the **"สำนักงานใหญ่" / "สาขาที่ NNNNN"** text, and its operative clause is explicitly *"ในกรณีผู้ประกอบการจดทะเบียนได้จัดทำใบกำกับภาษีให้แก่ผู้ซื้อ...ซึ่งเป็นผู้ประกอบการจดทะเบียน"* — i.e. only when the **buyer** is a registrant.
+
+Both were verified against rd.go.th primary text. v2 cited 199 alone for both particulars; correct that wherever it appears.
+
+### 16.3 What TSCC's data actually contains (150 members)
+
+| Field | Reality |
+|---|---|
+| **Entity type** | **Already populated.** 111 Private Limited Company · 15 Individual · 7 State Enterprise · 5 Public Limited Company · 2 Foundation · 10 N/A. PR-A's catalogue can be **backfilled from this sheet** rather than left NULL. |
+| **Tax ID** | 113 present, 37 = "N/A". **Every one of the 113 is 12 digits, not 13** — Excel stored them as numbers and ate the leading zero (`105562087242` → really `0105562087242`). |
+| **Address** | 132 have one. **Zero contain a single Thai character.** 100% English. |
+| **Registered capital** | 113 populated — *more complete than turnover* (78). Validates adding the column rather than renaming turnover. |
+| **Secondary contact** | Columns exist; **0 rows populated.** The feature is for future use, not for the import. |
+| **Country** | 127 Thailand · 4 Sweden · 19 N/A. |
+| Entity types **absent** | No cooperative, no representative/regional office, no government agency, no embassy. The defaults for those are therefore not urgent. |
+
+### 16.4 Zero-padding a foreign Tax ID — still refused
+
+The reviewer asked for *"ถ้าบางประเทศน้อยกว่า 13 หลัก ให้ใช้ 0000 ข้างหน้า"* — pad a foreign identifier out to 13 digits. We do not, and the reasons in § 3 #2 are unchanged:
+- A padded number lands inside the **Thai 13-digit TIN namespace** and can match a *different, real* Thai taxpayer.
+- A passport / work-permit number is alphanumeric — it cannot be padded into a digit string without fabricating one.
+- It is a **false particular on a tax document**: a penalty risk, not a UX preference.
+
+A foreign identifier that is not 13 digits is not a *truncated* 13-digit ID — it is a different kind of identifier. Store it verbatim, and omit the Tax ID line on the document when the buyer is not a Thai VAT registrant (per ประกาศ 196, exactly the case where no buyer TIN is required at all).
+
+> **Not this spec's problem:** TSCC's spreadsheet has a *separate* padding issue — Excel stored the Thai TINs as numbers and ate their leading zero (113 rows). That is an **importer** concern, not a form concern; it is recorded in § 16.3 and belongs to `scripts/import-members/`.
+
+### 16.5 Tax ID is required **only when the buyer is a VAT registrant**
+
+v2 (and an earlier maintainer decision) said "required on create for a Thai juristic entity". The data refutes that: **37 members have no TIN at all**, including all 7 State Enterprises and both Foundations. That rule would make them un-creatable through the form.
+
+**New rule:** `tax_id` is required **iff `is_vat_registered` is true** — which is exactly where ประกาศ 196 actually bites. A non-registrant needs no TIN on the document, so the form must not demand one. (The `registrant ⇒ 13 digits + checksum` invariant of § 7 is unchanged; only the *trigger* moves from entity type to the VAT flag.)
+
+### 16.6 VAT-registrant status is independent of legal form — verified
+
+พ.ร.ฎ. (ฉบับที่ 432) พ.ศ. 2548 sets the **1.8 M THB/yr** threshold under §81/1, and §77/1 defines "ผู้ประกอบการ" to include natural persons and non-juristic bodies. So a **บุคคลธรรมดา above the threshold must register** and *can* carry a head-office/branch particular.
+
+This kills the old heuristic (`legal_entity_type ≠ 'individual' ⇒ registrant`) on the law, not just on taste, and confirms `is_vat_registered` must be a **recorded fact, never derived**.
+
+**Defaults that must NOT exist:**
+- **`cooperative`** — no safe default. Savings cooperatives' interest income falls under specific business tax (§91); agricultural cooperatives are exempt under §81(1)(ก) for *unprocessed* produce only; a cooperative selling VATable goods above the threshold must register. Verified against RD ruling กค 0702/2893. **Force the admin to choose.**
+- **`association` / `foundation`** — no safe default. §81(1) contains no exemption by *status*; only §81(1)(ธ) exempts certain religious/charitable *activities*. **TSCC is itself a chamber of commerce (an association) and is VAT-registered.** Force the admin to choose.
+
+**Defaults that are defensible** (still overridable): `representative_office` / `regional_office` → false (legally barred from earning revenue in Thailand; they still hold a TIN for withholding tax). `government` → false (§81(1)(ท), ministries/departments remitting all receipts to the state). `state_enterprise` → true (a separate juristic person; not covered by the §81(1)(ท) exemption).
+
+### 16.7 A sub-district is **not** legally required in the buyer's address
+
+คำสั่งกรมสรรพากร ป.86/2542 sets an *unambiguous-location* standard, not a field checklist: *"กรณีระบุที่อยู่ไม่ครบถ้วนตามที่จดทะเบียน...แต่รายการที่อยู่ที่ระบุไว้ถูกต้อง และสามารถบอกตำแหน่งที่ตั้งที่ชัดเจนได้ ให้ถือว่าได้ระบุที่อยู่ครบถ้วนแล้ว"*. A missing แขวง/ตำบล does not by itself void the buyer's input-VAT claim.
+
+So PR-B's "sub-district required on create for TH" gate is a **data-quality choice we are making deliberately**, not a legal obligation. Keep it (a complete address is worth having, and the postcode picker makes it nearly free), but do not defend it as a legal requirement — and note that **TSCC's own sheet has no sub-district column at all**, so no imported member will have one.
+
+### 16.8 Still open — but no longer blocking
+
+- **Membership tiers are banded on `turnover_thb`.** TSCC's sheet has registered capital for 113 members and turnover for only 78 — capital is the better-populated field. Worth asking whether tiers should eventually re-band on it. **Not blocking:** both columns now exist, and the F2/F8 rules continue to read turnover.
+- **Are any of the 15 Individuals VAT-registered?** Determines what the `sole_proprietor` checkbox defaults to. **Not blocking:** the default is `false` and the admin can tick it.

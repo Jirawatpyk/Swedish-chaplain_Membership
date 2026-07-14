@@ -46,9 +46,13 @@ import { invoicingMetrics } from '@/lib/metrics';
 // real (PAN regex, child loggers) — we only stub `warn`.
 vi.mock('@/lib/logger', async () => {
   const actual = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger');
+  // Dynamic import (not a static top-level import) — sidesteps hoisting/
+  // TDZ ordering entirely, so this is safe regardless of where `@/lib/logger`
+  // first gets pulled in relative to this file's other static imports.
+  const { createMockLogger } = await import('../../helpers/mock-logger');
   return {
     ...actual,
-    logger: { ...actual.logger, warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+    logger: createMockLogger({ warn: vi.fn(), error: vi.fn(), info: vi.fn() }),
   };
 });
 

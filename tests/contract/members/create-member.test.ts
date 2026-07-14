@@ -202,4 +202,21 @@ describe('contract: POST /api/members (T040)', () => {
     const body = await res.json();
     expect(body.error.code).toBe('turnover_warning');
   });
+
+  // PR-B task 8 — the reason must be threaded into `details`, NOT into the
+  // top-level `message` (the old shape leaked the raw discriminator as a
+  // user-visible string and gave the client nothing to switch on).
+  it('409 conflict — carries the discriminator reason in details.reason', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    createMemberMock.mockResolvedValueOnce(
+      err({ type: 'conflict', reason: 'secondary_email_in_use' }),
+    );
+    const { POST } = await import('@/app/api/members/route');
+    const res = await POST(makeRequest(validBody));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('conflict');
+    expect(body.error.details.reason).toBe('secondary_email_in_use');
+  });
 });

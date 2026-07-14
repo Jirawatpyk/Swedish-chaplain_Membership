@@ -38,7 +38,7 @@
  *   - COMP-1 US2b content redaction: 1 event
  *     (`broadcast_content_redacted`, migration 0224)
  *   - 059-membership-suspension Task 8: 1 event
- *     (`broadcast_membership_suspended_blocked`, migration 0245)
+ *     (`broadcast_membership_suspended_blocked`, migration 0246)
  *   = 61 total. Static-assert below (`extends 61`) is the
  *   source of truth; the header summary is informational only and
  *   should be re-derived when the assert changes. R4.3 M-8 fixed
@@ -175,7 +175,7 @@ export const F7_AUDIT_EVENT_TYPES = [
   // `broadcast_deliveries` recipient email is anonymised. 5y retention.
   'broadcast_content_redacted',
 
-  // --- 059-membership-suspension Task 8 (migration 0245) — precondition (l)
+  // --- 059-membership-suspension Task 8 (migration 0246) — precondition (l)
   // submit-block forensic event — 1 -----------------------------------------
   // Emitted by `submitBroadcast` when the F8 membership-access gate
   // (Task 5) rejects a suspended/terminated member's submission, BEFORE

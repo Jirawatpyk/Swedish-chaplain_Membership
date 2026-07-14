@@ -27,6 +27,11 @@ function byId(container: HTMLElement, id: string): HTMLInputElement {
 // next-intl mock must register BEFORE the form import picks up the hook.
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
+  // PR-B task 5 — CountryCombobox (rendered inside CompanySection) calls
+  // useLocale() to resolve i18n-iso-countries' locale data; the minimal
+  // mock above is a full replace (not `importOriginal` partial), so it
+  // must also stub this export or the render throws.
+  useLocale: () => 'en',
 }));
 
 import { MemberForm, type PlanOption } from '@/components/members/member-form';
@@ -99,9 +104,12 @@ describe('MemberForm FR-035 tri-part required indicator', () => {
 });
 
 describe('MemberForm FR-036 autocomplete attrs', () => {
+  // PR-B task 5 — `country` dropped from this table: it is now a searchable
+  // combobox (a `role=combobox` trigger <button>, not a text <input>), so
+  // browser autocomplete has nothing to fill in — `autocomplete="country"`
+  // only ever applied to a free-typed 2-letter text field.
   it.each([
     ['company_name', 'organization'],
-    ['country', 'country'],
     ['website', 'url'],
     ['first_name', 'given-name'],
     ['last_name', 'family-name'],

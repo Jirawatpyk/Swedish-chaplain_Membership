@@ -62,7 +62,9 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     await expect(companyField).toBeVisible({ timeout: 10_000 });
 
     await fillField(companyField, `E2E Portal Corp ${RUN_ID}`);
-    await fillField(page.locator('#country'), 'TH');
+    // PR-B task 5 — #country is now a searchable combobox trigger <button>
+    // (not a fillable text <input>); no explicit selection needed since
+    // the form already defaults it to 'TH' (schema default).
 
     // Select first available plan
     await page.locator('#plan_id').click();
