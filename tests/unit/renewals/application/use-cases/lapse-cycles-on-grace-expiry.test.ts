@@ -21,11 +21,14 @@ import type { LapseCyclesOnGraceExpiryDeps } from '@/modules/renewals/applicatio
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type { TenantRenewalSettings } from '@/modules/renewals/domain/tenant-renewal-settings';
 import type { F5PaymentAttemptsBridge } from '@/modules/renewals/application/ports/f5-payment-attempts-bridge';
+import type { InvoiceDueBridge } from '@/modules/renewals/application/ports/invoice-due-bridge';
 import {
   CycleTransitionConflictError,
   CycleNotFoundError,
 } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
+import { renewalsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 
 const TENANT_ID = 'tenantA';
 const NOW = new Date('2026-05-08T00:00:00Z');
@@ -66,12 +69,23 @@ function fakeDeps(args: {
   reReadCycle?: (cycle: RenewalCycle) => RenewalCycle | null;
   settings?: TenantRenewalSettings | null;
   emitInTxImpl?: () => Promise<void>;
+  emitImpl?: () => Promise<void>;
   transitionImpl?: () => Promise<RenewalCycle>;
+  /** Task 13 — `InvoiceDueBridge` stub. Defaults to `false` (no credit-
+   * window protection) so every pre-existing test keeps its original
+   * grace_expired/payment_failed behaviour unless it opts in. */
+  invoiceDueImpl?: (input: {
+    tenantId: string;
+    memberId: string;
+    todayBkk: string;
+  }) => Promise<boolean>;
 }): {
   deps: LapseCyclesOnGraceExpiryDeps;
   emitInTxMock: ReturnType<typeof vi.fn>;
+  emitMock: ReturnType<typeof vi.fn>;
   countMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
+  invoiceDueMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -94,6 +108,7 @@ function fakeDeps(args: {
   );
   const acquireLockMock = vi.fn(async () => {});
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));
+  const emitMock = vi.fn(args.emitImpl ?? (async () => {}));
   const countMock = vi.fn(
     args.countImpl ??
       (async (input: { invoiceId: string }) =>
@@ -101,6 +116,10 @@ function fakeDeps(args: {
   );
   const f5Bridge: F5PaymentAttemptsBridge = {
     countFailedAttemptsForInvoice: countMock as never,
+  };
+  const invoiceDueMock = vi.fn(args.invoiceDueImpl ?? (async () => false));
+  const invoiceDueBridge: InvoiceDueBridge = {
+    hasUnpaidNotYetDueMembershipInvoice: invoiceDueMock as never,
   };
 
   const findByTenantMock = vi.fn(async () =>
@@ -132,7 +151,7 @@ function fakeDeps(args: {
       acquireCycleLockInTx: acquireLockMock,
     } as unknown as LapseCyclesOnGraceExpiryDeps['cyclesRepo'],
     auditEmitter: {
-      emit: vi.fn(),
+      emit: emitMock,
       emitInTx: emitInTxMock,
     } as unknown as LapseCyclesOnGraceExpiryDeps['auditEmitter'],
     tenantRenewalSettingsRepo: {
@@ -140,8 +159,9 @@ function fakeDeps(args: {
       upsert: vi.fn(),
     },
     f5PaymentAttemptsBridge: f5Bridge,
+    invoiceDueBridge,
   };
-  return { deps, emitInTxMock, countMock, transitionMock };
+  return { deps, emitInTxMock, emitMock, countMock, transitionMock, invoiceDueMock };
 }
 
 const baseInput = {
@@ -366,6 +386,102 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+  });
+
+  describe('Task 13 — InvoiceDueBridge credit-window guard (runs BEFORE the advisory-lock tx)', () => {
+    it('unpaid not-yet-due membership invoice → defers lapse (deferred_invoice_not_due), no DB transition, audit via emit() not emitInTx()', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, emitInTxMock, emitMock, invoiceDueMock } =
+        fakeDeps({
+          cycles: [cycle],
+          invoiceDueImpl: async () => true,
+        });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.cyclesProcessed).toBe(1);
+        expect(r.value.deferredInvoiceNotDue).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.paymentFailed).toBe(0);
+        expect(r.value.errors).toBe(0);
+      }
+      // No state transition — the member is NOT lapsed.
+      expect(transitionMock).not.toHaveBeenCalled();
+      // The atomic-with-state-change `emitInTx` path is untouched...
+      expect(emitInTxMock).not.toHaveBeenCalled();
+      // ...instead the fire-and-forget `emit()` records the deferral,
+      // since there is no state-change tx to piggyback on.
+      expect(emitMock).toHaveBeenCalledOnce();
+      expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+        type: 'renewal_lapse_deferred_invoice_not_due',
+        payload: expect.objectContaining({
+          cycle_id: cycle.cycleId,
+          invoice_subject: 'membership',
+        }),
+      });
+      // Guard consulted with the cycle's member + tenant + today's Bangkok date.
+      expect(invoiceDueMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: TENANT_ID,
+          memberId: cycle.memberId,
+        }),
+      );
+    });
+
+    it('no unpaid not-yet-due invoice → guard consulted, returns false, cycle lapses as before', async () => {
+      const cycle = expiredCycle({});
+      const { deps, invoiceDueMock, transitionMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => false,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.graceExpired).toBe(1);
+        expect(r.value.deferredInvoiceNotDue).toBe(0);
+        expect(r.value.deferredGuardErrors).toBe(0);
+      }
+      expect(invoiceDueMock).toHaveBeenCalledOnce();
+      expect(transitionMock).toHaveBeenCalledOnce();
+    });
+
+    it('guard throws → fails SAFE (member NOT lapsed), outcome deferred_guard_error — NOT folded into errors, observable via metric + logger.error', async () => {
+      const metricSpy = vi.spyOn(
+        renewalsMetrics.lapseInvoiceDueGuardErrors,
+        'add',
+      );
+      const loggerSpy = vi
+        .spyOn(logger, 'error')
+        .mockImplementation(() => logger);
+      try {
+        const cycle = expiredCycle({});
+        const { deps, transitionMock, emitInTxMock, emitMock } = fakeDeps({
+          cycles: [cycle],
+          invoiceDueImpl: async () => {
+            throw new Error('bridge connection lost');
+          },
+        });
+        const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+          expect(r.value.deferredGuardErrors).toBe(1);
+          // Distinguishable from the generic per-cycle error tally —
+          // a guard throw must not be an invisible silent skip folded
+          // into `errors`.
+          expect(r.value.errors).toBe(0);
+          expect(r.value.graceExpired).toBe(0);
+          expect(r.value.paymentFailed).toBe(0);
+        }
+        expect(transitionMock).not.toHaveBeenCalled();
+        expect(emitInTxMock).not.toHaveBeenCalled();
+        expect(emitMock).not.toHaveBeenCalled();
+        expect(metricSpy).toHaveBeenCalledWith(1, { tenant_id: TENANT_ID });
+        expect(loggerSpy).toHaveBeenCalled();
+      } finally {
+        metricSpy.mockRestore();
+        loggerSpy.mockRestore();
+      }
+    });
   });
 
   it('multi-cycle mix: 2 grace_expired + 1 payment_failed in one run', async () => {
