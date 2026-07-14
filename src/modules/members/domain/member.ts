@@ -161,6 +161,12 @@ export type Member = {
    */
   readonly isHeadOffice?: boolean;
   readonly branchCode?: string | null;
+  /**
+   * 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived (never
+   * infer it from `legalEntityType` — see migration 0246). Gates whether the
+   * buyer's §86/4 branch particular and TIN are required on a tax document.
+   */
+  readonly isVatRegistered: boolean;
   readonly website: string | null;
   readonly description: string | null;
   readonly foundedYear: number | null;

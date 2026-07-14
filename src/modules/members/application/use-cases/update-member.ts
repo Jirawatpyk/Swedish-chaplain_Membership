@@ -36,6 +36,10 @@ export const updateMemberSchema = z
     legal_entity_type: z.string().max(100).nullable().optional(),
     country: z.string().length(2).optional(),
     tax_id: z.string().max(50).nullable().optional(),
+    // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived
+    // (never infer it from legal_entity_type). Mirrors is_head_office:
+    // admin-managed edit, applied to the patch below.
+    is_vat_registered: z.boolean().optional(),
     website: z.string().max(200).url().nullable().optional().or(z.literal('')),
     description: z.string().max(2000).nullable().optional(),
     address_line1: z.string().max(200).nullable().optional(),
@@ -194,6 +198,9 @@ export async function updateMember(
       if (data.is_head_office !== undefined)
         draft.isHeadOffice = data.is_head_office;
       if (data.branch_code !== undefined) draft.branchCode = data.branch_code;
+      // 059 / PR-A — the §86/4 VAT-registrant flag (admin-managed edit).
+      if (data.is_vat_registered !== undefined)
+        draft.isVatRegistered = data.is_vat_registered;
       if (validatedCountry !== undefined) draft.country = validatedCountry;
       if (data.tax_id !== undefined) {
         if (data.tax_id === null) {

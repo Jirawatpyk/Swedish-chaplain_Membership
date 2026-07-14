@@ -85,6 +85,7 @@ function rowToMember(row: MemberRow): Member {
     // are for hand-built drafts/fixtures, not for a loaded row.
     isHeadOffice: row.isHeadOffice,
     branchCode: row.branchCode,
+    isVatRegistered: row.isVatRegistered,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -128,6 +129,7 @@ function applyMemberPatch(
   // (updateMember zod superRefine + the admin form) sends a CHECK-consistent pair.
   if (patch.isHeadOffice !== undefined) set.isHeadOffice = patch.isHeadOffice;
   if (patch.branchCode !== undefined) set.branchCode = patch.branchCode;
+  if (patch.isVatRegistered !== undefined) set.isVatRegistered = patch.isVatRegistered;
   if (patch.website !== undefined) set.website = patch.website;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.notes !== undefined) set.notes = patch.notes;
@@ -557,6 +559,7 @@ export const drizzleMemberRepo: MemberRepo = {
           legalEntityType: draft.member.legalEntityType,
           country: draft.member.country,
           taxId: draft.member.taxId,
+          isVatRegistered: draft.member.isVatRegistered,
           website: draft.member.website,
           description: draft.member.description,
           foundedYear: draft.member.foundedYear,
@@ -751,6 +754,11 @@ export const drizzleMemberRepo: MemberRepo = {
           // office ⇒ NULL branch code.
           isHeadOffice: true,
           branchCode: null,
+          // 059 / PR-A — reset the §86/4 VAT-registrant flag to its DEFAULT
+          // (false) on erasure, not NULL: the column is NOT NULL, and `false`
+          // also keeps the branch-pairing CHECK satisfiable (a non-registrant
+          // cannot be a branch).
+          isVatRegistered: false,
           // H1 — F8-era admin free-text + derived risk cluster. The blocked-
           // reactivation flag + `..._at` collapse to FALSE/NULL alongside their
           // provenance to satisfy the 0094 consistency CHECK (see comment above).

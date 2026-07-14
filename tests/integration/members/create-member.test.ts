@@ -325,6 +325,38 @@ describe('create-member integration (T041, US1)', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('defaults is_vat_registered to false and round-trips an explicit true (059 / PR-A)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+
+    const off = await createMember(
+      goodInput(planId),
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-off` },
+      deps,
+    );
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    const offRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, off.value.memberId)),
+    );
+    expect(offRows).toHaveLength(1);
+    expect(offRows[0]!.isVatRegistered).toBe(false);
+
+    // The tax_id here is not decoration — Task 4 adds the registrant ⇒ TIN
+    // invariant, and this test must keep passing once it lands.
+    const on = await createMember(
+      { ...goodInput(planId), is_vat_registered: true, tax_id: '0105562087242' },
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-on` },
+      deps,
+    );
+    expect(on.ok).toBe(true);
+    if (!on.ok) return;
+    const onRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, on.value.memberId)),
+    );
+    expect(onRows).toHaveLength(1);
+    expect(onRows[0]!.isVatRegistered).toBe(true);
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {

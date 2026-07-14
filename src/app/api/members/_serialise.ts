@@ -21,6 +21,9 @@ export function serialiseMember(m: Member) {
     // Guarded `?? true` / `?? null` for a hand-built Member that omits them.
     is_head_office: m.isHeadOffice ?? true,
     branch_code: m.branchCode ?? null,
+    // 059 / PR-A — the §86/4 VAT-registrant flag. Same class as
+    // is_head_office/branch_code above: admin API only, staff-only.
+    is_vat_registered: m.isVatRegistered,
     website: m.website,
     description: m.description,
     address_line1: m.addressLine1,

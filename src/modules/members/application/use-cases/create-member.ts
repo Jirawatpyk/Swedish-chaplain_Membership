@@ -58,6 +58,9 @@ export const createMemberSchema = z.object({
   legal_entity_type: z.string().max(100).nullable().optional(),
   country: z.string().length(2),
   tax_id: z.string().max(50).nullable().optional(),
+  // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived. Default
+  // false when omitted (never inferred from legal_entity_type).
+  is_vat_registered: z.boolean().optional(),
   website: z.string().max(200).url().nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
@@ -438,6 +441,7 @@ export async function createMember(
         legalEntityType: data.legal_entity_type ?? null,
         country: country.value,
         taxId,
+        isVatRegistered: data.is_vat_registered ?? false,
         website: data.website ?? null,
         description: data.description ?? null,
         foundedYear: data.founded_year ?? null,
