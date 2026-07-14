@@ -30,6 +30,12 @@ import { asEmail } from '../../domain/value-objects/email';
 import { asPhone, type Phone } from '../../domain/value-objects/phone';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import { asTaxId, type TaxId } from '../../domain/value-objects/tax-id';
+// Review fix (Finding 1) — close `legal_entity_type` to the 12-code
+// catalogue at THIS boundary too. Task 3b closed it client-side only
+// (the admin form's Select), so a direct API caller could still store an
+// arbitrary string — defeating the whole point (the fail-soft label
+// resolver would then print raw snake_case on the member page).
+import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
 import {
   asOverrideReason,
   OVERRIDE_REASON_CODES,
@@ -55,7 +61,12 @@ import { UseCaseAbort } from '../tx-abort';
 
 export const createMemberSchema = z.object({
   company_name: z.string().trim().min(1).max(200),
-  legal_entity_type: z.string().max(100).nullable().optional(),
+  // Review fix (Finding 1) — closed to the 12-code catalogue, mirroring the
+  // client's own `buildMemberFormSchema` (schema.ts). Must accept a valid
+  // code, `null`, AND "unset" (`undefined` / `''`) — 10 of TSCC's 150
+  // members have no recorded type, and rejecting unset would make a
+  // create with every other field valid fail on this one alone.
+  legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).nullable().optional().or(z.literal('')),
   country: z.string().length(2),
   tax_id: z.string().max(50).nullable().optional(),
   // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived. Default
@@ -438,7 +449,11 @@ export async function createMember(
         memberId,
         memberNumber,
         companyName: data.company_name.trim(),
-        legalEntityType: data.legal_entity_type ?? null,
+        // Collapses '' (the client Select's "nothing picked" sentinel) and
+        // `undefined` to `null` — every falsy branch of the zod union means
+        // "unset"; every LEGAL_ENTITY_TYPES code is a non-empty string, so
+        // `||` correctly narrows the type to LegalEntityTypeCode | null.
+        legalEntityType: data.legal_entity_type || null,
         country: country.value,
         taxId,
         isVatRegistered: data.is_vat_registered ?? false,

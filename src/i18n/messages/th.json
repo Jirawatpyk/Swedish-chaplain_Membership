@@ -1131,7 +1131,7 @@
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",
           "memberId": "รหัสสมาชิก",
-          "legalEntityType": "ประเภทนิติบุคคล",
+          "legalEntityType": "ประเภทสมาชิก",
           "country": "ประเทศ",
           "taxId": "เลขประจำตัวผู้เสียภาษี",
           "website": "เว็บไซต์",
@@ -5189,7 +5189,7 @@
         "memberNumber": "หมายเลขสมาชิก",
         "memberNumberCopy": "คัดลอกหมายเลขสมาชิก",
         "companyName": "ชื่อบริษัท",
-        "legalEntityType": "ประเภทนิติบุคคล",
+        "legalEntityType": "ประเภทสมาชิก",
         "country": "ประเทศ",
         "website": "เว็บไซต์",
         "description": "คำอธิบาย",

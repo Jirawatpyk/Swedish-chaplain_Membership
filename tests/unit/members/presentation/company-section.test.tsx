@@ -308,10 +308,13 @@ describe('CompanySection — entity-type explanation popup (PR-A Task 3b)', () =
     ).toBeInTheDocument();
   });
 
-  // Regression guard: the popover lives inside <form onSubmit>. A bare
-  // <button> defaults to type="submit" — clicking the help icon would
-  // otherwise submit the whole member form.
-  it('the help trigger is type=button and clicking it does NOT submit the form', () => {
+  // Defensive-redundancy guard, not a documented Base UI footgun: Base UI's
+  // PopoverTrigger already renders `type="button"` on its own (`useButton`),
+  // so this popover — which lives inside <form onSubmit> — would not
+  // actually submit the form even without the explicit prop. This pins the
+  // explicit `type="button"` (harmless belt-and-braces) and confirms
+  // clicking the help icon never submits the form either way.
+  it('the help trigger is type=button (explicit, defensive) and clicking it does NOT submit the form', () => {
     const onSubmit = vi.fn();
     renderEditForm({}, onSubmit);
     const help = screen.getByRole('button', {

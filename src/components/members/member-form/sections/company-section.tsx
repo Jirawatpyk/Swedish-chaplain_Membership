@@ -146,11 +146,15 @@ export function CompanySection({
               * explanation of each type. Tap-discoverable Popover (not a
               * hover Tooltip — must work on mobile), same pattern as the
               * Contacts section's "Emergency primary contact transfer"
-              * helper (admin/members/[memberId]/page.tsx). `type="button"`
-              * matters here in a way it didn't there: THIS popover lives
-              * inside <form onSubmit>, and a bare <button> defaults to
-              * type="submit" — without it, clicking the help icon would
-              * submit the whole member form. */}
+              * helper (admin/members/[memberId]/page.tsx). The explicit
+              * `type="button"` is defensive redundancy, not a fix for an
+              * observed bug: Base UI's `PopoverTrigger` already renders a
+              * native button with `type="button"` on its own (`useButton`'s
+              * `getButtonProps`, applied last by `mergeProps`), so this
+              * popover — which lives inside <form onSubmit> — would not
+              * actually have submitted the form without this prop. Kept
+              * explicit anyway: harmless, and it removes the dependency on
+              * that Base UI internal for anyone reading this in isolation. */}
             <Popover>
               <PopoverTrigger
                 type="button"

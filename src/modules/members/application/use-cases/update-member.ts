@@ -22,6 +22,10 @@ import {
   type IsoCountryCode,
 } from '../../domain/value-objects/iso-country-code';
 import { asTaxId } from '../../domain/value-objects/tax-id';
+// Review fix (Finding 1) — close `legal_entity_type` to the 12-code
+// catalogue here too (was client-only, see create-member.ts for the
+// full rationale).
+import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
 import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -33,7 +37,11 @@ import { UseCaseAbort } from '../tx-abort';
 export const updateMemberSchema = z
   .object({
     company_name: z.string().trim().min(1).max(200).optional(),
-    legal_entity_type: z.string().max(100).nullable().optional(),
+    // Review fix (Finding 1) — closed to the 12-code catalogue, mirroring
+    // create-member.ts + the client's buildMemberFormSchema. Accepts a
+    // valid code, `null`, or "unset" (`undefined` / `''`) — an edit to an
+    // unrelated field must never be blocked by this one.
+    legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).nullable().optional().or(z.literal('')),
     country: z.string().length(2).optional(),
     tax_id: z.string().max(50).nullable().optional(),
     // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived
@@ -189,8 +197,10 @@ export async function updateMember(
       const draft: MutablePatch = {};
       if (data.company_name !== undefined)
         draft.companyName = data.company_name.trim();
+      // Collapses '' (client Select "nothing picked") to `null` — see
+      // create-member.ts for why `||` is the correct narrowing here.
       if (data.legal_entity_type !== undefined)
-        draft.legalEntityType = data.legal_entity_type;
+        draft.legalEntityType = data.legal_entity_type || null;
       // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
       // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
       // the validated pair into the patch (buildDiff surfaces them on the

@@ -395,12 +395,14 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           // doesn't recognise (typed via the old free-text Input, before
           // this fix shipped) would make the zod enum reject the WHOLE
           // form on any submit, even an edit to an unrelated field like
-          // the company name. Treat an unrecognised legacy value as unset
-          // here — resolveLegalEntityTypeLabel's fail-soft fallback still
-          // shows the raw stored string on the read-only detail/portal
-          // pages; saving this form without touching the field then
-          // cleanly normalises it to `null` instead of perpetually
-          // blocking the admin or crashing the schema.
+          // the company name. Review fix (Finding 1) — `rowToMember`
+          // (drizzle-member-repo.ts) now normalises an out-of-catalogue DB
+          // value to `null` on every read, so `member.legalEntityType`
+          // reaching this component is already a valid code or `null`; the
+          // `isLegalEntityTypeCode` guard below is belt-and-braces defense
+          // for a hand-built `MemberInitialValues` (tests, future callers)
+          // that bypasses the repo. Saving this form without touching the
+          // field cleanly normalises it to `null` either way.
           legal_entity_type: isLegalEntityTypeCode(member.legalEntityType)
             ? member.legalEntityType
             : undefined,

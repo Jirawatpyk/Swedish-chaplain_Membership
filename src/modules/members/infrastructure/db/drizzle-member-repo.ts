@@ -62,6 +62,7 @@ import {
 import type { Contact, ContactId } from '../../domain/contact';
 import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
+import { isLegalEntityTypeCode } from '../../domain/value-objects/legal-entity-type';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
 import { asMemberNumber, parseMemberNumberQuery } from '../../domain/value-objects/member-number';
@@ -77,7 +78,25 @@ function rowToMember(row: MemberRow): Member {
     // value: a loud backstop if a direct-INSERT bypass ever writes a bad row.
     memberNumber: asMemberNumber(row.memberNumber),
     companyName: row.companyName,
-    legalEntityType: row.legalEntityType,
+    // Review fix (Finding 1) — the DB column is a plain `text` (never
+    // migrated to an enum; the catalogue is application-layer only), so a
+    // row is `string | null` at read time. A row written BEFORE Task 3b's
+    // closure (or via any future bypass) may hold an out-of-catalogue
+    // value. Rather than `as LegalEntityTypeCode` (which would silently
+    // masquerade a bad value as a valid code) or throwing (which would
+    // crash the member page on a legacy row), an unrecognised value reads
+    // as `null` here. This DOES change what a legacy out-of-catalogue row
+    // renders as: `resolveLegalEntityTypeLabel` (presentation layer) is
+    // called with `member.legalEntityType` from THIS function at every
+    // read site (admin detail page, portal profile page, the admin API's
+    // `_serialise.ts`) — none of them read the raw column independently —
+    // so such a row now shows "not recorded" instead of the raw stored
+    // string. Accepted: `members` is EMPTY in production (wiped
+    // 2026-07-12), so no such row exists today; a HONEST, non-crashing
+    // `null` beats a silently-mistyped value.
+    legalEntityType: isLegalEntityTypeCode(row.legalEntityType)
+      ? row.legalEntityType
+      : null,
     country: row.country as IsoCountryCode,
     taxId: row.taxId as TaxId | null,
     // 088 US3 — §86/4 Head-Office / Branch particular. Always populated from the

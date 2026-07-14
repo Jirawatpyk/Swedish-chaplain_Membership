@@ -16,6 +16,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { unsafeBrandTenantSlug, type TenantSlug } from '@/modules/tenants';
 import type { IsoCountryCode } from './value-objects/iso-country-code';
+import type { LegalEntityTypeCode } from './value-objects/legal-entity-type';
 import type { MemberNumber } from './value-objects/member-number';
 import type { TaxId } from './value-objects/tax-id';
 import { isUuid } from './value-objects/uuid';
@@ -143,7 +144,14 @@ export type Member = {
   readonly memberId: MemberId;
   readonly memberNumber: MemberNumber;
   readonly companyName: string;
-  readonly legalEntityType: string | null;
+  /**
+   * 059 / PR-A Task 3b (review fix) — closed to the 12-code catalogue at the
+   * Application boundary (create/update-member zod schemas) so a direct API
+   * caller cannot smuggle an arbitrary string past the admin form's Select.
+   * `null` = genuinely unset (10 of TSCC's 150 members have no recorded
+   * type) — never inferred, never defaulted.
+   */
+  readonly legalEntityType: LegalEntityTypeCode | null;
   readonly country: IsoCountryCode;
   readonly taxId: TaxId | null;
   /**

@@ -1131,7 +1131,7 @@
         "fields": {
           "memberNumber": "Member Number",
           "memberId": "Member ID",
-          "legalEntityType": "Legal entity type",
+          "legalEntityType": "Member Type",
           "country": "Country",
           "taxId": "Tax ID",
           "website": "Website",
@@ -5189,7 +5189,7 @@
         "memberNumber": "Member Number",
         "memberNumberCopy": "Copy member number",
         "companyName": "Company Name",
-        "legalEntityType": "Legal Entity Type",
+        "legalEntityType": "Member Type",
         "country": "Country",
         "website": "Website",
         "description": "Description",

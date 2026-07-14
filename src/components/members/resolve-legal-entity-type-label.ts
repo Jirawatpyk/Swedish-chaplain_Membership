@@ -13,12 +13,23 @@ import type { getTranslations } from 'next-intl/server';
  * catalogue going forward, but does not backfill or constrain the DATABASE
  * column — a row saved through the old free-text `<Input>` before this fix
  * shipped may still carry an arbitrary string, a typo, mixed case, or stray
- * whitespace. This resolver's normalise-then-fall-back-to-raw behaviour is
- * what makes THAT harmless: it normalises the stored value to a
+ * whitespace. This resolver's normalise-then-fall-back-to-raw behaviour
+ * handles that gracefully: it normalises the stored value to a
  * `lower_snake_case` key and looks it up in `legalEntityTypes.*`; a miss
  * falls back to the raw stored value verbatim (a `t()` call on an unmapped
  * key logs a noisy MISSING_MESSAGE, so guard with `.has` first — same
  * pattern as `timeline-event-item.tsx`).
+ *
+ * Review fix (Task 3b review, Finding 1) — `legal_entity_type` is now ALSO
+ * closed at the Application boundary (create/update-member zod schemas),
+ * and `drizzle-member-repo.ts`'s `rowToMember` narrows an out-of-catalogue
+ * DB value to `null` on every read. Both known call sites of this resolver
+ * (admin member-detail page, portal profile page) pass the Domain
+ * `Member.legalEntityType`, so the raw-string fallback below is currently
+ * unreachable through them — a legacy out-of-catalogue row now resolves to
+ * `null` (raw === null) upstream of this function, not to this fallback.
+ * The fallback stays as defense-in-depth for any future caller that reads
+ * the raw column directly (bypassing the repo narrowing).
  */
 export function resolveLegalEntityTypeLabel(
   raw: string | null,
