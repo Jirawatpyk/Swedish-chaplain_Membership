@@ -1125,7 +1125,8 @@
           "association": "Förening",
           "government": "Myndighet",
           "branch": "Filialkontor",
-          "representative_office": "Representationskontor"
+          "representative_office": "Representationskontor",
+          "state_enterprise": "Statligt bolag"
         },
         "fields": {
           "memberNumber": "Medlemsnummer",

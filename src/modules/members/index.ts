@@ -109,6 +109,13 @@ export {
   type OverrideReasonError,
 } from './domain/value-objects/override-reason';
 
+export {
+  LEGAL_ENTITY_TYPES,
+  VAT_DEFAULT_BY_CODE,
+  isLegalEntityTypeCode,
+  type LegalEntityTypeCode,
+} from './domain/value-objects/legal-entity-type';
+
 // --- Application use cases ----------------------------------------------------
 
 export {

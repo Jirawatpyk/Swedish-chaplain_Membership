@@ -1125,7 +1125,8 @@
           "association": "สมาคม",
           "government": "หน่วยงานรัฐ",
           "branch": "สำนักงานสาขา",
-          "representative_office": "สำนักงานผู้แทน"
+          "representative_office": "สำนักงานผู้แทน",
+          "state_enterprise": "รัฐวิสาหกิจ"
         },
         "fields": {
           "memberNumber": "หมายเลขสมาชิก",

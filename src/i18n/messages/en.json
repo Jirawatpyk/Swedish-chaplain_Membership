@@ -1125,7 +1125,8 @@
           "association": "Association",
           "government": "Government body",
           "branch": "Branch office",
-          "representative_office": "Representative office"
+          "representative_office": "Representative office",
+          "state_enterprise": "State enterprise"
         },
         "fields": {
           "memberNumber": "Member Number",
