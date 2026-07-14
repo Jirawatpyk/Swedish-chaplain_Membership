@@ -1365,6 +1365,7 @@
           "addressIncompleteJumpLink": "Complete the address",
           "isVatRegistered": "This member is registered for VAT",
           "isVatRegisteredHint": "VAT registration follows turnover (over 1.8M THB/year), not legal form — a sole proprietor can be registered and a company need not be. Record what is true, do not infer it from the entity type.",
+          "art14AttestationLabel": "I have informed this person that the chamber holds their contact details, and where to find the chamber's privacy policy.",
           "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",
           "branchCode": "Branch code",
           "branchCodeHint": "5-digit RD branch code, e.g. 00001",
@@ -1404,7 +1405,8 @@
             "branchOnNonRegistrant": "A branch code applies only to a VAT registrant. Tick \"This member is registered for VAT\" first.",
             "headOfficeBranchCodeMismatch": "A head office must not have a branch code, and a branch must have a 5-digit branch code. Check the head-office/branch setting together with the branch code.",
             "taxIdRequiredForRegistrant": "A VAT-registered member must have a Tax ID.",
-            "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact."
+            "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact.",
+            "art14AttestationRequired": "Confirm you have informed this person before adding them as a secondary contact."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -1467,6 +1469,8 @@
         "emailEditNote": "This contact is linked to a portal account, so this email is a sign-in identity. To change it, use the member's Edit page (it sends a verification email).",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
+        "art14AttestationLabel": "I have informed this person that the chamber holds their contact details, and where to find the chamber's privacy policy.",
+        "art14AttestationRequired": "Confirm you have informed this person before adding this contact.",
         "partialSave": "Email updated, but the other changes couldn't be saved. Please retry them.",
         "submit": "Save",
         "submitting": "Saving…",

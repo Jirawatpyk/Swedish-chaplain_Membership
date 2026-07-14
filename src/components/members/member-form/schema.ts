@@ -268,6 +268,15 @@ export function buildMemberFormSchema(
         }),
       role_title: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
       preferred_language: z.enum(['en', 'th', 'sv']),
+      // Task 8 (GDPR Art. 14) — the admin must attest they informed this
+      // third party before the secondary contact can be submitted. Mounted
+      // via `Controller` with `defaultValue={false}` (SecondaryContactSection
+      // has no `useForm` defaultValues entry for a freshly-expanded fieldset,
+      // same trap `preferred_language` avoids above), so this always sees a
+      // real boolean rather than `undefined`.
+      art14_attested: z
+        .boolean()
+        .refine((v) => v === true, { message: tf('errors.art14AttestationRequired') }),
     })
     .optional(),
   }).superRefine((data, ctx) => {

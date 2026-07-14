@@ -1,0 +1,60 @@
+-- Task 8 — GDPR Art. 14 attestation for third-party contacts.
+--
+-- A secondary contact (member-create form) or a contact added via the Edit
+-- page's "Add contact" dialog is a NAMED NATURAL PERSON whose data we obtain
+-- from a THIRD PARTY (the admin), not from the person themselves. GDPR
+-- Art. 14 requires that person be informed within one month. We do not email
+-- them (no code path contacts them), so the product decision (2026-07-14) is
+-- to rest on Art. 14(5)(a) — the exception where the data subject already
+-- has the information — and require the admin to ATTEST, at the moment of
+-- collection, that they have informed the person. A checkbox that only lives
+-- in the browser proves nothing a month later, so the attestation + its
+-- timestamp are persisted here.
+--
+-- NULL for the member's own primary contact (a first-party relationship —
+-- the member supplied their own representative's details; Art. 14 does not
+-- apply) and for any contact collected before this migration (no attestation
+-- control existed yet; nothing is backfilled — see below). A real timestamp
+-- for any contact an admin adds on someone else's behalf, going forward.
+--
+-- DELIBERATELY NO CHECK CONSTRAINT correlating this column with
+-- `is_primary`. Two reasons, both load-bearing:
+--
+--   1. Historical data. The `dev` Neon branch already carries non-primary
+--      contacts created before this control existed (verified via direct
+--      query before writing this migration: 2 live + 3 removed rows on
+--      tenant `swecham`, oldest from 2026-04-23). A hard
+--      `is_primary = FALSE ⇒ art14_attested_at IS NOT NULL` CHECK would
+--      either reject the ALTER TABLE outright, or require inventing a
+--      "cutover timestamp" grandfather clause
+--      (`... OR created_at < '<migration date>'`) — a magic constant baked
+--      into the schema that every future reader has to understand. Neither
+--      backfilling a fabricated attestation timestamp for these rows nor a
+--      buried cutover date is acceptable for a compliance record: the first
+--      is dishonest (nobody actually attested), the second is a maintenance
+--      trap (see 0232 → 0236, where a CHECK's 3-valued-logic gap shipped
+--      once already).
+--
+--   2. `is_primary` is MUTABLE (`promotePrimaryInTx` demotes the current
+--      primary and promotes another contact, in the SAME transaction, with
+--      no attestation input). A correlated CHECK would break that live
+--      feature both ways:
+--        - Promoting a secondary contact that already carries an
+--          attestation to primary would violate an
+--          "is_primary=TRUE ⇒ NULL" leg unless promotePrimaryInTx also
+--          NULLs the column — destroying the historical collection record.
+--        - Demoting the current primary to non-primary would violate an
+--          "is_primary=FALSE ⇒ NOT NULL" leg — that contact was created as
+--          primary (attestation always NULL by design) and demotion cannot
+--          retroactively fabricate an attestation that never occurred.
+--      `art14_attested_at` records HOW the data was ORIGINALLY collected,
+--      not who is CURRENTLY primary — the two are intentionally decoupled,
+--      so no CHECK should try to keep them in lock-step.
+--
+-- Enforcement of "an admin must tick the attestation box before a
+-- third-party contact is created" therefore lives at the APPLICATION layer
+-- (zod `z.literal(true)` gates in create-member.ts's secondary_contact
+-- schema and contact-crud.ts's addContactSchema) — the two collection entry
+-- points, closed by construction. This column is the durable evidence of
+-- that gate having fired, not the gate itself.
+ALTER TABLE "contacts" ADD COLUMN "art14_attested_at" timestamp with time zone;

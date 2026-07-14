@@ -101,6 +101,34 @@ export type Contact = {
    * is still sent and the flag persists until a retry.
    */
   readonly inviteBouncedAt: Date | null;
+  /**
+   * GDPR Art. 14 attestation (Task 8, product decision 2026-07-14) — the
+   * moment an admin confirmed they informed this THIRD PARTY (whose data
+   * was collected from the admin, not from the person themselves) that
+   * their details are held by the chamber. We do not email this person
+   * (no code path contacts them), so we rest on Art. 14(5)(a) — the
+   * exception where the data subject already has the information — and
+   * require the admin to attest to that fact at the moment of collection.
+   *
+   * A point-in-time COMPLIANCE RECORD of the ORIGINAL collection event,
+   * not a live "is this currently a primary contact" flag:
+   *   - NULL for the member's own primary contact — a first-party
+   *     relationship (the member supplied their own representative's
+   *     details at onboarding), so Art. 14 does not apply. Also NULL for
+   *     any contact collected before this control existed.
+   *   - A real timestamp for any contact added ON SOMEONE ELSE'S BEHALF
+   *     by an admin (a secondary contact at member creation, or any
+   *     contact added via the member Edit page's "Add contact" dialog).
+   *
+   * Deliberately NEVER re-derived from `isPrimary`: a contact that is
+   * later promoted to / demoted from primary (`promotePrimaryInTx`) does
+   * NOT get this value rewritten — promotion doesn't erase the historical
+   * fact of how the data was originally obtained, and demotion cannot
+   * retroactively fabricate an attestation that never happened. See
+   * `drizzle-contact-repo.ts` `promotePrimaryInTx` for why this rules out
+   * a DB CHECK correlating this column with `isPrimary`.
+   */
+  readonly art14AttestedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & ContactPrimacy;

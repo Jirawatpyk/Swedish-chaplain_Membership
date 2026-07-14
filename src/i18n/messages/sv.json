@@ -1365,6 +1365,7 @@
           "addressIncompleteJumpLink": "Fyll i adressen",
           "isVatRegistered": "Denna medlem är momsregistrerad",
           "isVatRegisteredHint": "Momsregistrering styrs av omsättningen (över 1,8 miljoner THB/år), inte av den juridiska formen — en enskild näringsidkare kan vara registrerad och ett bolag behöver inte vara det. Ange det som faktiskt gäller, härled det inte från den juridiska typen.",
+          "art14AttestationLabel": "Jag har informerat denna person om att kammaren har sparat deras kontaktuppgifter, och var de kan hitta kammarens sekretesspolicy.",
           "isHeadOffice": "Denna medlem är huvudkontoret (สำนักงานใหญ่)",
           "branchCode": "Filialkod",
           "branchCodeHint": "5-siffrig filialkod (RD), t.ex. 00001",
@@ -1404,7 +1405,8 @@
             "branchOnNonRegistrant": "En filialkod gäller endast en momsregistrerad. Kryssa först i \"Denna medlem är momsregistrerad\".",
             "headOfficeBranchCodeMismatch": "Ett huvudkontor får inte ha en filialkod, och en filial måste ha en 5-siffrig filialkod. Kontrollera inställningen för huvudkontor/filial tillsammans med filialkoden.",
             "taxIdRequiredForRegistrant": "En momsregistrerad medlem måste ha ett skatte-ID.",
-            "secondaryEmailSameAsPrimary": "Denna e-postadress är samma som den primära kontaktens. Använd en annan adress, eller ta bort den sekundära kontakten."
+            "secondaryEmailSameAsPrimary": "Denna e-postadress är samma som den primära kontaktens. Använd en annan adress, eller ta bort den sekundära kontakten.",
+            "art14AttestationRequired": "Bekräfta att du har informerat denna person innan du lägger till dem som sekundär kontakt."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
@@ -1467,6 +1469,8 @@
         "emailEditNote": "Den här kontakten är kopplad till ett portalkonto, så e-postadressen är en inloggningsidentitet. Ändra den på medlemmens redigeringssida (ett verifieringsmejl skickas).",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
+        "art14AttestationLabel": "Jag har informerat denna person om att kammaren har sparat deras kontaktuppgifter, och var de kan hitta kammarens sekretesspolicy.",
+        "art14AttestationRequired": "Bekräfta att du har informerat denna person innan du lägger till kontakten.",
         "partialSave": "E-postadressen uppdaterades, men de övriga ändringarna kunde inte sparas. Försök igen med dem.",
         "submit": "Spara",
         "submitting": "Sparar…",

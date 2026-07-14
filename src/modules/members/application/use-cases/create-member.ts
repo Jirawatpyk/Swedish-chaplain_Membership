@@ -107,6 +107,13 @@ export const createMemberSchema = z.object({
       phone: z.string().max(20).nullable().optional(),
       role_title: z.string().max(100).nullable().optional(),
       preferred_language: z.enum(['en', 'th', 'sv']),
+      // Task 8 (GDPR Art. 14) — a secondary contact's data is supplied by
+      // the admin, not by the person themselves (a third party). The admin
+      // must attest they informed that person before this write proceeds.
+      // `z.literal(true)` (not `z.boolean()`) so `false`/`undefined`/any
+      // other value fails validation — server-side enforcement so a direct
+      // API call cannot skip the UI checkbox.
+      art14_attested: z.literal(true),
     })
     .optional(),
   override_reason_code: z.enum(OVERRIDE_REASON_CODES).nullable().optional(),
@@ -319,6 +326,11 @@ export async function createMember(
       dateOfBirth: null,
       linkedUserId: null,
       inviteBouncedAt: null,
+      // Task 8 — the zod `art14_attested: z.literal(true)` gate above has
+      // already refused this request unless the admin attested. `clock.now()`
+      // (not a bare `new Date()`) for consistency with `regDate` below and so
+      // a fake clock in tests observes a deterministic attestation moment.
+      art14AttestedAt: deps.clock.now(),
       removedAt: null,
     };
   }
@@ -447,6 +459,11 @@ export async function createMember(
       : null,
     linkedUserId: null,
     inviteBouncedAt: null,
+    // Task 8 — the primary contact is a first-party relationship (the
+    // member supplied their own representative's details), so GDPR Art. 14
+    // does not apply. Always NULL — never re-derive this from `isPrimary`
+    // elsewhere; see `Contact.art14AttestedAt` (domain/contact.ts).
+    art14AttestedAt: null,
     removedAt: null,
   };
 

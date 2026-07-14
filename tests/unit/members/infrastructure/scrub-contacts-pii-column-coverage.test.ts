@@ -54,6 +54,7 @@ const KEPT = new Set<string>([
   'createdAt', // record-keeping
   'linkedUserId', // F1-binding (erasure deferred to US2 — retained intentionally)
   'inviteBouncedAt', // low-PII timestamp (no identifier, just a bounce marker)
+  'art14AttestedAt', // Task 8: compliance evidence, no PII — retained on erasure
 ]);
 
 describe('contacts scrub — column-coverage allowlist guard (COMP-1 US1)', () => {

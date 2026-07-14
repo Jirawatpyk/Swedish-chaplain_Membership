@@ -77,6 +77,7 @@ const baseContact: Contact = {
   dateOfBirth: null,
   linkedUserId: 'user-1' as Contact['linkedUserId'],
   inviteBouncedAt: null,
+  art14AttestedAt: null,
   removedAt: null,
   createdAt: now,
   updatedAt: now,

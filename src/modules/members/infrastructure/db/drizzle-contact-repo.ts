@@ -41,6 +41,7 @@ export function rowToContact(c: typeof contacts.$inferSelect): Contact {
     dateOfBirth: c.dateOfBirth ? new Date(c.dateOfBirth) : null,
     linkedUserId: c.linkedUserId as UserId | null,
     inviteBouncedAt: c.inviteBouncedAt ?? null,
+    art14AttestedAt: c.art14AttestedAt ?? null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     // M5: narrow into the correlated primacy union (isPrimary ⟹ not removed).
@@ -117,6 +118,7 @@ export const drizzleContactRepo: ContactRepo = {
           isPrimary: draft.isPrimary,
           dateOfBirth: draft.dateOfBirth?.toISOString().slice(0, 10) ?? null,
           linkedUserId: draft.linkedUserId,
+          art14AttestedAt: draft.art14AttestedAt,
           removedAt: null,
         })
         .returning();
@@ -389,6 +391,17 @@ export const drizzleContactRepo: ContactRepo = {
       // survival hole (a failed F1 erasure could never be re-driven → the
       // erased member's login stays alive forever). The invariant is guarded by
       // `erase-member-linked-user-shadow.test.ts`.
+      //
+      // `art14_attested_at` is ALSO DELIBERATELY absent from this .set() — it
+      // is NOT scrubbed/NULLed. GDPR Art. 17 (erasure) requires removing the
+      // data subject's PII, which this column is not: it carries only a
+      // timestamp, no name/email/identifier of who attested or was informed
+      // (those already went to sentinels above). It is retained as the
+      // durable EVIDENCE that the Art. 14 notice obligation was met for this
+      // contact before erasure — deleting the proof of compliance would be
+      // counter-productive to the very regulation this scrub exists to
+      // satisfy. Classified KEPT (not SCRUBBED) in
+      // `scrub-contacts-pii-column-coverage.test.ts`.
       const updated = await tx
         .update(contacts)
         .set({
@@ -438,6 +451,16 @@ export const drizzleContactRepo: ContactRepo = {
 
   async promotePrimaryInTx(tx, memberId, newPrimaryContactId) {
     try {
+      // Task 8 — neither the demote nor the promote UPDATE below touches
+      // `art14_attested_at`. That column records HOW a contact's data was
+      // ORIGINALLY collected (first-party at member creation vs. third-party
+      // via an admin), not who is currently primary, so it is intentionally
+      // left untouched by a primacy change: promoting a previously-attested
+      // secondary contact must not erase the historical collection record,
+      // and demoting the current primary cannot retroactively fabricate an
+      // attestation that never happened (they were created as primary, so it
+      // was always NULL). See migration 0249 for why this also rules out a
+      // DB CHECK correlating this column with `is_primary`.
       // Demote current primary FIRST (partial unique index constraint)
       const demoted = await tx
         .update(contacts)

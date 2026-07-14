@@ -5,7 +5,7 @@
  * ADD must surface inline on #cf-email (aria-invalid + message) with focus, not
  * a toast. Rendered against real en.json with a mocked fetch.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -13,6 +13,21 @@ import {
   ContactFormDialog,
   type ContactInitial,
 } from '@/components/members/contact-form-dialog';
+
+// Task 8 (GDPR Art. 14 checkbox) — Base UI Checkbox uses PointerEvent
+// internally; jsdom lacks it. Same polyfill as members-table-selection.test.tsx.
+beforeAll(() => {
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -268,6 +283,9 @@ describe('ContactFormDialog — inline email-taken', () => {
     fireEvent.change(document.querySelector('#cf-email')!, {
       target: { value: 'dup@example.com' },
     });
+    // Task 8 (GDPR Art. 14) — ADD mode requires the attestation checkbox;
+    // without it the client schema blocks submit before `fetch` ever runs.
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
     fireEvent.submit(document.querySelector('form')!);
 
     await waitFor(() =>
@@ -304,6 +322,9 @@ describe('ContactFormDialog — retryable 503 (G24)', () => {
     fireEvent.change(document.querySelector('#cf-email')!, {
       target: { value: 'new@example.com' },
     });
+    // Task 8 (GDPR Art. 14) — ADD mode requires the attestation checkbox;
+    // without it the client schema blocks submit before `fetch` ever runs.
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
     fireEvent.submit(document.querySelector('form')!);
 
     await waitFor(() => expect(toastError).toHaveBeenCalled());

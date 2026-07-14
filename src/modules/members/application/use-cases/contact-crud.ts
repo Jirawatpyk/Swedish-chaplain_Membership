@@ -44,6 +44,14 @@ export const addContactSchema = z.object({
   role_title: z.string().max(100).nullable().optional(),
   preferred_language: z.enum(['en', 'th', 'sv']).default('en'),
   date_of_birth: z.string().nullable().optional(),
+  // Task 8 (GDPR Art. 14) — every contact added through this use case is
+  // non-primary (isPrimary is hardcoded false below), i.e. a named third
+  // party whose data the ADMIN is supplying, not the person themselves. The
+  // admin must attest they informed that person before this write is
+  // allowed to proceed. `z.literal(true)` (not `z.boolean()`) so `false`,
+  // `undefined`, and any other value all fail validation — server-side
+  // enforcement so a direct API call cannot skip the UI checkbox.
+  art14_attested: z.literal(true),
 });
 
 export const updateContactFieldsSchema = z
@@ -131,6 +139,12 @@ export async function addContact(
         dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
         linkedUserId: null,
         inviteBouncedAt: null,
+        // Task 8 — the zod `art14_attested: z.literal(true)` gate above has
+        // already refused this call unless the admin attested; stamp the
+        // real moment of attestation (not the checkbox click time on the
+        // client, which we don't trust — this is the server-observed time
+        // the write actually happened).
+        art14AttestedAt: new Date(),
         removedAt: null,
       });
       // W1: throw-to-rollback — a `return err(...)` here would commit

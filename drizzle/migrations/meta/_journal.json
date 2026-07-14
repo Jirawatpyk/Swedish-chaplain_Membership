@@ -1744,6 +1744,13 @@
 			"when": 1798537900000,
 			"tag": "0248_members_branch_requires_vat_registrant",
 			"breakpoints": true
+		},
+		{
+			"idx": 252,
+			"version": "7",
+			"when": 1798538000000,
+			"tag": "0249_contacts_art14_attestation",
+			"breakpoints": true
 		}
 	]
 }

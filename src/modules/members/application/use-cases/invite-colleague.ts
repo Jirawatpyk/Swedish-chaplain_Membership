@@ -162,6 +162,19 @@ export async function inviteColleague(
     dateOfBirth: null,
     linkedUserId: null,
     inviteBouncedAt: null,
+    // Task 8 (GDPR Art. 14) — this also collects a non-primary contact's
+    // data from a third party (the inviting admin), the same shape as the
+    // two entry points Task 8 closed (create-member secondary contact,
+    // Edit-page addContact). It is OUT OF SCOPE here — Task 8 named exactly
+    // those two paths — but is deliberately NOT treated as equivalent: this
+    // flow immediately sends the invited person a real invitation email
+    // they must act on, which is a materially different information-flow
+    // from the two silent-collection paths this task closes. Left `null`
+    // (no attestation occurred — no checkbox exists on this flow) rather
+    // than fabricating a timestamp. Flagged as a residual for a follow-up
+    // product decision: whether the invitation email's content already
+    // satisfies Art. 14 notice, or whether this path also needs the gate.
+    art14AttestedAt: null,
     removedAt: null,
   };
 

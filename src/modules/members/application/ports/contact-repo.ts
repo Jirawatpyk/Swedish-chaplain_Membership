@@ -59,6 +59,13 @@ export interface ContactRepo {
    * audit events — the caller is responsible for writing the matching
    * `contact_created` audit via `AuditPort.recordInTx` so Application-
    * layer ownership of audit emission is preserved (Principle III, S1).
+   *
+   * `draft.art14AttestedAt` (Task 8, GDPR Art. 14) is the caller's
+   * responsibility to set correctly BEFORE calling this method: `null` for
+   * the member's own primary contact, a real timestamp for any contact
+   * collected on someone else's behalf. This port does not gate or default
+   * it — see `Contact.art14AttestedAt` (domain/contact.ts) for the full
+   * invariant.
    */
   addInTx(
     tx: TenantTx,

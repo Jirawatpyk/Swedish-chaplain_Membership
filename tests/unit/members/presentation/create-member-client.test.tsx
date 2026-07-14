@@ -38,6 +38,10 @@ const h = vi.hoisted(() => ({
       last_name: 'D',
       email: 'c@d.com',
       preferred_language: 'en',
+      // Task 8 (GDPR Art. 14) — the client schema already blocks submit
+      // unless this is checked; the stub payload mirrors what a real
+      // validated submit would carry.
+      art14_attested: true,
     },
   },
 }));
@@ -250,6 +254,7 @@ describe('CreateMemberClient orchestration', () => {
       phone: null,
       role_title: null,
       preferred_language: 'en',
+      art14_attested: true,
     });
   });
 });

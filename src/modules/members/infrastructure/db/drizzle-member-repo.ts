@@ -293,6 +293,7 @@ async function insertContactRow(
       isPrimary,
       dateOfBirth: contact.dateOfBirth?.toISOString().slice(0, 10) ?? null,
       linkedUserId: contact.linkedUserId,
+      art14AttestedAt: contact.art14AttestedAt,
       removedAt: null,
     })
     .returning();

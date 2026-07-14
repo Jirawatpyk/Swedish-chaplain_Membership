@@ -279,6 +279,12 @@ export async function inviteUserForMember(
           dateOfBirth: null,
           linkedUserId: null,
           inviteBouncedAt: null,
+          // Task 8 (GDPR Art. 14) residual — same reasoning as
+          // invite-colleague.ts: this path also sends the new contact a real
+          // invitation email, a different information-flow from the two
+          // silent-collection paths Task 8 closes. Left `null` rather than
+          // fabricated; flagged for a follow-up product decision.
+          art14AttestedAt: null,
           removedAt: null,
         };
         const added = await deps.contactRepo.addInTx(tx, contactDraft);

@@ -64,6 +64,7 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
     dateOfBirth: null,
     linkedUserId: userId as Contact['linkedUserId'],
     inviteBouncedAt: bouncedAt,
+    art14AttestedAt: new Date('2026-01-01T00:00:00Z'),
     isPrimary: false,
     removedAt: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),

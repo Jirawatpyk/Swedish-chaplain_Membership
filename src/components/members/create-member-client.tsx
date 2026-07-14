@@ -105,6 +105,11 @@ function toPayload(
       phone: values.secondary_contact.phone?.trim() || null,
       role_title: values.secondary_contact.role_title?.trim() || null,
       preferred_language: values.secondary_contact.preferred_language,
+      // Task 8 (GDPR Art. 14) — the client zod schema already blocked submit
+      // unless this was checked (schema.ts refine), so this is always `true`
+      // here; forwarded so the server's own `z.literal(true)` gate (defense
+      // in depth for a direct API call) sees it.
+      art14_attested: values.secondary_contact.art14_attested,
     };
   }
   if (opts.confirmSoftDuplicate) payload.confirm_soft_duplicate = true;

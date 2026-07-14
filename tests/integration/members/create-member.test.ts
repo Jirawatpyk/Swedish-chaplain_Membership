@@ -383,6 +383,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Svensson',
         email: `bjorn-${randomUUID().slice(0, 8)}@example.com`,
         preferred_language: 'sv' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -410,6 +411,13 @@ describe('create-member integration (T041, US1)', () => {
     expect(primary?.email).toBe(input.primary_contact.email);
     expect(secondary?.email).toBe(input.secondary_contact.email);
     expect(secondary?.preferredLanguage).toBe('sv');
+
+    // Task 8 (GDPR Art. 14) — the primary contact is first-party (member
+    // supplied their own representative), so NULL; the secondary contact's
+    // data came from the admin, so its attestation was recorded.
+    expect(primary?.art14AttestedAt).toBeNull();
+    expect(secondary?.art14AttestedAt).not.toBeNull();
+    expect(secondary?.art14AttestedAt).toBeInstanceOf(Date);
 
     // Both contacts got their OWN contact_created audit row, in the SAME tx.
     const auditRows = await db
@@ -441,6 +449,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Email',
         email: sharedEmail,
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -466,6 +475,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Email',
         email: 'not-an-email',
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -511,6 +521,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Secondary',
         email: collidingEmail,
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
