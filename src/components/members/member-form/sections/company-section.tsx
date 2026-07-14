@@ -140,8 +140,18 @@ export function CompanySection({
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
-          <div className="flex items-center gap-1">
-            <Label htmlFor="legal_entity_type">{tf('legalEntityType')}</Label>
+          {/* The gap below the label lives on THIS wrapper, and the Label is
+            * reset to `mb-0`. `ui/label.tsx` ships `mb-[var(--field-label-gap)]`
+            * on the Label itself — fine when the Label is the block above its
+            * control (every other field here), but inside a flex row that
+            * bottom margin is trapped IN the row: it inflates the row, so
+            * `items-center` drops the help icon below the label text, and it
+            * leaves no gap at all before the Select. Moving it out restores
+            * both. */}
+          <div className="mb-[var(--field-label-gap)] flex items-center gap-1">
+            <Label htmlFor="legal_entity_type" className="mb-0">
+              {tf('legalEntityType')}
+            </Label>
             {/* 059 / PR-A Task 3b — reviewer feedback item #3 asked for an
               * explanation of each type. Tap-discoverable Popover (not a
               * hover Tooltip — must work on mobile), same pattern as the
@@ -156,19 +166,33 @@ export function CompanySection({
               * explicit anyway: harmless, and it removes the dependency on
               * that Base UI internal for anyone reading this in isolation. */}
             <Popover>
-              {/* `-my-3` is load-bearing, not cosmetic. The 44×44 box is a
-                * WCAG 2.2 SC 2.5.8 target — and `members-target-size-2-2.spec.ts`
-                * asserts it via `boundingBox()`, so the ELEMENT must really be
-                * 44px (a pseudo-element hit area would measure 20px and fail the
-                * gate). But at its natural size it also makes this label row 44px
-                * tall while every sibling field's row is a bare ~20px <Label>,
-                * which pushed the whole Select ~24px below its row-mates. The
-                * negative margin pulls the surplus back out of the flow: the box
-                * stays 44px, its CONTRIBUTION to the row is 20px. */}
+              {/* `size-6` + `-my-2` — both load-bearing; the geometry is tight
+                * and every other combination breaks something visible.
+                *
+                * Two constraints have to hold at once:
+                *   1. The button must not GROW the label row. The Label is
+                *      `leading-none`, so the row is only ~14px; any flex item
+                *      whose outer height exceeds that pushes the Select down and
+                *      this field falls out of line with `country` / `tax_id`
+                *      beside it. `-my-2` cuts the 24px box to an 8px outer
+                *      height — under the label — so the row height is decided by
+                *      the Label alone, exactly as in every sibling field.
+                *   2. The button must not REACH the Select. Centred in a ~14px
+                *      row, a 24px box overhangs ~5px, which fits inside
+                *      `--field-label-gap` (6px). At 32px it overhangs 9px and at
+                *      44px, 15px — both land on the Select and swallow clicks
+                *      along its top edge.
+                *
+                * 24px is not an arbitrary shrink: it is exactly WCAG 2.2
+                * SC 2.5.8's minimum, and exactly `MIN_TARGET_PX` in
+                * `tests/e2e/members-target-size-2-2.spec.ts`, which measures the
+                * real box via `boundingBox()` — so the element must genuinely BE
+                * 24px. A pseudo-element hit area would report the 16px icon and
+                * fail that gate. */}
               <PopoverTrigger
                 type="button"
                 aria-label={tf('legalEntityTypeHelpAriaLabel')}
-                className="-my-3 inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="-my-2 inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <HelpCircleIcon className="size-4" aria-hidden="true" />
               </PopoverTrigger>
