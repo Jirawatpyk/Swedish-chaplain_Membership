@@ -160,6 +160,7 @@ function settings(): TenantInvoiceSettingsView {
     defaultNetDays: 30,
     proRatePolicy: 'monthly',
     autoEmailEnabled: false,
+    brandName: null,
     identity: Object.freeze({
       legal_name_th: 'หอการค้าไทย-สวีเดน',
       legal_name_en: 'Thailand-Swedish Chamber of Commerce',

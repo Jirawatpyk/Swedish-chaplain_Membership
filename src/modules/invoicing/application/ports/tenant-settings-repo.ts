@@ -32,6 +32,11 @@ export interface TenantInvoiceSettingsView {
   readonly proRatePolicy: ProRatePolicy;
   readonly autoEmailEnabled: boolean;
   readonly identity: TenantIdentitySnapshot;
+  /**
+   * 064 — the tenant's SHORT / brand name (e.g. "SweCham"), printed as the prefix
+   * on the §86/4 membership line. Null when unset → the prefix is omitted.
+   */
+  readonly brandName: string | null;
 }
 
 /**

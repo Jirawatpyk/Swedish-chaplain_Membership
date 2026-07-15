@@ -57,6 +57,7 @@ function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoic
     defaultNetDays: row.defaultNetDays,
     proRatePolicy: asProRatePolicyUnsafe(row.proRatePolicy),
     autoEmailEnabled: row.autoEmailEnabled,
+    brandName: row.brandName ?? null,
     identity: Object.freeze({
       legal_name_th: row.legalNameTh,
       legal_name_en: row.legalNameEn,

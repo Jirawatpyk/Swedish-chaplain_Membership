@@ -136,6 +136,7 @@ function makeSettings(): TenantInvoiceSettingsView {
     defaultNetDays: 30,
     proRatePolicy: 'monthly',
     autoEmailEnabled: false, // suppress outbox enqueue noise from these contract assertions
+    brandName: null,
     identity: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
       legal_name_en: 'Thailand-Swedish Chamber of Commerce',

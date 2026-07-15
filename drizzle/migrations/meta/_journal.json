@@ -1772,6 +1772,13 @@
       "when": 1798538100000,
       "tag": "0253_contacts_art14_attestation",
       "breakpoints": true
+    },
+    {
+      "idx": 256,
+      "version": "7",
+      "when": 1798538200000,
+      "tag": "0254_tenant_brand_name",
+      "breakpoints": true
     }
   ]
 }
