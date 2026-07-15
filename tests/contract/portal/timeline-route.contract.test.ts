@@ -37,6 +37,20 @@ vi.mock('@/modules/members', () => ({
   TIMELINE_SOURCES: ['audit', 'invoice', 'payment', 'event', 'broadcast', 'renewal'],
   TIMELINE_ACTOR_KINDS: ['staff', 'member', 'system'],
 }));
+// 059-membership-suspension Task 7b — the route now calls checkPortalAccess
+// directly (same composition as requireMemberContext). Mocked here to an
+// always-allow stub so this contract suite stays a pure unit test (no live
+// Neon dependency) and keeps exercising only the route's own logic; the
+// gate's block/allow behaviour is covered live in
+// tests/integration/portal/gap-routes-access-gate.test.ts.
+const checkPortalAccessMock = vi.fn();
+vi.mock('@/lib/lapsed-portal-scope', () => ({
+  checkPortalAccess: (...a: unknown[]) => checkPortalAccessMock(...a),
+}));
+vi.mock('@/lib/portal-access-deps', () => ({
+  buildPortalAccessDeps: () => ({}),
+  toPortalAccessAction: (method: string) => method,
+}));
 
 const MEMBER_SESSION = { user: { id: 'member-user-1', role: 'member' }, session: { id: 's1' } };
 const OWN_MEMBER_ID = '00000000-0000-4000-8000-0000000000aa';
@@ -52,6 +66,7 @@ describe('GET /api/portal/timeline — route contract', () => {
     requireSessionMock.mockResolvedValue(MEMBER_SESSION);
     findByLinkedUserIdMock.mockResolvedValue(ok({ memberId: OWN_MEMBER_ID }));
     timelineListMock.mockResolvedValue(ok({ events: [], nextCursor: null, total: 0 }));
+    checkPortalAccessMock.mockResolvedValue({ allowed: true, reason: 'full' });
   });
   afterEach(() => vi.resetModules());
 

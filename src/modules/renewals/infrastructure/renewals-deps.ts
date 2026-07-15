@@ -93,6 +93,7 @@ import { makeDrizzleBounceEventQuery } from './drizzle/drizzle-bounce-event-quer
 import { drizzleReminderAuditQueryRepo } from './drizzle/drizzle-reminder-audit-query-repo';
 import { makeDrizzleTenantRenewalSettingsRepo } from './drizzle/drizzle-tenant-renewal-settings-repo';
 import { makeF5PaymentAttemptsBridgeDrizzle } from './ports-adapters/f5-payment-attempts-bridge-drizzle';
+import { makeInvoiceDueBridgeDrizzle } from './ports-adapters/invoice-due-bridge-drizzle';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 import { makeDrizzleTierUpgradeSuggestionRepo } from './drizzle/drizzle-tier-upgrade-suggestion-repo';
 import { makeDrizzleTierUpgradeEvalCandidateRepo } from './drizzle/drizzle-tier-upgrade-eval-candidate-repo';
@@ -148,6 +149,7 @@ import type { RenewalGateway } from '../application/ports/renewal-gateway';
 import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 import type { ReminderAuditQueryPort } from '../application/ports/reminder-audit-query-repo';
 import type { F5PaymentAttemptsBridge } from '../application/ports/f5-payment-attempts-bridge';
+import type { InvoiceDueBridge } from '../application/ports/invoice-due-bridge';
 import type { TenantRenewalSettingsRepo } from '../application/ports/tenant-renewal-settings-repo';
 import type { TierUpgradeSuggestionRepo } from '../application/ports/tier-upgrade-suggestion-repo';
 import type { TierUpgradeEvalCandidateRepo } from '../application/ports/tier-upgrade-eval-candidate-repo';
@@ -355,6 +357,18 @@ export interface RenewalsDeps {
    */
   readonly f5PaymentAttemptsBridge: F5PaymentAttemptsBridge;
   /**
+   * 059-membership-suspension Task 12 — F8 → F4 read-only bridge
+   * answering "does this member have an unpaid (`status='issued'`),
+   * not-yet-past-due membership invoice?". Task 13 consults this
+   * BEFORE the advisory-lock tx in `lapseCyclesOnGraceExpiry` (same
+   * calling convention as `f5PaymentAttemptsBridge`) to stop the lapse
+   * cron from suspending a member who is still inside a fresh
+   * invoice's credit window. NOT the Gate 7.5
+   * `hasUnreconciledPaidMembershipInvoice` query — that one selects the
+   * OPPOSITE (paid/partially_credited) statuses.
+   */
+  readonly invoiceDueBridge: InvoiceDueBridge;
+  /**
    * Round-5 review-finding M6 — deterministic time source. Use
    * `deps.clock.now()` instead of `new Date()` directly so test
    * fixtures can pin a specific instant via
@@ -438,6 +452,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     reminderAuditQuery: drizzleReminderAuditQueryRepo,
     tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
     f5PaymentAttemptsBridge: makeF5PaymentAttemptsBridgeDrizzle(tenant),
+    invoiceDueBridge: makeInvoiceDueBridgeDrizzle(tenant),
     clock: wallClock,
     tierUpgradeRepo: makeDrizzleTierUpgradeSuggestionRepo(tenant),
     tierUpgradeEvalCandidateRepo:

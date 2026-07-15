@@ -136,10 +136,16 @@ const messages = {
   },
 };
 
-function renderPalette(role: 'member' | 'admin' | 'manager' = 'member') {
+function renderPalette(
+  role: 'member' | 'admin' | 'manager' = 'member',
+  membershipAccess?: 'full' | 'suspended' | 'terminated',
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <MemberCommandPalette currentUserRole={role} />
+      <MemberCommandPalette
+        currentUserRole={role}
+        {...(membershipAccess !== undefined ? { membershipAccess } : {})}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -266,6 +272,26 @@ describe('<MemberCommandPalette>', () => {
         ),
       { timeout: 1500 },
     );
+  });
+
+  it('shows "Compose E-Blast" by default (membershipAccess omitted → full)', () => {
+    renderPalette('member');
+    triggerCtrlK();
+    expect(screen.getByText('Compose E-Blast')).toBeTruthy();
+  });
+
+  it('059-membership-suspension: hides "Compose E-Blast" when suspended (dead-end target)', () => {
+    renderPalette('member', 'suspended');
+    triggerCtrlK();
+    expect(screen.queryByText('Compose E-Blast')).toBeNull();
+    // "View E-Blast usage" stays — the Benefits page is open while suspended.
+    expect(screen.getByText('View E-Blast usage')).toBeTruthy();
+  });
+
+  it('059-membership-suspension: hides "Compose E-Blast" when terminated', () => {
+    renderPalette('member', 'terminated');
+    triggerCtrlK();
+    expect(screen.queryByText('Compose E-Blast')).toBeNull();
   });
 
   it('shows the allPaid-hint when zero invoices AND no query (F-04 fix)', async () => {

@@ -89,6 +89,7 @@ const testRows: MembersTableRow[] = [
     plan_display_name: 'Premium Corporate',
     status: 'active',
     membership_lapsed: false,
+    membership_suspended: false,
     engagement: null,
     last_activity_at: '2026-04-10T00:00:00Z',
     primary_contact: {
@@ -108,6 +109,7 @@ const testRows: MembersTableRow[] = [
     plan_display_name: 'Regular Corporate',
     status: 'active',
     membership_lapsed: false,
+    membership_suspended: false,
     engagement: null,
     last_activity_at: null,
     primary_contact: null,

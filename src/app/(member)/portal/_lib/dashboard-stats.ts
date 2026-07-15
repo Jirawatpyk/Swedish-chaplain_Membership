@@ -8,9 +8,9 @@
  */
 import {
   daysUntilExpiry,
-  isOverdue,
+  deriveMembershipAccess,
   isTerminalCycleStatus,
-  isMembershipLapsed,
+  type MembershipAccessReason,
   type RenewalCycle,
 } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
@@ -21,19 +21,35 @@ export type StatVariant = 'neutral' | 'warning' | 'destructive';
 export interface MembershipStat {
   /**
    * `empty` = first-run (no cycle); `active` = far off / still-covered / paid
-   * up (`completed`); `due`/`overdue` = act on a non-terminal cycle;
-   * `lapsed` = an ENDED-terminal cycle (`lapsed`/`cancelled`, NOT `completed`)
-   * whose coverage has ended → must renew; `error` = the renewal read failed
+   * up (`completed`); `due` = act soon on a non-terminal, not-yet-invoiced
+   * cycle; `suspended` = benefits paused (059-membership-suspension) — an
+   * unpaid invoice is outstanding (`reason: 'unpaid'`) or a payment is being
+   * verified (`reason: 'pending_review'`); `lapsed` = an ENDED-terminal
+   * cycle (`lapsed`/`cancelled`, NOT `completed`) whose coverage has ended →
+   * membership itself is terminated; `error` = the renewal read failed
    * (transient) — distinct from `empty` so a DB-throw is never shown as the
    * "Welcome aboard" first-run state.
+   *
+   * `overdue` is RETAINED on the union for type back-compat with existing
+   * consumers (`membership-stat-section.tsx`) but is no longer PRODUCED by
+   * `deriveMembershipStat` — the condition it used to capture (a non-
+   * terminal cycle past its expiry) is now fully absorbed into `suspended`
+   * per the 059 TSCC policy change ("grace no longer retains access").
    */
-  readonly kind: 'empty' | 'active' | 'due' | 'overdue' | 'lapsed' | 'error';
+  readonly kind: 'empty' | 'active' | 'due' | 'overdue' | 'lapsed' | 'suspended' | 'error';
   readonly variant: StatVariant;
   /** Days to expiry (negative = overdue), or null when no cycle / malformed / error. */
   readonly daysRemaining: number | null;
   /** Cycle status passed through for the card sub-line, or null. */
   readonly status: RenewalCycle['status'] | null;
   readonly expiryIso: string | null;
+  /**
+   * 059-membership-suspension — the `deriveMembershipAccess` sub-reason,
+   * load-bearing for `suspended`/`lapsed` copy (distinguishing "unpaid" from
+   * "payment received, pending review" from "grace expired" from
+   * "cancelled"). `null` for every other kind.
+   */
+  readonly reason: MembershipAccessReason | null;
 }
 
 /**
@@ -49,57 +65,67 @@ export function deriveMembershipStat(
   now: Date,
 ): MembershipStat {
   if (cycle === 'error') {
-    return { kind: 'error', variant: 'warning', daysRemaining: null, status: null, expiryIso: null };
+    return { kind: 'error', variant: 'warning', daysRemaining: null, status: null, expiryIso: null, reason: null };
   }
   if (cycle === null) {
-    return { kind: 'empty', variant: 'neutral', daysRemaining: null, status: null, expiryIso: null };
+    return { kind: 'empty', variant: 'neutral', daysRemaining: null, status: null, expiryIso: null, reason: null };
   }
   const raw = daysUntilExpiry(cycle, now);
   const days = Number.isFinite(raw) ? raw : null;
   const status = cycle.status;
-  if (isOverdue(cycle, now)) {
-    return { kind: 'overdue', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+
+  // 059-membership-suspension — `deriveMembershipAccess` is now the SINGLE
+  // dispatch key (full / suspended / terminated), replacing the old
+  // isOverdue → isMembershipLapsed → due-threshold chain. Both `isOverdue`
+  // and the old lapsed-producing branch are subsumed here: every case they
+  // used to catch is now classified by the Domain predicate FIRST.
+  const access = deriveMembershipAccess(cycle, now);
+
+  if (access.access === 'suspended') {
+    // Benefits paused — an unpaid invoice is outstanding, or a payment is
+    // pending admin review. AMBER (warning), never red — this is not an
+    // accusation, the member remains a member (§ User-facing surfaces).
+    return {
+      kind: 'suspended',
+      variant: 'warning',
+      daysRemaining: days,
+      status,
+      expiryIso: cycle.expiresAt,
+      reason: access.reason,
+    };
   }
-  // 057 R2 finding A (CRITICAL) — `completed` is a terminal status but means
-  // the member PAID/renewed (closedReason 'paid'/'completed_offline'/
-  // 'admin_reactivated'), i.e. in good standing. The renewals module creates
-  // NO successor cycle (deferred R3), so a paid member's `completed` cycle
-  // stays the most-recent; once its period ends it must STILL read good
-  // standing, NOT "Membership lapsed — Renew" (which prompts a duplicate
-  // payment). So only the ENDED terminal statuses — `lapsed` and `cancelled`
-  // — represent coverage that has genuinely ended.
-  //
-  // `cancelled` (closedReason 'cancelled' | 'admin_rejected_with_refund')
-  // shares the lapsed kind for now. The 'admin_rejected_with_refund' refund
-  // sub-case shown "Renew to restore your benefits" is slightly off, but a
-  // dedicated copy variant is deferred (057 R2 finding #6) — low value for a
-  // ~131-member org; the destructive/renew framing is acceptable meanwhile.
-  // 057 R2 finding A — only ENDED-terminal cycles (lapsed/cancelled, NOT the
-  // paid/renewed `completed`) past expiry represent ended coverage. This is the
-  // canonical `isMembershipLapsed` predicate (single source of truth shared with
-  // the admin member-table badge). The `isOverdue` branch above already consumed
-  // every non-terminal past-expiry cycle, so delegating here is behavior-
-  // preserving (pinned by the characterization test). Return shape is byte-for-
-  // byte the original lapsed branch (`expiryIso: cycle.expiresAt`).
-  if (isMembershipLapsed(cycle, now)) {
-    return { kind: 'lapsed', variant: 'destructive', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+
+  if (access.access === 'terminated') {
+    // Membership itself has ended (grace expired, or an admin-cancelled
+    // period that has run out) — reuses the pre-existing `lapsed` kind/copy
+    // (mailto contact-support CTA), now carrying the specific reason.
+    return {
+      kind: 'lapsed',
+      variant: 'destructive',
+      daysRemaining: days,
+      status,
+      expiryIso: cycle.expiresAt,
+      reason: access.reason,
+    };
   }
+
+  // access.access === 'full' — UNCHANGED active/due/empty logic (057 R2
+  // CRITICAL: a `completed` cycle past its expiry MUST stay good-standing,
+  // never re-prompted for payment — guaranteed here because
+  // `deriveMembershipAccess` only returns `full` for a non-terminal cycle
+  // when it is NOT expired, for `completed` regardless of date, or for a
+  // cancelled/lapsed cycle whose period has not yet ended). The old E2
+  // "malformed date on a non-terminal cycle → error" guard is now
+  // unreachable by construction: `deriveMembershipAccess` treats an
+  // unparseable `expiresAt` on a non-terminal cycle as EXPIRED, which
+  // resolves to `suspended` above — so `full` + non-terminal status always
+  // carries a parseable, future `days` value here.
   if (days !== null && days <= 30 && !isTerminalCycleStatus(status)) {
-    return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+    return { kind: 'due', variant: 'warning', daysRemaining: days, status, expiryIso: cycle.expiresAt, reason: null };
   }
-  // E2 — a NON-TERMINAL cycle whose `expiresAt` is unparseable (days === null
-  // here, after the overdue + ended-terminal branches above) is a data-
-  // integrity defect: we cannot tell whether coverage is current. A corrupt
-  // date must NOT read "in good standing" (which would silence a possibly-
-  // lapsed membership). Surface it honestly as the `error` "Status unavailable"
-  // state rather than falling through to `active`. (A terminal cycle with a
-  // malformed date is already handled by the `isMembershipLapsed` branch → lapsed.)
-  if (days === null && !isTerminalCycleStatus(status)) {
-    return { kind: 'error', variant: 'warning', daysRemaining: null, status, expiryIso: cycle.expiresAt };
-  }
-  // Far off, completed (paid up), or ended-terminal-but-still-within-period →
-  // show membership status, not a stale countdown.
-  return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt };
+  // Far off, completed (paid up), or a cancelled/lapsed cycle still within
+  // its period → show membership status, not a stale countdown.
+  return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt, reason: null };
 }
 
 /** The minimal invoice shape the outstanding stat needs (decoupled from the F4 domain row). */
@@ -109,6 +135,15 @@ export interface OutstandingInvoiceInput {
   readonly totalSatang: bigint | null;
   /** ISO YYYY-MM-DD due date, or null. */
   readonly dueDate: string | null;
+  /**
+   * 059-membership-suspension — the invoice id + subject discriminator, so
+   * the smart-CTA helper (`resolveSuspendedCtaTarget`) can find an unpaid
+   * MEMBERSHIP invoice (as opposed to an event-ticket invoice) to link to,
+   * without a second DB read (reuses the same `deriveOutstandingStat` data
+   * the Outstanding-balance card already loads).
+   */
+  readonly id: string;
+  readonly invoiceSubject: 'membership' | 'event';
 }
 
 export interface OutstandingStat {

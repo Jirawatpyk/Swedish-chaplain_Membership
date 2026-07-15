@@ -80,7 +80,7 @@ const SubmitBroadcastBody = z.object({
 }
 ```
 
-**Response 422** (precondition failures from FR-002 a–j):
+**Response 422** (precondition failures from FR-002 a–l):
 
 ```ts
 {
@@ -89,7 +89,14 @@ const SubmitBroadcastBody = z.object({
              'broadcast_subject_too_long' | 'broadcast_body_too_large' |
              'broadcast_body_unsafe_html' | 'broadcast_audience_too_large' |
              'broadcast_custom_recipient_unknown' |
-             'broadcast_member_missing_primary_contact_email',
+             'broadcast_member_missing_primary_contact_email' |
+             // Added 2026-07-13 (059-membership-suspension) — FR-002
+             // precondition (l): the member's F8 membership-access state
+             // is 'suspended' or 'terminated'. NOTE: on a read failure of
+             // the underlying F8 lookup this use-case fails CLOSED to a
+             // generic 500 `submit.server_error`, NOT to this 422 code —
+             // see spec.md FR-002 amendment.
+             'broadcast_membership_suspended_blocked',
   errorMessageI18nKey: string,                                // resolves via next-intl
   errorDetails?: {
     forbiddenConstructs?: string[],                            // body_unsafe_html only

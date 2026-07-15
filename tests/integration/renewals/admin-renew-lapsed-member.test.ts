@@ -306,6 +306,12 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     // instead of completing + creating the next cycle, breaking this test's
     // whole "the loop closes" premise. Mirrors e8da485b's pattern.
     //
+    // Task 14 (059-membership-suspension) — this predecessor's gapless period
+    // (period_to 2021-01-01 + 12mo = 2022-01-01) is LONG expired vs "now", so
+    // the comeback cycle re-anchors to the current payment-month start rather
+    // than continuing the (dead) anniversary. All period assertions below read
+    // the fresh cycle's dates dynamically, so they hold for either anchor.
+    //
     // FIX-2 (PR #173 review, 2026-07-09) — `anchoredAt` set to `periodFrom`:
     // a genuinely lapsed member (was actively paying, THEN missed a
     // renewal) has real SETTLED history — `countSettledCyclesForMemberInTx`
@@ -462,6 +468,93 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     expect(next?.periodFrom.toISOString()).toBe(
       freshCycle[0]!.periodTo.toISOString(),
     );
+  }, 180_000);
+
+  // Task 14 (059-membership-suspension) — the comeback anchor's GAPLESS branch
+  // proven end-to-end against live Neon + the real F4 draft. A member with a
+  // SETTLED predecessor whose gapless period is STILL LIVE keeps their
+  // anniversary: the comeback cycle anchors at `prior.periodTo`, NOT the payment
+  // month. (The first test above — predecessor 2020→2021, comeback 2026 — is the
+  // complementary gapless-EXPIRED case: its fresh cycle re-anchors to the
+  // payment-month start, verified dynamically.)
+  it('Task 14 gapless-live: settled predecessor + still-live gapless period → comeback cycle anchors at prior.periodTo; §86/4 window matches', async () => {
+    const memberId = await seedLapsedMember();
+
+    // A SETTLED (anchored) predecessor whose period_to is ~3 months ago → its
+    // gapless period (period_to + 12mo, ~9 months ahead) has NOT expired.
+    // Dates are relative to `now` so the branch is exercised on any run date.
+    const now = new Date();
+    const priorPeriodFrom = new Date(
+      Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth() - 3, 1),
+    );
+    const priorPeriodTo = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1),
+    );
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'lapsed',
+        periodFrom: priorPeriodFrom,
+        periodTo: priorPeriodTo,
+        expiresAt: priorPeriodTo,
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: EXPECTED_FROZEN_THB,
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        // Anchored → counts as SETTLED coverage (the paid-through frontier).
+        anchoredAt: priorPeriodFrom,
+        closedAt: priorPeriodTo,
+        closedReason: 'lapsed',
+      }),
+    );
+
+    const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-gapless-${memberId}`,
+      requestId: `req-gl-${memberId.slice(0, 8)}`,
+    });
+    if (!result.ok) {
+      throw new Error(`admin renew failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const freshCycle = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          periodFrom: renewalCycles.periodFrom,
+          periodTo: renewalCycles.periodTo,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, result.value.cycleId))
+        .limit(1),
+    );
+    // GAPLESS: the comeback cycle continues the anniversary at the
+    // predecessor's period_to — NOT re-anchored to the payment month.
+    expect(freshCycle[0]?.periodFrom.toISOString()).toBe(
+      priorPeriodTo.toISOString(),
+    );
+
+    // The §86/4 membership line prints the EXACT gapless window (the cycle
+    // classifies `renewal`, so `membershipCoverage` is the printed window).
+    const membershipLine = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ descriptionEn: invoiceLines.descriptionEn })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
+    );
+    const fromDate = freshCycle[0]!.periodFrom.toISOString().slice(0, 10);
+    const toDate = freshCycle[0]!.periodTo.toISOString().slice(0, 10);
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionEn.includes(`(coverage ${fromDate} to ${toDate})`),
+      ),
+    ).toBe(true);
   }, 180_000);
 
   // FIX-1 (PR #173 review, 2026-07-09) — the zero-history cohort, reachable

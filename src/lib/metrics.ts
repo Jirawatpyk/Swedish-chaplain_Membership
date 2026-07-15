@@ -1548,7 +1548,10 @@ export const broadcastsMetrics = {
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'
-      | 'member_halted_pending_review',
+      | 'member_halted_pending_review'
+      // 059-membership-suspension Task 8 — keep in sync with
+      // submit-broadcast.ts SubmitPrecondition
+      | 'membership_suspended',
   ): void {
     safeMetric(() => {
       counter(
@@ -2631,6 +2634,30 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_lapse_invoice_due_guard_errors_total{tenant}` —
+   * 059-membership-suspension Task 13: the Task-12 `InvoiceDueBridge`
+   * credit-window guard (runs BEFORE the advisory-lock tx in
+   * `lapseCyclesOnGraceExpiry`) threw. Fail-SAFE design: the member is
+   * NOT lapsed on this path (a guard failure must never terminate
+   * benefit access), so the throw is deliberately NOT folded into the
+   * generic `lapseCyclesErrors` tally — a sustained non-zero rate here
+   * means the daily lapse cron is silently deferring members it should
+   * be able to evaluate, which is its own distinct on-call signal from
+   * "a cycle transition failed". Alert rule: any non-zero rate
+   * sustained for 15 min pages on-call.
+   */
+  lapseInvoiceDueGuardErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_lapse_invoice_due_guard_errors_total',
+          'F8 lapseCyclesOnGraceExpiry InvoiceDueBridge credit-window guard threw — member fails SAFE (not lapsed); distinct from lapseCyclesErrors so a guard-availability incident is not confused with a transition-failure incident',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_enter_awaiting_cycles_errors_total{tenant}` —
    * F8-completion slice 2: per-cycle errors during the daily
    * `enterAwaitingPaymentOnExpiry` (T-0) cron (DB transition throw /
@@ -2958,6 +2985,68 @@ export const renewalsMetrics = {
           if (!bucket) return;
           for (const [tenantLabel, count] of bucket.entries()) {
             result.observe(count, { tenant: tenantLabel });
+          }
+        });
+      }
+    });
+  },
+
+  /**
+   * 059-membership-suspension Task 18 — `membership_suspended_count` gauge.
+   *
+   * Per-tenant count of members whose most-recent renewal cycle resolves to
+   * `deriveMembershipAccess(cycle, now).access === 'suspended'` (benefits
+   * temporarily paused — unpaid invoice, pending admin-reactivation review,
+   * or a non-terminal cycle whose period already lapsed into the grace
+   * window). Distinct from `observeCycleStateGauge`'s 3-state gauge because
+   * "suspended" is a Slice-3 DERIVED-access concept layered across several
+   * underlying `renewal_cycles.status` values (not a single status column
+   * value) — folding it in as a 4th `observeCycleStateGauge` state would
+   * misrepresent the state-vs-derived-access distinction the Domain layer
+   * (`deriveMembershipAccess`) deliberately draws.
+   *
+   * Fed from the SAME site as `observeCycleStateGauge` — the daily
+   * dispatch-coordinator cron
+   * (`src/app/api/cron/renewals/dispatch-coordinator/route.ts`) — via a
+   * `DISTINCT ON (member_id) … ORDER BY created_at DESC, cycle_id DESC`
+   * subquery that first reduces to each member's MOST-RECENT cycle, then
+   * applies `deriveMembershipAccess`'s suspended predicate 1:1 (see that
+   * function's docstring in `src/modules/renewals/domain/renewal-cycle.ts`).
+   * The per-member reduction matters: unlike the sibling gauge's raw
+   * per-cycle status tallies, a member with a stale non-latest
+   * awaiting_payment/pending cycle who has since renewed must NOT be
+   * counted — exactly what the domain predicate's latest-cycle-only rule
+   * enforces. Keep the SQL and the domain rule in sync if either changes.
+   *
+   * Mirrors `observeCycleStateGauge`'s hand-rolled lazy-registration +
+   * per-tenant accumulator + async-observer-reads-`gaugeValues` mechanism
+   * exactly (tenant slug as the direct inner-Map key, matching the sibling
+   * gauge's test/inspection contract via `__test__readGaugeValues`) — NOT
+   * the generic `observeGauge` helper, whose inner-Map key is a
+   * JSON-serialised label object rather than a bare tenant string. Only one
+   * gauge name here (no per-state variability), so the extra per-state
+   * indirection `observeCycleStateGauge` needs is not required.
+   *
+   * Cardinality bound: one label dimension (`tenant`, small-cardinality).
+   */
+  observeMembershipSuspendedCountGauge(tenantId: string, count: number): void {
+    safeMetric(() => {
+      const gaugeName = 'membership_suspended_count';
+      const bucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+      bucket.set(tenantId, count);
+      gaugeValues.set(gaugeName, bucket);
+
+      if (!observableGauges.has(gaugeName)) {
+        const gauge = meter().createObservableGauge(gaugeName, {
+          description:
+            "Members whose latest renewal cycle resolves to deriveMembershipAccess access='suspended', per tenant (059-membership-suspension)",
+        });
+        observableGauges.set(gaugeName, gauge);
+        gauge.addCallback((result) => {
+          const b = gaugeValues.get(gaugeName);
+          if (!b) return;
+          for (const [tenantLabel, value] of b.entries()) {
+            result.observe(value, { tenant: tenantLabel });
           }
         });
       }

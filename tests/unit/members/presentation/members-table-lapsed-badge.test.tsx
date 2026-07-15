@@ -113,6 +113,7 @@ function baseRow(overrides: Partial<MembersTableRow> = {}): MembersTableRow {
     plan_display_name: 'Premium Corporate',
     status: 'active',
     membership_lapsed: false,
+    membership_suspended: false,
     engagement: null,
     last_activity_at: null,
     primary_contact: null,

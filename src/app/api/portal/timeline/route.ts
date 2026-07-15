@@ -21,6 +21,8 @@ import { env } from '@/lib/env';
 import { isYmd } from '@/lib/tenant-day-range';
 import { buildTimelineFilterInput } from '@/lib/timeline-filter-input';
 import { toTimelineApiItem } from '@/lib/timeline-presenter';
+import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
+import { buildPortalAccessDeps, toPortalAccessAction } from '@/lib/portal-access-deps';
 import {
   timelineList,
   TIMELINE_SOURCES,
@@ -95,6 +97,38 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(EMPTY);
   }
   const member = memberResult.value;
+
+  // 059-membership-suspension Task 7b — this route resolves its member via
+  // a bespoke `requireSession` + `findByLinkedUserId` lookup instead of
+  // `requireMemberContext` (`src/lib/member-context.ts`), so it does NOT
+  // automatically inherit that helper's `checkPortalAccess` enforcement.
+  // Wire the same gate directly, same deps builder + ctx shape + fail-open
+  // behaviour as `requireMemberContext` (checkPortalAccess fails open
+  // internally on a cyclesRepo read error, so no extra try/catch needed here).
+  // `new URL(request.url).pathname` (NOT `request.nextUrl.pathname`) per the
+  // same Task 3 controller note `requireMemberContext` follows — the
+  // normalized literal request path.
+  const actionValue = toPortalAccessAction(request.method);
+  const accessDecision = await checkPortalAccess(buildPortalAccessDeps(tenant), {
+    tenantId: tenant.slug,
+    memberId: member.memberId,
+    pathname: new URL(request.url).pathname,
+    actorUserId: user.id,
+    correlationId: requestId,
+    requestId,
+    ...(actionValue ? { action: actionValue } : {}),
+  });
+  if (!accessDecision.allowed) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'membership_access_restricted',
+          message: 'Membership access is restricted for this route.',
+        },
+      },
+      { status: 403 },
+    );
+  }
 
   const result = await timelineList(
     {

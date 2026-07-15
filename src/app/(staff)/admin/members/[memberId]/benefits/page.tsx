@@ -24,6 +24,7 @@ import { ArrowLeftIcon, MailIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { loadMembershipAccess } from '@/lib/load-membership-access';
 import {
   computeBenefitUsage,
   makeComputeBenefitUsageDeps,
@@ -98,14 +99,23 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   }
   const { member, contacts } = memberResult.value;
 
-  const result = await computeBenefitUsage(
-    tenant,
-    // Use the resolved member.memberId (same value getMember validated + the
-    // audit subject below) — not the raw URL param — so the figures and the
-    // member_benefit_viewed audit can never reference different members (R#10).
-    { memberId: member.memberId },
-    makeComputeBenefitUsageDeps(tenant.slug),
-  );
+  // 059-membership-suspension Task 18 — the viewed member's derived access,
+  // used ONLY to render the amber "Suspended" badge on the card below (never
+  // an enforcement gate here — staff can always view a suspended member's
+  // benefits; only the member's OWN use of the benefit is paused). Runs
+  // alongside computeBenefitUsage rather than after it — both are
+  // independent reads keyed on the same (tenant, member.memberId) pair.
+  const [result, membershipAccess] = await Promise.all([
+    computeBenefitUsage(
+      tenant,
+      // Use the resolved member.memberId (same value getMember validated + the
+      // audit subject below) — not the raw URL param — so the figures and the
+      // member_benefit_viewed audit can never reference different members (R#10).
+      { memberId: member.memberId },
+      makeComputeBenefitUsageDeps(tenant.slug),
+    ),
+    loadMembershipAccess(tenant.slug, member.memberId),
+  ]);
   if (!result.ok) {
     throw new Error(`computeBenefitUsage failed: ${result.error.code}`);
   }
@@ -161,6 +171,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
         active={usage.active}
         aggregateConsumedPct={usage.aggregateConsumedPct}
         underUseWarning={usage.underUseWarning}
+        suspended={membershipAccess.access === 'suspended'}
         staffActions={
           reminderHref !== undefined ? (
             <a

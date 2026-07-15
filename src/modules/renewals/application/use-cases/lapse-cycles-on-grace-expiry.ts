@@ -48,17 +48,46 @@
  *
  * RBAC: cron-only (`actorRole='cron'`, `actorUserId=null`). Route
  * handler validates Bearer `CRON_SECRET` before invoking.
+ *
+ * 059-membership-suspension Task 13 — credit-window guard. BEFORE the
+ * F5 decision-branch read above, `processOne` consults the Task-12
+ * `InvoiceDueBridge` (`deps.invoiceDueBridge.
+ * hasUnpaidNotYetDueMembershipInvoice`) to check whether the cycle's
+ * member has an unpaid (`status='issued'`), not-yet-past-due
+ * MEMBERSHIP invoice (F4's 90-day net terms). If so, the lapse
+ * transition is DEFERRED entirely — a member must not be suspended
+ * for non-payment while the invoice they'd pay isn't even due yet.
+ * Like the F5 bridge, this guard runs OUTSIDE the advisory-lock tx:
+ * calling a cross-module bridge INSIDE the tx would open a second
+ * pooled connection while holding the lock — the documented
+ * deadlock / pool-starvation class (see CLAUDE.md Gotchas,
+ * "Tenant-scoped repos MUST thread `tx`…"). No state transition
+ * happens on the deferred branch, so there is no state-change tx to
+ * pair the audit emit with (Constitution Principle VIII pairs a
+ * STATE CHANGE with its audit — deferring IS the absence of one);
+ * the forensic record is written via the fire-and-forget `emit()`
+ * path instead of `emitInTx`.
+ *
+ * Fail-SAFE on guard throw: a bridge failure must never terminate
+ * benefit access. `processOne` returns the distinguishable
+ * `'deferred_guard_error'` outcome (own tally + dedicated metric +
+ * loud structured log) instead of falling through to the lapse
+ * transition OR silently folding into the generic per-cycle
+ * `errors` tally — an invisible silent skip is exactly the failure
+ * mode this guard exists to avoid.
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { asTenantId, asMemberId } from '@/modules/members';
 import { asInvoiceId } from '@/modules/invoicing';
 import { parseInput } from './_lib/parse-input';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5PaymentAttemptsBridge } from '../ports/f5-payment-attempts-bridge';
+import type { InvoiceDueBridge } from '../ports/invoice-due-bridge';
 import type {
   CycleId,
   RenewalCycle,
@@ -93,6 +122,21 @@ export interface LapseCyclesOnGraceExpiryOutput {
   readonly paymentFailed: number;
   /** Cycles where the transition lost the TOCTOU race + skipped silently. */
   readonly transitionRaceSkipped: number;
+  /**
+   * Task 13 — cycles whose lapse was deferred because the member has
+   * an unpaid, not-yet-past-due MEMBERSHIP invoice (F4's 90-day net
+   * terms). No DB transition occurred; the cycle stays
+   * `awaiting_payment` and re-enters eligibility on tomorrow's run.
+   */
+  readonly deferredInvoiceNotDue: number;
+  /**
+   * Task 13 — the `InvoiceDueBridge` guard itself threw. Deliberately
+   * NOT folded into `errors`: a guard failure fails the member SAFE
+   * (not lapsed), which is a materially different on-call signal from
+   * "a cycle transition failed" (`errors`). See `renewalsMetrics.
+   * lapseInvoiceDueGuardErrors` for the paired counter.
+   */
+  readonly deferredGuardErrors: number;
   /** F5 bridge query / audit emit / DB transition that threw — for SRE alert. */
   readonly errors: number;
 }
@@ -110,6 +154,12 @@ export interface LapseCyclesOnGraceExpiryDeps
     | 'tenantRenewalSettingsRepo'
   > {
   readonly f5PaymentAttemptsBridge: F5PaymentAttemptsBridge;
+  /**
+   * Task 13 — F8 → F4 credit-window guard (see file header). Consulted
+   * BEFORE the advisory-lock tx, same calling convention as
+   * `f5PaymentAttemptsBridge`.
+   */
+  readonly invoiceDueBridge: InvoiceDueBridge;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -149,6 +199,8 @@ export async function lapseCyclesOnGraceExpiry(
   let graceExpired = 0;
   let paymentFailed = 0;
   let transitionRaceSkipped = 0;
+  let deferredInvoiceNotDue = 0;
+  let deferredGuardErrors = 0;
   let errors = 0;
 
   for (const cycle of page.items) {
@@ -163,12 +215,13 @@ export async function lapseCyclesOnGraceExpiry(
       );
       // Round 5 staff-review (K24-T2): exhaustive switch + `_exhaustive:
       // never` pin matches the F8-canonical pattern at
-      // `renewals-deps.ts:380-407` (R3-CR2 / R4-S1). A 4th
-      // ProcessOneOutcome variant added in the future MUST add a
-      // counter line here — the pin breaks the build until it does.
-      // Without this guard, a 4th outcome would silently fall through
-      // and break the SC invariant
-      // `graceExpired + paymentFailed + transitionRaceSkipped + errors === cyclesProcessed`.
+      // `renewals-deps.ts:380-407` (R3-CR2 / R4-S1). A future
+      // ProcessOneOutcome variant added MUST add a counter line here —
+      // the pin breaks the build until it does. Without this guard, a
+      // new outcome would silently fall through and break the SC
+      // invariant `graceExpired + paymentFailed + transitionRaceSkipped
+      // + deferredInvoiceNotDue + deferredGuardErrors + errors ===
+      // cyclesProcessed`.
       switch (outcome) {
         case 'grace_expired':
           graceExpired += 1;
@@ -178,6 +231,12 @@ export async function lapseCyclesOnGraceExpiry(
           break;
         case 'race_skipped':
           transitionRaceSkipped += 1;
+          break;
+        case 'deferred_invoice_not_due':
+          deferredInvoiceNotDue += 1;
+          break;
+        case 'deferred_guard_error':
+          deferredGuardErrors += 1;
           break;
         default: {
           const _exhaustive: never = outcome;
@@ -211,6 +270,8 @@ export async function lapseCyclesOnGraceExpiry(
     graceExpired,
     paymentFailed,
     transitionRaceSkipped,
+    deferredInvoiceNotDue,
+    deferredGuardErrors,
     errors,
   });
 }
@@ -218,7 +279,9 @@ export async function lapseCyclesOnGraceExpiry(
 type ProcessOneOutcome =
   | 'grace_expired'
   | 'payment_failed'
-  | 'race_skipped';
+  | 'race_skipped'
+  | 'deferred_invoice_not_due'
+  | 'deferred_guard_error';
 
 async function processOne(
   deps: LapseCyclesOnGraceExpiryDeps,
@@ -228,6 +291,63 @@ async function processOne(
   correlationId: string,
   now: Date,
 ): Promise<ProcessOneOutcome> {
+  // Task 13 — credit-window guard. Runs FIRST (and OUTSIDE the
+  // advisory-lock tx below): a member with an unpaid, not-yet-due
+  // membership invoice must never be suspended for non-payment, and
+  // checking this first also saves the F5 decision-branch round-trip
+  // on the (common) deferred path. Fail-SAFE: a bridge throw must
+  // never terminate benefit access — see file header + output-type
+  // docs for the full rationale.
+  const todayBkk = bangkokLocalDate(now.toISOString());
+  let withinCreditWindow: boolean;
+  try {
+    withinCreditWindow =
+      await deps.invoiceDueBridge.hasUnpaidNotYetDueMembershipInvoice({
+        tenantId,
+        memberId: cycle.memberId,
+        todayBkk,
+      });
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.LAPSE.INVOICE_DUE_GUARD_FAILED',
+        tenantId,
+        cycleId: cycle.cycleId,
+        err: e instanceof Error ? e : new Error(String(e)),
+      },
+      '[lapse-cycles-on-grace-expiry] invoiceDueBridge threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error, NOT folded into the generic errors tally',
+    );
+    renewalsMetrics.lapseInvoiceDueGuardErrors.add(1, { tenant_id: tenantId });
+    return 'deferred_guard_error';
+  }
+
+  if (withinCreditWindow) {
+    // No state transition on this branch — nothing to pair the audit
+    // with in a tx (Constitution Principle VIII pairs a STATE CHANGE
+    // with its audit; deferring is the absence of a state change).
+    // `emit()` is the port's fire-and-forget path — it never throws to
+    // the caller, matching every other read-only forensic record in
+    // this module.
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_lapse_deferred_invoice_not_due' as const,
+        payload: {
+          cycle_id: cycle.cycleId as CycleId,
+          member_id: asMemberId(cycle.memberId),
+          invoice_subject: 'membership' as const,
+          due_date_frontier: todayBkk,
+        },
+      },
+      {
+        tenantId,
+        actorUserId: null,
+        actorRole: 'cron',
+        correlationId,
+      },
+    );
+    return 'deferred_invoice_not_due';
+  }
+
   // Decision branch — count F5 failed-attempt rows for the cycle's
   // linked invoice. When `linked_invoice_id` is null (no F4 invoice
   // ever issued against this cycle), the count is 0 by definition →

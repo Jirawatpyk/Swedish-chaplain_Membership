@@ -387,6 +387,33 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5 parity test's
   //     `auto_refund_` prefix already covers it. ---
   'auto_refund_reconciled',
+  // --- 059-membership-suspension Task 8 (migration 0246) — membership
+  //     benefit-access forensic events. Emitted by `checkPortalAccess`
+  //     (`src/lib/lapsed-portal-scope.ts`): `membership_suspended_action_
+  //     blocked` discriminates the SUSPENDED-policy denylist block from
+  //     the pre-existing `lapsed_member_action_blocked` (now TERMINATED-
+  //     policy only); `membership_access_fail_open` records the fail-open
+  //     path when the cycle read throws. 5y retention (no tax-document
+  //     overlap). Keep in lockstep with F8_AUDIT_EVENT_TYPES (renewals
+  //     audit port) — the F8 audit-count parity tests enforce it. ---
+  'membership_suspended_action_blocked',
+  'membership_access_fail_open',
+  // --- 059-membership-suspension Task 8 (migration 0246) — F7 precondition
+  //     (l) submit-block forensic event. Emitted by `submitBroadcast` when
+  //     the F8 membership-access gate (Task 5) rejects a suspended/
+  //     terminated member. 5y retention. Keep in lockstep with
+  //     F7_AUDIT_EVENT_TYPES (broadcasts audit port) — the F7 parity test's
+  //     `broadcast_` prefix already covers it. ---
+  'broadcast_membership_suspended_blocked',
+  // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
+  //     `InvoiceDueBridge` credit-window guard. Emitted by
+  //     `lapseCyclesOnGraceExpiry` when a member past the grace window
+  //     still has an unpaid, not-yet-past-due MEMBERSHIP invoice — the
+  //     lapse transition is deferred instead of terminating benefit
+  //     access mid-credit-window. Keep in lockstep with
+  //     F8_AUDIT_EVENT_TYPES (renewals audit port) — the F8 audit-count
+  //     parity tests enforce it. ---
+  'renewal_lapse_deferred_invoice_not_due',
 ]);
 
 /**
@@ -482,6 +509,10 @@ export const DB_ONLY_AUDIT_EVENT_TYPES: readonly string[] = [
   'escalation_task_reassigned',
   'escalation_task_skipped',
   'event_archived',
+  // 059-membership-suspension Task 17 (migration 0248) — CSV-import
+  // alert-only observability: attendance recorded for a suspended/
+  // terminated member (never blocks).
+  'event_attendance_by_suspended_member',
   'event_created',
   'event_cultural_event_toggled',
   'event_detail_not_found_probe',

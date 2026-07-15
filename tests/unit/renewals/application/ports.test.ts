@@ -28,7 +28,15 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 66 unique event types (renewal rolling-anchor: +1 — renewal_cycle_reanchored)', () => {
+  it('contains 69 unique event types (059-membership-suspension Task 13: +1)', () => {
+    // 059-membership-suspension Task 13: 68 → 69 (added
+    // `renewal_lapse_deferred_invoice_not_due` — the InvoiceDueBridge
+    // credit-window guard's forensic event; see
+    // `lapse-cycles-on-grace-expiry.ts` `processOne`).
+    // 059-membership-suspension Task 8: 66 → 68 (added
+    // `membership_suspended_action_blocked` + `membership_access_fail_open`
+    // — the two lapsed-portal-scope forensic events; see
+    // `src/lib/lapsed-portal-scope.ts` `checkPortalAccess`).
     // Renewal rolling-anchor refactor (design 2026-07-08, migration 0238):
     // 65 → 66 (added `renewal_cycle_reanchored` — emitted when the shared
     // payment classifier re-anchors a first-payment cycle instead of
@@ -52,7 +60,7 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     // 3 lapsed-pending reminder-ladder events `_t-7` / `_t-3` / `_t-1`).
     // K6 (prior): 54 → 55 (added cron_bearer_auth_rejected per spec.md
     // line 365 taxonomy + verifyCronBearer 401 path now emits this audit).
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(66);
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(69);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });

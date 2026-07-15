@@ -30,6 +30,7 @@ import {
   makeComputeBenefitUsageDeps,
 } from '@/modules/insights';
 import { logger } from '@/lib/logger';
+import { loadMembershipAccess } from '@/lib/load-membership-access';
 import type { TenantContext } from '@/modules/tenants';
 import {
   Card,
@@ -48,11 +49,15 @@ export async function MemberBenefitsPreviewSection({
 }): Promise<React.JSX.Element | null> {
   const locale = await getLocale();
 
-  const result = await computeBenefitUsage(
-    tenant,
-    { memberId },
-    makeComputeBenefitUsageDeps(tenant.slug),
-  );
+  // 059-membership-suspension Task 18 — the viewed member's derived access,
+  // used ONLY to render the amber "Suspended" badge on the compact preview
+  // (never an enforcement gate — staff can always view the preview). Runs
+  // alongside computeBenefitUsage — both are independent reads keyed on the
+  // same (tenant, memberId) pair.
+  const [result, membershipAccess] = await Promise.all([
+    computeBenefitUsage(tenant, { memberId }, makeComputeBenefitUsageDeps(tenant.slug)),
+    loadMembershipAccess(tenant.slug, memberId),
+  ]);
   if (!result.ok) {
     logger.warn(
       { event: 'member_benefits_preview_read_err', memberId },
@@ -76,6 +81,7 @@ export async function MemberBenefitsPreviewSection({
         active={usage.active}
         aggregateConsumedPct={usage.aggregateConsumedPct}
         underUseWarning={usage.underUseWarning}
+        suspended={membershipAccess.access === 'suspended'}
         compact
         previewHref={`/admin/members/${memberId}/benefits`}
         className="h-full flex flex-col"

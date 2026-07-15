@@ -59,9 +59,10 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { addMonthsUtc } from '@/lib/dates';
 import { omitUndefined } from '@/lib/object-helpers';
 // L1 (068 security review) — Postgres 23505 detection. `@/lib/db-errors`
 // is Infrastructure-free (only the stable Postgres SQLSTATE contract), so
@@ -84,6 +85,7 @@ import {
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
+import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
@@ -153,6 +155,83 @@ export interface AdminRenewLapsedMemberDeps
   readonly cycleIdFactory: CreateCycleInTxDeps['idFactory'];
 }
 
+/**
+ * Task 14 (059-membership-suspension) — decide the comeback cycle's
+ * `period_from` anchor. This is the ONE cycle-creation path the anchor docs
+ * (`docs/Bug/2026-07-08-renewal-paid-invoice-disconnect.md`, Q-2) reserved as
+ * a payment-time anchor, refined here by the benefit-suspension design:
+ *
+ *   - **No settled predecessor** (`findMaxPaidThroughForMemberInTx` → null —
+ *     the zero-history / never-paid cohort): keep the payment-month/now anchor.
+ *     The value is PROVISIONAL — the fresh cycle classifies `first_payment`, so
+ *     the F8 on-paid chain (`markCycleCompleteInTx` → `reanchorFirstPaymentCycleInTx`)
+ *     RE-ANCHORS it to the actual payment month when the member pays, overriding
+ *     whatever is set here (FIX-1). The §86/4 window is omitted for this cohort.
+ *
+ *   - **Settled predecessor** (frontier non-null — a genuine lapsed comeback):
+ *     prefer the GAPLESS anniversary continuation `period_from = prior.periodTo`
+ *     (`MAX(period_to)` over the member's settled coverage), because
+ *     benefit-suspension already punished the late payment. Re-anchor to a fresh
+ *     payment-month start ONLY when the gapless period has ALREADY fully expired
+ *     (`gaplessPeriodTo <= now`, incl. the exact-boundary case) — the genuinely
+ *     long-lapsed member. Either way this cycle classifies `renewal`, so on-paid
+ *     COMPLETES it (never re-anchors) and creates the next cycle gaplessly at
+ *     this cycle's `period_to` — so the anchor chosen here is FINAL and flows
+ *     onto the printed §86/4 window + the next cycle's anchor.
+ *
+ * `findMaxPaidThroughForMemberInTx` uses the SAME "settled" predicate
+ * (`status='completed' OR anchored_at IS NOT NULL`) as
+ * `countSettledCyclesForMemberInTx`, so `frontier !== null` ⟺ the §86/4 gate's
+ * `settledCycleCountForMember >= 1` (the fresh awaiting_payment cycle is never
+ * settled, so excluding it does not change the count) — the anchor branch and
+ * the window-print branch partition the member set identically, and the printed
+ * window always matches the stored anchor whenever it is printed.
+ */
+async function resolveComebackPeriodFrom(
+  deps: Pick<AdminRenewLapsedMemberDeps, 'cyclesRepo' | 'planLookupForRenewal'>,
+  tx: TenantTx,
+  tenantId: string,
+  memberId: string,
+  planId: string,
+  nowIso: string,
+): Promise<string> {
+  const paidThrough = await deps.cyclesRepo.findMaxPaidThroughForMemberInTx(
+    tx,
+    tenantId,
+    memberId,
+  );
+  if (paidThrough === null) {
+    // No settled predecessor — keep the now anchor (onPaid re-anchors the
+    // first_payment cycle to the actual payment month).
+    return nowIso;
+  }
+  // Size the gapless window with the member's CURRENT plan term. Term is
+  // plan-stable across catalogue years (the multi-year axis is the cycle's own
+  // length — see `create-cycle-in-tx.ts`), so any fiscal year resolves the same
+  // `termMonths`. If the plan is unresolvable the window can't be sized — fall
+  // through to `now`; `createCycleInTx` re-resolves and throws
+  // `PlanNotResolvableError` (→ `plan_not_found`), so no cycle is written and
+  // the returned anchor is moot.
+  const frozen = await deps.planLookupForRenewal.loadPlanFrozenFields({
+    tenantId,
+    planId,
+    fiscalYear: deriveFiscalYear(nowIso),
+    mode: 'freeze',
+  });
+  if (frozen.status !== 'found') {
+    return nowIso;
+  }
+  const gaplessPeriodTo = addMonthsUtc(paidThrough, frozen.plan.termMonths);
+  return Date.parse(gaplessPeriodTo) > Date.parse(nowIso)
+    ? // Gapless period still live — keep the anniversary.
+      paidThrough
+    : // Gapless period fully expired — re-anchor to a fresh payment-month start
+      // (Bangkok month boundary), the same anchor onPaid would set for a first
+      // payment. No real payment yet at admin time → the comeback month is the
+      // best proxy (onPaid does NOT re-anchor a `renewal` cycle later).
+      paymentAnchorMonthStartUtc({ paymentDate: null, paidAt: nowIso });
+}
+
 export async function adminRenewLapsedMember(
   deps: AdminRenewLapsedMemberDeps,
   rawInput: AdminRenewLapsedMemberInput,
@@ -202,13 +281,30 @@ export async function adminRenewLapsedMember(
         return err({ kind: 'member_archived' as const });
       }
 
+      // Task 14 (059-membership-suspension) — the comeback anchor. Was an
+      // unconditional `periodFrom = now`; now: gapless anniversary continuation
+      // when the member has a settled predecessor whose gapless period is still
+      // live, a fresh payment-month re-anchor when it has fully expired, and the
+      // unchanged now anchor for the no-settled-predecessor cohort (onPaid
+      // re-anchors that first_payment cycle regardless). See
+      // `resolveComebackPeriodFrom`'s docstring for the on-paid interaction.
+      const nowIso = deps.clock.now().toISOString();
+      const periodFrom = await resolveComebackPeriodFrom(
+        deps,
+        tx,
+        input.tenantId,
+        input.memberId,
+        member.planId,
+        nowIso,
+      );
+
       // createCycleInTx no-ops if an active cycle exists (the member is
       // NOT lapsed) ⇒ member_has_active_cycle. It THROWS on an
       // unresolvable plan ⇒ caught below as plan_not_found.
       const outcome = await createCycleInTx(createDeps, tx, {
         tenantId: input.tenantId,
         memberId: input.memberId,
-        periodFrom: deps.clock.now().toISOString(),
+        periodFrom,
         planId: member.planId,
         startStatus: 'awaiting_payment',
         actorUserId: input.actorUserId,
@@ -328,11 +424,12 @@ export async function adminRenewLapsedMember(
   // L2 (068 security review) — derive plan_year SERVER-SIDE. The renewal
   // §86/4's "Membership {year}" label + the §87 fiscal-numbering bucket
   // must NOT be client-influenceable on a tax document. We derive the
-  // fiscal year from the fresh cycle's `period_from` (server-set to
-  // `clock.now()`) using the SAME `deriveFiscalYear` the F4 sequential-
-  // number allocator uses — so this renewal invoice buckets into the
-  // identical fiscal year a normal renewal invoice issued in the same
-  // period would (no divergence vs the confirm-renewal / invoices path).
+  // fiscal year from the fresh cycle's `period_from` (server-set by the
+  // Task-14 comeback-anchor decision — gapless / re-anchor / now) using the
+  // SAME `deriveFiscalYear` the F4 sequential-number allocator uses — so this
+  // renewal invoice buckets into the identical fiscal year a normal renewal
+  // invoice issued in the same period would (no divergence vs the
+  // confirm-renewal / invoices path).
   const planYear = deriveFiscalYear(cycle.periodFrom);
 
   // ---- Step 2: F4 invoice issuance OUTSIDE the F8 tx (F4 owns its own
@@ -345,10 +442,11 @@ export async function adminRenewLapsedMember(
   // confirm-renewal / mark-paid-offline (which bill the NEXT period after
   // an already-open cycle completes), this fresh comeback cycle IS the
   // period being billed — there is no predecessor open cycle to complete.
-  // Its period is already known (`periodFrom` = `clock.now()` set at
-  // Step-1 creation above), so the §86/4 prints the EXACT window
-  // (`periodFrom → periodTo`) instead of the generic "12 months from month
-  // of payment" fallback.
+  // Its period is already known (`periodFrom` set at Step-1 creation above by
+  // the Task-14 comeback anchor — gapless prior.periodTo when still live, else
+  // the re-anchored payment-month start), so the §86/4 prints the EXACT window
+  // (`periodFrom → periodTo`) instead of the generic "12 months from month of
+  // payment" fallback.
   //
   // FIX-1 (PR #173 review, 2026-07-09) — classification-gated (was
   // unconditional). A `first_payment` shape (the zero-history cohort —

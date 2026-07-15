@@ -984,6 +984,8 @@
         "selectAllMatchingHint": "{count} selected on this page. <loadMore>Load the next page</loadMore> to extend the selection.",
         "membershipLapsed": "Lapsed",
         "membershipLapsedSr": "Membership lapsed — needs renewal",
+        "membershipSuspended": "Suspended",
+        "membershipSuspendedSr": "Membership suspended — benefits paused",
         "tableCaption": "Members directory"
       },
       "emptyStates": {
@@ -4659,6 +4661,16 @@
         "contactToRenew": "Contact us to reactivate",
         "lapsedMailSubject": "Membership reactivation request",
         "renewNow": "Renew now",
+        "suspended": {
+          "unpaidValue": "Benefits paused",
+          "unpaidSubWithDueDate": "Invoice due {dueDate} — pay to restore full access",
+          "unpaidSubNoDueDate": "Pay your renewal invoice to restore full access",
+          "pendingReviewValue": "Payment received",
+          "pendingReviewSub": "We're verifying your payment — no action is needed right now.",
+          "payCta": "Pay to restore benefits",
+          "benefitsPausedTitle": "Benefits are paused",
+          "benefitsPausedBody": "Your usage quotas are unchanged — E-Blasts, event tickets, banner placement, and other included benefits will unlock the moment your payment is received."
+        },
         "errorValue": "Status unavailable",
         "errorSub": "We couldn't load your membership status. Please try again.",
         "emptyValue": "Welcome aboard",
@@ -5524,6 +5536,10 @@
       "cron_bearer_auth_rejected": "Cron auth rejected",
       "lapsed_member_action_blocked": "Action blocked — lapsed member",
       "renewal_kill_switch_blocked": "Action blocked — kill switch active",
+      "membership_suspended_action_blocked": "Action blocked — membership suspended",
+      "membership_access_fail_open": "Membership-access check failed open",
+      "renewal_lapse_deferred_invoice_not_due": "Lapse deferred — invoice not yet due",
+      "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
       "invoice_draft_created": "Invoice draft created",
       "invoice_draft_updated": "Invoice draft updated",
       "invoice_draft_deleted": "Invoice draft deleted",
@@ -5664,6 +5680,7 @@
       "broadcast_member_dispatch_resumed": "Member dispatch resumed",
       "broadcast_member_halted_pending_review": "Member dispatch halted pending review",
       "broadcast_member_missing_primary_contact_email": "Member missing primary contact email",
+      "broadcast_membership_suspended_blocked": "Broadcast blocked — membership suspended",
       "broadcast_not_in_plan": "Broadcast not included in plan",
       "broadcast_partial_delivery_accepted": "Partial delivery accepted",
       "broadcast_partially_sent": "Broadcast partially sent",
@@ -5955,7 +5972,9 @@
       "activeHeading": "Included benefits",
       "liveNote": "Updated on load · current year",
       "emptyTitle": "No tracked benefits",
-      "fullBenefits": "Full benefits"
+      "fullBenefits": "Full benefits",
+      "suspendedBadge": "Suspended",
+      "suspendedBadgeSr": "Membership suspended — benefits paused"
     },
     "benefit": {
       "eblast": "E-Blasts",

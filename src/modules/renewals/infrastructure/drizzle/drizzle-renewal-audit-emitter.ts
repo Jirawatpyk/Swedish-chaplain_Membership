@@ -66,6 +66,18 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  * existed from migration 0109.
  */
 const F8_ENUM_SHIPPED_TUPLE = [
+  // --- 059-membership-suspension Task 8 — lapsed-portal-scope forensic
+  // events. Migration ships the 2 pgEnum values alongside the real emit
+  // sites in `src/lib/lapsed-portal-scope.ts` `checkPortalAccess` (the
+  // suspended-block branch + the fail-open branch), so both are SHIPPED
+  // from day one — no deferred window.
+  'membership_suspended_action_blocked',
+  'membership_access_fail_open',
+  // --- 059-membership-suspension Task 13 (migration 0247) — F8 →F4
+  // `InvoiceDueBridge` credit-window guard. The real emit site lands in
+  // this same commit (`lapse-cycles-on-grace-expiry.ts` `processOne`),
+  // so SHIPPED from day one — no deferred window.
+  'renewal_lapse_deferred_invoice_not_due',
   // --- F8-completion slice 2 — T-0 payability flip emit site -----------
   // Migration 0215 adds the pgEnum value. Emit sites:
   //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')

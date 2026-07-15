@@ -41,6 +41,7 @@ import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/pla
 import type { EventAttendeesRepository } from '@/modules/broadcasts/application/ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '@/modules/broadcasts/application/ports/rate-limiter-port';
+import type { MembershipAccessPort } from '@/modules/broadcasts/application/ports/membership-access-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 const tenant = asTenantContext('test-tenant');
@@ -245,6 +246,17 @@ const rateLimiter: RateLimiterPort = {
   },
 };
 
+// 059-membership-suspension Task 5 — precondition (l) fixture. This
+// file's own coverage target is the halt-flag precondition (k), which
+// fires FIRST; 'full' access here is a control default so the (l) gate
+// never interferes. Dedicated coverage for (l) itself lives in
+// `tests/unit/broadcasts/submit-broadcast-membership.test.ts`.
+const membershipAccess: MembershipAccessPort = {
+  async getMembershipAccess() {
+    return ok({ access: 'full', reason: 'in_good_standing' });
+  },
+};
+
 const baseInput = {
   memberId: 'm-1',
   submittedByUserId: 'u-1',
@@ -274,6 +286,7 @@ describe('halt-flag precondition (T051)', () => {
         broadcastsRepo: makeBroadcastsRepo(state),
         sanitizer: stubSanitizer,
         membersBridge: makeMembersBridge(state),
+        membershipAccess,
         plansBridge,
         emailValidator: rfc5321EmailValidator,
         eventAttendees,
@@ -298,6 +311,7 @@ describe('halt-flag precondition (T051)', () => {
         broadcastsRepo: makeBroadcastsRepo(state),
         sanitizer: stubSanitizer,
         membersBridge: makeMembersBridge(state),
+        membershipAccess,
         plansBridge,
         emailValidator: rfc5321EmailValidator,
         eventAttendees,
@@ -319,6 +333,7 @@ describe('halt-flag precondition (T051)', () => {
         broadcastsRepo: makeBroadcastsRepo(state),
         sanitizer: stubSanitizer,
         membersBridge: makeMembersBridge(state),
+        membershipAccess,
         plansBridge,
         emailValidator: rfc5321EmailValidator,
         eventAttendees,
@@ -360,6 +375,7 @@ describe('halt-flag precondition (T051)', () => {
         broadcastsRepo: repo,
         sanitizer: stubSanitizer,
         membersBridge,
+        membershipAccess,
         plansBridge,
         emailValidator: rfc5321EmailValidator,
         eventAttendees,
@@ -412,6 +428,7 @@ describe('halt-flag precondition (T051)', () => {
         broadcastsRepo: makeBroadcastsRepo(state),
         sanitizer: stubSanitizer,
         membersBridge: makeMembersBridge(state),
+        membershipAccess,
         plansBridge,
         emailValidator: rfc5321EmailValidator,
         eventAttendees,

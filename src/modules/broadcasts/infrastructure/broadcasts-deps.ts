@@ -14,6 +14,7 @@ import { makeDrizzleMarketingUnsubscribesRepo } from './db/drizzle-marketing-uns
 import { rfc5321EmailValidator } from './email-validator/rfc5321-email-validator';
 import { emailTransactionalBridge } from './email-transactional-bridge';
 import { membersBridge } from './members-bridge';
+import { membershipAccessBridge } from './membership-access-bridge';
 import { plansBridge } from './plans-bridge';
 import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
@@ -101,6 +102,10 @@ export function makeSubmitBroadcastDeps(
     // reject-with-disallowed-srcs UX surface actually fires.
     imageAllowlistPort: makeDrizzleImageAllowlistRepo(),
     membersBridge,
+    // 059-membership-suspension Task 5 — precondition (l) wiring. Real
+    // F8 cross-module bridge (Task 4); NOT a stub — resolves the
+    // member's latest renewal cycle via `deriveMembershipAccess`.
+    membershipAccess: membershipAccessBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,
     eventAttendees: eventAttendeesBridge,

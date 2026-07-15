@@ -189,6 +189,11 @@ export const F6_AUDIT_EVENT_TYPES = [
   // values cannot be dropped without an offline rebuild so the DB
   // keeps the slot harmlessly; no application code can write to it
   // (TS enum type no longer includes the variant).
+  // 059-membership-suspension Task 17 — alert-only observability event.
+  // Emitted when the CSV importer records attendance for a matched
+  // member whose F8 benefit-access is suspended/terminated. Never
+  // blocks the import. Migration 0248 enum extension.
+  'event_attendance_by_suspended_member',
 ] as const;
 
 export type F6AuditEventType = (typeof F6_AUDIT_EVENT_TYPES)[number];
@@ -768,6 +773,32 @@ export interface AuditPayloads {
     readonly previousPaymentStatus: PaymentStatus;
     readonly newPaymentStatus: PaymentStatus;
     readonly rowHash: string;
+  };
+
+  /**
+   * 059-membership-suspension Task 17 — alert-only observability event.
+   * Emitted when the CSV importer matches an attendee row to a member
+   * whose F8 benefit-access state (`deriveMembershipAccess`) is
+   * `suspended` or `terminated`. The attendance row is recorded NORMALLY
+   * regardless — F6 never blocks on membership state (the event already
+   * happened by the time an admin uploads the CSV, and F6 event
+   * benefits are fulfilled externally, so there is nothing to gate
+   * here). This event exists purely so staff can see, after the fact,
+   * that a non-full-access member attended.
+   *
+   * Severity: `warn` — worth staff attention, not a security/availability
+   * signal. Emitted from inside the row's SAVEPOINT via `ports.audit.emit`
+   * on a best-effort basis: a failure here is logged but never rolls back
+   * the already-committed registration (the import-result
+   * `suspendedMemberWarnings` chip is the primary signal; this audit row
+   * is a secondary forensic trail, same tier as
+   * `csv_import_row_cancelled_no_prior`).
+   */
+  event_attendance_by_suspended_member: {
+    readonly severity: Severity;
+    readonly registrationId: RegistrationId;
+    readonly matchedMemberId: MemberId;
+    readonly accessState: 'suspended' | 'terminated';
   };
 
 }

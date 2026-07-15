@@ -34,6 +34,9 @@ import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewa
 // to a testable utility module so the en/th/sv branching is covered
 // by a unit test instead of relying on E2E for behavioural pinning.
 import { resolvePlanName } from './_lib/resolve-plan-name';
+// 059-membership-suspension Task 9 item 4 — payability-gate predicate,
+// extracted for unit-testability (see `_lib/is-renewal-payable.ts`).
+import { isRenewalPayable } from './_lib/is-renewal-payable';
 
 export default async function RenewalPortalPage({
   params,
@@ -221,23 +224,30 @@ export default async function RenewalPortalPage({
 
       <BenefitSummary benefits={summary.benefits} benefitsAvailable={summary.benefitsAvailable} />
 
-      {/* G4 (F8-completion slice 2.6) — payability gate. The Confirm flow
-          renders ONLY for an `awaiting_payment` cycle (the payable state).
-          An `upcoming|reminded` cycle shows a read-only "renewal window not
-          yet open" card; a `pending_admin_reactivation` cycle shows an
-          "awaiting admin verification" notice. The server gate
-          (`confirmRenewal` → 409 cycle_not_payable, with the lazy
-          self-transition for upcoming|reminded in slice 2.5) stays the
-          backstop — this presentation gate just stops a member ever seeing
-          a Confirm button they can't use.
+      {/* G4 (F8-completion slice 2.6) — payability gate, EXTENDED by
+          059-membership-suspension Task 9 item 4. The Confirm flow renders
+          for an `awaiting_payment` cycle (the payable state) OR a
+          non-terminal `upcoming`/`reminded` cycle whose period has already
+          ended — the exact condition `deriveMembershipAccess` uses to put
+          the member into `suspended`/`unpaid` (closes the 06:15-cron gap).
+          Before this fix, that expired-but-not-yet-`awaiting_payment`
+          cohort landed on the read-only "renewal window not yet open" card
+          below — a dead end directly contradicting the suspended card's
+          "pay to restore benefits" CTA, which links HERE.
+          `isRenewalPayable` (`_lib/is-renewal-payable.ts`) is the single
+          source of truth for this predicate. A `pending_admin_reactivation`
+          cycle shows a separate "awaiting admin verification" notice. The
+          server gate (`confirmRenewal` → 409 cycle_not_payable, with the
+          lazy `upcoming|reminded → awaiting_payment` self-transition) stays
+          the backstop — this presentation gate just stops a member ever
+          seeing a Confirm button they can't use, and now also stops it from
+          HIDING one they legitimately can.
 
-          Reviewer note (do NOT flag as a bug): until the enter-awaiting
-          cron / lazy confirm-writers have run, most members' cycles are
-          still `upcoming|reminded`, so this CORRECTLY renders the
-          not-yet-open state for them — that is correct, not "renewal is
-          broken". A member who renews early hits the slice-2.5 lazy
-          transition via the confirm route. */}
-      {summary.status === 'awaiting_payment' ? (
+          Reviewer note (superseded — do NOT reinstate the old note claiming
+          an expired upcoming/reminded cycle "correctly" shows not-yet-open;
+          under the 059 policy that member is suspended and the Confirm flow
+          MUST render for them). */}
+      {isRenewalPayable(summary.status, summary.expiresAt, new Date()) ? (
         /* Confirm flow wrapped in a Card so the renewal page reads as a
            consistent 3-card stack (plan summary · benefits · confirm) and
            matches the loading skeleton — was a card-less control group that

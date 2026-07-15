@@ -984,6 +984,8 @@
         "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen.",
         "membershipLapsed": "Förfallen",
         "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
+        "membershipSuspended": "Pausad",
+        "membershipSuspendedSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {
@@ -4659,6 +4661,16 @@
         "contactToRenew": "Kontakta oss för att återaktivera",
         "lapsedMailSubject": "Begäran om återaktivering av medlemskap",
         "renewNow": "Förnya nu",
+        "suspended": {
+          "unpaidValue": "Förmåner pausade",
+          "unpaidSubWithDueDate": "Faktura förfaller {dueDate} — betala för att återställa full tillgång",
+          "unpaidSubNoDueDate": "Betala din förnyelsefaktura för att återställa full tillgång",
+          "pendingReviewValue": "Betalning mottagen",
+          "pendingReviewSub": "Vi verifierar din betalning — ingen åtgärd krävs just nu.",
+          "payCta": "Betala för att återställa förmåner",
+          "benefitsPausedTitle": "Förmånerna är pausade",
+          "benefitsPausedBody": "Dina kvoter är oförändrade — e-utskick, evenemangsbiljetter, bannerplacering och andra ingående förmåner låses upp så snart din betalning har mottagits."
+        },
         "errorValue": "Status ej tillgänglig",
         "errorSub": "Vi kunde inte läsa in din medlemskapsstatus. Försök igen.",
         "emptyValue": "Välkommen",
@@ -5524,6 +5536,10 @@
       "cron_bearer_auth_rejected": "Cron-autentisering nekad",
       "lapsed_member_action_blocked": "Åtgärd blockerad — förfallen medlem",
       "renewal_kill_switch_blocked": "Åtgärd blockerad — kill switch aktiv",
+      "membership_suspended_action_blocked": "Åtgärd blockerad — medlemskap avstängt",
+      "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
+      "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
+      "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "invoice_draft_created": "Fakturautkast skapat",
       "invoice_draft_updated": "Fakturautkast uppdaterat",
       "invoice_draft_deleted": "Fakturautkast borttaget",
@@ -5664,6 +5680,7 @@
       "broadcast_member_dispatch_resumed": "Utskick till medlem återupptaget",
       "broadcast_member_halted_pending_review": "Utskick till medlem pausat i väntan på granskning",
       "broadcast_member_missing_primary_contact_email": "Medlem saknar primär kontakt-e-post",
+      "broadcast_membership_suspended_blocked": "Utskick blockerat — medlemskap avstängt",
       "broadcast_not_in_plan": "Utskick ingår inte i paketet",
       "broadcast_partial_delivery_accepted": "Delvis leverans accepterad",
       "broadcast_partially_sent": "Utskick delvis skickat",
@@ -5955,7 +5972,9 @@
       "activeHeading": "Inkluderade förmåner",
       "liveNote": "Uppdateras vid laddning · innevarande år",
       "emptyTitle": "Inga spårade förmåner",
-      "fullBenefits": "Alla förmåner"
+      "fullBenefits": "Alla förmåner",
+      "suspendedBadge": "Pausad",
+      "suspendedBadgeSr": "Medlemskap pausat — förmåner tillfälligt stoppade"
     },
     "benefit": {
       "eblast": "E-utskick",

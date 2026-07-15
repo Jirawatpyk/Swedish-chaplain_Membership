@@ -40,6 +40,7 @@ import { projectEngagementScore } from '@/modules/insights';
 import {
   loadMembersMembershipStatus,
   makeMembersMembershipStatusDeps,
+  type MembersMembershipStatus,
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -109,26 +110,33 @@ export function parseDirectorySort(
   return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
 }
 
+/** Empty membership-status result — used by the degrade path below. */
+const EMPTY_MEMBERSHIP_STATUS: MembersMembershipStatus = {
+  lapsed: new Set<string>(),
+  suspended: new Set<string>(),
+};
+
 /**
- * Best-effort lapsed-membership enrichment. Renewals is a secondary read on the
- * member-directory hot path — a failure must NEVER take down the directory.
+ * Best-effort lapsed/suspended-membership enrichment. Renewals is a secondary
+ * read on the member-directory hot path — a failure must NEVER take down the
+ * directory.
  *
  * The use-case is typed `Result<…, never>`: it has no domain-error branch, so
  * the ONLY live failure mode is a thrown repo call (a `runInTenant` query can
  * throw). `res.ok` is therefore always `true`; the lone live path is the catch,
  * which logs one PII-safe warn (errKind + memberIdsCount, no ids) and degrades
- * to "no badges" (empty set).
+ * to "no badges" (both sets empty).
  */
 async function loadMembersMembershipStatusSafe(
   tenant: ReturnType<typeof resolveTenantFromRequest>,
   memberIds: readonly string[],
-): Promise<ReadonlySet<string>> {
+): Promise<MembersMembershipStatus> {
   try {
     const res = await loadMembersMembershipStatus(
       makeMembersMembershipStatusDeps(tenant.slug),
       { tenantId: tenant.slug, memberIds },
     );
-    return res.ok ? res.value : new Set<string>();
+    return res.ok ? res.value : EMPTY_MEMBERSHIP_STATUS;
   } catch (e) {
     logger.warn(
       {
@@ -138,7 +146,7 @@ async function loadMembersMembershipStatusSafe(
       },
       '[members-lapsed] loadMembersMembershipStatus threw — badges suppressed',
     );
-    return new Set<string>();
+    return EMPTY_MEMBERSHIP_STATUS;
   }
 }
 
@@ -304,11 +312,12 @@ export async function MembersDirectoryBody({
   // helper) and format every row's display number (`SCCM-0042`) server-side,
   // mirroring the admin detail page. Falls back to the column DEFAULT 'M'
   // when no settings row exists (no visible error).
-  // #4 — overlap the renewals "lapsed" batch read with the prefix fetch: both
-  // depend only on the already-resolved search result, so run them together.
-  // The lapsed read is best-effort (degrades to an empty set → no badges).
+  // #4 / Task 16 — overlap the renewals "lapsed"+"suspended" batch read with
+  // the prefix fetch: both depend only on the already-resolved search result,
+  // so run them together. The read is best-effort (degrades to both sets
+  // empty → no badges).
   const memberIds = result.value.items.map((row) => row.member.memberId);
-  const [memberPrefix, lapsedIds] = await Promise.all([
+  const [memberPrefix, membershipStatus] = await Promise.all([
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
     loadMembersMembershipStatusSafe(tenant, memberIds),
   ]);
@@ -331,7 +340,8 @@ export async function MembersDirectoryBody({
     plan_year: row.member.planYear,
     plan_display_name: row.planDisplayName,
     status: row.member.status,
-    membership_lapsed: lapsedIds.has(row.member.memberId),
+    membership_lapsed: membershipStatus.lapsed.has(row.member.memberId),
+    membership_suspended: membershipStatus.suspended.has(row.member.memberId),
     // 056-members-table-compact — engagement (the positive-framed inverse of
     // the F8 risk score) is now the sole at-risk surface in the table; the raw
     // risk score is no longer wired into the row (the Risk column was dropped).

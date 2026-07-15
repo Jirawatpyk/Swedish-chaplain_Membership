@@ -114,6 +114,10 @@ export function toOutstandingInvoiceInputs(
     status: r.status,
     totalSatang: r.total?.satang ?? null,
     dueDate: r.dueDate,
+    // 059-membership-suspension — carried through so the smart-CTA helper
+    // can find an unpaid MEMBERSHIP invoice without a second DB read.
+    id: r.invoiceId,
+    invoiceSubject: r.invoiceSubject,
   }));
 }
 

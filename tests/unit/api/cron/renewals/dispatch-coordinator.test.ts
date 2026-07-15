@@ -95,6 +95,11 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorSkippedReadOnly: vi.fn(),
     cascadeOutcome: vi.fn(),
     observeCycleStateGauge: vi.fn(),
+    // 059-membership-suspension Task 18 — fed alongside observeCycleStateGauge
+    // at the same site; never exercised in this suite (db.execute stub
+    // returns `[]` so `row` is always undefined before either gauge call),
+    // but declared for hygiene/future-proofing (mirrors observeCycleStateGauge).
+    observeMembershipSuspendedCountGauge: vi.fn(),
     // W0-09 additions:
     coordinatorTenantsEnqueued: coordinatorTenantsEnqueuedMock,
     coordinatorTenantsSucceeded: coordinatorTenantsSucceededMock,

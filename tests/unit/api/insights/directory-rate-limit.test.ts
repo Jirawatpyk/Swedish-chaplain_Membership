@@ -28,6 +28,18 @@ vi.mock('@/lib/auth-session', () => ({ getCurrentSession: sessionMock }));
 const rlCheckMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/auth-deps', () => ({ rateLimiter: { check: rlCheckMock } }));
 
+// 059-membership-suspension Task 7b — the logo route's shared `gate()` helper
+// now calls checkPortalAccess directly (same composition requireMemberContext
+// uses). Mocked to an always-allow stub so this rate-limit suite stays a pure
+// unit test (no live Neon dependency); the gate's block/allow behaviour is
+// covered live in tests/integration/portal/gap-routes-access-gate.test.ts.
+const checkPortalAccessMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/lapsed-portal-scope', () => ({ checkPortalAccess: checkPortalAccessMock }));
+vi.mock('@/lib/portal-access-deps', () => ({
+  buildPortalAccessDeps: () => ({}),
+  toPortalAccessAction: (method: string) => method,
+}));
+
 const findByLinkedUserIdMock = vi.hoisted(() => vi.fn());
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({ memberRepo: { findByLinkedUserId: findByLinkedUserIdMock } }),
@@ -54,6 +66,12 @@ const { POST: exportsPost } = await import('@/app/api/admin/directory/exports/ro
 
 function req(body?: unknown): NextRequest {
   return {
+    // Task 7b — the logo route's gate() now derives the checkPortalAccess
+    // pathname via `new URL(request.url).pathname`, so the fake request
+    // needs a real `url` string (checkPortalAccess itself is mocked above,
+    // but the route still constructs the ctx object before calling it).
+    url: 'http://localhost:3100/api/portal/directory/logo',
+    method: 'POST',
     headers: { get: () => null },
     json: async () => body ?? {},
     formData: async () => {
@@ -69,6 +87,8 @@ beforeEach(() => {
   setLogoMock.mockReset();
   ebookMock.mockReset();
   jsonExportMock.mockReset();
+  checkPortalAccessMock.mockReset();
+  checkPortalAccessMock.mockResolvedValue({ allowed: true, reason: 'full' });
 });
 
 describe('portal/directory/logo POST — per-member rate limit (F9 #2)', () => {

@@ -1,0 +1,30 @@
+-- ---------------------------------------------------------------------------
+-- 059-membership-suspension Task 13 — `audit_event_type` extension (1 value).
+--
+-- Adds `renewal_lapse_deferred_invoice_not_due` (F8) — emitted by
+-- `lapseCyclesOnGraceExpiry`'s Task-12 `InvoiceDueBridge` guard when a
+-- member past the daily lapse cron's grace window still has an unpaid
+-- (`status='issued'`), not-yet-past-due MEMBERSHIP invoice (F4's 90-day
+-- net terms). The cron defers the `awaiting_payment` -> `lapsed`
+-- transition instead of terminating benefit access mid-credit-window.
+--
+-- 5-year retention (no tax-document overlap).
+--
+-- Pattern: `ALTER TYPE … ADD VALUE IF NOT EXISTS` (matches 0109/0245
+-- precedent) so re-running is a no-op. Forward-only: enum values cannot
+-- be removed.
+--
+-- Registered in lockstep with:
+--   - `F8_AUDIT_EVENT_TYPES` (renewals audit port) — count 68 → 69
+--   - `F8_ENUM_SHIPPED_TUPLE` (drizzle-renewal-audit-emitter.ts) — SHIPPED
+--     (the real emit site lands in this same commit,
+--     `lapse-cycles-on-grace-expiry.ts` `processOne`)
+--   - `auditEventTypeEnum` tuple (src/modules/auth/infrastructure/db/schema.ts)
+--   - `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`
+--   - i18n `audit.eventType.<name>` (en/th/sv) — enforced by
+--     tests/unit/insights/audit-event-label-coverage.test.ts (re-derives
+--     the DB enum from every migration and cross-checks it against
+--     ALL_AUDIT_EVENT_TYPES)
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_lapse_deferred_invoice_not_due';

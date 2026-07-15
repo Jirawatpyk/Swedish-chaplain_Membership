@@ -15,6 +15,8 @@ import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
+import { buildPortalAccessDeps, toPortalAccessAction } from '@/lib/portal-access-deps';
 import { updateDirectoryListing, makeUpdateDirectoryListingDeps } from '@/modules/insights';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -85,6 +87,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'no_member_profile' }, correlationId }, { status: 404 });
   }
   const memberId = memberResult.value.memberId;
+
+  // 059-membership-suspension Task 7b — this route resolves its member via
+  // a bespoke `getCurrentSession` + `findByLinkedUserId` lookup instead of
+  // `requireMemberContext` (`src/lib/member-context.ts`), so it does NOT
+  // automatically inherit that helper's `checkPortalAccess` enforcement.
+  // Wire the same gate directly, same deps builder + ctx shape + fail-open
+  // behaviour as `requireMemberContext` (checkPortalAccess fails open
+  // internally on a cyclesRepo read error, so no extra try/catch needed here).
+  // `new URL(request.url).pathname` (NOT `request.nextUrl.pathname`) per the
+  // same Task 3 controller note `requireMemberContext` follows — the
+  // normalized literal request path.
+  const actionValue = toPortalAccessAction(request.method);
+  const accessDecision = await checkPortalAccess(buildPortalAccessDeps(tenant), {
+    tenantId: tenant.slug,
+    memberId,
+    pathname: new URL(request.url).pathname,
+    actorUserId: current.user.id as string,
+    correlationId,
+    requestId: correlationId,
+    ...(actionValue ? { action: actionValue } : {}),
+  });
+  if (!accessDecision.allowed) {
+    return NextResponse.json(
+      { error: { code: 'membership_access_restricted' }, correlationId },
+      { status: 403 },
+    );
+  }
 
   try {
     const result = await updateDirectoryListing(

@@ -10,12 +10,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   httpStatusForBroadcastError,
+  messagesFor,
   type F7RouteErrorCode,
 } from '@/lib/broadcasts-route-helpers';
 
 const EXPECTED: Record<F7RouteErrorCode, number> = {
   // Submit preconditions (FR-002 a-k + FR-016a)
   broadcast_member_halted_pending_review: 422,
+  // 059-membership-suspension Task 5/8/15 — suspended/terminated member
+  // blocked from spending E-Blast quota (policy reject, not infra fault).
+  broadcast_membership_suspended_blocked: 422,
   broadcast_rate_limit_exceeded: 429,
   broadcast_not_in_plan: 422,
   broadcast_quota_blocked: 422,
@@ -85,5 +89,34 @@ describe('httpStatusForBroadcastError', () => {
     const result = httpStatusForBroadcastError('');
     expect(result.status).toBe(500);
     expect(result.code).toBe('internal_error');
+  });
+});
+
+// 059-membership-suspension bug fix — `submitBroadcast` has correctly
+// returned this kind since Task 8, but the HTTP route mapper never learned
+// about it, so `isF7RouteErrorCode` fell through and every suspended-member
+// submit surfaced as a generic 500 instead of the intended 422. This is the
+// route-mapping test Task 5 skipped (it only covered the Application
+// use-case). Non-vacuous: pins the exact status + bilingual copy, not just
+// "is defined".
+describe('broadcast_membership_suspended_blocked route mapping', () => {
+  it('maps to 422, not the 500 fallback', () => {
+    const result = httpStatusForBroadcastError(
+      'broadcast_membership_suspended_blocked',
+    );
+    expect(result.status).toBe(422);
+    expect(result.code).toBe('broadcast_membership_suspended_blocked');
+  });
+
+  it('resolves a bilingual message telling the member to complete payment', () => {
+    const { message, messageThai } = messagesFor(
+      'broadcast_membership_suspended_blocked',
+    );
+    expect(message).toBe(
+      'Your membership benefits are suspended. Please complete payment to resume sending E-Blasts.',
+    );
+    expect(messageThai).toBe(
+      'สิทธิประโยชน์สมาชิกภาพของคุณถูกระงับ กรุณาชำระเงินเพื่อกลับมาส่ง E-Blast ได้อีกครั้ง',
+    );
   });
 });
