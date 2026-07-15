@@ -22,6 +22,7 @@
  *   diagnostic (R7-M4).
  */
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -204,11 +205,14 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
           {rows.length > 0 ? (
             <Link
               href="/portal/invoices"
-              // 090 finding #7 — min-h-11 (≥44px) to match the sibling
-              // action-button convention across the portal.
-              className={cn(buttonVariants({ variant: 'outline' }), 'min-h-11')}
+              // Mirror the Benefit usage card's "Full benefits" header action
+              // exactly (benefit-usage-card.tsx) so the two side-by-side
+              // dashboard cards read as one component: same outline variant,
+              // `shrink-0`, and a trailing arrow icon.
+              className={cn(buttonVariants({ variant: 'outline' }), 'shrink-0')}
             >
               {t('summary.viewAll')}
+              <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           ) : null}
         </div>
@@ -308,10 +312,10 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             number: displayNo ?? r.invoiceId,
                           },
                         )}
-                        className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-3',
-                        )}
+                        // Default size (h-9, 36px) so the download actions match
+                        // the card's "View all" header button — one button height
+                        // across the whole card (was size:'sm' + min-h-11 = 44px).
+                        className={cn(buttonVariants({ variant: 'outline' }))}
                       />
                     ) : null}
                     {/* 090 Bug 3 — §86/4 RC receipt download, shown once the row
@@ -335,14 +339,17 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                             : 'actions.downloadReceiptAria',
                           { number: receiptRef },
                         )}
+                        // Default size (h-9, 36px) to match the invoice button +
+                        // the card's "View all" header button — one button height
+                        // across the card (was size:'sm' + min-h-11 = 44px).
                         className={cn(
-                          buttonVariants({ variant: 'outline', size: 'sm' }),
-                          'min-h-11 px-3',
-                          // finding #3 — let the long combined dual-role label
-                          // wrap to 2 lines instead of clipping (Button defaults
-                          // to whitespace-nowrap).
+                          buttonVariants({ variant: 'outline' }),
+                          // finding #3 — the long combined dual-role label wraps
+                          // to 2 lines instead of clipping (Button defaults to
+                          // whitespace-nowrap); `h-auto` lets it grow past the
+                          // 36px base, `min-h-9` keeps the 1-line case aligned.
                           vm.isCombinedPaid &&
-                            'h-auto min-h-11 whitespace-normal text-left',
+                            'h-auto min-h-9 whitespace-normal text-left py-1.5',
                         )}
                       />
                     ) : null}
