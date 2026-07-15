@@ -116,20 +116,25 @@ describe('Integration — billing_cycle default + derive-from-dates backfill (06
     expect(await readBillingCycle(memberId)).toBe('rolling');
   }, 60_000);
 
-  it('backfill flips a Jan-1-latest-cycle member to "calendar" and leaves a mid-year member "rolling"', async () => {
+  it('backfill flips a Jan-1-latest-cycle member to "calendar"; leaves mid-year AND Jan-but-not-1st members "rolling"', async () => {
     // A: Jan-1 anniversary → current-period anchor keeps period_from = Jan 1.
     const calendarMember = await seedMember('2020-01-01', 'CalendarA');
     // B: mid-year anniversary → period_from mid-year.
     const rollingMember = await seedMember('2020-06-20', 'RollingB');
+    // C: January but NOT the 1st → proves the predicate requires day=1, not
+    // just month=1 (guards against a simplified `EXTRACT(MONTH)=1` classifier).
+    const janMidMember = await seedMember('2020-01-15', 'JanMid');
 
-    // Before backfill: both are the 'rolling' default.
+    // Before backfill: all are the 'rolling' default.
     expect(await readBillingCycle(calendarMember)).toBe('rolling');
     expect(await readBillingCycle(rollingMember)).toBe('rolling');
+    expect(await readBillingCycle(janMidMember)).toBe('rolling');
 
     // Run the exact migration backfill, tenant-scoped via RLS.
     await runInTenant(tenant.ctx, (tx) => tx.execute(BACKFILL_SQL));
 
     expect(await readBillingCycle(calendarMember)).toBe('calendar');
     expect(await readBillingCycle(rollingMember)).toBe('rolling');
+    expect(await readBillingCycle(janMidMember)).toBe('rolling'); // Jan 15 ≠ Jan 1
   }, 60_000);
 });
