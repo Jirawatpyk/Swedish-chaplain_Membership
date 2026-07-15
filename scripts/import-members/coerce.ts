@@ -127,3 +127,45 @@ export function countryNameToCode(
 
   return err({ code: 'country.unresolved', raw });
 }
+
+/** Cells that mean "no tax id" in TSCC's sheet. */
+const BLANK_TAX_ALIASES: ReadonlySet<string> = new Set(['', 'n/a', 'na', '-', 'none']);
+
+/**
+ * Normalize a `Tax ID` cell. For a Thai member, restore the leading zero Excel
+ * stripped: 113 of the sheet's tax IDs arrive as 12 digits because Excel stored
+ * "0105562087242" as the number 105562087242. Left-pad TH 12-digit values to 13
+ * (verified: all 113 pass the RD checksum after padding). "N/A" / "-" / blank →
+ * '' (caller treats an empty tax_id as absent, not invalid). A non-TH value
+ * passes through untouched — foreign formats vary, and asTaxId only length-checks
+ * them. A TH value that is neither 12 nor 13 digits is returned as-is so asTaxId
+ * rejects it LOUD rather than being silently mangled.
+ *
+ * `country` is the resolved ISO alpha-2 (passed as a plain string — this is an
+ * internal importer helper).
+ */
+export function normalizeTaxIdCell(raw: string, country: string): string {
+  const trimmed = raw.trim();
+  if (BLANK_TAX_ALIASES.has(trimmed.toLowerCase())) return '';
+  if (country === 'TH') {
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.length === 12) return `0${digits}`;
+    if (digits.length === 13) return digits;
+  }
+  return trimmed;
+}
+
+export type MemberStatusValue = 'active' | 'inactive';
+
+/**
+ * Coerce the TSCC `Member Status` cell → members.status. Active→'active',
+ * Inactive→'inactive'. Unknown/blank → null (the caller defaults to 'active' and
+ * warns — never silently mis-states a member's standing). `archived` is NOT a
+ * value this import produces (archival is a deliberate admin action).
+ */
+export function coerceMemberStatus(raw: string): MemberStatusValue | null {
+  const v = raw.trim().toLowerCase();
+  if (v === 'active') return 'active';
+  if (v === 'inactive') return 'inactive';
+  return null;
+}

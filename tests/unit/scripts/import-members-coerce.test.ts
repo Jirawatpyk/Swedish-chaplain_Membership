@@ -6,8 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 
-const { isGregorianYear, countryNameToCode, parseGregorianDate, coercePreferredLanguage } =
-  await import('@/../scripts/import-members/coerce');
+const {
+  isGregorianYear, countryNameToCode, parseGregorianDate, coercePreferredLanguage,
+  normalizeTaxIdCell, coerceMemberStatus,
+} = await import('@/../scripts/import-members/coerce');
 
 describe('isGregorianYear — Buddhist-Era leak guard (spec § 3.5)', () => {
   it('accepts plausible Gregorian years', () => {
@@ -108,5 +110,39 @@ describe('coercePreferredLanguage (spec § 2)', () => {
     expect(coercePreferredLanguage(null)).toBeNull();
     expect(coercePreferredLanguage(undefined)).toBeNull();
     expect(coercePreferredLanguage('fr')).toBeNull();
+  });
+});
+
+describe('normalizeTaxIdCell — restore the Excel-stripped leading zero (TH)', () => {
+  it('left-pads a 12-digit TH tax id to 13 (Excel ate the leading 0)', () => {
+    expect(normalizeTaxIdCell('105562087242', 'TH')).toBe('0105562087242');
+  });
+  it('passes an already-13-digit TH tax id through', () => {
+    expect(normalizeTaxIdCell('0105562087242', 'TH')).toBe('0105562087242');
+  });
+  it('strips separators before padding a TH value', () => {
+    expect(normalizeTaxIdCell('1-0556-20872-42', 'TH')).toBe('0105562087242');
+  });
+  it('treats N/A / dash / blank as empty (absent, not invalid)', () => {
+    for (const raw of ['N/A', 'n/a', '-', '', '   ']) {
+      expect(normalizeTaxIdCell(raw, 'TH')).toBe('');
+    }
+  });
+  it('leaves a foreign (non-TH) tax id untouched', () => {
+    expect(normalizeTaxIdCell('SE556677889901', 'SE')).toBe('SE556677889901');
+  });
+  it('does NOT pad a TH value that is neither 12 nor 13 digits (asTaxId errors loud)', () => {
+    expect(normalizeTaxIdCell('123', 'TH')).toBe('123');
+  });
+});
+
+describe('coerceMemberStatus (TSCC Member Status column)', () => {
+  it('maps Active/Inactive case-insensitively', () => {
+    expect(coerceMemberStatus('Active')).toBe('active');
+    expect(coerceMemberStatus(' inactive ')).toBe('inactive');
+  });
+  it('returns null for unknown/blank (caller defaults to active + warns)', () => {
+    expect(coerceMemberStatus('')).toBeNull();
+    expect(coerceMemberStatus('archived')).toBeNull();
   });
 });
