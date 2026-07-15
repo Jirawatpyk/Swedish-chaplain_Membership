@@ -956,25 +956,25 @@ export function makeDrizzleRenewalCycleRepo(
     async listCyclesEligibleForLapse(
       _tenantId: string,
       args: {
-        readonly cutoffDate: string;
         readonly pageSize: number;
       },
     ): Promise<RenewalCyclePage> {
       return runInTenant(tenant, async (tx) => {
-        // T115a Phase 5 wave K24 — eligible = `awaiting_payment` cycles
-        // whose `expires_at < cutoffDate` (cutoff = `now -
-        // grace_period_days`). RLS scopes to the tenant context. Order
-        // by `expires_at ASC` so oldest expiries are processed first
+        // 065 §5.2 — candidate = ALL `awaiting_payment` cycles; the
+        // per-cycle decision (defer / terminate@due+60 / no-invoice
+        // backstop) is made in the use-case from the member's oldest-due
+        // unpaid membership invoice `due_date`. We MUST NOT pre-filter by
+        // `expires_at`: a §5.3 born-`awaiting_payment` new member has
+        // `expires_at ≈ now + 12 months`, so the former
+        // `expires_at < now - grace` gate would hide that cohort for ~12
+        // months and the due+60 clock would never fire for the exact
+        // members this feature targets. RLS scopes to the tenant context.
+        // Order by `expires_at ASC` so oldest expiries are processed first
         // (smallest blast radius if the cron is partially executed).
         const rows = await tx
           .select()
           .from(renewalCycles)
-          .where(
-            and(
-              eq(renewalCycles.status, 'awaiting_payment'),
-              sql`${renewalCycles.expiresAt} < ${args.cutoffDate}`,
-            ),
-          )
+          .where(eq(renewalCycles.status, 'awaiting_payment'))
           .orderBy(sql`${renewalCycles.expiresAt} ASC`)
           .limit(args.pageSize);
 

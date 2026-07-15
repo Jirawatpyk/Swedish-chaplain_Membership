@@ -16,13 +16,14 @@
  * predicate is application-layer defence-in-depth alongside RLS
  * (Constitution Principle I § 1).
  */
-import { and, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { invoicesTable } from '@/modules/invoicing';
 import type {
   HasUnpaidNotYetDueMembershipInvoiceInput,
   InvoiceDueBridge,
+  OldestUnpaidMembershipInvoiceDueDateInput,
 } from '../../application/ports/invoice-due-bridge';
 
 export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridge {
@@ -46,6 +47,38 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
           )
           .limit(1);
         return rows.length > 0;
+      });
+    },
+
+    async oldestUnpaidMembershipInvoiceDueDate(
+      input: OldestUnpaidMembershipInvoiceDueDateInput,
+    ): Promise<string | null> {
+      // 065 §5.2 — the member's OLDEST-DUE unpaid membership invoice
+      // `due_date` (or null). Member-scoped, NOT `linked_invoice_id`: a
+      // §5.3 born-`awaiting_payment` initial cycle has no linked invoice,
+      // so anchoring the lapse clock on the cycle's linked invoice would
+      // miss exactly that cohort. `status='issued'` = unpaid (draft/paid/
+      // void/credited never count); `ORDER BY due_date ASC LIMIT 1` picks
+      // the oldest so a member with several unpaid invoices is judged by
+      // the one they were asked to pay first. RLS scopes to the tenant via
+      // `runInTenant`; the explicit `tenantId` predicate is defence-in-
+      // depth alongside RLS (Constitution Principle I § 1).
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({ dueDate: invoicesTable.dueDate })
+          .from(invoicesTable)
+          .where(
+            and(
+              eq(invoicesTable.tenantId, input.tenantId),
+              eq(invoicesTable.memberId, input.memberId),
+              eq(invoicesTable.invoiceSubject, 'membership'),
+              eq(invoicesTable.status, 'issued'),
+              isNotNull(invoicesTable.dueDate),
+            ),
+          )
+          .orderBy(sql`${invoicesTable.dueDate} ASC`)
+          .limit(1);
+        return rows[0]?.dueDate ?? null;
       });
     },
   };

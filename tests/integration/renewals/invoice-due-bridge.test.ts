@@ -370,4 +370,75 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
       await tenantB.cleanup().catch(() => {});
     }
   });
+
+  describe('oldestUnpaidMembershipInvoiceDueDate (065 §5.2)', () => {
+    it('returns the OLDEST due_date among multiple issued membership invoices', async () => {
+      const memberId = await seedMember();
+      const older = addDays(todayBkk, 5);
+      const newer = addDays(todayBkk, 40);
+      // Seed newest first to prove ORDER BY due_date ASC (not insert order).
+      await seedMembershipInvoice({ memberId, status: 'issued', dueDate: newer });
+      await seedMembershipInvoice({ memberId, status: 'issued', dueDate: older });
+
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+      });
+      expect(got).toBe(older);
+    });
+
+    it('null when the member has no membership invoice', async () => {
+      const memberId = await seedMember();
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+      });
+      expect(got).toBeNull();
+    });
+
+    it('ignores draft / paid / void — only issued counts', async () => {
+      const memberId = await seedMember();
+      await seedMembershipInvoice({ memberId, status: 'draft', dueDate: pastDueDate });
+      await seedMembershipInvoice({ memberId, status: 'paid', dueDate: pastDueDate });
+      await seedMembershipInvoice({ memberId, status: 'void', dueDate: pastDueDate });
+
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+      });
+      expect(got).toBeNull();
+    });
+
+    it('ignores event-subject invoices (subject must be membership)', async () => {
+      const memberId = await seedMember();
+      await seedEventInvoiceForMember(memberId, futureDueDate);
+
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+      });
+      expect(got).toBeNull();
+    });
+
+    it("cross-tenant: tenant B cannot see tenant A's invoice due_date (RLS)", async () => {
+      const tenantB = await createTestTenant('test-chamber');
+      try {
+        const memberId = await seedMember();
+        await seedMembershipInvoice({ memberId, status: 'issued', dueDate: futureDueDate });
+
+        const depsB = makeRenewalsDeps(tenantB.ctx.slug);
+        const gotUnderB = await depsB.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+          tenantId: tenantB.ctx.slug,
+          memberId,
+        });
+        expect(gotUnderB).toBeNull();
+      } finally {
+        await tenantB.cleanup().catch(() => {});
+      }
+    });
+  });
 });

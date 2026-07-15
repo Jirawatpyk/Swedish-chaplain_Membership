@@ -79,10 +79,28 @@ describe('isMembershipLapsed', () => {
     expect(isMembershipLapsed(cycle({ status: 'awaiting_payment', expiresAt: PAST }), NOW)).toBe(false);
   });
 
-  it('false: terminal lapsed cycle whose expiresAt is in the FUTURE (coverage still live)', () => {
+  // 065 §5.2⇄§5.3 — a `lapsed` cycle is lapsed REGARDLESS of expiry. This
+  // WAS `false` ("coverage still live") on the assumption that a lapsed
+  // cycle always had a past `expiresAt`; §5.3's born-`awaiting_payment` new
+  // member (initial cycle carries a far-future `expiresAt = period_to`)
+  // lapsed at due+60 breaks that assumption. A lapsed non-payer has no paid
+  // coverage to preserve, so they are lapsed.
+  it('true: terminal lapsed cycle whose expiresAt is in the FUTURE (065 born-awaiting)', () => {
     expect(
       isMembershipLapsed(
         cycle({ status: 'lapsed', closedAt: PAST, closedReason: 'lapsed', expiresAt: FUTURE }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it('false: terminal CANCELLED cycle whose expiresAt is in the FUTURE (coverage still live)', () => {
+    // `cancelled` KEEPS the expiry check (it can befall a PAID cycle via the
+    // archive cascade whose coverage is legitimately still live) — this is
+    // the case the old lapsed test used to encode.
+    expect(
+      isMembershipLapsed(
+        cycle({ status: 'cancelled', closedAt: PAST, closedReason: 'cancelled', expiresAt: FUTURE }),
         NOW,
       ),
     ).toBe(false);
@@ -97,10 +115,12 @@ describe('isMembershipLapsed', () => {
     ).toBe(false);
   });
 
-  it('false: expiresAt EXACTLY == now (strict <, not ≤)', () => {
+  it('false: CANCELLED cycle with expiresAt EXACTLY == now (strict <, not ≤)', () => {
+    // The strict-`<` expiry boundary still governs `cancelled` (065 §5.2⇄§5.3
+    // moved `lapsed` off the expiry gate, so the boundary is exercised here).
     expect(
       isMembershipLapsed(
-        cycle({ status: 'lapsed', closedAt: PAST, closedReason: 'lapsed', expiresAt: NOW.toISOString() }),
+        cycle({ status: 'cancelled', closedAt: PAST, closedReason: 'cancelled', expiresAt: NOW.toISOString() }),
         NOW,
       ),
     ).toBe(false);

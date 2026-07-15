@@ -393,18 +393,23 @@ export interface RenewalCycleRepo {
   ): Promise<boolean>;
 
   /**
-   * T115a Phase 5 wave K24 — eligibility cursor for the daily
-   * `lapseCyclesOnGraceExpiry` cron (FR-004 + AS3 closed-reason
-   * differentiation). Returns cycles still in `awaiting_payment`
-   * whose `expires_at < cutoffDate` (cutoff = `now - grace_period_days`),
-   * ordered by `expires_at ASC` for deterministic batching. The
-   * use-case decides the closed_reason discriminant per cycle by
-   * consulting the F5 payment-attempts bridge.
+   * Eligibility cursor for the daily `lapseCyclesOnGraceExpiry` cron
+   * (FR-004 + AS3 closed-reason differentiation). Returns ALL cycles
+   * still in `awaiting_payment`, ordered by `expires_at ASC` for
+   * deterministic batching.
+   *
+   * 065 §5.2 — the `expires_at < cutoffDate` pre-filter was REMOVED (the
+   * `cutoffDate` arg with it): a §5.3 born-`awaiting_payment` new member
+   * has `expires_at ≈ now + 12 months`, so an `expires_at`-based gate
+   * would hide that cohort for ~12 months and the due+60 clock would
+   * never fire for them. The per-cycle decision (defer / terminate@due+60
+   * / no-invoice backstop on `expires_at + grace`) now lives entirely in
+   * the use-case, driven by the member's oldest-due unpaid membership
+   * invoice `due_date`.
    */
   listCyclesEligibleForLapse(
     tenantId: string,
     args: {
-      readonly cutoffDate: string;
       readonly pageSize: number;
     },
   ): Promise<RenewalCyclePage>;
