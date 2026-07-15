@@ -526,12 +526,24 @@ export function MembersTable({
       header: () => t('columns.company'),
       cell: (info) => {
         const country = info.row.original.country;
+        const name = info.getValue();
         return (
-          <span className="inline-flex items-center gap-2">
+          // `flex` (not inline-flex) so the name can wrap/clamp instead of
+          // forcing the cell — and the table — wider than the viewport. Long
+          // legal names (e.g. "… PUBLIC COMPANY LIMITED") clamp to 2 lines with
+          // the full name available on hover via `title`.
+          <span className="flex items-center gap-2">
             {country && (
-              <CountryDisplay code={country} variant="flag-only" />
+              <span className="shrink-0">
+                <CountryDisplay code={country} variant="flag-only" />
+              </span>
             )}
-            <span className="font-medium">{info.getValue()}</span>
+            <span
+              className="line-clamp-2 max-w-[24ch] font-medium break-words"
+              title={name}
+            >
+              {name}
+            </span>
           </span>
         );
       },
@@ -560,16 +572,21 @@ export function MembersTable({
       cell: (info) => {
         const c = info.getValue();
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
+        const fullName = `${c.first_name} ${c.last_name}`.trim();
         return (
-          <span className="inline-flex items-center gap-1.5">
-            <span>{`${c.first_name} ${c.last_name}`.trim()}</span>
+          <span className="flex items-center gap-1.5">
+            {/* `min-w-0 truncate` so a long name ellipsises instead of widening
+                the cell (the bounce badge stays a fixed, non-shrinking sibling). */}
+            <span className="min-w-0 max-w-[18ch] truncate" title={fullName}>
+              {fullName}
+            </span>
             {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
                 row-level bounce signal in the directory, not only on the detail
                 page. Copy lives under admin.members.detail.inviteBounced. */}
             {c.invite_bounced ? (
               <Badge
                 variant="outline"
-                className="gap-1 border-destructive/40 text-destructive"
+                className="shrink-0 gap-1 border-destructive/40 text-destructive"
               >
                 <TriangleAlert aria-hidden="true" className="size-3" />
                 <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
