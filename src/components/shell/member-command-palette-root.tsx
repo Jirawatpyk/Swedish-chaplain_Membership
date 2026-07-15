@@ -24,6 +24,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { MemberCommandPalette } from '@/components/command-palette/member-invoices-group';
+import { env } from '@/lib/env';
 
 export async function MemberCommandPaletteRoot() {
   const { user } = await requireSession('member');
@@ -47,6 +48,15 @@ export async function MemberCommandPaletteRoot() {
   }
 
   return (
-    <MemberCommandPalette currentUserRole={user.role} membershipAccess={membershipAccess} />
+    <MemberCommandPalette
+      currentUserRole={user.role}
+      membershipAccess={membershipAccess}
+      // F7 break-glass — the "Compose E-Blast" entry deep-links to
+      // /portal/broadcasts/new, which the proxy 503s when F7 is off. Pass the
+      // flag so the client palette hides that entry (a dead end otherwise).
+      // "View E-Blast usage" stays — it lands on the Benefits page, which
+      // gracefully falls back to the benefits tab under F7-off.
+      broadcastsEnabled={env.features.f7Broadcasts}
+    />
   );
 }

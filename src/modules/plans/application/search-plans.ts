@@ -43,6 +43,21 @@ export type PalettePlanHit = {
   readonly url: string;
 };
 
+/**
+ * Kill-switch tag for a palette entry whose destination is gated behind an env
+ * feature flag. When the flag is OFF, the entry's target route is proxy-503'd
+ * (F7 broadcasts → `/admin/broadcasts/**`), `notFound()` (F6 events →
+ * `/admin/events/**`), or simply absent (088 §86/4 receipt re-render), so
+ * surfacing the entry in ⌘K would be a dead-end jump. The Presentation layer
+ * (the `/api/plans/search` route) strips tagged entries via
+ * `filterPaletteEntriesByFeature`; the Application layer never reads `env`
+ * (Principle III) — the tag is pure data (an `env.features` key NAME).
+ */
+export type PaletteFeatureFlag =
+  | 'f6EventCreate'
+  | 'f7Broadcasts'
+  | 'f088TaxAtPayment';
+
 export type PaletteActionItem = {
   readonly id: string;
   readonly label: string;
@@ -56,12 +71,16 @@ export type PaletteActionItem = {
    * follow-up.
    */
   readonly keywords?: readonly string[];
+  /** See {@link PaletteFeatureFlag} — stripped by the route when the flag is OFF. */
+  readonly feature?: PaletteFeatureFlag;
 };
 
 export type PaletteNavigateItem = {
   readonly id: string;
   readonly label: string;
   readonly url: string;
+  /** See {@link PaletteFeatureFlag} — stripped by the route when the flag is OFF. */
+  readonly feature?: PaletteFeatureFlag;
 };
 
 export type SearchPlansSuccess = {
@@ -145,6 +164,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     label: 'palette.actions.rerenderTaxReceipt',
     url: '/admin/invoices?status=paid',
     requires: 'admin',
+    feature: 'f088TaxAtPayment',
   },
   // F5 Phase 6 (T118) — refund flow browse-mode shortcut. Admin-only.
   // Lands on the invoices list pre-filtered to paid + partially-
@@ -168,12 +188,14 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     label: 'palette.actions.reviewBroadcasts',
     url: '/admin/broadcasts',
     requires: 'read',
+    feature: 'f7Broadcasts',
   },
   {
     id: 'broadcast.halted',
     label: 'palette.actions.broadcastsHalted',
     url: '/admin/broadcasts?status=halted',
     requires: 'admin',
+    feature: 'f7Broadcasts',
   },
   // F7.1a US7 Round 1 R4-S7 L2 — direct ⌘K jump to author a new
   // broadcast template. High-frequency admin task once chambers
@@ -184,6 +206,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/broadcasts/templates/new',
     requires: 'admin',
     keywords: ['create', 'add'],
+    feature: 'f7Broadcasts',
   },
 ];
 
@@ -250,6 +273,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.broadcastsQueue',
     url: '/admin/broadcasts',
     requires: 'read',
+    feature: 'f7Broadcasts',
   },
   // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
   // Read-only requires for visibility (manager can browse the library
@@ -259,6 +283,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.broadcastTemplates',
     url: '/admin/broadcasts/templates',
     requires: 'read',
+    feature: 'f7Broadcasts',
   },
   // F7.1a US2 image-allowlist editor (UX M-1 fix 2026-05-21,
   // review finding enterprise-ux-designer M-1). Admin surface for
@@ -271,6 +296,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.broadcastImageSettings',
     url: '/admin/broadcasts/settings',
     requires: 'admin',
+    feature: 'f7Broadcasts',
   },
   // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
   // these entries, ⌘K-driven jumps to the renewal pipeline +
@@ -330,12 +356,14 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.eventsList',
     url: '/admin/events',
     requires: 'read',
+    feature: 'f6EventCreate',
   },
   {
     id: 'nav.eventcreateIntegration',
     label: 'palette.navigate.eventcreateIntegration',
     url: '/admin/settings/integrations/eventcreate',
     requires: 'admin',
+    feature: 'f6EventCreate',
   },
   // F6.1 R1 ux I8 — high-frequency navigation target for admins who
   // run imports daily. Manager role gets 404 per FR-035 RBAC.
@@ -344,6 +372,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.csvImportHistory',
     url: '/admin/events/import/history',
     requires: 'admin',
+    feature: 'f6EventCreate',
   },
   // F9 — distinct staff-only surfaces (audit log + member directory) that
   // otherwise can only be reached via the sidebar; both are read-tier (admin +
@@ -453,4 +482,25 @@ export async function searchPlans(
       navigate,
     },
   });
+}
+
+// --- Kill-switch strip (called from the Presentation layer) ------------------
+
+/**
+ * Drop palette entries whose {@link PaletteFeatureFlag} is disabled. Pure — the
+ * caller (the `/api/plans/search` route) resolves the flag values from `env` and
+ * passes them in, so the Application layer never reads `env` (Principle III). An
+ * untagged entry (no `feature`) always survives. Used to keep ⌘K from surfacing
+ * jumps whose destination route is proxy-503'd / `notFound()` when the owning
+ * feature is switched off (F5 offline-first, F6/F7 dark-launch break-glass).
+ */
+export function filterPaletteEntriesByFeature<
+  T extends { readonly feature?: PaletteFeatureFlag },
+>(
+  entries: ReadonlyArray<T>,
+  enabledFeatures: Readonly<Record<PaletteFeatureFlag, boolean>>,
+): ReadonlyArray<T> {
+  return entries.filter(
+    (entry) => entry.feature === undefined || enabledFeatures[entry.feature],
+  );
 }

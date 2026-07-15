@@ -139,12 +139,14 @@ const messages = {
 function renderPalette(
   role: 'member' | 'admin' | 'manager' = 'member',
   membershipAccess?: 'full' | 'suspended' | 'terminated',
+  broadcastsEnabled?: boolean,
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <MemberCommandPalette
         currentUserRole={role}
         {...(membershipAccess !== undefined ? { membershipAccess } : {})}
+        {...(broadcastsEnabled !== undefined ? { broadcastsEnabled } : {})}
       />
     </NextIntlClientProvider>,
   );
@@ -292,6 +294,23 @@ describe('<MemberCommandPalette>', () => {
     renderPalette('member', 'terminated');
     triggerCtrlK();
     expect(screen.queryByText('Compose E-Blast')).toBeNull();
+  });
+
+  it('F7 break-glass: hides "Compose E-Blast" when broadcasts are disabled, but keeps "View E-Blast usage"', () => {
+    renderPalette('member', 'full', false);
+    triggerCtrlK();
+    // Compose deep-links to /portal/broadcasts/new, which the proxy 503s when
+    // F7 is off — hide the dead-end shortcut.
+    expect(screen.queryByText('Compose E-Blast')).toBeNull();
+    // "View E-Blast usage" stays — it lands on the Benefits page, which falls
+    // back to the benefits tab gracefully under F7-off.
+    expect(screen.getByText('View E-Blast usage')).toBeTruthy();
+  });
+
+  it('F7 on + full access: shows "Compose E-Blast" (regression guard for the new prop default)', () => {
+    renderPalette('member', 'full', true);
+    triggerCtrlK();
+    expect(screen.getByText('Compose E-Blast')).toBeTruthy();
   });
 
   it('shows the allPaid-hint when zero invoices AND no query (F-04 fix)', async () => {
