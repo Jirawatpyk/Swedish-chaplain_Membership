@@ -348,13 +348,13 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
     });
   });
 
-  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) —
-  // `membershipCoverage` text-builder unit coverage: both kinds, TH+EN,
-  // NO standalone "ปี {planYear}" token in either, stored verbatim on the
-  // line, and the `window` path formats BOTH dates (including truncating a
-  // full ISO timestamp to YYYY-MM-DD via `.slice(0, 10)`).
-  describe('membershipCoverage — rolling-anchor coverage text (Task 8)', () => {
-    it('default (no membershipCoverage input) → from_payment wording, both locales, NO planYear token', async () => {
+  // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) + 064 —
+  // `membershipCoverage` text-builder unit coverage: both kinds, TH+EN, the
+  // "{year}" token = window START year on the `window` path / planYear on the
+  // `from_payment` path, stored verbatim on the line, and the `window` path
+  // formats BOTH dates (including truncating a full ISO timestamp to YYYY-MM-DD).
+  describe('membershipCoverage — rolling-anchor coverage text (Task 8 + 064)', () => {
+    it('default (no membershipCoverage input) → from_payment wording, both locales, year = planYear', async () => {
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'monthly' }),
         makeMember({ registrationDate: '2024-06-01' }),
@@ -395,7 +395,7 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       }
     });
 
-    it('{ kind: "window" } → exact dates on both locales, stored verbatim, NO planYear token, formats a full ISO timestamp via slice(0,10)', async () => {
+    it('{ kind: "window" } → exact dates on both locales, stored verbatim, year = window START year, formats a full ISO timestamp via slice(0,10)', async () => {
       const deps = makeDeps(
         makeSettings({ proRatePolicy: 'monthly' }),
         makeMember({ registrationDate: '2024-06-01' }),
@@ -414,11 +414,14 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         // A full ISO timestamp is sliced to date-only before month-year rendering;
         // toIso is exclusive so [2027-06-01, 2028-06-01) → "June 2027 - May 2028".
+        // 064 tax review — the "{year}" token is the WINDOW START year (2027 →
+        // BE 2570), NOT planYear (2026): the year must agree with the printed
+        // window on a §86/4, even when the caller's planYear differs.
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มิถุนายน 2570 - พฤษภาคม 2571)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2570 (มิถุนายน 2570 - พฤษภาคม 2571)',
         );
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2026 (June 2027 - May 2028)',
+          'Regular Member Membership Fee 2027 (June 2027 - May 2028)',
         );
         // Stored verbatim on the persisted invoice line (insertDraft args).
         const stored = (deps as unknown as { _capturedLines: () => Invoice['lines'] })
@@ -447,6 +450,32 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         );
         expect(line.descriptionTh).toBe(
           'ค่าสมาชิก SweCham สมาชิกสามัญ ปี 2569 (สิงหาคม 2569 - กรกฎาคม 2570)',
+        );
+      }
+    });
+
+    it('064 — a NON-1st-of-month membership start (the imported-member reality) spans exactly the term', async () => {
+      // TSCC's "Membership Start" (column G) is rarely the 1st. The window
+      // [2026-06-30, 2027-06-30) must print "June 2026 - May 2027" (12 month
+      // labels) — end = addMonthsUtc(toIso, -1)'s month, day discarded — never a
+      // 13th label or a month drift.
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly' }),
+        makeMember({ registrationDate: '2024-06-01' }),
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: { kind: 'window', fromIso: '2026-06-30', toIso: '2027-06-30' },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionEn).toBe(
+          'Regular Member Membership Fee 2026 (June 2026 - May 2027)',
+        );
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มิถุนายน 2569 - พฤษภาคม 2570)',
         );
       }
     });

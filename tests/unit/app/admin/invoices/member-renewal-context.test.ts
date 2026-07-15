@@ -127,9 +127,12 @@ describe('loadMemberRenewalContext — classification mapping', () => {
     expect(out.classification).toEqual({ kind: 'heal_no_cycle' });
     expect(out.periodTo).toBeNull();
     expect(out.termMonths).toBeNull();
+    // 064 — no open cycle → no current period to bill.
+    expect(out.currentPeriodFrom).toBeNull();
+    expect(out.currentPeriodTo).toBeNull();
   });
 
-  it('first_payment — one un-anchored open cycle → periodTo/termMonths stay null', async () => {
+  it('first_payment — one un-anchored open cycle → periodTo/termMonths null BUT currentPeriod surfaced (064)', async () => {
     countCyclesMock.mockResolvedValue(1);
     findOpenCycleMock.mockResolvedValue(
       buildOpenCycle({ status: 'upcoming', anchoredAt: null }),
@@ -140,6 +143,12 @@ describe('loadMemberRenewalContext — classification mapping', () => {
     expect(out.classification).toEqual({ kind: 'first_payment' });
     expect(out.periodTo).toBeNull();
     expect(out.termMonths).toBeNull();
+    // 064 — the open cycle's CURRENT period is surfaced for a first payment so
+    // the New-invoice route can bill it as the §86/4 coverage window. This is
+    // the feature's core mapping (`openCycle.periodFrom/periodTo`) — it must NOT
+    // be gated behind `classification === 'renewal'`.
+    expect(out.currentPeriodFrom).toBe('2026-06-01T00:00:00Z');
+    expect(out.currentPeriodTo).toBe('2027-06-01T00:00:00Z');
   });
 
   it('renewal — 2nd+ cycle already anchored → periodTo + termMonths surfaced from the open cycle', async () => {
@@ -158,6 +167,11 @@ describe('loadMemberRenewalContext — classification mapping', () => {
     expect(out.classification).toEqual({ kind: 'renewal' });
     expect(out.periodTo).toBe('2027-06-01T00:00:00Z');
     expect(out.termMonths).toBe(12);
+    // 064 — the current period is surfaced for a renewal too (the route uses the
+    // renewal-specific periodTo+term for the NEXT period, but currentPeriod is
+    // still populated whenever an open cycle exists).
+    expect(out.currentPeriodFrom).toBe('2026-06-01T00:00:00Z');
+    expect(out.currentPeriodTo).toBe('2027-06-01T00:00:00Z');
     // R2-FIX-9 — with a known open cycle the dead count-all read is skipped.
     expect(countCyclesMock).not.toHaveBeenCalled();
   });
