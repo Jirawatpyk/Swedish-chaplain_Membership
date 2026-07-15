@@ -267,24 +267,24 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       );
       const result = await createInvoiceDraft(deps, {
         ...baseInput,
+        // 064 — `toIso` is the EXCLUSIVE next-period start (= periodFrom + term),
+        // so [2026-01-01, 2027-01-01) prints "January 2026 - December 2026".
         membershipCoverage: {
           kind: 'window',
           fromIso: '2026-01-01',
-          toIso: '2026-12-31',
+          toIso: '2027-01-01',
         },
       }); // planYear 2026, clock 2026-01-15
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
-        // Plan name (resolved via planLookup.getPlanName).
-        expect(line.descriptionEn).toContain('Regular Member');
-        expect(line.descriptionTh).toContain('สมาชิกสามัญ');
-        // Coverage period — the caller-supplied exact window (Gregorian ISO,
-        // storage-safe; BE is display-only).
-        expect(line.descriptionEn).toContain('2026-01-01');
-        expect(line.descriptionEn).toContain('2026-12-31');
-        expect(line.descriptionTh).toContain('2026-01-01');
-        expect(line.descriptionTh).toContain('2026-12-31');
+        // 064 — {brand} {plan} Membership Fee {year} ({month range}).
+        expect(line.descriptionEn).toBe(
+          'Regular Member Membership Fee 2026 (January 2026 - December 2026)',
+        );
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มกราคม 2569 - ธันวาคม 2569)',
+        );
       }
     });
 
@@ -300,14 +300,14 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         membershipCoverage: {
           kind: 'window',
           fromIso: '2026-01-01',
-          toIso: '2026-12-31',
+          toIso: '2027-01-01',
         },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
-        expect(line.descriptionEn).toContain('Regular Member'); // plan name
-        expect(line.descriptionEn).toContain('2026-01-01'); // coverage period
+        expect(line.descriptionEn).toContain('Regular Member Membership Fee 2026'); // brand-less label + year
+        expect(line.descriptionEn).toContain('(January 2026 - December 2026)'); // coverage period (month-year)
         expect(line.descriptionEn).toContain('pro-rated'); // pro-rate detail retained
         expect(line.descriptionEn).toContain('0.5000');
       }
@@ -332,16 +332,18 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         membershipCoverage: {
           kind: 'window',
           fromIso: '2027-01-01',
-          toIso: '2027-12-31',
+          toIso: '2028-01-01',
         },
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
-        expect(line.descriptionEn).toContain('coverage 2027-01-01 to 2027-12-31');
-        expect(line.descriptionTh).toContain('2027-01-01 ถึง 2027-12-31');
+        expect(line.descriptionEn).toBe(
+          'Regular Member Membership Fee 2027 (January 2027 - December 2027)',
+        );
         // The bug printed the FY containing "now" (2026) on a FY2027 document.
-        expect(line.descriptionEn).not.toContain('coverage 2026-01-01');
+        expect(line.descriptionEn).not.toContain('2026');
+        expect(line.descriptionTh).toContain('(มกราคม 2570 - ธันวาคม 2570)');
       }
     });
   });
@@ -363,13 +365,11 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
         );
         expect(line.descriptionEn).toBe(
-          'Membership Regular Member (12 months, effective from the month of payment)',
+          'Regular Member Membership Fee 2026 (12 months, effective from the month of payment)',
         );
-        expect(line.descriptionTh).not.toContain('ปี ');
-        expect(line.descriptionEn).not.toContain(String(baseInput.planYear));
       }
     });
 
@@ -387,10 +387,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
         );
         expect(line.descriptionEn).toBe(
-          'Membership Regular Member (12 months, effective from the month of payment)',
+          'Regular Member Membership Fee 2026 (12 months, effective from the month of payment)',
         );
       }
     });
@@ -412,20 +412,42 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        // A full ISO timestamp is sliced to date-only before month-year rendering;
+        // toIso is exclusive so [2027-06-01, 2028-06-01) → "June 2027 - May 2028".
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ (ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มิถุนายน 2570 - พฤษภาคม 2571)',
         );
         expect(line.descriptionEn).toBe(
-          'Membership Regular Member (coverage 2027-06-01 to 2028-06-01)',
+          'Regular Member Membership Fee 2026 (June 2027 - May 2028)',
         );
-        expect(line.descriptionTh).not.toContain('ปี ');
-        expect(line.descriptionEn).not.toContain(String(baseInput.planYear));
         // Stored verbatim on the persisted invoice line (insertDraft args).
         const stored = (deps as unknown as { _capturedLines: () => Invoice['lines'] })
           ._capturedLines()
           .find((l) => l.kind === 'membership_fee')!;
         expect(stored.descriptionTh).toBe(line.descriptionTh);
         expect(stored.descriptionEn).toBe(line.descriptionEn);
+      }
+    });
+
+    it('064 — a tenant brand name is prefixed on the line (both locales); omitted when unset', async () => {
+      const deps = makeDeps(
+        makeSettings({ proRatePolicy: 'monthly', brandName: 'SweCham' }),
+        makeMember({ registrationDate: '2024-06-01' }),
+        1_600_000n,
+      );
+      const result = await createInvoiceDraft(deps, {
+        ...baseInput,
+        membershipCoverage: { kind: 'window', fromIso: '2026-08-01', toIso: '2027-08-01' },
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
+        expect(line.descriptionEn).toBe(
+          'SweCham Regular Member Membership Fee 2026 (August 2026 - July 2027)',
+        );
+        expect(line.descriptionTh).toBe(
+          'ค่าสมาชิก SweCham สมาชิกสามัญ ปี 2569 (สิงหาคม 2569 - กรกฎาคม 2570)',
+        );
       }
     });
   });
