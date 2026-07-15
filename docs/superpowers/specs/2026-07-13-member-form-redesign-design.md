@@ -22,7 +22,7 @@ So this is not form polish. The tax-correctness half is a **go-live prerequisite
 | PR | Contents | Gate |
 |---|---|---|
 | **PR-0 — pre-existing bug fixes** | `notes` dead on create · `registration_date` dead on edit (→ read-only + tooltip) · 8 fields with no inline error wiring | normal review |
-| **PR-A — tax correctness (go-live blocker)** | entity-type catalogue reconciled with the shipped i18n vocabulary · `is_vat_registered` column + migration + backfill · re-point **all four** discriminator consumers · the `registrant ⇒ TIN` invariant · scrub/erasure classification · tax integration tests | **tax + security sign-off, ≥2 reviewers** |
+| **PR-A — tax correctness (go-live blocker)** | entity-type catalogue reconciled with the shipped i18n vocabulary · `is_vat_registered` column + migration · **importer** mapping (there is no backfill — § 6) · re-point **all four** discriminator consumers · the `registrant ⇒ TIN` invariant · scrub/erasure classification · tax integration tests | **tax + security sign-off, ≥2 reviewers** |
 | **PR-B — form UX** | country combobox · postcode-driven address · registered capital · website relabel · secondary contact · decomposition of `member-form.tsx` · unsaved-changes guard | normal review |
 
 ## 3. Decisions
@@ -53,7 +53,7 @@ v1 claimed there was one derivation site. There are four, and one of them **re-i
 
 If only the adapter is re-pointed, the **pre-issue preview dialog will tell the admin the branch line prints while the PDF omits it** — exactly the class of defect 088 US3 was created to fix.
 
-**`isVatRegistrantEntityType()` is deleted from production code** once these four are re-pointed. It survives only inside the backfill. Leaving it "as the checkbox-default helper" (v1's plan) reintroduces the bug it exists to cause — it returns `true` for `association`, `foundation`, `representative_office`, `cooperative` and (after the legacy remap) `sole_proprietorship`. The checkbox default comes from `VAT_DEFAULT_BY_CODE` instead.
+**`isVatRegistrantEntityType()` is deleted from production code** once these four are re-pointed. It survives nowhere — with `members` empty there is no backfill to keep it alive for (§ 6). Leaving it "as the checkbox-default helper" (v1's plan) reintroduces the bug it exists to cause — it returns `true` for `association`, `foundation`, `representative_office`, `cooperative` and (after the legacy remap) `sole_proprietorship`. The checkbox default comes from `VAT_DEFAULT_BY_CODE` instead.
 
 Also update `scripts/verify-088-cutover.ts:213-219`, which audits `legal_entity_type IS NULL` as the "branch line fails closed" gate — after the cutover it would pass while measuring nothing.
 
@@ -113,7 +113,8 @@ Two columns. The migration must be written carefully — the review found four i
 -- Migrations do not run as chamber_app, so under FORCE RLS a bare UPDATE can match
 -- ZERO rows — silently, because RLS also hides rows from a verification SELECT.
 -- `row_security = off` makes Postgres RAISE instead of applying a policy: the
--- backfill either sees every row or the whole migration aborts.
+-- (No backfill: `members` is empty — see § 6. The column is added with its
+-- default and nothing is rewritten.)
 SET LOCAL row_security = off;--> statement-breakpoint
 
 ALTER TABLE "members"
@@ -127,16 +128,34 @@ ALTER TABLE "members" ADD CONSTRAINT "members_registered_capital_non_negative"
   CHECK ("registered_capital_thb" IS NULL OR "registered_capital_thb" >= 0);--> statement-breakpoint
 ```
 
-**The backfill is a TypeScript script, not SQL.** Postgres `btrim()` strips spaces only, while JS `.trim()` strips tabs, newlines, NBSP and more — and `create-member.ts:54` / `update-member.ts:36` are `z.string().max(100)` with **no `.trim()`**, so `E'\tindividual\n'` is reachable through the API. Simulating JS trim semantics in SQL is a fail-OPEN waiting to happen (it would mark a natural person as a VAT registrant and print สำนักงานใหญ่ on their tax invoice — the exact defect the 088 US3 review closed on 2026-07-02). The script:
+### There is NO backfill. The work is in the IMPORTER. (Corrected 2026-07-14)
 
-1. `SELECT DISTINCT legal_entity_type` first and **report** — do not guess the legacy vocabulary. Known values seen in fixtures: `'Co., Ltd.'`, `'co_ltd'`, `'company'`, `'company_limited'`, `'limited'`, `'individual'`, `'  Individual '`, `'   '`. (The `'both'` in `legal-entity.ts:18`'s docstring is a confusion with the **plan** enum `member_type_scope` from `0006_plans_and_fee_config.sql:5` — do not treat it as evidence.)
-2. Normalise each value with the **same TS function** the app uses, map to a canonical code, and derive `is_vat_registered` from **`VAT_DEFAULT_BY_CODE`** — *not* from `NOT IN ('', 'individual')`. v1's rule would have set `true` for `association`, `foundation`, `representative_office` and `government`, which is precisely the bug this feature exists to fix, frozen into a column nobody re-checks.
-3. Unknown value ⇒ `is_vat_registered = false` (fail-closed) + report it for a human to re-pick.
-4. Idempotent: rows already holding a canonical code are skipped.
+Earlier drafts of this spec specified a TypeScript backfill script to normalise legacy `legal_entity_type` values (`'Co., Ltd.'`, `'co_ltd'`, `'company'`, …) and derive `is_vat_registered` from them. **That entire body of work does not exist.**
 
-Prod has zero members and the importer never populated the column, so in practice the backfill touches only the `dev` branch — but it must still be correct, because the `dev` data is what the integration tests run against.
+**`members` is empty.** Production was wiped 2026-07-12 and the 95 imported rows went with it. There is nothing to backfill: a backfill migration would update **zero rows**. And the importer has **never** written `legal_entity_type` — the column is not in `scripts/import-members/columns.ts` at all, so even the wiped rows carried NULL.
 
-### Tighten the branch-pairing CHECK (separate migration, after the backfill)
+So the migration adds the column with a default and stops. Everything the backfill was supposed to do is instead done **once, correctly, at import time** — which is strictly better: no row ever exists with a NULL entity type, and there is no legacy vocabulary to normalise, no `btrim()`-vs-`.trim()` trap, and no idempotency puzzle.
+
+**What the importer must gain** (`scripts/import-members/`):
+
+1. **Read the `Member Type` column.** TSCC's sheet (`Member Data New`, 150 members) already has it, fully populated. It is **not** currently in the column map.
+2. **Map it to a canonical code.** The values present, and their targets:
+
+   | Excel `Member Type` | rows | code | i18n key |
+   |---|---|---|---|
+   | `Private Limited Company (Company Limited)` | 111 | `limited_company` | ✅ already shipped |
+   | `Individual` | 15 | `sole_proprietor` | ✅ already shipped |
+   | `State Enterprise` | 7 | `state_enterprise` | ⚠️ **the one new key** |
+   | `Public Limited Company` | 5 | `public_company` | ✅ already shipped |
+   | `Foundation` | 2 | `foundation` | ✅ already shipped |
+   | `N/A` | 10 | `null` | — |
+
+3. **Set `is_vat_registered` from `VAT_DEFAULT_BY_CODE`** — never from the old `≠ 'individual'` heuristic, which is the bug this feature exists to kill. `foundation` has **no default** (§ 16.6) — those 2 rows import as `false` and get flagged in the import report for an admin to confirm.
+4. **Fail loudly on an unmapped value.** A `Member Type` the table does not know must abort that row with a clear error, not silently import as NULL. Silent NULLs are how the §86/4 branch line came to be missing from every invoice in the first place.
+
+> **A trap for the importer:** `Individual` appears in **two different columns** with two different meanings — `Member Type` = บุคคลธรรมดา (a legal form, 15 rows) and `Plan` = the Individual membership package (17 rows). They are unrelated. Confusing them would assign the wrong entity type to 17 members and the wrong plan to 15.
+
+### Tighten the branch-pairing CHECK (separate migration)
 
 `0236_members_branch_pairing_ck_fix.sql:24-27` pins only `is_head_office ⇔ branch_code`. Nothing — not the DB, not the snapshot VO (`member-identity-snapshot.ts:161-174`), not the server schema — prevents `(is_vat_registered = false, is_head_office = false, branch_code = '00001')`. Today the "branch ⇒ registrant" rule lives **only in the client** (`member-form.tsx:236`), so a direct API call can already store it, and the branch line then silently vanishes.
 
@@ -288,9 +307,7 @@ Five fieldsets: Company · Address · Membership · Primary contact · Secondary
 ## 14. Testing
 
 **PR-A (tax) — the mandatory set:**
-- **SQL↔TS parity** (live Neon): a fixture of every legacy value (`NULL`, `''`, `'   '`, `'individual'`, `'  Individual '`, `E'\tindividual\n'`, `'Co., Ltd.'`, `'co_ltd'`, `'company'`, `'limited'`) run through both the backfill script and the app's normaliser; assert identical. **This is the only test that catches the trim mismatch.**
-- **Idempotency** (live Neon): apply the backfill twice; `sole_proprietor` must still be `is_vat_registered = false`.
-- **RLS reach**: the backfill must touch real rows or abort loudly — never match zero silently.
+- **Importer mapping** (this replaces the three backfill tests earlier drafts specified — **there is no backfill**, see § 6): every `Member Type` value in TSCC's sheet maps to its canonical code and to the correct `is_vat_registered` default; an **unmapped** value aborts that row loudly rather than importing a silent NULL (silent NULLs are exactly how the §86/4 branch line came to be missing from every invoice); and `Individual` in the **`Member Type`** column is never confused with `Individual` in the **`Plan`** column — they are different concepts and both appear in the sheet.
 - **§86/4 matrix** (live Neon, extends `tests/integration/invoicing/member-identity-branch.test.ts`): registrant + head office → "สำนักงานใหญ่"; registrant + branch → "สาขาที่ NNNNN"; non-registrant → no line; registrant + no TIN → **rejected at issue**.
 - **Preview/PDF agreement**: `issue-review.ts`'s branch-line prediction equals what the template renders, for every combination.
 - **FR-038 / SC-003**: toggling `is_vat_registered` after issue does not change the already-issued document; historical snapshots re-render **byte-identical**. Confirmed safe by design — the snapshot freezes the value and the branch line is gated on `templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION` — **so no template-version bump is needed**. Test it anyway.
@@ -336,7 +353,7 @@ Both were verified against rd.go.th primary text. v2 cited 199 alone for both pa
 
 | Field | Reality |
 |---|---|
-| **Entity type** | **Already populated.** 111 Private Limited Company · 15 Individual · 7 State Enterprise · 5 Public Limited Company · 2 Foundation · 10 N/A. PR-A's catalogue can be **backfilled from this sheet** rather than left NULL. |
+| **Entity type** | **Already populated.** 111 Private Limited Company · 15 Individual · 7 State Enterprise · 5 Public Limited Company · 2 Foundation · 10 N/A. The **importer** reads it (§ 6) — there is nothing to backfill, because `members` is empty. |
 | **Tax ID** | 113 present, 37 = "N/A". **Every one of the 113 is 12 digits, not 13** — Excel stored them as numbers and ate the leading zero (`105562087242` → really `0105562087242`). |
 | **Address** | 132 have one. **Zero contain a single Thai character.** 100% English. |
 | **Registered capital** | 113 populated — *more complete than turnover* (78). Validates adding the column rather than renaming turnover. |

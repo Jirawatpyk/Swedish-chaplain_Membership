@@ -30,6 +30,12 @@ import { asEmail } from '../../domain/value-objects/email';
 import { asPhone, type Phone } from '../../domain/value-objects/phone';
 import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import { asTaxId, type TaxId } from '../../domain/value-objects/tax-id';
+// Review fix (Finding 1) — close `legal_entity_type` to the 12-code
+// catalogue at THIS boundary too. Task 3b closed it client-side only
+// (the admin form's Select), so a direct API caller could still store an
+// arbitrary string — defeating the whole point (the fail-soft label
+// resolver would then print raw snake_case on the member page).
+import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
 import {
   asOverrideReason,
   OVERRIDE_REASON_CODES,
@@ -55,9 +61,17 @@ import { UseCaseAbort } from '../tx-abort';
 
 export const createMemberSchema = z.object({
   company_name: z.string().trim().min(1).max(200),
-  legal_entity_type: z.string().max(100).nullable().optional(),
+  // Review fix (Finding 1) — closed to the 12-code catalogue, mirroring the
+  // client's own `buildMemberFormSchema` (schema.ts). Must accept a valid
+  // code, `null`, AND "unset" (`undefined` / `''`) — 10 of TSCC's 150
+  // members have no recorded type, and rejecting unset would make a
+  // create with every other field valid fail on this one alone.
+  legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).nullable().optional().or(z.literal('')),
   country: z.string().length(2),
   tax_id: z.string().max(50).nullable().optional(),
+  // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived. Default
+  // false when omitted (never inferred from legal_entity_type).
+  is_vat_registered: z.boolean().optional(),
   website: z.string().max(200).url().nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
@@ -93,11 +107,35 @@ export const createMemberSchema = z.object({
       phone: z.string().max(20).nullable().optional(),
       role_title: z.string().max(100).nullable().optional(),
       preferred_language: z.enum(['en', 'th', 'sv']),
+      // Task 8 (GDPR Art. 14) — a secondary contact's data is supplied by
+      // the admin, not by the person themselves (a third party). The admin
+      // must attest they informed that person before this write proceeds.
+      // `z.literal(true)` (not `z.boolean()`) so `false`/`undefined`/any
+      // other value fails validation — server-side enforcement so a direct
+      // API call cannot skip the UI checkbox.
+      art14_attested: z.literal(true),
     })
     .optional(),
   override_reason_code: z.enum(OVERRIDE_REASON_CODES).nullable().optional(),
   override_reason_note: z.string().max(500).nullable().optional(),
   confirm_soft_duplicate: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 + 199
+  // are a PAIR): a member created as a VAT registrant must also carry a
+  // tax_id, or the §86/4 buyer block on a future tax document would print
+  // the branch line with no taxpayer number. CREATE supplies the full
+  // record in one request (unlike updateMemberSchema's PARTIAL patch, where
+  // this same rule has to live in the use-case body instead — see
+  // update-member.ts), so it fits cleanly on the schema here. The Domain
+  // value-object (member-identity-snapshot.ts) is the last, load-bearing
+  // gate at issue time; this is UX that surfaces the problem at create time.
+  if (data.is_vat_registered === true && !data.tax_id?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['tax_id'],
+      message: 'a VAT-registrant member must have a tax_id',
+    });
+  }
 });
 
 export type CreateMemberInput = z.infer<typeof createMemberSchema>;
@@ -288,6 +326,11 @@ export async function createMember(
       dateOfBirth: null,
       linkedUserId: null,
       inviteBouncedAt: null,
+      // Task 8 — the zod `art14_attested: z.literal(true)` gate above has
+      // already refused this request unless the admin attested. `clock.now()`
+      // (not a bare `new Date()`) for consistency with `regDate` below and so
+      // a fake clock in tests observes a deterministic attestation moment.
+      art14AttestedAt: deps.clock.now(),
       removedAt: null,
     };
   }
@@ -416,6 +459,11 @@ export async function createMember(
       : null,
     linkedUserId: null,
     inviteBouncedAt: null,
+    // Task 8 — the primary contact is a first-party relationship (the
+    // member supplied their own representative's details), so GDPR Art. 14
+    // does not apply. Always NULL — never re-derive this from `isPrimary`
+    // elsewhere; see `Contact.art14AttestedAt` (domain/contact.ts).
+    art14AttestedAt: null,
     removedAt: null,
   };
 
@@ -435,9 +483,14 @@ export async function createMember(
         memberId,
         memberNumber,
         companyName: data.company_name.trim(),
-        legalEntityType: data.legal_entity_type ?? null,
+        // Collapses '' (the client Select's "nothing picked" sentinel) and
+        // `undefined` to `null` — every falsy branch of the zod union means
+        // "unset"; every LEGAL_ENTITY_TYPES code is a non-empty string, so
+        // `||` correctly narrows the type to LegalEntityTypeCode | null.
+        legalEntityType: data.legal_entity_type || null,
         country: country.value,
         taxId,
+        isVatRegistered: data.is_vat_registered ?? false,
         website: data.website ?? null,
         description: data.description ?? null,
         foundedYear: data.founded_year ?? null,

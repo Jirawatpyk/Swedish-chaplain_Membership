@@ -53,6 +53,11 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   // route it to dedicated `errors.overflow` copy ("...exhausted. Contact
   // support."), matching the issue-as-paid dialog. (final-review Finding.)
   'overflow',
+  // 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH) — the buyer is a
+  // VAT registrant with no tax_id (Domain VO write-time invariant). The
+  // admin fix is either field: add the TIN, or clear the VAT-registered
+  // checkbox — a raw "Error code:" fallback would give no such guidance.
+  'buyer_tax_id_required_for_registrant',
 ]);
 
 /**

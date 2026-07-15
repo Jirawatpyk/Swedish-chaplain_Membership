@@ -29,6 +29,27 @@ export interface PdfRenderInput {
   readonly dueDate: string | null;
   readonly tenant: TenantIdentitySnapshot;
   readonly member: MemberIdentitySnapshot;
+  /*
+   * (removed 2026-07-15) There was a top-level `buyerIsVatRegistrant: boolean`
+   * here, carrying the value `resolveBuyerIsVatRegistrant()` returned for the
+   * caller's document-CLASS decision. It existed so `buyerTaxIdEl` could print a
+   * WALK-IN buyer's own TIN — their snapshot's `buyer_is_vat_registrant` is
+   * always `false` (no `members` row to record it on), so reading the snapshot
+   * dropped the very TIN that had classed the document as a tax invoice.
+   *
+   * The Tax-ID line no longer asks that question at all. It asks "is this string
+   * a real Thai TIN?" (`isThaiTaxId` — 13 digits + check digit), because keying
+   * it on registrant status ALSO erased a Thai natural person's national ID,
+   * which IS their taxpayer number. That change made this field dead: nothing
+   * read it. A REQUIRED field on a port that nobody reads is worse than no field
+   * — three docblocks were still telling the next reader that the template gated
+   * on it.
+   *
+   * The สำนักงานใหญ่/สาขา line still keys on the RECORDED
+   * `member.buyer_is_vat_registrant` (ประกาศ 199 requires that particular only of
+   * a registrant, and a 13-digit number cannot evidence head-office/branch
+   * status). Do not re-introduce a resolved flag here to serve it.
+   */
   readonly lines: readonly InvoiceLine[];
   readonly subtotal: Money;
   readonly vatRate: VatRate;

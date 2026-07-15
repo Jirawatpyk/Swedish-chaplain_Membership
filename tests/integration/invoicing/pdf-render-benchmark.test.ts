@@ -60,6 +60,9 @@ function buildRealisticInput(): PdfRenderInput {
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate
+    // (this file measures render latency only); `true` matches the fixture's
+    // own `tax_id` presence.
     lines: [
       {
         lineId: asInvoiceLineId('11111111-1111-4111-8111-111111111111'),

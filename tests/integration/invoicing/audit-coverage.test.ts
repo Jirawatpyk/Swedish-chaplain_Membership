@@ -221,7 +221,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     }
   }, 30_000);
 
-  it('F4AuditEventType TS union documents all 25 registered types', async () => {
+  it('F4AuditEventType TS union documents all 27 registered types', async () => {
     // This asserts the compile-time union matches what the DB enum
     // ships. Read the DB enum at runtime + check every value is
     // assignable to F4AuditEventType via `as` cast (which would
@@ -235,12 +235,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     `);
     const dbEnum = new Set(rows.map((r) => r.enumlabel));
 
-    // The full 25 F4 types — taken from F4AuditEventType union.
+    // The full 27 F4 types — taken from F4AuditEventType union.
     // Growth: 16 → 17 (`invoice_pdf_regenerated` 2026-04-20) → 22
     // (T166 async worker + receipt downloads + tenant_receipt_prefix_changed
     // 2026-04-25/05-10) → 23 (R8 `invoice_pdf_downloaded` 2026-05-15) →
     // 24 (Phase 3 `invoices_csv_exported` 2026-05-16) → 25 (Task 15
-    // `event_buyer_pii_redacted` 2026-06-04).
+    // `event_buyer_pii_redacted` 2026-06-04) → 26 (§ F.6 `tax_receipt_issued`
+    // 2026-07-01) → 27 (059 PR-A Task 4 `invoice_buyer_identity_invalid`
+    // 2026-07-14).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -271,8 +273,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 tax-receipt first-issuance
       // signal (SC-001), minted in-tx with the RC §87 number at payment. 10y.
       'tax_receipt_issued',
+      // 059 PR-A Task 4 fix (2026-07-14) — write-time buyer-identity-snapshot
+      // invariant reject (VAT registrant, no tax_id). No tax-document touch;
+      // PRE-SEQUENCE (no §87 number burned). 5y.
+      'invoice_buyer_identity_invalid',
     ] as const;
-    expect(allF4Types).toHaveLength(26);
+    expect(allF4Types).toHaveLength(27);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -697,6 +703,22 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/integration/invoicing/bill-to-receipt.integration.test.ts (SC-001 — asserts EXACTLY ONE tax_receipt_issued audit row lands at payment, keyed on the pay requestId, with receipt_document_number_raw + member_id + payment_date payload)',
         since: '2026-07-01',
       },
+      // 059 PR-A Task 4 fix (thai-tax-compliance-auditor HIGH, 2026-07-14) —
+      // write-time buyer-identity-snapshot invariant reject (VAT registrant,
+      // no tax_id). DEFERRED — no live-Neon behavioral test exercises the
+      // real member-identity adapter's throw path yet: reachability requires
+      // a member row with `is_vat_registered=true AND tax_id IS NULL`, which
+      // both create-member and update-member reject at the app layer and the
+      // CSV importer never writes (the 059 PR-A finding this fix closes).
+      // Unit-mocked coverage (exercises the REAL Domain VO, not a fixture)
+      // proves the catch-branch + typed err + audit shape; a live-Neon
+      // behavioral test would need a direct-SQL-seeded corrupt row.
+      invoice_buyer_identity_invalid: {
+        status: 'deferred',
+        where:
+          'tests/unit/invoicing/issue-invoice.test.ts (buyer_tax_id_required_for_registrant catch-branch, real Domain VO throw + audit.emit assertion) + tests/unit/invoicing/issue-event-invoice-as-paid.test.ts (mirror, matched-member arm)',
+        since: '2026-07-14',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -735,6 +757,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'event_buyer_pii_redacted',
       // 088-invoice-tax-flow-redesign (§ F.6) — §86/4 first-issuance signal.
       'tax_receipt_issued',
+      // 059 PR-A Task 4 fix (2026-07-14) — write-time buyer-identity-snapshot
+      // invariant reject.
+      'invoice_buyer_identity_invalid',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -846,11 +871,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // retention cron; migration 0204).
     // 088-invoice-tax-flow-redesign (§ F.6) — bumped 26 → 27 for
     // `tax_receipt_issued` (deferred; emit site ships in US1 T018/T019).
-    expect(coveredCount + deferredCount).toBe(27);
-    // Behavioral coverage target: 23/26. Remaining 3 are post-MVP
+    // 059 PR-A Task 4 fix — bumped 27 → 28 for `invoice_buyer_identity_invalid`
+    // (deferred; no live-Neon behavioral test yet — see the coverage entry).
+    expect(coveredCount + deferredCount).toBe(28);
+    // Behavioral coverage target: 23/26. Remaining 4 are post-MVP/rare-path
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
-    // receipt-PDF worker — integration coverage lands with T166-06).
+    // receipt-PDF worker — integration coverage lands with T166-06),
+    // invoice_buyer_identity_invalid (059 PR-A Task 4 — unit-mocked only).
     expect(coveredCount).toBeGreaterThanOrEqual(23);
   });
 });

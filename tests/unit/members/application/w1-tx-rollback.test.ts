@@ -83,6 +83,8 @@ const validInput = {
   last_name: 'Doe',
   email: 'jane@test.example',
   preferred_language: 'en' as const,
+  // Task 8 (GDPR Art. 14) — addContactSchema now requires this.
+  art14_attested: true as const,
 };
 const meta = {
   actorUserId: 'actor-uuid',

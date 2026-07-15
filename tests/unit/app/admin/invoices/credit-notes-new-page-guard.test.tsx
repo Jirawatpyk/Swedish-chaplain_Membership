@@ -60,10 +60,21 @@ vi.mock('@/modules/invoicing', () => ({
     documentNumber?: { raw: string } | null;
     receiptDocumentNumberRaw?: string | null;
   }) => inv.documentNumber?.raw ?? inv.receiptDocumentNumberRaw ?? undefined,
+  // 059 / PR-A Task 6a — re-keyed onto the buyer's VAT-REGISTRANT status. These
+  // two mirror `src/modules/invoicing/domain/document-kind.ts` exactly (matched
+  // member → the RECORDED flag; walk-in → TIN presence, unchanged).
   inferEventDocumentKind: (
     subject: 'membership' | 'event',
-    taxId: string | null | undefined,
-  ) => (subject === 'event' && (taxId ?? '').trim() === '' ? 'receipt_separate' : 'invoice'),
+    buyerIsVatRegistrant: boolean,
+  ) => (subject === 'event' && !buyerIsVatRegistrant ? 'receipt_separate' : 'invoice'),
+  resolveBuyerIsVatRegistrant: (
+    memberId: string | null,
+    buyer: { tax_id?: string | null; buyer_is_vat_registrant?: boolean } | null | undefined,
+  ) => {
+    if (!buyer) return false;
+    if (memberId === null) return (buyer.tax_id ?? '').trim() !== '';
+    return buyer.buyer_is_vat_registrant === true;
+  },
 }));
 
 // Presentation stubs — the guard runs before render; the form marker echoes the
@@ -108,6 +119,10 @@ function invoice(overrides: Record<string, unknown>) {
     receiptDocumentNumberRaw: null,
     billDocumentNumberRaw: null,
     invoiceSubject: 'membership',
+    // 059 / PR-A Task 6a — `memberId` now DISCRIMINATES the buyer shape (matched
+    // member → the recorded registrant flag; walk-in → TIN presence), so it must
+    // be present on the fixture. `null` = the walk-in / non-member default.
+    memberId: null,
     memberIdentitySnapshot: { tax_id: null },
     ...overrides,
   };
@@ -154,11 +169,14 @@ describe('NewCreditNotePage — §105 receipt_separate fail-fast guard (088 FIX 
     expect(html).toContain('RC-2026-000009');
   });
 
-  it('legacy §86/4 tax invoice (event + TIN, documentNumber set) → renders the form', async () => {
+  it('legacy §86/4 tax invoice (WALK-IN event + 13-digit TIN, documentNumber set) → renders the form', async () => {
+    // A walk-in (memberId null) still keys on TIN presence — unchanged by the
+    // 6a re-key, so this §86/4 stays creditable.
     getInvoiceMock.mockResolvedValue({
       ok: true,
       value: invoice({
         invoiceSubject: 'event',
+        memberId: null,
         memberIdentitySnapshot: { tax_id: '1234567890123' },
         documentNumber: { raw: 'IN-2026-0001' },
         receiptDocumentNumberRaw: null,
@@ -167,5 +185,46 @@ describe('NewCreditNotePage — §105 receipt_separate fail-fast guard (088 FIX 
     const html = await renderPage();
     expect(html).toContain('cn-form');
     expect(html).toContain('IN-2026-0001');
+  });
+
+  it('059: MATCHED-MEMBER event, NON-registrant holding a passport → notFound() (the §105 receipt is not creditable)', async () => {
+    // Their document is a §105 ใบเสร็จรับเงิน (no input VAT to reverse), so a
+    // §86/10 ใบลดหนี้ against it is legally void. Under the old TIN-keyed gate the
+    // non-blank passport made this page render a form that the use-case would then
+    // always reject with `receipt_not_creditable`. The page must now 404 fail-fast,
+    // in lockstep with the re-keyed use-case gate.
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: invoice({
+        invoiceSubject: 'event',
+        memberId: 'member-77',
+        memberIdentitySnapshot: {
+          tax_id: 'AA1234567',
+          buyer_is_vat_registrant: false,
+        },
+        documentNumber: null,
+        receiptDocumentNumberRaw: 'RE-2026-000007',
+      }),
+    });
+    await expect(renderPage()).rejects.toThrow('NEXT_NOT_FOUND');
+  });
+
+  it('059: MATCHED-MEMBER event, RECORDED registrant → renders the form (§86/4 is creditable)', async () => {
+    getInvoiceMock.mockResolvedValue({
+      ok: true,
+      value: invoice({
+        invoiceSubject: 'event',
+        memberId: 'member-77',
+        memberIdentitySnapshot: {
+          tax_id: '1234567890123',
+          buyer_is_vat_registrant: true,
+        },
+        documentNumber: { raw: 'IN-2026-0002' },
+        receiptDocumentNumberRaw: null,
+      }),
+    });
+    const html = await renderPage();
+    expect(html).toContain('cn-form');
+    expect(html).toContain('IN-2026-0002');
   });
 });

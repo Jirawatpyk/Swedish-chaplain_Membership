@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
 import { CountryDisplay } from '@/components/members/country-display';
 import { DetailField } from '@/components/members/detail-field';
+import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -80,6 +81,13 @@ export async function PortalProfileBody({
 }) {
   const t = await getTranslations('portal.profile');
   const tDir = await getTranslations('directorySettings');
+  // 059 / PR-A Task 3b — the ADMIN member-detail page already resolves
+  // legal_entity_type through these same labels (resolveLegalEntityTypeLabel);
+  // reused here rather than duplicated so a member sees IDENTICAL copy to
+  // what staff see, in all three locales, from one translated source.
+  const tLegalTypes = await getTranslations(
+    'admin.members.detail.legalEntityTypes',
+  );
   const locale = await getLocale();
 
   const tenant = resolveTenantFromRequest();
@@ -151,6 +159,13 @@ export async function PortalProfileBody({
   // `m.memberNumber` is already a branded MemberNumber (validated by
   // rowToMember) — no re-wrap needed.
   const memberNumberFormatted = formatMemberNumber(memberPrefix, m.memberNumber);
+  // 059 / PR-A Task 3b — was rendered RAW (`value={m.legalEntityType}`), so a
+  // member saw the machine code (`limited_company`) verbatim. Resolved
+  // through the same i18n labels + fail-soft fallback the admin page uses.
+  const legalEntityLabel = resolveLegalEntityTypeLabel(
+    m.legalEntityType,
+    tLegalTypes,
+  );
 
   return (
     <DetailContainer>
@@ -205,7 +220,7 @@ export async function PortalProfileBody({
               {!isIndividual && (
                 <DetailField
                   label={t('fields.legalEntityType')}
-                  value={m.legalEntityType}
+                  value={legalEntityLabel}
                 />
               )}
               {/* 067 — members get their tax_id on every issued tax invoice;

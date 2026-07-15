@@ -215,6 +215,8 @@ function makeInput(opts: {
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — irrelevant to this file's subject (the WHT note
+    // gate); `true` matches the fixture's own `tax_id` presence.
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),

@@ -154,7 +154,13 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
     expect(lockedView!.snapshot.address).toBe(address);
   });
 
-  it('member with NO structured address → snapshot.address degrades to the country code', async () => {
+  it('member with NO structured address → snapshot.address degrades to the country NAME (never blank)', async () => {
+    // 059 / PR-A Task 6a — the country renders as a NAME, not the raw ISO code.
+    // §86/4 requires an address that identifies the buyer unambiguously, and a
+    // Revenue officer cannot read "SE". It also surfaces data errors: "SV" is EL
+    // SALVADOR, and it passes ISO validation, so a mis-keyed Swedish member was
+    // invisible until the name printed. The non-empty invariant is preserved (the
+    // snapshot schema requires `address.min(1)`).
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
@@ -172,6 +178,6 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
       memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, memberId),
     );
     expect(view).not.toBeNull();
-    expect(view!.snapshot.address).toBe('SE');
+    expect(view!.snapshot.address).toBe('Sweden');
   });
 });

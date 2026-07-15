@@ -94,6 +94,9 @@ function makeInput(
     vatRate: VatRate.ofUnsafe('0.0700'),
     vat: Money.fromSatangUnsafe(7_000n),
     total: Money.fromSatangUnsafe(107_000n),
+    // 059 / PR-A Task 6b — irrelevant to this file's subject (stamp opacity);
+    // `true` matches the fixture's own `tax_id`. Set BEFORE `...extra` so a
+    // caller can still override it.
     ...extra,
   };
 }

@@ -1744,6 +1744,34 @@
       "when": 1798537700000,
       "tag": "0248_f6_event_attendance_by_suspended_member",
       "breakpoints": true
+    },
+    {
+      "idx": 252,
+      "version": "7",
+      "when": 1798537800000,
+      "tag": "0250_members_is_vat_registered",
+      "breakpoints": true
+    },
+    {
+      "idx": 253,
+      "version": "7",
+      "when": 1798537900000,
+      "tag": "0251_audit_log_invoice_buyer_identity_invalid",
+      "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1798538000000,
+      "tag": "0252_members_branch_requires_vat_registrant",
+      "breakpoints": true
+    },
+    {
+      "idx": 255,
+      "version": "7",
+      "when": 1798538100000,
+      "tag": "0253_contacts_art14_attestation",
+      "breakpoints": true
     }
   ]
 }

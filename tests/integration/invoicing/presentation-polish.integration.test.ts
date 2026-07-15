@@ -73,9 +73,22 @@ function makeInput(opts: {
   templateVersion: number;
   kind?: PdfDocKind;
   member?: Partial<MemberIdentitySnapshot>;
+  /** 059 / PR-A Task 6b — the resolved top-level field. Defaults to the
+   *  snapshot's own flag, matching every pre-Task-6b test in this file. */
+  buyerIsVatRegistrant?: boolean;
 }): PdfRenderInput {
   const docR = DocumentNumber.of('RC', 2026, 42);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
+  const member = {
+    legal_name: BUYER_NAME,
+    tax_id: BUYER_TAX_ID,
+    address: BUYER_ADDR,
+    primary_contact_name: 'John Doe',
+    primary_contact_email: 'john@acme.example',
+    member_number: null,
+    member_number_display: null,
+    ...opts.member,
+  };
   return {
     kind: opts.kind ?? 'invoice',
     templateVersion: opts.templateVersion,
@@ -90,16 +103,7 @@ function makeInput(opts: {
       address_en: 'Bangkok',
       logo_blob_key: null,
     },
-    member: {
-      legal_name: BUYER_NAME,
-      tax_id: BUYER_TAX_ID,
-      address: BUYER_ADDR,
-      primary_contact_name: 'John Doe',
-      primary_contact_email: 'john@acme.example',
-      member_number: null,
-      member_number_display: null,
-      ...opts.member,
-    },
+    member,
     lines: makeLines(),
     // 1,000.00 THB net + 70.00 VAT = 1,070.00 THB total → unambiguous grouping.
     subtotal: Money.fromSatangUnsafe(100_000n),

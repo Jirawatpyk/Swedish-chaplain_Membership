@@ -34,6 +34,9 @@ import {
   type OverrideReasonResult,
 } from './override-reason-dialog';
 import { formatOverrideWarning } from './override-warning-message';
+// 059 / PR-A Task 3b — deep import (NOT the `@/modules/members` barrel),
+// same rationale as schema.ts: pure TS, zero framework deps.
+import { isLegalEntityTypeCode } from '@/modules/members/domain/value-objects/legal-entity-type';
 import {
   buildFieldPayload,
   buildContactPayload,
@@ -387,7 +390,22 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         defaultPlanYear={member.planYear}
         initialValues={{
           company_name: member.companyName,
-          legal_entity_type: member.legalEntityType ?? undefined,
+          // 059 / PR-A Task 3b — the form's Select is now closed to the
+          // 12-code catalogue; seeding it with a value the catalogue
+          // doesn't recognise (typed via the old free-text Input, before
+          // this fix shipped) would make the zod enum reject the WHOLE
+          // form on any submit, even an edit to an unrelated field like
+          // the company name. Review fix (Finding 1) — `rowToMember`
+          // (drizzle-member-repo.ts) now normalises an out-of-catalogue DB
+          // value to `null` on every read, so `member.legalEntityType`
+          // reaching this component is already a valid code or `null`; the
+          // `isLegalEntityTypeCode` guard below is belt-and-braces defense
+          // for a hand-built `MemberInitialValues` (tests, future callers)
+          // that bypasses the repo. Saving this form without touching the
+          // field cleanly normalises it to `null` either way.
+          legal_entity_type: isLegalEntityTypeCode(member.legalEntityType)
+            ? member.legalEntityType
+            : undefined,
           country: member.country,
           tax_id: member.taxId ?? undefined,
           website: member.website ?? undefined,
@@ -401,6 +419,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           sub_district: member.subDistrict ?? undefined,
           // 088 US3 — §86/4 branch particular (seed the head-office toggle +
           // branch code so the admin sees the present value before Save).
+          // 059 / PR-A — and the VAT-registrant flag that gates them both.
+          is_vat_registered: member.isVatRegistered ?? false,
           is_head_office: member.isHeadOffice ?? true,
           branch_code: member.branchCode ?? null,
           // Round-4 R4-I3: the form schema now accepts `null` on input

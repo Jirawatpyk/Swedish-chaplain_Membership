@@ -8,7 +8,6 @@
 
 import { z } from 'zod';
 import type { Path } from 'react-hook-form';
-import { isVatRegistrantEntityType } from '@/lib/legal-entity';
 // Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
@@ -16,8 +15,11 @@ import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/p
 // Deep imports (no framework deps — same pattern as phone) so the client
 // mirrors the server's Thai tax-id checksum + ISO-3166 country validity and
 // rejects a bad value inline instead of on a 400 round-trip.
-import { validateThaiTaxIdChecksum } from '@/modules/members/domain/policies/thai-tax-id-checksum';
+import { validateThaiTaxIdChecksum } from '@/lib/thai-tax-id';
 import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
+// 059 / PR-A Task 3b — the closed 12-code catalogue (same deep-import
+// rationale: pure TS, zero framework deps, safe in this client component).
+import { LEGAL_ENTITY_TYPES } from '@/modules/members/domain/value-objects/legal-entity-type';
 import { type Translator } from '@/lib/zod-i18n';
 
 // --- Form shape --------------------------------------------------------------
@@ -71,7 +73,16 @@ export function buildMemberFormSchema(
     .trim()
     .min(1, tf('errors.required'))
     .max(200, tv('tooLong', { max: 200 })),
-  legal_entity_type: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  // 059 / PR-A Task 3b — closed to the 12-code catalogue (was free text,
+  // which is how Task 1's catalogue ended up rendered by NOTHING: an admin
+  // could type any string, the display resolver failed soft, and raw
+  // snake_case landed on the member page). `.optional().or(z.literal(''))`
+  // mirrors `website` above: the Select's own "nothing picked" value is an
+  // empty string (no SelectItem carries `value=""` — same convention as
+  // `plan_id`'s `field.value ?? ''`), and `undefined` must ALSO stay valid —
+  // 10 of TSCC's 150 members have no recorded type, and an edit to an
+  // unrelated field on one of them must never be blocked by this field.
+  legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).optional().or(z.literal('')),
   country: z
     .string()
     .length(2, tf('errors.countryCode'))
@@ -102,6 +113,12 @@ export function buildMemberFormSchema(
   // (สำนักงานใหญ่); a branch carries a 5-digit `branch_code`. The 5-digit +
   // registrant checks live in the superRefine so a blank code on a head office
   // never trips the base rule.
+  //
+  // 059 / PR-A — `is_vat_registered` is the RECORDED §86/4 discriminator (it was
+  // guessed from `legal_entity_type` until migration 0250). Same EDIT-only
+  // posture as the pair above: it gates the branch line and the buyer-TIN
+  // requirement, so it belongs with them in the tax fieldset.
+  is_vat_registered: z.boolean().optional(),
   is_head_office: z.boolean().optional(),
   branch_code: z.string().nullable().optional(),
   founded_year: z
@@ -251,6 +268,15 @@ export function buildMemberFormSchema(
         }),
       role_title: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
       preferred_language: z.enum(['en', 'th', 'sv']),
+      // Task 8 (GDPR Art. 14) — the admin must attest they informed this
+      // third party before the secondary contact can be submitted. Mounted
+      // via `Controller` with `defaultValue={false}` (SecondaryContactSection
+      // has no `useForm` defaultValues entry for a freshly-expanded fieldset,
+      // same trap `preferred_language` avoids above), so this always sees a
+      // real boolean rather than `undefined`.
+      art14_attested: z
+        .boolean()
+        .refine((v) => v === true, { message: tf('errors.art14AttestationRequired') }),
     })
     .optional(),
   }).superRefine((data, ctx) => {
@@ -364,11 +390,13 @@ export function buildMemberFormSchema(
       }
     }
     // 088 US3 (FR-008) — §86/4 branch cross-field validation. A branch (NOT head
-    // office) requires a 5-digit code AND is only valid for a VAT-registrant
-    // juristic buyer (legal_entity_type set and ≠ 'individual'; the same
-    // discriminator the identity adapter uses for `buyer_is_vat_registrant`).
-    // A head office skips this (its code is cleared before submit). Mirrors the
-    // server updateMember superRefine + the `members_branch_pairing_ck` DB CHECK.
+    // office) requires a 5-digit code AND is only valid for a VAT registrant —
+    // read from the RECORDED `is_vat_registered` flag, the SAME fact the identity
+    // adapter pins onto `buyer_is_vat_registrant` at issue (059 / PR-A; it used
+    // to be guessed from `legal_entity_type`, which is why the two could
+    // disagree). A head office skips this (its code is cleared before submit).
+    // Mirrors the server updateMember superRefine + the `members_branch_pairing_ck`
+    // DB CHECK.
     if (data.is_head_office === false) {
       const code = data.branch_code?.trim() ?? '';
       if (!/^\d{5}$/.test(code)) {
@@ -378,13 +406,28 @@ export function buildMemberFormSchema(
           message: tf('errors.branchCodeFormat'),
         });
       }
-      if (!isVatRegistrantEntityType(data.legal_entity_type)) {
+      if (data.is_vat_registered !== true) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['branch_code'],
           message: tf('errors.branchOnNonRegistrant'),
         });
       }
+    }
+    // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 + 199
+    // are a PAIR): a member marked as VAT-registered must also carry a
+    // tax_id, or the §86/4 buyer block on a tax document would print the
+    // branch line with no taxpayer number. Mirrors the server-side check
+    // (create-member.ts's superRefine / update-member.ts's use-case-body
+    // check) and the member-identity-snapshot Domain VO — the LAST, load-
+    // bearing gate at issue time. This is UX: it surfaces the problem inline
+    // before the admin ever submits.
+    if (data.is_vat_registered === true && !data.tax_id?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['tax_id'],
+        message: tf('errors.taxIdRequiredForRegistrant'),
+      });
     }
   });
 }

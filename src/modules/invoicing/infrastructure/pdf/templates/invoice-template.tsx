@@ -25,6 +25,11 @@ import {
   revenueCodeCitation,
 } from './revenue-code-citation';
 import { buyerHasTin } from '../../../domain/document-kind';
+// Pure, framework-free tax algorithm shared by F3 (validating a member's stored
+// tax_id) and F4 (deciding whether a stored identifier is a real Thai TIN it may
+// print). Lives in `src/lib` precisely so neither context has to deep-import the
+// other's domain, and so the algorithm has exactly one implementation.
+import { isThaiTaxId } from '@/lib/thai-tax-id';
 // 088 US4 (T034/T035 / FR-009) — pure, locale-independent formatting helpers.
 // Extracted to `../format-thb` so the unit test imports them WITHOUT pulling in
 // @react-pdf/renderer. `formatThbSatang(satang, grouped)` groups the integer
@@ -374,6 +379,44 @@ const WHT_NOTE_WRAP_FIX_MIN_VERSION = 9;
 export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
 
 /**
+ * 059 / PR-A — first template version that prints the BUYER's Tax ID line ONLY
+ * when the stored value is ACTUALLY A THAI TIN: 13 digits with a correct
+ * weighted check digit (`isThaiTaxId`, src/lib/thai-tax-id.ts).
+ *
+ * THE RULE CHANGED LATE, AND THE REASON MATTERS. It first keyed on
+ * VAT-REGISTRANT status, which conflated two unrelated things:
+ *
+ *   - a foreign member's PASSPORT / work-permit / foreign organisation number,
+ *     which `members.tax_id` legitimately accepts. Printing THAT under the label
+ *     "Tax ID" is a FALSE PARTICULAR (ประกาศอธิบดีฯ ฉบับที่ 196). This is the
+ *     defect the gate exists for, and it stays closed.
+ *   - a Thai NATURAL PERSON's number. An individual's taxpayer identification
+ *     number IS their 13-digit national ID, so printing it is TRUE — and they
+ *     need it on the document to claim their personal income-tax deduction. A
+ *     บุคคลธรรมดา is never a VAT registrant, so the registrant gate silently
+ *     erased their own tax number from their own document.
+ *
+ * The check digit separates the two with near-certainty. Registrant status still
+ * gates the สำนักงานใหญ่/สาขา line (`buyerBranchEl`) — ประกาศ 199 requires THAT
+ * particular only of a registrant, and a 13-digit number cannot evidence
+ * head-office/branch status (a national ID is 13 digits too). THE TWO MUST NEVER
+ * BE UNIFIED.
+ *
+ * THE VERSION GATE IS LOAD-BEARING, NOT DECORATION. An issued PDF is NOT
+ * write-once: `void-invoice.ts` and `issue-credit-note.ts` (the
+ * credited-annotation overlay) both RE-RENDER with the CURRENTLY DEPLOYED
+ * template code against the FROZEN snapshot, at the document's PINNED
+ * `templateVersion`, and re-upload to the SAME blobKey with
+ * `allowOverwrite: true`. Pre-v11 the line printed on any non-blank `tax_id`.
+ * Un-gated, this change would silently DROP the Tax ID line from an
+ * already-issued document the moment someone voids or credit-notes it. Gated, a
+ * document pinned to v<=10 keeps its legacy unconditional print and reproduces
+ * its original bytes — the SC-003 guarantee, exactly like the v3-v10 gates.
+ * Registry log: template-registry.ts v11.
+ */
+const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
+
+/**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
  * the template's shaped-Thai + English-gloss convention — the PDF carries no
  * i18n context). Line 1 cites the Revenue-Code basis; line 2 references the MFA
@@ -481,11 +524,46 @@ function renderPageBody({
     </Text>
   );
   // 066-membership-no-tin — render the buyer Tax ID line ONLY when a non-blank
-  // TIN is present, via the SHARED `buyerHasTin` discriminator (the same one the
-  // issue/pay/credit gates use). Byte-identical for a real TIN (renders) and
-  // null (omitted) — only whitespace changes.
+  // TIN is present, via the SHARED `buyerHasTin` discriminator ("is there a
+  // number to print").
+  //
+  // 059 / PR-A — AND, at v>=11, only when that number is ACTUALLY A THAI TIN.
+  //
+  // The first version of this gate keyed on VAT-REGISTRANT status, and that was
+  // too broad. It conflated two different things:
+  //
+  //   - a foreign member's PASSPORT / work-permit / foreign company number
+  //     stored in the same column: printing THAT under the label "Tax ID" is a
+  //     FALSE particular on a §86/4 document. This is the defect the gate exists
+  //     for, and it stays closed.
+  //   - a Thai NATURAL PERSON's number: in Thailand an individual's taxpayer
+  //     identification number IS their 13-digit national ID. Printing it under
+  //     the label "Tax ID" is TRUE — and they NEED it there, to claim the
+  //     personal income-tax deduction the receipt exists for. A บุคคลธรรมดา is
+  //     not a VAT registrant, so the registrant gate silently erased their own
+  //     tax number from their own document.
+  //
+  // The honest discriminator is therefore not "is this buyer a VAT registrant"
+  // but "is this string a real Thai TIN" — and the 13-digit weighted check digit
+  // answers that with near-certainty (`isThaiTaxId`). A passport does not pass
+  // it; a foreign registration number does not pass it; an individual's national
+  // ID and a juristic person's TIN both do, because both ARE taxpayer numbers.
+  //
+  // Registrant status still gates the สำนักงานใหญ่/สาขา line (`buyerBranchEl`,
+  // below) — ประกาศอธิบดีฯ ฉบับที่ 199 requires THAT particular only of a
+  // registrant, and a 13-digit number cannot evidence head-office/branch status
+  // (a natural person's national ID is 13 digits too). The two must not be
+  // unified. `input.buyerIsVatRegistrant` remains the input for that.
+  //
+  // Version-gated exactly as `buyerBranchEl` is: a document pinned to v<=10
+  // keeps the legacy unconditional print, so voiding / credit-noting it still
+  // reproduces its ORIGINAL bytes (SC-003). v11 is not deployed anywhere yet, so
+  // redefining its rule (rather than minting v12) alters no issued document.
   const buyerTaxIdEl = buyerHasTin(input.member.tax_id) ? (
-    <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+    input.templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION &&
+    !isThaiTaxId(input.member.tax_id) ? null : (
+      <Text style={styles.label}>Tax ID: {input.member.tax_id}</Text>
+    )
   ) : null;
   // 055-member-number — the buyer's FORMATTED member number (`SCCM-0042`),
   // pinned on the snapshot at ISSUE time. Guarded `!== null` (NOT truthy) so a
@@ -513,6 +591,20 @@ function renderPageBody({
   // (fail-closed). Gated on templateVersion so pre-v5 documents re-render
   // byte-stable (SC-003). Its own gate (v>=5) is ⊆ the v6 polish gate, so the
   // v6 reorder never resurrects it on a pre-v5 pin.
+  //
+  // 059 / PR-A Task 6b — CRITICAL: this reads `input.member.buyer_is_vat_registrant`
+  // (the snapshot's RECORDED fact), and MUST NEVER be switched to
+  // `input.buyerIsVatRegistrant` (the resolved value `buyerTaxIdEl` now reads,
+  // above). The two fields answer different questions for a WALK-IN buyer:
+  // `buyerIsVatRegistrant` is derived from TIN-PRESENCE (`resolveBuyerIsVatRegistrant`'s
+  // walk-in branch), and a 13-digit number is NOT proof of VAT registration — a
+  // Thai natural person's national ID is also 13 digits. Printing a walk-in's own
+  // TIN back to them (buyerTaxIdEl) is safe; asserting their head-office/branch
+  // status (ประกาศอธิบดีฯ ฉบับที่ 199) on that same guess is not — it would print a
+  // §86/4 particular the seller cannot evidence. A walk-in's snapshot never sets
+  // `buyer_is_vat_registrant`, so this line correctly NEVER draws for a walk-in
+  // (a known, pre-existing gap — 088 US3 — not fixed here). Do not "helpfully"
+  // unify the two conditions.
   const buyerBranchEl =
     input.member.buyer_is_vat_registrant === true &&
     input.templateVersion >= HEAD_OFFICE_BRANCH_MIN_VERSION ? (

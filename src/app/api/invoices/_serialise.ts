@@ -64,6 +64,11 @@ export const ISSUE_ERROR_STATUS_BASE: Readonly<Record<string, number>> = {
   zero_rate_requires_flag: 422,
   pdf_render_failed: 500,
   blob_upload_failed: 500,
+  // 059 PR-A Task 4 fix — buyer is a VAT registrant with no tax_id (Domain
+  // VO write-time invariant). Business reject, admin-fixable (add the TIN,
+  // or clear the VAT-registered checkbox) — 422, same class as the other
+  // fail-closed rejects above.
+  buyer_tax_id_required_for_registrant: 422,
 };
 
 /** Resolve the response status for an issuance-route error code (default 500). */

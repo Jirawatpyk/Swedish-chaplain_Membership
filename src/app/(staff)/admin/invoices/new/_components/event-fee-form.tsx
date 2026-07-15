@@ -181,21 +181,23 @@ export type IssuanceMode = 'already_paid' | 'bill_first';
  * - `refunded`           → HARD BLOCK, no override.
  * - `no_show`            → no default (attendance says nothing about payment).
  *
- * GLOBAL (enforced by the caller's UI + server guard
- * `event_no_tin_requires_paid_issue`): bill_first is never selectable for a
- * no-TIN buyer, which is why this function never defaults to bill_first when
- * `hasTin` is false.
+ * GLOBAL (enforced by the caller's UI + the server guard, whose code is still
+ * named `event_no_tin_requires_paid_issue` for compatibility but whose MEANING
+ * widened in 059 / PR-A Task 6a — it now fires on "not a VAT registrant", not
+ * on "no TIN"): bill_first is never selectable for a non-registrant buyer,
+ * which is why this function never defaults to bill_first when
+ * `buyerIsVatRegistrant` is false.
  */
 export function defaultModeFor(
   paymentStatus: string,
-  hasTin: boolean,
+  buyerIsVatRegistrant: boolean,
 ): { mode: IssuanceMode | null; locked: 'refunded' | null } {
   switch (paymentStatus) {
     case 'paid':
       return { mode: 'already_paid', locked: null };
     case 'pending':
     case 'waitlisted':
-      return { mode: hasTin ? 'bill_first' : null, locked: null };
+      return { mode: buyerIsVatRegistrant ? 'bill_first' : null, locked: null };
     case 'refunded':
       return { mode: null, locked: 'refunded' };
     // 'free', 'no_show', and anything unrecognised: explicit admin choice.
@@ -298,7 +300,7 @@ function IssuanceModeFieldset({
   effectiveMode,
   onModeChoice,
   disabled,
-  hasTin,
+  buyerIsVatRegistrant,
   isWaitingNoTin,
   taxAtPayment,
   children,
@@ -306,7 +308,7 @@ function IssuanceModeFieldset({
   readonly effectiveMode: IssuanceMode | null;
   readonly onModeChoice: (mode: IssuanceMode | null) => void;
   readonly disabled: boolean;
-  readonly hasTin: boolean;
+  readonly buyerIsVatRegistrant: boolean;
   readonly isWaitingNoTin: boolean;
   /**
    * 088 (FR-014/SC-005) — under the bill→payment flow, `bill_first` issues a
@@ -360,14 +362,14 @@ function IssuanceModeFieldset({
             id="issuance-mode-bill-first"
             value="bill_first"
             className="mt-0.5"
-            disabled={disabled || !hasTin}
+            disabled={disabled || !buyerIsVatRegistrant}
             aria-labelledby="issuance-mode-bill-first-label"
-            {...(!hasTin ? { 'aria-describedby': 'mode-bill-first-needs-tin' } : {})}
+            {...(!buyerIsVatRegistrant ? { 'aria-describedby': 'mode-bill-first-needs-tin' } : {})}
           />
           <Label
             htmlFor="issuance-mode-bill-first"
             className={
-              hasTin
+              buyerIsVatRegistrant
                 ? 'flex cursor-pointer flex-col gap-0.5'
                 : 'flex cursor-not-allowed flex-col gap-0.5 opacity-60'
             }
@@ -384,7 +386,7 @@ function IssuanceModeFieldset({
       {/* Disabled-option reason is VISIBLE text (no hover-only
           tooltip — same philosophy as the attendee picker's erased
           rows: keyboard/SR/touch users must get it too). */}
-      {!hasTin && (
+      {!buyerIsVatRegistrant && (
         <p
           id="mode-bill-first-needs-tin"
           className="text-xs text-muted-foreground"
@@ -679,33 +681,45 @@ export function EventFeeForm({
   const totalSatang = amountValid ? Math.round(amountNum * 100) : 0;
   const { subtotal, vat } = previewVatInclusive(totalSatang);
 
-  // TIN presence for the §2.3 mode rules. 064 remediation B5 — matched
-  // members now use SERVER-TRUTH presence (`buyerHasTin`, derived from the
-  // F3 member's tax_id by the registrations endpoint; only the boolean
-  // crosses the wire). A TIN-less matched member therefore gets the correct
-  // no-TIN rules (bill_first disabled, receipt-path default) instead of the
-  // legacy "matched ⇒ has TIN" guess. The guess survives ONLY as the
-  // fallback when the field is absent/null (older API shape / degraded
-  // lookup) — the server's `event_no_tin_requires_paid_issue` guard stays
-  // authoritative either way. Non-members: the manual tax-id field rules.
-  const hasTin = matched
-    ? (attendee?.buyerHasTin ?? true)
+  // 059 / PR-A Task 6c — the §2.3 mode rules ask the SAME question issuance
+  // asks: "is this buyer a VAT registrant?", NOT "is their tax_id non-blank".
+  //
+  // Task 6a re-keyed the server's `event_no_tin_requires_paid_issue` gate onto
+  // the recorded `members.is_vat_registered` flag, because a foreign member may
+  // store a passport / work-permit number in `tax_id` and a non-blank field is
+  // not a ผู้ประกอบการจดทะเบียน. While this form still asked the TIN question,
+  // the two disagreed: a TIN-bearing NON-registrant was OFFERED bill_first, and
+  // then refused at issue with "this buyer has no tax ID" — while visibly
+  // having one on screen.
+  //
+  // Matched members: server truth from the registrations endpoint (only the
+  // boolean crosses the wire). Non-members (walk-ins): the manual tax-id field
+  // still rules — they have no `members` row to carry a recorded flag, and the
+  // field is zod-locked to /^\d{13}$/ so a passport cannot reach it; issuance
+  // makes the same call for them (see `resolveBuyerIsVatRegistrant`).
+  //
+  // The `?? true` fallback (absent field / degraded lookup) is deliberately
+  // OPTIMISTIC: the server gate stays authoritative, so the cost of offering
+  // bill_first wrongly is one accurate 422 — whereas hiding it from a genuine
+  // registrant blocks legitimate work with no explanation.
+  const buyerIsVatRegistrant = matched
+    ? (attendee?.buyerIsVatRegistrant ?? true)
     : buyer.taxId.trim().length > 0;
   const { mode: defaultMode, locked } =
     attendee !== null
-      ? defaultModeFor(attendee.paymentStatus, hasTin)
+      ? defaultModeFor(attendee.paymentStatus, buyerIsVatRegistrant)
       : { mode: null, locked: null };
   // A bill_first pick is invalidated when the TIN is cleared afterwards —
   // fall back to the (no-TIN) default rather than keeping an illegal mode.
   const effectiveMode: IssuanceMode | null = locked
     ? null
-    : modeChoice === 'bill_first' && !hasTin
+    : modeChoice === 'bill_first' && !buyerIsVatRegistrant
       ? defaultMode
       : (modeChoice ?? defaultMode);
   const isWaitingNoTin =
     attendee !== null &&
     locked === null &&
-    !hasTin &&
+    !buyerIsVatRegistrant &&
     (attendee.paymentStatus === 'pending' || attendee.paymentStatus === 'waitlisted');
 
   // Doc-type: resolved via pure helper — matched/no-attendee → 'pending';
@@ -1071,7 +1085,7 @@ export function EventFeeForm({
               effectiveMode={effectiveMode}
               onModeChoice={setModeChoice}
               disabled={pending}
-              hasTin={hasTin}
+              buyerIsVatRegistrant={buyerIsVatRegistrant}
               isWaitingNoTin={isWaitingNoTin}
               taxAtPayment={taxAtPayment}
             >

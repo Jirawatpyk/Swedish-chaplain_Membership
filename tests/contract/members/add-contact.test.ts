@@ -88,6 +88,7 @@ const createdContact = {
   dateOfBirth: null,
   linkedUserId: null,
   inviteBouncedAt: null,
+  art14AttestedAt: new Date(),
   removedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),

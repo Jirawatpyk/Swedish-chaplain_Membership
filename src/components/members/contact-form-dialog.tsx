@@ -28,6 +28,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { uuid } from '@/lib/uuid';
+import { Checkbox } from '@/components/ui/checkbox';
 // Deep import (not the members barrel) — pure TS, keeps the E.164 phone
 // rule single-sourced with the domain value object.
 import { isAcceptablePhoneInput } from '@/modules/members/domain/value-objects/phone';
@@ -94,6 +95,17 @@ type FormValues = {
   phone: string;
   role_title: string;
   preferred_language: 'en' | 'th' | 'sv';
+  /**
+   * Task 8 (GDPR Art. 14) — ADD mode only. This dialog's "add" path is the
+   * second of the two entry points that collect a named third party's data
+   * from the admin rather than the person themselves (the other is the
+   * create-member secondary-contact section). Not meaningful on EDIT (an
+   * existing contact was already attested at creation time — see
+   * `Contact.art14AttestedAt`), so the schema only requires/validates it
+   * when `mode === 'add'`; always present on `FormValues` so both modes
+   * share one `useForm` shape.
+   */
+  art14_attested: boolean;
 };
 
 export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
@@ -143,6 +155,17 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
             .max(254, tv('tooLong', { max: 254 }))
             .email(t('emailInvalid'))
         : z.string().optional(),
+      // Task 8 (GDPR Art. 14) — ADD mode only. The admin must attest they
+      // informed this third party before the contact can be submitted; an
+      // existing (EDIT) contact was already attested at creation time, so no
+      // gate here. `z.literal(true)`-equivalent via refine (keeps the field a
+      // plain boolean on FormValues for both modes).
+      art14_attested:
+        mode === 'add'
+          ? z
+              .boolean()
+              .refine((v) => v === true, { message: t('art14AttestationRequired') })
+          : z.boolean().optional().transform(() => true),
     };
     return z.object(shape);
     // t/tf/tv are stable per-render; mode/emailEditable never change for a
@@ -167,6 +190,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
       phone: contact?.phone ?? '',
       role_title: contact?.roleTitle ?? '',
       preferred_language: contact?.preferredLanguage ?? 'en',
+      art14_attested: false,
     },
   });
 
@@ -181,6 +205,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
         phone: contact?.phone ?? '',
         role_title: contact?.roleTitle ?? '',
         preferred_language: contact?.preferredLanguage ?? 'en',
+        art14_attested: false,
       });
     }
     setOpen(next);
@@ -241,6 +266,10 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
             phone: values.phone.trim() || null,
             role_title: values.role_title.trim() || null,
             preferred_language: values.preferred_language,
+            // Task 8 (GDPR Art. 14) — the schema already blocked submit
+            // unless this was checked, so always `true` here; forwarded so
+            // the server's own `z.literal(true)` gate sees it.
+            art14_attested: values.art14_attested,
           }),
         });
         if (!res.ok) {
@@ -479,6 +508,52 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               )}
             />
           </div>
+
+          {mode === 'add' && (
+            // Task 8 (GDPR Art. 14) — this contact's data is supplied by the
+            // admin, not the person themselves (a third party). The admin
+            // must attest they informed that person the chamber holds their
+            // details, and where to find the privacy notice, before this
+            // contact can be added.
+            <div className="flex items-start gap-2">
+              <Controller
+                control={control}
+                name="art14_attested"
+                render={({ field }) => (
+                  <Checkbox
+                    id="cf-art14-attested"
+                    className="mt-0.5"
+                    // Base UI Checkbox.Root's visible role=checkbox element
+                    // uses its own generated id, so a sibling <Label
+                    // htmlFor> can't reliably name it — set the accessible
+                    // name directly (same fix as tax-branch-section.tsx's
+                    // is_head_office checkbox).
+                    aria-label={t('art14AttestationLabel')}
+                    aria-invalid={Boolean(errors.art14_attested)}
+                    aria-describedby={
+                      errors.art14_attested ? 'cf-art14-attested-error' : undefined
+                    }
+                    checked={field.value ?? false}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                  />
+                )}
+              />
+              <div>
+                <Label htmlFor="cf-art14-attested" className="font-normal">
+                  {t('art14AttestationLabel')}
+                </Label>
+                {errors.art14_attested && (
+                  <p
+                    id="cf-art14-attested-error"
+                    role="alert"
+                    className="mt-1 text-xs text-destructive"
+                  >
+                    {errors.art14_attested.message}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           <DialogFooter>
             <Button

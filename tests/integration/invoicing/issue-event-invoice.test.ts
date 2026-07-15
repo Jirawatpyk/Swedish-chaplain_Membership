@@ -223,6 +223,12 @@ describe('issueInvoice — EVENT-fee invoices (Model B exact VAT, member + non-m
         companyName: 'Gamma Corp',
         country: 'TH',
         taxId: '1111111111111',
+        // 059 / PR-A Task 6a — the RECORDED registrant flag now decides whether an
+        // EVENT fee may be billed first (§86/4 ใบกำกับภาษี) or must go as-paid
+        // (§105 ใบเสร็จรับเงิน). `tax_id` alone no longer implies registrant status
+        // — it may hold a foreign natural person's passport. This seed models a
+        // VAT-registrant company, which is why bill-first is legal for it.
+        isVatRegistered: true,
         addressLine1: '1 Wireless Road',
         city: 'Pathum Wan',
         province: 'Bangkok',

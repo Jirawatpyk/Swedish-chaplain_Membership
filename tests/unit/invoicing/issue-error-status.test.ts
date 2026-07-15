@@ -45,6 +45,9 @@ describe('issueErrorStatus — shared issuance-route status map (wave-4 S16)', (
       zero_rate_requires_flag: 422,
       pdf_render_failed: 500,
       blob_upload_failed: 500,
+      // 059 PR-A Task 4 fix — VAT-registrant buyer with no tax_id (Domain VO
+      // write-time invariant); admin-fixable business reject.
+      buyer_tax_id_required_for_registrant: 422,
     });
   });
 
@@ -108,6 +111,7 @@ describe('isIssuanceServerFault — 065 M-4 route-level log-severity split', () 
       'not_event_subject',
       'payment_date_future',
       'payment_date_too_old',
+      'buyer_tax_id_required_for_registrant',
     ]) {
       expect(isIssuanceServerFault(code)).toBe(false);
     }

@@ -414,6 +414,15 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F8_AUDIT_EVENT_TYPES (renewals audit port) — the F8 audit-count
   //     parity tests enforce it. ---
   'renewal_lapse_deferred_invoice_not_due',
+  // --- 059 PR-A Task 4 fix (migration 0251, 2026-07-14) — F4 write-time
+  //     buyer-identity-snapshot invariant reject. Emitted from the outer
+  //     catch of issueInvoice / issueEventInvoiceAsPaid when the resolved
+  //     buyer is a VAT registrant with no tax_id (Domain VO throw,
+  //     PRE-SEQUENCE — no §87 number burned). 5y retention (no tax-document
+  //     touch). Keep in lockstep with F4AuditEventType +
+  //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
+  //     enum↔retention parity test enforces it. ---
+  'invoice_buyer_identity_invalid',
 ]);
 
 /**

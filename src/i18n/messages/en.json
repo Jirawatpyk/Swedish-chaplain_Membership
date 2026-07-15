@@ -1127,7 +1127,8 @@
           "association": "Association",
           "government": "Government body",
           "branch": "Branch office",
-          "representative_office": "Representative office"
+          "representative_office": "Representative office",
+          "state_enterprise": "State enterprise"
         },
         "fields": {
           "memberNumber": "Member Number",
@@ -1141,6 +1142,7 @@
           "address": "Address",
           "foundedYear": "Founded",
           "turnoverThb": "Annual turnover (THB)",
+          "registeredCapitalThb": "Registered capital (THB)",
           "planId": "Plan ID",
           "planYear": "Plan year",
           "registrationDate": "Registration date",
@@ -1309,6 +1311,23 @@
         "fields": {
           "companyName": "Company name",
           "legalEntityType": "Legal entity type",
+          "legalEntityTypePlaceholder": "Select a type…",
+          "legalEntityTypeHelpAriaLabel": "Help — legal entity types explained",
+          "legalEntityTypeHelpTitle": "Legal entity types explained",
+          "legalEntityTypeExplanations": {
+            "company": "A registered company where the exact type isn't specified.",
+            "limited_company": "A private limited company (บริษัทจำกัด) registered with the Department of Business Development.",
+            "public_company": "A public limited company (บริษัทมหาชนจำกัด), eligible to offer shares to the public.",
+            "partnership": "An ordinary or limited partnership (ห้างหุ้นส่วน) of two or more people.",
+            "sole_proprietor": "A single person trading under a registered business name — not a separate legal entity from its owner.",
+            "individual": "A natural person joining in a personal capacity, not as a registered business.",
+            "foundation": "A non-profit legal entity (มูลนิธิ) established for a charitable or public-benefit purpose.",
+            "association": "A membership-based non-profit organisation (สมาคม) — TSCC itself is one.",
+            "government": "A government ministry, department, or agency.",
+            "branch": "A Thai branch office of a company registered abroad.",
+            "representative_office": "A foreign company's liaison office in Thailand (สำนักงานผู้แทน). May not earn revenue in Thailand.",
+            "state_enterprise": "A state-owned enterprise (รัฐวิสาหกิจ) — a separate legal person from the government itself."
+          },
           "country": "Country (ISO code)",
           "countryPlaceholder": "Select a country…",
           "countrySearchPlaceholder": "Search countries…",
@@ -1347,6 +1366,9 @@
           "useTypedValueLabel": "Use \"{value}\"",
           "addressIncompleteBanner": "Address incomplete — required before a tax invoice can be issued.",
           "addressIncompleteJumpLink": "Complete the address",
+          "isVatRegistered": "This member is registered for VAT",
+          "isVatRegisteredHint": "VAT registration follows turnover (over 1.8M THB/year), not legal form — a sole proprietor can be registered and a company need not be. Record what is true, do not infer it from the entity type.",
+          "art14AttestationLabel": "I have informed this person that the chamber holds their contact details, and where to find the chamber's privacy policy.",
           "isHeadOffice": "This member is the head office (สำนักงานใหญ่)",
           "branchCode": "Branch code",
           "branchCodeHint": "5-digit RD branch code, e.g. 00001",
@@ -1383,8 +1405,11 @@
             "turnover": "Enter a non-negative amount.",
             "registeredCapital": "Enter a non-negative amount.",
             "branchCodeFormat": "Enter a 5-digit branch code, e.g. 00001.",
-            "branchOnNonRegistrant": "A branch code applies only to a VAT-registrant company. Set the legal entity type first.",
-            "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact."
+            "branchOnNonRegistrant": "A branch code applies only to a VAT registrant. Tick \"This member is registered for VAT\" first.",
+            "headOfficeBranchCodeMismatch": "A head office must not have a branch code, and a branch must have a 5-digit branch code. Check the head-office/branch setting together with the branch code.",
+            "taxIdRequiredForRegistrant": "A VAT-registered member must have a Tax ID.",
+            "secondaryEmailSameAsPrimary": "This email is the same as the primary contact's email. Use a different address, or remove the secondary contact.",
+            "art14AttestationRequired": "Confirm you have informed this person before adding them as a secondary contact."
           },
           "notes": "Notes (admin only)",
           "notesPlaceholder": "Internal admin notes…",
@@ -1447,6 +1472,8 @@
         "emailEditNote": "This contact is linked to a portal account, so this email is a sign-in identity. To change it, use the member's Edit page (it sends a verification email).",
         "fieldRequired": "This field is required.",
         "emailInvalid": "Enter a valid email address.",
+        "art14AttestationLabel": "I have informed this person that the chamber holds their contact details, and where to find the chamber's privacy policy.",
+        "art14AttestationRequired": "Confirm you have informed this person before adding this contact.",
         "partialSave": "Email updated, but the other changes couldn't be saved. Please retry them.",
         "submit": "Save",
         "submitting": "Saving…",
@@ -2112,7 +2139,7 @@
           "pending": "Document type set at issue",
           "ariaTaxInvoice": "This invoice will be issued as a tax invoice because the buyer has a tax ID.",
           "ariaTaxInvoiceReceipt": "A combined tax invoice/receipt will be issued because the buyer has a tax ID and the fee is already paid.",
-          "ariaReceipt": "This will be issued as a receipt because the buyer has no tax ID.",
+          "ariaReceipt": "This will be issued as a receipt because the buyer is not recorded as VAT-registered.",
           "ariaPending": "The document type is determined from the member's tax ID when the invoice is issued.",
           "bill088": "Invoice / ใบแจ้งหนี้",
           "ariaBill088": "This will be issued as an invoice (ใบแจ้งหนี้); the §86/4 tax invoice/receipt is issued when payment is recorded."
@@ -2151,7 +2178,7 @@
             "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
             "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
-          "billFirstNeedsTin": "This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.",
+          "billFirstNeedsTin": "This buyer is not recorded as VAT-registered — the fee must be recorded as already paid; an invoice cannot be issued before payment. If they are VAT-registered, tick that on the member record first.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
           "refundedBlockedTitle": "Registration refunded",
           "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
@@ -2349,8 +2376,7 @@
           },
           "branchLine": {
             "headOffice": "สำนักงานใหญ่ (Head Office)",
-            "noneIndividual": "No branch line (individual buyer)",
-            "noneUnset": "No branch line (legal entity type not set)"
+            "noneNotRegistrant": "No branch line (buyer is not a VAT registrant)"
           },
           "vatTreatmentValue": {
             "standard": "Standard — VAT 7%",
@@ -2362,7 +2388,7 @@
           },
           "warnings": {
             "noPaymentPath": "This ใบแจ้งหนี้ will have NO payment path — online payment is off and no bank-transfer details are configured, so the member cannot pay it. Configure a payment method before issuing, or proceed knowing the bill is currently unpayable.",
-            "nullEntityType": "No §86/4 Head Office / Branch line will print — this buyer's legal entity type is not set. Set it on the member record first if this is a VAT-registrant company."
+            "notVatRegistrant": "No §86/4 Head Office / Branch line will print — this buyer is not recorded as a VAT registrant. If they are registered, tick \"This member is registered for VAT\" on the member record first."
           }
         },
         "form": {
@@ -2420,13 +2446,14 @@
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
           "refreshAction": "Refresh",
-          "event_no_tin_requires_paid_issue": "This buyer has no tax ID — the ticket fee must be recorded as paid (issuing a receipt), not billed first.",
+          "event_no_tin_requires_paid_issue": "This buyer is not recorded as VAT-registered — the ticket fee must be recorded as paid (issuing a receipt), not billed first. If they are VAT-registered, tick that on the member record first.",
           "registration_refunded": "This registration has been refunded since the draft was created — the document cannot be issued for a refunded fee.",
           "settings_missing": "Invoice settings haven't been configured for this organisation yet — configure them before issuing.",
           "member_archived": "This member is archived and can't be invoiced — restore the member first.",
           "member_not_found": "This member could not be found — they may have been removed.",
           "no_buyer_snapshot": "This draft has no buyer details — delete it and recreate it with the buyer filled in.",
           "invalid_lines": "This draft's line items are invalid — delete it and recreate it.",
+          "buyer_tax_id_required_for_registrant": "This member is registered for VAT but has no tax ID on file — add their tax ID, or clear the VAT-registered checkbox on the member record if the number isn't known yet.",
           "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again.",
@@ -2449,6 +2476,7 @@
           "invalid_lines": "The invoice lines are invalid — delete the draft and recreate it.",
           "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support.",
           "no_buyer_snapshot": "The draft has no buyer details — recreate it with the buyer filled in.",
+          "buyer_tax_id_required_for_registrant": "This member is registered for VAT but has no tax ID on file — add their tax ID, or clear the VAT-registered checkbox on the member record if the number isn't known yet.",
           "member_archived": "This member has been archived and cannot be invoiced. Restore the member first.",
           "settings_missing": "Invoice settings have not been configured for this organisation yet.",
           "invoice_already_issued": "This invoice has already been issued.",
@@ -5182,7 +5210,7 @@
         "memberNumber": "Member Number",
         "memberNumberCopy": "Copy member number",
         "companyName": "Company Name",
-        "legalEntityType": "Legal Entity Type",
+        "legalEntityType": "Legal entity type",
         "country": "Country",
         "website": "Website",
         "description": "Description",
@@ -5559,6 +5587,7 @@
       "receipt_pdf_downloaded": "Receipt PDF downloaded",
       "tax_receipt_issued": "Tax receipt issued",
       "tenant_receipt_prefix_changed": "Document-number prefix changed",
+      "invoice_buyer_identity_invalid": "Buyer identity invalid — issuance blocked",
       "sign_in_failure": "Sign-in failed",
       "sign_out": "Signed out",
       "password_reset_requested": "Password reset requested",

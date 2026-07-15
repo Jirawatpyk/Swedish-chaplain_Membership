@@ -158,11 +158,51 @@
  *     invoice / bill / receipt / credit-note document) renders byte-identical at
  *     v10 as at v9 (proven: standard receipt v9↔v10 byte-length equal —
  *     zero-rate-pdf-golden §C + status-stamp-opacity.integration.test.ts).
+ *   - **v11** (2026-07-15, 059-member-tax-correctness / PR-A) — the BUYER Tax ID
+ *     line now prints ONLY when the stored value is ACTUALLY A THAI TIN: 13
+ *     digits with a correct weighted check digit (`isThaiTaxId`,
+ *     src/lib/thai-tax-id.ts). Pre-v11 the template printed ANY non-blank
+ *     `tax_id` with no check at all.
+ *
+ *     That became unsafe when `members.tax_id` began accepting a foreign natural
+ *     person's PASSPORT / work-permit number (they have no Thai TIN): their
+ *     identifier would print on a legal tax document as a taxpayer number — a
+ *     FALSE PARTICULAR (ประกาศอธิบดีฯ ฉบับที่ 196).
+ *
+ *     THE RULE WAS CORRECTED MID-BRANCH, AND THE HISTORY IS THE POINT. v11 first
+ *     shipped keyed on VAT-REGISTRANT status, which conflated the passport case
+ *     above with a completely different one: a Thai NATURAL PERSON's number. An
+ *     individual's taxpayer identification number IS their 13-digit national ID —
+ *     printing it is TRUE, and they need it on the document to claim their
+ *     personal income-tax deduction. A บุคคลธรรมดา is never a VAT registrant, so
+ *     the registrant gate silently ERASED THEIR OWN TAX NUMBER FROM THEIR OWN
+ *     DOCUMENT. The check digit separates a real Thai TIN from a passport or a
+ *     foreign registration number with near-certainty; VAT-registrant status
+ *     cannot, and never could.
+ *
+ *     Registrant status still gates the สำนักงานใหญ่/สาขา line (v5 rule,
+ *     unchanged): ประกาศ 199 requires THAT particular only of a registrant, and a
+ *     13-digit number cannot evidence head-office/branch status — a national ID
+ *     is 13 digits too. THE TWO PARTICULARS ANSWER DIFFERENT QUESTIONS AND MUST
+ *     NEVER BE UNIFIED.
+ *
+ *     Gated on `templateVersion >= TAX_ID_REGISTRANT_GATE_MIN_VERSION` (=11, see
+ *     templates/invoice-template.tsx). THE GATE IS LOAD-BEARING: an issued PDF is
+ *     NOT write-once — void-invoice.ts and issue-credit-note.ts (credited
+ *     annotation) both re-render with the CURRENTLY DEPLOYED template against the
+ *     frozen snapshot at the document's PINNED version and overwrite the same
+ *     blobKey. An UN-gated change would silently DROP the Tax ID line from an
+ *     already-issued document the moment it was voided or credit-noted. A pinned
+ *     pre-v11 document keeps the legacy unconditional print and reproduces its
+ *     ORIGINAL bytes — the SC-003 guarantee, exactly like the v3–v10 gates.
+ *
+ *     v11 was never deployed under the earlier registrant-based rule, so
+ *     redefining it (rather than minting v12) alters no issued document.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 10 as const;
+export const CURRENT_TEMPLATE_VERSION = 11 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {

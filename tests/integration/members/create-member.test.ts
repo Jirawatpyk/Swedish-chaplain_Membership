@@ -325,6 +325,73 @@ describe('create-member integration (T041, US1)', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('defaults is_vat_registered to false and round-trips an explicit true (059 / PR-A)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+
+    const off = await createMember(
+      goodInput(planId),
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-off` },
+      deps,
+    );
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    const offRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, off.value.memberId)),
+    );
+    expect(offRows).toHaveLength(1);
+    expect(offRows[0]!.isVatRegistered).toBe(false);
+
+    // The tax_id here is not decoration — Task 4 adds the registrant ⇒ TIN
+    // invariant, and this test must keep passing once it lands.
+    const on = await createMember(
+      { ...goodInput(planId), is_vat_registered: true, tax_id: '0105562087242' },
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-on` },
+      deps,
+    );
+    expect(on.ok).toBe(true);
+    if (!on.ok) return;
+    const onRows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, on.value.memberId)),
+    );
+    expect(onRows).toHaveLength(1);
+    expect(onRows[0]!.isVatRegistered).toBe(true);
+  });
+
+  it('registrant ⇒ TIN: a VAT registrant with NO tax_id is REJECTED, and no row is written (059 / PR-A Task 4)', async () => {
+    // The NEGATIVE case, against the real database. Every other proof of this
+    // invariant on this branch runs against a mocked `runInTenant` — which can
+    // only show that the use case returns an error object, never that the row
+    // was not written.
+    //
+    // ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่/สาขา) are a PAIR: both are
+    // mandatory of a VAT-registrant buyer. A member stored as
+    // `is_vat_registered = true` with no `tax_id` would print the branch line on
+    // a §86/4 tax invoice with NO taxpayer number on it — a defective legal
+    // document. This is the state that must be unreachable.
+    const deps = buildMembersDeps(tenant.ctx);
+
+    const before = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.tenantId, tenant.ctx.slug)),
+    );
+
+    const result = await createMember(
+      { ...goodInput(planId), is_vat_registered: true, tax_id: null },
+      { actorUserId: user.userId, requestId: `rq-${Date.now()}-vat-no-tin` },
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('invalid_body');
+
+    // The point of doing this on live Neon: prove nothing landed. A mocked repo
+    // cannot tell you that.
+    const after = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.tenantId, tenant.ctx.slug)),
+    );
+    expect(after).toHaveLength(before.length);
+  });
+
   it('validation: bad Thai tax_id checksum rejected', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const input = {
@@ -351,6 +418,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Svensson',
         email: `bjorn-${randomUUID().slice(0, 8)}@example.com`,
         preferred_language: 'sv' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -378,6 +446,13 @@ describe('create-member integration (T041, US1)', () => {
     expect(primary?.email).toBe(input.primary_contact.email);
     expect(secondary?.email).toBe(input.secondary_contact.email);
     expect(secondary?.preferredLanguage).toBe('sv');
+
+    // Task 8 (GDPR Art. 14) — the primary contact is first-party (member
+    // supplied their own representative), so NULL; the secondary contact's
+    // data came from the admin, so its attestation was recorded.
+    expect(primary?.art14AttestedAt).toBeNull();
+    expect(secondary?.art14AttestedAt).not.toBeNull();
+    expect(secondary?.art14AttestedAt).toBeInstanceOf(Date);
 
     // Both contacts got their OWN contact_created audit row, in the SAME tx.
     const auditRows = await db
@@ -409,6 +484,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Email',
         email: sharedEmail,
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -434,6 +510,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Email',
         email: 'not-an-email',
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(
@@ -479,6 +556,7 @@ describe('create-member integration (T041, US1)', () => {
         last_name: 'Secondary',
         email: collidingEmail,
         preferred_language: 'en' as const,
+        art14_attested: true as const,
       },
     };
     const result = await createMember(

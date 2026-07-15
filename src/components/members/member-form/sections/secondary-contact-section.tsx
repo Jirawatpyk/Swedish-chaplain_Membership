@@ -22,16 +22,25 @@
  * truth for the same rows.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { Controller, useFormContext } from 'react-hook-form';
 import { useTranslations } from 'next-intl';
 import { UserPlusIcon, Trash2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { FieldError } from '../field-error';
 import { ContactFields } from './contact-fields';
 import { type MemberFormValues } from '../schema';
 
 export function SecondaryContactSection() {
   const t = useTranslations('admin.members.create');
-  const { unregister, setValue } = useFormContext<MemberFormValues>();
+  const tf = useTranslations('admin.members.create.fields');
+  const {
+    unregister,
+    setValue,
+    control,
+    formState: { errors },
+  } = useFormContext<MemberFormValues>();
   const [expanded, setExpanded] = useState(false);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   // Task 8 review-fix (Minor 4) — Remove unmounts the whole fieldset with no
@@ -100,6 +109,48 @@ export function SecondaryContactSection() {
         showDateOfBirth={false}
         required
       />
+      {/* Task 8 (GDPR Art. 14) — the admin must attest they informed this
+          third party (whose data they, not the person, are supplying) that
+          the chamber holds their details, and where to find the privacy
+          notice. Blocks submit until checked (schema.ts refine). */}
+      <div className="flex items-start gap-2">
+        <Controller
+          control={control}
+          name="secondary_contact.art14_attested"
+          defaultValue={false}
+          render={({ field }) => (
+            <Checkbox
+              id="secondary_contact_art14_attested"
+              className="mt-0.5"
+              // Base UI Checkbox.Root's visible role=checkbox element uses its
+              // own generated id, so a sibling <Label htmlFor> can't reliably
+              // name it — set the accessible name directly (same fix as
+              // tax-branch-section.tsx's is_head_office checkbox).
+              aria-label={tf('art14AttestationLabel')}
+              aria-invalid={Boolean(errors.secondary_contact?.art14_attested)}
+              aria-describedby={
+                errors.secondary_contact?.art14_attested
+                  ? 'secondary_contact_art14_attested-error'
+                  : undefined
+              }
+              checked={field.value ?? false}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+            />
+          )}
+        />
+        <div>
+          <Label
+            htmlFor="secondary_contact_art14_attested"
+            className="font-normal"
+          >
+            {tf('art14AttestationLabel')}
+          </Label>
+          <FieldError
+            id="secondary_contact_art14_attested-error"
+            message={errors.secondary_contact?.art14_attested?.message}
+          />
+        </div>
+      </div>
       <Button
         type="button"
         variant="destructive-outline"

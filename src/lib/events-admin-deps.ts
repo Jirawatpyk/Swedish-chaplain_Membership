@@ -38,7 +38,7 @@ import { eventcreateMetrics } from '@/lib/metrics';
 import { logger } from '@/lib/logger';
 import {
   asTenantId,
-  memberTinPresenceByIdsInTx,
+  memberVatRegistrantByIdsInTx,
   type TenantId,
 } from '@/modules/members';
 // `asTenantContext` already
@@ -242,22 +242,31 @@ export async function runListEventNamesByIds(
 }
 
 /**
- * 064 remediation B5 — resolve a batch of MATCHED member ids to "has a
- * non-blank tax id" under the caller's tenant RLS. Used by the F6 admin
- * event-detail route to enrich each registration with `buyerHasTin`
- * (server-truth TIN presence for the /admin/invoices/new attendee picker,
- * replacing the legacy "matched ⇒ has TIN" client guess).
+ * 059 / PR-A Task 6c — resolve a batch of MATCHED member ids to their RECORDED
+ * `members.is_vat_registered` flag under the caller's tenant RLS. Used by the
+ * F6 admin event-detail route to enrich each registration with
+ * `buyerIsVatRegistrant`, so the /admin/invoices/new attendee picker offers the
+ * issuance modes the server will actually accept.
  *
- * ONE query via the F3 barrel's `memberTinPresenceByIdsInTx` free function
+ * Replaces the 064-remediation-B5 tax-id-PRESENCE lookup. Task 6a re-keyed
+ * issuance's `event_no_tin_requires_paid_issue` gate onto the registrant flag
+ * (a foreign member may store a passport in `tax_id`, so "non-blank" is not
+ * "registrant"). While the picker still asked the TIN question, a TIN-bearing
+ * NON-registrant was offered `bill_first` and then refused at issue.
+ *
+ * ONE query via the F3 barrel's `memberVatRegistrantByIdsInTx` free function
  * (same composition posture as `runListEventNamesByIds` above). Only the
- * PRESENCE boolean crosses this seam — never the raw tax-id (PII).
+ * BOOLEAN crosses this seam — the raw tax-id is never read, let alone sent.
  * Cross-tenant ids are RLS-hidden (absent from the map, never leaked).
  *
- * A repo error (DB blip / malformed id) surfaces as an EMPTY map rather
- * than a throw: the enrichment is non-critical — the picker falls back to
- * the legacy guess and the server-side issuance guards stay authoritative.
+ * A repo error (DB blip / malformed id) surfaces as an EMPTY map rather than a
+ * throw: the enrichment is non-critical. The picker then falls back to OFFERING
+ * bill_first (see `event-fee-form.tsx`) — deliberately optimistic, because the
+ * server gate stays authoritative either way, and refusing a legitimate
+ * registrant with no explanation is worse than offering an option that comes
+ * back with an accurate reason.
  */
-export async function runListMemberTinPresenceByIds(
+export async function runListMemberVatRegistrantByIds(
   tenantSlug: string,
   memberIds: ReadonlyArray<string>,
 ): Promise<ReadonlyMap<string, boolean>> {
@@ -268,7 +277,7 @@ export async function runListMemberTinPresenceByIds(
   const ctx = asTenantContext(tenantSlug);
   try {
     return await runInTenant(ctx, (tx) =>
-      memberTinPresenceByIdsInTx(tx, asTenantId(tenantSlug), memberIds),
+      memberVatRegistrantByIdsInTx(tx, asTenantId(tenantSlug), memberIds),
     );
   } catch (e) {
     // What remains catchable here is infrastructure (runInTenant connection /
@@ -279,13 +288,13 @@ export async function runListMemberTinPresenceByIds(
     // degradation counter (the warn alone is not ops-pageable).
     logger.warn(
       {
-        event: 'f6_member_tin_presence_lookup_failed',
+        event: 'f6_member_vat_registrant_lookup_failed',
         tenant_slug: tenantSlug,
         member_id_count: memberIds.length,
         errName: e instanceof Error ? e.name : 'unknown',
         err: e instanceof Error ? e.message : String(e),
       },
-      '[F6] buyerHasTin enrichment lookup failed — registrations fall back to the legacy matched⇒has-TIN guess',
+      '[F6] buyerIsVatRegistrant enrichment lookup failed — registrations fall back to offering bill_first (the server gate stays authoritative)',
     );
     eventcreateMetrics.tinEnrichmentDegraded(tenantSlug);
     return new Map();

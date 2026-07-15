@@ -205,11 +205,12 @@ export default async function InvoiceDetailPage({
   // draft buyer with no TIN. Drafts have no pinned snapshot, so this live member
   // lookup (already done for the display name) is the source of truth.
   let buyerHasTaxId = true;
-  // 088 T017a / FR-027 — buyer legal_entity_type drives the pre-issue Head-Office/
-  // Branch preview + the fail-closed NULL-entity warning. Loaded from the live
-  // member (drafts only) alongside the display name; NULL for a non-member event
-  // draft (which the review dialog treats as non-membership).
-  let buyerLegalEntityType: string | null = null;
+  // 088 T017a / FR-027 — the RECORDED `members.is_vat_registered` flag drives the
+  // pre-issue Head-Office / Branch preview + its warning (059 / PR-A Task 3: this
+  // used to read `legal_entity_type` and guess). Loaded from the live member
+  // (drafts only) alongside the display name; false for a non-member event draft
+  // (which the review dialog treats as non-membership anyway).
+  let buyerIsVatRegistrant = false;
   if (!snapshotName && invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
@@ -219,7 +220,7 @@ export default async function InvoiceDetailPage({
     if (memberResult.ok) {
       memberDisplayName = memberResult.value.member.companyName;
       buyerHasTaxId = memberResult.value.member.taxId !== null;
-      buyerLegalEntityType = memberResult.value.member.legalEntityType;
+      buyerIsVatRegistrant = memberResult.value.member.isVatRegistered;
     }
   }
 
@@ -486,7 +487,7 @@ export default async function InvoiceDetailPage({
                   // US8 / US5 land (default off until then).
                   taxAtPayment={env.features.f088TaxAtPayment}
                   isMembership={invoice.invoiceSubject === 'membership'}
-                  legalEntityType={buyerLegalEntityType}
+                  buyerIsVatRegistrant={buyerIsVatRegistrant}
                   // 088 US8 (T061d) — draft subtotal in satang (plain number;
                   // a bigint cannot cross the RSC → client-prop boundary)
                   // drives the ≥ 5,000 THB zero-rate advisory in the form.

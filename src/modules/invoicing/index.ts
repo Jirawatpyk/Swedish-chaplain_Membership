@@ -73,8 +73,10 @@ export {
 export {
   buyerHasTin,
   inferEventDocumentKind,
+  resolveBuyerIsVatRegistrant,
   type InvoiceSubject,
   type EventDocumentKind,
+  type BuyerRegistrantParts,
 } from './domain/document-kind';
 export {
   DocumentNumber,

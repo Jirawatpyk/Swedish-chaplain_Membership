@@ -45,6 +45,11 @@ const SCRUBBED = new Set<string>([
   // consistent, head office ⇒ NULL code).
   'isHeadOffice',
   'branchCode',
+  // §86/4 business quasi-identifier, same class as isHeadOffice/branchCode.
+  // Reset to its DEFAULT (false) on erasure, not NULL — the column is NOT NULL,
+  // and `false` is also what keeps the tightened branch-pairing CHECK satisfied
+  // (a non-registrant cannot be a branch).
+  'isVatRegistered',
   // Postal address.
   'addressLine1',
   'addressLine2',

@@ -82,6 +82,8 @@ function makeInput(kind: PdfDocKind, templateVersion = 1): PdfRenderInput {
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — irrelevant to this file's subject (byte-length /
+    // structural determinism); `true` matches the fixture's own `tax_id`.
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),

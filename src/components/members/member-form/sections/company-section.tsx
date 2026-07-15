@@ -10,10 +10,10 @@
  * task 4) — reads/writes form state via `useFormContext` instead of
  * prop-drilled `register`/`errors`.
  */
-import { useState } from 'react';
+import { useState, type RefObject } from 'react';
 import { useTranslations } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
-import { ChevronDownIcon } from 'lucide-react';
+import { ChevronDownIcon, HelpCircleIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -24,17 +24,56 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  TranslatedSelectValue,
+} from '@/components/ui/select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { CountryCombobox } from '@/components/members/country-combobox';
+// 059 / PR-A Task 3b — deep import (NOT the `@/modules/members` barrel),
+// same rationale as schema.ts: pure TS, zero framework deps, safe in this
+// client component.
+import {
+  LEGAL_ENTITY_TYPES,
+  isLegalEntityTypeCode,
+} from '@/modules/members/domain/value-objects/legal-entity-type';
 import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
+import { resolveVatSeed } from '../resolve-vat-seed';
 
-export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
+export function CompanySection({
+  mode,
+  vatManuallyTouchedRef,
+}: {
+  readonly mode: 'create' | 'edit';
+  /**
+   * 059 / PR-A Task 3b — shared with TaxBranchSection (lifted to the
+   * member-form.tsx composition root, both sections are siblings under the
+   * same FormProvider). Read here (never written) to decide whether picking
+   * a new entity type should still seed `is_vat_registered`.
+   */
+  readonly vatManuallyTouchedRef: RefObject<boolean>;
+}) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
+  // 059 / PR-A Task 3b — the SAME 12 labels the admin member-detail page
+  // resolves `legal_entity_type` through (reused, not duplicated).
+  const tTypes = useTranslations('admin.members.detail.legalEntityTypes');
+  const tExplain = useTranslations(
+    'admin.members.create.fields.legalEntityTypeExplanations',
+  );
   const {
     register,
     control,
     getValues,
+    setValue,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
 
@@ -101,15 +140,134 @@ export function CompanySection({ mode }: { readonly mode: 'create' | 'edit' }) {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
-          <Label htmlFor="legal_entity_type">{tf('legalEntityType')}</Label>
-          <Input
-            id="legal_entity_type"
-            {...register('legal_entity_type')}
-            maxLength={100}
-            aria-invalid={Boolean(errors.legal_entity_type)}
-            aria-describedby={
-              errors.legal_entity_type ? 'legal_entity_type-error' : undefined
-            }
+          {/* The gap below the label lives on THIS wrapper, and the Label is
+            * reset to `mb-0`. `ui/label.tsx` ships `mb-[var(--field-label-gap)]`
+            * on the Label itself — fine when the Label is the block above its
+            * control (every other field here), but inside a flex row that
+            * bottom margin is trapped IN the row: it inflates the row, so
+            * `items-center` drops the help icon below the label text, and it
+            * leaves no gap at all before the Select. Moving it out restores
+            * both. */}
+          <div className="mb-[var(--field-label-gap)] flex items-center gap-1">
+            <Label htmlFor="legal_entity_type" className="mb-0">
+              {tf('legalEntityType')}
+            </Label>
+            {/* 059 / PR-A Task 3b — reviewer feedback item #3 asked for an
+              * explanation of each type. Tap-discoverable Popover (not a
+              * hover Tooltip — must work on mobile), same pattern as the
+              * Contacts section's "Emergency primary contact transfer"
+              * helper (admin/members/[memberId]/page.tsx). The explicit
+              * `type="button"` is defensive redundancy, not a fix for an
+              * observed bug: Base UI's `PopoverTrigger` already renders a
+              * native button with `type="button"` on its own (`useButton`'s
+              * `getButtonProps`, applied last by `mergeProps`), so this
+              * popover — which lives inside <form onSubmit> — would not
+              * actually have submitted the form without this prop. Kept
+              * explicit anyway: harmless, and it removes the dependency on
+              * that Base UI internal for anyone reading this in isolation. */}
+            <Popover>
+              {/* `size-6` + `-my-2` — both load-bearing; the geometry is tight
+                * and every other combination breaks something visible.
+                *
+                * Two constraints have to hold at once:
+                *   1. The button must not GROW the label row. The Label is
+                *      `leading-none`, so the row is only ~14px; any flex item
+                *      whose outer height exceeds that pushes the Select down and
+                *      this field falls out of line with `country` / `tax_id`
+                *      beside it. `-my-2` cuts the 24px box to an 8px outer
+                *      height — under the label — so the row height is decided by
+                *      the Label alone, exactly as in every sibling field.
+                *   2. The button must not REACH the Select. Centred in a ~14px
+                *      row, a 24px box overhangs ~5px, which fits inside
+                *      `--field-label-gap` (6px). At 32px it overhangs 9px and at
+                *      44px, 15px — both land on the Select and swallow clicks
+                *      along its top edge.
+                *
+                * 24px is not an arbitrary shrink: it is exactly WCAG 2.2
+                * SC 2.5.8's minimum, and exactly `MIN_TARGET_PX` in
+                * `tests/e2e/members-target-size-2-2.spec.ts`, which measures the
+                * real box via `boundingBox()` — so the element must genuinely BE
+                * 24px. A pseudo-element hit area would report the 16px icon and
+                * fail that gate. */}
+              <PopoverTrigger
+                type="button"
+                aria-label={tf('legalEntityTypeHelpAriaLabel')}
+                className="-my-2 inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <HelpCircleIcon className="size-4" aria-hidden="true" />
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-80 max-w-[calc(100vw-2rem)] text-sm"
+                sideOffset={4}
+              >
+                <p className="font-medium">{tf('legalEntityTypeHelpTitle')}</p>
+                <dl className="mt-2 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {LEGAL_ENTITY_TYPES.map((code) => (
+                    <div key={code}>
+                      <dt className="font-medium text-foreground">
+                        {tTypes(code)}
+                      </dt>
+                      <dd className="text-muted-foreground">{tExplain(code)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <Controller
+            control={control}
+            name="legal_entity_type"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ''}
+                onValueChange={(next) => {
+                  const code = next ?? '';
+                  field.onChange(code);
+                  // 059 / PR-A Task 3b — seed is_vat_registered from the
+                  // picked type's default. This runs INSIDE a
+                  // user-initiated onValueChange (never a
+                  // useEffect/useWatch) — the PR-B Critical this class of
+                  // bug produced was an effect firing on MOUNT because
+                  // useWatch returns defaultValues on the first render; a
+                  // Select's onValueChange literally cannot fire without
+                  // the admin picking an option, so there is no
+                  // mount-firing path to guard against here in the first
+                  // place. See resolve-vat-seed.ts for the three gates.
+                  const seed = resolveVatSeed({
+                    code,
+                    vatManuallyTouched: vatManuallyTouchedRef.current,
+                  });
+                  if (seed !== null) {
+                    setValue('is_vat_registered', seed, { shouldDirty: true });
+                  }
+                }}
+              >
+                <SelectTrigger
+                  id="legal_entity_type"
+                  aria-invalid={Boolean(errors.legal_entity_type)}
+                  aria-describedby={
+                    errors.legal_entity_type
+                      ? 'legal_entity_type-error'
+                      : undefined
+                  }
+                  className="w-full"
+                >
+                  <TranslatedSelectValue
+                    placeholder={tf('legalEntityTypePlaceholder')}
+                    translate={(value) =>
+                      isLegalEntityTypeCode(value) ? tTypes(value) : null
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEGAL_ENTITY_TYPES.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {tTypes(code)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           />
           <FieldError
             id="legal_entity_type-error"

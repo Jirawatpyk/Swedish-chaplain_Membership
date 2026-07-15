@@ -50,6 +50,7 @@ import { fiscalYearFromUtcIso } from '@/modules/invoicing/domain/value-objects/f
 import {
   buyerHasTin,
   inferReceiptKind,
+  resolveBuyerIsVatRegistrant,
 } from '@/modules/invoicing/domain/document-kind';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing/domain/tax-at-payment-flag';
 import { logger } from '@/lib/logger';
@@ -478,6 +479,12 @@ export async function recordPayment(
     //  15. the matched-member integration pin (incl. its direct-insert
     //      fixture) in
     //      tests/integration/invoicing/record-payment-event-invoice.test.ts
+    // 059 / PR-A Task 6a — DELIBERATELY NOT re-keyed onto the registrant flag.
+    // This is FORENSICS, not a document-class decision: it reconstructs what a
+    // PRE-064 row's already-issued PDF ACTUALLY RENDERED AS, under the rule in
+    // force at the time (which WAS `buyerHasTin`). Re-keying it would rewrite
+    // history and misclassify legitimate old rows. Leave it. Same for the
+    // `legacy_no_tin_event_not_payable` twin in get-invoice-for-payment.ts.
     if (
       loaded.invoiceSubject === 'event' &&
       !buyerHasTin(loaded.memberIdentitySnapshot.tax_id)
@@ -594,12 +601,23 @@ export async function recordPayment(
     //       above — retained for lockstep with the issue/credit gates).
     //
     // Receipt kind mirrors the payment-time doc-kind via the shared
-    // `inferReceiptKind` resolver (membership / event-with-TIN → receipt_combined;
-    // event-no-TIN → receipt_separate), replacing the retired setting check.
-    const receiptKind = inferReceiptKind(
-      loaded.invoiceSubject,
-      loaded.memberIdentitySnapshot.tax_id,
+    // `inferReceiptKind` resolver (membership / event-REGISTRANT →
+    // receipt_combined; event NON-REGISTRANT → receipt_separate), replacing the
+    // retired setting check.
+    //
+    // 059 / PR-A Task 6a — re-keyed off the buyer snapshot's raw `tax_id` onto
+    // the RECORDED registrant flag (via the shared resolver), in lockstep with
+    // the issue-time and credit-time gates. A matched member's `tax_id` may hold
+    // a passport / work-permit number, which is not a VAT registration and must
+    // not decide the document class.
+    // 059 / PR-A Task 6b — computed ONCE and threaded to BOTH the receipt-kind
+    // decision below AND the PDF render input, so the Tax ID line's print
+    // decision can never disagree with the kind decision that chose it.
+    const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+      memberId,
+      loaded.memberIdentitySnapshot,
     );
+    const receiptKind = inferReceiptKind(loaded.invoiceSubject, buyerIsVatRegistrant);
     const forceSeparate = receiptKind === 'receipt_separate';
     const taxAtPayment = deps.taxAtPayment === 'on';
     const reuseInvoiceNumber = !taxAtPayment && !forceSeparate;

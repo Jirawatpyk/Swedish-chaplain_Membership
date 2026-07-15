@@ -70,6 +70,10 @@ function makeVoidInput(): PdfRenderInput {
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate,
+    // so this ADDITIVE field is inert for the rendered bytes (the byte-length
+    // measurement above is unaffected); `true` matches the fixture's own
+    // `tax_id`.
     lines: [
       {
         lineId: asInvoiceLineId('00000000-0000-0000-0000-0000000000a1'),

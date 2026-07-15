@@ -109,6 +109,13 @@ export {
   type OverrideReasonError,
 } from './domain/value-objects/override-reason';
 
+export {
+  LEGAL_ENTITY_TYPES,
+  VAT_DEFAULT_BY_CODE,
+  isLegalEntityTypeCode,
+  type LegalEntityTypeCode,
+} from './domain/value-objects/legal-entity-type';
+
 // --- Application use cases ----------------------------------------------------
 
 export {
@@ -190,16 +197,19 @@ export { countActiveMembersOnPlan } from './infrastructure/db/count-active-membe
 // W0-02 — tx-bound variant for use inside an existing runInTenant tx
 // (plan-repo `softDeleteGuarded` uses this to count within the advisory-lock tx).
 export { countActiveMembersOnPlanInTx } from './infrastructure/db/count-active-members-on-plan';
-// 064 remediation B5 — batched tax-id PRESENCE lookup (boolean only, never
-// the raw tax-id) backing the F6 event-detail `buyerHasTin` enrichment.
-// Same free-function-through-the-barrel composition pattern as the
-// countActiveMembersOnPlan pair above; callers thread their own
+// 059 / PR-A Task 6c — batched VAT-REGISTRANT lookup backing the F6
+// event-detail `buyerIsVatRegistrant` enrichment. Replaces the
+// 064-remediation-B5 tax-id-PRESENCE lookup: issuance now decides the event
+// document class on the RECORDED registrant flag, not on "is tax_id
+// non-blank", so the picker must ask the same question or it offers an option
+// the server will refuse. Same free-function-through-the-barrel composition
+// pattern as the countActiveMembersOnPlan pair above; callers thread their own
 // runInTenant tx (Principle I).
-export { memberTinPresenceByIdsInTx } from './infrastructure/db/member-tin-presence';
+export { memberVatRegistrantByIdsInTx } from './infrastructure/db/member-vat-registrant';
 
 // COMP-1 US3-A — narrow erasure-status read for the member-detail ErasedBanner.
 // Same free-function-through-the-barrel narrow-read pattern as the
-// countActiveMembersOnPlan / memberTinPresenceByIdsInTx pair above (avoids
+// countActiveMembersOnPlan / memberVatRegistrantByIdsInTx pair above (avoids
 // widening the MemberRepo interface + its many test stubs). Threads its own
 // runInTenant tx internally (Principle I).
 export {

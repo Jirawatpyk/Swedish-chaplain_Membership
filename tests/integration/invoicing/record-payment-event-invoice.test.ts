@@ -295,6 +295,10 @@ describe('recordPayment — NON-member EVENT-fee invoices (admin manual mark-pai
         companyName: 'Gamma Pay Corp',
         country: 'TH',
         taxId: '1111111111111',
+        // 059 / PR-A Task 6a — the RECORDED registrant flag now decides the
+        // payment-time receipt kind (never `tax_id` presence). A VAT-registrant
+        // company → the COMBINED §86/4 + §105ทวิ tax receipt.
+        isVatRegistered: true,
         addressLine1: '1 Wireless Road',
         city: 'Pathum Wan',
         province: 'Bangkok',

@@ -83,6 +83,9 @@ function makeRenderInput(opts: {
       logo_blob_key: null,
     },
     member,
+    // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate
+    // (this file's own subject is the Member No. line, unaffected either way);
+    // `true` matches the fixture's own `tax_id` presence.
     lines: makeLine(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),

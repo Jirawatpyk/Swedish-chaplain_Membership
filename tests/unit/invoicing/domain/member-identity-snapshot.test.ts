@@ -9,6 +9,7 @@ import {
   MalformedSnapshotError,
   InvalidMemberIdentitySnapshotError,
   makeMemberIdentitySnapshot,
+  readMemberIdentitySnapshot,
   type MemberIdentitySnapshot,
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 
@@ -531,5 +532,133 @@ describe('buyer branch + VAT-registrant fields (088-invoice-tax-flow-redesign)',
         buyer_branch_code: '00005',
       }),
     ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+});
+
+// ── 059 / PR-A Task 4 — the registrant ⇒ TIN invariant ──
+// ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่/สาขาที่ NNNNN) are a PAIR —
+// both mandatory when the buyer is a VAT registrant. THIS is the last gate
+// before an immutable tax document exists (create-member.ts / update-member.ts
+// / the form schema are UX that surface the problem earlier — none of them
+// replaces this one). A snapshot with `buyer_is_vat_registrant: true` and
+// `tax_id: null` must fail loud, not degrade into a defective §86/4 document.
+describe('registrant ⇒ TIN invariant (059 / PR-A Task 4)', () => {
+  it('the WRITE path rejects buyer_is_vat_registrant=true with a null tax_id', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        tax_id: null,
+        buyer_is_vat_registrant: true,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('readMemberIdentitySnapshot ACCEPTS that shape — this is the constructor the repos must use', () => {
+    // The row-mappers in drizzle-invoice-repo and drizzle-credit-note-repo call
+    // THIS function, not `makeMemberIdentitySnapshot`. If someone swaps them
+    // back, a document issued under the old rules becomes unreadable and one such
+    // row 500s the whole invoice list page.
+    //
+    // That is not hypothetical: it shipped TWICE on this branch. First the rule
+    // lived in the schema's `superRefine` (which the row-mappers run). Moving it
+    // into `makeMemberIdentitySnapshot` did NOT fix it, because BOTH row-mappers
+    // were still CALLING that constructor — the invoice repo wrapped its own
+    // parse in it, the credit-note repo used it directly. Only splitting the
+    // read constructor out actually closed it.
+    const snap = readMemberIdentitySnapshot({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: true,
+    });
+    expect(snap.buyer_is_vat_registrant).toBe(true);
+    expect(snap.tax_id).toBeNull();
+    expect(Object.isFrozen(snap)).toBe(true);
+  });
+
+  it('the READ path ACCEPTS that shape — an already-issued document must stay readable', () => {
+    // The invariant is a WRITE rule, and it lives in `makeMemberIdentitySnapshot`,
+    // NOT in the schema's superRefine. This test is the reason.
+    //
+    // `memberIdentitySnapshotSchema` is ALSO the read boundary: DrizzleInvoiceRepo's
+    // `parseMemberIdentitySnapshot` runs it over the frozen JSONB of every invoice
+    // row, and `list()` / `listPaged()` map rows with no per-row guard. Putting the
+    // rule in the shared schema made it RETROACTIVE — a document issued under the
+    // old rules (the deleted guess inferred `buyer_is_vat_registrant` from
+    // `legal_entity_type` alone, never consulting `tax_id`) becomes unparseable,
+    // and ONE such row takes down the entire invoice list page: an unhandled 500,
+    // no error code, no audit trail. That is the exact class of silent failure this
+    // branch exists to remove, reintroduced by the branch's own new rule.
+    //
+    // Same principle the templateVersion gate encodes for rendering: a document
+    // already issued must remain readable and reproducible forever. A constraint on
+    // what we may CREATE must never invalidate what we already WROTE. Correcting a
+    // historical particular is a credit note (§86/10) — not a parse error on
+    // someone's invoice list.
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts buyer_is_vat_registrant=true WITH a tax_id on the raw schema', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: '0105562000123',
+      buyer_is_vat_registrant: true,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts buyer_is_vat_registrant=false with a null tax_id on the raw schema', () => {
+    const result = memberIdentitySnapshotSchema.safeParse({
+      ...validSnapshot,
+      tax_id: null,
+      buyer_is_vat_registrant: false,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a VAT registrant with no TIN', () => {
+    // ประกาศ 196 + 199 are a PAIR: a registrant buyer must carry BOTH the
+    // 13-digit TIN and the head-office/branch line. Printing one without the
+    // other is a defective §86/4 document. This must fail LOUD at issue — it
+    // is the last gate before the document exists.
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        legal_name: 'ACME Co., Ltd.',
+        tax_id: null,
+        address: '123 Sukhumvit',
+        primary_contact_name: 'Somchai',
+        primary_contact_email: 'a@b.com',
+        buyer_is_vat_registrant: true,
+      }),
+    ).toThrow(InvalidMemberIdentitySnapshotError);
+  });
+
+  it('accepts a NON-registrant with no TIN', () => {
+    // The common case: a foreign member, or a Thai member below the threshold.
+    // No TIN is required of them, and no branch line prints.
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        legal_name: 'Nordic AB',
+        tax_id: null,
+        address: 'Stockholm',
+        primary_contact_name: 'Anders',
+        primary_contact_email: 'a@b.se',
+        buyer_is_vat_registrant: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it('accepts a VAT registrant WITH a TIN', () => {
+    expect(() =>
+      makeMemberIdentitySnapshot({
+        ...validSnapshot,
+        tax_id: '0105562000123',
+        buyer_is_vat_registrant: true,
+      }),
+    ).not.toThrow();
   });
 });

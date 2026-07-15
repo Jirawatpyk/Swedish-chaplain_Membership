@@ -5,10 +5,21 @@
  *
  * Live Neon, RLS-scoped tx (mirrors member-identity-member-number.test.ts). A
  * wrong raw-SQL column name (`is_head_office` / `branch_code` /
- * `legal_entity_type`) — which typecheck CANNOT catch — surfaces HERE, so this
+ * `is_vat_registered`) — which typecheck CANNOT catch — surfaces HERE, so this
  * is the guard the repo gotcha ("unit mocks hide schema gaps") calls for.
  *
- * Requires migration 0232 (members_branch_fields) applied to the dev branch.
+ * WHY THIS FILE IS LOAD-BEARING: the adapter casts its raw-SQL result with
+ * `as unknown as Array<{…}>`, so the compiler is blind in BOTH directions — a
+ * column in the row TYPE but missing from the SQL yields `undefined` at runtime
+ * and still compiles. And there are TWO byte-identical SELECT arms (a
+ * `FOR UPDATE` lock and a plain read) that must be edited in lockstep. Every
+ * assertion below therefore exercises a NAMED arm, and the registrant flag is
+ * asserted on BOTH.
+ *
+ * 059 / PR-A Task 3 — the discriminator is now the RECORDED
+ * `members.is_vat_registered` column, never guessed from `legal_entity_type`.
+ * Requires migrations 0232 (members_branch_fields) + 0246 (is_vat_registered)
+ * applied to the dev branch.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -39,14 +50,17 @@ describe('088 US3 — memberIdentityAdapter.getForIssue surfaces §86/4 branch p
   let user: TestUser;
   const planId = 'branch-plan';
 
-  // Registrant juristic buyer set to a specific branch.
+  // VAT-registrant buyer set to a specific branch.
   const branchMemberId = randomUUID();
-  // Registrant juristic buyer with NO branch (head office default).
+  // VAT-registrant buyer with NO branch (head office default).
   const headOfficeMemberId = randomUUID();
-  // Individual (non-registrant) buyer → fail-closed (no branch line).
-  const individualMemberId = randomUUID();
-  // NULL legal_entity_type buyer → also fail-closed.
-  const unknownTypeMemberId = randomUUID();
+  // Non-registrant buyer → fail-closed (no branch line).
+  const nonRegistrantMemberId = randomUUID();
+  // 059 / PR-A — the discriminator is the RECORDED flag, NOT the legal form. A
+  // juristic `legal_entity_type` with `is_vat_registered = false` must still
+  // come back false: this member is the regression guard for the deleted
+  // `isVatRegistrantEntityType` guess, which returned TRUE for exactly this row.
+  const juristicNotRegisteredMemberId = randomUUID();
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -81,6 +95,7 @@ describe('088 US3 — memberIdentityAdapter.getForIssue surfaces §86/4 branch p
           legalEntityType: 'company',
           country: 'TH',
           taxId: '0105562000123',
+          isVatRegistered: true,
           isHeadOffice: false,
           branchCode: '00042',
           planId,
@@ -94,27 +109,32 @@ describe('088 US3 — memberIdentityAdapter.getForIssue surfaces §86/4 branch p
           legalEntityType: 'company',
           country: 'TH',
           taxId: '0105562000456',
+          isVatRegistered: true,
           // isHeadOffice + branchCode take the DB defaults (true / NULL).
           planId,
           planYear: 2026,
         },
         {
           tenantId: tenant.ctx.slug,
-          memberId: individualMemberId,
+          memberId: nonRegistrantMemberId,
           memberNumber: 3,
           companyName: 'Jane Individual',
           legalEntityType: 'individual',
           country: 'TH',
+          // isVatRegistered takes the DB default (false).
           planId,
           planYear: 2026,
         },
         {
           tenantId: tenant.ctx.slug,
-          memberId: unknownTypeMemberId,
+          memberId: juristicNotRegisteredMemberId,
           memberNumber: 4,
-          companyName: 'Mystery Co.',
-          legalEntityType: null,
+          companyName: 'Below-Threshold Co., Ltd.',
+          // A JURISTIC entity type — the deleted guess would have said "not
+          // 'individual', therefore a registrant" and printed a branch line.
+          legalEntityType: 'company',
           country: 'TH',
+          isVatRegistered: false,
           planId,
           planYear: 2026,
         },
@@ -148,19 +168,58 @@ describe('088 US3 — memberIdentityAdapter.getForIssue surfaces §86/4 branch p
     expect(view!.snapshot.buyer_branch_code).toBeNull();
   });
 
-  it('an individual (non-registrant) buyer → registrant=false (fail-closed — no branch line will render)', async () => {
+  it('a non-registrant buyer → registrant=false (fail-closed — no branch line will render)', async () => {
     const view = await runInTenant(tenant.ctx, (tx) =>
-      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, individualMemberId),
+      memberIdentityAdapter.getForIssue(
+        tx,
+        tenant.ctx.slug,
+        nonRegistrantMemberId,
+      ),
     );
     expect(view).not.toBeNull();
     expect(view!.snapshot.buyer_is_vat_registrant).toBe(false);
   });
 
-  it('a NULL legal_entity_type buyer → registrant=false (fail-closed, distinct from the known-registrant/unknown-branch case)', async () => {
+  // 059 / PR-A Task 3 — the regression guard for the deleted guess. This member
+  // is `legal_entity_type = 'company'` (juristic) but `is_vat_registered = false`
+  // (below the §85/1 turnover threshold). `isVatRegistrantEntityType` returned
+  // TRUE here — "any string that is not 'individual'" — and would have printed a
+  // §86/4 Head-Office line on a NON-registrant's tax document. The recorded flag
+  // is the only thing that decides.
+  it('a JURISTIC buyer who is not VAT-registered → registrant=false (the legal form does NOT decide)', async () => {
     const view = await runInTenant(tenant.ctx, (tx) =>
-      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, unknownTypeMemberId),
+      memberIdentityAdapter.getForIssue(
+        tx,
+        tenant.ctx.slug,
+        juristicNotRegisteredMemberId,
+      ),
     );
     expect(view).not.toBeNull();
     expect(view!.snapshot.buyer_is_vat_registrant).toBe(false);
+  });
+
+  // The two raw SELECTs are SEPARATE SQL strings behind an `as unknown as` cast.
+  // A column added to one arm and not the other compiles clean and silently
+  // yields `undefined` here — which is neither true nor false, and would sail
+  // past a loose assertion. Assert the flag on BOTH arms, strictly.
+  it('the snapshot carries the RECORDED flag, from BOTH SELECT arms', async () => {
+    const plain = await runInTenant(tenant.ctx, (tx) =>
+      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, branchMemberId, {
+        forUpdate: false,
+      }),
+    );
+    expect(plain!.snapshot.buyer_is_vat_registrant).toBe(true);
+
+    const locked = await runInTenant(tenant.ctx, (tx) =>
+      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, branchMemberId, {
+        forUpdate: true,
+      }),
+    );
+    expect(locked!.snapshot.buyer_is_vat_registrant).toBe(true);
+
+    // Both arms must agree — a drifted column would make one of them undefined.
+    expect(locked!.snapshot.buyer_is_vat_registrant).toBe(
+      plain!.snapshot.buyer_is_vat_registrant,
+    );
   });
 });

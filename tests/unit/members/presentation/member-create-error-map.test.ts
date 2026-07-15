@@ -66,6 +66,22 @@ describe('mapMemberCreateServerError', () => {
     ['invalid_tax_id', 'tax_id', 'errors.taxIdInvalid'],
     ['invalid_phone', 'primary_contact.phone', 'fields.phoneError'],
     ['invalid_country', 'country', 'fields.errors.countryCode'],
+    // 059 / PR-A Task 4 — update-member.ts's use-case-body registrant ⇒ TIN
+    // check (defense-in-depth only; buildMemberFormSchema's own superRefine
+    // blocks this before submit in the normal UI flow).
+    [
+      'vat_registrant_requires_tax_id',
+      'tax_id',
+      'fields.errors.taxIdRequiredForRegistrant',
+    ],
+    // 059 / PR-A Task 5 — update-member.ts's use-case-body branch ⇒
+    // VAT-registrant check (same defense-in-depth posture as Task 4's row
+    // directly above).
+    [
+      'branch_requires_vat_registrant',
+      'branch_code',
+      'fields.errors.branchOnNonRegistrant',
+    ],
   ])('routes a 400 %s to its originating field', (type, field, messageKey) => {
     expect(mapMemberCreateServerError(400, 'validation_error', type)).toEqual({
       field,
@@ -125,9 +141,14 @@ describe('mapMemberCreateServerError', () => {
         'validation_error',
         'invalid_secondary_phone',
       ),
+      mapMemberCreateServerError(
+        400,
+        'validation_error',
+        'vat_registrant_requires_tax_id',
+      ),
     ].filter((m): m is NonNullable<typeof m> => m !== null);
 
-    expect(mapped).toHaveLength(8);
+    expect(mapped).toHaveLength(9);
     for (const m of mapped) {
       expect(typeof resolveCreateKey(m.messageKey)).toBe('string');
     }

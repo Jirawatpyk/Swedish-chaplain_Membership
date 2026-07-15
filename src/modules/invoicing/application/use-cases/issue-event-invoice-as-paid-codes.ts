@@ -34,6 +34,9 @@ const ISSUE_EVENT_INVOICE_AS_PAID_ERROR_CODE_FLAGS = {
   overflow: true,
   pdf_render_failed: true,
   blob_upload_failed: true,
+  // 059 PR-A Task 4 fix — VAT-registrant buyer with no tax_id (Domain VO
+  // write-time invariant).
+  buyer_tax_id_required_for_registrant: true,
 } as const satisfies Record<IssueEventInvoiceAsPaidErrorCode, true>;
 
 /** Every `IssueEventInvoiceAsPaidError['code']`, exactly once. */

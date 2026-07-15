@@ -155,6 +155,8 @@ export type MemberPatch = Partial<
     // 088 US3 — §86/4 Head-Office / Branch particular (admin-managed edit).
     | 'isHeadOffice'
     | 'branchCode'
+    // 059 / PR-A — the §86/4 VAT-registrant flag (admin-managed edit).
+    | 'isVatRegistered'
     | 'website'
     | 'description'
     | 'notes'

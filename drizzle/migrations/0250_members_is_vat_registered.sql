@@ -1,0 +1,26 @@
+-- 059 / PR-A — the §86/4 VAT-registrant flag, recorded rather than guessed.
+--
+-- Today the "is this buyer a VAT registrant?" question is answered by
+-- `isVatRegistrantEntityType(legal_entity_type)` — i.e. "anything that is not
+-- the literal string 'individual'". That is wrong in law and wrong in fact:
+--
+--   * VAT registration is a function of TURNOVER (>1.8M THB/yr — พ.ร.ฎ. ฉบับที่
+--     432 under §81/1), not of legal form. §77/1 defines ผู้ประกอบการ to include
+--     natural persons, so a sole proprietor above the threshold MUST register —
+--     the guess under-prints for them.
+--   * §81(1) exempts no one by STATUS. TSCC is itself a chamber of commerce (an
+--     association) and IS VAT-registered — the guess would have to be right about
+--     the chamber's own peers, and it is not.
+--
+-- And because `legal_entity_type` is NULL on every row (the importer never wrote
+-- it), the guess currently returns false for EVERYONE — so no member has ever
+-- received the mandatory "สำนักงานใหญ่ / สาขาที่ NNNNN" particular (ประกาศอธิบดีฯ
+-- ฉบับที่ 199) on a tax invoice.
+--
+-- NO BACKFILL: `members` is empty (prod wiped 2026-07-12). The importer sets this
+-- column from TSCC's sheet at import time — see scripts/import-members/.
+--
+-- Idempotent (ADD COLUMN IF NOT EXISTS), pattern from 0232. RLS: `members` is
+-- per-tenant row-level; the new column inherits the existing policy.
+ALTER TABLE "members"
+  ADD COLUMN IF NOT EXISTS "is_vat_registered" boolean NOT NULL DEFAULT false;--> statement-breakpoint

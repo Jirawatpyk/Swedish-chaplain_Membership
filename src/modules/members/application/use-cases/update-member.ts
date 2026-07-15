@@ -22,6 +22,10 @@ import {
   type IsoCountryCode,
 } from '../../domain/value-objects/iso-country-code';
 import { asTaxId } from '../../domain/value-objects/tax-id';
+// Review fix (Finding 1) — close `legal_entity_type` to the 12-code
+// catalogue here too (was client-only, see create-member.ts for the
+// full rationale).
+import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
 import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -33,9 +37,17 @@ import { UseCaseAbort } from '../tx-abort';
 export const updateMemberSchema = z
   .object({
     company_name: z.string().trim().min(1).max(200).optional(),
-    legal_entity_type: z.string().max(100).nullable().optional(),
+    // Review fix (Finding 1) — closed to the 12-code catalogue, mirroring
+    // create-member.ts + the client's buildMemberFormSchema. Accepts a
+    // valid code, `null`, or "unset" (`undefined` / `''`) — an edit to an
+    // unrelated field must never be blocked by this one.
+    legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).nullable().optional().or(z.literal('')),
     country: z.string().length(2).optional(),
     tax_id: z.string().max(50).nullable().optional(),
+    // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived
+    // (never infer it from legal_entity_type). Mirrors is_head_office:
+    // admin-managed edit, applied to the patch below.
+    is_vat_registered: z.boolean().optional(),
     website: z.string().max(200).url().nullable().optional().or(z.literal('')),
     description: z.string().max(2000).nullable().optional(),
     address_line1: z.string().max(200).nullable().optional(),
@@ -92,6 +104,27 @@ export type UpdateMemberError =
     }
   | { type: 'invalid_country' }
   | { type: 'invalid_tax_id'; code: string }
+  // 059 / PR-A Task 4 — registrant ⇒ TIN invariant, enforced against the
+  // RESULTING state (current merged with the patch) — see the check in the
+  // use-case body below for why this cannot live in updateMemberSchema.
+  | { type: 'vat_registrant_requires_tax_id' }
+  // 059 / PR-A Task 5 — branch ⇒ VAT-registrant invariant, mirrors the DB
+  // CHECK `members_branch_pairing_ck` (migration 0252) and is checked
+  // against the RESULTING state for the exact same reason as the invariant
+  // above — see the check in the use-case body below.
+  | { type: 'branch_requires_vat_registrant' }
+  // Pre-existing since 0232/0236 (latent), surfaced by the 0248 tightening —
+  // the head-office ⇔ branch-code STRUCTURAL pairing (leg 1: a head office
+  // must carry NO branch code; leg 2's code half: a branch must carry one),
+  // checked against the RESULTING state. Distinct from
+  // `branch_requires_vat_registrant` above, which only covers leg 2's
+  // `is_vat_registered` half. Mirrors updateMemberSchema's superRefine,
+  // which validates the SAME relationship but only on the patch in
+  // isolation (and only fires when `is_head_office` is present) — a PATCH
+  // touching ONLY `branch_code` used to sail past both that superRefine and
+  // the narrower `branch_requires_vat_registrant` gate straight into a raw
+  // Postgres CHECK-violation 500. See the check in the use-case body below.
+  | { type: 'head_office_branch_code_mismatch' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -111,6 +144,20 @@ export type UpdateMemberCallMeta = {
 
 // --- Implementation ----------------------------------------------------------
 
+/**
+ * `member_updated` audit-diff fields whose VALUE must never be persisted —
+ * only the FACT that they changed (`fieldsChanged` already carries that).
+ *
+ * `taxId` — for a foreign natural person this column holds a passport /
+ * work-permit number, not a Thai TIN. `audit_log` is append-only (5-year
+ * retention; nothing in `src/` ever issues an `UPDATE` against it — grep
+ * `.update(auditLog` before assuming otherwise), so a raw value written
+ * here SURVIVES a GDPR Art. 17 / PDPA erasure: `eraseMember` NULLs
+ * `members.tax_id`, but cannot reach this audit row. GUARD 3
+ * (059 / member-tax-correctness).
+ */
+const AUDIT_DIFF_VALUE_REDACTED_FIELDS: ReadonlySet<string> = new Set(['taxId']);
+
 /** Diff helper: record only fields present in the patch that changed value. */
 function buildDiff(
   current: Member,
@@ -123,7 +170,17 @@ function buildDiff(
     const currentVal = current[key as keyof Member];
     if (currentVal !== patch[key]) {
       fieldsChanged.push(key as string);
-      diff[key as string] = { old: currentVal, new: patch[key] };
+      // GUARD 3 — record the CHANGE, never the VALUE, for fields listed in
+      // AUDIT_DIFF_VALUE_REDACTED_FIELDS. `fields_changed` above already
+      // preserves accountability (who changed WHAT field, when); the raw
+      // value adds nothing an auditor requires and is a retention liability
+      // audit_log cannot un-write.
+      diff[key as string] = AUDIT_DIFF_VALUE_REDACTED_FIELDS.has(key as string)
+        ? {
+            old: currentVal === null ? null : '<set>',
+            new: patch[key] === null ? '<cleared>' : '<set>',
+          }
+        : { old: currentVal, new: patch[key] };
     }
   }
   return { fieldsChanged, diff };
@@ -185,8 +242,10 @@ export async function updateMember(
       const draft: MutablePatch = {};
       if (data.company_name !== undefined)
         draft.companyName = data.company_name.trim();
+      // Collapses '' (client Select "nothing picked") to `null` — see
+      // create-member.ts for why `||` is the correct narrowing here.
       if (data.legal_entity_type !== undefined)
-        draft.legalEntityType = data.legal_entity_type;
+        draft.legalEntityType = data.legal_entity_type || null;
       // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
       // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
       // the validated pair into the patch (buildDiff surfaces them on the
@@ -194,6 +253,9 @@ export async function updateMember(
       if (data.is_head_office !== undefined)
         draft.isHeadOffice = data.is_head_office;
       if (data.branch_code !== undefined) draft.branchCode = data.branch_code;
+      // 059 / PR-A — the §86/4 VAT-registrant flag (admin-managed edit).
+      if (data.is_vat_registered !== undefined)
+        draft.isVatRegistered = data.is_vat_registered;
       if (validatedCountry !== undefined) draft.country = validatedCountry;
       if (data.tax_id !== undefined) {
         if (data.tax_id === null) {
@@ -225,6 +287,109 @@ export async function updateMember(
         draft.registeredCapitalThb = data.registered_capital_thb;
       if (data.notes !== undefined) draft.notes = data.notes;
       const patch = draft as MemberPatch;
+
+      // 059 / PR-A Task 4 — registrant ⇒ TIN invariant (ประกาศอธิบดีฯ 196 +
+      // 199 are a PAIR: a VAT-registrant buyer must carry BOTH the TIN and
+      // the head-office/branch line, or a §86/4 document prints defective).
+      //
+      // Deliberately NOT expressed in updateMemberSchema's superRefine —
+      // updateMemberSchema validates a PARTIAL patch, where `is_vat_registered`
+      // and `tax_id` may each be absent from any given request. A patch that
+      // only flips `is_vat_registered: true` looks fine in isolation (tax_id
+      // simply isn't part of THIS request); a patch that only clears `tax_id`
+      // looks fine too (is_vat_registered isn't part of THIS request either)
+      // — but either can leave the member registrant-with-no-TIN. Only the
+      // RESULTING state (current merged with the patch) can tell, and only
+      // the use case has `current` in scope (read above, before patching). If
+      // a future refactor "helpfully" moves this into the schema, it
+      // reintroduces the hole this closes — keep it here.
+      //
+      // Gated on the patch actually touching one of the two fields (same
+      // "fires only when present" posture as the is_head_office/branch_code
+      // superRefine above) so an edit to an unrelated field is never blocked
+      // by a member already in a legacy-violating state.
+      if (patch.isVatRegistered !== undefined || patch.taxId !== undefined) {
+        const resultingIsVatRegistered =
+          patch.isVatRegistered !== undefined
+            ? patch.isVatRegistered
+            : current.isVatRegistered;
+        const resultingTaxId =
+          patch.taxId !== undefined ? patch.taxId : current.taxId;
+        if (resultingIsVatRegistered && resultingTaxId === null) {
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'vat_registrant_requires_tax_id',
+          });
+        }
+      }
+
+      // 059 / PR-A Task 5 — branch-pairing invariants, mirrors the DB CHECK
+      // `members_branch_pairing_ck` (migration 0252) in full: leg 1 (a head
+      // office carries NO branch code), and leg 2 (a branch carries BOTH a
+      // 5-digit code AND the VAT-registrant flag). Checked against the
+      // RESULTING state for the exact same reason as the registrant ⇒ TIN
+      // check above.
+      //
+      // Deliberately NOT expressed in updateMemberSchema's superRefine — same
+      // reasoning as the registrant ⇒ TIN check above. `is_head_office`,
+      // `branch_code`, and `is_vat_registered` may each be absent from any
+      // given partial patch: a patch that only flips `is_vat_registered:
+      // false` looks fine in isolation (is_head_office isn't part of THIS
+      // request), but if the member is ALREADY a branch, the resulting row
+      // is a non-registrant branch. Only the RESULTING state (current
+      // merged with the patch) can tell, and only the use case has `current`
+      // in scope.
+      //
+      // FIX (pre-existing since 0232/0236, surfaced by the 0248 tightening)
+      // — this gate used to trigger only on `is_head_office` /
+      // `is_vat_registered`, and updateMemberSchema's superRefine only
+      // trigger on `is_head_office`. A patch touching ONLY `branch_code`
+      // (e.g. `{ branch_code: '00001' }` on a head-office member, or
+      // `{ branch_code: null }` on a branch) sailed past BOTH gates straight
+      // into `updateFieldsInTx` and a raw Postgres CHECK violation → 500.
+      // The gate now fires whenever the patch touches ANY of the three
+      // fields in the pairing rule, and validates the FULL resulting triple.
+      if (
+        patch.isHeadOffice !== undefined ||
+        patch.branchCode !== undefined ||
+        patch.isVatRegistered !== undefined
+      ) {
+        const resultingIsHeadOffice =
+          patch.isHeadOffice !== undefined
+            ? patch.isHeadOffice
+            : (current.isHeadOffice ?? true);
+        const resultingBranchCode =
+          patch.branchCode !== undefined
+            ? patch.branchCode
+            : (current.branchCode ?? null);
+        const resultingIsVatRegisteredForBranch =
+          patch.isVatRegistered !== undefined
+            ? patch.isVatRegistered
+            : current.isVatRegistered;
+
+        if (resultingIsHeadOffice === true) {
+          // Leg 1 — a head office must not carry a branch code.
+          if (resultingBranchCode != null) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'head_office_branch_code_mismatch',
+            });
+          }
+        } else {
+          // Leg 2 — a branch requires BOTH a 5-digit code AND the
+          // registrant flag. Code-presence is checked first so a
+          // stranded-branch patch (code cleared, registrant untouched)
+          // reports the structural mismatch rather than the registrant one.
+          if (resultingBranchCode == null) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'head_office_branch_code_mismatch',
+            });
+          }
+          if (!resultingIsVatRegisteredForBranch) {
+            throw new UseCaseAbort<UpdateMemberError>({
+              type: 'branch_requires_vat_registrant',
+            });
+          }
+        }
+      }
 
       const { fieldsChanged, diff } = buildDiff(current, patch);
       if (fieldsChanged.length === 0) {

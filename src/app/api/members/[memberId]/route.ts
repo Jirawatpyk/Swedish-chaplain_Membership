@@ -314,6 +314,18 @@ export async function PATCH(
       );
     case 'invalid_country':
     case 'invalid_tax_id':
+    // 059 / PR-A Task 4 — the registrant ⇒ TIN invariant, checked in the
+    // use-case body against the RESULTING (current + patch) state. Same 400
+    // validation_error shape as the other domain-validation rejections above.
+    case 'vat_registrant_requires_tax_id':
+    // 059 / PR-A Task 5 — the branch ⇒ VAT-registrant invariant, same
+    // resulting-state posture as Task 4's check directly above.
+    case 'branch_requires_vat_registrant':
+    // 059 / PR-A Task 5 fix (pre-existing since 0232/0236, surfaced by the
+    // 0248 tightening) — the head-office ⇔ branch-code structural pairing,
+    // same resulting-state posture. Without this case a PATCH touching only
+    // `branch_code` fell through to the `server_error` 500 branch below.
+    case 'head_office_branch_code_mismatch':
       return NextResponse.json(
         {
           error: {

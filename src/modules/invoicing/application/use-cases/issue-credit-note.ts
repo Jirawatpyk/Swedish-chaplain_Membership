@@ -75,7 +75,10 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { calculateCreditNoteVat } from '@/modules/invoicing/domain/policies/calculate-credit-note-vat';
 import { enforceCreditCannotExceedRemainder } from '@/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder';
-import { inferEventDocumentKind } from '@/modules/invoicing/domain/document-kind';
+import {
+  inferEventDocumentKind,
+  resolveBuyerIsVatRegistrant,
+} from '@/modules/invoicing/domain/document-kind';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
@@ -437,9 +440,16 @@ export async function issueCreditNote(
       // which resolves to no-TIN → receipt_separate → blocked here.
       //
       // DETECTION — reconstructed from the persisted `invoiceSubject` + the
-      // BUYER snapshot's TIN via the shared `inferEventDocumentKind`,
+      // BUYER's VAT-REGISTRANT status via the shared `inferEventDocumentKind`,
       // mirroring the issue-time gates EXACTLY so issue-time, pay-time, and
       // credit-time stay in lockstep (FIX 5 shared Domain discriminator).
+      //
+      // 059 / PR-A Task 6a — re-keyed off the BUYER snapshot's raw `tax_id` onto
+      // the RECORDED registrant flag (shared resolver). Keying the CREDIT gate on
+      // TIN-presence while ISSUE keys on registrant status would let a §105
+      // receipt (issued to a non-registrant whose `tax_id` holds a passport) be
+      // credited by a §86/10 ใบลดหนี้ — legally void, and precisely the lockstep
+      // divergence this module exists to prevent.
       // `invoices.pdf_doc_kind` (migration 0211) persists the same verdict;
       // the J2 annotation re-render reads the column (Task 12) while this
       // gate keeps the derivation so the lockstep sites share one source.
@@ -448,11 +458,17 @@ export async function issueCreditNote(
       // never burns a §87 credit-note sequence number — the §87 CN stream
       // stays gap-free. Mirrors the issue-invoice rule that the doc-type gate
       // precedes sequence allocation.
+      // 059 / PR-A Task 6b — computed ONCE and threaded to the doc-kind gate
+      // AND both PDF re-renders below (the credit-note itself + the J2
+      // credited-annotation overlay), so the Tax ID line's print decision can
+      // never disagree with the kind decision that gated this credit.
+      const buyerIsVatRegistrant = resolveBuyerIsVatRegistrant(
+        loaded.memberId,
+        loaded.memberIdentitySnapshot,
+      );
       const isReceiptSeparate =
-        inferEventDocumentKind(
-          loaded.invoiceSubject,
-          loaded.memberIdentitySnapshot?.tax_id,
-        ) === 'receipt_separate';
+        inferEventDocumentKind(loaded.invoiceSubject, buyerIsVatRegistrant) ===
+        'receipt_separate';
       if (isReceiptSeparate) {
         return err({ code: 'receipt_not_creditable' });
       }

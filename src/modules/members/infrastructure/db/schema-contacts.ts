@@ -81,6 +81,15 @@ export const contacts = pgTable(
     // NULL = no bounce recorded.
     inviteBouncedAt: timestamp('invite_bounced_at', { withTimezone: true }),
 
+    // Task 8 (GDPR Art. 14) — see the JSDoc on `Contact.art14AttestedAt`
+    // (domain/contact.ts) for the full rationale. NULL for the primary
+    // contact and for any contact collected before this control existed;
+    // a real timestamp for any contact an admin added on someone else's
+    // behalf. No DB CHECK correlates this with `is_primary` — see
+    // migration 0253 for why a static correlation is unsafe across
+    // promote/demote primary-contact transitions.
+    art14AttestedAt: timestamp('art14_attested_at', { withTimezone: true }),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

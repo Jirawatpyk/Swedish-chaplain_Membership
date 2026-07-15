@@ -1,7 +1,7 @@
 /**
- * 065 L-2 / L-1 — `runListMemberTinPresenceByIds` failure-path honesty.
+ * 065 L-2 / L-1 — `runListMemberVatRegistrantByIds` failure-path honesty.
  *
- * The B5 buyerHasTin enrichment wrapper degrades to an EMPTY map on
+ * The B5 buyerIsVatRegistrant enrichment wrapper degrades to an EMPTY map on
  * infrastructure failure (the picker falls back to the legacy
  * matched⇒has-TIN guess; server-side issuance guards stay authoritative).
  * Pre-065 the degradation was a single warn with only `err.message` —
@@ -42,14 +42,14 @@ vi.mock('@/lib/logger', async () => {
   };
 });
 
-import { runListMemberTinPresenceByIds } from '@/lib/events-admin-deps';
+import { runListMemberVatRegistrantByIds } from '@/lib/events-admin-deps';
 
 const MEMBER_IDS = [
   '00000000-0000-4000-8000-000000000001',
   '00000000-0000-4000-8000-000000000002',
 ];
 
-describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', () => {
+describe('runListMemberVatRegistrantByIds — 065 L-2/L-1 failure-path honesty', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -57,7 +57,7 @@ describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', (
   it('happy path — returns the tenant-scoped presence map unchanged', async () => {
     const presence = new Map([[MEMBER_IDS[0]!, true]]);
     runInTenantMock.mockResolvedValueOnce(presence);
-    const out = await runListMemberTinPresenceByIds('test-swecham', MEMBER_IDS);
+    const out = await runListMemberVatRegistrantByIds('test-swecham', MEMBER_IDS);
     expect(out).toBe(presence);
     expect(runInTenantMock).toHaveBeenCalledTimes(1);
   });
@@ -69,18 +69,18 @@ describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', (
     }
     runInTenantMock.mockRejectedValueOnce(new NeonBlip('connection reset'));
 
-    const out = await runListMemberTinPresenceByIds('test-swecham', MEMBER_IDS);
+    const out = await runListMemberVatRegistrantByIds('test-swecham', MEMBER_IDS);
     expect(out.size).toBe(0);
     // L-2 — errName distinguishes a future programming-error class
     // (TypeError etc.) from an infrastructure blip in the logs.
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: 'f6_member_tin_presence_lookup_failed',
+        event: 'f6_member_vat_registrant_lookup_failed',
         tenant_slug: 'test-swecham',
         member_id_count: 2,
         errName: 'NeonBlip',
       }),
-      expect.stringContaining('buyerHasTin enrichment lookup failed'),
+      expect.stringContaining('buyerIsVatRegistrant enrichment lookup failed'),
     );
     // No member ids / PII in the warn payload — count only.
     const warnPayload = JSON.stringify(vi.mocked(logger.warn).mock.calls[0]?.[0]);
@@ -93,7 +93,7 @@ describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', (
   it('non-Error throw → errName falls back to "unknown" (still degraded, still counted)', async () => {
     const degraded = vi.spyOn(eventcreateMetrics, 'tinEnrichmentDegraded');
     runInTenantMock.mockRejectedValueOnce('string failure');
-    const out = await runListMemberTinPresenceByIds('test-swecham', MEMBER_IDS);
+    const out = await runListMemberVatRegistrantByIds('test-swecham', MEMBER_IDS);
     expect(out.size).toBe(0);
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ errName: 'unknown', err: 'string failure' }),
@@ -106,7 +106,7 @@ describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', (
   it('malformed tenant slug → InvalidTenantSlugError PROPAGATES (caller bug, never the silent empty-map arm)', async () => {
     const degraded = vi.spyOn(eventcreateMetrics, 'tinEnrichmentDegraded');
     await expect(
-      runListMemberTinPresenceByIds('Bad Slug!', MEMBER_IDS),
+      runListMemberVatRegistrantByIds('Bad Slug!', MEMBER_IDS),
     ).rejects.toThrow(InvalidTenantSlugError);
     expect(runInTenantMock).not.toHaveBeenCalled();
     expect(degraded).not.toHaveBeenCalled();
@@ -114,7 +114,7 @@ describe('runListMemberTinPresenceByIds — 065 L-2/L-1 failure-path honesty', (
   });
 
   it('empty memberIds → empty map WITHOUT opening a tenant tx', async () => {
-    const out = await runListMemberTinPresenceByIds('test-swecham', []);
+    const out = await runListMemberVatRegistrantByIds('test-swecham', []);
     expect(out.size).toBe(0);
     expect(runInTenantMock).not.toHaveBeenCalled();
   });

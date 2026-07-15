@@ -108,8 +108,11 @@ describe('MemberForm error summary (XF-09)', () => {
   // instead of waiting for a bug report. `role_title` lives at RHF path
   // `primary_contact.role_title` but its DOM id is the bare `role_title` —
   // same as its error-summary key.
+  // legal_entity_type dropped from this table (PR-A Task 3b): it is now a
+  // closed Select over LEGAL_ENTITY_TYPES, not free text — there is no
+  // "exceeds its max length" scenario left to exercise on it. Its own
+  // closed-catalogue behaviour is pinned in member-form-schema.test.ts.
   it.each([
-    ['legal_entity_type', 100],
     ['description', 2000],
     ['notes', 4000],
     ['address_line1', 200],

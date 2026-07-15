@@ -52,7 +52,7 @@ function renderForm(
           summary={BASE_SUMMARY}
           taxAtPayment
           isMembership={false}
-          legalEntityType={null}
+          buyerIsVatRegistrant={false}
           subtotalSatang={800_000}
           onClose={() => undefined}
           {...overrides}

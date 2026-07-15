@@ -28,10 +28,7 @@ import {
   makeTenantIdentitySnapshot,
   type TenantIdentitySnapshot,
 } from '../../domain/value-objects/tenant-identity-snapshot';
-import {
-  makeMemberIdentitySnapshot,
-  type MemberIdentitySnapshot,
-} from '../../domain/value-objects/member-identity-snapshot';
+import { readMemberIdentitySnapshot } from '../../domain/value-objects/member-identity-snapshot';
 import { creditNotes, invoices, type CreditNoteRow } from '../db';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -84,8 +81,12 @@ function rowToCreditNote(
     tenantIdentitySnapshot: makeTenantIdentitySnapshot(
       row.tenantIdentitySnapshot as TenantIdentitySnapshot,
     ),
-    memberIdentitySnapshot: makeMemberIdentitySnapshot(
-      row.memberIdentitySnapshot as MemberIdentitySnapshot,
+    // READ path — `readMemberIdentitySnapshot`, NOT `makeMemberIdentitySnapshot`.
+    // The latter carries the WRITE-only `registrant ⇒ TIN` rule, and applying it
+    // here would make a credit note issued under the OLD rules unreadable. See
+    // that function's docblock.
+    memberIdentitySnapshot: readMemberIdentitySnapshot(
+      row.memberIdentitySnapshot,
     ),
     pdf: {
       blobKey: row.pdfBlobKey,

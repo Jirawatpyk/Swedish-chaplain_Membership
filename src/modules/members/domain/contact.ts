@@ -101,6 +101,47 @@ export type Contact = {
    * is still sent and the flag persists until a retry.
    */
   readonly inviteBouncedAt: Date | null;
+  /**
+   * GDPR Art. 14 attestation (Task 8, product decision 2026-07-14) — the
+   * moment an admin confirmed they informed this THIRD PARTY (whose data
+   * was collected from the admin, not from the person themselves) that
+   * their details are held by the chamber.
+   *
+   * CORRECTED 2026-07-15 after a compliance review. This is NOT the
+   * Art. 14(5)(a) exemption, which the first version of this comment wrongly
+   * cited. That exemption is for when the data subject ALREADY HAS the
+   * Art. 14(1)-(2) particulars independently of this collection — it is not a
+   * way for the controller to CAUSE them to have the information via another
+   * channel and then claim no notice was owed.
+   *
+   * What this is: the Art. 14(1)-(2) notice duty DISCHARGED THROUGH AN
+   * OUT-OF-BAND CHANNEL (the admin tells the person directly; GDPR does not
+   * mandate email — recitals 58/60 allow any appropriate manner), with this
+   * timestamp as the Art. 5(2) ACCOUNTABILITY EVIDENCE that it happened.
+   * Stamped from the server's clock, never the client's, so it carries
+   * evidentiary weight. Thailand PDPA §25 wants the same notice within 30 days
+   * and offers no "already has the information" escape, so the same reading
+   * has to hold there too.
+   *
+   * A point-in-time COMPLIANCE RECORD of the ORIGINAL collection event,
+   * not a live "is this currently a primary contact" flag:
+   *   - NULL for the member's own primary contact — a first-party
+   *     relationship (the member supplied their own representative's
+   *     details at onboarding), so Art. 14 does not apply. Also NULL for
+   *     any contact collected before this control existed.
+   *   - A real timestamp for any contact added ON SOMEONE ELSE'S BEHALF
+   *     by an admin (a secondary contact at member creation, or any
+   *     contact added via the member Edit page's "Add contact" dialog).
+   *
+   * Deliberately NEVER re-derived from `isPrimary`: a contact that is
+   * later promoted to / demoted from primary (`promotePrimaryInTx`) does
+   * NOT get this value rewritten — promotion doesn't erase the historical
+   * fact of how the data was originally obtained, and demotion cannot
+   * retroactively fabricate an attestation that never happened. See
+   * `drizzle-contact-repo.ts` `promotePrimaryInTx` for why this rules out
+   * a DB CHECK correlating this column with `isPrimary`.
+   */
+  readonly art14AttestedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & ContactPrimacy;

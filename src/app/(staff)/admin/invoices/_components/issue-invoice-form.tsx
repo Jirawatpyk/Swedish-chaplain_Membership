@@ -84,8 +84,8 @@ export type IssueInvoiceFormProps = {
   /** Membership subject → the branch-line review + WHT-note row apply; the
    *  `vat_treatment` control is replaced by the "always VAT 7%" caption. */
   readonly isMembership: boolean;
-  /** Buyer `legal_entity_type` (drives the Head-Office/Branch preview). */
-  readonly legalEntityType: string | null;
+  /** `members.is_vat_registered` — gates the Head-Office/Branch preview. */
+  readonly buyerIsVatRegistrant: boolean;
   /** Whether the tenant WHT note will print (US5). `undefined` → row hidden. */
   readonly whtNoteWillPrint?: boolean;
   /** FR-027 WARN(a) — bill will render with NO payment path. */
@@ -108,7 +108,7 @@ export function IssueInvoiceForm({
   showNoTaxIdHint = false,
   taxAtPayment,
   isMembership,
-  legalEntityType,
+  buyerIsVatRegistrant,
   whtNoteWillPrint,
   hasNoPaymentPath,
   billNumberPrefix = 'SC',
@@ -167,9 +167,18 @@ export function IssueInvoiceForm({
     confirmPhrase.toLocaleUpperCase(locale);
 
   // FR-027 review model — branch-line preview + non-blocking warnings.
+  //
+  // The literal 'individual' used to be passed here as a SENTINEL meaning
+  // "non-membership sale — suppress the branch line without raising the
+  // unset-entity-type warning". It was never a real entity type. With a boolean
+  // the sentinel has no home: a non-membership sale simply has no VAT-registrant
+  // buyer of record. The warning-suppression half of the sentinel's job moves to
+  // the RENDER gate below, which already hides the branch-line row on a
+  // non-membership sale — so the row and its warning now appear together or not
+  // at all.
   const review = taxAtPayment
     ? computeIssueReviewModel({
-        legalEntityType: isMembership ? legalEntityType : 'individual',
+        buyerIsVatRegistrant: isMembership ? buyerIsVatRegistrant : false,
         ...(hasNoPaymentPath !== undefined ? { hasNoPaymentPath } : {}),
       })
     : null;
@@ -505,9 +514,7 @@ export function IssueInvoiceForm({
                 <dd className="font-medium">
                   {review.branchLine.kind === 'head_office'
                     ? t('review.branchLine.headOffice')
-                    : review.branchLine.reason === 'individual'
-                      ? t('review.branchLine.noneIndividual')
-                      : t('review.branchLine.noneUnset')}
+                    : t('review.branchLine.noneNotRegistrant')}
                 </dd>
               </div>
             )}
@@ -570,17 +577,23 @@ export function IssueInvoiceForm({
                   </AlertDescription>
                 </Alert>
               )}
-              {review.warnings.includes('no_branch_line_null_entity_type') && (
-                <Alert
-                  role="status"
-                  className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
-                >
-                  <TriangleAlertIcon className="size-4" aria-hidden="true" />
-                  <AlertDescription className="text-amber-900 dark:text-amber-200">
-                    {t('review.warnings.nullEntityType')}
-                  </AlertDescription>
-                </Alert>
-              )}
+              {/* Gated on `isMembership` to match the branch-line ROW above: a
+                  non-membership (event-fee) sale renders no §86/4 branch line at
+                  all, so warning that one is absent would be noise. This gate
+                  carries the warning-suppression that the old 'individual'
+                  sentinel used to provide at the model's input. */}
+              {isMembership &&
+                review.warnings.includes('no_branch_line_not_vat_registrant') && (
+                  <Alert
+                    role="status"
+                    className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                  >
+                    <TriangleAlertIcon className="size-4" aria-hidden="true" />
+                    <AlertDescription className="text-amber-900 dark:text-amber-200">
+                      {t('review.warnings.notVatRegistrant')}
+                    </AlertDescription>
+                  </Alert>
+                )}
             </div>
           )}
         </section>

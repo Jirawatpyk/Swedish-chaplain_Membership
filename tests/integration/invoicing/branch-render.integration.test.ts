@@ -28,6 +28,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { Document, Page } from '@react-pdf/renderer';
 import { InvoiceTemplate } from '@/modules/invoicing/infrastructure/pdf/templates/invoice-template';
 import { shapeThai } from '@/modules/invoicing/infrastructure/pdf/fonts/register-sarabun';
+import { resolveBuyerIsVatRegistrant } from '@/modules/invoicing/domain/document-kind';
 import type { PdfDocKind, PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -61,9 +62,26 @@ function makeInput(opts: {
   templateVersion: number;
   kind?: PdfDocKind;
   member?: Partial<MemberIdentitySnapshot>;
+  /**
+   * 059 / PR-A Task 6b — the RESOLVED top-level field `buyerTaxIdEl` reads.
+   * `buyerBranchEl` (this file's subject) deliberately does NOT read this field
+   * — it stays keyed on the snapshot's own `buyer_is_vat_registrant`. Defaults
+   * to that same snapshot flag so every pre-Task-6b test below is unaffected.
+   */
+  buyerIsVatRegistrant?: boolean;
 }): PdfRenderInput {
   const docR = DocumentNumber.of('RC', 2026, 42);
   if (!docR.ok) throw new Error('fixture: DocumentNumber.of failed');
+  const member = {
+    legal_name: 'Acme Co., Ltd.',
+    tax_id: '1234567890123',
+    address: '99/1 Sukhumvit Rd',
+    primary_contact_name: 'John Doe',
+    primary_contact_email: 'john@acme.example',
+    member_number: null,
+    member_number_display: null,
+    ...opts.member,
+  };
   return {
     kind: opts.kind ?? 'invoice',
     templateVersion: opts.templateVersion,
@@ -80,16 +98,7 @@ function makeInput(opts: {
       address_en: 'Bangkok',
       logo_blob_key: null,
     },
-    member: {
-      legal_name: 'Acme Co., Ltd.',
-      tax_id: '1234567890123',
-      address: '99/1 Sukhumvit Rd',
-      primary_contact_name: 'John Doe',
-      primary_contact_email: 'john@acme.example',
-      member_number: null,
-      member_number_display: null,
-      ...opts.member,
-    },
+    member,
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),
@@ -242,6 +251,37 @@ describe('088 US3 — §86/4 Head-Office / Branch on both parties (FR-008)', () 
       // The seller head-office line prints on both pages too.
       expect(text).toContain(HEAD_OFFICE_EN);
     }
+  });
+
+  it('059 / PR-A Task 6b: a WALK-IN whose TIN made buyerIsVatRegistrant=true still gets NO branch line', () => {
+    // CRITICAL constraint from the Task 6b fix: `buyerBranchEl` must NEVER read
+    // the top-level `buyerIsVatRegistrant` field (buyerTaxIdEl's source) — only
+    // the snapshot's own RECORDED `buyer_is_vat_registrant`. A walk-in's TIN can
+    // make the top-level field `true` (it classed the document as an invoice),
+    // but a 13-digit number is not proof of head-office/branch status — a Thai
+    // natural person's national ID is also 13 digits. This is a known,
+    // pre-existing gap (088 US3): a walk-in never gets a branch line either way.
+    const walkInSnapshotParts = {
+      tax_id: '1234567890123',
+      buyer_is_vat_registrant: false as const, // walk-in snapshot NEVER sets this
+    };
+    const resolvedRegistrant = resolveBuyerIsVatRegistrant(null, walkInSnapshotParts);
+    expect(resolvedRegistrant).toBe(true); // sanity: same as the Tax ID line test
+
+    const page = pagesOf(
+      InvoiceTemplate(
+        makeInput({
+          templateVersion: 5,
+          member: walkInSnapshotParts,
+        }),
+      ),
+    )[0]!;
+    const text = pageText(page);
+    // Only the seller head-office line — the buyer contributes none, even
+    // though buyerIsVatRegistrant (top-level) is true.
+    expect(countOccurrences(text, HEAD_OFFICE_EN)).toBe(1);
+    expect(text).not.toContain(BRANCH_EN);
+    expect(text).not.toContain(BRANCH_TH);
   });
 
   it('SC-003 gate: a pinned pre-v5 (@v4) document renders NO branch line on EITHER party (byte-stable)', () => {

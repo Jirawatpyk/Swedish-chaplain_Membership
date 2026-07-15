@@ -64,6 +64,11 @@ export const members = pgTable(
     // business quasi-identifier) — see scrub-pii-column-coverage.test.ts.
     isHeadOffice: boolean('is_head_office').notNull().default(true),
     branchCode: char('branch_code', { length: 5 }),
+    // 059 / PR-A — the §86/4 discriminator, RECORDED not derived. Gates whether
+    // the buyer's "สำนักงานใหญ่ / สาขาที่ NNNNN" line prints (ประกาศ 199) and
+    // whether their TIN is required (ประกาศ 196). Never infer this from
+    // `legalEntityType` — see migration 0250.
+    isVatRegistered: boolean('is_vat_registered').notNull().default(false),
     website: text('website'),
     description: text('description'),
     foundedYear: integer('founded_year'),

@@ -257,6 +257,7 @@ export async function voidInvoice(
       }
       if (!settings) return err({ code: 'settings_missing' });
 
+      // 059 / PR-A Task 6b — the retained §87/3 evidence copy must reproduce the
       // 088 T068 — resolve the number the MAIN blob prints under. It is
       // whatever number the main document was ORIGINALLY issued with:
       //   - `documentNumber`         → legacy §87 §86/4 invoice / as-paid TIN combined

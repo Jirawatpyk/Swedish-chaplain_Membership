@@ -979,10 +979,10 @@ describe('<EventFeeForm>', () => {
 
   // ── 064 remediation B5 — server-truth TIN for matched members ───────────
 
-  it('B5: matched member with buyerHasTin=false → no-TIN rules (bill_first aria-disabled + visible reason)', async () => {
+  it('B5: matched member with buyerIsVatRegistrant=false → no-TIN rules (bill_first aria-disabled + visible reason)', async () => {
     vi.stubGlobal(
       'fetch',
-      mockFetchRegistrations([{ ...matchedRegistration, buyerHasTin: false }]),
+      mockFetchRegistrations([{ ...matchedRegistration, buyerIsVatRegistrant: false }]),
     );
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
@@ -1006,10 +1006,10 @@ describe('<EventFeeForm>', () => {
     );
   });
 
-  it('B5: matched member with buyerHasTin=true → bill_first selectable (explicit server truth)', async () => {
+  it('B5: matched member with buyerIsVatRegistrant=true → bill_first selectable (explicit server truth)', async () => {
     vi.stubGlobal(
       'fetch',
-      mockFetchRegistrations([{ ...matchedRegistration, buyerHasTin: true }]),
+      mockFetchRegistrations([{ ...matchedRegistration, buyerIsVatRegistrant: true }]),
     );
     renderForm({ initialEventId: 'ev-1' });
     fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
@@ -1023,8 +1023,8 @@ describe('<EventFeeForm>', () => {
     expect(screen.queryByTestId('mode-bill-first-needs-tin')).toBeNull();
   });
 
-  it('B5: buyerHasTin ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable', async () => {
-    // `matchedRegistration` deliberately carries NO buyerHasTin field —
+  it('B5: buyerIsVatRegistrant ABSENT (older API shape) → legacy matched⇒has-TIN guess keeps bill_first selectable', async () => {
+    // `matchedRegistration` deliberately carries NO buyerIsVatRegistrant field —
     // backward compat for the API shape: the form falls back to the guess.
     vi.stubGlobal('fetch', mockFetchRegistrations([matchedRegistration]));
     renderForm({ initialEventId: 'ev-1' });

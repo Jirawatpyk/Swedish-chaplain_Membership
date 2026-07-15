@@ -73,6 +73,9 @@ function makePreviewInput(): PdfRenderInput {
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — templateVersion 1 predates the v11 registrant gate
+    // (this file's subject is the null-issueDate crash guard); `true` matches
+    // the fixture's own `tax_id` presence.
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(100_000n),
     vatRate: VatRate.ofUnsafe('0.0700'),

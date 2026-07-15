@@ -172,6 +172,11 @@ export const memberIdentitySnapshotSchema = z.object({
       message: 'branch buyer must carry a 5-digit branch_code',
     });
   }
+  // NOTE — the `registrant ⇒ TIN` invariant (059 / PR-A Task 4) is DELIBERATELY
+  // NOT here. It is a WRITE-time rule, enforced in `makeMemberIdentitySnapshot`
+  // below. See the comment there: this schema is also the READ boundary, and a
+  // rule that governs what we may CREATE must never make what we ALREADY WROTE
+  // unreadable.
 });
 
 export class MalformedSnapshotError extends Error {
@@ -228,6 +233,75 @@ export function makeMemberIdentitySnapshot(
   parts: z.input<typeof memberIdentitySnapshotSchema>,
 ): MemberIdentitySnapshot {
   const result = memberIdentitySnapshotSchema.safeParse(parts);
+  if (!result.success) {
+    throw new InvalidMemberIdentitySnapshotError(result.error.issues);
+  }
+
+  // 059 / PR-A Task 4 — ประกาศอธิบดีฯ 196 (buyer TIN) + 199 (สำนักงานใหญ่ /
+  // สาขา) are a PAIR: both are mandatory when the buyer is a VAT registrant. A
+  // snapshot with the flag set and no TIN would print the branch line with no
+  // taxpayer number — a defective §86/4 document. This is the last gate before
+  // an immutable tax document exists (create-member's and update-member's own
+  // guards are UX that surface the problem earlier), so it fails LOUD.
+  //
+  // IT LIVES HERE, ON THE WRITE PATH — NOT IN THE SCHEMA'S superRefine ABOVE.
+  //
+  // `memberIdentitySnapshotSchema` is ALSO the READ boundary: DrizzleInvoiceRepo's
+  // `parseMemberIdentitySnapshot` runs it over the frozen JSONB of every invoice
+  // row it loads, and `list()` / `listPaged()` map rows without a per-row guard.
+  // A rule placed in the shared schema is therefore retroactive: any document
+  // ISSUED under the old rules that violates the NEW one becomes unparseable, and
+  // a single such row takes down the whole invoice list page — an unhandled 500,
+  // no error code, no audit trail. That is precisely the class of silent failure
+  // this branch exists to remove, and it would have been reintroduced by the
+  // branch's own new rule.
+  //
+  // The principle is the same one the templateVersion gate encodes for RENDERING:
+  // a document already issued must remain readable and reproducible forever. A
+  // constraint on what we may CREATE must never invalidate what we already WROTE.
+  // If a historical snapshot needs correcting, that is a credit note (§86/10) —
+  // not a parse error on someone's invoice list.
+  if (result.data.buyer_is_vat_registrant === true && result.data.tax_id === null) {
+    throw new InvalidMemberIdentitySnapshotError([
+      {
+        code: z.ZodIssueCode.custom,
+        path: ['tax_id'],
+        message:
+          'a VAT-registrant buyer must carry a tax_id (ประกาศอธิบดีฯ 196 + 199)',
+      },
+    ]);
+  }
+
+  return Object.freeze({ ...result.data });
+}
+
+/**
+ * READ-boundary constructor: rebuild a snapshot from a row that was ALREADY
+ * WRITTEN. Structural validation only — it deliberately does NOT enforce the
+ * `registrant ⇒ TIN` rule above.
+ *
+ * USE THIS, NOT `makeMemberIdentitySnapshot`, WHEN MAPPING A DB ROW.
+ *
+ * Getting this wrong is not hypothetical — it shipped twice on this branch. The
+ * rule first lived in the schema's `superRefine`, which the repos' row-parsers
+ * run over every invoice they load; moving it into `makeMemberIdentitySnapshot`
+ * did NOT fix that, because BOTH row-mappers were CALLING that constructor
+ * (`drizzle-invoice-repo` wrapped its own parse in it; `drizzle-credit-note-repo`
+ * used it directly). Either way a document issued under the OLD rules — the
+ * deleted guess inferred registrant status from `legal_entity_type` alone and
+ * never consulted `tax_id` — becomes unparseable, and ONE such row takes down the
+ * entire invoice list page: unhandled, no error code, no audit trail.
+ *
+ * The principle, which is the same one `templateVersion` encodes for rendering:
+ * a constraint on what we may CREATE must never invalidate what we already
+ * WROTE. A document already issued must stay readable forever. Correcting a
+ * wrong particular on it is a credit note (§86/10) — not a parse error on
+ * somebody's invoice list.
+ */
+export function readMemberIdentitySnapshot(
+  raw: unknown,
+): MemberIdentitySnapshot {
+  const result = memberIdentitySnapshotSchema.safeParse(raw);
   if (!result.success) {
     throw new InvalidMemberIdentitySnapshotError(result.error.issues);
   }

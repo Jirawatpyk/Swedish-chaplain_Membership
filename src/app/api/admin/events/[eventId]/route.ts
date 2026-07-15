@@ -24,7 +24,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import {
   runLoadEventDetail,
-  runListMemberTinPresenceByIds,
+  runListMemberVatRegistrantByIds,
 } from '@/lib/events-admin-deps';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import {
@@ -314,15 +314,24 @@ export async function GET(
   const responseHeaders: Record<string, string> = {};
   if (pageSizeClamped) responseHeaders['X-PageSize-Clamped'] = 'true';
 
-  // 064 remediation B5 — enrich each registration with `buyerHasTin`:
-  // server-truth tax-id PRESENCE for MATCHED members (one batched F3 read
-  // via the lib composition root), `null` for non-members (the manual
-  // buyer tax-id field rules there) and for matched ids the lookup could
-  // not resolve (callers fall back to the legacy matched⇒has-TIN guess).
+  // 059 / PR-A Task 6c — enrich each registration with `buyerIsVatRegistrant`:
+  // the RECORDED `members.is_vat_registered` flag for MATCHED members (one
+  // batched F3 read via the lib composition root), `null` for non-members (the
+  // manual buyer's tax-id field rules there) and for matched ids the lookup
+  // could not resolve.
+  //
+  // This REPLACES the 064-remediation-B5 `buyerHasTin` enrichment. Task 6a
+  // re-keyed issuance's `event_no_tin_requires_paid_issue` gate onto the
+  // registrant flag — a foreign member may store a passport / work-permit
+  // number in `tax_id`, so "this field is non-blank" is not "this buyer is a
+  // ผู้ประกอบการจดทะเบียน". While the picker still asked the TIN question, a
+  // TIN-bearing NON-registrant was offered bill_first and then refused at issue
+  // with "this buyer has no tax ID" — while visibly having one.
+  //
   // Presentation-layer enrichment by design: the F6 use-case DTO stays
-  // untouched (the admin events PAGE consumes it directly and has no use
-  // for the TIN signal), and only the boolean crosses the wire — never the
-  // raw tax-id (PII).
+  // untouched (the admin events PAGE consumes it directly and has no use for
+  // this signal), and only the boolean crosses the wire — the raw tax-id is
+  // never even read.
   const matchedMemberIds = [
     ...new Set(
       result.value.registrations.flatMap((r) =>
@@ -330,15 +339,15 @@ export async function GET(
       ),
     ),
   ];
-  const tinPresenceById =
+  const vatRegistrantById =
     matchedMemberIds.length > 0
-      ? await runListMemberTinPresenceByIds(tenantCtx.slug, matchedMemberIds)
+      ? await runListMemberVatRegistrantByIds(tenantCtx.slug, matchedMemberIds)
       : new Map<string, boolean>();
   const registrations = result.value.registrations.map((r) => ({
     ...r,
-    buyerHasTin:
+    buyerIsVatRegistrant:
       r.matchedMemberId !== null
-        ? (tinPresenceById.get(String(r.matchedMemberId)) ?? null)
+        ? (vatRegistrantById.get(String(r.matchedMemberId)) ?? null)
         : null,
   }));
 

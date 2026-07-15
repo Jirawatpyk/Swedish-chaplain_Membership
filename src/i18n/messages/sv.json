@@ -1127,12 +1127,13 @@
           "association": "Förening",
           "government": "Myndighet",
           "branch": "Filialkontor",
-          "representative_office": "Representationskontor"
+          "representative_office": "Representationskontor",
+          "state_enterprise": "Statligt bolag"
         },
         "fields": {
           "memberNumber": "Medlemsnummer",
           "memberId": "Medlems-ID",
-          "legalEntityType": "Företagstyp",
+          "legalEntityType": "Juridisk form",
           "country": "Land",
           "taxId": "Skatte-ID",
           "website": "Webbplats",
@@ -1141,6 +1142,7 @@
           "address": "Adress",
           "foundedYear": "Grundat",
           "turnoverThb": "Årsomsättning (THB)",
+          "registeredCapitalThb": "Registrerat aktiekapital (THB)",
           "planId": "Paket-ID",
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
@@ -1308,7 +1310,24 @@
         },
         "fields": {
           "companyName": "Företagsnamn",
-          "legalEntityType": "Företagstyp",
+          "legalEntityType": "Juridisk form",
+          "legalEntityTypePlaceholder": "Välj en typ…",
+          "legalEntityTypeHelpAriaLabel": "Hjälp — juridiska former förklarade",
+          "legalEntityTypeHelpTitle": "Juridiska former förklarade",
+          "legalEntityTypeExplanations": {
+            "company": "Ett registrerat företag där den exakta typen inte anges.",
+            "limited_company": "Ett privat aktiebolag (บริษัทจำกัด) registrerat hos Department of Business Development.",
+            "public_company": "Ett publikt aktiebolag (บริษัทมหาชนจำกัด) som får erbjuda aktier till allmänheten.",
+            "partnership": "Ett handelsbolag eller kommanditbolag (ห้างหุ้นส่วน) med två eller fler delägare.",
+            "sole_proprietor": "En enskild firma (enskild näringsidkare), registrerad i innehavarens eget namn — inte en juridisk person skild från ägaren.",
+            "individual": "En privatperson som blir medlem i eget namn — inte via en registrerad verksamhet.",
+            "foundation": "En ideell juridisk person (มูลนิธิ) bildad för välgörenhet eller allmännyttigt ändamål.",
+            "association": "En medlemsbaserad ideell förening (สมาคม) — TSCC är själv en sådan.",
+            "government": "Ett statligt ministerium, departement eller myndighet.",
+            "branch": "Ett thailändskt filialkontor till ett bolag registrerat utomlands.",
+            "representative_office": "Ett utländskt bolags representationskontor i Thailand (สำนักงานผู้แทน). Får inte generera intäkter i Thailand.",
+            "state_enterprise": "Ett statligt bolag (รัฐวิสาหกิจ) — en egen juridisk person skild från staten."
+          },
           "country": "Land (ISO-kod)",
           "countryPlaceholder": "Välj ett land…",
           "countrySearchPlaceholder": "Sök länder…",
@@ -1347,6 +1366,9 @@
           "useTypedValueLabel": "Använd \"{value}\"",
           "addressIncompleteBanner": "Adressen är ofullständig — krävs innan en skattefaktura kan utfärdas.",
           "addressIncompleteJumpLink": "Fyll i adressen",
+          "isVatRegistered": "Denna medlem är momsregistrerad",
+          "isVatRegisteredHint": "Momsregistrering styrs av omsättningen (över 1,8 miljoner THB/år), inte av den juridiska formen — en enskild näringsidkare kan vara registrerad och ett bolag behöver inte vara det. Ange det som faktiskt gäller, härled det inte från den juridiska typen.",
+          "art14AttestationLabel": "Jag har informerat denna person om att kammaren har sparat deras kontaktuppgifter, och var de kan hitta kammarens sekretesspolicy.",
           "isHeadOffice": "Denna medlem är huvudkontoret (สำนักงานใหญ่)",
           "branchCode": "Filialkod",
           "branchCodeHint": "5-siffrig filialkod (RD), t.ex. 00001",
@@ -1383,8 +1405,11 @@
             "turnover": "Ange ett icke-negativt belopp.",
             "registeredCapital": "Ange ett icke-negativt belopp.",
             "branchCodeFormat": "Ange en 5-siffrig filialkod, t.ex. 00001.",
-            "branchOnNonRegistrant": "En filialkod gäller endast ett momsregistrerat bolag. Ange den juridiska personens typ först.",
-            "secondaryEmailSameAsPrimary": "Denna e-postadress är samma som den primära kontaktens. Använd en annan adress, eller ta bort den sekundära kontakten."
+            "branchOnNonRegistrant": "En filialkod gäller endast en momsregistrerad. Kryssa först i \"Denna medlem är momsregistrerad\".",
+            "headOfficeBranchCodeMismatch": "Ett huvudkontor får inte ha en filialkod, och en filial måste ha en 5-siffrig filialkod. Kontrollera inställningen för huvudkontor/filial tillsammans med filialkoden.",
+            "taxIdRequiredForRegistrant": "En momsregistrerad medlem måste ha ett skatte-ID.",
+            "secondaryEmailSameAsPrimary": "Denna e-postadress är samma som den primära kontaktens. Använd en annan adress, eller ta bort den sekundära kontakten.",
+            "art14AttestationRequired": "Bekräfta att du har informerat denna person innan du lägger till dem som sekundär kontakt."
           },
           "notes": "Anteckningar (endast administratörer)",
           "notesPlaceholder": "Interna adminanteckningar…",
@@ -1447,6 +1472,8 @@
         "emailEditNote": "Den här kontakten är kopplad till ett portalkonto, så e-postadressen är en inloggningsidentitet. Ändra den på medlemmens redigeringssida (ett verifieringsmejl skickas).",
         "fieldRequired": "Detta fält är obligatoriskt.",
         "emailInvalid": "Ange en giltig e-postadress.",
+        "art14AttestationLabel": "Jag har informerat denna person om att kammaren har sparat deras kontaktuppgifter, och var de kan hitta kammarens sekretesspolicy.",
+        "art14AttestationRequired": "Bekräfta att du har informerat denna person innan du lägger till kontakten.",
         "partialSave": "E-postadressen uppdaterades, men de övriga ändringarna kunde inte sparas. Försök igen med dem.",
         "submit": "Spara",
         "submitting": "Sparar…",
@@ -2112,7 +2139,7 @@
           "pending": "Dokumenttyp sätts vid utfärdande",
           "ariaTaxInvoice": "Denna faktura utfärdas som en skattefaktura eftersom köparen har ett skatte-ID.",
           "ariaTaxInvoiceReceipt": "Ett kombinerat dokument (skattefaktura/kvitto) utfärdas eftersom köparen har ett skatte-ID och avgiften redan är betald.",
-          "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen saknar skatte-ID.",
+          "ariaReceipt": "Detta utfärdas som ett kvitto eftersom köparen inte är registrerad som momsregistrerad.",
           "ariaPending": "Dokumenttypen avgörs av medlemmens skatte-ID när fakturan utfärdas.",
           "bill088": "ใบแจ้งหนี้ (Faktura)",
           "ariaBill088": "Utfärdas som en ใบแจ้งหนี้ (faktura); §86/4-skattefakturan/kvittot utfärdas när betalningen registreras."
@@ -2151,7 +2178,7 @@
             "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID.",
             "hint088": "Utfärda en ใบแจ้งหนี้ (faktura) nu och registrera betalningen senare; §86/4-skattekvittot utfärdas vid betalning. Kräver köparens skatte-ID."
           },
-          "billFirstNeedsTin": "Köparen saknar skatte-ID — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning.",
+          "billFirstNeedsTin": "Köparen är inte registrerad som momsregistrerad — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning. Om köparen är momsregistrerad, markera det på medlemsposten först.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
           "refundedBlockedTitle": "Registreringen är återbetald",
           "refundedBlocked": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
@@ -2349,8 +2376,7 @@
           },
           "branchLine": {
             "headOffice": "สำนักงานใหญ่ (huvudkontor)",
-            "noneIndividual": "Ingen filialrad (privatperson)",
-            "noneUnset": "Ingen filialrad (juridisk typ ej angiven)"
+            "noneNotRegistrant": "Ingen filialrad (köparen är inte momsregistrerad)"
           },
           "vatTreatmentValue": {
             "standard": "Standard — moms 7%",
@@ -2362,7 +2388,7 @@
           },
           "warnings": {
             "noPaymentPath": "Denna ใบแจ้งหนี้ (faktura) får INGEN betalningsväg — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Konfigurera en betalningsmetod innan utfärdande, eller fortsätt med vetskapen att fakturan för närvarande inte kan betalas.",
-            "nullEntityType": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparens juridiska typ är inte angiven. Ange den i medlemsposten först om detta är ett momsregistrerat företag."
+            "notVatRegistrant": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
           }
         },
         "form": {
@@ -2420,13 +2446,14 @@
           "failed": "Kunde inte utfärda",
           "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",
           "refreshAction": "Uppdatera",
-          "event_no_tin_requires_paid_issue": "Köparen saknar skatte-ID — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg.",
+          "event_no_tin_requires_paid_issue": "Köparen är inte registrerad som momsregistrerad — biljettavgiften måste registreras som betald (kvitto utfärdas), inte faktureras i förväg. Om köparen är momsregistrerad, markera det på medlemsposten först.",
           "registration_refunded": "Denna registrering har återbetalats efter att utkastet skapades — dokumentet kan inte utfärdas för en återbetald avgift.",
           "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du utfärdar.",
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "member_not_found": "Den här medlemmen kunde inte hittas — den kan ha tagits bort.",
           "no_buyer_snapshot": "Det här utkastet saknar köparuppgifter — ta bort det och skapa ett nytt med köparen ifylld.",
           "invalid_lines": "Det här utkastets rader är ogiltiga — ta bort det och skapa ett nytt.",
+          "buyer_tax_id_required_for_registrant": "Den här medlemmen är momsregistrerad men saknar skatte-ID — lägg till skatte-ID:t, eller avmarkera kryssrutan för momsregistrering på medlemsposten om numret inte är känt ännu.",
           "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
@@ -2449,6 +2476,7 @@
           "invalid_lines": "Fakturaraderna är ogiltiga — ta bort utkastet och skapa det på nytt.",
           "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten.",
           "no_buyer_snapshot": "Utkastet saknar köparuppgifter — skapa det på nytt med köparen ifylld.",
+          "buyer_tax_id_required_for_registrant": "Den här medlemmen är momsregistrerad men saknar skatte-ID — lägg till skatte-ID:t, eller avmarkera kryssrutan för momsregistrering på medlemsposten om numret inte är känt ännu.",
           "member_archived": "Denna medlem har arkiverats och kan inte faktureras. Återställ medlemmen först.",
           "settings_missing": "Fakturainställningarna för denna organisation har ännu inte konfigurerats.",
           "invoice_already_issued": "Denna faktura har redan utfärdats.",
@@ -5559,6 +5587,7 @@
       "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
       "tax_receipt_issued": "Skattekvitto utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
       "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat",
+      "invoice_buyer_identity_invalid": "Köparens uppgifter ogiltiga — utfärdande blockerat",
       "sign_in_failure": "Inloggning misslyckades",
       "sign_out": "Utloggad",
       "password_reset_requested": "Lösenordsåterställning begärd",

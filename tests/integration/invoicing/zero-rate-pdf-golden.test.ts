@@ -89,6 +89,11 @@ function makeInput(
       member_number: null,
       member_number_display: null,
     },
+    // 059 / PR-A Task 6b — `false` preserves this fixture's existing semantics:
+    // the embassy buyer carries a `tax_id` but is modelled as a NON-registrant
+    // (see the T058 §C comment below) — matching the pre-Task-6b behaviour
+    // where the template read the snapshot's own (always-undefined here)
+    // `buyer_is_vat_registrant` directly.
     lines: makeLines(),
     subtotal: Money.fromSatangUnsafe(1_200_000n),
     // vat_treatment DRIVES the rate — a zero-rated document is 0% / 0.00.
@@ -143,11 +148,24 @@ describe('T058 §B — the non-tax bill shows VAT 0% but NOT the §80/1(5) note 
 
 describe('T058 §C — a STANDARD receipt is byte-length-stable at v7 and v8 (SC-003)', () => {
   it('standard receipt_combined renders identical byte length at v7 and v8', async () => {
+    // The version MUST be the literal 8, not CURRENT_TEMPLATE_VERSION.
+    //
+    // This test's claim is about the v7→v8 ZERO-RATE change specifically: it is
+    // threaded only onto a zero-rated document, so a STANDARD render is
+    // byte-identical across that one bump. Passing CURRENT here silently
+    // re-pointed the claim at every LATER bump too, which is not what it proves —
+    // it survived v9 and v10 only by luck (neither gate touched this fixture) and
+    // then legitimately broke at v11, whose TAX_ID_REGISTRANT_GATE drops the buyer
+    // Tax ID line for a NON-registrant (this fixture's embassy buyer carries a
+    // tax_id but no `buyer_is_vat_registrant`). Each version gate owns its own
+    // byte-stability test at its own pinned pair — v11's lives in
+    // tax-id-registrant-gate.integration.test.ts. (059 / PR-A Task 6a.)
+    const ZERO_RATE_V = 8;
     const v7 = await reactPdfRenderAdapter.render(
       makeInput('receipt_combined', 7, { zeroRate: false }),
     );
     const v8 = await reactPdfRenderAdapter.render(
-      makeInput('receipt_combined', CURRENT_TEMPLATE_VERSION, { zeroRate: false }),
+      makeInput('receipt_combined', ZERO_RATE_V, { zeroRate: false }),
     );
     // The v8 template change is threaded ONLY on a zero-rated document, so a
     // standard render is unaffected — the reproduce-the-original guarantee.

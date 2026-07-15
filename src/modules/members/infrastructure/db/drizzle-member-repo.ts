@@ -62,6 +62,7 @@ import {
 import type { Contact, ContactId } from '../../domain/contact';
 import { ERASED_SENTINEL } from '../../domain/erasure-sentinels';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
+import { isLegalEntityTypeCode } from '../../domain/value-objects/legal-entity-type';
 import type { TaxId } from '../../domain/value-objects/tax-id';
 import type { Email } from '../../domain/value-objects/email';
 import { asMemberNumber, parseMemberNumberQuery } from '../../domain/value-objects/member-number';
@@ -77,7 +78,25 @@ function rowToMember(row: MemberRow): Member {
     // value: a loud backstop if a direct-INSERT bypass ever writes a bad row.
     memberNumber: asMemberNumber(row.memberNumber),
     companyName: row.companyName,
-    legalEntityType: row.legalEntityType,
+    // Review fix (Finding 1) — the DB column is a plain `text` (never
+    // migrated to an enum; the catalogue is application-layer only), so a
+    // row is `string | null` at read time. A row written BEFORE Task 3b's
+    // closure (or via any future bypass) may hold an out-of-catalogue
+    // value. Rather than `as LegalEntityTypeCode` (which would silently
+    // masquerade a bad value as a valid code) or throwing (which would
+    // crash the member page on a legacy row), an unrecognised value reads
+    // as `null` here. This DOES change what a legacy out-of-catalogue row
+    // renders as: `resolveLegalEntityTypeLabel` (presentation layer) is
+    // called with `member.legalEntityType` from THIS function at every
+    // read site (admin detail page, portal profile page, the admin API's
+    // `_serialise.ts`) — none of them read the raw column independently —
+    // so such a row now shows "not recorded" instead of the raw stored
+    // string. Accepted: `members` is EMPTY in production (wiped
+    // 2026-07-12), so no such row exists today; a HONEST, non-crashing
+    // `null` beats a silently-mistyped value.
+    legalEntityType: isLegalEntityTypeCode(row.legalEntityType)
+      ? row.legalEntityType
+      : null,
     country: row.country as IsoCountryCode,
     taxId: row.taxId as TaxId | null,
     // 088 US3 — §86/4 Head-Office / Branch particular. Always populated from the
@@ -85,6 +104,7 @@ function rowToMember(row: MemberRow): Member {
     // are for hand-built drafts/fixtures, not for a loaded row.
     isHeadOffice: row.isHeadOffice,
     branchCode: row.branchCode,
+    isVatRegistered: row.isVatRegistered,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -128,6 +148,7 @@ function applyMemberPatch(
   // (updateMember zod superRefine + the admin form) sends a CHECK-consistent pair.
   if (patch.isHeadOffice !== undefined) set.isHeadOffice = patch.isHeadOffice;
   if (patch.branchCode !== undefined) set.branchCode = patch.branchCode;
+  if (patch.isVatRegistered !== undefined) set.isVatRegistered = patch.isVatRegistered;
   if (patch.website !== undefined) set.website = patch.website;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.notes !== undefined) set.notes = patch.notes;
@@ -272,6 +293,7 @@ async function insertContactRow(
       isPrimary,
       dateOfBirth: contact.dateOfBirth?.toISOString().slice(0, 10) ?? null,
       linkedUserId: contact.linkedUserId,
+      art14AttestedAt: contact.art14AttestedAt,
       removedAt: null,
     })
     .returning();
@@ -557,6 +579,7 @@ export const drizzleMemberRepo: MemberRepo = {
           legalEntityType: draft.member.legalEntityType,
           country: draft.member.country,
           taxId: draft.member.taxId,
+          isVatRegistered: draft.member.isVatRegistered,
           website: draft.member.website,
           description: draft.member.description,
           foundedYear: draft.member.foundedYear,
@@ -751,6 +774,11 @@ export const drizzleMemberRepo: MemberRepo = {
           // office ⇒ NULL branch code.
           isHeadOffice: true,
           branchCode: null,
+          // 059 / PR-A — reset the §86/4 VAT-registrant flag to its DEFAULT
+          // (false) on erasure, not NULL: the column is NOT NULL, and `false`
+          // also keeps the branch-pairing CHECK satisfiable (a non-registrant
+          // cannot be a branch).
+          isVatRegistered: false,
           // H1 — F8-era admin free-text + derived risk cluster. The blocked-
           // reactivation flag + `..._at` collapse to FALSE/NULL alongside their
           // provenance to satisfy the 0094 consistency CHECK (see comment above).

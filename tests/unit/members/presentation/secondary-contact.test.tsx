@@ -15,7 +15,7 @@
  * i18n-key-resolution assertions are meaningful — mirrors
  * address-section.test.tsx / member-form-error-summary.test.tsx.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -24,6 +24,21 @@ import {
   type MemberFormValues,
   type PlanOption,
 } from '@/components/members/member-form';
+
+// Task 8 (GDPR Art. 14 checkbox) — Base UI Checkbox uses PointerEvent
+// internally; jsdom lacks it. Same polyfill as members-table-selection.test.tsx.
+beforeAll(() => {
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 const PLANS: PlanOption[] = [
   { plan_id: 'premium', plan_year: 2026, display_name: 'Premium — 2026' },
@@ -193,6 +208,11 @@ describe('SecondaryContactSection — additive, not a negative opt-out', () => {
     fireEvent.change(byId('secondary_contact_email'), {
       target: { value: 'bjorn@example.com' },
     });
+    // Task 8 (GDPR Art. 14) — the attestation checkbox blocks submit until
+    // checked; without this click the schema's refine rejects the request.
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: /informed this person/i }),
+    );
 
     const form = container.querySelector('form');
     if (!form) throw new Error('member form did not render');
@@ -204,7 +224,36 @@ describe('SecondaryContactSection — additive, not a negative opt-out', () => {
       first_name: 'Björn',
       last_name: 'Svensson',
       email: 'bjorn@example.com',
+      art14_attested: true,
     });
+  });
+
+  it('blocks submit when the fieldset is filled but the Art. 14 attestation checkbox is left unchecked (Task 8)', async () => {
+    const { container, onSubmit } = renderForm();
+    fireEvent.click(
+      screen.getByRole('button', { name: /add a secondary contact/i }),
+    );
+    fireEvent.change(byId('secondary_contact_first_name'), {
+      target: { value: 'Björn' },
+    });
+    fireEvent.change(byId('secondary_contact_last_name'), {
+      target: { value: 'Svensson' },
+    });
+    fireEvent.change(byId('secondary_contact_email'), {
+      target: { value: 'bjorn@example.com' },
+    });
+    // Attestation checkbox deliberately left unchecked.
+
+    const form = container.querySelector('form');
+    if (!form) throw new Error('member form did not render');
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('#secondary_contact_art14_attested-error'),
+      ).not.toBeNull();
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it('Remove clears the underlying form VALUE, not just the widget — a filled-then-removed secondary contact never rides along on submit', async () => {

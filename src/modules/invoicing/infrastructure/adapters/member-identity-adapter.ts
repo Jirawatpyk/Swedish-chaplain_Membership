@@ -14,7 +14,6 @@
  * name + email come from `contacts`.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { isVatRegistrantEntityType } from '@/lib/legal-entity';
 import type {
   MemberIdentityPort,
   MemberIdentityView,
@@ -54,7 +53,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
-                   m.legal_entity_type, m.is_head_office, m.branch_code,
+                   m.is_vat_registered, m.is_head_office, m.branch_code,
                    COALESCE(
                      (SELECT s.member_number_prefix
                         FROM tenant_member_settings s
@@ -75,7 +74,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
                    m.archived_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
-                   m.legal_entity_type, m.is_head_office, m.branch_code,
+                   m.is_vat_registered, m.is_head_office, m.branch_code,
                    COALESCE(
                      (SELECT s.member_number_prefix
                         FROM tenant_member_settings s
@@ -115,10 +114,19 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       member_number_prefix: string;
       member_type_scope: 'company' | 'individual' | 'both' | null;
       // 088 US3 (T030 / FR-008) — §86/4 buyer-branch source columns. The branch
-      // LINE is drawn only for a VAT-registrant juristic buyer, derived from
-      // `legal_entity_type` (≠ 'individual' AND non-NULL). `is_head_office` is
-      // NOT NULL (DEFAULT true); `branch_code` is a nullable char(5).
-      legal_entity_type: string | null;
+      // LINE is drawn only for a VAT-registrant buyer, read from the RECORDED
+      // `is_vat_registered` column (059 / PR-A: it used to be GUESSED from
+      // `legal_entity_type`). All three are NOT NULL except `branch_code`, a
+      // nullable char(5); `is_vat_registered` + `is_head_office` DEFAULT
+      // false/true respectively.
+      //
+      // WARNING: the `as unknown as` cast above means the compiler checks NEITHER
+      // direction — a column named here but absent from the SELECTs yields
+      // `undefined` at runtime, and vice versa. There are TWO SELECT arms (the
+      // `FOR UPDATE` lock and the plain read) and they must be edited in
+      // lockstep. `tests/integration/invoicing/member-identity-branch.test.ts`
+      // exercises BOTH arms; it is the only thing that can catch drift here.
+      is_vat_registered: boolean;
       is_head_office: boolean;
       branch_code: string | null;
     }>;
@@ -189,14 +197,15 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         // here so a later prefix/member change never mutates an issued document.
         member_number_display: memberNumberDisplay,
         // 088 US3 (T030 / FR-008) — §86/4 Head-Office / Branch particular, pinned
-        // at issue. The buyer branch LINE renders only for a VAT-registrant
-        // juristic buyer, so the discriminator is derived HERE (never
-        // `buyerHasTin`) via the SHARED `isVatRegistrantEntityType` helper — the
-        // SAME canonicalisation the admin-form branch guard uses, so a member
-        // entered as 'Individual' / '  individual  ' stays fail-closed (US3
-        // review fix 2026-07-02). NULL / '' / any casing of 'individual' ⇒ false
-        // ⇒ NO branch line.
-        buyer_is_vat_registrant: isVatRegistrantEntityType(m.legal_entity_type),
+        // at issue. The buyer branch LINE renders only for a VAT-registrant buyer
+        // (never keyed on `buyerHasTin`).
+        //
+        // Was: `isVatRegistrantEntityType(m.legal_entity_type)` — a GUESS ("any
+        // string that is not 'individual'"), wrong in law (VAT registration
+        // follows turnover, not legal form) and, because `legal_entity_type` was
+        // NULL on every row, false for EVERYONE — so no member ever received the
+        // mandatory branch particular. Now: the recorded fact. See migration 0250.
+        buyer_is_vat_registrant: m.is_vat_registered,
         // Head office (default) / branch pair, taken from the member row. The
         // `members_branch_pairing_ck` CHECK guarantees they are consistent
         // (head office ⇒ NULL code; branch ⇒ 5-digit code), matching the

@@ -191,6 +191,12 @@ async function rawSelectMember(memberId: string) {
       province: members.province,
       postal_code: members.postalCode,
       sub_district: members.subDistrict,
+      // 059 / PR-A — the §86/4 branch triple. The oracle never read these, so
+      // no test could tell whether erasure left a member in a state the
+      // tightened `members_branch_pairing_ck` (0248) forbids.
+      is_vat_registered: members.isVatRegistered,
+      is_head_office: members.isHeadOffice,
+      branch_code: members.branchCode,
       erased_at: members.erasedAt,
     })
     .from(members)
@@ -380,5 +386,63 @@ describe('eraseMember — sentinel-email collision (production deps)', () => {
     expect(csA[0]?.email).toMatch(/^erased\+.*@erased\.invalid$/);
     expect(csB[0]?.email).toMatch(/^erased\+.*@erased\.invalid$/);
     expect(csA[0]?.email).not.toBe(csB[0]?.email);
+  }, 30_000);
+
+  it('erases a member who IS A BRANCH — the tightened branch CHECK must not block Art. 17', async () => {
+    // 059 / PR-A Task 5 tightened `members_branch_pairing_ck` to require
+    // `is_head_office = false ⇒ is_vat_registered = true AND branch_code ~ '^\d{5}$'`.
+    // Erasure (`scrubPiiInTx`) sets `is_vat_registered = false`, `is_head_office =
+    // true`, `branch_code = null` — so if that CHECK were written badly, ERASING A
+    // BRANCH MEMBER WOULD THROW, and a data subject could not exercise Art. 17.
+    // Breaking erasure would be a far worse defect than the tax bug being fixed.
+    //
+    // The existing tests here never caught this: `seedMemberWithContacts` never
+    // sets the branch triple, so every seeded member is a head office by DB
+    // default and the branch arm of the constraint is never exercised. The
+    // constraint is provably safe by algebra (the scrub lands in the head-office
+    // disjunct, which never reads `is_vat_registered`) — but "provably safe" and
+    // "proven safe against the real database" are different claims, and only the
+    // second one survives someone editing the predicate.
+    const seeded = await seedMemberWithContacts(tenant, {
+      companyName: 'Simulated Branch Co., Ltd.',
+      taxId: '0105551234567', // SIMULATED — checksum-valid Thai TIN
+      contactCount: 1,
+      emailPrefix: 'branch-erase',
+    });
+
+    // Make it a real branch. Raw UPDATE: the create path cannot produce this
+    // state (head-office/branch is edit-only), and going through the use case
+    // would test the use case, not the constraint.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(members)
+        .set({
+          isVatRegistered: true,
+          isHeadOffice: false,
+          branchCode: '00042',
+        })
+        .where(eq(members.memberId, seeded.memberId));
+    });
+
+    const before = (await rawSelectMember(seeded.memberId))!;
+    expect(before.is_head_office).toBe(false);
+    expect(before.branch_code).toBe('00042');
+    expect(before.is_vat_registered).toBe(true);
+
+    const result = await eraseMember(
+      asMemberId(seeded.memberId) as MemberId,
+      { reason: 'gdpr_erasure_request' },
+      { actorUserId: admin.userId, requestId: `rq-branch-${Date.now()}` },
+      buildEraseMemberDeps(tenant.ctx),
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    // The scrub must land in the head-office disjunct of the CHECK.
+    const after = (await rawSelectMember(seeded.memberId))!;
+    expect(after.is_head_office).toBe(true);
+    expect(after.branch_code).toBeNull();
+    expect(after.is_vat_registered).toBe(false);
+    expect(after.tax_id).toBeNull();
+    expect(after.company_name).toBe('[erased]');
   }, 30_000);
 });

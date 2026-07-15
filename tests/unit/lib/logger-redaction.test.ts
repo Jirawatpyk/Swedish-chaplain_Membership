@@ -430,4 +430,60 @@ describe('logger redaction (T158, T-14)', () => {
     expect(line).toContain('Visible Co Ltd');
     expect(line).toContain('[REDACTED]');
   });
+
+  // GUARD 3b (059 / member-tax-correctness) — `update-member.ts`'s
+  // audit-diff builder places a changed `taxId` at `payload.diff.taxId`.
+  // `payload` and `diff` are the TWO parent segments before the field
+  // itself — the exact same "2 nesting levels then field" shape as the
+  // R2-I1 `recipient_email` precedent above (`{event: {payload:
+  // {recipient_email}}}`, matched by `*.*.recipient_email`): there,
+  // `event`+`payload` are the 2 wildcard-matched parents; here,
+  // `payload`+`diff` are. Reproduces the ACTUAL `member_updated`
+  // AuditEvent shape (`{ type, actorUserId, ..., payload: { diff: {
+  // taxId } } }`) logged as the root object — e.g. a future catch-block
+  // logging the full event on `recordInTx` failure. Pino's `*` wildcard
+  // matches exactly ONE intermediate key per `*`, so a depth-1 path
+  // (`*.taxId`) does NOT reach a value nested two levels deep. Before
+  // this fix, `REDACT_PATHS` had only depth-0/1 entries for
+  // `tax_id`/`taxId` — this pins the depth-2 variant so it can never
+  // silently regress.
+  it('GUARD 3b: redacts tax_id/taxId at depth-2 (payload.diff.taxId shape)', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        payload: {
+          diff: {
+            tax_id: { old: null, new: `${SENTINEL}-snake-d2` },
+            taxId: { old: null, new: `${SENTINEL}-camel-d2` },
+          },
+        },
+      },
+      'audit diff depth-2',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-snake-d2`);
+    expect(line).not.toContain(`${SENTINEL}-camel-d2`);
+    expect(line).toContain('[REDACTED]');
+  });
+
+  it('GUARD 3b: still redacts tax_id/taxId at depth-0 and depth-1 (no regression)', () => {
+    const { logger, output } = makeCapturingLogger();
+    logger.info(
+      {
+        tax_id: `${SENTINEL}-snake-d0`,
+        taxId: `${SENTINEL}-camel-d0`,
+        member: {
+          tax_id: `${SENTINEL}-snake-d1`,
+          taxId: `${SENTINEL}-camel-d1`,
+        },
+      },
+      'tax id shallow depths',
+    );
+    const line = output.join('');
+    expect(line).not.toContain(`${SENTINEL}-snake-d0`);
+    expect(line).not.toContain(`${SENTINEL}-camel-d0`);
+    expect(line).not.toContain(`${SENTINEL}-snake-d1`);
+    expect(line).not.toContain(`${SENTINEL}-camel-d1`);
+    expect(line).toContain('[REDACTED]');
+  });
 });

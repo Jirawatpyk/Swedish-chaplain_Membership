@@ -75,6 +75,37 @@ export function mapMemberCreateServerError(
         };
       case 'invalid_tax_id':
         return { field: 'tax_id', messageKey: 'errors.taxIdInvalid' };
+      // 059 / PR-A Task 4 — update-member.ts's use-case-body registrant ⇒ TIN
+      // check (defense-in-depth only: buildMemberFormSchema's own superRefine
+      // blocks this before submit in the normal UI flow). Reuses the SAME
+      // i18n key the form's inline rule uses (mirrors the invalid_email /
+      // invalid_secondary_email precedent above, not the dedicated
+      // errors.taxIdInvalid used for a checksum failure).
+      case 'vat_registrant_requires_tax_id':
+        return {
+          field: 'tax_id',
+          messageKey: 'fields.errors.taxIdRequiredForRegistrant',
+        };
+      // 059 / PR-A Task 5 — update-member.ts's use-case-body branch ⇒
+      // VAT-registrant check (defense-in-depth only: buildMemberFormSchema's
+      // own superRefine blocks this before submit in the normal UI flow).
+      // Reuses the SAME i18n key the form's inline rule uses.
+      case 'branch_requires_vat_registrant':
+        return {
+          field: 'branch_code',
+          messageKey: 'fields.errors.branchOnNonRegistrant',
+        };
+      // 059 / PR-A Task 5 fix — update-member.ts's use-case-body head-office
+      // ⇔ branch-code structural pairing check (defense-in-depth only: the
+      // admin form always sends `is_head_office` + `branch_code` together,
+      // so buildMemberFormSchema's own superRefine blocks this before submit
+      // in the normal UI flow — this is reachable only via a direct API call
+      // that patches `branch_code` in isolation).
+      case 'head_office_branch_code_mismatch':
+        return {
+          field: 'branch_code',
+          messageKey: 'fields.errors.headOfficeBranchCodeMismatch',
+        };
       case 'invalid_phone':
         return { field: 'primary_contact.phone', messageKey: 'fields.phoneError' };
       case 'invalid_country':

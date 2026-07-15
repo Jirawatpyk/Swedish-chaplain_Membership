@@ -12,8 +12,9 @@
  * `<input type="checkbox">` predates `@/components/ui/checkbox.tsx` (Base
  * UI, with focus ring + aria-invalid + indeterminate) — swapped in here.
  */
+import type { RefObject } from 'react';
 import { useTranslations } from 'next-intl';
-import { Controller, useFormContext } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
@@ -22,19 +23,54 @@ import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
 
 export function TaxBranchSection({
+  mode,
   isHeadOffice,
   onIsHeadOfficeChange,
+  vatManuallyTouchedRef,
 }: {
+  /**
+   * 059 / PR-A — the VAT checkbox renders in BOTH modes (it is what makes the
+   * §86/4 branch line print, and with it hidden at create there was no path that
+   * could set it at birth). The head-office / branch controls stay EDIT-ONLY:
+   * the create payload and the repo's create `.values()` do not write them (they
+   * take the DB defaults, head-office/NULL), so offering them at create would be
+   * dead state — the admin would tick a branch code and it would vanish.
+   */
+  readonly mode: 'create' | 'edit';
   readonly isHeadOffice: boolean;
   readonly onIsHeadOfficeChange: (isHeadOffice: boolean) => void;
+  /**
+   * 059 / PR-A Task 3b — shared with CompanySection (lifted to the
+   * member-form.tsx composition root). Flipped to `true` here the moment
+   * the admin hand-toggles this checkbox, so the entity-type Select's
+   * seeding suggestion stops overwriting it. See `resolve-vat-seed.ts`.
+   */
+  readonly vatManuallyTouchedRef: RefObject<boolean>;
 }) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
   const {
     register,
     control,
+    setValue,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
+
+  // 059 / PR-A — the head-office / branch question is asked ONLY of a VAT
+  // registrant, because for anyone else it has no effect on any document and no
+  // meaning in law:
+  //   - ประกาศอธิบดีฯ ฉบับที่ 199 makes the "สำนักงานใหญ่ / สาขาที่ NNNNN" line a
+  //     §86/4 particular required ONLY of a registrant buyer;
+  //   - `buyerBranchEl` in the invoice template prints it only when
+  //     `buyer_is_vat_registrant === true`;
+  //   - `members_branch_pairing_ck` (migration 0252) already forbids a branch
+  //     that is not a registrant.
+  // A natural person has no head office and no branches. Asking them to confirm
+  // they ARE the head office is not just noise — it implies the answer matters,
+  // and the checkbox defaults to ticked, so it looks like a fact we recorded.
+  // Read-only here (no write), so there is no mount-fire hazard.
+  const isVatRegistered =
+    useWatch({ control, name: 'is_vat_registered' }) === true;
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -42,6 +78,62 @@ export function TaxBranchSection({
         {t('sections.taxBranch')}
       </legend>
       <p className="text-xs text-muted-foreground">{tf('branchHint')}</p>
+      {/* 059 / PR-A — the §86/4 discriminator, RECORDED not guessed. Gates both
+          the "สำนักงานใหญ่ / สาขาที่ NNNNN" line (ประกาศ 199) and the buyer-TIN
+          requirement (ประกาศ 196) on every tax document this member receives.
+          It was previously INFERRED from `legal_entity_type` ("anything not
+          'individual'") — wrong in law (VAT registration follows turnover, not
+          legal form) and, with that column NULL on every row, false for
+          everyone. Defaults to the stored value on edit; false on create. */}
+      <div className="flex items-start gap-2">
+        <Controller
+          control={control}
+          name="is_vat_registered"
+          render={({ field }) => (
+            <Checkbox
+              id="is_vat_registered"
+              className="mt-0.5"
+              // See the is_head_office note below — base-ui Checkbox.Root needs
+              // the accessible name set directly.
+              aria-label={tf('isVatRegistered')}
+              checked={field.value ?? false}
+              onCheckedChange={(checked) => {
+                // 059 / PR-A Task 3b — `onCheckedChange` only fires on a
+                // real user interaction (click/keyboard), never on the
+                // seeding effect's own `setValue()` call — so this can't
+                // self-trigger. Marking the ref here is what makes seeding
+                // "a suggestion, not a rule": the moment the admin makes
+                // their own deliberate choice, the entity-type Select stops
+                // overwriting it for the rest of this session.
+                vatManuallyTouchedRef.current = true;
+                const next = checked === true;
+                field.onChange(next);
+                if (!next) {
+                  // Un-ticking VAT hides the head-office / branch controls, so
+                  // reset them to the only state a non-registrant can legally
+                  // hold. Not cosmetic: `members_branch_pairing_ck` REJECTS
+                  // (is_vat_registered=false, is_head_office=false), so leaving
+                  // a branch code behind a hidden control would fail the save
+                  // with an error pointing at a field the admin cannot see.
+                  // User-initiated (a real click), so no mount-fire hazard.
+                  setValue('is_head_office', true);
+                  setValue('branch_code', '');
+                  onIsHeadOfficeChange(true);
+                }
+              }}
+            />
+          )}
+        />
+        <div>
+          <Label htmlFor="is_vat_registered" className="font-normal">
+            {tf('isVatRegistered')}
+          </Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {tf('isVatRegisteredHint')}
+          </p>
+        </div>
+      </div>
+      {mode === 'edit' && isVatRegistered && (
       <div className="flex items-start gap-2">
         <Controller
           control={control}
@@ -70,7 +162,8 @@ export function TaxBranchSection({
           {tf('isHeadOffice')}
         </Label>
       </div>
-      {!isHeadOffice && (
+      )}
+      {mode === 'edit' && isVatRegistered && !isHeadOffice && (
         <div className="max-w-xs">
           <Label htmlFor="branch_code">
             {tf('branchCode')}

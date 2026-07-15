@@ -60,6 +60,20 @@ function toPayload(
     legal_entity_type: values.legal_entity_type?.trim() || null,
     country: values.country.toUpperCase(),
     tax_id: values.tax_id?.trim() || null,
+    // 059 / PR-A — the §86/4 discriminator (ประกาศอธิบดีฯ 199). Without this key
+    // the checkbox was dead state: `createMemberSchema` has accepted the field
+    // since migration 0250, but the payload never sent it, so every member was
+    // created a NON-registrant no matter what the admin ticked — and, with the
+    // importer also not writing it, NO path could make a member a registrant at
+    // birth. That is how "no member ever receives the branch line" would have
+    // quietly come back.
+    //
+    // `is_head_office` / `branch_code` are deliberately NOT sent: the repo's
+    // create `.values()` does not write them either (they take the DB defaults,
+    // head-office/NULL), so creating a member directly as a BRANCH has never
+    // been supported. That stays an edit-only operation — widening the create
+    // write-surface is not this branch's business.
+    is_vat_registered: values.is_vat_registered === true,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
     notes: values.notes ? values.notes.trim() || null : null,
@@ -105,6 +119,11 @@ function toPayload(
       phone: values.secondary_contact.phone?.trim() || null,
       role_title: values.secondary_contact.role_title?.trim() || null,
       preferred_language: values.secondary_contact.preferred_language,
+      // Task 8 (GDPR Art. 14) — the client zod schema already blocked submit
+      // unless this was checked (schema.ts refine), so this is always `true`
+      // here; forwarded so the server's own `z.literal(true)` gate (defense
+      // in depth for a direct API call) sees it.
+      art14_attested: values.secondary_contact.art14_attested,
     };
   }
   if (opts.confirmSoftDuplicate) payload.confirm_soft_duplicate = true;
