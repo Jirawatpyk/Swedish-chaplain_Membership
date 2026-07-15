@@ -136,17 +136,23 @@ function parseTurnover(raw: string): number | null {
   const t = raw.replace(/[,\s]/g, '');
   if (t.length === 0) return null;
   const n = Number(t);
-  // turnover_thb is a NON-NEGATIVE bigint (whole baht, DB CHECK turnover_thb >= 0).
-  // Anything that is not a whole, non-negative, in-range integer would crash the
-  // `--commit` INSERT and roll back the whole all-or-nothing import with an opaque
-  // DB error. Reject all such values here so they degrade to a clean per-row
-  // `not_a_number` warning (turnover → null, member still imports):
-  //   - FRACTIONAL ("5000000.50")        → `invalid input syntax for type bigint`
-  //   - NEGATIVE ("-5000000")            → violates the members_turnover_non_negative CHECK
-  //   - OVER-RANGE (> MAX_SAFE_INTEGER)  → JS precision loss + Postgres `bigint out of range`
-  // (MAX_SAFE_INTEGER ≈ 9.0e15 is well above any real annual turnover and safely
-  // below bigint max 9.2e18, so this bound never rejects a legitimate value.)
-  return Number.isInteger(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? n : null;
+  // turnover_thb / registered_capital_thb are NON-NEGATIVE bigints (whole baht,
+  // DB CHECK >= 0). A value flowing raw into the `--commit` INSERT that is not a
+  // whole, non-negative, in-range integer would crash it and roll back the whole
+  // all-or-nothing import. Handle each shape so the row still contributes its data
+  // instead of degrading to null:
+  //   - FRACTIONAL ("5000000.50")        → ROUND to the nearest whole baht. The real
+  //     TSCC sheet carries .xx satang on most turnover/capital rows; dropping them
+  //     silently lost 117/148 real figures. Satang is not stored, so rounding is
+  //     the faithful whole-baht value.
+  //   - NEGATIVE ("-5000000")            → null + warning (violates the CHECK).
+  //   - OVER-RANGE (> MAX_SAFE_INTEGER)  → null + warning (JS precision loss +
+  //     Postgres `bigint out of range`). MAX_SAFE_INTEGER ≈ 9.0e15 is well above
+  //     any real annual turnover and safely below bigint max 9.2e18.
+  //   - NaN ("N/A")                       → null + warning.
+  if (!Number.isFinite(n) || n < 0) return null;
+  const rounded = Math.round(n);
+  return Number.isSafeInteger(rounded) ? rounded : null;
 }
 
 function parseFoundedYear(raw: string): number | null {
