@@ -48,9 +48,10 @@ vi.mock('next-intl/server', () => ({
   getLocale: vi.fn().mockResolvedValue('en'),
 }));
 
-// Client children (DataExportPanel, PortalSignOutButton) call useRouter(),
-// which throws "expected app router to be mounted" outside a Next.js app
-// shell. Stub the navigation hooks the app-router would provide.
+// Client children (DataExportPanel) call useRouter(), which throws "expected
+// app router to be mounted" outside a Next.js app shell. Stub the navigation
+// hooks the app-router would provide. (063: the in-hub PortalSignOutButton —
+// which also used useRouter — was removed; sign-out is top-bar-only now.)
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
@@ -188,12 +189,12 @@ describe('Account hub — unlinked user (no member row)', () => {
     findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
   });
 
-  it('still renders #account + the sign-out button when memberId is null', async () => {
+  it('still renders #account (sign-out is now top-bar-only, not in-hub) when memberId is null', async () => {
     const { container } = await renderHub();
     expect(container.querySelector('#account')).not.toBeNull();
     expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
   });
 
   it('hides #renewal-prefs when the user has no linked member', async () => {
@@ -233,8 +234,8 @@ describe('Account hub — f9Dashboard gated OFF', () => {
     expect(container.querySelector('#account')).not.toBeNull();
     expect(container.querySelector('#renewal-prefs')).not.toBeNull();
     expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
   });
 });
 
@@ -268,14 +269,14 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
     });
 
-    it('still renders #account + the sign-out button, logs error, drops member sections', async () => {
+    it('still renders #account (sign-out top-bar-only), logs error, drops member sections', async () => {
       // If the seed try/catch were removed this `await` would reject and the
       // assertions below would never run — the test would error, not pass.
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
       expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
       // memberId stays null → member-specific sections absent.
       expect(container.querySelector('#renewal-prefs')).toBeNull();
       expect(container.querySelector('#data-privacy')).toBeNull();
@@ -295,12 +296,12 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
     });
 
-    it('still renders #account + the sign-out button and logs the outer hub-seed error', async () => {
+    it('still renders #account (sign-out top-bar-only) and logs the outer hub-seed error', async () => {
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
       expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
       expect(container.querySelector('#renewal-prefs')).toBeNull();
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ errKind: expect.any(String) }),
@@ -324,8 +325,8 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       expect(container.querySelector('#account')).not.toBeNull();
       expect(container.querySelector('#renewal-prefs')).not.toBeNull();
       expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
       // S-renewal-breadcrumb: independently observable on its own key.
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ errKind: expect.any(String) }),
@@ -346,8 +347,8 @@ describe('Account hub — never-500 throw paths (I3)', () => {
       const { container } = await renderHub();
       expect(container.querySelector('#account')).not.toBeNull();
       expect(
-      within(container).getByRole('button', { name: /^sign out$/i }),
-    ).toBeInTheDocument();
+      within(container).queryByRole('button', { name: /^sign out$/i }),
+    ).toBeNull();
       // f9 ON + linked member → section renders; the export list degrades to []
       // inside the panel rather than 500-ing the page.
       expect(container.querySelector('#data-privacy')).not.toBeNull();

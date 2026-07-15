@@ -7,7 +7,6 @@ import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { PreferredLocaleForm } from '@/components/portal/preferred-locale-form';
-import { PortalSignOutButton } from '@/components/portal/portal-sign-out-button';
 import { DataExportPanel } from '@/components/data-export/data-export-panel';
 import {
   buildDataExportLabels,
@@ -253,16 +252,11 @@ export default async function MemberAccountPage() {
         >
           {tPage('forgotPassword')}
         </Link>
-        {/* 023 (option B): the standalone Appearance/Sign-out card was removed
-            — its theme toggle duplicated the header ThemeToggle + the UserMenu
-            Light/Dark/System items (both available at every width), leaving
-            only the sign-out, which folds into the Account actions here. Still
-            a findable in-hub sign-out (TC-MEM-26); on mobile the Account tab
-            opens this hub directly. Separated by a rule so the session action
-            reads as distinct from the account-settings above it. */}
-        <div className="border-t pt-4">
-          <PortalSignOutButton />
-        </div>
+        {/* 063 UX: the in-hub sign-out was removed at the member's request.
+            The top-bar UserMenu carries a persistent sign-out at every width
+            (desktop + mobile — it is never hidden), so a second one in this
+            hub was redundant. Supersedes the 023-option-B "findable in-hub
+            sign-out" (TC-MEM-26); sign-out is now top-bar-only. */}
       </HubCard>
 
       {/*

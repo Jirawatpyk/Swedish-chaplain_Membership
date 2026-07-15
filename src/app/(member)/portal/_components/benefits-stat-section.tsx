@@ -20,9 +20,20 @@ export async function BenefitsStatSection({
   readonly memberId: string;
 }): Promise<React.JSX.Element> {
   const t = await getTranslations('portal.dashboard.benefits');
+  // Same namespace the BenefitUsageCard uses for `benefit.<key>` names, so the
+  // dashboard card and the full benefits page label a benefit identically.
+  const tBenefit = await getTranslations('benefits');
   const usage = await loadDashboardBenefitUsage(ctx, memberId);
 
   const stat = deriveBenefitsStat(usage);
+
+  // 063 UX — when exactly ONE benefit is lagging, NAME it ("E-Blasts
+  // under-used") instead of a vague "1 benefit under-used"; fall back to the
+  // plural count when more than one lags.
+  const soleUnderUsedKey =
+    stat.kind === 'under-use' && stat.underUsedKeys.length === 1
+      ? stat.underUsedKeys[0]
+      : undefined;
 
   const value =
     stat.kind === 'error'
@@ -30,7 +41,11 @@ export async function BenefitsStatSection({
       : stat.kind === 'empty'
         ? t('emptyValue')
         : stat.kind === 'under-use'
-          ? t('underUseValue', { count: stat.underUseCount })
+          ? soleUnderUsedKey !== undefined
+            ? t('underUseValueNamed', {
+                benefit: tBenefit(`benefit.${soleUnderUsedKey}`),
+              })
+            : t('underUseValue', { count: stat.underUseCount })
           : t('onTrackValue');
 
   const sub =

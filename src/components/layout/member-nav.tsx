@@ -37,12 +37,15 @@ export function MemberNav() {
             aria-current={active ? 'page' : undefined}
             className={cn(
               'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              'hover:bg-accent hover:text-accent-foreground',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-              // Active = navy-tinted pill + navy text/icon (navy-on-tint ~8:1,
-              // WCAG AA). The bg-primary/10 tint + aria-current keep it
-              // non-colour-only (1.4.1), not the colour change alone.
-              active ? 'bg-primary/10 text-primary' : 'text-muted-foreground',
+              // 063 UX — this nav sits on the navy top bar (bg-sidebar), so it
+              // uses the SAME sidebar tokens the admin sidebar nav does: white
+              // links, an accent pill (#2B5F92, white 6.7:1) on hover/active,
+              // and a gold focus ring visible on navy. Active also goes
+              // font-semibold + carries aria-current so it is non-colour-only
+              // (WCAG 1.4.1). Never navy-on-navy.
+              'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar',
+              active && 'bg-sidebar-accent font-semibold text-sidebar-accent-foreground',
             )}
           >
             <item.icon className="size-4 shrink-0" aria-hidden />

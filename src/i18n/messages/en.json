@@ -4721,6 +4721,7 @@
       "benefits": {
         "label": "Benefits",
         "underUseValue": "{count, plural, one {# benefit under-used} other {# benefits under-used}}",
+        "underUseValueNamed": "{benefit} under-used",
         "underUseSub": "Make the most of what your plan includes.",
         "onTrackValue": "All benefits on track",
         "onTrackSub": "You're keeping pace with the year.",

@@ -4721,6 +4721,7 @@
       "benefits": {
         "label": "Förmåner",
         "underUseValue": "{count, plural, one {# förmån underutnyttjad} other {# förmåner underutnyttjade}}",
+        "underUseValueNamed": "{benefit} underutnyttjad",
         "underUseSub": "Få ut det mesta av det din plan inkluderar.",
         "onTrackValue": "Alla förmåner på rätt spår",
         "onTrackSub": "Du håller jämna steg med året.",

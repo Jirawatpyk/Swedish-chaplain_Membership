@@ -214,6 +214,13 @@ export interface BenefitsStat {
   readonly kind: 'empty' | 'under-use' | 'on-track' | 'error';
   readonly variant: StatVariant;
   readonly underUseCount: number;
+  /**
+   * 063 UX — the keys of the under-used quantifiable benefits, in
+   * `usage.quantifiable` order (e.g. `['eblast']`). Lets the dashboard card
+   * NAME the single lagging benefit ("E-Blasts under-used") instead of a bare
+   * "1 benefit under-used". Empty for every non-`under-use` kind.
+   */
+  readonly underUsedKeys: readonly string[];
 }
 
 /**
@@ -243,26 +250,33 @@ export type BenefitUsageReadInput = BenefitUsage | 'error' | null;
  */
 export function deriveBenefitsStat(usage: BenefitUsageReadInput): BenefitsStat {
   if (usage === 'error') {
-    return { kind: 'error', variant: 'warning', underUseCount: 0 };
+    return { kind: 'error', variant: 'warning', underUseCount: 0, underUsedKeys: [] };
   }
   // `null` = benign "no benefit basis" (member_not_found) — neutral empty, not
   // a warning. Falls through to the same empty result as a content-less VO.
   if (usage === null) {
-    return { kind: 'empty', variant: 'neutral', underUseCount: 0 };
+    return { kind: 'empty', variant: 'neutral', underUseCount: 0, underUsedKeys: [] };
   }
   const hasContent = usage.quantifiable.length > 0 || usage.active.length > 0;
   if (!hasContent) {
-    return { kind: 'empty', variant: 'neutral', underUseCount: 0 };
+    return { kind: 'empty', variant: 'neutral', underUseCount: 0, underUsedKeys: [] };
   }
-  let underUseCount = 0;
+  // 063 UX — collect the KEYS of the lagging benefits (not just a count) so the
+  // dashboard card can name the single one. Order follows `usage.quantifiable`.
+  const underUsedKeys: string[] = [];
   for (const b of usage.quantifiable) {
     if (b.entitlement <= 0) continue;
     const consumedPct = (b.used / b.entitlement) * 100;
     if (usage.elapsedYearPct - consumedPct >= PER_BENEFIT_UNDER_USE_GAP_PCT) {
-      underUseCount += 1;
+      underUsedKeys.push(b.key);
     }
   }
-  return underUseCount > 0
-    ? { kind: 'under-use', variant: 'warning', underUseCount }
-    : { kind: 'on-track', variant: 'neutral', underUseCount: 0 };
+  return underUsedKeys.length > 0
+    ? {
+        kind: 'under-use',
+        variant: 'warning',
+        underUseCount: underUsedKeys.length,
+        underUsedKeys,
+      }
+    : { kind: 'on-track', variant: 'neutral', underUseCount: 0, underUsedKeys: [] };
 }

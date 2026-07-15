@@ -62,7 +62,20 @@ export default async function MemberLayout({ children }: { children: ReactNode }
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-background px-[var(--page-padding-x)] gap-2">
+      {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
+          field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
+          9:1) cascades white to every currentColor child (BrandMark, ghost
+          control buttons, tenant wordmark); the 4px `--sidebar-flag` (#FECC02)
+          bottom edge is the flag stripe (decorative — no text sits on it, so
+          flag yellow never enters a contrast pairing). MemberNav carries its
+          own sidebar-token variants for the same reason.
+          `[--ring:var(--sidebar-ring)]` locally re-points the focus-ring token
+          to the gold sidebar ring: the default `--ring` is navy (identical to
+          `--sidebar`), so the shared ghost control buttons (ThemeToggle /
+          LocaleSwitcher / UserMenu) would otherwise draw a navy-on-navy —
+          invisible — focus indicator here (WCAG 2.4.7 / 1.4.11). Scoped to the
+          header so the rest of the portal keeps its normal ring. */}
+      <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
         {/*
          * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
          *
