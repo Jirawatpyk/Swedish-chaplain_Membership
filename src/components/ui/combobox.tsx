@@ -156,6 +156,52 @@ export function Combobox({
   const [search, setSearch] = React.useState('');
   const selected = options.find((o) => o.value === value);
 
+  // Window-scroll guard for the open transition.
+  //
+  // When the popover opens with a value already selected (e.g. the member
+  // form's Country field defaults to Thailand), cmdk scrolls the selected
+  // command item into view with `scrollIntoView({ block: 'nearest' })` the
+  // instant the list mounts. Base UI's Positioner has not fixed-positioned
+  // the portaled popup yet at that moment, so the item still sits in document
+  // flow near the top — and the scroll bubbles up to the WINDOW, jerking the
+  // whole page to the top. (An unselected combobox — the address district
+  // pickers — has no item to scroll to, so it never triggers this.) Base UI's
+  // own focus-on-open can bubble a scroll the same way. We snapshot the window
+  // scroll offset the moment the popover opens and restore it in a layout
+  // effect below — which, being an ancestor effect, runs AFTER cmdk's own
+  // child effect but BEFORE paint, so the stray scroll never shows.
+  const scrollRestoreRef = React.useRef<{ x: number; y: number } | null>(null);
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (disabled) return;
+      if (nextOpen) scrollRestoreRef.current = { x: window.scrollX, y: window.scrollY };
+      setOpen(nextOpen);
+    },
+    [disabled],
+  );
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const target = scrollRestoreRef.current;
+    if (!target) return;
+    const restore = () => {
+      if (window.scrollX !== target.x || window.scrollY !== target.y) {
+        window.scrollTo(target.x, target.y);
+      }
+    };
+    // Immediate pass catches a same-commit scroll (Base UI's focus-on-open on
+    // an unselected combobox). cmdk's selected-item scroll is different: its
+    // `ce` runs in a layout effect that a *self-scheduled* setState defers to a
+    // LATER synchronous commit — after this effect has already run — so we also
+    // restore on the next animation frame, which fires after every synchronous
+    // commit in this task but before paint, so the stray scroll never shows.
+    restore();
+    const raf = requestAnimationFrame(() => {
+      restore();
+      scrollRestoreRef.current = null;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
+
   // Ref callback (not useRef+useEffect) so this fires in the SAME commit
   // that mounts/unmounts the Command tree, regardless of exactly when Base
   // UI's own portal mount lands relative to the `open` state flip. See the
@@ -189,7 +235,7 @@ export function Combobox({
   }, [options]);
 
   return (
-    <Popover open={open} onOpenChange={(nextOpen) => !disabled && setOpen(nextOpen)}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         render={
           <Button
