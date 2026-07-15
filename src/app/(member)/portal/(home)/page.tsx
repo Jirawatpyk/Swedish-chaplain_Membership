@@ -93,10 +93,18 @@ export default async function MemberPortalHomePage() {
   // Resolve the member number for the header chip (RLS-safe prefix resolver).
   // `member.memberNumber` is already a branded MemberNumber (validated by
   // rowToMember) — pass it straight through, no re-wrap needed.
-  const memberNumberLabel = formatMemberNumber(
-    await resolveMemberNumberPrefix(tenant, deps.memberSettings),
-    member.memberNumber,
-  );
+  // Resolve the member-number prefix + the plan/tier display name in parallel
+  // (independent reads). The tier name feeds the header badge (063 UX — so the
+  // member sees their membership level on the landing page, not only under
+  // /portal/profile).
+  const [memberNumberPrefix, planLookup] = await Promise.all([
+    resolveMemberNumberPrefix(tenant, deps.memberSettings),
+    deps.plans.getPlan(tenant, member.planId, member.planYear),
+  ]);
+  const memberNumberLabel = formatMemberNumber(memberNumberPrefix, member.memberNumber);
+  // Only surface the tier badge when the plan row resolves — never show a raw
+  // slug ("diamond") in a member-facing badge; on a miss, just omit it.
+  const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : null;
 
   const statusChipKey =
     member.status === 'archived'
@@ -115,6 +123,12 @@ export default async function MemberPortalHomePage() {
             <Badge variant="outline" className="font-mono">
               {memberNumberLabel}
             </Badge>
+            {/* 063 UX — membership tier (e.g. "Diamond Partnership"). Filled
+                brand badge so the member's level reads as the headline of the
+                three chips. Omitted when the plan row can't be resolved. */}
+            {planDisplayName !== null && (
+              <Badge variant="default">{planDisplayName}</Badge>
+            )}
             <Badge variant="secondary">{t(`statusChip.${statusChipKey}`)}</Badge>
           </span>
         }
