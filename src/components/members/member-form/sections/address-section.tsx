@@ -466,6 +466,13 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   }, [addressLine1Value, cityValue, countryIsTH, provinceValue, subDistrictValue, postalCodeValue]);
 
   const isCreate = mode === 'create';
+  // Bug fix (UAT 2026-07-15): the address is a §86/4 requirement of THAI
+  // buyers only. A non-TH member's address is fully optional — no required
+  // asterisk, no submit block (mirrors schema.ts's TH-gated completeness
+  // superRefine). address_line1 is the one required marker shared by both
+  // layouts, so it keys on this; the non-TH city/province/postal inputs below
+  // carry no marker at all.
+  const addressRequired = isCreate && countryIsTH;
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -489,15 +496,15 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
       <div>
         <Label htmlFor="address_line1">
           {tf('addressLine1')}
-          {isCreate && <RequiredMark />}
+          {addressRequired && <RequiredMark />}
         </Label>
         <Input
           id="address_line1"
           {...register('address_line1')}
           maxLength={200}
           autoComplete="address-line1"
-          required={isCreate}
-          aria-required={isCreate}
+          required={addressRequired}
+          aria-required={addressRequired}
           aria-invalid={Boolean(errors.address_line1)}
           aria-describedby={errors.address_line1 ? 'address_line1-error' : undefined}
         />
@@ -671,17 +678,15 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
-            <Label htmlFor="city">
-              {tf('city')}
-              {isCreate && <RequiredMark />}
-            </Label>
+            {/* Non-TH city: optional (no required marker) — a foreign member's
+                address is not a §86/4 particular. Matches province/postal below
+                and the TH-gated schema superRefine. */}
+            <Label htmlFor="city">{tf('city')}</Label>
             <Input
               id="city"
               {...register('city')}
               maxLength={100}
               autoComplete="address-level2"
-              required={isCreate}
-              aria-required={isCreate}
               aria-invalid={Boolean(errors.city)}
               aria-describedby={errors.city ? 'city-error' : undefined}
             />

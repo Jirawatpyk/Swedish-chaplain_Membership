@@ -207,6 +207,11 @@ export default async function EditMemberPage({ params }: PageProps) {
               roleTitle: primary?.roleTitle ?? null,
               preferredLanguage:
                 (primary?.preferredLanguage as 'en' | 'th' | 'sv') ?? 'en',
+              // Thai Alumni DOB — a date-only value; serialise the domain Date
+              // to 'YYYY-MM-DD' for the <input type="date"> the form seeds.
+              dateOfBirth: primary?.dateOfBirth
+                ? primary.dateOfBirth.toISOString().slice(0, 10)
+                : null,
             }}
           />
         </CardContent>

@@ -140,6 +140,12 @@ export const drizzleContactRepo: ContactRepo = {
           ...(patch.preferredLanguage !== undefined && {
             preferredLanguage: patch.preferredLanguage,
           }),
+          // Thai Alumni DOB — same `date`-column serialisation as addInTx
+          // (`.toISOString().slice(0,10)`); `null` clears it. Absent from the
+          // patch (`undefined`) leaves the column untouched.
+          ...(patch.dateOfBirth !== undefined && {
+            dateOfBirth: patch.dateOfBirth?.toISOString().slice(0, 10) ?? null,
+          }),
           updatedAt: new Date(),
         })
         .where(eq(contacts.contactId, contactId))

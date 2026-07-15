@@ -345,48 +345,50 @@ export function buildMemberFormSchema(
     // edit (e.g. fixing an email) — same trap PR-0 avoided for
     // `registration_date`. The edit form shows a persistent banner instead
     // (address-section.tsx), computed independently of this schema.
-    if (mode === 'create') {
-      const addressLine1 = data.address_line1?.trim();
-      const city = data.city?.trim();
-      if (!addressLine1) {
+    //
+    // TH-ONLY: the completeness gate exists to guarantee the §86/4 buyer-address
+    // particulars a Thai tax invoice needs — a requirement of THAI buyers. A
+    // non-TH member's address is fully optional: many countries/territories have
+    // no postal code (Hong Kong, UAE) and no province/sub-district concept, so
+    // forcing any of these fields would block creating members from those places.
+    // The whole address block (incl. address_line1 + city) is therefore gated on
+    // country === 'TH'; address-section.tsx mirrors this — no required asterisk
+    // on a non-TH address.
+    if (mode === 'create' && (data.country ?? '').toUpperCase() === 'TH') {
+      if (!data.address_line1?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['address_line1'],
           message: tf('errors.required'),
         });
       }
-      if (!city) {
+      if (!data.city?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['city'],
           message: tf('errors.required'),
         });
       }
-      // TH additionally requires province + sub_district + postal_code — the
-      // §86/4 buyer-address particulars. Non-TH (e.g. Hong Kong, UAE) may have
-      // no postal code at all, and has no province/sub_district concept.
-      if ((data.country ?? '').toUpperCase() === 'TH') {
-        if (!data.province?.trim()) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['province'],
-            message: tf('errors.required'),
-          });
-        }
-        if (!data.sub_district?.trim()) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['sub_district'],
-            message: tf('errors.required'),
-          });
-        }
-        if (!data.postal_code?.trim()) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['postal_code'],
-            message: tf('errors.required'),
-          });
-        }
+      if (!data.province?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['province'],
+          message: tf('errors.required'),
+        });
+      }
+      if (!data.sub_district?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['sub_district'],
+          message: tf('errors.required'),
+        });
+      }
+      if (!data.postal_code?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['postal_code'],
+          message: tf('errors.required'),
+        });
       }
     }
     // 088 US3 (FR-008) — §86/4 branch cross-field validation. A branch (NOT head
