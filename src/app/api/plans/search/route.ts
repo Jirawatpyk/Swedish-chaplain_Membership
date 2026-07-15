@@ -12,7 +12,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { searchPlans } from '@/modules/plans';
+import { searchPlans, filterPaletteEntriesByFeature } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import type { LocaleKey } from '@/modules/plans';
 import {
@@ -289,18 +289,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // 088 T021b / FR-035 — the "Re-render tax receipt" palette action is an 088
-    // tax-at-payment concept (the §86/4 RC receipt is minted at payment). Strip
-    // it when FEATURE_088_TAX_AT_PAYMENT is OFF so the legacy §87-at-issue flow
-    // never surfaces an action it cannot fulfil. Presentation-layer gate: `env`
-    // is read here (route), not in the Application-layer `searchPlans`.
-    const actions = env.features.f088TaxAtPayment
-      ? result.value.results.actions
-      : result.value.results.actions.filter((a) => a.id !== 'invoice.rerenderReceipt');
+    // Kill-switch strip (Presentation-layer gate — `env` is read HERE, in the
+    // route, never in the Application-layer `searchPlans`, per Principle III).
+    // Any registry entry tagged with a `feature` flag is dropped when that flag
+    // is OFF, so ⌘K never surfaces a jump whose destination is proxy-503'd
+    // (F7 → `/admin/broadcasts/**`), `notFound()` (F6 → `/admin/events/**`), or
+    // absent (088 §86/4 receipt re-render on the legacy §87-at-issue flow).
+    const enabledFeatures = {
+      f6EventCreate: env.features.f6EventCreate,
+      f7Broadcasts: env.features.f7Broadcasts,
+      f088TaxAtPayment: env.features.f088TaxAtPayment,
+    };
+    const actions = filterPaletteEntriesByFeature(
+      result.value.results.actions,
+      enabledFeatures,
+    );
+    const navigate = filterPaletteEntriesByFeature(
+      result.value.results.navigate,
+      enabledFeatures,
+    );
 
     return NextResponse.json(
       {
-        results: { ...result.value.results, actions, members, refundableInvoices },
+        results: {
+          ...result.value.results,
+          actions,
+          navigate,
+          members,
+          refundableInvoices,
+        },
       },
       { status: 200 },
     );

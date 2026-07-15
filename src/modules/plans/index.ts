@@ -204,6 +204,7 @@ export {
 
 export {
   searchPlans,
+  filterPaletteEntriesByFeature,
   type SearchPlansInput,
   type SearchPlansSuccess,
   type SearchPlansError,
@@ -211,6 +212,7 @@ export {
   type PalettePlanHit,
   type PaletteActionItem,
   type PaletteNavigateItem,
+  type PaletteFeatureFlag,
 } from './application/search-plans';
 
 // Phase 4 (US2 — T098-T099) — shipped:

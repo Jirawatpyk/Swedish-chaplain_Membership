@@ -215,7 +215,15 @@ export default async function StaffHomePage() {
       },
     ] as const
   )
-    .filter((item) => item.n > 0)
+    // Drop the Broadcasts item when F7 is off — `/admin/broadcasts` 503s via
+    // the proxy kill-switch, so surfacing "N awaiting approval" would be a
+    // dead-end link. `broadcastsAwaitingApproval` is a plain DB count that can
+    // still be >0 from broadcasts submitted before the flag was flipped off.
+    .filter(
+      (item) =>
+        item.n > 0 &&
+        (item.id !== 'broadcasts' || env.features.f7Broadcasts),
+    )
     .map((item) => ({
       id: item.id,
       label: item.label,

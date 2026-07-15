@@ -57,6 +57,15 @@ type MemberCommandPaletteProps = {
    * Defaults to `'full'` for callers that don't pass it (back-compat).
    */
   readonly membershipAccess?: 'full' | 'suspended' | 'terminated';
+  /**
+   * F7 break-glass — `false` when FEATURE_F7_BROADCASTS is off. Hides the
+   * "Compose E-Blast" entry (its /portal/broadcasts/new target 503s via the
+   * proxy kill-switch, so it would be a dead-end). "View E-Blast usage" stays
+   * (the Benefits page falls back to the benefits tab gracefully). Defaults to
+   * `true` for callers that don't pass it (back-compat); the server root always
+   * passes the real `env.features.f7Broadcasts`.
+   */
+  readonly broadcastsEnabled?: boolean;
 };
 
 export type MemberInvoiceSearchRow = {
@@ -79,6 +88,7 @@ type SearchResponse = {
 export function MemberCommandPalette({
   currentUserRole,
   membershipAccess = 'full',
+  broadcastsEnabled = true,
 }: MemberCommandPaletteProps) {
   const t = useTranslations('portal.payment.cmdkPay');
   const tBcast = useTranslations('portal.broadcasts.cmdk');
@@ -246,7 +256,7 @@ export function MemberCommandPalette({
               shortcut. "View E-Blast usage" always stays — the Benefits
               page itself remains open. */}
           <CommandGroup heading={tBcast('group')}>
-            {membershipAccess === 'full' && (
+            {membershipAccess === 'full' && broadcastsEnabled && (
               <CommandItem
                 value={`compose e-blast broadcast ${tBcast('compose.title')}`}
                 onSelect={() => {

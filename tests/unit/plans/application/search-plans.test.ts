@@ -25,11 +25,13 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import {
   searchPlans,
+  filterPaletteEntriesByFeature,
   type SearchPlansDeps,
   type Plan,
   type PlanRepo,
   type ClockPort,
   type LocaleKey,
+  type PaletteFeatureFlag,
 } from '@/modules/plans';
 import type { Role } from '@/modules/auth/domain/role';
 
@@ -242,6 +244,49 @@ describe('searchPlans — navigate registry filter', () => {
   });
 });
 
+describe('searchPlans — kill-switch feature tags', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // The route strips these via `filterPaletteEntriesByFeature`; searchPlans
+  // itself never reads env, so it must EMIT the tag for the route to act on.
+  it('tags every broadcast action + navigate entry with feature "f7Broadcasts"', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'broadcast' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const broadcastEntries = [
+      ...result.value.results.actions,
+      ...result.value.results.navigate,
+    ].filter((e) => e.id.includes('broadcast') || e.id.includes('Broadcast'));
+    expect(broadcastEntries.length).toBeGreaterThan(0);
+    for (const e of broadcastEntries) {
+      expect(e.feature).toBe('f7Broadcasts');
+    }
+  });
+
+  it('tags the events navigate entries with feature "f6EventCreate"', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'event' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const eventEntries = result.value.results.navigate.filter(
+      (e) => e.id === 'nav.events' || e.id === 'nav.eventcreateIntegration',
+    );
+    expect(eventEntries.length).toBeGreaterThan(0);
+    for (const e of eventEntries) {
+      expect(e.feature).toBe('f6EventCreate');
+    }
+  });
+
+  it('leaves feature-less entries (e.g. nav.dashboard) untagged', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'dashboard' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const dashboard = result.value.results.navigate.find(
+      (e) => e.id === 'nav.dashboard',
+    );
+    expect(dashboard?.feature).toBeUndefined();
+  });
+});
+
 describe('searchPlans — server_error', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -259,5 +304,62 @@ describe('searchPlans — server_error', () => {
     // could leak SQL/schema fragments into the log sink.
     expect(result.error.errKind).toBe('Error');
     expect(JSON.stringify(result.error)).not.toContain('postgres timeout');
+  });
+});
+
+describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
+  type Entry = { readonly id: string; readonly feature?: PaletteFeatureFlag };
+  const entries: readonly Entry[] = [
+    { id: 'untagged.dashboard' },
+    { id: 'nav.broadcasts', feature: 'f7Broadcasts' },
+    { id: 'nav.events', feature: 'f6EventCreate' },
+    { id: 'invoice.rerenderReceipt', feature: 'f088TaxAtPayment' },
+  ];
+
+  it('keeps every entry when all flags are ON', () => {
+    const kept = filterPaletteEntriesByFeature(entries, {
+      f6EventCreate: true,
+      f7Broadcasts: true,
+      f088TaxAtPayment: true,
+    }).map((e) => e.id);
+    expect(kept).toEqual([
+      'untagged.dashboard',
+      'nav.broadcasts',
+      'nav.events',
+      'invoice.rerenderReceipt',
+    ]);
+  });
+
+  it('drops only the F7-tagged entries when broadcasts are OFF (untagged survive)', () => {
+    const kept = filterPaletteEntriesByFeature(entries, {
+      f6EventCreate: true,
+      f7Broadcasts: false,
+      f088TaxAtPayment: true,
+    }).map((e) => e.id);
+    expect(kept).toEqual([
+      'untagged.dashboard',
+      'nav.events',
+      'invoice.rerenderReceipt',
+    ]);
+  });
+
+  it('drops the F6-tagged entry when events are OFF', () => {
+    const kept = filterPaletteEntriesByFeature(entries, {
+      f6EventCreate: false,
+      f7Broadcasts: true,
+      f088TaxAtPayment: true,
+    }).map((e) => e.id);
+    expect(kept).not.toContain('nav.events');
+    expect(kept).toContain('nav.broadcasts');
+    expect(kept).toContain('untagged.dashboard');
+  });
+
+  it('drops every tagged entry when all three flags are OFF, keeping untagged', () => {
+    const kept = filterPaletteEntriesByFeature(entries, {
+      f6EventCreate: false,
+      f7Broadcasts: false,
+      f088TaxAtPayment: false,
+    }).map((e) => e.id);
+    expect(kept).toEqual(['untagged.dashboard']);
   });
 });

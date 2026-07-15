@@ -34,9 +34,18 @@ vi.mock('@/lib/admin-context', () => ({
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
 }));
-vi.mock('@/modules/plans/application/search-plans', () => ({
-  searchPlans: (...args: unknown[]) => searchPlansMock(...args),
-}));
+// Mock only `searchPlans`; keep the REAL `filterPaletteEntriesByFeature` (the
+// route re-exports it through this same module and calls it to strip
+// kill-switched entries — spreading the original lets that filtering genuinely
+// run against the stub's entries instead of stubbing it away).
+vi.mock('@/modules/plans/application/search-plans', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/modules/plans/application/search-plans')>();
+  return {
+    ...actual,
+    searchPlans: (...args: unknown[]) => searchPlansMock(...args),
+  };
+});
 // 055-member-number — directorySearch now returns a member with memberNumber
 // so the route can format it. runInTenant is stubbed to return 'SCCM' prefix.
 const mockMemberRow = {
