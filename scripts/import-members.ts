@@ -56,6 +56,9 @@ interface Args {
   readonly planYear: number;
   readonly commit: boolean;
   readonly reportDir: string;
+  /** Sheet name to read; defaults to the first sheet. The real TSCC workbook
+   *  keeps member data on 'Member Data New', not sheet[0]. */
+  readonly sheet: string | undefined;
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -67,7 +70,7 @@ function parseArgs(argv: readonly string[]): Args {
   const planYearRaw = get('--plan-year');
   if (!file || !planYearRaw) {
     throw new Error(
-      'usage: import-members.ts --file <xlsx> --plan-year <year> [--commit] [--report-dir <dir>]',
+      'usage: import-members.ts --file <xlsx> --plan-year <year> [--sheet <name>] [--commit] [--report-dir <dir>]',
     );
   }
   const planYear = Number(planYearRaw);
@@ -77,19 +80,29 @@ function parseArgs(argv: readonly string[]): Args {
     planYear,
     commit: argv.includes('--commit'),
     reportDir: get('--report-dir') ?? process.cwd(),
+    sheet: get('--sheet'),
   };
 }
 
 /** Read the first sheet as array-of-arrays (cellDates → JS Date for date columns). */
-export function readWorkbook(file: string): { headers: string[]; dataRows: unknown[][] } {
+export function readWorkbook(
+  file: string,
+  sheetName?: string,
+): { headers: string[]; dataRows: unknown[][] } {
   const wb = XLSX.readFile(file, { cellDates: true });
-  const sheetName = wb.SheetNames[0];
-  if (!sheetName) throw new Error(`workbook has no sheets: ${file}`);
+  const name = sheetName ?? wb.SheetNames[0];
+  if (!name) throw new Error(`workbook has no sheets: ${file}`);
+  const ws = wb.Sheets[name];
+  if (!ws) {
+    throw new Error(
+      `sheet "${name}" not found in ${file}. Available: ${wb.SheetNames.join(', ')}`,
+    );
+  }
   // blankrows: true KEEPS empty rows in the array so the array index stays aligned
   // with the real Excel row number (mapDataRows drops blank rows but their slot is
   // preserved, so report rowIndex always points at the true spreadsheet row even
   // after a blank separator gap).
-  const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName]!, {
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, {
     header: 1,
     blankrows: true,
     defval: '',
@@ -280,17 +293,25 @@ export async function commitMembers(
         memberId,
         memberNumber,
         companyName: m.companyName,
+        legalEntityType: m.legalEntityType,
+        isVatRegistered: m.isVatRegistered,
         country: m.country,
         taxId: m.taxId,
         planId: m.planId,
         planYear,
         registrationDate: m.registrationDate.toISOString().slice(0, 10),
         registrationFeePaid: true,
-        status: 'active',
+        status: m.status,
         turnoverThb: m.turnoverThb,
+        registeredCapitalThb: m.registeredCapitalThb,
+        foundedYear: m.foundedYear,
+        website: m.website,
+        description: m.description,
         city: m.city,
         province: m.province,
         postalCode: m.postalCode,
+        addressLine1: m.addressLine1,
+        addressLine2: m.addressLine2,
         preferredLocale: m.preferredLocale,
       });
       await tx.insert(auditLog).values({
@@ -319,29 +340,35 @@ export async function commitMembers(
       // throws → the whole batch rolls back (atomic) → the operator fixes the
       // data + re-runs. The counter is bumped (PII-free: tenant + row-index
       // only) BEFORE the re-throw so the operator sees which row aborted.
-      try {
-        await createCycleInTx(cycleDeps, tx, {
-          tenantId: ctx.slug,
-          memberId,
-          periodFrom: m.registrationDate.toISOString(),
-          planId: m.planId,
-          actorUserId,
-          actorRole: 'system',
-          correlationId: `import-members-${randomUUID()}`,
-          // 068 cluster F — anchor at the CURRENT membership period (preserving
-          // the registration anniversary), not the raw historical registration
-          // date, so a long-standing member is not marked lapsed at launch.
-          anchorToCurrentPeriod: { nowIso: commitNowIso },
-        });
-        cyclesCreated += 1;
-      } catch (e) {
-        renewalsMetrics.importCycleCreateFailed.add(1, { tenant_id: ctx.slug });
-        console.error(
-          `[import-members] cycle creation failed for row ${headRow} ` +
-            `(member ${memberId}) — rolling back the whole batch: ` +
-            (e instanceof Error ? e.message : String(e)),
-        );
-        throw e;
+      //
+      // PR-C — only an ACTIVE member joins the renewal pipeline. An imported
+      // inactive member is a directory record only; creating a cycle would
+      // resurface it in the F8 at-risk / reminder flows.
+      if (m.status === 'active') {
+        try {
+          await createCycleInTx(cycleDeps, tx, {
+            tenantId: ctx.slug,
+            memberId,
+            periodFrom: m.registrationDate.toISOString(),
+            planId: m.planId,
+            actorUserId,
+            actorRole: 'system',
+            correlationId: `import-members-${randomUUID()}`,
+            // 068 cluster F — anchor at the CURRENT membership period (preserving
+            // the registration anniversary), not the raw historical registration
+            // date, so a long-standing member is not marked lapsed at launch.
+            anchorToCurrentPeriod: { nowIso: commitNowIso },
+          });
+          cyclesCreated += 1;
+        } catch (e) {
+          renewalsMetrics.importCycleCreateFailed.add(1, { tenant_id: ctx.slug });
+          console.error(
+            `[import-members] cycle creation failed for row ${headRow} ` +
+              `(member ${memberId}) — rolling back the whole batch: ` +
+              (e instanceof Error ? e.message : String(e)),
+          );
+          throw e;
+        }
       }
     }
 
@@ -363,7 +390,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const ctx = requireSwechamTenant();
 
-  const { headers, dataRows } = readWorkbook(args.file);
+  const { headers, dataRows } = readWorkbook(args.file, args.sheet);
   const columnMap = buildColumnMap(headers);
   if (columnMap.missingRequired.length > 0) {
     console.error(

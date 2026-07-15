@@ -152,6 +152,19 @@ describe('commitMembers — initial renewal cycle per imported member (Task 1.7)
     ]);
   }, 60_000);
 
+  it('an INACTIVE imported member is created but gets NO renewal cycle (PR-C)', async () => {
+    // An inactive member is a directory record only — creating a cycle would
+    // resurface it in the F8 at-risk / reminder pipeline. Both members are
+    // created; only the active one gets a cycle.
+    const active = vm({ regDate: '2026-03-01T00:00:00Z', status: 'active' });
+    const inactive = vm({ regDate: '2026-03-01T00:00:00Z', status: 'inactive' });
+    const out = await commitMembers(tenantC.ctx, user.userId, [active, inactive], 2026);
+    expect(out.membersCreated).toBe(2);
+    expect(out.cyclesCreated).toBe(1); // only the active member
+    expect(await countCycles(tenantC.ctx.slug)).toBe(1);
+    expect(await countMembers(tenantC.ctx.slug)).toBe(2);
+  }, 60_000);
+
   it('cold-start: a member with a HISTORICAL registration_date anchors at the CURRENT period (expires_at in the future), not the original (cluster F, 068)', async () => {
     // A long-standing member registered 5+ years ago. With the naive
     // `period_from = registration_date` anchoring, period_to = registration +
