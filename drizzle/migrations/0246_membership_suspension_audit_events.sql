@@ -1,0 +1,45 @@
+-- ---------------------------------------------------------------------------
+-- 059-membership-suspension Task 8 — `audit_event_type` extension (3 values).
+--
+-- Closes the two `TODO(Task 8)` markers left by Tasks 3 + 5:
+--
+--   1. `membership_suspended_action_blocked` (F8) — emitted by
+--      `checkPortalAccess` (src/lib/lapsed-portal-scope.ts) for the
+--      SUSPENDED-policy denylist block. Discriminated from the pre-existing
+--      `lapsed_member_action_blocked`, which now covers ONLY the
+--      TERMINATED-policy allowlist block (previously both branches emitted
+--      the same event, hiding which policy fired).
+--   2. `membership_access_fail_open` (F8) — emitted by the same resolver
+--      when `cyclesRepo.findLatestCycleForMember` throws and the resolver
+--      fails OPEN (allows the request). Previously this path only
+--      pino-logged; a sustained fail-open storm was invisible in
+--      audit_log.
+--   3. `broadcast_membership_suspended_blocked` (F7) — emitted by
+--      `submitBroadcast`'s precondition (l) (059-membership-suspension
+--      Task 5) when a suspended/terminated member's e-blast submission is
+--      rejected, before rate-limit/plan/quota.
+--
+-- All 3 default to 5-year retention (no tax-document overlap).
+--
+-- Pattern: `ALTER TYPE … ADD VALUE IF NOT EXISTS` (matches 0109 precedent)
+-- so re-running is a no-op. Forward-only: enum values cannot be removed.
+--
+-- Registered in lockstep with:
+--   - `F8_AUDIT_EVENT_TYPES` (renewals audit port) — count 66 → 68
+--   - `F8_ENUM_SHIPPED_TUPLE` (drizzle-renewal-audit-emitter.ts) — both
+--     events are SHIPPED (real emit sites land in this same commit)
+--   - `F7_AUDIT_EVENT_TYPES` (broadcasts audit port) — count 60 → 61
+--   - `auditEventTypeEnum` tuple (src/modules/auth/infrastructure/db/schema.ts)
+--   - `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`
+--   - i18n `audit.eventType.<name>` (en/th/sv) — enforced by
+--     tests/unit/insights/audit-event-label-coverage.test.ts (also re-derives
+--     the DB enum from every migration and cross-checks it against
+--     ALL_AUDIT_EVENT_TYPES — F8 has no dedicated live-Neon enum-parity test,
+--     this is its structural equivalent)
+--   - the F7 parity test (tests/integration/broadcasts/
+--     audit-event-type-parity.test.ts, `broadcast_` prefix scope)
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'membership_suspended_action_blocked';--> statement-breakpoint
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'membership_access_fail_open';--> statement-breakpoint
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'broadcast_membership_suspended_blocked';

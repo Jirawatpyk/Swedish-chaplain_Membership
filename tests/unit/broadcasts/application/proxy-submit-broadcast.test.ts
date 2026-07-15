@@ -39,6 +39,7 @@ import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/pla
 import type { EventAttendeesRepository } from '@/modules/broadcasts/application/ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '@/modules/broadcasts/application/ports/rate-limiter-port';
+import type { MembershipAccessPort } from '@/modules/broadcasts/application/ports/membership-access-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 const useCasePath = resolve(
@@ -268,6 +269,17 @@ function makeRateLimiter(allow: boolean): RateLimiterPort {
   };
 }
 
+// 059-membership-suspension Task 5 — precondition (l) fixture. Defaults
+// to 'full' access; dedicated coverage for the gate itself lives in
+// `tests/unit/broadcasts/submit-broadcast-membership.test.ts`.
+function makeMembershipAccess(): MembershipAccessPort {
+  return {
+    async getMembershipAccess() {
+      return ok({ access: 'full', reason: 'in_good_standing' });
+    },
+  };
+}
+
 function makeEventAttendees(): EventAttendeesRepository {
   return {
     async getLastNinetyDayAttendees() {
@@ -307,6 +319,7 @@ function makeDeps(opts: FixtureOpts) {
       broadcastsRepo: repo.port,
       sanitizer: dompurifySanitizer,
       membersBridge: makeMembersBridge(opts),
+      membershipAccess: makeMembershipAccess(),
       plansBridge: makePlansBridge(opts),
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),

@@ -516,6 +516,15 @@ export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
 export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
+// 059-membership-suspension Task 12 — schema-level re-export mirroring
+// the F5 `paymentsTable` precedent (`@/modules/payments` barrel): F8's
+// `invoice-due-bridge-drizzle.ts` reads the `invoices` table directly
+// (read-only cross-module query) rather than composing an F4 use-case,
+// because no F4 use-case exposes "does this member have an unpaid,
+// not-yet-due membership invoice" today. Re-exporting the table here
+// (instead of a deep `./infrastructure/db/schema-invoices` import) keeps
+// the cross-module dependency at the documented barrel surface.
+export { invoices as invoicesTable } from './infrastructure/db/schema-invoices';
 // Invoice-auto-email — referenced by the cron outbox dispatcher to
 // render bilingual invoice/CN/receipt issued+resend notifications.
 export {

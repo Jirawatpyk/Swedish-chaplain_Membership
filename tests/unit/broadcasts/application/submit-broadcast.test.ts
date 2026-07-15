@@ -47,6 +47,7 @@ import type { PlansBridgePort } from '@/modules/broadcasts/application/ports/pla
 import type { EventAttendeesRepository } from '@/modules/broadcasts/application/ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '@/modules/broadcasts/application/ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '@/modules/broadcasts/application/ports/rate-limiter-port';
+import type { MembershipAccessPort } from '@/modules/broadcasts/application/ports/membership-access-port';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { SubmitBroadcastInput } from '@/modules/broadcasts/application/use-cases/submit-broadcast';
@@ -359,6 +360,18 @@ function makeEventAttendees(): EventAttendeesRepository {
   };
 }
 
+// 059-membership-suspension Task 5 — precondition (l) fixture. Defaults
+// to 'full' access so the existing quota/plan/segment coverage in this
+// file is unaffected; the precondition's own dedicated coverage lives
+// in `tests/unit/broadcasts/submit-broadcast-membership.test.ts`.
+function makeMembershipAccess(): MembershipAccessPort {
+  return {
+    async getMembershipAccess() {
+      return ok({ access: 'full', reason: 'in_good_standing' });
+    },
+  };
+}
+
 function makeMarketingUnsubscribes(): MarketingUnsubscribesRepo {
   return {
     async upsert() {
@@ -387,6 +400,7 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       broadcastsRepo,
       sanitizer: dompurifySanitizer,
       membersBridge: makeMembersBridge(opts),
+      membershipAccess: makeMembershipAccess(),
       plansBridge: makePlansBridge(opts),
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),

@@ -37,10 +37,10 @@ import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { emitCreditBackViaStateChange } from './_helpers/emit-credit-back-pair';
 import { isQuotaCountedStatus } from '../../domain/value-objects/payment-status';
-import type { TenantId } from '@/modules/members';
+import type { TenantId, MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { MatchType } from '../../domain/value-objects/match-type';
-import type { EventId } from '../../domain/branded-types';
+import type { EventId, RegistrationId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
 import type { EventsRepository } from '../ports/events-repository';
 import {
@@ -71,6 +71,7 @@ import type {
   PriorImportMatch,
 } from '../ports/csv-import-records-repo';
 import type { ErrorCsvStore } from '../ports/error-csv-store';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
 import type { Result } from '@/lib/result';
 import type { AuditEventId } from '@/modules/auth';
 import {
@@ -113,6 +114,19 @@ export interface ImportSummary {
   readonly matchCounts: Readonly<Record<MatchType, number>>;
   readonly errorRows: ReadonlyArray<ImportSummaryErrorRow>;
   readonly durationMs: number;
+  /**
+   * 059-membership-suspension Task 17 — rows whose matched member's F8
+   * benefit access was `suspended`/`terminated` at import time. The
+   * attendance row is recorded NORMALLY in every case (F6 never blocks
+   * on membership state); this is a pure observability surface for the
+   * import-result UI + the `event_attendance_by_suspended_member` audit
+   * trail (emitted once per flagged row, best-effort).
+   */
+  readonly suspendedMemberWarnings: ReadonlyArray<{
+    readonly rowNumber: number;
+    readonly memberId: string;
+    readonly accessState: 'suspended' | 'terminated';
+  }>;
 }
 
 export type ImportCsvOutcome =
@@ -311,6 +325,16 @@ export interface ImportCsvDeps {
     fn: (ports: ImportCsvTxScopedPorts) => Promise<T>,
   ) => Promise<T>;
   /**
+   * 059-membership-suspension Task 17 — F6-owned read against F8
+   * benefit-access state (`deriveMembershipAccess`). Lives at the top level
+   * (not only on `ImportCsvTxScopedPorts`) so the alert-only suspended-member
+   * check can run AFTER the batch tx commits, OUTSIDE the held connection —
+   * the bridge opens its OWN `runInTenant`, so calling it while the batch tx
+   * holds a connection is the pool-pressure pattern the lapse use-case
+   * avoids. Same stateless singleton the tx-scoped ports expose.
+   */
+  readonly membershipAccess: MembershipAccessPort;
+  /**
    * Standalone-tx audit emit for `csv_import_completed` (per-import)
    * and `csv_import_row_failed` (per failed row). Same shape as the
    * webhook use-case's `emitStandalone` — runs in its own `db.transaction`
@@ -430,6 +454,24 @@ type RowOutcome =
        * `eventsUpdated`.
        */
       readonly eventBound: boolean;
+      /**
+       * 059-membership-suspension Task 17 — the matched member id +
+       * registration id for the just-inserted attendance row, carried
+       * RAW so the alert-only suspended-member check
+       * (`checkSuspendedMemberWarning`) can run AFTER the batch tx
+       * commits rather than inside the savepoint. Running it inside the
+       * tx opened a second pooled connection while the batch tx held one
+       * (+ row locks) — the pool-pressure pattern the sibling lapse
+       * use-case deliberately avoids (see CLAUDE.md Gotchas); hoisting it
+       * out keeps the whole membership-access read + its forensic audit
+       * off the held-connection path. `matchedMemberId` is `null` for
+       * non-member / unmatched rows (nothing to check). F6 NEVER blocks
+       * on membership state, so this never affects whether the row is
+       * recorded — the row is already committed by the time the check
+       * runs.
+       */
+      readonly matchedMemberId: MemberId | null;
+      readonly registrationId: RegistrationId;
     }
   | {
       readonly kind: 'row_failed';
@@ -1079,6 +1121,130 @@ async function resolveSelectedEvent(
   return found.value;
 }
 
+/**
+ * 059-membership-suspension Task 17 — alert-only observability check.
+ * Called AFTER the batch tx has COMMITTED the attendance row (from
+ * `importCsv`'s outcome-consumption loop, not from inside the savepoint) —
+ * this function NEVER blocks or alters that outcome. It only decides whether
+ * to flag the row (import-result `suspendedMemberWarnings`) + emit a forensic
+ * `event_attendance_by_suspended_member` audit event.
+ *
+ * Runs OUTSIDE the batch tx (review finding, 2026-07-15): the
+ * `membershipAccess` bridge opens its OWN `runInTenant` connection, and
+ * calling it while the batch tx still held its connection (+ row locks) was
+ * the second-pooled-connection-inside-a-tx pattern the sibling lapse
+ * use-case (`lapseCyclesOnGraceExpiry`) deliberately avoids (CLAUDE.md
+ * Gotchas). Hoisting the whole check post-commit keeps both the access read
+ * AND its forensic audit off the held-connection path. The audit is emitted
+ * via `deps.emitStandalone` (its own tx) rather than the batch-tx-scoped
+ * `ports.audit` for the same reason — there is no batch tx to pair it with
+ * anymore.
+ *
+ * Both failure modes are fail-open (the row is ALREADY committed; neither
+ * mode can undo it):
+ *   - membership-access lookup errors → log + return `null` (no warning
+ *     rather than a possibly-wrong one — matches this branch's read-path
+ *     fail-open policy, Tasks 3/6/7).
+ *   - audit-emit failure/throw → log + still return the warning (the
+ *     import-result chip is the primary signal; the audit row is a
+ *     secondary forensic trail, same tier as
+ *     `csv_import_row_cancelled_no_prior`).
+ */
+async function checkSuspendedMemberWarning(
+  deps: Pick<ImportCsvDeps, 'membershipAccess' | 'emitStandalone'>,
+  input: ImportCsvInput,
+  matchedMemberId: MemberId,
+  rowNumber: number,
+  registrationId: RegistrationId,
+): Promise<{
+  readonly memberId: MemberId;
+  readonly accessState: 'suspended' | 'terminated';
+} | null> {
+  // Defensive fail-open guard: the port contract says "never throws" and the
+  // concrete adapter (`membership-access-bridge.ts`) wraps its body
+  // accordingly, but a contract violation here must never escape and fail the
+  // import — the row is already committed and this is pure observability. A
+  // throw is handled exactly like the `!access.ok` branch: log + return null
+  // (no warning, no audit).
+  let access: Awaited<
+    ReturnType<typeof deps.membershipAccess.getMembershipAccess>
+  >;
+  try {
+    access = await deps.membershipAccess.getMembershipAccess(
+      input.tenantId,
+      matchedMemberId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_csv_suspended_member_check_lookup_threw',
+        tenantId: input.tenantId,
+        rowNumber,
+        matchedMemberId,
+        err: toErrMessage(e),
+      },
+      '[F6.1] suspended-member membership-access lookup THREW (port contract violation) — proceeding without a warning (fail-open; row already recorded normally)',
+    );
+    return null;
+  }
+  if (!access.ok) {
+    logger.warn(
+      {
+        event: 'f6_csv_suspended_member_check_lookup_failed',
+        tenantId: input.tenantId,
+        rowNumber,
+        matchedMemberId,
+        err: access.error.kind,
+      },
+      '[F6.1] suspended-member membership-access lookup failed — proceeding without a warning (fail-open; row already recorded normally)',
+    );
+    return null;
+  }
+  if (access.value.access === 'full') return null;
+
+  const accessState = access.value.access;
+  try {
+    const auditResult = await deps.emitStandalone({
+      eventType: 'event_attendance_by_suspended_member',
+      tenantId: input.tenantId,
+      actorType: 'csv_import',
+      actorUserId: input.actorUserId,
+      occurredAt: new Date(),
+      summary: `CSV row ${rowNumber} recorded attendance for a ${accessState} member (benefit access ${accessState})`,
+      payload: {
+        severity: 'warn',
+        registrationId,
+        matchedMemberId,
+        accessState,
+      },
+    });
+    if (!auditResult.ok) {
+      logger.warn(
+        {
+          event: 'f6_csv_suspended_member_audit_emit_failed',
+          tenantId: input.tenantId,
+          rowNumber,
+          matchedMemberId,
+          auditErrKind: auditResult.error.kind,
+        },
+        '[F6.1] event_attendance_by_suspended_member audit emit failed — forensic trail loss; row outcome + summary warning still recorded',
+      );
+    }
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_csv_suspended_member_audit_emit_threw',
+        tenantId: input.tenantId,
+        rowNumber,
+        matchedMemberId,
+        err: toErrMessage(e),
+      },
+      '[F6.1] event_attendance_by_suspended_member audit emitter threw — forensic trail loss',
+    );
+  }
+  return { memberId: matchedMemberId, accessState };
+}
+
 async function processOneRowInSavepoint(
   parsed: ParsedOkRow,
   input: ImportCsvInput,
@@ -1352,12 +1518,22 @@ async function processOneRowInSavepoint(
         return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
       }
 
+      // 059-membership-suspension Task 17 — carry the matched member +
+      // registration ids RAW; the alert-only suspended-member check runs
+      // POST-COMMIT in `importCsv`'s outcome loop, OUTSIDE this batch tx
+      // (the membership-access bridge opens its own connection — running it
+      // here would be a second pooled connection while the batch tx is
+      // held). F6 never blocks on membership state, so deferring the check
+      // is purely a matter of WHEN the alert is computed, not WHETHER the
+      // row is recorded.
       return {
         kind: 'inserted' as const,
         rowNumber: parsed.rowNumber,
         matchType: result.matchType,
         eventCreated: result.eventCreated,
         eventBound: result.eventBound,
+        matchedMemberId: result.matchedMemberId,
+        registrationId: result.registrationId,
       };
     });
   } catch (e) {
@@ -2062,6 +2238,11 @@ export async function importCsv(
     eventsUpdated: 0,
     matchCounts: zeroMatchCounts(),
     errorRows: [] as ImportSummaryErrorRow[],
+    suspendedMemberWarnings: [] as Array<{
+      rowNumber: number;
+      memberId: string;
+      accessState: 'suspended' | 'terminated';
+    }>,
   };
 
   const batches: Array<ReadonlyArray<ParsedRow>> = [];
@@ -2149,6 +2330,29 @@ export async function importCsv(
                 summary.eventsCreated += 1;
               } else {
                 summary.eventsUpdated += 1;
+              }
+            }
+            // 059-membership-suspension Task 17 — alert-only suspended-member
+            // check. Runs HERE (post-commit, after `processBatch`'s
+            // `runInTenantTx` has resolved at line ~2301) rather than inside
+            // the savepoint, so the membership-access read + its forensic
+            // audit never open a second pooled connection while the batch tx
+            // holds one (review finding). Fail-open + never blocks — the row
+            // is already recorded regardless of this result.
+            if (outcome.matchedMemberId !== null) {
+              const warning = await checkSuspendedMemberWarning(
+                deps,
+                input,
+                outcome.matchedMemberId,
+                outcome.rowNumber,
+                outcome.registrationId,
+              );
+              if (warning !== null) {
+                summary.suspendedMemberWarnings.push({
+                  rowNumber: outcome.rowNumber,
+                  memberId: warning.memberId,
+                  accessState: warning.accessState,
+                });
               }
             }
             break;
@@ -2438,6 +2642,7 @@ export async function importCsv(
         eventsUpdated: summary.eventsUpdated,
         matchCounts: summary.matchCounts,
         errorRows: summary.errorRows,
+        suspendedMemberWarnings: summary.suspendedMemberWarnings,
         durationMs,
       },
       errorCsvAvailable,
@@ -2466,6 +2671,7 @@ export async function importCsv(
       eventsUpdated: summary.eventsUpdated,
       matchCounts: summary.matchCounts,
       errorRows: summary.errorRows,
+      suspendedMemberWarnings: summary.suspendedMemberWarnings,
       durationMs,
     },
   };

@@ -121,6 +121,18 @@ function outstanding(overrides: Partial<DashboardOutstandingRead>): DashboardOut
   return { inputs: [], total: 0, partial: false, error: false, ...overrides };
 }
 
+// 059-membership-suspension — `MembershipStatSection` now ALSO calls
+// `loadDashboardOutstanding` (mocked as `outstandingRead`) whenever the
+// derived stat is `suspended`, to find an unpaid membership invoice for the
+// smart CTA. Default every test to an empty (invoice-less) read so tests
+// that don't care about the invoice-linking branch don't have to mock it
+// themselves; the dedicated CTA tests below override with
+// `.mockResolvedValueOnce`.
+beforeEach(() => {
+  outstandingRead.mockReset();
+  outstandingRead.mockResolvedValue(outstanding({}));
+});
+
 function usage(overrides: Partial<BenefitUsage>): BenefitUsage {
   return {
     membershipYear: 2026,
@@ -164,20 +176,44 @@ describe('MembershipStatSection — every stat.kind resolves real en keys', () =
     expect(html).toContain(en.portal.dashboard.membership.activeValue);
   });
 
-  it('due (renew-soon within threshold)', async () => {
+  it('due (renew-soon within threshold, not yet invoiced)', async () => {
+    // 059-membership-suspension — `awaiting_payment` now ALWAYS resolves to
+    // `suspended` (see below), so the `due` ("renew soon") state now only
+    // applies to the pre-invoice `upcoming`/`reminded` statuses.
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
-    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: soon }));
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     const html = await renderMembership();
     noMissing(html);
     expect(html).toContain(en.portal.dashboard.membership.renewDueValue);
   });
 
-  it('overdue (expired, non-terminal)', async () => {
+  it('suspended, reason unpaid (expired non-terminal cycle, no invoice on file yet)', async () => {
+    // 059-membership-suspension — the old destructive `overdue` state (an
+    // expired-but-non-terminal cycle) is now `suspended`/`unpaid` (amber,
+    // not red). No invoice is mocked, so the copy falls back to the
+    // no-due-date variant and the smart CTA links to the self-serve renewal
+    // flow.
     const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
-    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: past }));
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: past }));
     const html = await renderMembership();
     noMissing(html);
-    expect(html).toContain(en.portal.dashboard.membership.overdueValue);
+    expect(html).toContain(en.portal.dashboard.membership.suspended.unpaidValue);
+    expect(html).toContain(en.portal.dashboard.membership.suspended.unpaidSubNoDueDate);
+  });
+
+  it('suspended, reason pending_review (paid, awaiting admin verification)', async () => {
+    renewalRead.mockResolvedValue(
+      cycle({
+        status: 'pending_admin_reactivation',
+        enteredPendingAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    const html = await renderMembership();
+    noMissing(html);
+    expect(html).toContain(en.portal.dashboard.membership.suspended.pendingReviewValue);
+    // React HTML-escapes the apostrophe in "We're" — check a substring either side of it.
+    expect(html).toContain('verifying your payment');
   });
 
   it('lapsed (terminal, ended)', async () => {
@@ -223,14 +259,55 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
 
   it('due → renders the renew-now link to /portal/renewal/[memberId]', async () => {
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
-    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: soon }));
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     expectCta(await renderMembership(), true);
   });
 
-  it('overdue → renders the renew-now link', async () => {
+  it('suspended (unpaid, no invoice on file) → smart CTA links to self-serve renewal, labelled "Pay to restore benefits"', async () => {
+    // 059-membership-suspension — an expired non-terminal cycle is now
+    // `suspended`, not `overdue`; the CTA label changes to the suspended
+    // pay-CTA (NOT "Renew now") even though the href is the same renewal
+    // route, because no unpaid membership invoice is on file yet.
     const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
-    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: past }));
-    expectCta(await renderMembership(), true);
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: past }));
+    const html = await renderMembership();
+    noMissing(html);
+    expect(html).toContain(`href="${RENEW_HREF}"`);
+    expect(html).toContain(en.portal.dashboard.membership.suspended.payCta);
+    expect(html).not.toContain(RENEW_LABEL);
+    expect(html).toContain('min-h-11');
+  });
+
+  it('suspended (unpaid, invoice on file) → smart CTA links to the specific invoice instead', async () => {
+    outstandingRead.mockResolvedValueOnce(
+      outstanding({
+        inputs: [
+          { status: 'issued', totalSatang: 100_00n, dueDate: '2026-06-30', id: 'inv-abc', invoiceSubject: 'membership' },
+        ],
+        total: 1,
+      }),
+    );
+    const past = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: past }));
+    const html = await renderMembership();
+    noMissing(html);
+    expect(html).toContain('href="/portal/invoices/inv-abc"');
+    expect(html).not.toContain(`href="${RENEW_HREF}"`);
+    expect(html).toContain(en.portal.dashboard.membership.suspended.payCta);
+  });
+
+  it('suspended (pending_review) → NO CTA at all (member already paid)', async () => {
+    renewalRead.mockResolvedValue(
+      cycle({
+        status: 'pending_admin_reactivation',
+        enteredPendingAt: '2026-01-01T00:00:00.000Z',
+        expiresAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    const html = await renderMembership();
+    noMissing(html);
+    expect(html).not.toContain(en.portal.dashboard.membership.suspended.payCta);
+    expect(html).not.toContain(`href="${RENEW_HREF}"`);
   });
 
   it('lapsed → NO renew-now CTA (terminal cycle → route redirect dead-end)', async () => {
@@ -257,7 +334,7 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
 
   it('due → NO contact-support mailto (renewable via the in-portal flow)', async () => {
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
-    renewalRead.mockResolvedValue(cycle({ status: 'awaiting_payment', expiresAt: soon }));
+    renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     const html = await renderMembership();
     noMissing(html);
     expect(html).not.toContain('mailto:info@swecham.se');
@@ -301,7 +378,7 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
   it('due (owing, none past-due) — resolves dueSub + countSub', async () => {
     outstandingRead.mockResolvedValue(
       outstanding({
-        inputs: [{ status: 'issued', totalSatang: 100_00n, dueDate: '2099-12-31' }],
+        inputs: [{ status: 'issued', totalSatang: 100_00n, dueDate: '2099-12-31', id: 'inv-1', invoiceSubject: 'membership' }],
         total: 1,
       }),
     );
@@ -314,7 +391,7 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
   it('overdue (past-due present) — resolves overdueSub variantLabel', async () => {
     outstandingRead.mockResolvedValue(
       outstanding({
-        inputs: [{ status: 'issued', totalSatang: 53_50n, dueDate: '2000-01-01' }],
+        inputs: [{ status: 'issued', totalSatang: 53_50n, dueDate: '2000-01-01', id: 'inv-2', invoiceSubject: 'membership' }],
         total: 1,
       }),
     );
@@ -326,7 +403,7 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
   it('overdue + partial — resolves valuePartial + overdueSubPartial', async () => {
     outstandingRead.mockResolvedValue(
       outstanding({
-        inputs: [{ status: 'issued', totalSatang: 53_50n, dueDate: '2000-01-01' }],
+        inputs: [{ status: 'issued', totalSatang: 53_50n, dueDate: '2000-01-01', id: 'inv-3', invoiceSubject: 'membership' }],
         total: 999, // clipped → partial floor
         partial: true,
       }),
@@ -339,7 +416,7 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
   it('due + partial (no due date) — resolves countSubPartial', async () => {
     outstandingRead.mockResolvedValue(
       outstanding({
-        inputs: [{ status: 'issued', totalSatang: 100_00n, dueDate: null }],
+        inputs: [{ status: 'issued', totalSatang: 100_00n, dueDate: null, id: 'inv-4', invoiceSubject: 'membership' }],
         total: 999,
         partial: true,
       }),

@@ -47,13 +47,38 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
   let user: TestUser;
   const memberA = randomUUID();
   const memberB = randomUUID();
+  // Task 13 — member with a real `issued`, not-yet-past-due MEMBERSHIP
+  // invoice. The InvoiceDueBridge guard must defer this member's lapse
+  // instead of terminating benefit access mid-credit-window.
+  const memberC = randomUUID();
   const cycleGraceExpired = randomUUID();
   const cyclePaymentFailed = randomUUID();
+  const cycleDeferredInvoiceNotDue = randomUUID();
   const invoiceForFailed = randomUUID();
+  const invoiceForCreditWindow = randomUUID();
   // NOW = 2026-05-30; grace_period_days = 14; cycles seeded with
   // expires_at = 2026-05-01 → 29 days past expiry → past grace.
   const NOW = new Date('2026-05-30T08:00:00Z');
   const EXPIRES_AT = new Date('2026-05-01T00:00:00Z');
+  // Task 13 — F4's `invoices.due_date` is a plain `YYYY-MM-DD` date
+  // column; well past `bangkokLocalDate(NOW)` ('2026-05-30') so the
+  // guard's `due_date >= todayBkk` predicate is unambiguously true.
+  const FUTURE_DUE_DATE = '2026-06-30';
+  const SNAP_TENANT = {
+    legal_name_th: 'ทดสอบ',
+    legal_name_en: 'Test',
+    tax_id: '0000000000000',
+    address_th: 'Bangkok',
+    address_en: 'Bangkok',
+    logo_blob_key: null,
+  };
+  const SNAP_MEMBER = {
+    legal_name: 'Lapse Co (credit window)',
+    tax_id: '1234567890123',
+    address: 'Bangkok',
+    primary_contact_name: 'n',
+    primary_contact_email: 'test@example.com',
+  };
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -85,10 +110,10 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
         .onConflictDoNothing(),
     );
 
-    // Two members, each with one cycle past the grace boundary.
+    // Three members, each with one cycle past the grace boundary.
     await runInTenant(tenantA.ctx, (tx) =>
       tx.insert(members).values(
-        [memberA, memberB].map((mid, i) => ({
+        [memberA, memberB, memberC].map((mid, i) => ({
           tenantId: tenantA.ctx.slug,
           memberId: mid,
           // 055-member-number — NOT NULL + per-tenant UNIQUE; map index → 1..N.
@@ -99,6 +124,42 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
           planYear: 2026,
         })),
       ),
+    );
+
+    // Task 13 — memberC's real `issued`, not-yet-past-due MEMBERSHIP
+    // invoice (F4's 90-day net terms). Must satisfy
+    // `invoices_non_draft_has_snapshots` (full snapshot + pdf set) —
+    // same CHECK-satisfying shape as
+    // `tests/integration/renewals/invoice-due-bridge.test.ts`.
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoiceForCreditWindow,
+        memberId: memberC,
+        planYear: 2026,
+        planId,
+        draftByUserId: user.userId,
+        status: 'issued',
+        dueDate: FUTURE_DUE_DATE,
+        pdfDocKind: 'invoice',
+        fiscalYear: 2025,
+        sequenceNumber: 900001,
+        documentNumber: 'INV-2025-900001',
+        issueDate: '2025-01-15',
+        currency: 'THB',
+        subtotalSatang: 5_000_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 350_000n,
+        totalSatang: 5_350_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 90,
+        tenantIdentitySnapshot: SNAP_TENANT,
+        memberIdentitySnapshot: SNAP_MEMBER,
+        pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2025/${invoiceForCreditWindow}.pdf`,
+        pdfSha256: 'c'.repeat(64),
+        pdfTemplateVersion: 1,
+      }),
     );
 
     // memberB's invoice + 1 failed F5 payment row (drives payment_failed).
@@ -169,6 +230,10 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
       );
     await seedCycle(cycleGraceExpired, memberA, null);
     await seedCycle(cyclePaymentFailed, memberB, invoiceForFailed);
+    // Task 13 — memberC's cycle is ALSO past grace, but the member has
+    // a real unpaid, not-yet-past-due membership invoice: the guard
+    // must defer the lapse instead of terminating benefit access.
+    await seedCycle(cycleDeferredInvoiceNotDue, memberC, invoiceForCreditWindow);
   }, 180_000);
 
   afterAll(async () => {
@@ -200,14 +265,17 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.cyclesProcessed).toBe(2);
+    expect(r.value.cyclesProcessed).toBe(3);
     expect(r.value.graceExpired).toBe(1);
     expect(r.value.paymentFailed).toBe(1);
     expect(r.value.transitionRaceSkipped).toBe(0);
+    // Task 13 — memberC's cycle is deferred, not lapsed and not an error.
+    expect(r.value.deferredInvoiceNotDue).toBe(1);
+    expect(r.value.deferredGuardErrors).toBe(0);
     expect(r.value.errors).toBe(0);
 
-    // Verify both cycles transitioned to lapsed with the right
-    // closed_reason discriminant on disk.
+    // Verify all three cycles landed in the right terminal/non-terminal
+    // state with the right closed_reason discriminant on disk.
     const rows = await runInTenant(tenantA.ctx, (tx) =>
       tx
         .select({
@@ -220,13 +288,18 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
     );
     const grace = rows.find((r) => r.cycleId === cycleGraceExpired);
     const failed = rows.find((r) => r.cycleId === cyclePaymentFailed);
+    const deferred = rows.find((r) => r.cycleId === cycleDeferredInvoiceNotDue);
     expect(grace?.status).toBe('lapsed');
     expect(grace?.closedReason).toBe('grace_expired');
     expect(failed?.status).toBe('lapsed');
     expect(failed?.closedReason).toBe('payment_failed');
+    // Task 13 — the guarded cycle SURVIVES: still awaiting_payment, no
+    // closed_reason ever written (no transition attempted at all).
+    expect(deferred?.status).toBe('awaiting_payment');
+    expect(deferred?.closedReason).toBeNull();
 
-    // Verify audit emit — both cycles emitted `renewal_lapsed`.
-    const audits = await runInTenant(tenantA.ctx, (tx) =>
+    // Verify audit emit — both LAPSED cycles emitted `renewal_lapsed`.
+    const lapsedAudits = await runInTenant(tenantA.ctx, (tx) =>
       tx
         .select({ eventType: auditLog.eventType })
         .from(auditLog)
@@ -237,6 +310,26 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
           ),
         ),
     );
-    expect(audits.length).toBe(2);
+    expect(lapsedAudits.length).toBe(2);
+
+    // Task 13 — the deferred member emitted the new forensic event
+    // (own fire-and-forget `emit()`, no state-change tx to piggyback on).
+    const deferredAudits = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ eventType: auditLog.eventType, payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(auditLog.eventType, 'renewal_lapse_deferred_invoice_not_due'),
+          ),
+        ),
+    );
+    expect(deferredAudits.length).toBe(1);
+    expect(deferredAudits[0]?.payload).toMatchObject({
+      cycle_id: cycleDeferredInvoiceNotDue,
+      member_id: memberC,
+      invoice_subject: 'membership',
+    });
   });
 });

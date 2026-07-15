@@ -132,4 +132,39 @@ describe('<BenefitUsageCard>', () => {
     renderCard({ compact: true, active: [{ key: 'directory_listing' }] });
     expect(screen.queryByText('Directory listing')).not.toBeInTheDocument();
   });
+
+  // --- 059-membership-suspension Task 18 — suspended-membership badge -----
+
+  describe('suspended badge', () => {
+    it('renders the amber Suspended badge + SR text when suspended=true', () => {
+      renderCard({ suspended: true });
+      expect(screen.getByText('Suspended')).toBeInTheDocument();
+      expect(
+        screen.getByText('Membership suspended — benefits paused'),
+      ).toBeInTheDocument();
+    });
+
+    it('renders NO Suspended badge when suspended=false', () => {
+      renderCard({ suspended: false });
+      expect(screen.queryByText('Suspended')).not.toBeInTheDocument();
+    });
+
+    it('renders NO Suspended badge when suspended is omitted (default)', () => {
+      renderCard();
+      expect(screen.queryByText('Suspended')).not.toBeInTheDocument();
+    });
+
+    it('uses an amber (warning) colour token, never destructive red', () => {
+      renderCard({ suspended: true });
+      const badge = screen.getByText('Suspended').closest('span[class]');
+      expect(badge).not.toBeNull();
+      expect(badge?.className).toMatch(/text-warning/);
+      expect(badge?.className).not.toMatch(/text-destructive/);
+    });
+
+    it('renders in compact mode too (inline member-detail preview surface)', () => {
+      renderCard({ compact: true, suspended: true });
+      expect(screen.getByText('Suspended')).toBeInTheDocument();
+    });
+  });
 });

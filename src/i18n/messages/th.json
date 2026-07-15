@@ -984,6 +984,8 @@
         "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม",
         "membershipLapsed": "หมดอายุ",
         "membershipLapsedSr": "สมาชิกภาพหมดอายุ — ต้องต่ออายุ",
+        "membershipSuspended": "ระงับชั่วคราว",
+        "membershipSuspendedSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว",
         "tableCaption": "รายชื่อสมาชิก"
       },
       "emptyStates": {
@@ -4687,6 +4689,16 @@
         "contactToRenew": "ติดต่อเราเพื่อเปิดใช้งานใหม่",
         "lapsedMailSubject": "คำขอเปิดใช้งานสมาชิกภาพใหม่",
         "renewNow": "ต่ออายุเลย",
+        "suspended": {
+          "unpaidValue": "ระงับสิทธิประโยชน์ชั่วคราว",
+          "unpaidSubWithDueDate": "ใบแจ้งหนี้ครบกำหนดชำระ {dueDate} — ชำระเงินเพื่อเปิดใช้งานสิทธิประโยชน์อีกครั้ง",
+          "unpaidSubNoDueDate": "ชำระใบแจ้งหนี้ต่ออายุสมาชิกภาพเพื่อเปิดใช้งานสิทธิประโยชน์อีกครั้ง",
+          "pendingReviewValue": "ได้รับการชำระเงินแล้ว",
+          "pendingReviewSub": "เรากำลังตรวจสอบการชำระเงินของคุณ — ไม่ต้องดำเนินการใด ๆ เพิ่มเติมในขณะนี้",
+          "payCta": "ชำระเงินเพื่อเปิดใช้งานสิทธิประโยชน์",
+          "benefitsPausedTitle": "สิทธิประโยชน์ถูกระงับชั่วคราว",
+          "benefitsPausedBody": "โควตาการใช้งานของคุณยังคงเดิม — อีเมลประชาสัมพันธ์ (E-Blast) บัตรเข้าร่วมงาน ป้ายโฆษณา และสิทธิประโยชน์อื่น ๆ จะเปิดใช้งานทันทีที่เราได้รับการชำระเงิน"
+        },
         "errorValue": "ไม่สามารถแสดงสถานะได้",
         "errorSub": "เราไม่สามารถโหลดสถานะสมาชิกของคุณได้ กรุณาลองใหม่อีกครั้ง",
         "emptyValue": "ยินดีต้อนรับ",
@@ -5552,6 +5564,10 @@
       "cron_bearer_auth_rejected": "ปฏิเสธการยืนยันตัวตนของ cron",
       "lapsed_member_action_blocked": "บล็อกการดำเนินการ — สมาชิกหมดอายุ",
       "renewal_kill_switch_blocked": "บล็อกการดำเนินการ — kill switch เปิดใช้งาน",
+      "membership_suspended_action_blocked": "บล็อกการดำเนินการ — สมาชิกภาพถูกระงับ",
+      "membership_access_fail_open": "ตรวจสอบสิทธิ์สมาชิกภาพล้มเหลว — อนุญาตแบบ fail-open",
+      "renewal_lapse_deferred_invoice_not_due": "เลื่อนการยกเลิกสมาชิกภาพ — ใบแจ้งหนี้ยังไม่ถึงกำหนดชำระ",
+      "event_attendance_by_suspended_member": "บันทึกการเข้าร่วมงาน — สิทธิประโยชน์สมาชิกถูกระงับหรือยกเลิก",
       "invoice_draft_created": "สร้างใบแจ้งหนี้แบบร่าง",
       "invoice_draft_updated": "อัปเดตใบแจ้งหนี้แบบร่าง",
       "invoice_draft_deleted": "ลบใบแจ้งหนี้แบบร่าง",
@@ -5693,6 +5709,7 @@
       "broadcast_member_dispatch_resumed": "กลับมาส่งอีเมลถึงสมาชิกอีกครั้ง",
       "broadcast_member_halted_pending_review": "พักส่งอีเมลถึงสมาชิกระหว่างรอตรวจสอบ",
       "broadcast_member_missing_primary_contact_email": "สมาชิกไม่มีอีเมลผู้ติดต่อหลัก",
+      "broadcast_membership_suspended_blocked": "บล็อกการส่งอีเมล — สมาชิกภาพถูกระงับ",
       "broadcast_not_in_plan": "แพ็กเกจไม่รวมสิทธิ์ส่งอีเมล",
       "broadcast_partial_delivery_accepted": "ยอมรับการส่งบางส่วน",
       "broadcast_partially_sent": "ส่งอีเมลได้บางส่วน",
@@ -5984,7 +6001,9 @@
       "activeHeading": "สิทธิประโยชน์ที่รวมอยู่",
       "liveNote": "อัปเดตเมื่อโหลด · ปีปัจจุบัน",
       "emptyTitle": "ไม่มีสิทธิประโยชน์ที่ติดตาม",
-      "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด"
+      "fullBenefits": "ดูสิทธิประโยชน์ทั้งหมด",
+      "suspendedBadge": "ระงับชั่วคราว",
+      "suspendedBadgeSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว"
     },
     "benefit": {
       "eblast": "อีเมลประชาสัมพันธ์ (E-Blast)",

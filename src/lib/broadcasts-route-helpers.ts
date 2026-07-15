@@ -31,6 +31,12 @@ import { logger } from '@/lib/logger';
 export type F7RouteErrorCode =
   // Submit preconditions (FR-002 a–k + FR-016a)
   | 'broadcast_member_halted_pending_review'
+  // 059-membership-suspension Task 5/8/15 — a suspended/terminated member
+  // (F8 `deriveMembershipAccess`) is blocked from spending E-Blast quota.
+  // Runs before rate-limit/plan/quota in `submit-broadcast.ts`; mirrors
+  // `broadcast_quota_blocked` at 422 (policy reject, not infra failure —
+  // a lookup *error* fails closed to `submit.server_error` → 500 instead).
+  | 'broadcast_membership_suspended_blocked'
   | 'broadcast_rate_limit_exceeded'
   | 'broadcast_not_in_plan'
   | 'broadcast_quota_blocked'
@@ -93,6 +99,12 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
       'Your broadcast privileges are paused pending admin review. Contact your administrator.',
     messageThai:
       'สิทธิ์การส่ง E-Blast ของคุณถูกพักไว้รออดมินตรวจสอบ กรุณาติดต่อผู้ดูแล',
+  },
+  broadcast_membership_suspended_blocked: {
+    message:
+      'Your membership benefits are suspended. Please complete payment to resume sending E-Blasts.',
+    messageThai:
+      'สิทธิประโยชน์สมาชิกภาพของคุณถูกระงับ กรุณาชำระเงินเพื่อกลับมาส่ง E-Blast ได้อีกครั้ง',
   },
   broadcast_rate_limit_exceeded: {
     message: 'Too many submissions. Please try again later.',
@@ -376,6 +388,7 @@ export async function resolveTenantDisplayName(
  */
 const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_member_halted_pending_review: 422,
+  broadcast_membership_suspended_blocked: 422,
   broadcast_rate_limit_exceeded: 429,
   broadcast_not_in_plan: 422,
   broadcast_quota_blocked: 422,

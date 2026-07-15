@@ -8,6 +8,14 @@
  * Pipeline (FR-002 preconditions in CHEAP → EXPENSIVE order; the letters
  * map to the FR-002 sub-clauses, not pipeline order):
  *   k. halt flag → broadcast_member_halted_pending_review
+ *   l. membership access (059-membership-suspension Task 5 + Task 8) →
+ *      broadcast_membership_suspended_blocked — a suspended/terminated
+ *      member (F8 `deriveMembershipAccess`) cannot spend e-blast quota.
+ *      Runs BEFORE rate-limit/plan/quota so a suspended member's
+ *      submission never reaches the quota counter (the bug class this
+ *      gate exists to close: a check that compiles but is never wired
+ *      into the actual submit path). Task 8 wires the audit emit
+ *      (migration 0246 adds the pgEnum value).
  *   d. rate limit → broadcast_rate_limit_exceeded
  *   a. plan check → broadcast_not_in_plan
  *   b. quota → broadcast_quota_blocked  (enforced for all actors incl admin_proxy — T-10)
@@ -50,6 +58,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
 import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailValidatorPort } from '../ports/email-validator-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
@@ -68,6 +77,16 @@ const REVIEW_SLA_TARGET_HOURS = 48;
 
 export type SubmitBroadcastError =
   | { readonly kind: 'broadcast_member_halted_pending_review'; readonly memberId: string }
+  // 059-membership-suspension Task 5 — precondition (l). Distinct kind
+  // from the halt-flag reject: a halt is an admin-imposed hold, while
+  // this is a member benefit-access state derived from F8's renewal
+  // cycle (suspended/terminated). Audit emit + enum value shipped in
+  // Task 8 (migration 0246) — see the `emitReject` call at the emit site
+  // below.
+  | {
+      readonly kind: 'broadcast_membership_suspended_blocked';
+      readonly memberId: string;
+    }
   | {
       readonly kind: 'broadcast_rate_limit_exceeded';
       readonly retryAfterSeconds: number;
@@ -151,6 +170,14 @@ export interface SubmitBroadcastDeps {
    */
   readonly imageAllowlistPort?: ImageAllowlistPort;
   readonly membersBridge: MembersBridgePort;
+  /**
+   * 059-membership-suspension Task 5 — precondition (l). Cross-module
+   * read against F8's `deriveMembershipAccess` (via the
+   * `membershipAccessBridge` adapter). REQUIRED (not optional) — every
+   * submit path, including admin_proxy, must be gated the same way the
+   * halt-flag and quota preconditions are non-optional.
+   */
+  readonly membershipAccess: MembershipAccessPort;
   readonly plansBridge: PlansBridgePort;
   readonly emailValidator: EmailValidatorPort;
   readonly eventAttendees: EventAttendeesRepository;
@@ -219,7 +246,10 @@ type SubmitPrecondition =
   | 'audience_too_large'
   | 'custom_recipient_unknown'
   | 'member_missing_primary_contact_email'
-  | 'member_halted_pending_review';
+  | 'member_halted_pending_review'
+  // 059-membership-suspension Task 8 — precondition (l), analogous to
+  // the halt-flag precondition (k) directly above it in the pipeline.
+  | 'membership_suspended';
 
 const PRECONDITION_BY_EVENT = {
   broadcast_quota_blocked: 'quota_exhausted',
@@ -237,6 +267,7 @@ const PRECONDITION_BY_EVENT = {
   broadcast_member_missing_primary_contact_email:
     'member_missing_primary_contact_email',
   broadcast_member_halted_pending_review: 'member_halted_pending_review',
+  broadcast_membership_suspended_blocked: 'membership_suspended',
 } as const satisfies Partial<Record<F7AuditEventType, SubmitPrecondition>>;
 
 /** Helper: emit a precondition-rejection audit on a standalone tx. */
@@ -293,6 +324,38 @@ export async function submitBroadcast(
     });
     return err({
       kind: 'broadcast_member_halted_pending_review',
+      memberId: input.memberId,
+    });
+  }
+
+  // ---- Precondition (l): membership access -------------------------
+  // 059-membership-suspension Task 5. A suspended/terminated member
+  // (F8 `deriveMembershipAccess`) cannot submit an e-blast — this is
+  // the enforcement that actually stops quota from being spent (a
+  // route-only guard would leak: use-cases are called from more than
+  // one route, e.g. proxy-submit delegates here too).
+  const access = await deps.membershipAccess.getMembershipAccess(
+    deps.tenant,
+    input.memberId,
+  );
+  if (!access.ok) {
+    // Infra error → fail CLOSED as a server_error (mirrors the quota
+    // counter's round-4 MED-D pattern at :349-357 below): a DB blip on
+    // the F8 lookup is NOT "member is fine, let it through". Returning
+    // a fake policy reject here would misreport an infra fault as a
+    // 422 user-fault; returning fake success would grant benefit access
+    // on an unexpected error. Neither is acceptable on a write path.
+    return err({
+      kind: 'submit.server_error',
+      message: `membership_access_error: ${access.error.kind}`,
+    });
+  }
+  if (access.value.access !== 'full') {
+    await emitReject(deps, input, 'broadcast_membership_suspended_blocked', {
+      memberId: input.memberId,
+    });
+    return err({
+      kind: 'broadcast_membership_suspended_blocked',
       memberId: input.memberId,
     });
   }

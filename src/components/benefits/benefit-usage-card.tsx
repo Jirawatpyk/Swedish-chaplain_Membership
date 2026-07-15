@@ -16,7 +16,7 @@
  *   so the same card serves the member + admin variants (FR-022/AS-4).
  */
 import Link from 'next/link';
-import { ArrowRight, PackageOpen } from 'lucide-react';
+import { ArrowRight, PackageOpen, PauseCircle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -50,6 +50,17 @@ export interface BenefitUsageCardProps {
   readonly warningActionHref?: string;
   /** Admin-only action controls (rendered in the header on the staff variant). */
   readonly staffActions?: React.ReactNode;
+  /**
+   * 059-membership-suspension Task 18 — renders an amber "Suspended" badge
+   * beside the title when the member's benefits are temporarily paused
+   * (`deriveMembershipAccess(...).access === 'suspended'`). Mirrors the
+   * Task 16 admin-directory badge exactly: distinct icon (PauseCircle) +
+   * distinct visible label + distinct sr-only phrase, never colour-alone.
+   * Omitted/`false` on the member portal's own benefits view (only the two
+   * F9 admin surfaces — the dedicated benefits page and the member-detail
+   * inline preview — pass this prop).
+   */
+  readonly suspended?: boolean;
   /**
    * Pass A · Section 2 — compact preview mode for the admin member-detail
    * inline quota summary. Keeps only the quantifiable quota bars and drops
@@ -93,6 +104,7 @@ export function BenefitUsageCard({
   underUseWarning,
   warningActionHref,
   staffActions,
+  suspended = false,
   compact = false,
   previewHref,
   headingId,
@@ -111,14 +123,29 @@ export function BenefitUsageCard({
           sits on its own line below (full view only). */}
       <CardHeader>
         <div className="flex flex-row items-center justify-between gap-3">
-          {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
-              card lands in the SR heading tree under the page <h1>. */}
-          <h2
-            {...(headingId ? { id: headingId } : {})}
-            className="font-heading text-base font-medium leading-snug"
-          >
-            {t('card.title', { year: membershipYear })}
-          </h2>
+          <div className="flex min-w-0 items-center gap-2">
+            {/* 056 fix #1 — real <h2> in place of the CardTitle <div> so the
+                card lands in the SR heading tree under the page <h1>. */}
+            <h2
+              {...(headingId ? { id: headingId } : {})}
+              className="font-heading text-base font-medium leading-snug"
+            >
+              {t('card.title', { year: membershipYear })}
+            </h2>
+            {suspended && (
+              <Badge
+                variant="outline"
+                className="shrink-0 gap-1 border-warning/40 text-warning"
+              >
+                <PauseCircle aria-hidden="true" className="size-3" />
+                {/* Non-colour-alone encoding, mirrors Task 16's directory
+                    badge: distinct icon + distinct visible label + distinct
+                    sr-only phrase on top of the amber colour token. */}
+                <span aria-hidden="true">{t('card.suspendedBadge')}</span>
+                <span className="sr-only">{t('card.suspendedBadgeSr')}</span>
+              </Badge>
+            )}
+          </div>
           {compact && previewHref !== undefined ? (
             <Link
               href={previewHref}

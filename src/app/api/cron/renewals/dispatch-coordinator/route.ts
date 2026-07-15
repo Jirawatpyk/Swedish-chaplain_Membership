@@ -55,7 +55,12 @@ async function observeCycleStateGaugesForTenant(
 ): Promise<void> {
   try {
     const ctx = asTenantContext(tenantId);
-    type Row = { active: number; in_grace: number; lapsed_total: number };
+    type Row = {
+      active: number;
+      in_grace: number;
+      lapsed_total: number;
+      suspended_total: number;
+    };
     const rows = await runInTenant<ReadonlyArray<Row>>(ctx, async (tx) => {
       const result = await tx.execute(sql`
         SELECT
@@ -65,7 +70,38 @@ async function observeCycleStateGaugesForTenant(
           COUNT(*) FILTER (
             WHERE status = 'awaiting_payment' AND expires_at < NOW()
           )::int AS in_grace,
-          COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed_total
+          COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed_total,
+          -- 059-membership-suspension Task 18 — mirrors
+          -- deriveMembershipAccess's suspended branch 1:1
+          -- (src/modules/renewals/domain/renewal-cycle.ts): pending
+          -- admin-reactivation review, OR an unpaid awaiting_payment cycle
+          -- (regardless of grace window), OR a non-terminal upcoming/
+          -- reminded cycle whose period already ended (cron-gap suspend).
+          --
+          -- Unlike active/in_grace/lapsed_total above — which are raw
+          -- per-CYCLE status tallies (pre-existing convention) — this
+          -- gauge is per-MEMBER, counting only members whose MOST-RECENT
+          -- cycle is suspended. deriveMembershipAccess classifies a member
+          -- from their single latest cycle (findLatestCycleForMember:
+          -- created_at DESC, cycle_id DESC), so a stale non-latest
+          -- awaiting_payment/pending row on a member who has since renewed
+          -- must NOT inflate this count. DISTINCT ON collapses to each
+          -- member's latest row first, then the same predicate is applied
+          -- — keeping the gauge byte-for-byte in step with the domain
+          -- predicate. Keep both in sync if that function changes. The
+          -- subquery reads renewal_cycles under the same runInTenant GUC,
+          -- so RLS tenant-scoping applies identically to the outer FROM.
+          (
+            SELECT COUNT(*)::int
+            FROM (
+              SELECT DISTINCT ON (member_id) status, expires_at
+              FROM renewal_cycles
+              ORDER BY member_id, created_at DESC, cycle_id DESC
+            ) latest
+            WHERE latest.status = 'pending_admin_reactivation'
+               OR latest.status = 'awaiting_payment'
+               OR (latest.status IN ('upcoming','reminded') AND latest.expires_at < NOW())
+          ) AS suspended_total
         FROM renewal_cycles
       `);
       // Drizzle's postgres-js driver returns the rows array directly.
@@ -85,6 +121,10 @@ async function observeCycleStateGaugesForTenant(
       tenantId,
       'lapsed_total',
       row.lapsed_total,
+    );
+    renewalsMetrics.observeMembershipSuspendedCountGauge(
+      tenantId,
+      row.suspended_total,
     );
   } catch (e) {
     // Gauge observation is best-effort — never block coordinator on

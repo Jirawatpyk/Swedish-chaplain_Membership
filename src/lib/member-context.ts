@@ -17,6 +17,8 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
+import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
+import { buildPortalAccessDeps, toPortalAccessAction } from '@/lib/portal-access-deps';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -108,6 +110,41 @@ export async function requireMemberContext(
     }
 
     const member = memberResult.value;
+
+    // Task 7 (059-membership-suspension) — the ALWAYS-ON terminated /
+    // suspended portal-scope gate. Every `/api/portal/**` route that
+    // resolves its member via `requireMemberContext` gets `checkPortalAccess`
+    // enforcement on every request — unlike the SSR-only
+    // `enforcePortalPageAccess` layout guard, which does not re-run on
+    // client-side navigation between sibling routes, this runs on every
+    // data fetch/mutation regardless of how the client got there. Checked
+    // BEFORE the contacts lookup below so a blocked request short-circuits
+    // without the extra round-trip. `new URL(request.url).pathname` (not
+    // `request.nextUrl.pathname`) per the Task 3 controller note — the
+    // normalized literal request path.
+    const actionValue = toPortalAccessAction(request.method);
+    const accessDecision = await checkPortalAccess(buildPortalAccessDeps(tenant), {
+      tenantId: tenant.slug,
+      memberId: member.memberId,
+      pathname: new URL(request.url).pathname,
+      actorUserId: current.user.id,
+      correlationId: requestId,
+      requestId,
+      ...(actionValue ? { action: actionValue } : {}),
+    });
+    if (!accessDecision.allowed) {
+      return {
+        response: NextResponse.json(
+          {
+            error: {
+              code: 'membership_access_restricted',
+              message: 'Membership access is restricted for this route.',
+            },
+          },
+          { status: 403 },
+        ),
+      };
+    }
 
     // Load contacts to find the primary
     const contactsResult = await deps.contactRepo.listByMember(

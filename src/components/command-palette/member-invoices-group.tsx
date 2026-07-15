@@ -48,6 +48,15 @@ import type { Role } from '@/modules/auth/domain/role';
 
 type MemberCommandPaletteProps = {
   readonly currentUserRole: Role;
+  /**
+   * 059-membership-suspension Task 9 item 7 — when not `'full'`, the
+   * "Compose E-Blast" jump target is hidden (the destination route is
+   * denylisted while suspended, and unreachable at all while terminated —
+   * offering it would be a dead-end shortcut). "View E-Blast usage" stays
+   * visible: the Benefits page is open regardless of membership access.
+   * Defaults to `'full'` for callers that don't pass it (back-compat).
+   */
+  readonly membershipAccess?: 'full' | 'suspended' | 'terminated';
 };
 
 export type MemberInvoiceSearchRow = {
@@ -69,6 +78,7 @@ type SearchResponse = {
  */
 export function MemberCommandPalette({
   currentUserRole,
+  membershipAccess = 'full',
 }: MemberCommandPaletteProps) {
   const t = useTranslations('portal.payment.cmdkPay');
   const tBcast = useTranslations('portal.broadcasts.cmdk');
@@ -227,20 +237,27 @@ export function MemberCommandPalette({
               })}
             </CommandGroup>
           )}
-          {/* F7 US3 Smart Feature #4 — Broadcasts entries: always
-              shown so members can deep-link to compose / benefits
-              dashboard regardless of invoice state. */}
+          {/* F7 US3 Smart Feature #4 — Broadcasts entries: shown so members
+              can deep-link to compose / benefits dashboard regardless of
+              invoice state. 059-membership-suspension Task 9 item 7 —
+              "Compose E-Blast" is hidden when the member is not `full`: the
+              destination is denylisted while suspended (and unreachable at
+              all while terminated), so offering it would be a dead-end
+              shortcut. "View E-Blast usage" always stays — the Benefits
+              page itself remains open. */}
           <CommandGroup heading={tBcast('group')}>
-            <CommandItem
-              value={`compose e-blast broadcast ${tBcast('compose.title')}`}
-              onSelect={() => {
-                handleOpenChange(false);
-                router.push('/portal/broadcasts/new');
-              }}
-              data-testid="cmdk-broadcasts-compose"
-            >
-              <span className="truncate">{tBcast('compose.title')}</span>
-            </CommandItem>
+            {membershipAccess === 'full' && (
+              <CommandItem
+                value={`compose e-blast broadcast ${tBcast('compose.title')}`}
+                onSelect={() => {
+                  handleOpenChange(false);
+                  router.push('/portal/broadcasts/new');
+                }}
+                data-testid="cmdk-broadcasts-compose"
+              >
+                <span className="truncate">{tBcast('compose.title')}</span>
+              </CommandItem>
+            )}
             <CommandItem
               value={`view e-blast usage benefits quota ${tBcast('benefits.title')}`}
               onSelect={() => {

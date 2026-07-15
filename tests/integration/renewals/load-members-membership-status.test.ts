@@ -319,9 +319,12 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     expect(res.ok).toBe(true);
     if (res.ok) {
       // mLapsed (terminal lapsed, past expiry) + mMulti (latest cycle is
-      // the lapsed one) are flagged. mActive (non-terminal) and mNone
-      // (no cycle) are NOT.
-      expect([...res.value].sort()).toEqual([mLapsed, mMulti].sort());
+      // the lapsed one) are flagged lapsed. mActive is `awaiting_payment`
+      // (always suspended per deriveMembershipAccess, regardless of its
+      // future expiry) — flagged suspended, NOT lapsed. mNone (no cycle)
+      // is in neither set.
+      expect([...res.value.lapsed].sort()).toEqual([mLapsed, mMulti].sort());
+      expect([...res.value.suspended].sort()).toEqual([mActive]);
     }
   });
 
@@ -332,9 +335,12 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
       memberIds: [bMember],
     });
     expect(res.ok).toBe(true);
-    // RLS hides B's cycle from A's `runInTenant` binding → empty Set
+    // RLS hides B's cycle from A's `runInTenant` binding → empty Sets
     // (NOT a leaked "lapsed" flag for a foreign member).
-    if (res.ok) expect(res.value.size).toBe(0);
+    if (res.ok) {
+      expect(res.value.lapsed.size).toBe(0);
+      expect(res.value.suspended.size).toBe(0);
+    }
 
     // Defence in depth: tenant B's OWN binding still sees its lapsed
     // member — proves the empty result above is RLS isolation, not a
@@ -345,7 +351,7 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
       memberIds: [bMember],
     });
     expect(resB.ok).toBe(true);
-    if (resB.ok) expect(resB.value.has(bMember)).toBe(true);
+    if (resB.ok) expect(resB.value.lapsed.has(bMember)).toBe(true);
   });
 
   it('multi-cycle parity: batch picks the SAME latest cycle as loadMemberRenewalStatus (created_at DESC)', async () => {
@@ -364,7 +370,7 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     // lapsed one → so the batch DISTINCT-ON must also resolve mMulti as
     // lapsed. Both agreeing proves they share the created_at DESC basis.
     if (single.ok) expect(single.value.cycle?.status).toBe('lapsed');
-    if (batch.ok) expect(batch.value.has(mMulti)).toBe(true);
+    if (batch.ok) expect(batch.value.lapsed.has(mMulti)).toBe(true);
   });
 
   it('equal-created_at tiebreak: both reads pick the SAME cycle via cycle_id DESC (S1 regression guard)', async () => {
@@ -404,7 +410,7 @@ describe('loadMembersMembershipStatus (integration, live Neon)', () => {
     }
     // Batch DISTINCT-ON path MUST agree → mTie flagged lapsed. (If it picked
     // the awaiting_payment cycle instead, mTie would be absent from the Set.)
-    if (batch.ok) expect(batch.value.has(mTie)).toBe(true);
+    if (batch.ok) expect(batch.value.lapsed.has(mTie)).toBe(true);
   });
 
   it('index drop-guard: renewal_cycles_member_recency_idx exists with the expected predicate', async () => {

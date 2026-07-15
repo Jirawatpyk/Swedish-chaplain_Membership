@@ -12,6 +12,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { loadMembershipAccess } from '@/lib/load-membership-access';
 import {
   computeQuotaCounter,
   envTenantDisplayName,
@@ -66,30 +67,49 @@ export default async function ComposeBroadcastPage({
   // explainer lives).
   const membersDeps = buildMembersDeps(tenant);
   let initialQuota = null;
+  // 059-membership-suspension Task 9 item 5 — hoisted OUT of the try/catch
+  // below (see the `redirect()` calls further down for why): a suspended/
+  // terminated member must never reach the compose form.
+  // `enforcePortalPageAccess` (member shell layout) already catches this on
+  // SSR load/refresh, but Next.js 16 does NOT re-run a layout on client-side
+  // navigation between sibling portal routes — so a member who was `full`
+  // when the portal first loaded and became suspended mid-session (or who
+  // client-navigates here from the command palette / benefits page) needs
+  // this page-level check too.
+  let membershipAccessBlocked = false;
+  // FR-009 cap=0 flag, also hoisted for the same reason (see below).
+  let quotaExhausted = false;
   try {
     const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
       tenant,
       session.user.id,
     );
     if (memberLookup.ok) {
-      const quotaResult = await computeQuotaCounter(
-        makeComputeQuotaDeps(tenant.slug),
-        { memberId: memberLookup.value.memberId },
+      const membershipAccess = await loadMembershipAccess(
+        tenant.slug,
+        memberLookup.value.memberId,
       );
-      if (quotaResult.ok) {
-        // FR-009 — cap=0 means the member's plan has no E-Blast benefit.
-        // Redirect to the benefits surface (which renders the same quota
-        // card with an "exhausted / not in plan" treatment).
-        if (quotaResult.value.counter.cap === 0) {
-          redirect('/portal/benefits?tab=broadcasts');
+      if (membershipAccess.access !== 'full') {
+        membershipAccessBlocked = true;
+      } else {
+        const quotaResult = await computeQuotaCounter(
+          makeComputeQuotaDeps(tenant.slug),
+          { memberId: memberLookup.value.memberId },
+        );
+        if (quotaResult.ok) {
+          // FR-009 — cap=0 means the member's plan has no E-Blast benefit.
+          if (quotaResult.value.counter.cap === 0) {
+            quotaExhausted = true;
+          } else {
+            initialQuota = {
+              used: quotaResult.value.counter.used,
+              reserved: quotaResult.value.counter.reserved,
+              remaining: quotaResult.value.counter.remaining,
+              cap: quotaResult.value.counter.cap,
+              quotaYear: quotaResult.value.quotaYear,
+            };
+          }
         }
-        initialQuota = {
-          used: quotaResult.value.counter.used,
-          reserved: quotaResult.value.counter.reserved,
-          remaining: quotaResult.value.counter.remaining,
-          cap: quotaResult.value.counter.cap,
-          quotaYear: quotaResult.value.quotaYear,
-        };
       }
     }
   } catch (err) {
@@ -106,6 +126,17 @@ export default async function ComposeBroadcastPage({
       'broadcasts.compose.quota_init_failed',
     );
     initialQuota = null;
+  }
+
+  // `redirect()` throws a special Next.js error that a broad `catch` would
+  // otherwise swallow — Next's own docs (and this repo's
+  // `src/lib/portal-page-access.ts`) call this out explicitly, so both
+  // redirects are resolved here, AFTER the try/catch above has fully
+  // settled, never inside it. Both land on the same benefits-page target —
+  // it explains why compose is unavailable either way (paused benefits or
+  // an exhausted/not-in-plan quota).
+  if (membershipAccessBlocked || quotaExhausted) {
+    redirect('/portal/benefits?tab=broadcasts');
   }
 
   // F7.1a US2 (T078) — resolve the kill-switch server-side so the

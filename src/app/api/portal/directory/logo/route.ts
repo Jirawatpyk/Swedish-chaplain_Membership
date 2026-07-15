@@ -15,6 +15,8 @@ import { getCurrentSession, type CurrentSession } from '@/lib/auth-session';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { checkPortalAccess } from '@/lib/lapsed-portal-scope';
+import { buildPortalAccessDeps, toPortalAccessAction } from '@/lib/portal-access-deps';
 import { setDirectoryLogo, removeDirectoryLogo, MAX_LOGO_UPLOAD_BYTES } from '@/modules/insights';
 import {
   makeSetDirectoryLogoDeps,
@@ -69,7 +71,37 @@ async function gate(
     }
     return NextResponse.json({ error: { code: 'no_member_profile' }, correlationId }, { status: 404 });
   }
-  return { tenant, memberId: memberResult.value.memberId, current };
+  const memberId = memberResult.value.memberId;
+
+  // 059-membership-suspension Task 7b — this route resolves its member via
+  // a bespoke `getCurrentSession` + `findByLinkedUserId` lookup instead of
+  // `requireMemberContext` (`src/lib/member-context.ts`), so it does NOT
+  // automatically inherit that helper's `checkPortalAccess` enforcement.
+  // Wire the same gate directly, same deps builder + ctx shape + fail-open
+  // behaviour as `requireMemberContext` (checkPortalAccess fails open
+  // internally on a cyclesRepo read error, so no extra try/catch needed here).
+  // Shared by both POST and DELETE — `request.method` reflects whichever
+  // handler called `gate()`. `new URL(request.url).pathname` (NOT
+  // `request.nextUrl.pathname`) per the same Task 3 controller note
+  // `requireMemberContext` follows — the normalized literal request path.
+  const actionValue = toPortalAccessAction(request.method);
+  const accessDecision = await checkPortalAccess(buildPortalAccessDeps(tenant), {
+    tenantId: tenant.slug,
+    memberId,
+    pathname: new URL(request.url).pathname,
+    actorUserId: current.user.id as string,
+    correlationId,
+    requestId: correlationId,
+    ...(actionValue ? { action: actionValue } : {}),
+  });
+  if (!accessDecision.allowed) {
+    return NextResponse.json(
+      { error: { code: 'membership_access_restricted' }, correlationId },
+      { status: 403 },
+    );
+  }
+
+  return { tenant, memberId, current };
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

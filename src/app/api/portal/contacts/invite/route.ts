@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
       audit: deps.audit,
       createUser: createUserPort,
       deleteInvitedUser: deps.deleteInvitedUser,
+      membershipAccess: deps.membershipAccess,
       idFactory: deps.idFactory,
     },
     {
@@ -100,6 +101,20 @@ export async function POST(request: NextRequest) {
       case 'not_primary':
         return NextResponse.json(
           { error: { code: 'forbidden', message: result.error.reason } },
+          { status: 403 },
+        );
+      case 'membership_suspended':
+        // 059-membership-suspension Task 6 — a suspended/terminated member
+        // cannot invite colleagues (each invite mints a new F1 account).
+        // Enforced inside the use case (see invite-colleague.ts); this is
+        // just the HTTP mapping.
+        return NextResponse.json(
+          {
+            error: {
+              code: 'membership_suspended',
+              message: 'Membership is suspended or terminated',
+            },
+          },
           { status: 403 },
         );
       case 'email_taken':

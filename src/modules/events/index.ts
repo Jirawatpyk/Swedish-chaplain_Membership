@@ -279,6 +279,14 @@ export type {
   RetentionSweeperError,
 } from './application/ports/retention-sweeper';
 
+// 059-membership-suspension Task 17 — F6-owned read against F8
+// benefit-access state (alert-only CSV-import observability check).
+export type {
+  MembershipAccessPort,
+  MembershipAccessSummary,
+  MembershipAccessLookupError,
+} from './application/ports/membership-access-port';
+
 // --- 5. Phase 3 use-case exports --------------------------------------------
 
 export {

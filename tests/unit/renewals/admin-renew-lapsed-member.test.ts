@@ -79,6 +79,7 @@ interface DepsResult {
   bridgeMock: ReturnType<typeof vi.fn>;
   countCyclesForMemberMock: ReturnType<typeof vi.fn>;
   countSettledCyclesForMemberMock: ReturnType<typeof vi.fn>;
+  findMaxPaidThroughMock: ReturnType<typeof vi.fn>;
   readGuardsMock: ReturnType<typeof vi.fn>;
 }
 
@@ -109,6 +110,19 @@ function makeDeps(opts?: {
    * the §86/4 OMITS the exact window even for a member WITH settled history.
    */
   erased?: boolean;
+  /**
+   * Task 14 (059-membership-suspension) — the member's PAID-THROUGH frontier
+   * (`findMaxPaidThroughForMemberInTx`: `MAX(period_to)` over SETTLED cycles),
+   * feeding the comeback-anchor decision. When omitted it is DERIVED from
+   * `settledCycleCountForMember` for consistency — a clearly-EXPIRED frontier
+   * (`2020-01-01`) when the member has settled history (`>= 1`), else `null`.
+   * This keeps the frontier discriminator (which drives the anchor) and the
+   * settled-count discriminator (which drives the §86/4 window gate) in
+   * lock-step by construction — `frontier !== null` ⟺ `settledCount >= 1`
+   * (same "completed OR anchored" predicate). Pass an explicit value to
+   * exercise the gapless-not-expired / boundary branches.
+   */
+  maxPaidThrough?: string | null;
 }): DepsResult {
   const memberPlan =
     opts?.memberPlan === undefined
@@ -116,6 +130,16 @@ function makeDeps(opts?: {
       : opts.memberPlan;
   const activeCycle = opts?.activeCycle ?? null;
   const planFrozenStatus = opts?.planFrozenStatus ?? 'found';
+  const settledCount = opts?.settledCycleCountForMember ?? 1;
+  // Derive a consistent paid-through frontier from the settled count unless the
+  // caller pins one explicitly (see the opts docstring): the anchor's frontier
+  // discriminator and the §86/4 gate's settled-count discriminator must agree.
+  const maxPaidThrough =
+    opts?.maxPaidThrough !== undefined
+      ? opts.maxPaidThrough
+      : settledCount >= 1
+        ? '2020-01-01T00:00:00.000Z'
+        : null;
   const bridgeResult: IssueInvoiceForRenewalResult =
     opts?.bridgeResult ??
     ({
@@ -127,8 +151,22 @@ function makeDeps(opts?: {
 
   const loadMemberPlanMock = vi.fn(async () => memberPlan);
   const findActiveMock = vi.fn(async () => activeCycle);
-  const insertMock = vi.fn(async () =>
-    buildCycle({ status: 'awaiting_payment' }),
+  // Echo the periodFrom/periodTo `createCycleInTx` computes (from the anchor
+  // the use-case chose) back onto the returned cycle, so the tests can verify
+  // the anchor flows through to BOTH the stored cycle AND the §86/4 window
+  // (`membershipCoverage` is threaded from `cycle.periodFrom/periodTo`). The
+  // canned-return default previously swallowed the anchor.
+  const insertMock = vi.fn(
+    async (
+      _tx: unknown,
+      _tid: string,
+      newCycle: { periodFrom: string; periodTo: string },
+    ) =>
+      buildCycle({
+        status: 'awaiting_payment',
+        periodFrom: newCycle.periodFrom,
+        periodTo: newCycle.periodTo,
+      }),
   );
   const loadPlanFrozenMock = vi.fn(async () =>
     planFrozenStatus === 'found'
@@ -152,9 +190,9 @@ function makeDeps(opts?: {
   const countCyclesForMemberMock = vi.fn(
     async () => opts?.countCyclesForMember ?? 2,
   );
-  const countSettledCyclesForMemberMock = vi.fn(
-    async () => opts?.settledCycleCountForMember ?? 1,
-  );
+  const countSettledCyclesForMemberMock = vi.fn(async () => settledCount);
+  // Task 14 — the PAID-THROUGH frontier the comeback-anchor decision reads.
+  const findMaxPaidThroughMock = vi.fn(async () => maxPaidThrough);
   // R2-FIX-2 — the erased-guard read the Step-1 classify now consumes.
   const readGuardsMock = vi.fn(async () => ({
     blocked: false,
@@ -170,6 +208,7 @@ function makeDeps(opts?: {
       linkInvoice: linkInvoiceMock,
       countCyclesForMemberInTx: countCyclesForMemberMock,
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberMock,
+      findMaxPaidThroughForMemberInTx: findMaxPaidThroughMock,
     } as unknown as AdminRenewLapsedMemberDeps['cyclesRepo'],
     auditEmitter: {
       emitInTx: emitInTxMock,
@@ -198,6 +237,7 @@ function makeDeps(opts?: {
     bridgeMock,
     countCyclesForMemberMock,
     countSettledCyclesForMemberMock,
+    findMaxPaidThroughMock,
     readGuardsMock,
   };
 }
@@ -325,6 +365,109 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       );
       const bridgeArg = t.bridgeMock.mock.calls[0]![0] as Record<string, unknown>;
       expect(bridgeArg).not.toHaveProperty('membershipCoverage');
+    });
+  });
+
+  // Task 14 (059-membership-suspension) — the post-lapse comeback anchor. A
+  // member with a SETTLED predecessor keeps their anniversary (gapless) when
+  // the gapless period is still live; a genuinely long-lapsed member (gapless
+  // already fully expired) re-anchors to a fresh payment-month start. A member
+  // with NO settled predecessor keeps the payment-month/now anchor (onPaid
+  // re-anchors that first_payment cycle regardless). The clock is fixed at
+  // 2026-06-13, term 12 → month-start(now) = 2026-06-01.
+  describe('Task 14 — comeback anchor (gapless-or-re-anchor)', () => {
+    const NOW_ISO = '2026-06-13T00:00:00.000Z';
+    const MONTH_START_NOW = '2026-06-01T00:00:00.000Z';
+
+    /** The `NewRenewalCycleInput` createCycleInTx passed to insert. */
+    function insertedCycle(t: DepsResult): { periodFrom: string; periodTo: string } {
+      return t.insertMock.mock.calls[0]![2] as {
+        periodFrom: string;
+        periodTo: string;
+      };
+    }
+
+    it('settled predecessor + gapless period still LIVE → anchors GAPLESS at prior.periodTo; §86/4 window matches the gapless anchor', async () => {
+      // frontier 2026-01-01 + 12mo term = 2027-01-01 > now(2026-06-13) → live.
+      const t = makeDeps({ maxPaidThrough: '2026-01-01T00:00:00.000Z' });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+
+      // The fresh cycle was created at the GAPLESS anchor (prior.periodTo),
+      // NOT the comeback instant.
+      const cycle = insertedCycle(t);
+      expect(cycle.periodFrom).toBe('2026-01-01T00:00:00.000Z');
+      expect(cycle.periodTo).toBe('2027-01-01T00:00:00.000Z');
+
+      // The §86/4 prints the EXACT gapless window (classification 'renewal').
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as IssueInvoiceForRenewalInput;
+      expect(bridgeArg.membershipCoverage).toEqual({
+        kind: 'window',
+        fromIso: '2026-01-01T00:00:00.000Z',
+        toIso: '2027-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('settled predecessor + gapless period EXPIRED → re-anchors at the payment-month start; §86/4 window matches the re-anchor', async () => {
+      // frontier 2020-01-01 + 12mo = 2021-01-01 <= now → gapless fully expired.
+      const t = makeDeps({ maxPaidThrough: '2020-01-01T00:00:00.000Z' });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+
+      const cycle = insertedCycle(t);
+      expect(cycle.periodFrom).toBe(MONTH_START_NOW);
+      expect(cycle.periodTo).toBe('2027-06-01T00:00:00.000Z');
+
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as IssueInvoiceForRenewalInput;
+      expect(bridgeArg.membershipCoverage).toEqual({
+        kind: 'window',
+        fromIso: MONTH_START_NOW,
+        toIso: '2027-06-01T00:00:00.000Z',
+      });
+    });
+
+    it('boundary — gapless periodTo EXACTLY == now → treated as expired → re-anchors at the payment-month start (strict > check)', async () => {
+      // frontier 2025-06-13 + 12mo = 2026-06-13 == now → NOT > now → re-anchor.
+      const t = makeDeps({ maxPaidThrough: '2025-06-13T00:00:00.000Z' });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      expect(insertedCycle(t).periodFrom).toBe(MONTH_START_NOW);
+    });
+
+    it('no settled predecessor → keeps the payment-month/now anchor (onPaid re-anchors this first_payment); §86/4 window OMITTED', async () => {
+      const t = makeDeps({
+        maxPaidThrough: null,
+        countCyclesForMember: 1,
+        settledCycleCountForMember: 0,
+      });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+
+      // Unchanged behaviour — the comeback anchor short-circuits on a null
+      // frontier and keeps the raw `clock.now()` instant.
+      expect(insertedCycle(t).periodFrom).toBe(NOW_ISO);
+
+      const bridgeArg = t.bridgeMock.mock.calls[0]![0] as Record<string, unknown>;
+      expect(bridgeArg).not.toHaveProperty('membershipCoverage');
+    });
+
+    it('null frontier short-circuits BEFORE the gapless plan-term read (no extra loadPlanFrozenFields)', async () => {
+      const t = makeDeps({
+        maxPaidThrough: null,
+        countCyclesForMember: 1,
+        settledCycleCountForMember: 0,
+      });
+      await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      // The frontier was consulted for THIS member.
+      expect(t.findMaxPaidThroughMock).toHaveBeenCalledWith(
+        expect.anything(),
+        TENANT_ID,
+        MEMBER_ID,
+      );
+      // A null frontier means the term read is skipped — the only
+      // loadPlanFrozenFields call is createCycleInTx's own freeze.
+      expect(t.loadPlanFrozenMock).toHaveBeenCalledTimes(1);
     });
   });
 

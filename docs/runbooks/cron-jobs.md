@@ -934,8 +934,17 @@ cycle is never eligible for both in one pass.
    collapses to `expires_at < now`, so EVERY cycle flipped at 06:15
    lapses the same day at 06:30 — there is no self-service payable
    window. This is pre-existing to the lapse cron (any `awaiting_payment`
-   cycle already had this exposure). SweCham uses the default 14; do NOT
-   set grace=0 unless "instant-lapse, no self-service window" is intended.
+   cycle already had this exposure). **Amended 2026-07-13
+   (059-membership-suspension)**: this line previously read "SweCham uses
+   the default 14" — SUPERSEDED. TSCC's confirmed policy is **90 days**
+   of credit before termination (see § "Step 1" below for the operator
+   SQL and its mandatory ordering constraint — it MUST NOT run before the
+   059 Slice 1 benefit-suspension enforcement is live). Do NOT assume the
+   currently-live value is 14, 30, or 90 without querying it first — the
+   code-shipped migration default is 14, an earlier ops note below
+   claimed a hand-run 30 that may never have executed, and 90 is the
+   target once Slice 1 ships. Regardless of the live value, do NOT set
+   grace=0 unless "instant-lapse, no self-service window" is intended.
 
 ### Alert rules
 
@@ -1044,29 +1053,66 @@ migration 0238). NOT a cron — listed here because this file is the F8
 operator reference and both steps must land in the same ship window as
 the code deploy.
 
-### Step 1 — grace period 14 → 30 days (R7)
+### Step 1 — grace period → 90 days (R7; superseded 2026-07-13 by TSCC written policy)
 
-TSCC's public site states membership lapses when the fee is overdue more
-than 30 days. Map it onto the existing config knob:
+> **Amended 2026-07-13 (059-membership-suspension)**: TSCC subsequently
+> confirmed a **fixed, written policy** — see
+> `docs/superpowers/specs/2026-07-13-membership-benefit-suspension-design.md`
+> § Purpose: members get 90 days of credit on the renewal invoice, during
+> which benefits are suspended (not "retained" — see
+> `specs/011-renewal-reminders/spec.md` FR-003 amendment), and membership
+> terminates if the 90 days elapse unpaid. This SUPERSEDES the "board
+> discretion per case" / 30-days-chosen-default note immediately below,
+> which is kept for history, not current guidance. The target value
+> changes from 30 to **90**.
+
+~~TSCC's public site states membership lapses when the fee is overdue more
+than 30 days. Map it onto the existing config knob:~~
 
 ```sql
-UPDATE tenant_renewal_settings SET grace_period_days = 30 WHERE tenant_id = 'swecham';
+UPDATE tenant_renewal_settings SET grace_period_days = 90 WHERE tenant_id = 'swecham';
 ```
 
-> **Status (RESOLVED 2026-07-09)**: TSCC confirmed there is **no fixed
-> lapse policy — it is board discretion per case**. 30 days is therefore
+> ~~**Status (RESOLVED 2026-07-09)**: TSCC confirmed there is no fixed
+> lapse policy — it is board discretion per case. 30 days is therefore
 > the CHOSEN DEFAULT (matches their public-site wording and common
 > chamber practice), not a compliance requirement. The board can change
 > it any time by updating this single config value (`grace_period_days`,
 > valid range 0–90) — no deploy needed. F8 counts the grace window from
-> *period end*; 30 is strictly more forgiving than the seeded default 14,
-> so applying it at ship is low-risk.
+> period end; 30 is strictly more forgiving than the seeded default 14,
+> so applying it at ship is low-risk.~~ **SUPERSEDED 2026-07-13** — see
+> the amendment note above; the policy is now fixed at 90, not board
+> discretion.
 
-Verify after applying:
+> ⚠️ **CRITICAL — ordering constraint.** This SQL **MUST NOT run before
+> the 059-membership-suspension Slice 1 benefit-suspension enforcement is
+> live** in production (the enforcement that actually blocks a suspended
+> member's benefits: `deriveMembershipAccess` wired at the portal
+> chokepoints — `requireMemberContext` + the portal layout — plus the F7
+> `submitBroadcast` / F3 `inviteColleague` use-case gates, and
+> `check:portal-guard` green). Before Slice 1 ships, "grace" only means
+> `renewal_cycle.status = awaiting_payment` with **no benefit blocking
+> whatsoever** — running this UPDATE in that state gives every unpaid
+> member a **90-day free-benefits ride** with zero enforcement. Confirm
+> Slice 1 is live (flag-flipped, chokepoints wired, gate green) BEFORE
+> applying this SQL. This is a ship-day OPERATOR step, documented here —
+> it is NOT executed as part of this documentation task.
+>
+> Valid range remains **0–90** (`GRACE_PERIOD_DAYS_MAX = 90` in
+> `src/modules/renewals/domain/tenant-renewal-settings.ts`) — 90 is now
+> also the ceiling, so this SQL sets the maximum, not headroom below it.
+
+Verify the CURRENT value first — do not assume it is 14, 30, or 90:
 
 ```sql
 SELECT tenant_id, grace_period_days FROM tenant_renewal_settings WHERE tenant_id = 'swecham';
 ```
+
+(The code-shipped migration default is 14; the "30" note directly above
+was a hand-run SQL that may never have executed — this file has carried
+both claims without reconciliation. Verify empirically before applying
+the 90-day UPDATE above, then verify again with the same SELECT
+afterward.)
 
 ### Step 2 — backfill cycle anchors from TSCC payment dates (R4)
 

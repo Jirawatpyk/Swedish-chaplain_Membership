@@ -57,6 +57,7 @@ import {
   ArrowDownIcon,
   ArrowUpDownIcon,
   ArrowUpIcon,
+  PauseCircle,
   PencilIcon,
   TriangleAlert,
 } from 'lucide-react';
@@ -105,6 +106,16 @@ export type MembersTableRow = {
    * Always set (never optional) to match the row-builder's exhaustive map.
    */
   readonly membership_lapsed: boolean;
+  /**
+   * Task 16 (059-membership-suspension) — true when the member's most-recent
+   * renewal cycle is temporarily paused (unpaid / pending-admin-review / a
+   * non-terminal cycle whose grace period already ended). Derived
+   * server-side via the same `loadMembersMembershipStatus` batch read as
+   * `membership_lapsed`; mutually exclusive with it by construction
+   * (`deriveMembershipAccess` never returns both for one cycle). Always set
+   * (never optional) to match the row-builder's exhaustive map.
+   */
+  readonly membership_suspended: boolean;
   /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
@@ -591,7 +602,11 @@ export function MembersTable({
               members. The badge surfaces "active-looking but lapsed"
               awareness; on an archived row (only visible via ?show_archived=1)
               it is redundant next to the Archived status badge — archived
-              already means out. */}
+              already means out. Task 16: Lapsed (red/terminated) takes
+              priority over Suspended (amber) when both are somehow true —
+              they're mutually exclusive by construction
+              (deriveMembershipAccess), but the render still needs a
+              deterministic single choice. */}
           {info.row.original.membership_lapsed && info.getValue() !== 'archived' ? (
             <Badge
               variant="outline"
@@ -602,6 +617,19 @@ export function MembersTable({
                   sr-only phrase below, not "Lapsed Membership lapsed …" twice. */}
               <span aria-hidden="true">{t('membershipLapsed')}</span>
               <span className="sr-only">{t('membershipLapsedSr')}</span>
+            </Badge>
+          ) : info.row.original.membership_suspended && info.getValue() !== 'archived' ? (
+            <Badge
+              variant="outline"
+              className="gap-1 border-warning/40 text-warning"
+            >
+              <PauseCircle aria-hidden="true" className="size-3" />
+              {/* Non-colour-alone encoding: distinct icon (PauseCircle vs
+                  TriangleAlert) + distinct visible label + distinct sr-only
+                  phrase from the Lapsed badge above, on top of the amber vs
+                  red colour token. */}
+              <span aria-hidden="true">{t('membershipSuspended')}</span>
+              <span className="sr-only">{t('membershipSuspendedSr')}</span>
             </Badge>
           ) : null}
         </span>

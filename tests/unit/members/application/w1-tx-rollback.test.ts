@@ -225,6 +225,14 @@ function makeInviteColleagueDeps(options: {
     // F1 user; stub the port so the catch branch can invoke it. Default ok:true;
     // individual tests can override to assert the compensation-failure log path.
     deleteInvitedUser: vi.fn().mockResolvedValue({ ok: true }) as unknown as InviteColleagueDeps['deleteInvitedUser'],
+    // 059-membership-suspension Task 6 — this suite exercises the W1
+    // throw-to-rollback shape, not the membership-access gate; always
+    // report full access so the gate never short-circuits these cases.
+    membershipAccess: {
+      getMembershipAccess: vi
+        .fn()
+        .mockResolvedValue(ok({ access: 'full', reason: 'in_good_standing' })),
+    } as unknown as InviteColleagueDeps['membershipAccess'],
     idFactory: {
       contactId: () => asContactId('33333333-3333-4333-8333-333333333333'),
     },
