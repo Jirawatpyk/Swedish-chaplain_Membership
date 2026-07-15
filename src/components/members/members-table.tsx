@@ -528,18 +528,18 @@ export function MembersTable({
         const country = info.row.original.country;
         const name = info.getValue();
         return (
-          // `flex` (not inline-flex) so the name can wrap/clamp instead of
-          // forcing the cell — and the table — wider than the viewport. Long
-          // legal names (e.g. "… PUBLIC COMPANY LIMITED") clamp to 2 lines with
-          // the full name available on hover via `title`.
-          <span className="flex items-center gap-2">
+          // `flex` (not inline-flex) so the name WRAPS instead of forcing the
+          // cell — and the table — wider than the viewport. The name shows in
+          // FULL (wraps to as many lines as needed, no ellipsis); `max-w`
+          // bounds the column width so a long legal name grows DOWN, not across.
+          <span className="flex items-start gap-2">
             {country && (
-              <span className="shrink-0">
+              <span className="shrink-0 pt-0.5">
                 <CountryDisplay code={country} variant="flag-only" />
               </span>
             )}
             <span
-              className="line-clamp-2 max-w-[24ch] font-medium break-words"
+              className="max-w-[26ch] font-medium break-words whitespace-normal"
               title={name}
             >
               {name}
@@ -574,10 +574,14 @@ export function MembersTable({
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
         const fullName = `${c.first_name} ${c.last_name}`.trim();
         return (
-          <span className="flex items-center gap-1.5">
-            {/* `min-w-0 truncate` so a long name ellipsises instead of widening
-                the cell (the bounce badge stays a fixed, non-shrinking sibling). */}
-            <span className="min-w-0 max-w-[18ch] truncate" title={fullName}>
+          <span className="flex items-start gap-1.5">
+            {/* Name shows in FULL and WRAPS (min-w-0 + break-words); a long name
+                grows DOWN, not across, so it never widens the table. The bounce
+                badge stays a fixed, non-shrinking sibling. */}
+            <span
+              className="min-w-0 max-w-[18ch] break-words whitespace-normal"
+              title={fullName}
+            >
               {fullName}
             </span>
             {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
