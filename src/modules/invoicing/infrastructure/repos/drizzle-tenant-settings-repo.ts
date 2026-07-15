@@ -74,6 +74,11 @@ function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoic
       seller_branch_code: row.sellerBranchCode,
       wht_note_th: row.whtNoteTh,
       wht_note_en: row.whtNoteEn,
+      // 065 §5.4 — statutory termination notice rides the pinned snapshot
+      // (issue-invoice copies `settings.identity` verbatim). Bill-only render
+      // is gated in the template (v12 + isBill), never here.
+      termination_notice_th: row.terminationNoticeTh,
+      termination_notice_en: row.terminationNoticeEn,
       bank_payee_name: row.bankPayeeName,
       bank_account_no: row.bankAccountNo,
       bank_account_type: row.bankAccountType,

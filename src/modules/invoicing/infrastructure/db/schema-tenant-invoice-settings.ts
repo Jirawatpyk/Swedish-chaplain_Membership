@@ -91,6 +91,14 @@ export const tenantInvoiceSettings = pgTable(
     whtNoteTh: text('wht_note_th'),
     whtNoteEn: text('wht_note_en'),
 
+    // 065 renewal-swecham-alignment (§5.4) — statutory termination notice.
+    // Rendered on the ใบแจ้งหนี้ (bill) ONLY (isBill-gated in the template),
+    // NEVER on a §86/4 tax invoice/receipt. NULL ⇒ render nothing (ships dark
+    // until SweCham supplies approved wording). Pinned into the immutable
+    // TenantIdentitySnapshot at issue (SC-003).
+    terminationNoticeTh: text('termination_notice_th'),
+    terminationNoticeEn: text('termination_notice_en'),
+
     // 088 US5 / T039 (§ C.2 / § F.7) — seller §86/4 Head-Office/Branch particular
     // pinned into the tenant snapshot at issue. `seller_is_head_office=true` =
     // สำนักงานใหญ่ (TSCC default); `false` = a branch identified by the 5-digit RD
