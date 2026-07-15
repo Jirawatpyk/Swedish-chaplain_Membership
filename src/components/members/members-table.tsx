@@ -523,6 +523,7 @@ export function MembersTable({
     // the localised country name via its hover `title` + SR `aria-label`
     // (CountryDisplay variant="flag-only"), so a11y is intact.
     columnHelper.accessor('company_name', {
+      size: 220,
       header: () => t('columns.company'),
       cell: (info) => {
         const country = info.row.original.country;
@@ -551,6 +552,7 @@ export function MembersTable({
     // 056-members-table-compact — merged "Plan · Year" cell (the standalone
     // Year column was removed). Middot separator is a locale-neutral literal.
     columnHelper.accessor('plan_display_name', {
+      size: 150,
       header: () => t('columns.plan'),
       cell: (info) => {
         const displayName = info.getValue();
@@ -568,6 +570,7 @@ export function MembersTable({
     // 056-members-table-compact — Contact shows the name only (the email
     // second line was dropped to keep the column compact).
     columnHelper.accessor('primary_contact', {
+      size: 175,
       header: () => t('columns.primaryContact'),
       cell: (info) => {
         const c = info.getValue();
@@ -604,6 +607,7 @@ export function MembersTable({
       },
     }),
     columnHelper.accessor('status', {
+      size: 130,
       header: () => t('columns.status'),
       // #4 — the Lapsed badge is a SIBLING of the status control, OUTSIDE the
       // InlineStatusCell <button>. Inside the button it would fire the status
@@ -664,6 +668,7 @@ export function MembersTable({
     // band label, FR-035). Server-side sortable via `?sort=engagement&order=`
     // (FR-007a); nulls render "—" (and sort last server-side).
     columnHelper.accessor('engagement', {
+      size: 130,
       header: () => <EngagementSortHeader />,
       cell: (info) => {
         // G1: engagement is PROJECTED SERVER-SIDE in the page row-mapping via
@@ -683,6 +688,7 @@ export function MembersTable({
       },
     }),
     columnHelper.accessor('last_activity_at', {
+      size: 150,
       header: () => t('columns.lastActivity'),
       cell: (info) => {
         const v = info.getValue();
@@ -814,8 +820,20 @@ export function MembersTable({
       )}
       {/* WCAG 1.3.1 — visually-hidden caption identifies the table for
           screen reader users who navigate table landmarks. */}
-      <Table aria-label={t('tableCaption')}>
+      {/* `table-fixed` + an explicit <colgroup> pin the column widths to the
+          header, NOT the cell content. Without this the default
+          `table-layout: auto` recomputes every column's width from the current
+          rows, so the header visibly SHIFTS each time a search changes the data.
+          Widths come from the column defs' `size` (px); table-fixed scales them
+          to fill the full width, and the overflow-x wrapper handles narrow
+          viewports. */}
+      <Table aria-label={t('tableCaption')} className="table-fixed">
         <caption className="sr-only">{t('tableCaption')}</caption>
+        <colgroup>
+          {table.getVisibleLeafColumns().map((col) => (
+            <col key={col.id} style={{ width: `${col.getSize()}px` }} />
+          ))}
+        </colgroup>
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
