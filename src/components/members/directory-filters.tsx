@@ -10,7 +10,7 @@
  *   - Clear: resets all filters + pagination
  */
 
-import { useCallback, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
@@ -65,8 +65,28 @@ export function DirectoryFilters({ plans = [] }: Props) {
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
+
+  // The search Input is UNCONTROLLED (defaultValue only) so typing never
+  // remounts it. Its previous form carried `key={currentQ}`, which remounted the
+  // input on EVERY debounced URL update — dropping keyboard focus mid-type (you
+  // couldn't type more than one debounce-window's worth) and resetting the value.
+  // Instead, push the URL value into the DOM only when the input is NOT focused
+  // (external changes: browser back/forward, a shared link, programmatic clear),
+  // so active typing is never disturbed.
   const currentPlan = searchParams.get('plan_id') ?? 'all';
   const currentRisk = searchParams.get('risk_band') ?? 'all';
+
+  // The search box is a CONTROLLED input (Base UI's FieldControl warns on
+  // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
+  // manual `ref.value =` approaches both fought it and dropped focus mid-type).
+  // Local state holds what the user typed; the debounce below syncs it to the
+  // URL. We reconcile FROM the URL only when the input is NOT focused (browser
+  // back/forward, a shared link, the Clear button) — never mid-type, so fast
+  // typing can't be reverted to an in-flight debounced value.
+  const [searchValue, setSearchValue] = useState(currentQ);
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) setSearchValue(currentQ);
+  }, [currentQ]);
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -82,13 +102,17 @@ export function DirectoryFilters({ plans = [] }: Props) {
       params.delete('show_archived');
       const query = params.toString();
       startTransition(() => {
-        router.replace(query ? `${pathname}?${query}` : pathname);
+        // `scroll: false` — a filter change is an in-place refine, NOT a
+        // navigation; the default scroll-to-top made the table "jump" on every
+        // debounced keystroke.
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
       });
     },
     [searchParams, router, pathname],
   );
 
   const onSearchChange = (value: string) => {
+    setSearchValue(value); // controlled — reflect the keystroke immediately
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       pushUrl({ q: value.trim() || null });
@@ -102,7 +126,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
     currentRisk !== 'all';
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (inputRef.current) inputRef.current.value = '';
+    setSearchValue('');
     pushUrl({ q: null, status: null, plan_id: null, risk_band: null });
   };
 
@@ -116,8 +140,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
         <Input
           ref={inputRef}
           type="search"
-          key={currentQ}
-          defaultValue={currentQ}
+          value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={t('searchPlaceholder')}
           aria-label={t('searchSrLabel')}
