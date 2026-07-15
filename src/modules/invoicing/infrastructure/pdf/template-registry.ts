@@ -198,11 +198,24 @@
  *
  *     v11 was never deployed under the earlier registrant-based rule, so
  *     redefining it (rather than minting v12) alters no issued document.
+ *   - **v12** (2026-07-16, 065-renewal-swecham-alignment / §5.4) — the tenant
+ *     statutory termination notice (pinned in the snapshot,
+ *     `termination_notice_th/_en`) renders on the ใบแจ้งหนี้ (bill) ONLY
+ *     (isBill-gated, exactly like the v7 offline-payment bank block — NEVER on a
+ *     §86/4 tax invoice/receipt, §105 receipt, or §86/10 credit note). Gated on
+ *     `templateVersion >= TERMINATION_NOTICE_MIN_VERSION` (=12, see
+ *     templates/invoice-template.tsx), so a pinned pre-v12 document (resend /
+ *     void-overlay / async worker / any re-render at its stored
+ *     `pdf_template_version`) reproduces its ORIGINAL bytes with NO notice — the
+ *     SC-003 reproduce-the-original guarantee, exactly like the v3–v11 gates.
+ *     v11 is DEPLOYED, so this is a fresh version (not a redefine): the notice
+ *     draws only on v12+ bill issuances, and a bill with an unset notice (both
+ *     columns NULL) renders byte-identical at v12 as at v11.
  */
 
-export const CURRENT_TEMPLATE_VERSION = 11 as const;
+export const CURRENT_TEMPLATE_VERSION = 12 as const;
 
-export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
+export const TEMPLATE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 export type PdfTemplateVersion = (typeof TEMPLATE_VERSIONS)[number];
 
 export function isKnownTemplateVersion(v: number): v is PdfTemplateVersion {
