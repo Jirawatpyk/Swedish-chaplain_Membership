@@ -13,7 +13,8 @@
  *
  * Members get an Account menu linking to Account settings (/portal/account)
  * and its in-page sections (Renewal preferences → /portal/account#renewal-prefs,
- * Data & privacy → /portal/account#data-privacy), theme controls, and sign-out.
+ * Data & privacy → /portal/account#data-privacy) and sign-out. Theme controls
+ * live only on the top bar (<ThemeToggle>), not duplicated in this dropdown.
  * D2 consolidated these into the single Account hub; the legacy routes
  * (/portal/preferences/renewals, /portal/account/data-export) now redirect to
  * the matching anchors, so renewal-reminder email CTAs keep resolving.
@@ -24,14 +25,10 @@ import {
   UserIcon,
   CalendarClockIcon,
   ShieldIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -74,9 +71,7 @@ function initials(displayName: string | null, email: string): string {
 export function UserMenu({ displayName, email, role }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
-  const tTheme = useTranslations('shell.theme');
   const tHub = useTranslations('portal.account.menu');
-  const { setTheme } = useTheme();
   const isMember = role === 'member';
   const router = useRouter();
 
@@ -133,21 +128,10 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
                 {tHub('dataPrivacy')}
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('light')}>
-                <SunIcon className="size-4" aria-hidden />
-                {tTheme('light')}
-              </DropdownMenuItem>
-              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('dark')}>
-                <MoonIcon className="size-4" aria-hidden />
-                {tTheme('dark')}
-              </DropdownMenuItem>
-              <DropdownMenuItem closeOnClick={false} onClick={() => setTheme('system')}>
-                <MonitorIcon className="size-4" aria-hidden />
-                {tTheme('system')}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
+            {/* Theme controls intentionally NOT here — the portal top bar
+                already carries a persistent <ThemeToggle> (portal/layout.tsx),
+                so a second set in this dropdown was redundant. Staff keep
+                their own top-bar toggle too. */}
           </>
         ) : (
           <DropdownMenuGroup>

@@ -62,50 +62,62 @@ export default async function MemberLayout({ children }: { children: ReactNode }
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="flex h-[var(--top-bar-height)] items-center border-b border-border bg-background px-[var(--page-padding-x)] gap-2">
+      {/* 063 UX — navy brand chrome matching the admin sidebar's Swedish-flag
+          field. `bg-sidebar` (navy #10487A) + `text-sidebar-foreground` (white
+          9:1) cascades white to every currentColor child (BrandMark, ghost
+          control buttons, tenant wordmark); the 4px `--sidebar-flag` (#FECC02)
+          bottom edge is the flag stripe (decorative — no text sits on it, so
+          flag yellow never enters a contrast pairing). MemberNav carries its
+          own sidebar-token variants for the same reason.
+          `[--ring:var(--sidebar-ring)]` locally re-points the focus-ring token
+          to the gold sidebar ring: the default `--ring` is navy (identical to
+          `--sidebar`), so the shared ghost control buttons (ThemeToggle /
+          LocaleSwitcher / UserMenu) would otherwise draw a navy-on-navy —
+          invisible — focus indicator here (WCAG 2.4.7 / 1.4.11). Scoped to the
+          header so the rest of the portal keeps its normal ring. */}
+      <header className="flex h-[var(--top-bar-height)] items-center border-b-4 border-b-[color:var(--sidebar-flag)] bg-sidebar text-sidebar-foreground [--ring:var(--sidebar-ring)] px-[var(--page-padding-x)] gap-2">
         {/*
          * Mobile-first header layout (WCAG 2.1 1.4.4 reflow fix).
          *
          * Grid: left column takes whatever space is available after
-         * the fixed-width right column. `min-w-0` on the left cell
-         * lets content shrink below its intrinsic width so long
-         * tenant names + icon nav never force horizontal scroll at
-         * 320 px.
+         * the fixed-width right column. `min-w-0` on the left cell AND
+         * on the brand Link lets the wordmark shrink/truncate so long
+         * tenant names never force horizontal scroll at 320 px while
+         * still showing IN FULL whenever there is room.
          *
-         * Desktop (≥ 640 px): right column expands to include the
-         * ThemeToggle (via `sm:contents` on its wrapper); the grid
-         * max-width is capped at the detail layout token.
-         *
-         * LocaleSwitcher sits in the same right column but OUTSIDE the
-         * `sm:contents` wrapper, so it stays always-visible at every
-         * width — locale has no OS-level fallback the way color scheme
-         * does for a hidden ThemeToggle.
+         * The right column (LocaleSwitcher + ThemeToggle + UserMenu) is
+         * always-visible at every width — 063 made ThemeToggle the sole
+         * theme control (removed from the UserMenu dropdown), so it can
+         * no longer be hidden on mobile the way it used to be.
          */}
         <div className="mx-auto grid w-full max-w-[var(--layout-max-width-detail)] grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             <Link
               href="/portal"
-              className="flex shrink-0 items-center gap-2"
+              className="flex min-w-0 items-center gap-2"
             >
               {/* Brand: Interlocking Link mark + tenant wordmark. The mark is
-                  decorative — the adjacent text names the portal. */}
+                  decorative — the adjacent text names the portal. The Link is
+                  `min-w-0` (shrinkable) + the wordmark `truncate`s, so the name
+                  shows in FULL whenever there is room and only ellipsises on
+                  the narrowest phones — no fixed `max-w` cap that clipped it
+                  prematurely (063 fix). */}
               <BrandMark variant="mark" className="size-6 shrink-0" />
-              <span className="text-body font-semibold tracking-tight max-w-[6rem] truncate sm:max-w-none">
+              <span className="text-body font-semibold tracking-tight truncate">
                 {process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'} · {tPortal('member')}
               </span>
             </Link>
             <MemberNav />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {/* LocaleSwitcher is ALWAYS visible (even on mobile): unlike
-                theme, locale has no OS fallback and no UserMenu entry, so a
-                hidden switcher would strand a member in a language they can't
-                read. ThemeToggle stays hidden < 640px (OS prefers-color-scheme
-                is the mobile fallback). */}
+            {/* LocaleSwitcher + ThemeToggle are BOTH always-visible at every
+                width. 063 removed the Light/Dark/System items from the
+                UserMenu dropdown (they duplicated this toggle), so this toggle
+                is now the ONLY theme control — hiding it on mobile (the old
+                `hidden sm:contents`) would leave a member with NO way to
+                switch theme. */}
             <LocaleSwitcher persistToAccount />
-            <span className="hidden sm:contents">
-              <ThemeToggle />
-            </span>
+            <ThemeToggle />
             <UserMenu
               displayName={user.displayName}
               email={user.email}

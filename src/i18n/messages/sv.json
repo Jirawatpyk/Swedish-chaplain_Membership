@@ -2958,6 +2958,15 @@
     },
     "renewals": {
       "title": "Förnyelsepipeline",
+      "pipelineHelp": {
+        "ariaLabel": "Om förnyelsepipelinen",
+        "title": "Förnyelsepipeline",
+        "body": "Varje medlems aktuella förnyelsecykel, grupperad efter angelägenhet — från T-90 (förfaller om 90 dagar) ner till T-0 (förfaller idag), sedan Grace och Lapsed. Filtrera på nivå eller månad för att avgränsa listan.",
+        "graceTerm": "Grace (respitperiod)",
+        "graceDef": "Förfallen men fortfarande inom respitperioden — förmånerna är pausade, men medlemmen kan betala för att behålla sitt medlemskap.",
+        "lapsedTerm": "Lapsed (upphört)",
+        "lapsedDef": "Respitperioden har löpt ut — medlemskapet har upphört och behöver återaktiveras av en administratör."
+      },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
       "pendingReview": {
         "tab": "Väntar på granskning",
@@ -3218,6 +3227,11 @@
       },
       "atRisk": {
         "title": "Medlemmar i riskzon",
+        "help": {
+          "ariaLabel": "Om medlemmar i riskzon",
+          "title": "Medlemmar i riskzon",
+          "body": "Medlemmar vars förnyelse- och engagemangssignaler tyder på att de kanske inte förnyar, sorterade i tre nivåer — varning, i riskzon och kritisk (mest brådskande). Högre riskpoäng innebär större risk att medlemskapet upphör; nå ut till dem innan cykeln tar slut."
+        },
         "summary": "{warning} varning · {atRisk} i riskzon · {critical} kritisk",
         "summaryLoading": "Läser in sammanfattning av medlemmar i riskzon…",
         "f6Inactive": "Eventdata är inte ansluten — poäng speglar endast senaste engagemangssignaler (max {max} poäng)",
@@ -4721,6 +4735,7 @@
       "benefits": {
         "label": "Förmåner",
         "underUseValue": "{count, plural, one {# förmån underutnyttjad} other {# förmåner underutnyttjade}}",
+        "underUseValueNamed": "{benefit} underutnyttjad",
         "underUseSub": "Få ut det mesta av det din plan inkluderar.",
         "onTrackValue": "Alla förmåner på rätt spår",
         "onTrackSub": "Du håller jämna steg med året.",

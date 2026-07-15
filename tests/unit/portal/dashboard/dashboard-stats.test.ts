@@ -377,7 +377,7 @@ describe('deriveBenefitsStat', () => {
     expect(deriveBenefitsStat(usage({})).kind).toBe('empty');
   });
 
-  it('counts per-benefit under-use (each benefit ratio lagging elapsed-year by ≥25pts)', () => {
+  it('counts per-benefit under-use + NAMES the single lagging key (063)', () => {
     // elapsed 80%; eblast 0/5 (0%) is under-used, cultural 5/5 (100%) is on track
     const stat = deriveBenefitsStat(
       usage({
@@ -391,9 +391,28 @@ describe('deriveBenefitsStat', () => {
     expect(stat.kind).toBe('under-use');
     expect(stat.variant).toBe('warning');
     expect(stat.underUseCount).toBe(1);
+    // 063 — the dashboard card names the sole lagging benefit; the key must be
+    // the eblast (0/5), never the on-track cultural (5/5).
+    expect(stat.underUsedKeys).toEqual(['eblast']);
   });
 
-  it('returns on-track when every benefit keeps pace with the year', () => {
+  it('collects ALL under-used keys in quantifiable order when >1 lags (063)', () => {
+    // elapsed 90%; both benefits at 0 usage → both under-used.
+    const stat = deriveBenefitsStat(
+      usage({
+        elapsedYearPct: 90,
+        quantifiable: [
+          { key: 'eblast', used: 0, entitlement: 15, lastUsedAt: null },
+          { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
+        ],
+      }),
+    );
+    expect(stat.kind).toBe('under-use');
+    expect(stat.underUseCount).toBe(2);
+    expect(stat.underUsedKeys).toEqual(['eblast', 'cultural_tickets']);
+  });
+
+  it('returns on-track (no under-used keys) when every benefit keeps pace', () => {
     const stat = deriveBenefitsStat(
       usage({
         elapsedYearPct: 50,
@@ -403,6 +422,7 @@ describe('deriveBenefitsStat', () => {
     expect(stat.kind).toBe('on-track');
     expect(stat.variant).toBe('neutral');
     expect(stat.underUseCount).toBe(0);
+    expect(stat.underUsedKeys).toEqual([]);
   });
 
   it('is on-track (never under-use) for an active-only plan with no quantifiable benefits', () => {
