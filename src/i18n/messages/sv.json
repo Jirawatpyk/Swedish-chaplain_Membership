@@ -2958,6 +2958,11 @@
     },
     "renewals": {
       "title": "Förnyelsepipeline",
+      "pipelineHelp": {
+        "ariaLabel": "Om förnyelsepipelinen",
+        "title": "Förnyelsepipeline",
+        "body": "Visar varje aktiv medlems aktuella förnyelsecykel, grupperad efter angelägenhet — kommande, snart förfallen och förfallen — så att du ser vem du bör kontakta härnäst. Använd nivåfiltret och månadsvyn för att avgränsa listan."
+      },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
       "pendingReview": {
         "tab": "Väntar på granskning",
@@ -3218,6 +3223,11 @@
       },
       "atRisk": {
         "title": "Medlemmar i riskzon",
+        "help": {
+          "ariaLabel": "Om medlemmar i riskzon",
+          "title": "Medlemmar i riskzon",
+          "body": "Medlemmar vars förnyelse- och engagemangssignaler tyder på att de kanske inte förnyar, sorterade i tre nivåer — varning, i riskzon och kritisk (mest brådskande). Högre riskpoäng innebär större risk att medlemskapet upphör; nå ut till dem innan cykeln tar slut."
+        },
         "summary": "{warning} varning · {atRisk} i riskzon · {critical} kritisk",
         "summaryLoading": "Läser in sammanfattning av medlemmar i riskzon…",
         "f6Inactive": "Eventdata är inte ansluten — poäng speglar endast senaste engagemangssignaler (max {max} poäng)",

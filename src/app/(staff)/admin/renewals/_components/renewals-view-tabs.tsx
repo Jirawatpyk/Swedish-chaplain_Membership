@@ -12,9 +12,15 @@
  */
 'use client';
 
+import { HelpCircleIcon } from 'lucide-react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 const PIPELINE_VALUE = 'pipeline';
 const PENDING_REVIEW_VALUE = 'pending-review';
@@ -47,13 +53,35 @@ export function RenewalsViewTabs({ current }: RenewalsViewTabsProps) {
   }
 
   return (
-    <Tabs value={current} onValueChange={handleChange}>
-      <TabsList aria-label={t('pendingReview.tab')}>
-        <TabsTrigger value={PIPELINE_VALUE}>{t('title')}</TabsTrigger>
-        <TabsTrigger value={PENDING_REVIEW_VALUE}>
-          {t('pendingReview.tab')}
-        </TabsTrigger>
-      </TabsList>
-    </Tabs>
+    <div className="flex items-center gap-1.5">
+      <Tabs value={current} onValueChange={handleChange}>
+        <TabsList aria-label={t('pendingReview.tab')}>
+          <TabsTrigger value={PIPELINE_VALUE}>{t('title')}</TabsTrigger>
+          <TabsTrigger value={PENDING_REVIEW_VALUE}>
+            {t('pendingReview.tab')}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {/* Tap-discoverable help explaining what the pipeline lists. A Popover
+          (not a hover Tooltip) so it works on touch — same pattern as
+          `company-section.tsx`. Placed BESIDE the tab strip, never nested in a
+          TabsTrigger (which would break the tablist's roving-tabindex a11y). */}
+      <Popover>
+        <PopoverTrigger
+          type="button"
+          aria-label={t('pipelineHelp.ariaLabel')}
+          className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <HelpCircleIcon className="size-4" aria-hidden="true" />
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-80 max-w-[calc(100vw-2rem)] text-sm"
+          sideOffset={4}
+        >
+          <p className="font-medium">{t('pipelineHelp.title')}</p>
+          <p className="mt-1.5 text-muted-foreground">{t('pipelineHelp.body')}</p>
+        </PopoverContent>
+      </Popover>
+    </div>
   );
 }

@@ -2958,6 +2958,11 @@
     },
     "renewals": {
       "title": "Renewal pipeline",
+      "pipelineHelp": {
+        "ariaLabel": "About the renewal pipeline",
+        "title": "Renewal pipeline",
+        "body": "Lists every active member's current renewal cycle, grouped by urgency — upcoming, due soon, and overdue — so you can see who to contact next. Use the tier filter and month lens to narrow the list."
+      },
       "subtitle": "Active members by renewal date and tier.",
       "pendingReview": {
         "tab": "Pending review",
@@ -3218,6 +3223,11 @@
       },
       "atRisk": {
         "title": "At-risk members",
+        "help": {
+          "ariaLabel": "About at-risk members",
+          "title": "At-risk members",
+          "body": "Members whose renewal + engagement signals suggest they may not renew, sorted into three bands — warning, at-risk, and critical (most urgent). A higher risk score means a higher chance of lapsing; reach out to them before their cycle ends."
+        },
         "summary": "{warning} warning · {atRisk} at-risk · {critical} critical",
         "summaryLoading": "Loading at-risk member summary…",
         "f6Inactive": "Event data not connected — scores reflect recent engagement signals only (max {max} points)",

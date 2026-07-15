@@ -25,6 +25,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertCircle,
   AlertTriangle,
+  HelpCircleIcon,
   ShieldCheck,
   TrendingDown,
 } from 'lucide-react';
@@ -37,6 +38,11 @@ import {
   CardHeader,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -166,12 +172,33 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
   return (
     <Card aria-labelledby="at-risk-widget-title">
       <CardHeader>
-        <h2
-          id="at-risk-widget-title"
-          className="text-base font-semibold leading-none tracking-tight"
-        >
-          {t('title')}
-        </h2>
+        <div className="flex items-center gap-1.5">
+          <h2
+            id="at-risk-widget-title"
+            className="text-base font-semibold leading-none tracking-tight"
+          >
+            {t('title')}
+          </h2>
+          {/* Tap-discoverable help (Popover, works on touch — not a hover
+              Tooltip) explaining what "at-risk" means + the three bands.
+              Beside the heading, same pattern as the pipeline-tab help. */}
+          <Popover>
+            <PopoverTrigger
+              type="button"
+              aria-label={t('help.ariaLabel')}
+              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <HelpCircleIcon className="size-4" aria-hidden="true" />
+            </PopoverTrigger>
+            <PopoverContent
+              className="w-80 max-w-[calc(100vw-2rem)] text-sm"
+              sideOffset={4}
+            >
+              <p className="font-medium">{t('help.title')}</p>
+              <p className="mt-1.5 text-muted-foreground">{t('help.body')}</p>
+            </PopoverContent>
+          </Popover>
+        </div>
         <CardDescription>
           {data?.summary
             ? t('summary', {
