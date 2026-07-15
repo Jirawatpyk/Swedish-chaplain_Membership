@@ -388,6 +388,49 @@ describe('validateRows — entity type + VAT + status + tax-id repair (PR-C)', (
     expect(m.addressLine2).toBe('Unit 2');
   });
 
+  it('sanitises a website that exceeds the DB 200-char limit (strips tracking query, else drops)', () => {
+    // members_website_length CHECK caps website at 200. A directory URL with a
+    // long gclid/utm tracking query overflows — strip the query/fragment (the
+    // base URL is the real site); if the base still overflows, drop to null.
+    // Never let it crash the atomic --commit.
+    const longQuery =
+      'https://www.example.com/th/' + '?gclid=' + 'x'.repeat(230);
+    const r = validateRows([row({ rowIndex: 2, website: longQuery })], RESOLVER);
+    expect(r.stats.errorCount).toBe(0);
+    expect(r.members[0]!.website).toBe('https://www.example.com/th/');
+    expect(r.issues.some((i) => i.field === 'website')).toBe(true);
+
+    const longBase = 'https://www.example.com/' + 'a'.repeat(220);
+    const r2 = validateRows([row({ rowIndex: 2, website: longBase })], RESOLVER);
+    expect(r2.members[0]!.website).toBeNull();
+    expect(r2.issues.some((i) => i.field === 'website' && i.code === 'dropped_too_long')).toBe(true);
+  });
+
+  it('truncates a description longer than the DB 2000-char limit', () => {
+    const long = 'x'.repeat(2500);
+    const r = validateRows([row({ rowIndex: 2, description: long })], RESOLVER);
+    expect(r.stats.errorCount).toBe(0);
+    expect(r.members[0]!.description!.length).toBe(2000);
+    expect(r.issues.some((i) => i.field === 'description' && i.code === 'truncated_2000')).toBe(true);
+  });
+
+  it('drops a founded_year that post-dates the registration year (DB CHECK)', () => {
+    // members_founded_year_vs_registration: founded_year <= registration year.
+    const r = validateRows(
+      [row({ rowIndex: 2, registrationDate: '2020-01-01', foundedYear: '2025' })],
+      RESOLVER,
+    );
+    expect(r.stats.errorCount).toBe(0);
+    expect(r.members[0]!.foundedYear).toBeNull();
+    expect(r.issues.some((i) => i.field === 'foundedYear' && i.code === 'after_registration')).toBe(true);
+  });
+
+  it('excludes a member whose company_name exceeds the DB 200-char limit', () => {
+    const r = validateRows([row({ rowIndex: 2, companyName: 'C'.repeat(201) })], RESOLVER);
+    expect(r.issues.some((i) => i.field === 'companyName' && i.code === 'too_long')).toBe(true);
+    expect(r.members).toHaveLength(0);
+  });
+
   it('builds an entity-type histogram across all member groups', () => {
     const r = validateRows(
       [

@@ -155,6 +155,25 @@ function parseTurnover(raw: string): number | null {
   return Number.isSafeInteger(rounded) ? rounded : null;
 }
 
+/**
+ * Bring an Excel `Website` cell within the DB `members_website_length` CHECK
+ * (≤200). A directory URL with a long gclid/utm tracking query overflows — strip
+ * the query + fragment (the base URL is the real site); if the base still
+ * overflows, drop to null. Never let it crash the atomic --commit. Returns the
+ * value plus whether it was modified so the caller can warn.
+ */
+function sanitizeWebsiteForImport(raw: string): {
+  readonly value: string | null;
+  readonly changed: 'none' | 'stripped' | 'dropped';
+} {
+  const t = raw.trim();
+  if (t.length === 0) return { value: null, changed: 'none' };
+  if (t.length <= 200) return { value: t, changed: 'none' };
+  const base = t.split(/[?#]/)[0] ?? '';
+  if (base.length > 0 && base.length <= 200) return { value: base, changed: 'stripped' };
+  return { value: null, changed: 'dropped' };
+}
+
 function parseFoundedYear(raw: string): number | null {
   const t = raw.trim();
   if (t.length === 0) return null;
@@ -219,6 +238,13 @@ export function validateRows(
     const memberErrorsBefore = issues.filter((i) => i.severity === 'error').length;
 
     // --- Member-level fields (rules 3,4,5,8) — taken from the group head ---
+    // company_name is required + the DB CHECK members_company_name_length caps it
+    // at 200. A name cannot be silently truncated (it is the identity), so an
+    // over-long one is a per-row error the operator fixes.
+    if (head.companyName.trim().length > 200) {
+      err(head.rowIndex, 'companyName', 'too_long');
+    }
+
     const country = countryNameToCode(head.country);
     if (!country.ok) err(head.rowIndex, 'country', 'unresolved');
 
@@ -289,9 +315,32 @@ export function validateRows(
     if (head.registeredCapital.trim().length > 0 && registeredCapitalThb === null) {
       warn(head.rowIndex, 'registeredCapital', 'not_a_number');
     }
-    const foundedYear = parseFoundedYear(head.foundedYear);
+    let foundedYear = parseFoundedYear(head.foundedYear);
     if (head.foundedYear.trim().length > 0 && foundedYear === null) {
       warn(head.rowIndex, 'foundedYear', 'not_a_year');
+    }
+    // members_founded_year_vs_registration: founded_year <= registration year
+    // (this also keeps it within members_founded_year_range for real data, since
+    // registration is never in the future here). Drop + warn rather than crash.
+    if (foundedYear !== null && regDate.ok && foundedYear > regDate.value.getUTCFullYear()) {
+      warn(head.rowIndex, 'foundedYear', 'after_registration');
+      foundedYear = null;
+    }
+
+    // members_website_length ≤ 200 — strip tracking query, else drop (never crash).
+    const websiteResult = sanitizeWebsiteForImport(head.website);
+    const website = websiteResult.value;
+    if (websiteResult.changed === 'dropped') {
+      warn(head.rowIndex, 'website', 'dropped_too_long');
+    } else if (websiteResult.changed === 'stripped') {
+      warn(head.rowIndex, 'website', 'query_stripped_too_long');
+    }
+
+    // members_description_length ≤ 2000 — truncate + warn (free text, safe to clip).
+    let description = blankToNull(head.description);
+    if (description !== null && description.length > 2000) {
+      description = description.slice(0, 2000);
+      warn(head.rowIndex, 'description', 'truncated_2000');
     }
 
     const memberLocale = coercePreferredLanguage(head.memberLocale);
@@ -453,8 +502,8 @@ export function validateRows(
         turnoverThb,
         registeredCapitalThb,
         foundedYear,
-        website: blankToNull(head.website),
-        description: blankToNull(head.description),
+        website,
+        description,
         registrationDate: regDate.value,
         preferredLocale: memberLocale,
         city: blankToNull(head.city),
