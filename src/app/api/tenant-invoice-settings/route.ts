@@ -103,6 +103,9 @@ const bodySchema = z.object({
   // 088 US5 (T037 / FR-012) — tenant WHT footer note; null clears it.
   wht_note_th: z.string().max(500).nullable().optional(),
   wht_note_en: z.string().max(500).nullable().optional(),
+  // 065 §5.4 — statutory termination notice (bill-only render); null clears it.
+  termination_notice_th: z.string().max(500).nullable().optional(),
+  termination_notice_en: z.string().max(500).nullable().optional(),
   // 088 US5 (T037 / § C.2) — seller §86/4 Head-Office/Branch (pairing enforced in
   // the superRefine below + the DB seller-branch CHECK).
   seller_is_head_office: z.boolean().optional(),
@@ -273,6 +276,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         // identity snapshot; project them back so the settings form can round-trip.
         wht_note_th: view.identity.wht_note_th ?? null,
         wht_note_en: view.identity.wht_note_en ?? null,
+        // 065 §5.4 — statutory termination notice rides the pinned snapshot too.
+        termination_notice_th: view.identity.termination_notice_th ?? null,
+        termination_notice_en: view.identity.termination_notice_en ?? null,
         seller_is_head_office: view.identity.seller_is_head_office ?? true,
         seller_branch_code: view.identity.seller_branch_code ?? null,
         bank_payee_name: view.identity.bank_payee_name ?? null,
@@ -444,6 +450,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     // 088 US5 (T037) — WHT note + seller branch + bank block (snake_case → camelCase).
     ...(b.wht_note_th !== undefined && { whtNoteTh: b.wht_note_th }),
     ...(b.wht_note_en !== undefined && { whtNoteEn: b.wht_note_en }),
+    // 065 §5.4 — statutory termination notice (snake_case → camelCase).
+    ...(b.termination_notice_th !== undefined && { terminationNoticeTh: b.termination_notice_th }),
+    ...(b.termination_notice_en !== undefined && { terminationNoticeEn: b.termination_notice_en }),
     ...(b.seller_is_head_office !== undefined && { sellerIsHeadOffice: b.seller_is_head_office }),
     ...(b.seller_branch_code !== undefined && { sellerBranchCode: b.seller_branch_code }),
     ...(b.bank_payee_name !== undefined && { bankPayeeName: b.bank_payee_name }),

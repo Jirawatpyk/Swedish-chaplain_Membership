@@ -296,6 +296,9 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       // 088 US5 (T040) — WHT note + seller branch + bank block.
       ['whtNoteTh', 'whtNoteTh'],
       ['whtNoteEn', 'whtNoteEn'],
+      // 065 §5.4 — statutory termination notice.
+      ['terminationNoticeTh', 'terminationNoticeTh'],
+      ['terminationNoticeEn', 'terminationNoticeEn'],
       ['sellerIsHeadOffice', 'sellerIsHeadOffice'],
       ['sellerBranchCode', 'sellerBranchCode'],
       ['bankPayeeName', 'bankPayeeName'],

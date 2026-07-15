@@ -74,6 +74,9 @@ export interface InvoiceSettingsFormInitialValues {
   readonly seller_branch_code: string | null;
   readonly wht_note_th: string | null;
   readonly wht_note_en: string | null;
+  // 065 §5.4 — statutory termination notice (bill-only render).
+  readonly termination_notice_th: string | null;
+  readonly termination_notice_en: string | null;
   readonly bank_payee_name: string | null;
   readonly bank_account_no: string | null;
   readonly bank_account_type: string | null;
@@ -92,6 +95,8 @@ const ACCOUNT_NO_RE = /^[0-9][0-9\s-]{3,}$/;
 const BRANCH_CODE_RE = /^\d{5}$/;
 
 const WHT_MAX = 500;
+// 065 §5.4 — statutory termination notice length cap (mirrors the route zod).
+const TERMINATION_NOTICE_MAX = 500;
 const INSTRUCTIONS_MAX = 500;
 const BANK_ADDRESS_MAX = 500;
 
@@ -152,6 +157,13 @@ export function InvoiceSettingsForm({
   // 088 US5 (T043) — WHT footer note.
   const [whtNoteTh, setWhtNoteTh] = useState(initialValues.wht_note_th ?? '');
   const [whtNoteEn, setWhtNoteEn] = useState(initialValues.wht_note_en ?? '');
+  // 065 §5.4 — statutory termination notice (bill-only render).
+  const [terminationNoticeTh, setTerminationNoticeTh] = useState(
+    initialValues.termination_notice_th ?? '',
+  );
+  const [terminationNoticeEn, setTerminationNoticeEn] = useState(
+    initialValues.termination_notice_en ?? '',
+  );
   // 088 US5 (T043b) — offline-payment bank block.
   const [bankPayeeName, setBankPayeeName] = useState(initialValues.bank_payee_name ?? '');
   const [bankAccountNo, setBankAccountNo] = useState(initialValues.bank_account_no ?? '');
@@ -318,6 +330,9 @@ export function InvoiceSettingsForm({
       seller_branch_code: sellerIsHeadOffice ? null : branchTrimmed,
       wht_note_th: orNull(whtNoteTh),
       wht_note_en: orNull(whtNoteEn),
+      // 065 §5.4 — statutory termination notice.
+      termination_notice_th: orNull(terminationNoticeTh),
+      termination_notice_en: orNull(terminationNoticeEn),
       bank_payee_name: orNull(bankPayeeName),
       bank_account_no: accountTrimmed === '' ? null : accountTrimmed,
       bank_account_type: orNull(bankAccountType),
@@ -765,6 +780,45 @@ export function InvoiceSettingsForm({
             />
             <p className="text-right text-xs text-muted-foreground">
               {t('charCount', { count: whtNoteEn.length, max: WHT_MAX })}
+            </p>
+          </div>
+        </div>
+      </fieldset>
+
+      {/* 065 §5.4 — Statutory termination notice (ใบแจ้งหนี้ / bill only) */}
+      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
+        <legend className="px-2 text-sm font-semibold">{t('sections.terminationNotice')}</legend>
+        <p className="text-xs text-muted-foreground">{t('hints.terminationNotice')}</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="termination_notice_th">{t('labels.terminationNoticeTh')}</Label>
+            <Textarea
+              id="termination_notice_th"
+              value={terminationNoticeTh}
+              onChange={(e) => setTerminationNoticeTh(e.target.value)}
+              disabled={disabled}
+              maxLength={TERMINATION_NOTICE_MAX}
+              rows={3}
+              lang="th"
+              placeholder={t('hints.terminationNoticeThExample')}
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {t('charCount', { count: terminationNoticeTh.length, max: TERMINATION_NOTICE_MAX })}
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="termination_notice_en">{t('labels.terminationNoticeEn')}</Label>
+            <Textarea
+              id="termination_notice_en"
+              value={terminationNoticeEn}
+              onChange={(e) => setTerminationNoticeEn(e.target.value)}
+              disabled={disabled}
+              maxLength={TERMINATION_NOTICE_MAX}
+              rows={3}
+              placeholder={t('hints.terminationNoticeEnExample')}
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {t('charCount', { count: terminationNoticeEn.length, max: TERMINATION_NOTICE_MAX })}
             </p>
           </div>
         </div>

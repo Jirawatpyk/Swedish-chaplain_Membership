@@ -65,6 +65,9 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
   seller_branch_code: null,
   wht_note_th: null,
   wht_note_en: null,
+  // 065 §5.4 — statutory termination notice defaults.
+  termination_notice_th: null,
+  termination_notice_en: null,
   bank_payee_name: null,
   bank_account_no: null,
   bank_account_type: null,
@@ -114,6 +117,9 @@ export default async function InvoiceSettingsPage() {
         seller_branch_code: existing.identity.seller_branch_code ?? null,
         wht_note_th: existing.identity.wht_note_th ?? null,
         wht_note_en: existing.identity.wht_note_en ?? null,
+        // 065 §5.4 — statutory termination notice rides the pinned snapshot.
+        termination_notice_th: existing.identity.termination_notice_th ?? null,
+        termination_notice_en: existing.identity.termination_notice_en ?? null,
         bank_payee_name: existing.identity.bank_payee_name ?? null,
         bank_account_no: existing.identity.bank_account_no ?? null,
         bank_account_type: existing.identity.bank_account_type ?? null,

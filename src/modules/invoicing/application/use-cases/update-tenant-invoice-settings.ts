@@ -67,6 +67,9 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   // 088 US5 (T040 / FR-012) — tenant WHT footer note; null clears it.
   whtNoteTh: z.string().max(500).nullable().optional(),
   whtNoteEn: z.string().max(500).nullable().optional(),
+  // 065 §5.4 — statutory termination notice (bill-only render); null clears it.
+  terminationNoticeTh: z.string().max(500).nullable().optional(),
+  terminationNoticeEn: z.string().max(500).nullable().optional(),
   // 088 US5 (T040 / § C.2) — seller §86/4 Head-Office/Branch. Pairing validated
   // in the superRefine below (mirrors tenant_invoice_settings_seller_branch_ck).
   sellerIsHeadOffice: z.boolean().optional(),
@@ -205,6 +208,9 @@ export async function updateTenantInvoiceSettings(
     // when explicitly provided so a partial PATCH never stomps unrelated columns.
     ...(input.whtNoteTh !== undefined && { whtNoteTh: input.whtNoteTh }),
     ...(input.whtNoteEn !== undefined && { whtNoteEn: input.whtNoteEn }),
+    // 065 §5.4 — statutory termination notice; threaded only when provided.
+    ...(input.terminationNoticeTh !== undefined && { terminationNoticeTh: input.terminationNoticeTh }),
+    ...(input.terminationNoticeEn !== undefined && { terminationNoticeEn: input.terminationNoticeEn }),
     ...(input.sellerIsHeadOffice !== undefined && { sellerIsHeadOffice: input.sellerIsHeadOffice }),
     ...(input.sellerBranchCode !== undefined && { sellerBranchCode: input.sellerBranchCode }),
     ...(input.bankPayeeName !== undefined && { bankPayeeName: input.bankPayeeName }),

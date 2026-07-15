@@ -111,6 +111,32 @@ describe('drizzleTenantSettingsRepo — WHT + seller-branch + bank round-trip (l
     expect(s!.invoiceNumberPrefix).toBe('INV');
   }, 30_000);
 
+  it('065 §5.4 — persists + reads back the statutory termination notice via the pinned snapshot', async () => {
+    await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
+      ...BASE_REQUIRED,
+      terminationNoticeTh: 'PLACEHOLDER: SweCham มีหน้าที่ยุติสมาชิกภาพผู้ค้างชำระภายใน 60 วัน',
+      terminationNoticeEn: 'PLACEHOLDER: SweCham is regulatory-bound to terminate unpaid members.',
+    });
+    const s = await drizzleTenantSettingsRepo.getForIssue(tenant.ctx.slug);
+    expect(s).not.toBeNull();
+    expect(s!.identity.termination_notice_th).toBe(
+      'PLACEHOLDER: SweCham มีหน้าที่ยุติสมาชิกภาพผู้ค้างชำระภายใน 60 วัน',
+    );
+    expect(s!.identity.termination_notice_en).toBe(
+      'PLACEHOLDER: SweCham is regulatory-bound to terminate unpaid members.',
+    );
+
+    // Clearing to null removes it (partial PATCH, unrelated fields untouched).
+    await drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
+      ...BASE_REQUIRED,
+      terminationNoticeTh: null,
+      terminationNoticeEn: null,
+    });
+    const cleared = await drizzleTenantSettingsRepo.getForIssue(tenant.ctx.slug);
+    expect(cleared!.identity.termination_notice_th).toBeNull();
+    expect(cleared!.identity.termination_notice_en).toBeNull();
+  }, 30_000);
+
   it('DB CHECK rejects a branch seller with a NULL branch code (defense-in-depth)', async () => {
     await expect(
       drizzleTenantSettingsRepo.upsert(tenant.ctx.slug, {
