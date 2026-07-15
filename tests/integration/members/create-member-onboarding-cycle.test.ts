@@ -23,7 +23,8 @@ import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { createMember } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { f8OnCreateMemberCallbacks } from '@/modules/renewals';
+import { deriveMembershipAccess, f8OnCreateMemberCallbacks } from '@/modules/renewals';
+import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -65,7 +66,7 @@ describe('Integration — createMember onboarding listener creates the initial c
     await tenant.cleanup().catch(() => {});
   }, 60_000);
 
-  it('creates exactly one upcoming cycle anchored at registration_date, frozen at the plan price', async () => {
+  it('creates exactly one awaiting_payment cycle (065 §5.3) anchored at registration_date, frozen at the plan price', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const seedSlug = randomUUID().slice(0, 8);
     const registrationDate = '2026-03-15'; // ISO date
@@ -105,7 +106,10 @@ describe('Integration — createMember onboarding listener creates the initial c
     );
     expect(cycles).toHaveLength(1);
     const cycle = cycles[0]!;
-    expect(cycle.status).toBe('upcoming');
+    // 065 §5.3 — a new member is born 'awaiting_payment' (no benefit until the
+    // first invoice is paid), not 'upcoming'. deriveMembershipAccess maps this
+    // to suspended; first payment reanchors to 'upcoming' + anchored → full.
+    expect(cycle.status).toBe('awaiting_payment');
     // Anchored at registration_date (UTC midnight of the ISO date).
     expect(cycle.periodFrom.toISOString()).toBe('2026-03-15T00:00:00.000Z');
     // period_to = period_from + 12 months (gapless).
@@ -135,6 +139,47 @@ describe('Integration — createMember onboarding listener creates the initial c
     expect(
       (forMember[0]!.payload as { cycle_id?: string }).cycle_id,
     ).toBe(cycle.cycleId);
+  }, 60_000);
+
+  it('065 §5.3 — a new member has SUSPENDED benefit access until first payment (end-to-end)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const seedSlug = randomUUID().slice(0, 8);
+    const created = await createMember(
+      {
+        company_name: `Gated Co ${seedSlug}`,
+        country: 'SE',
+        plan_id: planId,
+        plan_year: 2026,
+        registration_date: '2026-05-10',
+        primary_contact: {
+          first_name: 'Gita',
+          last_name: 'Gated',
+          email: `${seedSlug}@gated.test`,
+          preferred_language: 'en' as const,
+        },
+      },
+      { actorUserId: user.userId, requestId: `gated-${seedSlug}` },
+      { ...deps, onboardingListeners: f8OnCreateMemberCallbacks(tenant.ctx.slug) },
+    );
+    if (!created.ok)
+      throw new Error(`create failed: ${JSON.stringify(created.error)}`);
+    const memberId = created.value.memberId;
+
+    // The end-to-end access decision the portal + use-case gates read: a
+    // never-paid new member is SUSPENDED (no benefit until the first invoice is
+    // paid). Read the latest cycle through the same repo `loadLatestCycleForMember`
+    // wraps (the wrapper is React-`cache()`-scoped to RSC — not usable here).
+    // The heal to `full` on first payment is covered by the reanchor-first-payment
+    // tests; the import + renewal paths stay `upcoming` (= full) — covered by
+    // import-members-cycles + create-next-cycle-on-paid — proving the gate fires
+    // ONLY on new-member enrolment.
+    const latest = await makeDrizzleRenewalCycleRepo(
+      tenant.ctx,
+    ).findLatestCycleForMember(tenant.ctx.slug, memberId);
+    expect(latest?.status).toBe('awaiting_payment');
+    const decision = deriveMembershipAccess(latest, new Date());
+    expect(decision.access).toBe('suspended');
+    expect(decision.reason).toBe('unpaid');
   }, 60_000);
 
   it('068 R2-1 — a BACKDATED registration_date is anchored to the CURRENT period (cycle expires in the FUTURE, not immediately lapse-eligible)', async () => {
@@ -192,8 +237,9 @@ describe('Integration — createMember onboarding listener creates the initial c
     // advanced forward by whole 12-month terms (anniversary day preserved).
     expect(cycle.periodFrom.getTime()).toBeGreaterThan(twoYearsAgo.getTime());
     expect(cycle.periodFrom.getUTCDate()).toBe(15); // anniversary day kept
-    // The member did not silently lapse: an `upcoming` cycle (not lapsed).
-    expect(cycle.status).toBe('upcoming');
+    // The member did not silently lapse: an active (awaiting_payment) cycle,
+    // NOT lapsed (065 §5.3 — born awaiting_payment = suspended, not terminated).
+    expect(cycle.status).toBe('awaiting_payment');
   }, 60_000);
 
   it('an idempotency replay (same onboarding event re-fired) does NOT create a 2nd cycle', async () => {
