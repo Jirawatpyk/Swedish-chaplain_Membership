@@ -275,6 +275,7 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       ['registrationFeeSatang', 'registrationFeeSatang'],
       ['legalNameTh', 'legalNameTh'],
       ['legalNameEn', 'legalNameEn'],
+      ['brandName', 'brandName'],
       ['taxId', 'taxId'],
       ['registeredAddressTh', 'registeredAddressTh'],
       ['registeredAddressEn', 'registeredAddressEn'],

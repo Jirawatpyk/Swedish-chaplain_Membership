@@ -69,6 +69,8 @@ const bodySchema = z.object({
     .optional(),
   legal_name_th: z.string().min(1).max(300).optional(),
   legal_name_en: z.string().min(1).max(300).optional(),
+  // 064 — tenant short/brand name for the membership line prefix (null clears).
+  brand_name: z.string().max(100).nullable().optional(),
   tax_id: z
     .string()
     .regex(/^\d{13}$/, 'tax_id must be 13 digits (Thai RD format)')
@@ -254,6 +256,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         registration_fee_satang: String(view.registrationFeeSatang),
         legal_name_th: view.identity.legal_name_th,
         legal_name_en: view.identity.legal_name_en,
+        brand_name: view.brandName,
         tax_id: view.identity.tax_id,
         registered_address_th: view.identity.address_th,
         registered_address_en: view.identity.address_en,
@@ -419,6 +422,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }),
     ...(b.legal_name_th !== undefined && { legalNameTh: b.legal_name_th }),
     ...(b.legal_name_en !== undefined && { legalNameEn: b.legal_name_en }),
+    ...(b.brand_name !== undefined && { brandName: b.brand_name }),
     ...(b.tax_id !== undefined && { taxId: b.tax_id }),
     ...(b.registered_address_th !== undefined && { registeredAddressTh: b.registered_address_th }),
     ...(b.registered_address_en !== undefined && { registeredAddressEn: b.registered_address_en }),

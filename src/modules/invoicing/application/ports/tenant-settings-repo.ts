@@ -62,6 +62,8 @@ export interface TenantInvoiceSettingsPatch {
   readonly registrationFeeSatang?: Satang;
   readonly legalNameTh?: string;
   readonly legalNameEn?: string;
+  /** 064 — tenant short/brand name; null clears it (prefix omitted). */
+  readonly brandName?: string | null;
   readonly taxId?: string;
   readonly registeredAddressTh?: string;
   readonly registeredAddressEn?: string;
