@@ -54,19 +54,27 @@ async function seedPremiumPlan(slug: string, userId: string): Promise<void> {
 }
 
 let vmSeq = 0;
-function vm(over: { planId?: string; regDate?: string }): ValidatedMember {
+function vm(over: { planId?: string; regDate?: string; status?: 'active' | 'inactive' }): ValidatedMember {
   vmSeq += 1;
   const email = `cyc${vmSeq}-${randomUUID().slice(0, 8)}@imp.test`;
   return {
     companyName: `Cyc Co ${vmSeq}`,
+    legalEntityType: null,
+    isVatRegistered: false,
+    status: over.status ?? 'active',
     country: 'SE' as ValidatedMember['country'],
     taxId: ('SE' + String(vmSeq).padStart(6, '0')) as ValidatedMember['taxId'],
     planId: over.planId ?? 'premium',
     memberTypeScope: 'company',
     turnoverThb: null,
+    registeredCapitalThb: null,
+    foundedYear: null,
+    website: null,
+    description: null,
     registrationDate: new Date(over.regDate ?? '2026-02-10T00:00:00Z'),
     preferredLocale: null,
     city: null, province: null, postalCode: null,
+    addressLine1: null, addressLine2: null,
     contacts: [{
       firstName: 'First', lastName: 'Last',
       email: email as ValidatedMember['contacts'][number]['email'],

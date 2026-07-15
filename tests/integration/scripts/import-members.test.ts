@@ -45,14 +45,22 @@ function vm(over: { planId?: string; emails?: string[] }): ValidatedMember {
   const emails = over.emails ?? [`c${vmSeq}-${randomUUID().slice(0, 8)}@imp.test`];
   return {
     companyName: `Imp Co ${vmSeq}`,
+    legalEntityType: null,
+    isVatRegistered: false,
+    status: 'active',
     country: 'SE' as ValidatedMember['country'],
     taxId: ('SE' + String(vmSeq).padStart(6, '0')) as ValidatedMember['taxId'],
     planId: over.planId ?? 'premium',
     memberTypeScope: 'company',
     turnoverThb: null,
+    registeredCapitalThb: null,
+    foundedYear: null,
+    website: null,
+    description: null,
     registrationDate: new Date('2026-01-15T00:00:00Z'),
     preferredLocale: null,
     city: null, province: null, postalCode: null,
+    addressLine1: null, addressLine2: null,
     contacts: emails.map((email, i) => ({
       firstName: 'First', lastName: 'Last',
       email: email as ValidatedMember['contacts'][number]['email'],

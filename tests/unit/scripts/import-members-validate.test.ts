@@ -327,3 +327,64 @@ describe('validateRows (spec § 3)', () => {
     }
   });
 });
+
+describe('validateRows — entity type + VAT + status + tax-id repair (PR-C)', () => {
+  it('derives is_vat_registered = default && has TIN (TH limited company)', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: '105562087242', legalEntityType: 'Private Limited Company (Company Limited)' })],
+      RESOLVER,
+    );
+    expect(r.stats.errorCount).toBe(0);
+    const m = r.members[0]!;
+    expect(m.legalEntityType).toBe('limited_company');
+    expect(m.taxId).toBe('0105562087242'); // leading zero restored
+    expect(m.isVatRegistered).toBe(true);
+  });
+
+  it('a State Enterprise with NO tax id is is_vat_registered=false (invariant-safe)', () => {
+    // 7 TSCC state enterprises have no TIN. VAT_DEFAULT_BY_CODE.state_enterprise
+    // is true, but without a TIN the registrant⇒TIN invariant would reject them —
+    // so the flag is gated on actually having a number.
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: 'N/A', legalEntityType: 'State Enterprise' })],
+      RESOLVER,
+    );
+    expect(r.stats.errorCount).toBe(0);
+    const m = r.members[0]!;
+    expect(m.legalEntityType).toBe('state_enterprise');
+    expect(m.taxId).toBeNull();
+    expect(m.isVatRegistered).toBe(false);
+  });
+
+  it('foundation warns for manual VAT confirmation (no safe default)', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: '', legalEntityType: 'Foundation' })],
+      RESOLVER,
+    );
+    expect(r.members).toHaveLength(1);
+    expect(r.members[0]!.isVatRegistered).toBe(false);
+    expect(r.issues.some((i) => i.field === 'legalEntityType' && i.code === 'vat_default_unknown_confirm')).toBe(true);
+  });
+
+  it('an unmapped Member Type is a per-row error (member excluded)', () => {
+    const r = validateRows([row({ rowIndex: 2, legalEntityType: 'Sole Proprietorship Ltd' })], RESOLVER);
+    expect(errCodes(r)).toContain('unmapped');
+    expect(r.members).toHaveLength(0);
+  });
+
+  it('maps Member Status and carries the directory fields', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, status: 'Inactive', website: 'https://acme.test', foundedYear: '1995',
+             registeredCapital: '5,000,000', description: 'Widgets', addressLine1: '1 Rd', addressLine2: 'Unit 2' })],
+      RESOLVER,
+    );
+    const m = r.members[0]!;
+    expect(m.status).toBe('inactive');
+    expect(m.website).toBe('https://acme.test');
+    expect(m.foundedYear).toBe(1995);
+    expect(m.registeredCapitalThb).toBe(5_000_000);
+    expect(m.description).toBe('Widgets');
+    expect(m.addressLine1).toBe('1 Rd');
+    expect(m.addressLine2).toBe('Unit 2');
+  });
+});
