@@ -131,7 +131,10 @@ describe('DirectoryFilters — search input focus/URL sync', () => {
     const { rerender } = renderFilters();
     const input = screen.getByRole('searchbox') as HTMLInputElement;
 
-    input.focus();
+    act(() => {
+      input.focus(); // sets document.activeElement
+      fireEvent.focus(input); // fires the React onFocus handler → isSearchFocused
+    });
     expect(document.activeElement).toBe(input);
 
     // User types ahead of the debounce.

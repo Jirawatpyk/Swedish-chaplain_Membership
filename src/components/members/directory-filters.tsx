@@ -10,7 +10,7 @@
  *   - Clear: resets all filters + pagination
  */
 
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
@@ -61,7 +61,6 @@ export function DirectoryFilters({ plans = [] }: Props) {
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
@@ -71,14 +70,24 @@ export function DirectoryFilters({ plans = [] }: Props) {
   // The search box is a CONTROLLED input (Base UI's FieldControl warns on
   // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
   // manual `ref.value =` approaches both fought it and dropped focus mid-type).
-  // Local state holds what the user typed; the debounce below syncs it to the
-  // URL. We reconcile FROM the URL only when the input is NOT focused (browser
-  // back/forward, a shared link, the Clear button) — never mid-type, so fast
-  // typing can't be reverted to an in-flight debounced value.
+  // `searchValue` holds what the user typed; the debounce below syncs it to
+  // the URL. We reconcile FROM the URL only when the input is NOT focused
+  // (browser back/forward, a shared link, the Clear button) — never mid-type,
+  // so fast typing can't be reverted to an in-flight debounced value.
+  //
+  // This reconcile is the React "adjust state when a prop changes" pattern,
+  // done DURING RENDER (guarded by the `syncedQ` tracker) rather than in an
+  // effect — so there is no cascading re-render and no `key`-based remount
+  // (the remount was the original focus-drop bug). Focus is tracked as state
+  // via onFocus/onBlur so the render stays pure (no `document.activeElement`
+  // read during render, which would be non-deterministic and SSR-unsafe).
   const [searchValue, setSearchValue] = useState(currentQ);
-  useEffect(() => {
-    if (document.activeElement !== inputRef.current) setSearchValue(currentQ);
-  }, [currentQ]);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [syncedQ, setSyncedQ] = useState(currentQ);
+  if (currentQ !== syncedQ) {
+    setSyncedQ(currentQ);
+    if (!isSearchFocused) setSearchValue(currentQ);
+  }
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -130,10 +139,11 @@ export function DirectoryFilters({ plans = [] }: Props) {
           aria-hidden
         />
         <Input
-          ref={inputRef}
           type="search"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           placeholder={t('searchPlaceholder')}
           aria-label={t('searchSrLabel')}
           autoComplete="off"
