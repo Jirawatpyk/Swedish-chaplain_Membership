@@ -108,6 +108,9 @@ export interface ValidationReport {
   readonly members: readonly ValidatedMember[];
   readonly issues: readonly RowIssue[];
   readonly tierHistogram: Readonly<Record<string, number>>;
+  /** Coerced entity type per member GROUP (code / 'null' / 'unmapped'), across ALL
+   *  groups regardless of member validity — the coercer's verification signal. */
+  readonly entityTypeHistogram: Readonly<Record<string, number>>;
   readonly stats: {
     readonly totalRows: number;
     readonly memberGroups: number;
@@ -202,6 +205,7 @@ export function validateRows(
 
   const members: ValidatedMember[] = [];
   const tierHistogram: Record<string, number> = {};
+  const entityTypeHistogram: Record<string, number> = {};
   let validContacts = 0;
 
   for (const groupRows of groups.values()) {
@@ -222,6 +226,13 @@ export function validateRows(
       ? entityTypeRes.value
       : null;
     if (!entityTypeRes.ok) err(head.rowIndex, 'legalEntityType', 'unmapped');
+    {
+      // Count EVERY group's coerced entity type (code / 'null' / 'unmapped'),
+      // independent of member validity — this verifies the coercer against the
+      // sheet (expect 111/15/7/5/2 + 10 null on the real TSCC data).
+      const key = entityTypeRes.ok ? (legalEntityType ?? 'null') : 'unmapped';
+      entityTypeHistogram[key] = (entityTypeHistogram[key] ?? 0) + 1;
+    }
 
     const regDate = parseGregorianDate(head.registrationDate);
     if (!regDate.ok) err(head.rowIndex, 'registrationDate', regDate.error.code);
@@ -457,6 +468,7 @@ export function validateRows(
     members,
     issues,
     tierHistogram,
+    entityTypeHistogram,
     stats: {
       totalRows: rows.length,
       memberGroups: groups.size,

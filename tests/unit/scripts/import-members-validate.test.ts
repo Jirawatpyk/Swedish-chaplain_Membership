@@ -387,4 +387,18 @@ describe('validateRows — entity type + VAT + status + tax-id repair (PR-C)', (
     expect(m.addressLine1).toBe('1 Rd');
     expect(m.addressLine2).toBe('Unit 2');
   });
+
+  it('builds an entity-type histogram across all member groups', () => {
+    const r = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'A Co', contactEmail: 'a@x.test', country: 'TH', taxId: '105562087242', legalEntityType: 'Private Limited Company (Company Limited)' }),
+        row({ rowIndex: 3, companyName: 'B Co', contactEmail: 'b@x.test', legalEntityType: 'State Enterprise' }),
+        row({ rowIndex: 4, companyName: 'C Co', contactEmail: 'c@x.test', legalEntityType: 'N/A' }),
+      ],
+      RESOLVER,
+    );
+    expect(r.entityTypeHistogram['limited_company']).toBe(1);
+    expect(r.entityTypeHistogram['state_enterprise']).toBe(1);
+    expect(r.entityTypeHistogram['null']).toBe(1);
+  });
 });
