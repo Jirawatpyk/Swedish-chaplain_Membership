@@ -115,7 +115,7 @@ export function buildMemberFormSchema(
   // never trips the base rule.
   //
   // 059 / PR-A — `is_vat_registered` is the RECORDED §86/4 discriminator (it was
-  // guessed from `legal_entity_type` until migration 0246). Same EDIT-only
+  // guessed from `legal_entity_type` until migration 0250). Same EDIT-only
   // posture as the pair above: it gates the branch line and the buyer-TIN
   // requirement, so it belongs with them in the tax fieldset.
   is_vat_registered: z.boolean().optional(),

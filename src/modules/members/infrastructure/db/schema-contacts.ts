@@ -86,7 +86,7 @@ export const contacts = pgTable(
     // contact and for any contact collected before this control existed;
     // a real timestamp for any contact an admin added on someone else's
     // behalf. No DB CHECK correlates this with `is_primary` — see
-    // migration 0249 for why a static correlation is unsafe across
+    // migration 0253 for why a static correlation is unsafe across
     // promote/demote primary-contact transitions.
     art14AttestedAt: timestamp('art14_attested_at', { withTimezone: true }),
 

@@ -109,7 +109,7 @@ export type UpdateMemberError =
   // use-case body below for why this cannot live in updateMemberSchema.
   | { type: 'vat_registrant_requires_tax_id' }
   // 059 / PR-A Task 5 — branch ⇒ VAT-registrant invariant, mirrors the DB
-  // CHECK `members_branch_pairing_ck` (migration 0248) and is checked
+  // CHECK `members_branch_pairing_ck` (migration 0252) and is checked
   // against the RESULTING state for the exact same reason as the invariant
   // above — see the check in the use-case body below.
   | { type: 'branch_requires_vat_registrant' }
@@ -323,7 +323,7 @@ export async function updateMember(
       }
 
       // 059 / PR-A Task 5 — branch-pairing invariants, mirrors the DB CHECK
-      // `members_branch_pairing_ck` (migration 0248) in full: leg 1 (a head
+      // `members_branch_pairing_ck` (migration 0252) in full: leg 1 (a head
       // office carries NO branch code), and leg 2 (a branch carries BOTH a
       // 5-digit code AND the VAT-registrant flag). Checked against the
       // RESULTING state for the exact same reason as the registrant ⇒ TIN

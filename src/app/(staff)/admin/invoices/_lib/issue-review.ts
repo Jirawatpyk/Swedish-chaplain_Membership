@@ -32,7 +32,7 @@ export interface IssueReviewInput {
    * take `legalEntityType: string | null` and re-implement the discriminator by
    * hand (`norm === 'individual'`), independently of the adapter that produces
    * the snapshot the PDF actually renders. Two copies of one rule is how a
-   * preview comes to contradict the document. See migration 0246.
+   * preview comes to contradict the document. See migration 0250.
    */
   readonly buyerIsVatRegistrant: boolean;
   /**

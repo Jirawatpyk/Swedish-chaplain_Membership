@@ -27,7 +27,7 @@
  *
  * The document class follows the BUYER'S STATUS — `buyer_is_vat_registrant`,
  * pinned on the identity snapshot at issue from the RECORDED
- * `members.is_vat_registered` column (migration 0246). Callers derive that
+ * `members.is_vat_registered` column (migration 0250). Callers derive that
  * boolean through the ONE shared resolver below, never by hand.
  *
  * `buyerHasTin` SURVIVES and is still exported: it remains the right predicate
@@ -88,7 +88,7 @@ export interface BuyerRegistrantParts {
  *   MATCHED MEMBER (memberId non-null) — membership invoices, and event invoices
  *     whose attendee matched an F3 member. Their snapshot is pinned at ISSUE by
  *     `memberIdentityAdapter.getForIssue`, which reads the RECORDED
- *     `members.is_vat_registered` column (migration 0246). Use the recorded fact.
+ *     `members.is_vat_registered` column (migration 0250). Use the recorded fact.
  *     A snapshot written before that field existed omits the key and zod resolves
  *     it to `false` — FAIL-CLOSED, the correct default for a §86/4 particular
  *     (assert nothing you cannot evidence).

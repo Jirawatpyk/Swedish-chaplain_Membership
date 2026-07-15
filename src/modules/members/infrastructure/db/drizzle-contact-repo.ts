@@ -459,7 +459,7 @@ export const drizzleContactRepo: ContactRepo = {
       // secondary contact must not erase the historical collection record,
       // and demoting the current primary cannot retroactively fabricate an
       // attestation that never happened (they were created as primary, so it
-      // was always NULL). See migration 0249 for why this also rules out a
+      // was always NULL). See migration 0253 for why this also rules out a
       // DB CHECK correlating this column with `is_primary`.
       // Demote current primary FIRST (partial unique index constraint)
       const demoted = await tx

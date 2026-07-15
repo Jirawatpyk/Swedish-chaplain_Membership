@@ -63,7 +63,7 @@ export function TaxBranchSection({
   //     §86/4 particular required ONLY of a registrant buyer;
   //   - `buyerBranchEl` in the invoice template prints it only when
   //     `buyer_is_vat_registrant === true`;
-  //   - `members_branch_pairing_ck` (migration 0248) already forbids a branch
+  //   - `members_branch_pairing_ck` (migration 0252) already forbids a branch
   //     that is not a registrant.
   // A natural person has no head office and no branches. Asking them to confirm
   // they ARE the head office is not just noise — it implies the answer matters,

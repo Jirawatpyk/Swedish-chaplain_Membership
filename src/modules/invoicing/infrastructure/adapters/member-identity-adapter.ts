@@ -204,7 +204,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         // string that is not 'individual'"), wrong in law (VAT registration
         // follows turnover, not legal form) and, because `legal_entity_type` was
         // NULL on every row, false for EVERYONE — so no member ever received the
-        // mandatory branch particular. Now: the recorded fact. See migration 0246.
+        // mandatory branch particular. Now: the recorded fact. See migration 0250.
         buyer_is_vat_registrant: m.is_vat_registered,
         // Head office (default) / branch pair, taken from the member row. The
         // `members_branch_pairing_ck` CHECK guarantees they are consistent

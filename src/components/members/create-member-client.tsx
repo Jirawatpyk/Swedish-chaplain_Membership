@@ -62,7 +62,7 @@ function toPayload(
     tax_id: values.tax_id?.trim() || null,
     // 059 / PR-A — the §86/4 discriminator (ประกาศอธิบดีฯ 199). Without this key
     // the checkbox was dead state: `createMemberSchema` has accepted the field
-    // since migration 0246, but the payload never sent it, so every member was
+    // since migration 0250, but the payload never sent it, so every member was
     // created a NON-registrant no matter what the admin ticked — and, with the
     // importer also not writing it, NO path could make a member a registrant at
     // birth. That is how "no member ever receives the branch line" would have
