@@ -371,3 +371,26 @@ describe('CompanySection — VAT-registrant seeding never fires on mount (PR-A T
     expect(checkbox).toBeChecked();
   });
 });
+
+/**
+ * 060 / Task 9 — the Tax-ID field shows a required marker ONLY when the member is
+ * a VAT registrant (the zod rule at member-form/schema.ts already enforces
+ * registrant ⇒ tax_id). A permanent asterisk would lie to the 37/150 TSCC members
+ * with no TIN at all (individuals, state enterprises, foundations). `aria-required`
+ * is the load-bearing a11y signal — RequiredMark is aria-hidden.
+ */
+describe('CompanySection — conditional Tax-ID required marker (Task 9)', () => {
+  it('a VAT registrant: Tax ID shows the asterisk AND aria-required="true"', () => {
+    const { container } = renderEditForm({ is_vat_registered: true });
+    const label = container.querySelector('label[for="tax_id"]');
+    expect(label?.textContent).toContain('*');
+    expect(container.querySelector('#tax_id')?.getAttribute('aria-required')).toBe('true');
+  });
+
+  it('a NON-registrant: Tax ID shows no asterisk and is not aria-required', () => {
+    const { container } = renderEditForm({ is_vat_registered: false });
+    const label = container.querySelector('label[for="tax_id"]');
+    expect(label?.textContent).not.toContain('*');
+    expect(container.querySelector('#tax_id')?.getAttribute('aria-required')).not.toBe('true');
+  });
+});
