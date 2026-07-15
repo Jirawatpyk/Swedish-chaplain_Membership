@@ -122,7 +122,9 @@ const computeBenefitUsage = vi.hoisted(() =>
     value: {
       membershipYear: 2026,
       elapsedYearPct: 50,
-      quantifiable: [],
+      // Include the E-Blast benefit so the page's eblast `actionHref` branch
+      // actually runs (an empty array never exercised it → the leak hid here).
+      quantifiable: [{ key: 'eblast', label: 'E-Blast', consumed: 0, limit: 5 }],
       active: [],
       aggregateConsumedPct: null,
       underUseWarning: false,
@@ -156,9 +158,17 @@ vi.mock('@/modules/broadcasts', () => ({
 
 // Stub the leaf benefit card — its internals (locale/i18n surface) are not the
 // subject of this gate test; the page's OWN t() calls still resolve via the
-// real-en.json translator above. The stub renders a sentinel testid only.
+// real-en.json translator above. The stub renders a sentinel testid AND
+// captures the props the page passes it — the E-Blast Compose `actionHref` /
+// `warningActionHref` leak the earlier version of this test could not see
+// (it stubbed the card with no prop capture AND used an empty `quantifiable`,
+// so the eblast branch never ran).
+const benefitCardProps = vi.hoisted(() => ({ value: undefined as unknown }));
 vi.mock('@/components/benefits/benefit-usage-card', () => ({
-  BenefitUsageCard: () => <div data-testid="benefit-usage-card">benefit usage</div>,
+  BenefitUsageCard: (props: unknown) => {
+    benefitCardProps.value = props;
+    return <div data-testid="benefit-usage-card">benefit usage</div>;
+  },
 }));
 
 // Stub BroadcastsPanel with a SYNCHRONOUS render-spy. The real panel is an
@@ -197,6 +207,7 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
     listMemberBroadcasts.mockClear();
     computeBenefitUsage.mockClear();
     broadcastsPanelRender.mockClear();
+    benefitCardProps.value = undefined;
     findByLinkedUserId.mockResolvedValue({ ok: true, value: { memberId: 'm1' } });
   });
 
@@ -246,6 +257,25 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
     expect(screen.getByTestId('benefit-usage-card')).toBeInTheDocument();
     // The single visible tab is the Benefits tab.
     expect(screen.getByRole('tab', { name: 'Benefits' })).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // The E-Blast Compose leak (reported 2026-07-15): the Broadcasts *tab* is
+  // gated, but the E-Blast benefit card lives on the always-visible Benefits
+  // tab. Its Compose `actionHref` (+ the under-use `warningActionHref`) point
+  // at /portal/broadcasts/new, which the proxy 503s when F7 is off — a dead
+  // link a member can still click. Under F7-off the card must receive NEITHER.
+  // -------------------------------------------------------------------------
+  it('f7=false → the E-Blast benefit card gets NO Compose actionHref and NO warningActionHref (no dead link)', async () => {
+    await renderPage({ tab: 'benefits' });
+    const props = benefitCardProps.value as {
+      quantifiable: ReadonlyArray<{ key: string; actionHref?: string }>;
+      warningActionHref?: string;
+    };
+    const eblast = props.quantifiable.find((b) => b.key === 'eblast');
+    expect(eblast).toBeDefined();
+    expect(eblast?.actionHref).toBeUndefined();
+    expect(props.warningActionHref).toBeUndefined();
   });
 
   it('f7=false + ?tab=broadcasts → also passes a numeric ?page= without fetching broadcasts', async () => {

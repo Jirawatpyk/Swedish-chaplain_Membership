@@ -157,8 +157,16 @@ export default async function PortalBenefitsPage(props: {
     // not inflate the adoption KPI. Scoped to the benefits arm by design (R2-3).
     insightsMetrics.benefitViewed('member', tenant.slug);
 
+    // F7 break-glass: attach the Compose CTA (→ /portal/broadcasts/new, which
+    // the proxy 503s when F7 is off) to the E-Blast benefit card ONLY when F7
+    // is enabled. The Broadcasts *tab* is already gated, but this card lives on
+    // the always-visible Benefits/entitlements tab — without this gate a
+    // switched-off tenant shows a Compose button that dead-links to the raw
+    // kill-switch 503.
     const quantifiable: BenefitUsageItem[] = usage.quantifiable.map((b) =>
-      b.key === 'eblast' ? { ...b, actionHref: EBLAST_COMPOSE_HREF } : { ...b },
+      b.key === 'eblast' && f7Enabled
+        ? { ...b, actionHref: EBLAST_COMPOSE_HREF }
+        : { ...b },
     );
 
     benefitsPanel = (
@@ -178,7 +186,7 @@ export default async function PortalBenefitsPage(props: {
           active={usage.active}
           aggregateConsumedPct={usage.aggregateConsumedPct}
           underUseWarning={usage.underUseWarning}
-          warningActionHref={EBLAST_COMPOSE_HREF}
+          {...(f7Enabled ? { warningActionHref: EBLAST_COMPOSE_HREF } : {})}
           headingId="benefits-panel-heading"
         />
       </div>
