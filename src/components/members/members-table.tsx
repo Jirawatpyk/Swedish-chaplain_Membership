@@ -824,10 +824,20 @@ export function MembersTable({
           header, NOT the cell content. Without this the default
           `table-layout: auto` recomputes every column's width from the current
           rows, so the header visibly SHIFTS each time a search changes the data.
-          Widths come from the column defs' `size` (px); table-fixed scales them
-          to fill the full width, and the overflow-x wrapper handles narrow
-          viewports. */}
-      <Table aria-label={t('tableCaption')} className="table-fixed">
+          Widths come from the column defs' `size` (px).
+          `minWidth: getTotalSize()` is REQUIRED: under `table-fixed`, if the
+          column widths sum to more than the table's rendered width, the browser
+          SHRINKS every column to fit rather than overflowing — squeezing the
+          `whitespace-nowrap` cells (which have no ellipsis) into overlap. Pinning
+          the table's min-width to the column total keeps each column at its
+          intended size and lets the `overflow-x-auto` wrapper (ui/table.tsx)
+          engage on viewports narrower than the total, so the header stays
+          aligned AND narrow viewports scroll instead of clipping. */}
+      <Table
+        aria-label={t('tableCaption')}
+        className="table-fixed"
+        style={{ minWidth: table.getTotalSize() }}
+      >
         <caption className="sr-only">{t('tableCaption')}</caption>
         <colgroup>
           {table.getVisibleLeafColumns().map((col) => (

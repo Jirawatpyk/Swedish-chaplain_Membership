@@ -65,14 +65,6 @@ export function DirectoryFilters({ plans = [] }: Props) {
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
-
-  // The search Input is UNCONTROLLED (defaultValue only) so typing never
-  // remounts it. Its previous form carried `key={currentQ}`, which remounted the
-  // input on EVERY debounced URL update — dropping keyboard focus mid-type (you
-  // couldn't type more than one debounce-window's worth) and resetting the value.
-  // Instead, push the URL value into the DOM only when the input is NOT focused
-  // (external changes: browser back/forward, a shared link, programmatic clear),
-  // so active typing is never disturbed.
   const currentPlan = searchParams.get('plan_id') ?? 'all';
   const currentRisk = searchParams.get('risk_band') ?? 'all';
 
