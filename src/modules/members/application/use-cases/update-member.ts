@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -48,7 +49,17 @@ export const updateMemberSchema = z
     // (never infer it from legal_entity_type). Mirrors is_head_office:
     // admin-managed edit, applied to the patch below.
     is_vat_registered: z.boolean().optional(),
-    website: z.string().max(200).url().nullable().optional().or(z.literal('')),
+    // `.url()` accepts javascript:/data:; block hostile schemes since this is
+    // rendered as an <a href> on the member-detail page (safe-url.ts sink is
+    // the guarantee, this is the early boundary error).
+    website: z
+      .string()
+      .max(200)
+      .url()
+      .refine((v) => !hasDangerousUrlScheme(v), { message: 'website scheme not allowed' })
+      .nullable()
+      .optional()
+      .or(z.literal('')),
     description: z.string().max(2000).nullable().optional(),
     address_line1: z.string().max(200).nullable().optional(),
     address_line2: z.string().max(200).nullable().optional(),

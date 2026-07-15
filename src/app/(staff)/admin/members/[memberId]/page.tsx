@@ -30,6 +30,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { safeExternalHref } from '@/lib/safe-url';
 import { headers } from 'next/headers';
 import {
   getMember,
@@ -737,6 +738,12 @@ export default async function MemberDetailPage({
 
   const memberNumberDisplay = formatMemberNumber(memberPrefix, member.memberNumber);
 
+  // Only render the website as a clickable link when it is a safe http(s) URL.
+  // zod `.url()` accepts `javascript:`/`data:`, and the portal self-update
+  // PATCH stores `website` as a plain string — so a hostile value can reach
+  // this staff-facing sink. When unsafe, the raw value shows as text below.
+  const websiteHref = safeExternalHref(member.website);
+
   const windowStatus =
     member.status === 'archived' && member.archivedAt
       ? archiveWindowStatus(member.archivedAt, new Date())
@@ -914,16 +921,19 @@ export default async function MemberDetailPage({
                     : {})}
                 />
                 {/* 056 fix #4 — website as a real external link, not plain text.
+                    066 fix — only a safe http(s) URL becomes an anchor
+                    (`websiteHref`); an unsafe scheme (e.g. javascript:) falls
+                    back to plain text via `value` so it can never be clicked.
                     value=null so the link (or the "—" fallback) is the sole
                     content; `extra` carries the anchor when a website exists. */}
                 <DetailField
                   label={t('fields.website')}
-                  value={null}
-                  {...(member.website
+                  value={websiteHref ? null : member.website || null}
+                  {...(websiteHref
                     ? {
                         extra: (
                           <a
-                            href={member.website}
+                            href={websiteHref}
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label={t('fields.websiteExternal')}

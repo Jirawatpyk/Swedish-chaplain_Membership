@@ -15,6 +15,7 @@
 import { asEmail, type Email } from '@/modules/members/domain/value-objects/email';
 import { asPhone, type Phone } from '@/modules/members/domain/value-objects/phone';
 import { asTaxId, type TaxId } from '@/modules/members/domain/value-objects/tax-id';
+import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { type IsoCountryCode } from '@/modules/members/domain/value-objects/iso-country-code';
 import {
   countryNameToCode,
@@ -164,10 +165,14 @@ function parseTurnover(raw: string): number | null {
  */
 function sanitizeWebsiteForImport(raw: string): {
   readonly value: string | null;
-  readonly changed: 'none' | 'stripped' | 'dropped';
+  readonly changed: 'none' | 'stripped' | 'dropped' | 'dropped_scheme';
 } {
   const t = raw.trim();
   if (t.length === 0) return { value: null, changed: 'none' };
+  // Never store a value that would render as a javascript:/data: href on the
+  // member-detail page (safe-url.ts). Operator sheets are low-risk, but drop
+  // it here for defence-in-depth + a visible warning.
+  if (hasDangerousUrlScheme(t)) return { value: null, changed: 'dropped_scheme' };
   if (t.length <= 200) return { value: t, changed: 'none' };
   const base = t.split(/[?#]/)[0] ?? '';
   if (base.length > 0 && base.length <= 200) return { value: base, changed: 'stripped' };
@@ -188,6 +193,9 @@ function parseFoundedYear(raw: string): number | null {
 export function validateRows(
   rows: readonly RawRow[],
   tierResolver: TierResolver,
+  // Current Gregorian year, injectable for deterministic tests. Used to cap
+  // founded_year at today (mirrors the members_founded_year_range DB CHECK).
+  nowYear: number = new Date().getUTCFullYear(),
 ): ValidationReport {
   const issues: RowIssue[] = [];
   const err = (rowIndex: number, field: string, code: string): void => {
@@ -319,12 +327,20 @@ export function validateRows(
     if (head.foundedYear.trim().length > 0 && foundedYear === null) {
       warn(head.rowIndex, 'foundedYear', 'not_a_year');
     }
-    // members_founded_year_vs_registration: founded_year <= registration year
-    // (this also keeps it within members_founded_year_range for real data, since
-    // registration is never in the future here). Drop + warn rather than crash.
-    if (foundedYear !== null && regDate.ok && foundedYear > regDate.value.getUTCFullYear()) {
-      warn(head.rowIndex, 'foundedYear', 'after_registration');
-      foundedYear = null;
+    // Cap founded_year at the lesser of the registration year and the CURRENT
+    // year — mirroring BOTH DB CHECKs (members_founded_year_vs_registration
+    // AND members_founded_year_range, which caps at EXTRACT(YEAR FROM
+    // CURRENT_DATE)). registration_date is NOT future-guarded upstream
+    // (parseGregorianDate accepts up to 2400), so a future-typo registration
+    // year must not lift the current-year ceiling — otherwise a founded_year
+    // in (nowYear, regYear] slips past here only to violate the range CHECK and
+    // crash the atomic --commit. Drop + warn rather than crash.
+    if (foundedYear !== null && regDate.ok) {
+      const foundedCap = Math.min(regDate.value.getUTCFullYear(), nowYear);
+      if (foundedYear > foundedCap) {
+        warn(head.rowIndex, 'foundedYear', 'after_registration');
+        foundedYear = null;
+      }
     }
 
     // members_website_length ≤ 200 — strip tracking query, else drop (never crash).
@@ -332,6 +348,8 @@ export function validateRows(
     const website = websiteResult.value;
     if (websiteResult.changed === 'dropped') {
       warn(head.rowIndex, 'website', 'dropped_too_long');
+    } else if (websiteResult.changed === 'dropped_scheme') {
+      warn(head.rowIndex, 'website', 'dropped_unsafe_scheme');
     } else if (websiteResult.changed === 'stripped') {
       warn(head.rowIndex, 'website', 'query_stripped_too_long');
     }

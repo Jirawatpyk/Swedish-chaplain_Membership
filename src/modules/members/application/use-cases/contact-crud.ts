@@ -54,6 +54,18 @@ export const addContactSchema = z.object({
   art14_attested: z.literal(true),
 });
 
+/**
+ * True iff `v` is a real 'YYYY-MM-DD' calendar date. Round-trips through UTC so
+ * an overflow date (e.g. '2020-02-30', which `new Date` silently rolls to Mar 1)
+ * is rejected, not stored a day off. Format-only checks miss that; `Date.parse`
+ * alone accepts the rollover.
+ */
+function isIsoDateOnly(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
 export const updateContactFieldsSchema = z
   .object({
     first_name: z.string().trim().min(1).max(100).optional(),
@@ -66,7 +78,18 @@ export const updateContactFieldsSchema = z
     // `.strict()` schema, so every edit that touched DOB was rejected 400 (or,
     // when the client also dropped it, silently never sent). An empty string
     // clears it to null (admin removed the value); a 'YYYY-MM-DD' string sets it.
-    date_of_birth: z.string().nullable().optional(),
+    //
+    // Validate the FORMAT at the boundary: without it, an unparseable string
+    // reaches `new Date(...).toISOString()` in the repo and throws RangeError →
+    // an opaque HTTP 500 for what is really a 400; and a non-ISO string
+    // ('06/15/2005', '2005') parses in LOCAL time and stores the DOB a day off.
+    date_of_birth: z
+      .string()
+      .refine((v) => v === '' || isIsoDateOnly(v), {
+        message: 'date_of_birth must be empty or a YYYY-MM-DD calendar date',
+      })
+      .nullable()
+      .optional(),
   })
   .strict();
 

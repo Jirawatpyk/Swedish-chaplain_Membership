@@ -21,6 +21,7 @@
  */
 
 import { z } from 'zod';
+import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -72,7 +73,16 @@ export const createMemberSchema = z.object({
   // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived. Default
   // false when omitted (never inferred from legal_entity_type).
   is_vat_registered: z.boolean().optional(),
-  website: z.string().max(200).url().nullable().optional(),
+  // `.url()` alone accepts javascript:/data: (any scheme new URL() parses),
+  // and this value is later rendered as an <a href>; block hostile schemes.
+  // See src/lib/safe-url.ts (render sink safeExternalHref is the guarantee).
+  website: z
+    .string()
+    .max(200)
+    .url()
+    .refine((v) => !hasDangerousUrlScheme(v), { message: 'website scheme not allowed' })
+    .nullable()
+    .optional(),
   description: z.string().max(2000).nullable().optional(),
   notes: z.string().max(4000).nullable().optional(),
   address_line1: z.string().max(200).nullable().optional(),

@@ -445,3 +445,43 @@ describe('validateRows — entity type + VAT + status + tax-id repair (PR-C)', (
     expect(r.entityTypeHistogram['null']).toBe(1);
   });
 });
+
+describe('validateRows — founded_year DB-CHECK cap (066 fix)', () => {
+  it('drops a founded_year later than the current year even when a future-typo registration would allow it', () => {
+    // registration typo → 2099 (parseGregorianDate accepts <= 2400); founded
+    // 2065 is <= regYear but > current year, so it passes the old
+    // vs-registration guard yet would violate members_founded_year_range at
+    // INSERT → crash the atomic --commit. nowYear injected for determinism.
+    const r = validateRows(
+      [row({ rowIndex: 2, registrationDate: '2099-01-01', foundedYear: '2065' })],
+      RESOLVER,
+      2026,
+    );
+    expect(r.members).toHaveLength(1);
+    expect(r.members[0]!.foundedYear).toBeNull();
+    expect(
+      r.issues.some((i) => i.field === 'foundedYear' && i.code === 'after_registration'),
+    ).toBe(true);
+  });
+
+  it('keeps a founded_year at or before both the current year and the registration year', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, registrationDate: '2026-06-01', foundedYear: '2010' })],
+      RESOLVER,
+      2026,
+    );
+    expect(r.members[0]!.foundedYear).toBe(2010);
+  });
+
+  it('still drops a founded_year after the registration year (original vs-registration guard)', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, registrationDate: '2015-01-01', foundedYear: '2020' })],
+      RESOLVER,
+      2026,
+    );
+    expect(r.members[0]!.foundedYear).toBeNull();
+    expect(
+      r.issues.some((i) => i.field === 'foundedYear' && i.code === 'after_registration'),
+    ).toBe(true);
+  });
+});
