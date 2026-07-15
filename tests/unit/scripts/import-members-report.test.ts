@@ -23,16 +23,18 @@ const RESOLVER = buildTierResolver([
 const report = validateRows(
   [
     {
-      rowIndex: 2, companyName: 'Secret Holdings Ltd', country: 'SE', taxId: 'SE99887766',
-      tier: 'Premium', turnover: '', registrationDate: '2026-01-01', memberLocale: '',
-      city: '', province: '', postalCode: '',
+      rowIndex: 2, companyName: 'Secret Holdings Ltd', legalEntityType: '', country: 'SE', taxId: 'SE99887766',
+      tier: 'Premium', turnover: '', registeredCapital: '', website: '', foundedYear: '', description: '',
+      registrationDate: '2026-01-01', memberLocale: '', status: '',
+      city: '', province: '', postalCode: '', addressLine1: '', addressLine2: '',
       contactFirstName: 'Top', contactLastName: 'Secret', contactEmail: 'ceo@secret-holdings.test',
       contactPhone: '', contactRole: '', contactLanguage: '', isPrimary: 'yes',
     },
     {
-      rowIndex: 3, companyName: 'Bad Email Co', country: 'SE', taxId: 'SE111',
-      tier: 'Premium', turnover: '', registrationDate: '2026-01-01', memberLocale: '',
-      city: '', province: '', postalCode: '',
+      rowIndex: 3, companyName: 'Bad Email Co', legalEntityType: '', country: 'SE', taxId: 'SE111',
+      tier: 'Premium', turnover: '', registeredCapital: '', website: '', foundedYear: '', description: '',
+      registrationDate: '2026-01-01', memberLocale: '', status: '',
+      city: '', province: '', postalCode: '', addressLine1: '', addressLine2: '',
       contactFirstName: 'A', contactLastName: 'B', contactEmail: 'NOT-AN-EMAIL',
       contactPhone: '', contactRole: '', contactLanguage: '', isPrimary: 'yes',
     },

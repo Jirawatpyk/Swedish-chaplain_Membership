@@ -28,15 +28,23 @@ export interface RawRow {
   /** 1-based Excel data-row index — the ONLY cross-reference in the report (no PII). */
   readonly rowIndex: number;
   readonly companyName: string;
+  readonly legalEntityType: string;
   readonly country: string;
   readonly taxId: string;
   readonly tier: string;
   readonly turnover: string;
+  readonly registeredCapital: string;
+  readonly website: string;
+  readonly foundedYear: string;
+  readonly description: string;
   readonly registrationDate: string;
   readonly memberLocale: string;
+  readonly status: string;
   readonly city: string;
   readonly province: string;
   readonly postalCode: string;
+  readonly addressLine1: string;
+  readonly addressLine2: string;
   readonly contactFirstName: string;
   readonly contactLastName: string;
   readonly contactEmail: string;
