@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod';
+import { hasDangerousUrlScheme } from '@/lib/safe-url';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -50,7 +51,17 @@ const _contactFields = {
 const contactFieldsSchema = z.object(_contactFields).strict();
 
 const _memberFields = {
-  website: z.string().max(200).nullable().optional(),
+  // Reject javascript:/data:/vbscript:/file: schemes at the write boundary —
+  // a member-supplied `website` is later rendered as an `<a href>` in the
+  // staff member-detail page, and zod has no scheme guard of its own. The
+  // render sink (safeExternalHref) is the definitive guard; this is
+  // defence-in-depth with a clear early error. See src/lib/safe-url.ts.
+  website: z
+    .string()
+    .max(200)
+    .refine((v) => !hasDangerousUrlScheme(v), { message: 'website scheme not allowed' })
+    .nullable()
+    .optional(),
   description: z.string().max(2000).nullable().optional(),
 } satisfies Record<PortalSelfUpdateMemberField, z.ZodTypeAny>;
 const memberFieldsSchema = z.object(_memberFields).strict();

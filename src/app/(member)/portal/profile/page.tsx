@@ -17,6 +17,7 @@ import { CountryDisplay } from '@/components/members/country-display';
 import { DetailField } from '@/components/members/detail-field';
 import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-entity-type-label';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { safeExternalHref } from '@/lib/safe-url';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -183,6 +184,10 @@ export async function PortalProfileBody({
       .filter((l): l is string => Boolean(l && l.trim()))
       .join(', ') || null;
 
+  // Render the website as a link only when it is a safe http(s) URL — an
+  // unsafe scheme (javascript:/data:) falls back to plain text. See safe-url.ts.
+  const websiteHref = safeExternalHref(m.website);
+
   return (
     <DetailContainer>
       <PageHeader
@@ -261,13 +266,13 @@ export async function PortalProfileBody({
                   value={addressText}
                 />
               </div>
-              {m.website ? (
+              {websiteHref ? (
                 <DetailField
                   label={t('fields.website')}
                   value={null}
                   extra={
                     <a
-                      href={m.website}
+                      href={websiteHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground underline underline-offset-4 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -279,7 +284,7 @@ export async function PortalProfileBody({
               ) : (
                 <DetailField
                   label={t('fields.website')}
-                  value={null}
+                  value={m.website || null}
                 />
               )}
               {!isIndividual && (
