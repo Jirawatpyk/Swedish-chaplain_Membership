@@ -2961,7 +2961,11 @@
       "pipelineHelp": {
         "ariaLabel": "Om förnyelsepipelinen",
         "title": "Förnyelsepipeline",
-        "body": "Visar varje aktiv medlems aktuella förnyelsecykel, grupperad efter angelägenhet — kommande, snart förfallen och förfallen — så att du ser vem du bör kontakta härnäst. Använd nivåfiltret och månadsvyn för att avgränsa listan."
+        "body": "Varje medlems aktuella förnyelsecykel, grupperad efter angelägenhet — från T-90 (förfaller om 90 dagar) ner till T-0 (förfaller idag), sedan Grace och Lapsed. Filtrera på nivå eller månad för att avgränsa listan.",
+        "graceTerm": "Grace (respitperiod)",
+        "graceDef": "Förfallen men fortfarande inom respitperioden — förmånerna är pausade, men medlemmen kan betala för att behålla sitt medlemskap.",
+        "lapsedTerm": "Lapsed (upphört)",
+        "lapsedDef": "Respitperioden har löpt ut — medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
       "pendingReview": {

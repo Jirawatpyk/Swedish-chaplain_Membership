@@ -80,6 +80,20 @@ export function RenewalsViewTabs({ current }: RenewalsViewTabsProps) {
         >
           <p className="font-medium">{t('pipelineHelp.title')}</p>
           <p className="mt-1.5 text-muted-foreground">{t('pipelineHelp.body')}</p>
+          <dl className="mt-2 space-y-1.5">
+            <div>
+              <dt className="font-medium text-foreground">
+                {t('pipelineHelp.graceTerm')}
+              </dt>
+              <dd className="text-muted-foreground">{t('pipelineHelp.graceDef')}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-foreground">
+                {t('pipelineHelp.lapsedTerm')}
+              </dt>
+              <dd className="text-muted-foreground">{t('pipelineHelp.lapsedDef')}</dd>
+            </div>
+          </dl>
         </PopoverContent>
       </Popover>
     </div>
