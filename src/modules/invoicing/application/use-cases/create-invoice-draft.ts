@@ -38,6 +38,8 @@ import {
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { calculateProRateFactor } from '@/modules/invoicing/domain/policies/calculate-pro-rate-factor';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { addMonthsUtc } from '@/lib/dates';
+import { formatTaxDocMonthYear } from '@/lib/format-tax-doc-month-year';
 
 export const createInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
@@ -301,41 +303,72 @@ export async function createInvoiceDraft(
     // "coverage {FY start} to {FY end}" label printed calendar-year dates
     // that disagreed with the ACTUAL rolling period on the same tax
     // document). Two kinds, caller-selected via `input.membershipCoverage`:
-    //   - `window`       — the caller (an F8 renewal bridge) already knows
-    //     the exact period (`cycle.periodTo → periodTo + term`); print it
-    //     verbatim, with NO standalone "ปี {planYear}" token (rev 2 — it
-    //     contradicted the printed window on a tax document).
+    //   - `window`       — the caller (an F8 renewal bridge, or the New-invoice
+    //     route for a first payment) already knows the exact period
+    //     (`cycle.periodTo → periodTo + term`, or the current period); print it
+    //     as a month-year range. 064 — the "{year}" token is taken from the
+    //     window's START year (never `planYear`, which has a different source),
+    //     so it can never contradict the printed window on a §86/4.
     //   - `from_payment` (default) — the anchor doesn't exist yet at
     //     draft/issue time (a member's first bill, or any caller that
     //     hasn't resolved a period), so the wording is generic: "12
     //     months, effective from the month of payment". The §86/4 receipt
     //     (rendered at payment) carries the actual payment date on its
     //     face — this stored line text is never mutated after the fact.
+    // 064 — the coverage window is now rendered as MONTH-YEAR (not raw ISO), per
+    // TSCC's product naming. The window's `toIso` is the EXCLUSIVE next-period
+    // start (= periodFrom + term); the last COVERED month is one month before it,
+    // so `end = addMonthsUtc(toIso, -1)` always yields exactly `term` month-labels
+    // (robust to non-1st-of-month starts): [2026-08-01, 2027-08-01) → "August 2026
+    // - July 2027"; [2026-06-30, 2027-06-30) → "June 2026 - May 2027". A member
+    // with no resolved period (the `from_payment` default — e.g. no open cycle)
+    // keeps the generic wording.
     const coverage = input.membershipCoverage ?? { kind: 'from_payment' as const };
+    // The last COVERED month = one month before the exclusive `toIso`.
+    // `addMonthsUtc` returns a full ISO timestamp → slice back to `YYYY-MM-DD`
+    // before month-year rendering.
+    const coverageEndMonth =
+      coverage.kind === 'window'
+        ? addMonthsUtc(coverage.toIso.slice(0, 10), -1).slice(0, 10)
+        : '';
     const windowText =
       coverage.kind === 'window'
         ? {
-            th: `(ระยะเวลา ${coverage.fromIso.slice(0, 10)} ถึง ${coverage.toIso.slice(0, 10)})`,
-            en: `(coverage ${coverage.fromIso.slice(0, 10)} to ${coverage.toIso.slice(0, 10)})`,
+            th: `(${formatTaxDocMonthYear(coverage.fromIso.slice(0, 10), 'th')} - ${formatTaxDocMonthYear(coverageEndMonth, 'th')})`,
+            en: `(${formatTaxDocMonthYear(coverage.fromIso.slice(0, 10), 'en')} - ${formatTaxDocMonthYear(coverageEndMonth, 'en')})`,
           }
         : {
             th: '(12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
             en: '(12 months, effective from the month of payment)',
           };
-    // The full-cycle base carries plan name + coverage wording; a pro-rated line
-    // appends the factor + start date. The start date is the pro-rate ANCHOR
-    // (`proRateAnchor` — the member's join date when they joined mid-FY), i.e.
-    // the SAME date the factor was derived from, NOT `issueDate` (today). The
-    // two coincide only when a member is invoiced on the day they join; billing
-    // a mid-FY joiner later would otherwise print a "from" date that contradicts
-    // the factor (e.g. factor 0.8333 for a Mar join but "from <July issue>").
+
+    // 064 — the tenant's SHORT / brand name (e.g. "SweCham"), prefixed on the line.
+    // Omitted entirely when unset. Distinct from the full registered legal name in
+    // the document header.
+    const brandPrefix = settings.brandName ? `${settings.brandName} ` : '';
+    // 064 / tax review — the printed "{year}" token MUST agree with the coverage
+    // window on a §86/4 (a year that contradicts the printed period is the
+    // self-contradictory-document class PR #173 closed). So when a window is
+    // present, the year is the window's START year, NOT planYear (the two have
+    // different sources and are not otherwise bound to agree). planYear is used
+    // only for the from_payment fallback, which prints no window. TH prints the
+    // Buddhist-Era year (display-only; storage stays Gregorian).
+    const feeYearCe =
+      coverage.kind === 'window' ? Number(coverage.fromIso.slice(0, 4)) : input.planYear;
+    const feeYearBE = feeYearCe + 543;
+
+    // The full-cycle base carries brand + plan name + "Membership Fee {year}" +
+    // the coverage window; a pro-rated line appends the factor + start date. The
+    // start date is the pro-rate ANCHOR (`proRateAnchor` — the member's join date
+    // when they joined mid-FY), i.e. the SAME date the factor was derived from,
+    // NOT `issueDate` (today).
     const membershipDescTh =
-      `ค่าสมาชิก ${planLabelTh}${windowText.th}` +
+      `ค่าสมาชิก ${brandPrefix}${planLabelTh}ปี ${feeYearBE} ${windowText.th}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${proRateAnchor})`);
     const membershipDescEn =
-      `Membership ${planLabelEn}${windowText.en}` +
+      `${brandPrefix}${planLabelEn}Membership Fee ${feeYearCe} ${windowText.en}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rated ${proRateFactor}, from ${proRateAnchor})`);

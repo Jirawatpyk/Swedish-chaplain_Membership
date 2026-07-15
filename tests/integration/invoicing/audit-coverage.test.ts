@@ -391,6 +391,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       defaultNetDays: 30,
       proRatePolicy: 'monthly',
       autoEmailEnabled: false,
+      brandName: null,
       identity: {
         legal_name_th: 'ทดสอบ',
         legal_name_en: 'Test',

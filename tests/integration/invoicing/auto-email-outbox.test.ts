@@ -122,6 +122,7 @@ async function seedTenantForIssuance(
       // Auto-email MUST be ON so the issue path enqueues the initial
       // outbox row the (1) assertion relies on.
       autoEmailEnabled: true,
+      brandName: null,
       // Separate-mode so recordPayment creates a distinct receiptPdf,
       // which the (4b) "resend receipt" assertion requires.
       receiptNumberingMode: 'separate',
@@ -199,6 +200,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
     defaultNetDays: 30,
     proRatePolicy: 'monthly',
     autoEmailEnabled: true,
+    brandName: null,
     identity: {
       legal_name_th: 'ทดสอบ',
       legal_name_en: 'Test',

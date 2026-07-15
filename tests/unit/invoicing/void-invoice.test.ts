@@ -263,6 +263,7 @@ function makeSettings(): TenantInvoiceSettingsView {
     defaultNetDays: 30,
     proRatePolicy: 'monthly',
     autoEmailEnabled: true,
+    brandName: null,
     identity: SNAP_TENANT,
   };
 }

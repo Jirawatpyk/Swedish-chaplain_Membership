@@ -192,11 +192,13 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     });
   });
 
-  it('first_payment-classified member → membershipCoverage OMITTED (from_payment default text)', async () => {
+  it('first_payment with NO open cycle → membershipCoverage OMITTED (from_payment default text)', async () => {
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'first_payment' },
       periodTo: null,
       termMonths: null,
+      currentPeriodFrom: null,
+      currentPeriodTo: null,
       hasUnpaidMembershipInvoice: false,
     });
 
@@ -206,6 +208,30 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     expect(res.status).toBe(201);
     const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
     expect('membershipCoverage' in input).toBe(false);
+  });
+
+  it('064 — first_payment WITH an open cycle → membershipCoverage.window = the CURRENT period', async () => {
+    loadMemberRenewalContextMock.mockResolvedValueOnce({
+      classification: { kind: 'first_payment' },
+      periodTo: null,
+      termMonths: null,
+      currentPeriodFrom: '2026-08-01',
+      currentPeriodTo: '2027-08-01',
+      hasUnpaidMembershipInvoice: false,
+    });
+
+    const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makePostRequest(REQUEST_BODY));
+
+    expect(res.status).toBe(201);
+    const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+    // The current period is billed verbatim (the draft composer renders it as
+    // "August 2026 - July 2027").
+    expect(input.membershipCoverage).toEqual({
+      kind: 'window',
+      fromIso: '2026-08-01',
+      toIso: '2027-08-01',
+    });
   });
 
   it('not_applicable-classified member → membershipCoverage OMITTED', async () => {

@@ -53,6 +53,8 @@ export interface InvoiceSettingsFormInitialValues {
   readonly currency_code: string; // ISO 4217 (e.g. "THB")
   readonly legal_name_th: string;
   readonly legal_name_en: string;
+  /** 064 — tenant short/brand name (e.g. "SweCham"); '' = unset. */
+  readonly brand_name: string;
   readonly tax_id: string;
   readonly registered_address_th: string;
   readonly registered_address_en: string;
@@ -111,6 +113,7 @@ export function InvoiceSettingsForm({
   const [currencyCode, setCurrencyCode] = useState(initialValues.currency_code);
   const [legalNameTh, setLegalNameTh] = useState(initialValues.legal_name_th);
   const [legalNameEn, setLegalNameEn] = useState(initialValues.legal_name_en);
+  const [brandName, setBrandName] = useState(initialValues.brand_name);
   const [taxId, setTaxId] = useState(initialValues.tax_id);
   const [addrTh, setAddrTh] = useState(initialValues.registered_address_th);
   const [addrEn, setAddrEn] = useState(initialValues.registered_address_en);
@@ -294,6 +297,8 @@ export function InvoiceSettingsForm({
       currency_code: normalisedCurrency,
       legal_name_th: legalNameTh,
       legal_name_en: legalNameEn,
+      // 064 — empty clears it (→ membership-line prefix omitted).
+      brand_name: brandName.trim() === '' ? null : brandName.trim(),
       tax_id: taxId,
       registered_address_th: addrTh,
       registered_address_en: addrEn,
@@ -440,6 +445,18 @@ export function InvoiceSettingsForm({
               required
               maxLength={300}
             />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="brand_name">{t('labels.brandName')}</Label>
+            <Input
+              id="brand_name"
+              value={brandName}
+              onChange={(e) => setBrandName(e.target.value)}
+              disabled={disabled}
+              maxLength={100}
+              placeholder={t('labels.brandNamePlaceholder')}
+            />
+            <p className="text-xs text-muted-foreground">{t('labels.brandNameHint')}</p>
           </div>
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="tax_id">{t('labels.taxId')}</Label>

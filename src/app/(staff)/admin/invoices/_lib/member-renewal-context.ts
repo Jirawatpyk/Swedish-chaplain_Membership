@@ -34,6 +34,14 @@ export interface MemberRenewalContext {
   readonly periodTo: string | null;
   /** Only set when `classification.kind === 'renewal'` (the open cycle's frozen plan term). */
   readonly termMonths: number | null;
+  /**
+   * 064 — the open cycle's CURRENT period `[from, to)`, set whenever an open cycle
+   * exists (any classification). A FIRST payment bills this current period, so the
+   * route prints its month-year window on the §86/4 line. Null when the member has
+   * no open cycle (→ generic `from_payment` wording).
+   */
+  readonly currentPeriodFrom: string | null;
+  readonly currentPeriodTo: string | null;
   /** An existing `status='issued'` (unpaid) membership invoice for this member. */
   readonly hasUnpaidMembershipInvoice: boolean;
 }
@@ -64,7 +72,10 @@ export async function loadMemberRenewalContext(
   // feeding a UI hint line (module docstring), so running them
   // concurrently via `Promise.all` is a safe latency win rather than the
   // previous strictly-sequential await chain.
-  const [{ classification, periodTo, termMonths }, invoicesResult] = await Promise.all([
+  const [
+    { classification, periodTo, termMonths, currentPeriodFrom, currentPeriodTo },
+    invoicesResult,
+  ] = await Promise.all([
     runInTenant(ctx, async (tx) => {
       const guards = await renewalsDeps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
         tx,
@@ -127,6 +138,10 @@ export async function loadMemberRenewalContext(
         periodTo: classification.kind === 'renewal' ? (openCycle?.periodTo ?? null) : null,
         termMonths:
           classification.kind === 'renewal' ? (openCycle?.frozenPlanTermMonths ?? null) : null,
+        // 064 — the current period is available whenever an open cycle exists,
+        // regardless of classification (a first payment bills it).
+        currentPeriodFrom: openCycle?.periodFrom ?? null,
+        currentPeriodTo: openCycle?.periodTo ?? null,
       };
     }),
     listInvoicesByMember(makeListInvoicesByMemberDeps(tenantSlug), {
@@ -141,5 +156,12 @@ export async function loadMemberRenewalContext(
     invoicesResult.ok &&
     invoicesResult.value.rows.some((invoice) => invoice.invoiceSubject === 'membership');
 
-  return { classification, periodTo, termMonths, hasUnpaidMembershipInvoice };
+  return {
+    classification,
+    periodTo,
+    termMonths,
+    currentPeriodFrom,
+    currentPeriodTo,
+    hasUnpaidMembershipInvoice,
+  };
 }

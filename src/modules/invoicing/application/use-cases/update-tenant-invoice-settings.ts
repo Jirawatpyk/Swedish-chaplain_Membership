@@ -41,6 +41,9 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   registrationFeeSatang: z.bigint().nonnegative().optional(),
   legalNameTh: z.string().min(1).max(300).optional(),
   legalNameEn: z.string().min(1).max(300).optional(),
+  // 064 — tenant SHORT / brand name (e.g. "SweCham") for the membership line
+  // prefix. Nullable (null/empty clears it → the prefix is omitted).
+  brandName: z.string().max(100).nullable().optional(),
   taxId: z
     .string()
     .regex(/^\d{13}$/, 'taxId must be 13 digits (Thai RD format)')
@@ -171,6 +174,7 @@ export async function updateTenantInvoiceSettings(
     }),
     ...(input.legalNameTh !== undefined && { legalNameTh: input.legalNameTh }),
     ...(input.legalNameEn !== undefined && { legalNameEn: input.legalNameEn }),
+    ...(input.brandName !== undefined && { brandName: input.brandName }),
     ...(input.taxId !== undefined && { taxId: input.taxId }),
     ...(input.registeredAddressTh !== undefined && {
       registeredAddressTh: input.registeredAddressTh,

@@ -36,6 +36,7 @@ const BASE_VALUES: InvoiceSettingsFormInitialValues = {
   currency_code: 'THB',
   legal_name_th: 'บริษัท',
   legal_name_en: 'Company',
+  brand_name: '',
   tax_id: '0994000187203',
   registered_address_th: 'ที่อยู่',
   registered_address_en: 'Address',

@@ -86,10 +86,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Task 9 (renewal-rolling-anchor §3b review-mandate) — server-authoritative
   // coverage window: the client NEVER supplies `membershipCoverage` (it's a
   // printed §86/4 tax-document field). Resolve the SAME classification the
-  // New-invoice form's advisory context line used, and thread the window
-  // ONLY for a `renewal`-classified member — everyone else keeps the
-  // `from_payment` default (Task 8). A lookup failure degrades to that same
+  // New-invoice form's advisory context line used, and thread the window from
+  // the member's OPEN cycle. A lookup failure degrades to the `from_payment`
   // default rather than blocking draft creation (advisory-only per design).
+  //   - RENEWAL bills the NEXT period `[periodTo, periodTo + term)`.
+  //   - 064: a FIRST payment (or any member with an open cycle) bills the
+  //     CURRENT period `[currentPeriodFrom, currentPeriodTo)` — so an imported
+  //     member's first §86/4 prints their real membership dates, not the generic
+  //     "12 months from payment" wording (which regressed in PR #173).
   let membershipCoverage: CreateInvoiceDraftInput['membershipCoverage'];
   try {
     const renewalContext = await loadMemberRenewalContext(tenantCtx.slug, parsed.data.member_id);
@@ -102,6 +106,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         kind: 'window',
         fromIso: renewalContext.periodTo,
         toIso: addMonthsUtc(renewalContext.periodTo, renewalContext.termMonths),
+      };
+    } else if (
+      renewalContext.currentPeriodFrom &&
+      renewalContext.currentPeriodTo
+    ) {
+      membershipCoverage = {
+        kind: 'window',
+        fromIso: renewalContext.currentPeriodFrom,
+        toIso: renewalContext.currentPeriodTo,
       };
     }
   } catch (err) {

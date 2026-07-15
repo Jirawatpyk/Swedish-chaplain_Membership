@@ -49,6 +49,11 @@ export const tenantInvoiceSettings = pgTable(
 
     legalNameTh: text('legal_name_th').notNull(),
     legalNameEn: text('legal_name_en').notNull(),
+    // 064 — the tenant's SHORT / brand name (e.g. "SweCham"), printed as the
+    // prefix on the §86/4 membership line ("SweCham Regular Corporate Membership
+    // Fee 2026 (…)"). Nullable — when unset the prefix is simply omitted. Distinct
+    // from the full registered `legal_name_*` (which prints in the document header).
+    brandName: text('brand_name'),
     taxId: text('tax_id').notNull(),
     registeredAddressTh: text('registered_address_th').notNull(),
     registeredAddressEn: text('registered_address_en').notNull(),

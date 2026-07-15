@@ -132,6 +132,7 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
     defaultNetDays: 30,
     proRatePolicy: 'monthly',
     autoEmailEnabled: true,
+    brandName: null,
     identity: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
       legal_name_en: 'Thailand-Swedish Chamber of Commerce',
