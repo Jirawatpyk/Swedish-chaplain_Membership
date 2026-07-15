@@ -128,6 +128,47 @@ export function MembershipSection({
         </div>
       </div>
 
+      {/* 065 §5.1 — per-member billing cadence. A REQUIRED free choice
+          (calendar year vs rolling anniversary); mirrors the plan picker's
+          Controller/Select shape. */}
+      <div>
+        <Label htmlFor="billing_cycle">
+          {tf('billingCycle')}
+          <RequiredMark />
+        </Label>
+        <Controller
+          control={control}
+          name="billing_cycle"
+          render={({ field }) => (
+            <Select value={field.value ?? ''} onValueChange={(v) => field.onChange(v)}>
+              <SelectTrigger
+                id="billing_cycle"
+                aria-required="true"
+                aria-invalid={Boolean(errors.billing_cycle)}
+                aria-describedby={
+                  errors.billing_cycle ? 'billing_cycle-error required-fields-note' : 'required-fields-note'
+                }
+                className="w-full"
+              >
+                <TranslatedSelectValue
+                  placeholder={tf('billingCyclePlaceholder')}
+                  translate={(value) =>
+                    value === 'calendar' || value === 'rolling'
+                      ? tf(`billingCycleOptions.${value}`)
+                      : null
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="calendar">{tf('billingCycleOptions.calendar')}</SelectItem>
+                <SelectItem value="rolling">{tf('billingCycleOptions.rolling')}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        />
+        <FieldError id="billing_cycle-error" message={errors.billing_cycle?.message} />
+      </div>
+
       <div>
         <Label htmlFor="registration_date">{tf('registrationDate')}</Label>
         <Input

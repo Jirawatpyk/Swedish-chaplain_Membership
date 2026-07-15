@@ -74,6 +74,8 @@ function makeValues(
     turnover_thb: undefined,
     plan_id: 'premium',
     plan_year: 2026,
+    // 065 §5.1 — billing_cycle is a required MemberFormValues field.
+    billing_cycle: 'rolling',
     registration_date: '2026-01-01',
     notes: null,
     primary_contact: {

@@ -30,6 +30,9 @@ const BASE = {
   postal_code: '10110',
   plan_id: 'p',
   plan_year: 2026,
+  // 065 §5.1 — billing_cycle is a REQUIRED free choice (no default / no '' arm),
+  // so every otherwise-valid fixture must carry one or the whole object rejects.
+  billing_cycle: 'rolling',
   notes: null,
   primary_contact: {
     first_name: 'A',
@@ -107,6 +110,32 @@ describe('buildMemberFormSchema — client mirrors server', () => {
   // nothing highlighted. Reject it inline instead.
   it('rejects a non-integer turnover on the turnover_thb field', () => {
     expect(issuePaths({ ...BASE, turnover_thb: '1.5' })).toContain('turnover_thb');
+  });
+});
+
+// 065 §5.1 — billing_cycle is a REQUIRED free choice: no default and (unlike
+// legal_entity_type) no empty-string arm, so an unset value must fail on its
+// own field, and only the two enum values are accepted.
+describe('buildMemberFormSchema — billing_cycle is a required free choice (065 §5.1)', () => {
+  it('flags a missing billing_cycle on its own field', () => {
+    const { billing_cycle: _omitted, ...withoutCycle } = BASE;
+    expect(issuePaths(withoutCycle)).toContain('billing_cycle');
+  });
+
+  it('rejects an empty-string billing_cycle (no empty arm) on its own field', () => {
+    expect(issuePaths({ ...BASE, billing_cycle: '' })).toContain('billing_cycle');
+  });
+
+  it('rejects an unknown billing_cycle value on its own field', () => {
+    expect(issuePaths({ ...BASE, billing_cycle: 'quarterly' })).toContain('billing_cycle');
+  });
+
+  it('accepts calendar', () => {
+    expect(issuePaths({ ...BASE, billing_cycle: 'calendar' })).not.toContain('billing_cycle');
+  });
+
+  it('accepts rolling', () => {
+    expect(issuePaths({ ...BASE, billing_cycle: 'rolling' })).not.toContain('billing_cycle');
   });
 });
 

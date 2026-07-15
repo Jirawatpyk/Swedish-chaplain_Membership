@@ -24,6 +24,9 @@ export function serialiseMember(m: Member) {
     // 059 / PR-A — the §86/4 VAT-registrant flag. Same class as
     // is_head_office/branch_code above: admin API only, staff-only.
     is_vat_registered: m.isVatRegistered,
+    // 065 §5.1 — per-member billing cadence (admin API). `?? 'rolling'` guards
+    // a hand-built Member that omits it (matches the DB DEFAULT).
+    billing_cycle: m.billingCycle ?? 'rolling',
     website: m.website,
     description: m.description,
     address_line1: m.addressLine1,

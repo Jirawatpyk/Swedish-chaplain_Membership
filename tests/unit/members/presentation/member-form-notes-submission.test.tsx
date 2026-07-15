@@ -52,6 +52,8 @@ describe('MemberForm notes — reaches onSubmit via the real DOM (create mode)',
             postal_code: '10110',
             plan_id: PLANS[0]!.plan_id,
             plan_year: 2026,
+            // 065 §5.1 — required pick; seed it so submit isolates `notes`.
+            billing_cycle: 'rolling',
             primary_contact: {
               first_name: 'A',
               last_name: 'B',

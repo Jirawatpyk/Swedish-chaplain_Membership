@@ -105,6 +105,10 @@ function rowToMember(row: MemberRow): Member {
     isHeadOffice: row.isHeadOffice,
     branchCode: row.branchCode,
     isVatRegistered: row.isVatRegistered,
+    // 065 §5.1 — per-member billing cadence. Always populated from the NOT NULL
+    // column (DB DEFAULT 'rolling'); the optional aggregate field is for
+    // hand-built drafts/fixtures, not for a loaded row.
+    billingCycle: row.billingCycle,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -149,6 +153,8 @@ function applyMemberPatch(
   if (patch.isHeadOffice !== undefined) set.isHeadOffice = patch.isHeadOffice;
   if (patch.branchCode !== undefined) set.branchCode = patch.branchCode;
   if (patch.isVatRegistered !== undefined) set.isVatRegistered = patch.isVatRegistered;
+  // 065 §5.1 — per-member billing cadence (admin-managed edit).
+  if (patch.billingCycle !== undefined) set.billingCycle = patch.billingCycle;
   if (patch.website !== undefined) set.website = patch.website;
   if (patch.description !== undefined) set.description = patch.description;
   if (patch.notes !== undefined) set.notes = patch.notes;
@@ -580,6 +586,10 @@ export const drizzleMemberRepo: MemberRepo = {
           country: draft.member.country,
           taxId: draft.member.taxId,
           isVatRegistered: draft.member.isVatRegistered,
+          // 065 §5.1 — per-member billing cadence. `?? 'rolling'` guards a
+          // hand-built draft that omits it (matches the DB DEFAULT); the real
+          // create path always threads the admin's chosen value.
+          billingCycle: draft.member.billingCycle ?? 'rolling',
           website: draft.member.website,
           description: draft.member.description,
           foundedYear: draft.member.foundedYear,

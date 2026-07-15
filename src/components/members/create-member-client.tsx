@@ -74,6 +74,10 @@ function toPayload(
     // been supported. That stays an edit-only operation — widening the create
     // write-surface is not this branch's business.
     is_vat_registered: values.is_vat_registered === true,
+    // 065 §5.1 — per-member billing cadence. The client zod makes this a
+    // required pick, so `values.billing_cycle` is always 'calendar' | 'rolling'
+    // here; forwarded so the server records the admin's choice.
+    billing_cycle: values.billing_cycle,
     website: values.website?.trim() || null,
     description: values.description?.trim() || null,
     notes: values.notes ? values.notes.trim() || null : null,

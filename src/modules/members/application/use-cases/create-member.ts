@@ -73,6 +73,14 @@ export const createMemberSchema = z.object({
   // 059 / PR-A — the §86/4 VAT-registrant flag, RECORDED not derived. Default
   // false when omitted (never inferred from legal_entity_type).
   is_vat_registered: z.boolean().optional(),
+  // 065 §5.1 — per-member billing cadence (calendar-year vs rolling
+  // anniversary), RECORDED not derived. Optional here with a 'rolling' default
+  // at the mapping below — EXACT parity with is_vat_registered above: a direct
+  // API caller that omits it takes the DB DEFAULT ('rolling'). The admin FORM
+  // makes it a REQUIRED free choice (client zod has no default / no '' arm);
+  // this lenient server default only backstops a direct caller and keeps the
+  // ~19 inline-payload create integration tests green.
+  billing_cycle: z.enum(['calendar', 'rolling']).optional(),
   // `.url()` alone accepts javascript:/data: (any scheme new URL() parses),
   // and this value is later rendered as an <a href>; block hostile schemes.
   // See src/lib/safe-url.ts (render sink safeExternalHref is the guarantee).
@@ -501,6 +509,10 @@ export async function createMember(
         country: country.value,
         taxId,
         isVatRegistered: data.is_vat_registered ?? false,
+        // 065 §5.1 — per-member billing cadence. `?? 'rolling'` mirrors the
+        // is_vat_registered `?? false` above (the DB DEFAULT for this column
+        // is 'rolling'); the admin form always threads the chosen value.
+        billingCycle: data.billing_cycle ?? 'rolling',
         website: data.website ?? null,
         description: data.description ?? null,
         foundedYear: data.founded_year ?? null,

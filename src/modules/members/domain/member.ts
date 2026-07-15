@@ -24,6 +24,16 @@ import { isUuid } from './value-objects/uuid';
 export const MEMBER_STATUSES = ['active', 'inactive', 'archived'] as const;
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 
+/**
+ * 065 renewal-swecham-alignment (§5.1) — per-member billing cadence.
+ * `calendar` = a calendar-year member (1 Jan–31 Dec); `rolling` = billed on
+ * the anniversary of joining. RECORDED not derived (not inferable from
+ * plan/dates). Single-sourced here so the schema enum, form, and both zod
+ * boundaries agree.
+ */
+export const BILLING_CYCLES = ['calendar', 'rolling'] as const;
+export type BillingCycle = (typeof BILLING_CYCLES)[number];
+
 declare const MemberIdBrand: unique symbol;
 export type MemberId = string & { readonly [MemberIdBrand]: true };
 
@@ -175,6 +185,17 @@ export type Member = {
    * buyer's §86/4 branch particular and TIN are required on a tax document.
    */
   readonly isVatRegistered: boolean;
+  /**
+   * 065 renewal-swecham-alignment (§5.1) — per-member billing cadence,
+   * RECORDED not derived. Foundation-only this round: drives NO lifecycle
+   * behaviour yet (the future auto-invoice phase reads it). OPTIONAL on the
+   * aggregate (same posture as `isHeadOffice`/`branchCode`) so the many
+   * partial-`Member` fixtures + the create draft stay non-breaking:
+   * `rowToMember` ALWAYS populates it from the NOT NULL column, so a Member
+   * loaded from the repo always carries a real value; hand-built read sites
+   * guard `?? 'rolling'` (the DB DEFAULT).
+   */
+  readonly billingCycle?: BillingCycle;
   readonly website: string | null;
   readonly description: string | null;
   readonly foundedYear: number | null;

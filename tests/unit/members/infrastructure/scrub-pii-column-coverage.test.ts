@@ -95,6 +95,12 @@ const KEPT = new Set<string>([
   'status', // state (erasure is orthogonal to archive)
   'archivedAt', // state
   'lastActivityAt', // state
+  // 065 §5.1 — per-member billing cadence ('calendar' | 'rolling'). NOT PII:
+  // a 2-value operational setting with zero re-identification value (same class
+  // as `status` / `preferredLocale`). Retained on erasure; the column is NOT
+  // NULL so nulling it is impossible anyway.
+  'billingCycle', // operational-setting
+
   // Non-identifying boolean flags + their consent/record timestamps.
   'renewalRemindersOptedOut', // flag
   'renewalRemindersOptedOutAt', // record-keeping

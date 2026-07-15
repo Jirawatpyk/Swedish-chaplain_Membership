@@ -83,6 +83,13 @@ export function buildMemberFormSchema(
   // 10 of TSCC's 150 members have no recorded type, and an edit to an
   // unrelated field on one of them must never be blocked by this field.
   legal_entity_type: z.enum(LEGAL_ENTITY_TYPES).optional().or(z.literal('')),
+  // 065 §5.1 — per-member billing cadence. A REQUIRED free choice (NO
+  // empty-string arm, unlike legal_entity_type above): every member must carry
+  // a billing cycle (the DB column is NOT NULL). On EDIT the backfilled value
+  // loads; on CREATE the admin must pick one — there is no default.
+  billing_cycle: z.enum(['calendar', 'rolling'], {
+    errorMap: () => ({ message: tf('errors.required') }),
+  }),
   country: z
     .string()
     .length(2, tf('errors.countryCode'))

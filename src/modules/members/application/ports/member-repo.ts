@@ -157,6 +157,8 @@ export type MemberPatch = Partial<
     | 'branchCode'
     // 059 / PR-A — the §86/4 VAT-registrant flag (admin-managed edit).
     | 'isVatRegistered'
+    // 065 §5.1 — per-member billing cadence (admin-managed edit).
+    | 'billingCycle'
     | 'website'
     | 'description'
     | 'notes'

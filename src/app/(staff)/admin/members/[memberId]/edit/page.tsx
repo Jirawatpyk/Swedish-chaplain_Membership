@@ -191,6 +191,8 @@ export default async function EditMemberPage({ params }: PageProps) {
               branchCode: member.branchCode ?? null,
               // 059 / PR-A — the RECORDED VAT-registrant flag gating them both.
               isVatRegistered: member.isVatRegistered,
+              // 065 §5.1 — per-member billing cadence.
+              billingCycle: member.billingCycle ?? 'rolling',
               planId: member.planId,
               planYear: member.planYear,
               registrationDate: member.registrationDate
