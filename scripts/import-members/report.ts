@@ -44,6 +44,7 @@ export interface ReportDocument {
   readonly planYear: number;
   readonly stats: ValidationReport['stats'];
   readonly tierHistogram: Readonly<Record<string, number>>;
+  readonly entityTypeHistogram: Readonly<Record<string, number>>;
   readonly issues: readonly RowIssue[];
   readonly committed: CommitOutcome | null;
 }
@@ -61,6 +62,7 @@ export function buildReportDocument(args: {
     planYear: args.planYear,
     stats: args.report.stats,
     tierHistogram: args.report.tierHistogram,
+    entityTypeHistogram: args.report.entityTypeHistogram,
     issues: args.report.issues, // {rowIndex, field, code, severity} — no PII
     committed: args.committed ?? null,
   };
@@ -81,6 +83,11 @@ export function renderReportText(doc: ReportDocument): string {
   lines.push('Tier histogram (valid members):');
   for (const [planId, n] of Object.entries(doc.tierHistogram).sort()) {
     lines.push(`  ${planId}: ${n}`);
+  }
+  lines.push('');
+  lines.push('Entity-type histogram (all member groups):');
+  for (const [code, n] of Object.entries(doc.entityTypeHistogram).sort()) {
+    lines.push(`  ${code}: ${n}`);
   }
   if (doc.issues.length > 0) {
     lines.push('');

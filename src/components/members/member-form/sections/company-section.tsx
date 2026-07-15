@@ -12,7 +12,7 @@
  */
 import { useState, type RefObject } from 'react';
 import { useTranslations } from 'next-intl';
-import { Controller, useFormContext } from 'react-hook-form';
+import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import { ChevronDownIcon, HelpCircleIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -85,6 +85,13 @@ export function CompanySection({
     () => getValues('country') ?? 'TH',
   );
   const countryIsTH = country.toUpperCase() === 'TH';
+
+  // 060 / Task 9 — the Tax ID field is required ONLY for a VAT registrant (the
+  // zod rule in schema.ts enforces registrant ⇒ tax_id). `is_vat_registered`
+  // lives in the sibling TaxBranchSection, but both share one FormProvider, so
+  // this read-only watch sees it. Read-only → no mount-fire hazard.
+  const isVatRegistered =
+    useWatch({ control, name: 'is_vat_registered' }) === true;
 
   // PR-B task 7 — "Additional details" collapsible (description, notes,
   // founded_year, turnover_thb, registered_capital_thb). Closed by default
@@ -304,11 +311,15 @@ export function CompanySection({
           <FieldError id="country-error" message={errors.country?.message} />
         </div>
         <div>
-          <Label htmlFor="tax_id">{tf('taxId')}</Label>
+          <Label htmlFor="tax_id">
+            {tf('taxId')}
+            {isVatRegistered && <RequiredMark />}
+          </Label>
           <Input
             id="tax_id"
             {...register('tax_id')}
             maxLength={50}
+            aria-required={isVatRegistered}
             aria-invalid={Boolean(errors.tax_id)}
             aria-describedby={
               [

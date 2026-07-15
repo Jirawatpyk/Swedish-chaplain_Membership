@@ -73,6 +73,7 @@ const CONTACT = {
   phone: null,
   roleTitle: null,
   preferredLanguage: 'en' as const,
+  dateOfBirth: null,
 };
 const PLANS = [{ plan_id: 'premium', plan_year: 2026, display_name: 'Premium' }];
 

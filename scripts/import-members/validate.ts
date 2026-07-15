@@ -20,23 +20,35 @@ import {
   countryNameToCode,
   parseGregorianDate,
   coercePreferredLanguage,
+  normalizeTaxIdCell,
+  coerceMemberStatus,
   type PreferredLanguage,
 } from './coerce';
+import { coerceLegalEntityType } from './entity-type';
+import { VAT_DEFAULT_BY_CODE, type LegalEntityTypeCode } from '@/modules/members';
 import type { MemberTypeScope, TierResolver } from './tier-resolution';
 
 export interface RawRow {
   /** 1-based Excel data-row index — the ONLY cross-reference in the report (no PII). */
   readonly rowIndex: number;
   readonly companyName: string;
+  readonly legalEntityType: string;
   readonly country: string;
   readonly taxId: string;
   readonly tier: string;
   readonly turnover: string;
+  readonly registeredCapital: string;
+  readonly website: string;
+  readonly foundedYear: string;
+  readonly description: string;
   readonly registrationDate: string;
   readonly memberLocale: string;
+  readonly status: string;
   readonly city: string;
   readonly province: string;
   readonly postalCode: string;
+  readonly addressLine1: string;
+  readonly addressLine2: string;
   readonly contactFirstName: string;
   readonly contactLastName: string;
   readonly contactEmail: string;
@@ -59,16 +71,25 @@ export interface ValidatedContact {
 
 export interface ValidatedMember {
   readonly companyName: string;
+  readonly legalEntityType: LegalEntityTypeCode | null;
+  readonly isVatRegistered: boolean;
+  readonly status: 'active' | 'inactive';
   readonly country: IsoCountryCode;
   readonly taxId: TaxId | null;
   readonly planId: string;
   readonly memberTypeScope: MemberTypeScope;
   readonly turnoverThb: number | null;
+  readonly registeredCapitalThb: number | null;
+  readonly foundedYear: number | null;
+  readonly website: string | null;
+  readonly description: string | null;
   readonly registrationDate: Date;
   readonly preferredLocale: PreferredLanguage | null;
   readonly city: string | null;
   readonly province: string | null;
   readonly postalCode: string | null;
+  readonly addressLine1: string | null;
+  readonly addressLine2: string | null;
   readonly contacts: readonly ValidatedContact[];
   readonly rowIndices: readonly number[];
 }
@@ -87,6 +108,9 @@ export interface ValidationReport {
   readonly members: readonly ValidatedMember[];
   readonly issues: readonly RowIssue[];
   readonly tierHistogram: Readonly<Record<string, number>>;
+  /** Coerced entity type per member GROUP (code / 'null' / 'unmapped'), across ALL
+   *  groups regardless of member validity — the coercer's verification signal. */
+  readonly entityTypeHistogram: Readonly<Record<string, number>>;
   readonly stats: {
     readonly totalRows: number;
     readonly memberGroups: number;
@@ -112,17 +136,33 @@ function parseTurnover(raw: string): number | null {
   const t = raw.replace(/[,\s]/g, '');
   if (t.length === 0) return null;
   const n = Number(t);
-  // turnover_thb is a NON-NEGATIVE bigint (whole baht, DB CHECK turnover_thb >= 0).
-  // Anything that is not a whole, non-negative, in-range integer would crash the
-  // `--commit` INSERT and roll back the whole all-or-nothing import with an opaque
-  // DB error. Reject all such values here so they degrade to a clean per-row
-  // `not_a_number` warning (turnover → null, member still imports):
-  //   - FRACTIONAL ("5000000.50")        → `invalid input syntax for type bigint`
-  //   - NEGATIVE ("-5000000")            → violates the members_turnover_non_negative CHECK
-  //   - OVER-RANGE (> MAX_SAFE_INTEGER)  → JS precision loss + Postgres `bigint out of range`
-  // (MAX_SAFE_INTEGER ≈ 9.0e15 is well above any real annual turnover and safely
-  // below bigint max 9.2e18, so this bound never rejects a legitimate value.)
-  return Number.isInteger(n) && n >= 0 && n <= Number.MAX_SAFE_INTEGER ? n : null;
+  // turnover_thb / registered_capital_thb are NON-NEGATIVE bigints (whole baht,
+  // DB CHECK >= 0). A value flowing raw into the `--commit` INSERT that is not a
+  // whole, non-negative, in-range integer would crash it and roll back the whole
+  // all-or-nothing import. Handle each shape so the row still contributes its data
+  // instead of degrading to null:
+  //   - FRACTIONAL ("5000000.50")        → ROUND to the nearest whole baht. The real
+  //     TSCC sheet carries .xx satang on most turnover/capital rows; dropping them
+  //     silently lost 117/148 real figures. Satang is not stored, so rounding is
+  //     the faithful whole-baht value.
+  //   - NEGATIVE ("-5000000")            → null + warning (violates the CHECK).
+  //   - OVER-RANGE (> MAX_SAFE_INTEGER)  → null + warning (JS precision loss +
+  //     Postgres `bigint out of range`). MAX_SAFE_INTEGER ≈ 9.0e15 is well above
+  //     any real annual turnover and safely below bigint max 9.2e18.
+  //   - NaN ("N/A")                       → null + warning.
+  if (!Number.isFinite(n) || n < 0) return null;
+  const rounded = Math.round(n);
+  return Number.isSafeInteger(rounded) ? rounded : null;
+}
+
+function parseFoundedYear(raw: string): number | null {
+  const t = raw.trim();
+  if (t.length === 0) return null;
+  const n = Number(t);
+  // members.founded_year is a nullable plain integer year. Guard a sane range so
+  // a stray turnover / BE / date cell degrades to null (+ warning) instead of
+  // storing nonsense.
+  return Number.isInteger(n) && n >= 1800 && n <= 2100 ? n : null;
 }
 
 /** Validate all rows; group by member; apply spec § 3 rules 1-8. */
@@ -171,6 +211,7 @@ export function validateRows(
 
   const members: ValidatedMember[] = [];
   const tierHistogram: Record<string, number> = {};
+  const entityTypeHistogram: Record<string, number> = {};
   let validContacts = 0;
 
   for (const groupRows of groups.values()) {
@@ -183,6 +224,21 @@ export function validateRows(
 
     const tier = tierResolver.resolve(head.tier);
     if (!tier.ok) err(head.rowIndex, 'tier', 'unmapped');
+
+    // Entity type (Task 7). blank/N/A → null; unmapped → per-row error (excludes
+    // the member — a wrong legal form must never be guessed).
+    const entityTypeRes = coerceLegalEntityType(head.legalEntityType);
+    const legalEntityType: LegalEntityTypeCode | null = entityTypeRes.ok
+      ? entityTypeRes.value
+      : null;
+    if (!entityTypeRes.ok) err(head.rowIndex, 'legalEntityType', 'unmapped');
+    {
+      // Count EVERY group's coerced entity type (code / 'null' / 'unmapped'),
+      // independent of member validity — this verifies the coercer against the
+      // sheet (expect 111/15/7/5/2 + 10 null on the real TSCC data).
+      const key = entityTypeRes.ok ? (legalEntityType ?? 'null') : 'unmapped';
+      entityTypeHistogram[key] = (entityTypeHistogram[key] ?? 0) + 1;
+    }
 
     const regDate = parseGregorianDate(head.registrationDate);
     if (!regDate.ok) err(head.rowIndex, 'registrationDate', regDate.error.code);
@@ -197,7 +253,7 @@ export function validateRows(
     let taxId: TaxId | null = null;
     if (tier.ok && country.ok) {
       const scope = tier.value.memberTypeScope;
-      const rawTax = head.taxId.trim();
+      const rawTax = normalizeTaxIdCell(head.taxId, country.value); // pad-13 + N/A→''
       if (rawTax.length === 0) {
         if (scope === 'company') warn(head.rowIndex, 'taxId', 'missing_for_company');
       } else {
@@ -207,9 +263,35 @@ export function validateRows(
       }
     }
 
+    // 059/PR-A — is_vat_registered = the entity-type DEFAULT, gated on actually
+    // having a TIN (the registrant⇒TIN invariant, live on prod, rejects
+    // true+null at create). association/foundation have NO safe default → warn.
+    const isVatRegistered =
+      legalEntityType !== null &&
+      VAT_DEFAULT_BY_CODE[legalEntityType] === true &&
+      taxId !== null;
+    if (legalEntityType !== null && VAT_DEFAULT_BY_CODE[legalEntityType] === null) {
+      warn(head.rowIndex, 'legalEntityType', 'vat_default_unknown_confirm');
+    }
+
+    const statusValue = coerceMemberStatus(head.status);
+    if (head.status.trim().length > 0 && statusValue === null) {
+      warn(head.rowIndex, 'status', 'unknown_status_defaulting_active');
+    }
+    const status = statusValue ?? 'active';
+
     const turnoverThb = parseTurnover(head.turnover);
     if (head.turnover.trim().length > 0 && turnoverThb === null) {
       warn(head.rowIndex, 'turnover', 'not_a_number');
+    }
+
+    const registeredCapitalThb = parseTurnover(head.registeredCapital);
+    if (head.registeredCapital.trim().length > 0 && registeredCapitalThb === null) {
+      warn(head.rowIndex, 'registeredCapital', 'not_a_number');
+    }
+    const foundedYear = parseFoundedYear(head.foundedYear);
+    if (head.foundedYear.trim().length > 0 && foundedYear === null) {
+      warn(head.rowIndex, 'foundedYear', 'not_a_year');
     }
 
     const memberLocale = coercePreferredLanguage(head.memberLocale);
@@ -361,16 +443,25 @@ export function validateRows(
       validContacts += normalizedContacts.length;
       members.push({
         companyName: head.companyName.trim(),
+        legalEntityType,
+        isVatRegistered,
+        status,
         country: country.value,
         taxId,
         planId: tier.value.planId,
         memberTypeScope: tier.value.memberTypeScope,
         turnoverThb,
+        registeredCapitalThb,
+        foundedYear,
+        website: blankToNull(head.website),
+        description: blankToNull(head.description),
         registrationDate: regDate.value,
         preferredLocale: memberLocale,
         city: blankToNull(head.city),
         province: blankToNull(head.province),
         postalCode: blankToNull(head.postalCode),
+        addressLine1: blankToNull(head.addressLine1),
+        addressLine2: blankToNull(head.addressLine2),
         contacts: normalizedContacts,
         rowIndices: groupRows.map((r) => r.rowIndex),
       });
@@ -383,6 +474,7 @@ export function validateRows(
     members,
     issues,
     tierHistogram,
+    entityTypeHistogram,
     stats: {
       totalRows: rows.length,
       memberGroups: groups.size,

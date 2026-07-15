@@ -442,6 +442,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
             phone: primaryContact.phone ?? undefined,
             role_title: primaryContact.roleTitle ?? undefined,
             preferred_language: primaryContact.preferredLanguage,
+            // Thai Alumni DOB — seed the present value so the field shows it on
+            // load (was unseeded → always blank; combined with the dropped
+            // payload, edits never persisted).
+            date_of_birth: primaryContact.dateOfBirth ?? undefined,
           },
         }}
         onSubmit={onSubmit}

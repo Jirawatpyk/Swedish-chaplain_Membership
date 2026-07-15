@@ -61,6 +61,12 @@ export const updateContactFieldsSchema = z
     phone: z.string().max(20).nullable().optional(),
     role_title: z.string().max(100).nullable().optional(),
     preferred_language: z.enum(['en', 'th', 'sv']).optional(),
+    // Thai Alumni DOB gate — the edit form renders `date_of_birth` when the
+    // member's plan requires it (individual scope). It was omitted from this
+    // `.strict()` schema, so every edit that touched DOB was rejected 400 (or,
+    // when the client also dropped it, silently never sent). An empty string
+    // clears it to null (admin removed the value); a 'YYYY-MM-DD' string sets it.
+    date_of_birth: z.string().nullable().optional(),
   })
   .strict();
 
@@ -218,6 +224,12 @@ export async function updateContactFields(
   if (data.role_title !== undefined) draft.roleTitle = data.role_title;
   if (data.preferred_language !== undefined)
     draft.preferredLanguage = data.preferred_language;
+  // Thai Alumni DOB: `''`/`null` clear the stored value; a non-empty string is
+  // parsed to a Date (date-only, so UTC midnight round-trips the 'YYYY-MM-DD'
+  // form the `date` column stores — see drizzle-contact-repo updateInTx).
+  if (data.date_of_birth !== undefined) {
+    draft.dateOfBirth = data.date_of_birth ? new Date(data.date_of_birth) : null;
+  }
   const patch = draft as Partial<Contact>;
 
   // Ownership check: verify contactId belongs to memberId (SEC-3 IDOR guard)

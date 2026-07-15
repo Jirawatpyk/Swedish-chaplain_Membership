@@ -19,15 +19,23 @@ function row(over: Partial<RawRow> & { rowIndex: number }): RawRow {
   return {
     rowIndex: over.rowIndex,
     companyName: over.companyName ?? 'Acme Co',
+    legalEntityType: over.legalEntityType ?? '',
     country: over.country ?? 'SE',
     taxId: over.taxId ?? 'SE5566778899',
     tier: over.tier ?? 'Premium',
     turnover: over.turnover ?? '',
+    registeredCapital: over.registeredCapital ?? '',
+    website: over.website ?? '',
+    foundedYear: over.foundedYear ?? '',
+    description: over.description ?? '',
     registrationDate: over.registrationDate ?? '2026-01-15',
     memberLocale: over.memberLocale ?? '',
+    status: over.status ?? '',
     city: over.city ?? '',
     province: over.province ?? '',
     postalCode: over.postalCode ?? '',
+    addressLine1: over.addressLine1 ?? '',
+    addressLine2: over.addressLine2 ?? '',
     contactFirstName: over.contactFirstName ?? 'Jane',
     contactLastName: over.contactLastName ?? 'Doe',
     contactEmail: over.contactEmail ?? 'jane@acme.test',
@@ -286,26 +294,26 @@ describe('validateRows (spec § 3)', () => {
     expect(errCodes(r)).toContain('multiple_primary');
   });
 
-  it('turnover: a FRACTIONAL value degrades to a warning (member still imports), an integer passes (code-review fix)', () => {
-    // turnover_thb is a bigint (whole baht); a fractional cell flowing into --commit would
-    // crash the INSERT and roll back the WHOLE import. parseTurnover must reject non-integers
-    // as a clean per-row not_a_number warning (turnover → null) instead of an opaque DB abort.
+  it('turnover: a FRACTIONAL value is ROUNDED to whole baht (satang dropped); an integer passes; negative/over-range degrade to a warning', () => {
+    // turnover_thb is a bigint (whole baht). The real TSCC sheet carries .xx satang
+    // on most turnover rows — ROUND to the nearest baht rather than dropping the
+    // value (the earlier reject-fractional behaviour silently lost 117/148 real
+    // turnover figures). A fractional cell must never flow raw into --commit (a
+    // bigint INSERT of "5000000.5" crashes the whole atomic import).
     const frac = validateRows([row({ rowIndex: 2, turnover: '5000000.50' })], RESOLVER);
-    expect(frac.stats.errorCount).toBe(0); // not an error — member survives
+    expect(frac.stats.errorCount).toBe(0);
     expect(frac.members).toHaveLength(1);
-    expect(frac.members[0]!.turnoverThb).toBeNull();
+    expect(frac.members[0]!.turnoverThb).toBe(5000001); // rounded, not null
     expect(
-      frac.issues.some(
-        (i) => i.field === 'turnover' && i.code === 'not_a_number' && i.severity === 'warning',
-      ),
-    ).toBe(true);
+      frac.issues.some((i) => i.field === 'turnover' && i.code === 'not_a_number'),
+    ).toBe(false); // parsed successfully → no warning
     // a whole-baht integer passes through unchanged.
     const whole = validateRows([row({ rowIndex: 2, turnover: '5000000' })], RESOLVER);
     expect(whole.members[0]!.turnoverThb).toBe(5000000);
 
-    // R2 review: a NEGATIVE integer (would violate the members_turnover_non_negative
-    // CHECK) and an OVER-RANGE value (> MAX_SAFE_INTEGER → bigint overflow) must ALSO
-    // degrade to the warning, not crash --commit.
+    // R2 review: a NEGATIVE value (would violate the members_turnover_non_negative
+    // CHECK) and an OVER-RANGE value (> MAX_SAFE_INTEGER → bigint overflow) must
+    // still degrade to the warning, not crash --commit.
     for (const bad of ['-5000000', '99999999999999999999']) {
       const r = validateRows([row({ rowIndex: 2, turnover: bad })], RESOLVER);
       expect(r.stats.errorCount).toBe(0);
@@ -317,5 +325,80 @@ describe('validateRows (spec § 3)', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('validateRows — entity type + VAT + status + tax-id repair (PR-C)', () => {
+  it('derives is_vat_registered = default && has TIN (TH limited company)', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: '105562087242', legalEntityType: 'Private Limited Company (Company Limited)' })],
+      RESOLVER,
+    );
+    expect(r.stats.errorCount).toBe(0);
+    const m = r.members[0]!;
+    expect(m.legalEntityType).toBe('limited_company');
+    expect(m.taxId).toBe('0105562087242'); // leading zero restored
+    expect(m.isVatRegistered).toBe(true);
+  });
+
+  it('a State Enterprise with NO tax id is is_vat_registered=false (invariant-safe)', () => {
+    // 7 TSCC state enterprises have no TIN. VAT_DEFAULT_BY_CODE.state_enterprise
+    // is true, but without a TIN the registrant⇒TIN invariant would reject them —
+    // so the flag is gated on actually having a number.
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: 'N/A', legalEntityType: 'State Enterprise' })],
+      RESOLVER,
+    );
+    expect(r.stats.errorCount).toBe(0);
+    const m = r.members[0]!;
+    expect(m.legalEntityType).toBe('state_enterprise');
+    expect(m.taxId).toBeNull();
+    expect(m.isVatRegistered).toBe(false);
+  });
+
+  it('foundation warns for manual VAT confirmation (no safe default)', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, country: 'TH', taxId: '', legalEntityType: 'Foundation' })],
+      RESOLVER,
+    );
+    expect(r.members).toHaveLength(1);
+    expect(r.members[0]!.isVatRegistered).toBe(false);
+    expect(r.issues.some((i) => i.field === 'legalEntityType' && i.code === 'vat_default_unknown_confirm')).toBe(true);
+  });
+
+  it('an unmapped Member Type is a per-row error (member excluded)', () => {
+    const r = validateRows([row({ rowIndex: 2, legalEntityType: 'Sole Proprietorship Ltd' })], RESOLVER);
+    expect(errCodes(r)).toContain('unmapped');
+    expect(r.members).toHaveLength(0);
+  });
+
+  it('maps Member Status and carries the directory fields', () => {
+    const r = validateRows(
+      [row({ rowIndex: 2, status: 'Inactive', website: 'https://acme.test', foundedYear: '1995',
+             registeredCapital: '5,000,000', description: 'Widgets', addressLine1: '1 Rd', addressLine2: 'Unit 2' })],
+      RESOLVER,
+    );
+    const m = r.members[0]!;
+    expect(m.status).toBe('inactive');
+    expect(m.website).toBe('https://acme.test');
+    expect(m.foundedYear).toBe(1995);
+    expect(m.registeredCapitalThb).toBe(5_000_000);
+    expect(m.description).toBe('Widgets');
+    expect(m.addressLine1).toBe('1 Rd');
+    expect(m.addressLine2).toBe('Unit 2');
+  });
+
+  it('builds an entity-type histogram across all member groups', () => {
+    const r = validateRows(
+      [
+        row({ rowIndex: 2, companyName: 'A Co', contactEmail: 'a@x.test', country: 'TH', taxId: '105562087242', legalEntityType: 'Private Limited Company (Company Limited)' }),
+        row({ rowIndex: 3, companyName: 'B Co', contactEmail: 'b@x.test', legalEntityType: 'State Enterprise' }),
+        row({ rowIndex: 4, companyName: 'C Co', contactEmail: 'c@x.test', legalEntityType: 'N/A' }),
+      ],
+      RESOLVER,
+    );
+    expect(r.entityTypeHistogram['limited_company']).toBe(1);
+    expect(r.entityTypeHistogram['state_enterprise']).toBe(1);
+    expect(r.entityTypeHistogram['null']).toBe(1);
   });
 });

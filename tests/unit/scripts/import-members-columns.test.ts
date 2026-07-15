@@ -55,6 +55,50 @@ describe('buildColumnMap (spec § 2)', () => {
   });
 });
 
+// The real "Member Data New" headers (cols A..AE; trailing empty cols omitted).
+const TSCC_HEADERS = [
+  'Name', 'Code', 'Company', 'Tax ID', 'Member Type',
+  'Latest Invoice No.', 'Latest INV Date\n(Membership Start)', 'Invoice Status',
+  'Receipt No.', 'Receipt Date\n(Payment Date)', 'Renewal date',
+  'Country (ISO post)', 'Webiste', 'Founded year', 'Annual Turnover (THB)',
+  'Capital registeration', 'Description', 'Note (Admin only)', 'Plan',
+  'Member Status', 'Registration date', 'Plan Year (Current)', 'Member In 2025',
+  'Postal code', 'Province / State', 'City / Distrct', 'Address Line 1',
+  'Address Line 2', 'First name (Primary contact)', 'Last name (Primary contact)',
+  'Email (Primary contact)',
+];
+
+describe('buildColumnMap — real TSCC "Member Data New" sheet', () => {
+  it('resolves the real headers with no missing required column', () => {
+    const m = buildColumnMap(TSCC_HEADERS);
+    expect(m.missingRequired).toEqual([]);
+    expect(m.index.companyName).toBe(2); // C Company
+    expect(m.index.legalEntityType).toBe(4); // E Member Type
+    expect(m.index.tier).toBe(18); // S Plan (NOT E)
+    expect(m.index.country).toBe(11); // L Country (ISO post)
+    expect(m.index.turnover).toBe(14); // O Annual Turnover (THB)
+    expect(m.index.registeredCapital).toBe(15); // P Capital registeration
+    expect(m.index.website).toBe(12); // M Webiste (typo header)
+    expect(m.index.foundedYear).toBe(13); // N Founded year
+    expect(m.index.description).toBe(16); // Q Description
+    expect(m.index.status).toBe(19); // T Member Status
+    expect(m.index.registrationDate).toBe(6); // G — NOT the empty U (col 20)
+    expect(m.index.postalCode).toBe(23); // X
+    expect(m.index.province).toBe(24); // Y Province / State
+    expect(m.index.city).toBe(25); // Z City / Distrct (typo header)
+    expect(m.index.addressLine1).toBe(26); // AA
+    expect(m.index.addressLine2).toBe(27); // AB
+    expect(m.index.contactEmail).toBe(30); // AE Email (Primary contact)
+    expect(m.fullNameIndex).toBe(0); // A Name (contact-name fallback)
+  });
+
+  it('does not let "Member Type" collide with tier (trap #3)', () => {
+    const m = buildColumnMap(['Company', 'Member Type', 'Plan', 'Country', 'Registration Date', 'Email']);
+    expect(m.index.legalEntityType).toBe(1);
+    expect(m.index.tier).toBe(2); // Plan — NOT Member Type
+  });
+});
+
 describe('mapDataRows (spec § 2)', () => {
   it('extracts RawRow fields + 1-based rowIndex; Date cell → LOCAL-component ISO (no UTC off-by-one)', () => {
     const map = buildColumnMap(FULL_HEADERS);

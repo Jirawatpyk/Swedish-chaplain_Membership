@@ -399,11 +399,17 @@ describe('buildMemberFormSchema — address completeness gate (PR-B task 6)', ()
     expect(issuePaths(rest)).toContain('city');
   });
 
-  it('create + non-TH: requires only address_line1 + city — province/sub_district/postal_code stay optional', () => {
+  // UAT 2026-07-15 — a non-TH member's address is FULLY optional (was:
+  // address_line1 + city required). The §86/4 completeness gate is a THAI-buyer
+  // requirement; many non-TH territories have no postal code / province concept,
+  // so forcing any address field would block creating members from them.
+  it('create + non-TH: address is fully optional — no field flagged', () => {
     expect(
       issuePaths({
         ...BASE,
         country: 'SE',
+        address_line1: undefined,
+        city: undefined,
         province: undefined,
         sub_district: undefined,
         postal_code: undefined,
@@ -411,7 +417,7 @@ describe('buildMemberFormSchema — address completeness gate (PR-B task 6)', ()
     ).toEqual([]);
   });
 
-  it('create + non-TH: still flags a missing city', () => {
+  it('create + non-TH: does NOT flag a missing city', () => {
     expect(
       issuePaths({
         ...BASE,
@@ -421,7 +427,7 @@ describe('buildMemberFormSchema — address completeness gate (PR-B task 6)', ()
         sub_district: undefined,
         postal_code: undefined,
       }),
-    ).toContain('city');
+    ).not.toContain('city');
   });
 
   it('edit: never blocks on a completely empty address', () => {

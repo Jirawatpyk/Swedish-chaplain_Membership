@@ -54,19 +54,27 @@ async function seedPremiumPlan(slug: string, userId: string): Promise<void> {
 }
 
 let vmSeq = 0;
-function vm(over: { planId?: string; regDate?: string }): ValidatedMember {
+function vm(over: { planId?: string; regDate?: string; status?: 'active' | 'inactive' }): ValidatedMember {
   vmSeq += 1;
   const email = `cyc${vmSeq}-${randomUUID().slice(0, 8)}@imp.test`;
   return {
     companyName: `Cyc Co ${vmSeq}`,
+    legalEntityType: null,
+    isVatRegistered: false,
+    status: over.status ?? 'active',
     country: 'SE' as ValidatedMember['country'],
     taxId: ('SE' + String(vmSeq).padStart(6, '0')) as ValidatedMember['taxId'],
     planId: over.planId ?? 'premium',
     memberTypeScope: 'company',
     turnoverThb: null,
+    registeredCapitalThb: null,
+    foundedYear: null,
+    website: null,
+    description: null,
     registrationDate: new Date(over.regDate ?? '2026-02-10T00:00:00Z'),
     preferredLocale: null,
     city: null, province: null, postalCode: null,
+    addressLine1: null, addressLine2: null,
     contacts: [{
       firstName: 'First', lastName: 'Last',
       email: email as ValidatedMember['contacts'][number]['email'],
@@ -142,6 +150,19 @@ describe('commitMembers — initial renewal cycle per imported member (Task 1.7)
       '2027-02-10T00:00:00.000Z',
       '2027-05-20T00:00:00.000Z',
     ]);
+  }, 60_000);
+
+  it('an INACTIVE imported member is created but gets NO renewal cycle (PR-C)', async () => {
+    // An inactive member is a directory record only — creating a cycle would
+    // resurface it in the F8 at-risk / reminder pipeline. Both members are
+    // created; only the active one gets a cycle.
+    const active = vm({ regDate: '2026-03-01T00:00:00Z', status: 'active' });
+    const inactive = vm({ regDate: '2026-03-01T00:00:00Z', status: 'inactive' });
+    const out = await commitMembers(tenantC.ctx, user.userId, [active, inactive], 2026);
+    expect(out.membersCreated).toBe(2);
+    expect(out.cyclesCreated).toBe(1); // only the active member
+    expect(await countCycles(tenantC.ctx.slug)).toBe(1);
+    expect(await countMembers(tenantC.ctx.slug)).toBe(2);
   }, 60_000);
 
   it('cold-start: a member with a HISTORICAL registration_date anchors at the CURRENT period (expires_at in the future), not the original (cluster F, 068)', async () => {

@@ -167,6 +167,22 @@ export async function PortalProfileBody({
     tLegalTypes,
   );
 
+  // 069 — surface the member's address so they can verify the value that
+  // prints as the §86/4 BUYER address on every tax invoice they receive (same
+  // "verify what the chamber has on file" rationale as tax_id above). Read-only:
+  // the §86/4 address is admin-managed — a member who spots an error asks the
+  // chamber to correct it (the portal edit whitelist, FR-042, deliberately
+  // excludes it). Composed exactly like the admin detail page (sub-district →
+  // city → province → postcode, then the two street lines), joined onto one line
+  // for the DetailField cell; `null` when nothing is on file → renders "—".
+  const cityLine = [m.subDistrict, m.city, m.province, m.postalCode]
+    .filter((p): p is string => Boolean(p && p.trim()))
+    .join(' ');
+  const addressText =
+    [m.addressLine1, m.addressLine2, cityLine]
+      .filter((l): l is string => Boolean(l && l.trim()))
+      .join(', ') || null;
+
   return (
     <DetailContainer>
       <PageHeader
@@ -237,6 +253,14 @@ export async function PortalProfileBody({
                 value={null}
                 extra={<CountryDisplay code={m.country} />}
               />
+              {/* 069 — §86/4 buyer address on file (read-only; admin-managed).
+                  Full-width so a long address wraps cleanly. */}
+              <div className="sm:col-span-2 lg:col-span-3">
+                <DetailField
+                  label={t('fields.address')}
+                  value={addressText}
+                />
+              </div>
               {m.website ? (
                 <DetailField
                   label={t('fields.website')}

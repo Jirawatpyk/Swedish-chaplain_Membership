@@ -65,4 +65,37 @@ describe('member importer — workbook round-trip (spec § 8)', () => {
       cleanup();
     }
   });
+
+  it('reads a NAMED sheet when a sheet name is given (not just the first)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'import-sheet-'));
+    const file = join(dir, 'two-sheets.xlsx');
+    try {
+      const wb = XLSX.utils.book_new();
+      // Real workbook keeps member data on a later sheet, NOT sheet[0].
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['ignore'], ['x']]), 'First');
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([['Company', 'Email'], ['Acme', 'a@b.test']]),
+        'Member Data New',
+      );
+      XLSX.writeFile(wb, file);
+      const { headers } = readWorkbook(file, 'Member Data New');
+      expect(headers).toEqual(['Company', 'Email']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws a clear error naming available sheets when the sheet is missing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'import-sheet-missing-'));
+    const file = join(dir, 'one-sheet.xlsx');
+    try {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['a'], ['1']]), 'Only');
+      XLSX.writeFile(wb, file);
+      expect(() => readWorkbook(file, 'Nope')).toThrow(/not found/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

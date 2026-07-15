@@ -90,6 +90,15 @@ const member = {
   website: null,
   description: null,
   foundedYear: 2010,
+  // 069 — address parts surfaced read-only on the portal (the §86/4 buyer
+  // address the member can verify). Composed sub-district → city → province →
+  // postcode after the two street lines.
+  addressLine1: '123 Sukhumvit Rd',
+  addressLine2: null,
+  subDistrict: 'Khlong Toei',
+  city: 'Khlong Toei',
+  province: 'Bangkok',
+  postalCode: '10110',
   memberNumber: 42,
   planId: 'corporate',
   planYear: 2026,
@@ -236,6 +245,38 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
     expect(html).toContain('fields.taxId');
     // … and the actual value (DetailField renders `String(value)`).
     expect(html).toContain('0105558012345');
+  });
+
+  // 069 — the §86/4 buyer address is surfaced read-only so the member can
+  // verify what prints on their tax invoices. Composed exactly like the admin
+  // detail page: street lines, then sub-district → city → province → postcode.
+  it('renders the Address field composed from the member address parts', async () => {
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const html = renderToStaticMarkup(tree as ReactElement);
+    expect(html).toContain('fields.address');
+    expect(html).toContain('123 Sukhumvit Rd');
+    expect(html).toContain('Khlong Toei Khlong Toei Bangkok 10110');
+  });
+
+  it('Address field shows the "—" fallback when no address is on file', async () => {
+    const noAddress = {
+      ...member,
+      addressLine1: null,
+      addressLine2: null,
+      subDistrict: null,
+      city: null,
+      province: null,
+      postalCode: null,
+    };
+    getMemberMock.mockResolvedValueOnce({
+      ok: true,
+      value: { member: noAddress, contacts: [ownContact] },
+    });
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const html = renderToStaticMarkup(tree as ReactElement);
+    // The label still renders; the value cell falls back to the em dash.
+    expect(html).toContain('fields.address');
+    expect(html).toContain('—');
   });
 
   /**

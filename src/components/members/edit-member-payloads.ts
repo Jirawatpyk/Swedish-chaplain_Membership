@@ -57,6 +57,10 @@ export type EditablePrimaryContact = {
   readonly phone: string | null;
   readonly roleTitle: string | null;
   readonly preferredLanguage: 'en' | 'th' | 'sv';
+  // Thai Alumni DOB — 'YYYY-MM-DD' or null. Seeded from the member's stored
+  // value so the edit form shows the present DOB (was omitted entirely, so the
+  // field loaded blank AND any typed value was dropped by the builders below).
+  readonly dateOfBirth: string | null;
 };
 
 /** Member-company field PATCH body (always full — diff is tracked by the use case). */
@@ -163,6 +167,10 @@ export function buildContactPayload(
     body.role_title = c.role_title?.trim() || null;
   if (c.preferred_language !== contact.preferredLanguage)
     body.preferred_language = c.preferred_language;
+  // Thai Alumni DOB — send only when changed (empty ⇒ null clears it). The
+  // server's updateContactFieldsSchema now accepts `date_of_birth`.
+  if ((c.date_of_birth?.trim() || null) !== (contact.dateOfBirth ?? null))
+    body.date_of_birth = c.date_of_birth?.trim() || null;
   return body;
 }
 
@@ -177,7 +185,10 @@ export function contactFieldsChanged(
     c.last_name.trim() !== contact.lastName ||
     (c.phone?.trim() || null) !== (contact.phone ?? null) ||
     (c.role_title?.trim() || null) !== (contact.roleTitle ?? null) ||
-    c.preferred_language !== contact.preferredLanguage
+    c.preferred_language !== contact.preferredLanguage ||
+    // Thai Alumni DOB — without this leg a DOB-only edit produces no diff, so
+    // no contact PATCH fires and the new/changed birthdate silently fails to save.
+    (c.date_of_birth?.trim() || null) !== (contact.dateOfBirth ?? null)
   );
 }
 

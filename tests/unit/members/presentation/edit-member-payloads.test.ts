@@ -49,6 +49,7 @@ const contact: EditablePrimaryContact = {
   phone: null,
   roleTitle: 'Manager',
   preferredLanguage: 'en',
+  dateOfBirth: null,
 };
 
 type ContactValues = MemberFormValues['primary_contact'];
@@ -129,6 +130,29 @@ describe('contactFieldsChanged', () => {
     expect(
       contactFieldsChanged(makeValues({}, { preferred_language: 'th' }), contact),
     ).toBe(true);
+  });
+  // Thai Alumni DOB — a DOB-only edit must fire the contact PATCH; without the
+  // DOB leg in contactFieldsChanged the birthdate silently never saved.
+  it('detects an added date_of_birth (null → value)', () => {
+    expect(
+      contactFieldsChanged(makeValues({}, { date_of_birth: '2000-01-15' }), contact),
+    ).toBe(true);
+  });
+  it('detects a changed date_of_birth', () => {
+    expect(
+      contactFieldsChanged(
+        makeValues({}, { date_of_birth: '1999-12-31' }),
+        { ...contact, dateOfBirth: '2000-01-15' },
+      ),
+    ).toBe(true);
+  });
+  it('does NOT treat unchanged date_of_birth as a change', () => {
+    expect(
+      contactFieldsChanged(
+        makeValues({}, { date_of_birth: '2000-01-15' }),
+        { ...contact, dateOfBirth: '2000-01-15' },
+      ),
+    ).toBe(false);
   });
 });
 
