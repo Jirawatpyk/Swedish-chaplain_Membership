@@ -305,25 +305,38 @@ describe('recordPayment — 066 §4.4(1) terminated-membership gate', () => {
     if (!r.ok) expect(r.error.code).toBe('membership_terminated');
   });
 
-  it('suspended access → gate does NOT fire (not membership_terminated)', async () => {
-    const r = await recordPayment(depsWithAccess('suspended'), input);
-    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+  it('suspended access → gate does NOT fire; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('suspended');
+    const r = await recordPayment(deps, input);
+    // Positive assertion (a fail-CLOSED regression under any other code would
+    // otherwise slip past a bare `not.toBe('membership_terminated')`).
+    expect(r.ok).toBe(true);
+    // The gate ran (access was checked) and let a non-terminated member pay.
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
   });
 
-  it('membership-access lookup ERROR → gate fails OPEN (payment not blocked)', async () => {
+  it('membership-access lookup ERROR → gate fails OPEN; payment PROCEEDS', async () => {
     // §4.4(1) fail-open: availability of the money path beats the gate;
     // the §4.4(2) heal-site net (keyed on in-tx cycle state, not the gate
-    // result) is the durable backstop for any slip.
-    const r = await recordPayment(depsWithAccess('terminated', /* lookupOk */ false), input);
-    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+    // result) is the durable backstop for any slip. Assert the payment
+    // completed so a fail-CLOSED regression (blocking on lookup error under
+    // ANY error code) is caught, not just a code rename.
+    const deps = depsWithAccess('terminated', /* lookupOk */ false);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
   });
 
   it('webhook trigger → gate SKIPPED even for terminated (money already captured)', async () => {
-    const r = await recordPayment(depsWithAccess('terminated'), {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, {
       ...input,
       triggeredBy: 'webhook' as const,
     });
-    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+    // Payment proceeds AND the gate never even reads membership access on the
+    // webhook rail (money already moved — blocking would strand it).
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
   });
 });
 

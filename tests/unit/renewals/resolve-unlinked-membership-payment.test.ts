@@ -82,6 +82,14 @@ function fakeDeps(args: {
    */
   settledCycleCountForMember?: number;
   openCycle?: RenewalCycle | null;
+  /**
+   * 066 F-5 review — the member's latest cycle across ALL statuses, read by
+   * the terminal_only branch to gate the payment_on_terminated_member net on
+   * ACTUAL termination (isMembershipLapsed). Defaults to null (no cycle →
+   * not terminated → net skipped). Terminal_only tests that expect the net to
+   * fire must pass a lapsed/expired-cancelled cycle here.
+   */
+  latestCycle?: RenewalCycle | null;
   memberPlan?: { planId: string; isArchived: boolean } | null;
   reanchorResult?:
     | { cycle: RenewalCycle; reminderEventsReset: number }
@@ -98,6 +106,7 @@ function fakeDeps(args: {
     countCycles: ReturnType<typeof vi.fn>;
     countSettledCycles: ReturnType<typeof vi.fn>;
     findOpenCycle: ReturnType<typeof vi.fn>;
+    findLatestCycle: ReturnType<typeof vi.fn>;
     reanchor: ReturnType<typeof vi.fn>;
     transitionStatus: ReturnType<typeof vi.fn>;
     insert: ReturnType<typeof vi.fn>;
@@ -119,6 +128,7 @@ function fakeDeps(args: {
       Math.max((args.cycleCountForMember ?? 0) - 1, 0),
   );
   const findOpenCycle = vi.fn(async () => args.openCycle ?? null);
+  const findLatestCycle = vi.fn(async () => args.latestCycle ?? null);
   const reanchor = vi.fn(
     args.reanchorResult !== undefined
       ? async () => args.reanchorResult
@@ -171,6 +181,7 @@ function fakeDeps(args: {
       countCyclesForMemberInTx: countCycles,
       countSettledCyclesForMemberInTx: countSettledCycles,
       findOpenCycleForMemberInTx: findOpenCycle,
+      findLatestCycleForMemberInTx: findLatestCycle,
       reanchorPeriodInTx: reanchor,
       transitionStatus,
     } as unknown as ResolveUnlinkedMembershipPaymentDeps['cyclesRepo'],
@@ -191,6 +202,7 @@ function fakeDeps(args: {
       countCycles,
       countSettledCycles,
       findOpenCycle,
+      findLatestCycle,
       reanchor,
       transitionStatus,
       insert,
@@ -234,8 +246,19 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 2: erased member', 
 });
 
 describe('resolveUnlinkedMembershipPaymentInTx — behaviour 6: terminal_only', () => {
-  it('cycles exist but none open → skipped:terminal_only + 066 §4.4(2) net (audit + escalation + metric)', async () => {
-    const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle: null });
+  it('cycles exist, none open, latest LAPSED (terminated) → skipped:terminal_only + 066 §4.4(2) net', async () => {
+    const { deps, mocks } = fakeDeps({
+      cycleCountForMember: 2,
+      openCycle: null,
+      // 066 F-5 review — the net now fires only when the member is ACTUALLY
+      // terminated: latest cycle is `lapsed` (→ deriveMembershipAccess
+      // 'terminated').
+      latestCycle: buildCycle({
+        status: 'lapsed',
+        closedReason: 'grace_expired',
+        closedAt: '2026-04-01T00:00:00.000Z',
+      }),
+    });
     const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
     expect(r).toEqual({ kind: 'skipped', reason: 'terminal_only' });
     // 066 §4.4(2) — the payment_on_terminated_member audit event, in-tx.
@@ -254,6 +277,53 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 6: terminal_only', 
       cycleId: null,
     });
     expect(renewalsMetrics.paymentOnTerminatedMember).toHaveBeenCalledWith('terminal_only');
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
+  });
+
+  // 066 F-5 whole-branch review — the net must NOT fire for a member who has
+  // no OPEN cycle but is NOT terminated (suspended or still-covered). Firing
+  // it would write a false 10y tax-evidence record + spurious admin task.
+  it('latest cycle SUSPENDED (pending_admin_reactivation) → skipped:terminal_only, NO net', async () => {
+    const { deps, mocks } = fakeDeps({
+      cycleCountForMember: 2,
+      openCycle: null,
+      latestCycle: buildCycle({
+        status: 'pending_admin_reactivation',
+        enteredPendingAt: '2026-04-01T00:00:00.000Z',
+      }),
+    });
+    const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+    expect(r).toEqual({ kind: 'skipped', reason: 'terminal_only' });
+    const auditCall = mocks.emitInTx.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeUndefined();
+    expect(mocks.escalationInsert).not.toHaveBeenCalled();
+    expect(renewalsMetrics.paymentOnTerminatedMember).not.toHaveBeenCalled();
+    // Still counted as a resolved-skip (benign ad-hoc payment).
+    expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
+  });
+
+  it('latest cycle CANCELLED but still within coverage (full access) → skipped:terminal_only, NO net', async () => {
+    const { deps, mocks } = fakeDeps({
+      cycleCountForMember: 2,
+      openCycle: null,
+      // cancelled + FUTURE expiresAt → deriveMembershipAccess 'full'.
+      latestCycle: buildCycle({
+        status: 'cancelled',
+        closedReason: 'admin_reactivated',
+        closedAt: '2026-04-01T00:00:00.000Z',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+      }),
+    });
+    const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
+    expect(r).toEqual({ kind: 'skipped', reason: 'terminal_only' });
+    const auditCall = mocks.emitInTx.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeUndefined();
+    expect(mocks.escalationInsert).not.toHaveBeenCalled();
+    expect(renewalsMetrics.paymentOnTerminatedMember).not.toHaveBeenCalled();
     expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
   });
 });
@@ -902,6 +972,16 @@ function makeInMemoryCyclesRepo() {
         if (c.memberId === memberId && ACTIVE.has(c.status)) return c;
       }
       return null;
+    },
+    // 066 F-5 review — latest cycle across ALL statuses (created_at DESC,
+    // cycle_id DESC), mirroring the Drizzle in-tx read.
+    async findLatestCycleForMemberInTx(_tx: unknown, _tenantId: string, memberId: string) {
+      const mine = [...rows.values()].filter((c) => c.memberId === memberId);
+      mine.sort((a, b) => {
+        const byCreated = String(b.createdAt).localeCompare(String(a.createdAt));
+        return byCreated !== 0 ? byCreated : String(b.cycleId).localeCompare(String(a.cycleId));
+      });
+      return mine[0] ?? null;
     },
     async reanchorPeriodInTx(
       _tx: unknown,

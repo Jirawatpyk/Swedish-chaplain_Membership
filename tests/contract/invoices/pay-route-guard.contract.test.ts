@@ -154,6 +154,22 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — legacy no-TIN event g
     expect(body.error).toEqual({ code: 'legacy_no_tin_event_needs_remediation' });
   });
 
+  it('409 membership_terminated — bare code (066 §4.4(1) gate → route 409 map)', async () => {
+    // Pins the branch's new `: result.error.code === 'membership_terminated'
+    // ? 409` arm. Without this, that arm could be dropped and the ternary's
+    // `: 422` tail would silently misclassify a terminated-member refusal —
+    // every unit test still green (same latent class the legacy_no_tin pin
+    // above guards).
+    recordPaymentMock.mockResolvedValueOnce(err({ code: 'membership_terminated' }));
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest(), routeParams);
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'membership_terminated' });
+  });
+
   it('SECURITY (066 §4.4(1)): client-supplied triggeredBy/tenantId/actorUserId are overridden server-side — the terminated gate cannot be bypassed', async () => {
     // CWE-915 regression guard: a client sending `triggeredBy:'webhook'`
     // (the ONE trigger the gate exempts) must NOT reach the use-case — the
