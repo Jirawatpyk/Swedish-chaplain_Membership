@@ -362,13 +362,23 @@ export async function createInvoiceDraft(
     // start date is the pro-rate ANCHOR (`proRateAnchor` — the member's join date
     // when they joined mid-FY), i.e. the SAME date the factor was derived from,
     // NOT `issueDate` (today).
+    //
+    // The '\n' before the coverage window is a PDF line-break hint: it drops the
+    // "(month range)" onto its own line in the narrow invoice Description column
+    // so the parenthetical period doesn't wrap mid-way (prod UAT: "(July 2027 -
+    // June" / "2028)" and the Thai "2570" orphan). It is INVISIBLE everywhere
+    // else — the admin/portal/email HTML renders the description with default
+    // `white-space: normal`, which collapses the newline to a space. Stored on
+    // the line at issue time (forward-only data, exactly like the address /
+    // registry v6 note), so it needs NO template-version gate: the template
+    // renders the stored text verbatim, and already-issued lines are unchanged.
     const membershipDescTh =
-      `ค่าสมาชิก ${brandPrefix}${planLabelTh}ปี ${feeYearBE} ${windowText.th}` +
+      `ค่าสมาชิก ${brandPrefix}${planLabelTh}ปี ${feeYearBE}\n${windowText.th}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rate ${proRateFactor}, ตั้งแต่ ${proRateAnchor})`);
     const membershipDescEn =
-      `${brandPrefix}${planLabelEn}Membership Fee ${feeYearCe} ${windowText.en}` +
+      `${brandPrefix}${planLabelEn}Membership Fee ${feeYearCe}\n${windowText.en}` +
       (proRateFactor === '1.0000'
         ? ''
         : ` (pro-rated ${proRateFactor}, from ${proRateAnchor})`);

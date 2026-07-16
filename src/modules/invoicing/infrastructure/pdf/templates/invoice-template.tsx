@@ -669,8 +669,27 @@ function renderPageBody({
           )}
           <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
           <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
-          <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>
-          <Text style={styles.value}>{input.tenant.address_en}</Text>
+          {/* Seller §86/4 address — honour ADMIN-ENTERED line breaks. The tenant
+              address is a single free-text field; rendered as one <Text> it
+              auto-wrapped at whatever point fit the header column (e.g. splitting
+              "ถนน" from "พญาไท", or overflowing the EN street onto a bad line —
+              prod UAT). Splitting on '\n' (mirrors the buyer block below) lets the
+              admin control exactly where each line breaks via the Settings
+              textarea. BYTE-SAFE (SC-003 / no template-version bump): a stored
+              address with NO newline splits to a single element, so shapeThai runs
+              on the whole string exactly as before → identical bytes for every
+              already-issued snapshot. shapeThai runs PER LINE so its 55-char Thai
+              wrap budget can't re-flow across an admin's intended break. */}
+          {input.tenant.address_th.split('\n').map((line, i) => (
+            <Text key={`seller-addr-th-${i}`} style={styles.value}>
+              {shapeThai(line)}
+            </Text>
+          ))}
+          {input.tenant.address_en.split('\n').map((line, i) => (
+            <Text key={`seller-addr-en-${i}`} style={styles.value}>
+              {line}
+            </Text>
+          ))}
           <Text style={styles.label}>
             {shapeThai('เลขประจำตัวผู้เสียภาษี')} / Tax ID: {input.tenant.tax_id}
           </Text>
