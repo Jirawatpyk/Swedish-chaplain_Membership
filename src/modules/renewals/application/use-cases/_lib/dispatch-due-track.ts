@@ -44,6 +44,7 @@ import {
   type DispatchContext,
   type DispatchOneCycleOutcome,
 } from './dispatch-one-cycle';
+import { pauseRemindersAfterOutreach } from '../pause-reminders-after-outreach';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -76,6 +77,7 @@ export async function dispatchDueTrackCycle(
   // Gate 3 — the candidate query only selects `awaiting_payment`, but the
   // page is read outside any lock; re-check defensively.
   if (cycle.status !== 'awaiting_payment') {
+    await emitSkipAudit(deps, candidate, ctx, 'cycle_terminal');
     return { kind: 'skipped', reason: 'cycle_terminal' };
   }
   // Gate 4 — member archived.
@@ -112,6 +114,44 @@ export async function dispatchDueTrackCycle(
     );
     await emitSkipAudit(deps, candidate, ctx, 'unreconciled_paid_membership_invoice');
     return { kind: 'skipped', reason: 'unreconciled_paid_membership_invoice' };
+  }
+  // Gate 10 — 7-day pause after admin outreach (FR-033; T4-review M2).
+  // Applies to the due track too: a dunning email colliding with an
+  // admin's logged personal outreach damages trust, and delaying it is
+  // termination-safe (the §3.2(3) dormancy guard blocks the terminate
+  // until the warning eventually lands).
+  const pauseResult = await pauseRemindersAfterOutreach(deps, {
+    tenantId: ctx.tenantId,
+    memberId: member.memberId,
+  });
+  if (!pauseResult.ok) {
+    logger.error(
+      {
+        cycleId: cycle.cycleId,
+        memberId: member.memberId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+        errKind: pauseResult.error.kind,
+        errMessage: pauseResult.error.message,
+      },
+      'dispatchDueTrackCycle: pause-check returned err — defensive skip to preserve FR-033 invariant',
+    );
+    await emitSkipAudit(deps, candidate, ctx, 'tenant_misconfigured', {
+      gate: 'outreach_pause_check',
+      err_kind: pauseResult.error.kind,
+    });
+    return { kind: 'skipped', reason: 'tenant_misconfigured' };
+  }
+  if (pauseResult.value.paused) {
+    await emitSkipAudit(deps, candidate, ctx, 'outreach_in_progress', {
+      latest_outreach_at: pauseResult.value.latestOutreachAt,
+      expires_at: pauseResult.value.expiresAt,
+    });
+    return {
+      kind: 'skipped',
+      reason: 'outreach_in_progress',
+      metadata: { latest_outreach_at: pauseResult.value.latestOutreachAt },
+    };
   }
   // Gate 11 — no primary contact: nothing to email. No escalation task
   // here (unlike the ladder's fireStep) — the dormancy guard defers the

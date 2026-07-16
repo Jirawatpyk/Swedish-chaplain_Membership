@@ -238,6 +238,9 @@ export async function POST(
         skipped: false as const,
         tenant_id: tenantId,
         reminders_dispatched: dispatchResult.value.summary.emailsSent,
+        // 066 §3.2(2) (T4-review N4) — statutory-warning volume the
+        // dormancy guard depends on; broken out of the total.
+        due_track_reminders_dispatched: dispatchResult.value.summary.dueTrackEmailsSent,
         reminders_skipped: dispatchResult.value.summary.skipped,
         tasks_created: dispatchResult.value.summary.tasksCreated,
         reminders_failed_transient:

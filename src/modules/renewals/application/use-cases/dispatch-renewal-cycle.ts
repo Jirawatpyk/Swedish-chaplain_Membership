@@ -279,6 +279,7 @@ export async function dispatchRenewalCycle(
               return await dispatchDueTrackCycle(deps, candidate, dueTrackCtx);
             } catch (e) {
               // Same per-member fault isolation as the main loop.
+              const errMsg = e instanceof Error ? e.message : String(e);
               logger.error(
                 {
                   err: e instanceof Error ? e : new Error(String(e)),
@@ -289,10 +290,49 @@ export async function dispatchRenewalCycle(
                 },
                 'dispatchRenewalCycle: due-track per-cycle dispatch failed (isolated)',
               );
+              // K1-C8 parity (T4-review M3) — the cron tally and the
+              // audit_log forensic record must agree; a counted failure
+              // with no audit row is Principle VIII drift. Fire-and-forget
+              // emit (no tx open here); a probe-audit failure must not
+              // break peer isolation.
+              try {
+                await deps.auditEmitter.emit(
+                  {
+                    type: 'renewal_reminder_send_failed',
+                    payload: {
+                      cycle_id: candidate.cycle.cycleId,
+                      member_id: candidate.member.memberId,
+                      failure_kind: 'dispatcher_crash',
+                      failure_message: errMsg.slice(0, 200),
+                      via_retry_pass: false,
+                    },
+                  },
+                  {
+                    tenantId: input.tenantId,
+                    actorUserId: null,
+                    actorRole: 'cron',
+                    correlationId: input.correlationId,
+                    requestId: null,
+                  },
+                );
+              } catch (auditErr) {
+                logger.error(
+                  {
+                    err:
+                      auditErr instanceof Error
+                        ? auditErr
+                        : new Error(String(auditErr)),
+                    cycleId: candidate.cycle.cycleId,
+                    tenantId: input.tenantId,
+                    correlationId: input.correlationId,
+                  },
+                  'dispatchRenewalCycle: due-track dispatcher_crash audit emit failed',
+                );
+              }
               return {
                 kind: 'failed_transient' as const,
                 reminderEventId: '',
-                reason: `dispatcher_crash: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`,
+                reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
               };
             }
           }),

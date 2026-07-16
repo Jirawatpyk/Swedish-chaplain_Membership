@@ -395,6 +395,40 @@ describe('retryFailedReminders', () => {
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
+    it('066 (T4-review H1): opted-out member does NOT block a DUE-TRACK retry', async () => {
+      // due+7/due+30 are contractual dunning notices that bypass the
+      // marketing opt-out at dispatch - a transient failure must stay
+      // retryable, else exhaustion marks it permanent and the dormancy
+      // guard defers the member's termination forever.
+      const candidate = buildHappyCandidate();
+      const { deps, gatewayMock } = fakeDeps({
+        eligible: [{ ...buildFailedEvent(), stepId: 'due+30.email', templateId: 'due-track' }],
+        candidate: {
+          ...candidate,
+          member: { ...candidate.member, renewalRemindersOptedOut: true },
+        },
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.retryBlockedByGate).toBe(0);
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('066: opted-out member STILL blocks a ladder-step retry (bypass is due-track-only)', async () => {
+      const candidate = buildHappyCandidate();
+      const { deps, gatewayMock } = fakeDeps({
+        eligible: [buildFailedEvent()], // stepId t-30.email (ladder)
+        candidate: {
+          ...candidate,
+          member: { ...candidate.member, renewalRemindersOptedOut: true },
+        },
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.retryBlockedByGate).toBe(1);
+      expect(gatewayMock).not.toHaveBeenCalled();
+    });
+
     it('J9-M7: candidate not found (cycle deleted/RLS) → retryCandidateMissing (distinct from retryBlockedByGate)', async () => {
       // J9-M7 split the previous catch-all `retryBlockedByGate`
       // counter so operators can distinguish:
