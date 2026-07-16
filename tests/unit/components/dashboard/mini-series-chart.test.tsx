@@ -215,6 +215,34 @@ describe('MiniSeriesChart', () => {
     expect(container.querySelector('.recharts-bar')).toBeInTheDocument();
   });
 
+  it('renders a visible bar rectangle for zero-value months (minPointSize floor)', () => {
+    // A series with zero, non-zero, and zero again to ensure every month
+    // shows a crisp mark (even zeros) — matching the original hand-rolled
+    // SVG's MIN_BAR = 3 px floor. Without minPointSize, zero and tiny bars
+    // are invisible/sub-pixel, breaking the "all 12 months in a frame" model.
+    const points = [
+      pt('2026-01', 0, 'THB 0'),
+      pt('2026-02', 150, 'THB 150'),
+      pt('2026-03', 0, 'THB 0'),
+    ];
+    const { container } = render(
+      <MiniSeriesChart
+        {...BASE}
+        variant="bar"
+        summary={{ value: 'THB 150', label: '12-month total' }}
+        points={points}
+      />,
+    );
+    // Recharts renders a .recharts-bar-rectangle per data point; zero-value
+    // rectangles must be present and visible (via minPointSize={3}).
+    const barRects = container.querySelectorAll('.recharts-bar-rectangle');
+    expect(barRects.length).toBeGreaterThanOrEqual(3);
+    // Verify the table includes all three points (all-zero-and-non-zero rows).
+    const table = screen.getByRole('table');
+    expect(table).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(4); // header + 3 data
+  });
+
   it('renders an up delta chip with a ▲ glyph + label (not colour-only)', () => {
     const points = [pt('2026-01', 10, '10'), pt('2026-02', 20, '20')];
     render(

@@ -212,6 +212,7 @@ function SeriesCanvas({
               fill="var(--color-value)"
               radius={[2, 2, 0, 0]}
               maxBarSize={28}
+              minPointSize={3}
               isAnimationActive={allowMotion}
             />
           </BarChart>
