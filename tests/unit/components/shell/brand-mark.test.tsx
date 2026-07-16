@@ -92,4 +92,16 @@ describe('<BrandMark>', () => {
     const { container } = render(<BrandMark variant="mark" />);
     expect(container.querySelectorAll('text').length).toBe(0);
   });
+
+  it('reverse renders the dark-surface recolour alone, with no white tile', () => {
+    // Dormant capability for always-dark surfaces (trialled app-wide
+    // 2026-07-16, rolled back in favour of the chip/tile treatment).
+    const { container } = render(<BrandMark variant="mark" reverse />);
+    const image = container.querySelector('image')!;
+    expect(image.getAttribute('href')).toBe('/brand/tscc-mark-reverse.svg');
+    const tiles = Array.from(container.querySelectorAll('rect')).filter((r) =>
+      (r.getAttribute('class') ?? '').includes('fill-white'),
+    );
+    expect(tiles).toHaveLength(0);
+  });
 });

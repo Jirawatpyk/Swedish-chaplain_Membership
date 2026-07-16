@@ -15,8 +15,10 @@
  *     chip at the call site — the tile here is dark-theme-only.
  *     A reverse recolour for dark surfaces (blue stroke → white; in-house
  *     derivative, not TSCC-official) exists at
- *     public/brand/tscc-mark-reverse.svg if a tile-free treatment is ever
- *     preferred.
+ *     public/brand/tscc-mark-reverse.svg — opt in per call site via the
+ *     `reverse` prop (renders the recolour alone, no tile). A tile-free
+ *     treatment was trialled app-wide on 2026-07-16 and rolled back in
+ *     favour of the chip/tile, so the prop is currently dormant.
  *   - Wordmark text keeps `currentColor` (navy on light, white on dark, via
  *     the root utilities) and the gold rule stays pinned to --brand-accent,
  *     so lockup/vertical still reverse with the theme.
@@ -33,9 +35,16 @@ interface BrandMarkProps {
   readonly className?: string;
   /** Accessible name. Omit to render the mark as decorative (aria-hidden). */
   readonly title?: string;
+  /**
+   * Render the dark-surface recolour (flag blue → white) alone, with no
+   * white tile — for surfaces that are dark in BOTH themes. Currently
+   * dormant; see the colour-rules note above.
+   */
+  readonly reverse?: boolean;
 }
 
 const MARK_SRC = '/brand/tscc-mark.svg';
+const MARK_REVERSE_SRC = '/brand/tscc-mark-reverse.svg';
 const GOLD = 'var(--brand-accent)';
 const WORDMARK_FONT = 'var(--font-geist-sans), "Segoe UI", system-ui, sans-serif';
 
@@ -50,7 +59,12 @@ function DarkTile(props: {
   return <rect {...props} className="fill-white opacity-0 dark:opacity-100" />;
 }
 
-export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps) {
+export function BrandMark({
+  variant = 'mark',
+  className,
+  title,
+  reverse = false,
+}: BrandMarkProps) {
   const a11y = title
     ? ({ role: 'img', 'aria-label': title } as const)
     : ({ 'aria-hidden': true, focusable: false } as const);
@@ -59,11 +73,13 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
     .filter(Boolean)
     .join(' ');
 
+  const src = reverse ? MARK_REVERSE_SRC : MARK_SRC;
+
   if (variant === 'lockup') {
     return (
       <svg viewBox="0 0 516 120" className={rootClass} {...a11y}>
-        <DarkTile x={0} y={2} width={140} height={116} rx={14} />
-        <image href={MARK_SRC} x="8" y="10" width="124" height="100" />
+        {reverse ? null : <DarkTile x={0} y={2} width={140} height={116} rx={14} />}
+        <image href={src} x="8" y="10" width="124" height="100" />
         <text
           x="160"
           y="62"
@@ -94,8 +110,8 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
   if (variant === 'vertical') {
     return (
       <svg viewBox="0 0 330 248" className={rootClass} {...a11y}>
-        <DarkTile x={76} y={0} width={178} height={148} rx={16} />
-        <image href={MARK_SRC} x="88" y="10" width="154" height="128" />
+        {reverse ? null : <DarkTile x={76} y={0} width={178} height={148} rx={16} />}
+        <image href={src} x="88" y="10" width="154" height="128" />
         <text
           x="165"
           y="200"
@@ -127,8 +143,8 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
 
   return (
     <svg viewBox="0 0 104 96" className={rootClass} {...a11y}>
-      <DarkTile x={0} y={4} width={104} height={88} rx={12} />
-      <image href={MARK_SRC} x="4" y="8" width="96" height="80" />
+      {reverse ? null : <DarkTile x={0} y={4} width={104} height={88} rx={12} />}
+      <image href={src} x="4" y="8" width="96" height="80" />
     </svg>
   );
 }
