@@ -139,7 +139,7 @@ type CopyKey = `${RenewalReminderTier}.${RenewalReminderOffset}`;
  * before onboarding tenant #2 (design § Post-review follow-ups). SweCham may
  * optionally cite a specific bylaw article later (precision, not a gate).
  */
-const STATUTORY_TERMINATION_WARNING: Record<RenewalEmailLocale, string> = {
+export const STATUTORY_TERMINATION_WARNING: Record<RenewalEmailLocale, string> = {
   en: 'Under its bylaws, SweCham is required to terminate the membership of members whose fees remain unpaid more than 60 days after the invoice due date.',
   th: 'SweCham มีหน้าที่ตามข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกเกิน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
   sv: 'Enligt sina stadgar är SweCham skyldig att avsluta medlemskapet för medlemmar vars avgifter är obetalda mer än 60 dagar efter fakturans förfallodag.',
@@ -705,4 +705,67 @@ export function interpolateCopy(
     const value = variables[name];
     return value !== undefined ? String(value) : match;
   });
+}
+
+// ---------------------------------------------------------------------------
+// 066 Round-2 §3.2(2): tier-less DUE-ANCHORED overdue-invoice track
+// ---------------------------------------------------------------------------
+// NOT part of the tier×offset RENEWAL_COPY matrix: these are statutory-style
+// dunning notices anchored on the BILL due date, not the cycle expiry, so the
+// "expired on {expiresAt}" framing of the post-expiry bodies is wrong here
+// (a born-awaiting member's expiry is ~12 months in the future).
+// Parity gate: tests/unit/renewals/due-track-copy.test.ts (NOT check:i18n).
+// Placeholders: {firstName} + {companyName} ONLY (pinned by the same test).
+
+export const DUE_TRACK_COPY: Record<
+  RenewalEmailLocale,
+  Record<import('@/modules/renewals/domain/due-track').DueTrackStepId, ReminderEmailCopy>
+> = {
+  en: {
+    'due+7.email': {
+      subject: 'Reminder: your SweCham membership invoice is past due',
+      body: 'Hi {firstName}, our records show the membership invoice for {companyName} was due 7 days ago and remains unpaid. If you have already arranged payment, thank you — it may still be on its way to us. Otherwise, please settle the invoice at your earliest convenience to activate your membership benefits.',
+      cta: 'View and pay the invoice',
+    },
+    'due+30.email': {
+      subject: 'Important: unpaid membership invoice for {companyName}',
+      body: `Hi {firstName}, the membership invoice for {companyName} is now 30 days past due and remains unpaid. ${STATUTORY_TERMINATION_WARNING.en} Please settle the invoice, or contact the chamber if you need assistance.`,
+      cta: 'Pay the invoice now',
+    },
+  },
+  th: {
+    'due+7.email': {
+      subject: 'แจ้งเตือน: ใบแจ้งหนี้ค่าสมาชิก SweCham เลยกำหนดชำระแล้ว',
+      body: 'เรียนคุณ {firstName} ใบแจ้งหนี้ค่าสมาชิกของ {companyName} เลยกำหนดชำระมาแล้ว 7 วันและยังไม่ได้รับการชำระ หากท่านดำเนินการชำระแล้ว ขอขอบคุณ — ยอดอาจอยู่ระหว่างทาง มิฉะนั้นกรุณาชำระโดยเร็วเพื่อเปิดใช้สิทธิประโยชน์สมาชิกของท่าน',
+      cta: 'ดูและชำระใบแจ้งหนี้',
+    },
+    'due+30.email': {
+      subject: 'สำคัญ: ใบแจ้งหนี้ค่าสมาชิกของ {companyName} ค้างชำระ',
+      body: `เรียนคุณ {firstName} ใบแจ้งหนี้ค่าสมาชิกของ {companyName} ค้างชำระเกินกำหนด 30 วันแล้ว ${STATUTORY_TERMINATION_WARNING.th} กรุณาชำระใบแจ้งหนี้ หรือติดต่อหอการค้าหากต้องการความช่วยเหลือ`,
+      cta: 'ชำระใบแจ้งหนี้ตอนนี้',
+    },
+  },
+  sv: {
+    'due+7.email': {
+      subject: 'Påminnelse: din SweCham-medlemsfaktura har förfallit',
+      body: 'Hej {firstName}, medlemsfakturan för {companyName} förföll för 7 dagar sedan och är fortfarande obetald. Om du redan har ordnat betalningen — tack, den kan vara på väg. Annars ber vi dig betala fakturan snarast för att aktivera ditt medlemskaps förmåner.',
+      cta: 'Visa och betala fakturan',
+    },
+    'due+30.email': {
+      subject: 'Viktigt: obetald medlemsfaktura för {companyName}',
+      body: `Hej {firstName}, medlemsfakturan för {companyName} är nu 30 dagar försenad och fortfarande obetald. ${STATUTORY_TERMINATION_WARNING.sv} Vänligen betala fakturan, eller kontakta kammaren om du behöver hjälp.`,
+      cta: 'Betala fakturan nu',
+    },
+  },
+};
+
+/**
+ * Locale-resolved due-track copy. All locales are fully populated (parity
+ * pinned by due-track-copy.test.ts) — no EN-fallback path needed.
+ */
+export function resolveDueTrackCopy(
+  stepId: import('@/modules/renewals/domain/due-track').DueTrackStepId,
+  locale: RenewalEmailLocale,
+): ReminderEmailCopy {
+  return DUE_TRACK_COPY[locale][stepId];
 }

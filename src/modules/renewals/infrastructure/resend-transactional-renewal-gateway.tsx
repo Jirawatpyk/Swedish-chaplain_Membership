@@ -39,6 +39,7 @@ import {
 } from './email/templates/tier-upgrade-approval-email';
 import {
   resolveCopy,
+  resolveDueTrackCopy,
   interpolateCopy,
   TIER_LABELS,
   RENEWAL_REMINDER_TIERS,
@@ -46,6 +47,11 @@ import {
   type RenewalReminderOffset,
   type RenewalReminderTier,
 } from './email/templates/copy';
+import { DueTrackWarningEmail } from './email/templates/due-track-warning-email';
+import {
+  DUE_TRACK_STEP_IDS,
+  type DueTrackStepId,
+} from '@/modules/renewals/domain/due-track';
 import { formatDualFormatDate } from './email/templates/dual-format-date-footer';
 import type {
   RenewalGateway,
@@ -238,6 +244,191 @@ async function delay(ms: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Shared Resend dispatch (retry budget + error mapping)
+// ---------------------------------------------------------------------------
+
+/**
+ * 066 §3.2(2) extract-function — the Resend send loop (retry budget,
+ * error mapping, replyTo threading, idempotency header) shared by the
+ * tier-ladder path and the due-track branch of `sendRenewalEmail`.
+ * Behaviour is verbatim the pre-066 loop; only the subject/html/text
+ * assembly differs per caller.
+ */
+async function sendViaResendWithRetry(args: {
+  readonly input: SendRenewalEmailInput;
+  readonly subject: string;
+  readonly html: string;
+  readonly text: string;
+}): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>> {
+  const { input, subject, html, text } = args;
+  const resend = resendClient();
+  const from = resolveFrom();
+  let lastError: SendRenewalEmailError | null = null;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const response = await resend.emails.send({
+        from,
+        to: input.recipient.toEmail,
+        subject,
+        html,
+        text,
+        headers: { 'idempotency-key': input.idempotencyKey },
+        ...(input.replyToEmail
+          ? {
+              replyTo: input.replyToDisplayName
+                ? `${input.replyToDisplayName} <${input.replyToEmail}>`
+                : input.replyToEmail,
+            }
+          : {}),
+      });
+      if (response.error) {
+        const mapped = mapResendError(response.error);
+        // Permanent failures abort immediately. Transient (gateway_5xx)
+        // falls through to retry.
+        if (mapped.kind !== 'gateway_5xx') {
+          return err(mapped);
+        }
+        lastError = mapped;
+      } else if (response.data?.id) {
+        if (attempt > 0) {
+          logger.info(
+            {
+              tenantId: input.tenantId,
+              deliveryId: response.data.id,
+              attempt,
+            },
+            'resend.renewals.send.retry_succeeded',
+          );
+        }
+        return ok({
+          deliveryId: response.data.id,
+          dispatchedAt: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      // K13-3 (SEC-R12-2): sanitise the SDK exception message before
+      // it lands in lastError.message → audit_log.failure_message.
+      // Resend SDK exception strings can include sending-domain or
+      // API-key fragments depending on the network failure mode.
+      lastError = {
+        kind: 'gateway_5xx',
+        retryable: true,
+        message: sanitizeResendErrorMessage(
+          e instanceof Error ? e.message : 'unknown',
+        ),
+      };
+      logger.warn(
+        {
+          // K13-5 (CON-R12-2): Error instance for pino's `err`
+          // serializer (stack + type capture).
+          err: e instanceof Error ? e : new Error(String(e)),
+          tenantId: input.tenantId,
+          attempt,
+        },
+        'resend.renewals.send.exception',
+      );
+    }
+    const delayMs = RETRY_DELAYS_MS[attempt];
+    if (delayMs !== undefined) {
+      await delay(delayMs);
+    }
+  }
+
+  logger.error(
+    {
+      tenantId: input.tenantId,
+      idempotencyKey: input.idempotencyKey,
+      lastErrorKind: lastError?.kind ?? 'unknown',
+    },
+    'resend.renewals.send.exhausted_retries',
+  );
+  return err(
+    lastError ?? {
+      kind: 'gateway_5xx',
+      retryable: true,
+      message: 'exhausted retries',
+    },
+  );
+}
+
+/**
+ * 066 §3.2(2) — DUE-TRACK send path. Tier-less: copy keyed by stepId +
+ * locale only; renders `DueTrackWarningEmail` (bill-due framing, no expiry
+ * footer, no preferences link — contractual dunning bypasses the opt-out).
+ */
+async function sendDueTrackEmail(
+  input: SendRenewalEmailInput,
+  stepId: DueTrackStepId,
+): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>> {
+  // Same dead-CTA guard as the ladder path (go-live #11).
+  const payLinkUrl = String(input.templateVariables.renewal_link_url ?? '');
+  if (payLinkUrl.trim() === '') {
+    logger.warn(
+      { stepId: input.stepId, tenantId: input.tenantId },
+      'resend.renewals.send.missing_renewal_link_url',
+    );
+    return err({
+      kind: 'template_variables_missing',
+      missing: ['renewal_link_url'],
+    });
+  }
+
+  const locale = input.recipient.preferredLocale;
+  const memberFirstName = String(
+    input.templateVariables.member_first_name ?? input.recipient.toName ?? '',
+  );
+  const memberCompanyName = String(
+    input.templateVariables.member_company_name ?? '',
+  );
+  const copy = resolveDueTrackCopy(stepId, locale);
+  const subject = interpolateCopy(copy.subject, {
+    firstName: memberFirstName,
+    companyName: memberCompanyName,
+  });
+
+  const props = {
+    locale,
+    stepId,
+    memberFirstName,
+    memberCompanyName,
+    payLinkUrl,
+  };
+  let html: string;
+  let text: string;
+  try {
+    [html, text] = await Promise.all([
+      render(<DueTrackWarningEmail {...props} />),
+      render(<DueTrackWarningEmail {...props} />, { plainText: true }),
+    ]);
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        tenantId: input.tenantId,
+        stepId,
+      },
+      'resend.renewals.send.render_failed',
+    );
+    return err({
+      kind: 'gateway_4xx',
+      retryable: false,
+      message: sanitizeResendErrorMessage(
+        e instanceof Error ? e.message : 'render failed',
+      ),
+    });
+  }
+
+  return sendViaResendWithRetry({ input, subject, html, text });
+}
+
+function asDueTrackStepId(stepId: string): DueTrackStepId | null {
+  return (DUE_TRACK_STEP_IDS as readonly string[]).includes(stepId)
+    ? (stepId as DueTrackStepId)
+    : null;
+}
+
+// ---------------------------------------------------------------------------
 // Gateway implementation
 // ---------------------------------------------------------------------------
 
@@ -245,6 +436,15 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
   async sendRenewalEmail(
     input: SendRenewalEmailInput,
   ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>> {
+    // 0. 066 §3.2(2) — DUE-TRACK branch. Due-anchored steps are tier-less
+    // and keyed by stepId alone; they bypass the tier×offset parsing below
+    // (deriveOffsetFromStepId would reject 'due+30' and permanently fail
+    // the send as template_variables_missing).
+    const dueTrackStepId = asDueTrackStepId(input.stepId);
+    if (dueTrackStepId) {
+      return sendDueTrackEmail(input, dueTrackStepId);
+    }
+
     // 1. Parse stepId / templateId → derive offset + tier for copy resolution.
     const offset = deriveOffsetFromStepId(input.stepId);
     if (!offset) {
@@ -379,96 +579,10 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
       });
     }
 
-    // 5. Dispatch via Resend SDK with retry budget.
-    const resend = resendClient();
-    const from = resolveFrom();
-    let lastError: SendRenewalEmailError | null = null;
-
-    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-      try {
-        const response = await resend.emails.send({
-          from,
-          to: input.recipient.toEmail,
-          subject,
-          html,
-          text,
-          headers: { 'idempotency-key': input.idempotencyKey },
-          ...(input.replyToEmail
-            ? {
-                replyTo: input.replyToDisplayName
-                  ? `${input.replyToDisplayName} <${input.replyToEmail}>`
-                  : input.replyToEmail,
-              }
-            : {}),
-        });
-        if (response.error) {
-          const mapped = mapResendError(response.error);
-          // Permanent failures abort immediately. Transient (gateway_5xx)
-          // falls through to retry.
-          if (mapped.kind !== 'gateway_5xx') {
-            return err(mapped);
-          }
-          lastError = mapped;
-        } else if (response.data?.id) {
-          if (attempt > 0) {
-            logger.info(
-              {
-                tenantId: input.tenantId,
-                deliveryId: response.data.id,
-                attempt,
-              },
-              'resend.renewals.send.retry_succeeded',
-            );
-          }
-          return ok({
-            deliveryId: response.data.id,
-            dispatchedAt: new Date().toISOString(),
-          });
-        }
-      } catch (e) {
-        // K13-3 (SEC-R12-2): sanitise the SDK exception message before
-        // it lands in lastError.message → audit_log.failure_message.
-        // Resend SDK exception strings can include sending-domain or
-        // API-key fragments depending on the network failure mode.
-        lastError = {
-          kind: 'gateway_5xx',
-          retryable: true,
-          message: sanitizeResendErrorMessage(
-            e instanceof Error ? e.message : 'unknown',
-          ),
-        };
-        logger.warn(
-          {
-            // K13-5 (CON-R12-2): Error instance for pino's `err`
-            // serializer (stack + type capture).
-            err: e instanceof Error ? e : new Error(String(e)),
-            tenantId: input.tenantId,
-            attempt,
-          },
-          'resend.renewals.send.exception',
-        );
-      }
-      const delayMs = RETRY_DELAYS_MS[attempt];
-      if (delayMs !== undefined) {
-        await delay(delayMs);
-      }
-    }
-
-    logger.error(
-      {
-        tenantId: input.tenantId,
-        idempotencyKey: input.idempotencyKey,
-        lastErrorKind: lastError?.kind ?? 'unknown',
-      },
-      'resend.renewals.send.exhausted_retries',
-    );
-    return err(
-      lastError ?? {
-        kind: 'gateway_5xx',
-        retryable: true,
-        message: 'exhausted retries',
-      },
-    );
+    // 5. Dispatch via Resend SDK with retry budget (shared helper — 066
+    // extract-function; loop semantics unchanged, verified by this file's
+    // retry/error-mapping test suite).
+    return sendViaResendWithRetry({ input, subject, html, text });
   },
 
   async sendTierUpgradeApprovalEmail(

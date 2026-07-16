@@ -121,6 +121,65 @@ describe('resendTransactionalRenewalGateway', () => {
     });
   });
 
+  describe('due-track branch (066 §3.2(2))', () => {
+    const DUE_TRACK_INPUT = {
+      ...VALID_INPUT,
+      stepId: 'due+30.email',
+      templateId: 'due-track', // sentinel — the due branch never parses a tier from it
+    };
+
+    it('renders due+30.email instead of failing template_variables_missing', async () => {
+      const result =
+        await resendTransactionalRenewalGateway.sendRenewalEmail(DUE_TRACK_INPUT);
+      expect(result.ok).toBe(true);
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      const payload = sendMock.mock.calls[0]![0] as { subject: string };
+      // EN due+30 subject (copy content itself is pinned by due-track-copy.test.ts)
+      expect(payload.subject).toContain('unpaid membership invoice');
+    });
+
+    it('renders due+7.email with the gentle-rung subject', async () => {
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail({
+        ...DUE_TRACK_INPUT,
+        stepId: 'due+7.email',
+      });
+      expect(result.ok).toBe(true);
+      const payload = sendMock.mock.calls[0]![0] as { subject: string };
+      expect(payload.subject).toContain('past due');
+    });
+
+    it('resolves the recipient locale (th subject for th recipient)', async () => {
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail({
+        ...DUE_TRACK_INPUT,
+        recipient: { ...DUE_TRACK_INPUT.recipient, preferredLocale: 'th' as const },
+      });
+      expect(result.ok).toBe(true);
+      const payload = sendMock.mock.calls[0]![0] as { subject: string };
+      expect(payload.subject).toContain('ค้างชำระ');
+    });
+
+    it('still enforces the renewal_link_url guard (dead CTA must not ship)', async () => {
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail({
+        ...DUE_TRACK_INPUT,
+        templateVariables: { ...DUE_TRACK_INPUT.templateVariables, renewal_link_url: '' },
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('template_variables_missing');
+      expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('interpolates {firstName}/{companyName} into the subject', async () => {
+      await resendTransactionalRenewalGateway.sendRenewalEmail({
+        ...DUE_TRACK_INPUT,
+        stepId: 'due+30.email',
+      });
+      const payload = sendMock.mock.calls[0]![0] as { subject: string };
+      expect(payload.subject).toContain('Acme Co');
+      expect(payload.subject).not.toContain('{companyName}');
+    });
+  });
+
   describe('happy path', () => {
     it('sends with idempotency-key header + returns deliveryId + dispatchedAt', async () => {
       const result = await resendTransactionalRenewalGateway.sendRenewalEmail(

@@ -49,12 +49,16 @@ describe('isStatutoryWarningStepId', () => {
     expect(isStatutoryWarningStepId(id)).toBe(true);
   });
 
-  it.each(['due+7.email', 't+0.email', 't-30.email', 't+7.task.admin_notify', 'junk'])(
-    'rejects %s',
-    (id) => {
-      expect(isStatutoryWarningStepId(id)).toBe(false);
-    },
-  );
+  it.each([
+    'due+7.email',
+    't+0.email',
+    't+6.email', // just below the ≥7 threshold
+    't-30.email',
+    't+7.task.admin_notify',
+    'junk',
+  ])('rejects %s', (id) => {
+    expect(isStatutoryWarningStepId(id)).toBe(false);
+  });
 });
 
 describe('hasSatisfiedWarningRequirement', () => {
@@ -100,6 +104,14 @@ describe('hasSatisfiedWarningRequirement', () => {
         ],
         NOW,
       ),
+    ).toBe(false);
+  });
+
+  it('NOT satisfied by a VALID warning step id on the wrong channel (pins the channel guard)', () => {
+    // T1-review nit #1: 'due+30.email' passes the step-id predicate, so this
+    // case fails ONLY if the channel !== 'email' guard is present.
+    expect(
+      hasSatisfiedWarningRequirement([sent('due+30.email', '2026-07-01T00:00:00.000Z', 'task')], NOW),
     ).toBe(false);
   });
 
