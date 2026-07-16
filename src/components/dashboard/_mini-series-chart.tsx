@@ -35,6 +35,8 @@
  * hydration mismatch), then flips to `true` once the browser confirms
  * `prefers-reduced-motion: no-preference` post-mount — same
  * `useSyncExternalStore` idiom as `components/plans/plan-list-skeleton.tsx`.
+ * The subscribe/snapshot triad lives in the shared `./use-motion-preference`
+ * (Task 10 — extracted so `membership-tier-chart.tsx` doesn't duplicate it).
  */
 'use client';
 
@@ -50,6 +52,11 @@ import {
 import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
 import { ChartDataTable } from './chart-data-table';
+import {
+  getAllowMotion,
+  getServerAllowMotion,
+  subscribeMotionPreference,
+} from './use-motion-preference';
 
 export interface MiniSeriesPoint {
   /** Stable key (e.g. 'YYYY-MM'). */
@@ -81,25 +88,6 @@ export interface MiniSeriesDelta {
 
 /** Below this many months carrying a non-zero value the series is "sparse". */
 const SPARSE_THRESHOLD = 3;
-
-function subscribeMotionPreference(callback: () => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-  mq.addEventListener('change', callback);
-  return () => mq.removeEventListener('change', callback);
-}
-
-function getAllowMotion(): boolean {
-  if (typeof window === 'undefined') return false;
-  return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-/** SSR-safe default: no animation until the browser confirms motion is OK,
- * post-mount — avoids a hydration mismatch (design doc § Accessibility
- * "Reduced-motion"). */
-function getServerAllowMotion(): boolean {
-  return false;
-}
 
 interface SeriesTooltipPayloadEntry {
   readonly payload?: MiniSeriesPoint;

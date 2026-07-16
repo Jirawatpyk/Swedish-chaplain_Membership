@@ -466,6 +466,15 @@
         "month": "Month",
         "count": "Members"
       },
+      "membershipTier": {
+        "title": "Membership by tier",
+        "empty": "No active members yet.",
+        "tierColumnHeader": "Tier",
+        "countColumnHeader": "Members",
+        "pctColumnHeader": "% of total",
+        "totalRowLabel": "Total",
+        "unassignedTier": "No plan assigned"
+      },
       "insights": {
         "title": "Smart insights",
         "empty": "No insights right now — all clear.",
