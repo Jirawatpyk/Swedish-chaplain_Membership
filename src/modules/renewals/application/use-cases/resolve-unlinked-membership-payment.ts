@@ -240,6 +240,16 @@ export async function resolveUnlinkedMembershipPaymentInTx(
       // Only reachable with reason='terminal_only' here — 'erased' already
       // returned above. Members with only terminal cycles are owned by the
       // admin-comeback flow (loud log per design doc).
+      //
+      // 065 final-review S2 (tracked in the design doc's Post-review
+      // follow-ups; needs a SweCham decision): under the §5.2 due+60
+      // clock a TERMINATED member's bill is deliberately left open, so a
+      // post-termination payment lands HERE routinely — the member is
+      // charged (and under FEATURE_088_TAX_AT_PAYMENT a §86/4 receipt is
+      // minted) while membership stays terminated, with only this warn +
+      // metric as the trail (no audit event, no admin work-queue entry,
+      // no member-facing messaging). Pending SweCham: auto-refund vs
+      // admin-reactivation-queue vs keep-and-notify.
       logger.warn(
         {
           invoiceId: evt.invoiceId,

@@ -209,6 +209,19 @@ export async function restoreCycleForMember(
         // A restored cycle re-enters the normal pipeline as `'upcoming'` (the
         // createCycleInTx default) — restore is NOT a bill, so it is NOT
         // `awaiting_payment`.
+        //
+        // KNOWN 065 §5.3 GAP (final-review S1, tracked in the design doc's
+        // Post-review follow-ups): archive→undelete of a NEVER-PAID
+        // born-`awaiting_payment` member re-enters here as `'upcoming'` =
+        // full access, bypassing the §5.3 no-benefits-until-paid gate until
+        // the T-0 flip re-suspends them at period end. NOT fixed in-place
+        // because no safe discriminator exists in the DB: `maxPaidThrough`
+        // is null for the imported-110 cohort too (their paid coverage
+        // predates the system; cycles are unanchored), so gating on it
+        // would restore PAID imported members as suspended — the exact
+        // prod incident the §5.3 design MUST-NOTs forbid. The real fix
+        // needs the pre-archive status preserved through the archive
+        // cascade (e.g. a `closed_previous_status` column).
         anchorToCurrentPeriod: { nowIso: deps.clock.now().toISOString() },
       });
     });

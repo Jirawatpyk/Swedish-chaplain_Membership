@@ -774,3 +774,7 @@ git commit -m "feat(renewals): statutory termination warning on post-due reminde
 - **Spec coverage:** §5.1 → Tasks 1-2; §5.2 → Task 4 (+ coupling to Task 3); §5.3 → Task 3; §5.4 → Tasks 5-7; §5.5 → Task 8; §5.6 → no task (design defers F6). ✔
 - **Type consistency:** `billing_cycle` enum values `'calendar'|'rolling'` identical across schema/zod/form/i18n; `startStatus: 'awaiting_payment'` matches the existing param union; `oldestUnpaidMembershipInvoiceDueDate` signature identical in port + adapter + test; `TERMINATION_NOTICE_MIN_VERSION = 12` matches the registry bump. ✔
 - **Migration numbers `0254`/`0255` are provisional** — verify against `origin/main` at implement time and renumber + re-journal if main moved (Global Constraints).
+
+## Complexity Tracking
+
+- **Presentation→Domain deep import** (`src/components/members/member-form/schema.ts` → `@/modules/members/domain/member` for `BILLING_CYCLES`; also `edit-member-payloads.ts` for the `BillingCycle` type): deviation from Principle III's "Presentation calls Application use cases only". Justification: the same file already carries three review-blessed identical Domain deep imports (phone / iso-country-code / legal-entity-type) — pure-TS const/type modules with zero framework deps, where the rejected simpler alternative (re-declaring the union literals client-side) is exactly what caused the silent-drift class the import eliminates. ESLint `no-restricted-imports` deliberately permits this direction (it blocks cross-module + domain→framework).
