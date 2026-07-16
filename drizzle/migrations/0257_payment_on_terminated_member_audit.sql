@@ -54,6 +54,12 @@ BEGIN
     'receipt_pdf_resent',
     'credit_note_pdf_resent',
     'receipt_rendered',
+    -- Added migration 0084 (PDPA/GDPR review M-2) — marketing-consent
+    -- acknowledgement, 10y per PDPA §35 + GDPR Art. 7. MUST be preserved:
+    -- 0084 is the TRUE latest body baseline (NOT 0069), so re-creating the
+    -- function without this line would silently regress the consent record
+    -- to the 5y column default.
+    'member_acknowledged_broadcasts_terms',
     -- 066 §6 — post-termination payment forensic. Explains a §86/4 receipt
     -- minted to a terminated non-member; tax-evidence class, so 10y like
     -- its receipt peer.
