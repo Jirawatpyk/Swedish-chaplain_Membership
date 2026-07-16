@@ -475,27 +475,34 @@ export function InvoiceSettingsForm({
               {t('hints.taxId')}
             </p>
           </div>
+          {/* Multi-line so the admin controls exactly where the §86/4 address
+              wraps on the invoice/receipt PDF — each newline becomes a line break
+              in the document header (a single-line <Input> stripped them, forcing
+              the PDF to auto-wrap at bad points, e.g. splitting "ถนน" from
+              "พญาไท"). */}
           <div className="space-y-2">
             <Label htmlFor="addr_th">{t('labels.addressTh')}</Label>
-            <Input
+            <Textarea
               id="addr_th"
               value={addrTh}
               onChange={(e) => setAddrTh(e.target.value)}
               disabled={disabled}
               required
               maxLength={1000}
+              rows={3}
               lang="th"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="addr_en">{t('labels.addressEn')}</Label>
-            <Input
+            <Textarea
               id="addr_en"
               value={addrEn}
               onChange={(e) => setAddrEn(e.target.value)}
               disabled={disabled}
               required
               maxLength={1000}
+              rows={3}
             />
           </div>
         </div>
