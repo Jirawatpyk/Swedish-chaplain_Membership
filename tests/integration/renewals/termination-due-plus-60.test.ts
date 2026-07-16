@@ -328,6 +328,19 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     await seedMembershipInvoice(m, '2026-06-01'); // current: due+60 = 2026-07-31
     await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01
 
+    // Discriminating checkpoint (regression guard for the floor): at 2026-07-15
+    // the STALE invoice's due+60 (2025-06-30) is long past, but the CURRENT
+    // invoice's due+60 (2026-07-31) is not yet. WITH the floor the current
+    // invoice governs → still inside the termination window (deferred, NOT
+    // terminated). WITHOUT the floor the stale invoice would anchor and this
+    // run would already terminate → these assertions fail. This is what makes
+    // "the current invoice governs" a true regression guard, not just an
+    // outcome that happens to match on the final terminate run.
+    const mid = await runLapse(bkk('2026-07-15'));
+    expect(mid.deferredWithinTerminationWindow).toBe(1);
+    expect(mid.graceExpired).toBe(0);
+    expect(await cycleStatus(m)).toBe('awaiting_payment');
+
     const r = await runLapse(bkk('2026-08-01')); // current due+61
     expect(r.graceExpired).toBe(1);
     expect(await cycleStatus(m)).toBe('lapsed');
