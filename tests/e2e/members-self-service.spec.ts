@@ -73,13 +73,23 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     await page.locator('#billing_cycle').click();
     await page.getByRole('option').first().click();
 
+    // 088 §86/4 — a TH member (country defaults to 'TH') now REQUIRES a full
+    // buyer address. Fill line 1 + an unambiguous Bangkok postcode (10800 →
+    // Bang Sue) whose lookup auto-fills province/city/sub_district; wait for
+    // that to land before submit or the schema superRefine blocks the POST.
+    await fillField(page.locator('#address_line1'), '99 Test Tower');
+    await fillField(page.locator('#postal_code'), '10800');
+    await expect(page.locator('#province')).toContainText(/bangkok/i, {
+      timeout: 10_000,
+    });
+
     // Primary contact
     await fillField(page.locator('#first_name'), 'Portal');
     await fillField(page.locator('#last_name'), 'User');
     await fillField(page.locator('#contact_email'), `e2e-portal-${RUN_ID}@swecham.test`);
 
     // Submit
-    await page.getByRole('button', { name: /save|create|add/i }).click();
+    await page.getByRole('button', { name: /create member/i }).click();
 
     // Wait for detail page redirect
     await page.waitForURL(/\/admin\/members\/[a-f0-9-]+/, {

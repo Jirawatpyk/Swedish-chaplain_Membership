@@ -59,6 +59,17 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
     // first option or the form fails validation on submit.
     await page.locator('#billing_cycle').click();
     await page.getByRole('option').first().click();
+    // 088 §86/4 — a TH member (country defaults to 'TH') now REQUIRES a full
+    // buyer address (address_line1 + postal_code + province + city +
+    // sub_district; schema.ts superRefine). Fill line 1 + an unambiguous
+    // Bangkok postcode (10800 → Bang Sue): the postcode lookup auto-fills
+    // province/city/sub_district, so wait for that to land (300ms debounce +
+    // local /api/geo/postal fetch) before submitting or the POST is blocked.
+    await fillField(page.locator('#address_line1'), '99 Test Tower');
+    await fillField(page.locator('#postal_code'), '10800');
+    await expect(page.locator('#province')).toContainText(/bangkok/i, {
+      timeout: 10_000,
+    });
     await fillField(page.locator('#first_name'), 'Auto');
     await fillField(page.locator('#last_name'), 'Test');
     await fillField(
