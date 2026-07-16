@@ -480,9 +480,16 @@ export function makeDrizzleDispatchCandidateRepo(
         const pageRows = hasMore ? rows.slice(0, args.pageSize) : rows;
         const items = pageRows.map((r) => ({
           ...rowToDispatchCandidate(r),
-          // The IS NOT NULL filter guarantees a value; String() normalises
-          // the driver's date representation to 'YYYY-MM-DD'.
-          billDueDate: String(r.billDueDate).slice(0, 10),
+          // The IS NOT NULL filter guarantees a value. T3-review M1: the
+          // 'YYYY-MM-DD' wire string relies on drizzle's postgres-js
+          // transparent date parser (OID 1082 pass-through); a driver that
+          // parses dates to JS Date would corrupt String().slice(0,10) —
+          // the defensive branch keeps it exact either way (and the
+          // live-Neon test asserts exact equality as the tripwire).
+          billDueDate:
+            r.billDueDate instanceof Date
+              ? r.billDueDate.toISOString().slice(0, 10)
+              : String(r.billDueDate).slice(0, 10),
         }));
         const nextCursor =
           hasMore && pageRows.length > 0

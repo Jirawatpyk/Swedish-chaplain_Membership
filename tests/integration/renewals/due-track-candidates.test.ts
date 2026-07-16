@@ -256,6 +256,12 @@ describe('066 listDueTrackCandidates — second candidate arm (live Neon)', () =
 
   afterAll(async () => {
     await db.delete(invoices).where(eq(invoices.tenantId, tenantA.ctx.slug)).catch(() => {});
+    // T3-review M2 — the F6 fixture rows are not covered by tenant.cleanup().
+    await db
+      .delete(eventRegistrations)
+      .where(eq(eventRegistrations.tenantId, tenantA.ctx.slug))
+      .catch(() => {});
+    await db.delete(events).where(eq(events.tenantId, tenantA.ctx.slug)).catch(() => {});
     await db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenantA.ctx.slug))
@@ -314,5 +320,26 @@ describe('066 listDueTrackCandidates — second candidate arm (live Neon)', () =
     const hit = items.find((c) => c.cycle.cycleId === twoBillsCycle);
     expect(hit).toBeDefined();
     expect(hit!.billDueDate).toBe(OLDEST_DUE);
+  });
+
+  it('cross-tenant probe: tenant B cannot see tenant A due-track candidates (Principle I)', async () => {
+    // T3-review follow-up — the new arm gets its own RLS probe (the main
+    // arm's probe lives in dispatch-candidate-repo.test.ts). Tenant B has
+    // seeded NOTHING, so any row visible through B's context would be a
+    // cross-tenant leak from A's fixtures above.
+    const tenantB = await createTestTenant();
+    try {
+      const repoB = makeDrizzleDispatchCandidateRepo(tenantB.ctx);
+      const pageB = await repoB.listDueTrackCandidates(tenantB.ctx.slug, {
+        pageSize: 100,
+        cursor: null,
+      });
+      expect(pageB.items).toHaveLength(0);
+      // Positive control: A's context still sees its own candidates.
+      const itemsA = await listAll();
+      expect(itemsA.map((c) => c.cycle.cycleId)).toContain(bornAwaitingCycle);
+    } finally {
+      await tenantB.cleanup().catch(() => {});
+    }
   });
 });

@@ -36,6 +36,7 @@ import {
   type SkipReason,
   SKIP_REASONS,
 } from './_lib/dispatch-one-cycle';
+import { dispatchDueTrackCycle } from './_lib/dispatch-due-track';
 
 /**
  * F8 Phase 4 Wave I2e/F1 — bucket count for k-anonymity in span
@@ -116,6 +117,12 @@ export type DispatchRenewalCycleInput = z.infer<
 export interface DispatchRenewalCycleSummary {
   readonly candidatesProcessed: number;
   readonly emailsSent: number;
+  /**
+   * 066 §3.2(2) — subset of `emailsSent` that were DUE-TRACK warnings
+   * (`due+7.email` / `due+30.email`). Broken out so the cron JSON can
+   * show the statutory-warning volume the dormancy guard depends on.
+   */
+  readonly dueTrackEmailsSent: number;
   readonly tasksCreated: number;
   readonly skipped: Readonly<Record<SkipReason, number>>;
   readonly failedTransient: number;
@@ -165,6 +172,7 @@ export async function dispatchRenewalCycle(
   const summary: DispatchRenewalCycleSummary = {
     candidatesProcessed: 0,
     emailsSent: 0,
+    dueTrackEmailsSent: 0,
     tasksCreated: 0,
     skipped: emptySkipCounts(),
     failedTransient: 0,
@@ -224,6 +232,108 @@ export async function dispatchRenewalCycle(
     await deps.memberRenewalFlagsRepo.listMemberIdsWithUnreconciledPaidMembershipInvoice(
       input.tenantId,
     );
+  // ------------------------------------------------------------------
+  // 066 §3.2(2) — DUE-TRACK pass. Runs FIRST so the suppression set
+  // (`dueTrackCycleIds`) exists before the main ladder pass: a cycle
+  // served by the due-anchored dunning track must not ALSO receive the
+  // expires_at-anchored t+N emails. The second candidate arm has NO
+  // expires_at pre-filter (review C1 — born-awaiting cycles are ~12
+  // months from expiry), so this pass is the only channel that reaches
+  // that cohort before the due+60 termination clock.
+  // ------------------------------------------------------------------
+  const dueTrackCycleIds = new Set<string>();
+  {
+    const dueTrackCtx: DispatchContext = {
+      tenantId: input.tenantId,
+      actorUserId: null,
+      actorRole: 'cron',
+      correlationId: input.correlationId,
+      requestId: input.requestId ?? null,
+      nowIso,
+      unreconciledMemberIds,
+      dueTrackCycleIds: new Set<string>(), // unused inside the due pass
+    };
+    const counts = summary as {
+      candidatesProcessed: number;
+      emailsSent: number;
+      dueTrackEmailsSent: number;
+      skipped: Record<SkipReason, number>;
+      failedTransient: number;
+      failedPermanent: number;
+    };
+    let dueCursor: string | null = null;
+    let duePages = 0;
+    do {
+      const page = await deps.dispatchCandidateRepo.listDueTrackCandidates(
+        input.tenantId,
+        { pageSize, cursor: dueCursor },
+      );
+      duePages += 1;
+      for (let i = 0; i < page.items.length; i += DISPATCH_CONCURRENCY) {
+        const chunk = page.items.slice(i, i + DISPATCH_CONCURRENCY);
+        counts.candidatesProcessed += chunk.length;
+        const outcomes = await Promise.all(
+          chunk.map(async (candidate) => {
+            dueTrackCycleIds.add(candidate.cycle.cycleId);
+            try {
+              return await dispatchDueTrackCycle(deps, candidate, dueTrackCtx);
+            } catch (e) {
+              // Same per-member fault isolation as the main loop.
+              logger.error(
+                {
+                  err: e instanceof Error ? e : new Error(String(e)),
+                  cycleId: candidate.cycle.cycleId,
+                  memberId: candidate.member.memberId,
+                  tenantId: input.tenantId,
+                  correlationId: input.correlationId,
+                },
+                'dispatchRenewalCycle: due-track per-cycle dispatch failed (isolated)',
+              );
+              return {
+                kind: 'failed_transient' as const,
+                reminderEventId: '',
+                reason: `dispatcher_crash: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`,
+              };
+            }
+          }),
+        );
+        for (const outcome of outcomes) {
+          switch (outcome.kind) {
+            case 'sent':
+              counts.emailsSent += 1;
+              counts.dueTrackEmailsSent += 1;
+              break;
+            case 'skipped':
+              counts.skipped[outcome.reason] += 1;
+              break;
+            case 'failed_transient':
+              counts.failedTransient += 1;
+              break;
+            case 'failed_permanent':
+              counts.failedPermanent += 1;
+              break;
+            case 'task_created':
+              // Unreachable — the due track is email-only; tallied for
+              // exhaustiveness.
+              break;
+            default: {
+              const _exhaustive: never = outcome;
+              void _exhaustive;
+            }
+          }
+        }
+      }
+      dueCursor = page.nextCursor;
+      if (duePages > 1000) {
+        logger.error(
+          { tenantId: input.tenantId, duePages, correlationId: input.correlationId },
+          'dispatchRenewalCycle: due-track page-loop safety bound hit (>1000 pages) — aborting',
+        );
+        break;
+      }
+    } while (dueCursor);
+  }
+
   const baseCtx: Omit<DispatchContext, 'nowIso'> = {
     tenantId: input.tenantId,
     actorUserId: null,
@@ -231,6 +341,7 @@ export async function dispatchRenewalCycle(
     correlationId: input.correlationId,
     requestId: input.requestId ?? null,
     unreconciledMemberIds,
+    dueTrackCycleIds,
   };
   let cursor: string | undefined = undefined;
   let pages = 0;

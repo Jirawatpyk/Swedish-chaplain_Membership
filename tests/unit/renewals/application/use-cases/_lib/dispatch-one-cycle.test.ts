@@ -316,6 +316,9 @@ const happyCtx: DispatchContext = {
   // default so every pre-existing test below reaches Gate 8+ unaffected;
   // the dedicated Gate 7.5 tests override this field explicitly.
   unreconciledMemberIds: new Set(),
+  // 066 §3.2(2) — empty by default; the due-track suppression tests
+  // override this field explicitly.
+  dueTrackCycleIds: new Set(),
 };
 
 describe('dispatchOneCycle', () => {

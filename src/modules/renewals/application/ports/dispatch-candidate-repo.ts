@@ -125,7 +125,10 @@ export interface DispatchCandidateRepo {
    * anchor on different invoices. Erased members excluded (COMP-1 H4).
    *
    * Ordered by `cycle_id ASC` (keyset cursor = last cycle_id — this arm
-   * has no expires_at sort dimension).
+   * has no expires_at sort dimension). The cursor is INTERNAL-ONLY (plain
+   * cycle_id consumed by the in-process cron loop): it must never be
+   * externalised to a browser/API surface without switching to the
+   * HMAC-signed `encodeCursor` the main arm uses (Wave H1 W-08).
    */
   listDueTrackCandidates(
     tenantId: string,
