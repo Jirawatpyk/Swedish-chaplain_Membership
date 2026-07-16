@@ -123,10 +123,17 @@ way to read a value — keep the summary + first/last labels + a y reference.
   date, strict `>`) — never SQL `due_date < CURRENT_DATE` (UTC session ⇒ a 7-hour
   off-by-one for 00:00–07:00 Thai). This also makes the donut's overdue count
   **equal** the needs-attention `countOverdue` KPI (same page, same rule).
-- **Amounts** are **net-of-credit** and consistent with the revenue-trend
-  `netPaidRevenueSatang` netting: `partially_credited` folds into unpaid/overdue
-  at its **net** (not gross) balance; fully `credited` and `void` and `draft` are
-  excluded from the outstanding total. `draft` count shown as a caption.
+- **Amounts** — a receivables donut is a part-to-whole chart, so **every bucket
+  uses ONE basis: VAT-INCLUSIVE, net-of-credit** = `total − creditedTotal`
+  (the amount actually owed / received per the §86/4 tax invoice, which always
+  includes VAT — Thai AR is booked gross). This applies to `paid`, `unpaid`, and
+  `overdue` alike; mixing ex-VAT for `paid` with gross for the others would
+  distort the slice proportions (paid would read ~6.5% small) and make the centre
+  total meaningless. The ex-VAT *recognised revenue* view already lives in the
+  revenue-trend chart (`netPaidRevenueSatang`) — do not duplicate it here.
+  `partially_credited` folds into unpaid/overdue at its net (`total −
+  creditedTotal`) balance; fully `credited`, `void`, and `draft` are excluded
+  from the outstanding total; `draft` count shown as a caption.
 
 ## Accessibility (must not regress; axe gate is a hard check)
 
