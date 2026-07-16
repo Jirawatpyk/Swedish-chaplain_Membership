@@ -476,7 +476,7 @@
         "countColumnHeader": "Medlemmar",
         "pctColumnHeader": "% av totalt",
         "totalRowLabel": "Totalt",
-        "unassignedTier": "Inget paket tilldelat",
+        "unassignedTier": "Ingen plan tilldelad",
         "activeMembersLabel": "Aktiva medlemmar",
         "topTier": "Topp: {tier} · {pct}"
       },
