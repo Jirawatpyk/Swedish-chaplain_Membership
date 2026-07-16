@@ -1,7 +1,9 @@
 /**
- * F9 `InvoiceSource` adapter (US1 Increment 2 / T017).
+ * F9 `InvoiceSource` adapter (US1 Increment 2 / T017; `getInvoiceStatusDistribution`
+ * added 067-dashboard-interactive-charts Task 4).
  *
- * Reads YTD paid revenue + overdue-invoice count via the invoicing PUBLIC
+ * Reads YTD paid revenue, overdue-invoice count, and the invoice-status
+ * distribution (paid/unpaid/overdue + draft count) via the invoicing PUBLIC
  * BARREL only (`listInvoices` + `makeListInvoicesDeps` + pure `computeIsOverdue`)
  * — no deep/foreign-table imports (Constitution Principle III). Composes from
  * the existing exports (no invoicing surgery): paginates the filtered list and
@@ -16,6 +18,7 @@ import {
   makeListInvoicesDeps,
   computeIsOverdue,
   drizzleTenantSettingsRepo,
+  type Invoice,
 } from '@/modules/invoicing';
 import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import type { TenantContext } from '@/modules/tenants';
@@ -75,6 +78,38 @@ const netPaidRevenueSatang = (inv: {
   const netOfCredit = total - (inv.creditedTotal?.satang ?? 0n);
   return (netOfCredit * (inv.subtotal?.satang ?? 0n)) / total;
 };
+
+/**
+ * Outstanding balance for the unpaid/overdue distribution buckets — the
+ * VAT-INCLUSIVE amount the member still owes (`total − creditedTotal`), NOT
+ * the ex-VAT revenue figure `netPaidRevenueSatang` computes. These are
+ * distinct concepts: `paid` reports realised revenue (VAT excluded, it's a
+ * liability not income); `unpaid`/`overdue` report accounts-receivable — the
+ * money still due, which legitimately includes VAT. A `partially_credited`
+ * invoice nets down by exactly the credited amount, same as the revenue KPI.
+ */
+const netBalanceSatang = (inv: {
+  total: { satang: bigint } | null;
+  creditedTotal: { satang: bigint } | null;
+}): bigint => {
+  const total = inv.total?.satang ?? 0n;
+  return total - (inv.creditedTotal?.satang ?? 0n);
+};
+
+/**
+ * `computeIsOverdue` gates on `status === 'issued'` (its own docstring: rule
+ * 1), so a `partially_credited` invoice — which by definition is never
+ * `'issued'` — always evaluates false through it. The distribution still
+ * must fold a partially_credited invoice into unpaid/overdue by the SAME
+ * Bangkok-local due-date rule (design rule: "partially_credited → fold into
+ * unpaid/overdue by its due date"), so this overrides `status` to `'issued'`
+ * ONLY for the purposes of this date check — reusing `computeIsOverdue`'s
+ * comparison rather than re-implementing the Bangkok-date math. The override
+ * is local to this call; the invoice's REAL status still drives the bucket
+ * switch below (and is untouched everywhere else — audit, PDF, etc.).
+ */
+const isPastDueByDate = (inv: Invoice, nowIso: string): boolean =>
+  computeIsOverdue(inv.status === 'issued' ? inv : { ...inv, status: 'issued' }, nowIso);
 
 export const invoiceSourceAdapter: InvoiceSource = {
   async getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint> {
@@ -174,7 +209,10 @@ export const invoiceSourceAdapter: InvoiceSource = {
     return buckets;
   },
 
-  async getInvoiceStatusDistribution(): Promise<{
+  async getInvoiceStatusDistribution(
+    ctx: TenantContext,
+    nowIso: string,
+  ): Promise<{
     readonly buckets: ReadonlyArray<{
       bucket: 'paid' | 'unpaid' | 'overdue';
       satang: bigint;
@@ -182,7 +220,63 @@ export const invoiceSourceAdapter: InvoiceSource = {
     }>;
     readonly draftCount: number;
   }> {
-    // stub — implemented in 067 T4/T5
-    return { buckets: [], draftCount: 0 };
+    const deps = makeListInvoicesDeps(ctx.slug);
+    let cursor: string | null = null;
+    let paidSatang = 0n;
+    let paidCount = 0;
+    let unpaidSatang = 0n;
+    let unpaidCount = 0;
+    let overdueSatang = 0n;
+    let overdueCount = 0;
+    let draftCount = 0;
+    do {
+      // `status:'all'` + `includeDrafts:true` — this method (unlike the
+      // other reads above) needs EVERY status in one pass: draft (for
+      // draftCount), issued/partially_credited (bucketed below), and
+      // paid/void/credited (paid summed, void/credited excluded).
+      const result = await listInvoices(deps, {
+        tenantId: ctx.slug,
+        status: 'all',
+        pageSize: PAGE,
+        cursor,
+        includeDrafts: true,
+      });
+      if (!result.ok) throw new Error('InvoiceSource: status-distribution list failed');
+      for (const inv of result.value.rows) {
+        switch (inv.status) {
+          case 'draft':
+            draftCount += 1;
+            break;
+          case 'paid':
+            paidSatang += netPaidRevenueSatang(inv);
+            paidCount += 1;
+            break;
+          case 'issued':
+          case 'partially_credited':
+            if (isPastDueByDate(inv, nowIso)) {
+              overdueSatang += netBalanceSatang(inv);
+              overdueCount += 1;
+            } else {
+              unpaidSatang += netBalanceSatang(inv);
+              unpaidCount += 1;
+            }
+            break;
+          case 'void':
+          case 'credited':
+            // Excluded from every bucket AND draftCount (design rules).
+            break;
+        }
+      }
+      cursor = result.value.nextCursor;
+    } while (cursor !== null);
+
+    return {
+      buckets: [
+        { bucket: 'paid', satang: paidSatang, count: paidCount },
+        { bucket: 'unpaid', satang: unpaidSatang, count: unpaidCount },
+        { bucket: 'overdue', satang: overdueSatang, count: overdueCount },
+      ],
+      draftCount,
+    };
   },
 };
