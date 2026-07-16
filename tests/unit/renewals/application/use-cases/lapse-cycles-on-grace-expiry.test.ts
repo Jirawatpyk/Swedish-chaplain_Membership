@@ -539,6 +539,44 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       });
     });
 
+    it('066 §3.2(3): today > due+60 but NO statutory warning → deferred_no_prior_warning (no transition)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, listForCycleWarningsMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      // No qualifying warning exists for this cycle.
+      listForCycleWarningsMock.mockResolvedValueOnce([]);
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredNoPriorWarning).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.deferredNoPriorWarningCycles).toHaveLength(1);
+        expect(r.value.deferredNoPriorWarningCycles[0]?.cycleId).toBe(cycle.cycleId);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+    });
+
+    it('066 §3.2(3): dormancy-guard read (listForCycle) throws → deferred_guard_error, fail-safe (no transition)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, listForCycleWarningsMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      listForCycleWarningsMock.mockRejectedValueOnce(
+        new Error('reminder-event repo connection lost'),
+      );
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredGuardErrors).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.errors).toBe(0); // fail-SAFE, NOT folded into errors
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+    });
+
     it('no membership invoice + expires_at still inside grace → deferred_no_invoice_backstop (no transition)', async () => {
       // expires_at only 1 day past expiry — still inside the 14-day grace
       // backstop (cutoff = NOW - 14d; expires = NOW - 1d ≥ cutoff → defer).

@@ -25,7 +25,12 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import { tenantRenewalSettings } from '@/modules/renewals/infrastructure/schema-tenant-renewal-config';
-import { lapseCyclesOnGraceExpiry, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  createEscalationTask,
+  lapseCyclesOnGraceExpiry,
+  makeRenewalsDeps,
+} from '@/modules/renewals';
+import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -208,6 +213,7 @@ describe('066 lapse dormancy guard (live Neon)', () => {
 
   afterAll(async () => {
     for (const table of [
+      renewalEscalationTasks,
       renewalReminderEvents,
       invoices,
       renewalCycles,
@@ -290,5 +296,53 @@ describe('066 lapse dormancy guard (live Neon)', () => {
     expect(
       (forBackstop!.payload as { termination_basis?: string }).termination_basis,
     ).toBe('no_invoice_backstop');
+  }, 120_000);
+
+  it('T5-review H1: the route escalation args are zod-valid + idempotent across two cron runs', async () => {
+    // The lapse cron route creates a `termination_warning_blocked` escalation
+    // task per deferred_no_prior_warning cycle. This pins (a) the route's
+    // literal createEscalationTask args are valid (a future zod/enum
+    // tightening would fail here, not silently in the swallowed catch) and
+    // (b) idempotency: a second daily run creates NO second open task.
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const routeArgs = (correlationId: string) => ({
+      tenantId: tenantA.ctx.slug,
+      memberId: unwarned.memberId,
+      cycleId: unwarned.cycleId,
+      taskType: 'termination_warning_blocked',
+      assignedToRole: 'admin' as const,
+      dueAt: new Date(NOW.getTime() + 7 * MS_PER_DAY).toISOString(),
+      triggerReason: 'scheduled_cron_step' as const,
+      actorUserId: null,
+      actorRole: 'cron' as const,
+      correlationId,
+      summary: 'due+60 termination deferred — no statutory warning ≥14 days old',
+    });
+
+    const first = await createEscalationTask(deps, routeArgs(randomUUID()));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.value.created).toBe(true);
+
+    const second = await createEscalationTask(deps, routeArgs(randomUUID()));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.value.created).toBe(false); // idempotent open-status unique index
+    expect(second.value.taskId).toBe(first.value.taskId);
+
+    const openTasks = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ taskId: renewalEscalationTasks.taskId })
+        .from(renewalEscalationTasks)
+        .where(
+          and(
+            eq(renewalEscalationTasks.tenantId, tenantA.ctx.slug),
+            eq(renewalEscalationTasks.cycleId, unwarned.cycleId),
+            eq(renewalEscalationTasks.taskType, 'termination_warning_blocked'),
+            eq(renewalEscalationTasks.status, 'open'),
+          ),
+        ),
+    );
+    expect(openTasks).toHaveLength(1);
   }, 120_000);
 });

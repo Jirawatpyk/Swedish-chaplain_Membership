@@ -3648,7 +3648,7 @@
           "board_escalation": "Board escalation",
           "verify_pending_tier_upgrade": "Verify pending tier upgrade",
           "manual_outreach_required": "Manual outreach required",
-          "termination_warning_blocked": "Termination blocked - statutory warning undeliverable",
+          "termination_warning_blocked": "Termination deferred - no statutory warning ≥ 14 days old",
           "manual_admin_reactivation_review": "Manual reactivation review"
         },
         "yearInCycle": {

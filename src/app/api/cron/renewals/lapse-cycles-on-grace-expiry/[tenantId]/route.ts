@@ -142,7 +142,7 @@ export async function POST(
           actorRole: 'cron',
           correlationId,
           summary:
-            'due+60 termination deferred — member has never received a statutory warning (blocked warning channel); fix the contact/email data or use the manual renew/cancel flows',
+            'due+60 termination deferred — no statutory warning at least 14 days old exists for this member (never warned, warning channel blocked, or a warning was just sent). If the member is genuinely unwarnable (unverified email / no primary contact), fix the contact data or use the manual renew/cancel flows.',
         });
       } catch (escErr) {
         logger.error(

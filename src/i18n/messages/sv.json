@@ -3648,7 +3648,7 @@
           "board_escalation": "Eskalering till styrelsen",
           "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
           "manual_outreach_required": "Manuell kontakt krävs",
-          "termination_warning_blocked": "Avslut blockerat - stadgeenlig varning kunde inte levereras",
+          "termination_warning_blocked": "Avslut uppskjutet - ingen stadgeenlig varning äldre än 14 dagar",
           "manual_admin_reactivation_review": "Granska reaktivering"
         },
         "yearInCycle": {
