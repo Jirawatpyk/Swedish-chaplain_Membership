@@ -3648,6 +3648,7 @@
           "board_escalation": "ส่งต่อให้คณะกรรมการ",
           "verify_pending_tier_upgrade": "ตรวจสอบการอัปเกรดที่รออยู่",
           "manual_outreach_required": "ต้องติดต่อด้วยตนเอง",
+          "termination_warning_blocked": "ยุติสมาชิกภาพถูกระงับ - ส่งคำเตือนตามข้อบังคับไม่ได้",
           "manual_admin_reactivation_review": "ตรวจสอบการเปิดใช้ใหม่"
         },
         "yearInCycle": {

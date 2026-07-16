@@ -31,6 +31,7 @@ import { uuidv7 } from '@/lib/request-id';
 import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import {
+  createEscalationTask,
   lapseCyclesOnGraceExpiry,
   makeRenewalsDeps,
 } from '@/modules/renewals';
@@ -83,7 +84,8 @@ export async function POST(
   const startedAt = Date.now();
 
   try {
-    return await runInTenant(tenantCtx, async (tx) => {
+    const deps = makeRenewalsDeps(tenantId);
+    const result = await runInTenant(tenantCtx, async (tx) => {
       // Per-tenant advisory lock — `renewals:lapse:<tenantId>` is
       // distinct from `renewals:dispatch:` + `renewals:at-risk:` +
       // `renewals:tierupgrade:` so the four cron passes can run
@@ -94,49 +96,89 @@ export async function POST(
         sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:lapse:'||${tenantId}, 0))`,
       );
 
-      const deps = makeRenewalsDeps(tenantId);
-      const result = await lapseCyclesOnGraceExpiry(deps, {
+      return lapseCyclesOnGraceExpiry(deps, {
         tenantId,
         now: new Date(),
         correlationId,
       });
-      if (!result.ok) {
-        return NextResponse.json(
-          {
-            error: {
-              code: result.error.kind,
-              message:
-                result.error.kind === 'invalid_input'
-                  ? result.error.message
-                  : 'tenant_renewal_settings row missing',
-            },
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          error: {
+            code: result.error.kind,
+            message:
+              result.error.kind === 'invalid_input'
+                ? result.error.message
+                : 'tenant_renewal_settings row missing',
           },
+        },
+        {
+          status:
+            result.error.kind === 'tenant_settings_not_found' ? 500 : 400,
+        },
+      );
+    }
+
+    // 066 §3.2(3) — turn every dormancy-guard deferral into an
+    // ADMIN-visible escalation task. Runs OUTSIDE the advisory-lock tx
+    // (createEscalationTask opens its own tenant tx — nesting it inside
+    // the lock tx is the documented pool-starvation class). Idempotent:
+    // the (tenant, member, cycle, task_type) WHERE status='open' unique
+    // index makes daily re-runs a no-op. Best-effort — a task-write
+    // failure must not fail the cron response (the counter + metric
+    // already recorded the deferral).
+    for (const d of result.value.deferredNoPriorWarningCycles) {
+      try {
+        await createEscalationTask(deps, {
+          tenantId,
+          memberId: d.memberId,
+          cycleId: d.cycleId,
+          taskType: 'termination_warning_blocked',
+          assignedToRole: 'admin',
+          dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          triggerReason: 'scheduled_cron_step',
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId,
+          summary:
+            'due+60 termination deferred — member has never received a statutory warning (blocked warning channel); fix the contact/email data or use the manual renew/cancel flows',
+        });
+      } catch (escErr) {
+        logger.error(
           {
-            status:
-              result.error.kind === 'tenant_settings_not_found' ? 500 : 400,
+            err: escErr instanceof Error ? escErr : new Error(String(escErr)),
+            cycleId: d.cycleId,
+            tenantId,
+            correlationId,
           },
+          'cron.renewals.lapse-cycles.warning-blocked-escalation-failed',
         );
       }
-      return NextResponse.json({
-        skipped: false,
-        cycles_processed: result.value.cyclesProcessed,
-        grace_expired: result.value.graceExpired,
-        payment_failed: result.value.paymentFailed,
-        transition_race_skipped: result.value.transitionRaceSkipped,
-        // 065 §5.2 (final-review V8) — the deferred branches are the bulk
-        // of `cycles_processed` now that selection is ALL awaiting_payment
-        // cycles; without them the operator surface (cron-job.org history)
-        // cannot verify the SC sum invariant: grace_expired +
-        // payment_failed + transition_race_skipped + the four counters
-        // below === cycles_processed.
-        deferred_invoice_not_due: result.value.deferredInvoiceNotDue,
-        deferred_within_termination_window:
-          result.value.deferredWithinTerminationWindow,
-        deferred_no_invoice_backstop: result.value.deferredNoInvoiceBackstop,
-        deferred_guard_errors: result.value.deferredGuardErrors,
-        errors: result.value.errors,
-        duration_ms: Date.now() - startedAt,
-      });
+    }
+
+    return NextResponse.json({
+      skipped: false,
+      cycles_processed: result.value.cyclesProcessed,
+      grace_expired: result.value.graceExpired,
+      payment_failed: result.value.paymentFailed,
+      transition_race_skipped: result.value.transitionRaceSkipped,
+      // 065 §5.2 (final-review V8) — the deferred branches are the bulk
+      // of `cycles_processed` now that selection is ALL awaiting_payment
+      // cycles; without them the operator surface (cron-job.org history)
+      // cannot verify the SC sum invariant: grace_expired +
+      // payment_failed + transition_race_skipped + the five counters
+      // below === cycles_processed.
+      deferred_invoice_not_due: result.value.deferredInvoiceNotDue,
+      deferred_within_termination_window:
+        result.value.deferredWithinTerminationWindow,
+      deferred_no_invoice_backstop: result.value.deferredNoInvoiceBackstop,
+      // 066 §3.2(3) — dormancy-guard deferrals (each also raises an
+      // idempotent `termination_warning_blocked` escalation task).
+      deferred_no_prior_warning: result.value.deferredNoPriorWarning,
+      deferred_guard_errors: result.value.deferredGuardErrors,
+      errors: result.value.errors,
+      duration_ms: Date.now() - startedAt,
     });
   } catch (e) {
     logger.error(

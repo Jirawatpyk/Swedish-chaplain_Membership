@@ -103,6 +103,7 @@ function fakeDeps(args: {
   transitionMock: ReturnType<typeof vi.fn>;
   invoiceDueMock: ReturnType<typeof vi.fn>;
   hasUnpaidMock: ReturnType<typeof vi.fn>;
+  listForCycleWarningsMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -163,6 +164,14 @@ function fakeDeps(args: {
       : args.settings,
   );
 
+  const listForCycleWarningsMock = vi.fn(async () => [
+    {
+      stepId: 'due+30.email',
+      status: 'sent',
+      channel: 'email',
+      dispatchedAt: new Date(NOW.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ]);
   const deps: LapseCyclesOnGraceExpiryDeps = {
     tenant: { slug: TENANT_ID } as LapseCyclesOnGraceExpiryDeps['tenant'],
     cyclesRepo: {
@@ -181,6 +190,12 @@ function fakeDeps(args: {
     },
     f5PaymentAttemptsBridge: f5Bridge,
     invoiceDueBridge,
+    // 066 §3.2(3) — default: a qualifying due+30 warning sent 20d before
+    // NOW, so every pre-066 terminate-path test still terminates. The
+    // dormancy-guard tests override listForCycle explicitly.
+    reminderEventRepo: {
+      listForCycle: listForCycleWarningsMock,
+    } as unknown as LapseCyclesOnGraceExpiryDeps['reminderEventRepo'],
   };
   return {
     deps,
@@ -190,6 +205,7 @@ function fakeDeps(args: {
     transitionMock,
     invoiceDueMock,
     hasUnpaidMock,
+    listForCycleWarningsMock,
   };
 }
 

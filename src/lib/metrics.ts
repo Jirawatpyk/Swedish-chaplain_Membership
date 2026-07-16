@@ -2683,7 +2683,8 @@ export const renewalsMetrics = {
         reason:
           | 'invoice_not_due'
           | 'within_termination_window'
-          | 'no_invoice_backstop';
+          | 'no_invoice_backstop'
+          | 'no_prior_warning';
       },
     ): void {
       safeMetric(() => {
