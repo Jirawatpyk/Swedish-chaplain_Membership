@@ -44,7 +44,10 @@ import {
   fetchMemberDisplay,
   fetchPlanDisplay,
 } from './_lib/cycle-detail-fetchers';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import {
+  getDateFormatLocale,
+  formatLocalisedDate,
+} from '@/lib/format-date-localised';
 
 export async function generateMetadata({
   params,
@@ -227,6 +230,15 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     s ? dtFmtFull.format(new Date(s)) : '—';
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
+  // 066 S3 — a value that is ALREADY a Bangkok calendar date
+  // (`YYYY-MM-DD`), not a timestamptz instant. Route it through the shared,
+  // UTC-pinned `formatLocalisedDate` so `new Date('2026-01-15')` (UTC
+  // midnight) never renders one day early on a negative-UTC-offset host
+  // (local dev / CI TZ=America/*). The timestamptz fields keep `dtFmtDay`.
+  const fmtCalendarDate = (s: string | null | undefined): string =>
+    s
+      ? formatLocalisedDate(s, locale, { dateStyle: 'long', timeZone: 'UTC' })
+      : '—';
 
   const closedReason =
     c.status === 'lapsed' || c.status === 'cancelled'
@@ -725,7 +737,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                     terminationBasisDueDate
                       ? t('fields.terminationBasisWithDue', {
                           basis: terminationBasisLabel,
-                          date: fmtDateOnly(terminationBasisDueDate),
+                          date: fmtCalendarDate(terminationBasisDueDate),
                         })
                       : terminationBasisLabel
                   }
