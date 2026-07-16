@@ -43,7 +43,7 @@ const COPY: Record<EmailLocale, EmailCopy> = {
     expiryNotice: 'This link expires in 1 hour.',
     ignoreNotice:
       'If you did not request a password reset, you can safely ignore this email — your password will not be changed.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
   th: {
     subject: 'รีเซ็ตรหัสผ่าน SweCham',
@@ -65,7 +65,7 @@ const COPY: Record<EmailLocale, EmailCopy> = {
     expiryNotice: 'Den här länken upphör att gälla om 1 timme.',
     ignoreNotice:
       'Om du inte begärt en lösenordsåterställning kan du ignorera det här mejlet — ditt lösenord kommer inte att ändras.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
 };
 
@@ -93,7 +93,7 @@ export function buildResetPasswordEmail(input: ResetPasswordEmailInput): BuiltEm
     <title>${escapeHtml(copy.subject)}</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px; color: #111;">
-    <img src="${emailLogoUrl()}" alt="SweCham — Thailand-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
+    <img src="${emailLogoUrl()}" alt="SweCham — Thai-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
     <h1 style="font-size: 20px; margin-bottom: 16px;">${escapeHtml(copy.heading)}</h1>
     <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="margin: 24px 0;">

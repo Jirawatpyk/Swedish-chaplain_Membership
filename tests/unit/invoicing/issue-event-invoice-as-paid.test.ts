@@ -213,7 +213,7 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
     brandName: null,
     identity: Object.freeze({
       legal_name_th: 'หอการค้าไทย-สวีเดน',
-      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
       tax_id: '0000000000000',
       address_th: 'กรุงเทพฯ',
       address_en: 'Bangkok',
@@ -496,7 +496,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       makeSettings({
         identity: Object.freeze({
           legal_name_th: 'หอการค้าไทย-สวีเดน',
-          legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+          legal_name_en: 'Thai-Swedish Chamber of Commerce',
           tax_id: '0000000000000',
           address_th: 'กรุงเทพฯ',
           address_en: 'Bangkok',

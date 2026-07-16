@@ -133,7 +133,7 @@ describe('088 US8 — §80/1(5) zero-rate (live Neon, SC-008)', () => {
     await seedTenantFiscal({
       tenant,
       legalNameTh: 'หอการค้าไทย-สวีเดน',
-      legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+      legalNameEn: 'Thai-Swedish Chamber of Commerce',
       registeredAddressTh: 'กรุงเทพฯ',
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: 'SC',

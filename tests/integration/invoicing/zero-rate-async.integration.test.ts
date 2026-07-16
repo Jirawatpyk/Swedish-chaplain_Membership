@@ -103,7 +103,7 @@ describe('088 US8 — async worker sources pinned vat_treatment (live Neon, AS5)
     await seedTenantFiscal({
       tenant,
       legalNameTh: 'หอการค้าไทย-สวีเดน',
-      legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+      legalNameEn: 'Thai-Swedish Chamber of Commerce',
       registeredAddressTh: 'กรุงเทพฯ',
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: 'SC',

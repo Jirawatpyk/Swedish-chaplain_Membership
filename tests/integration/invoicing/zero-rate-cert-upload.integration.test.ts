@@ -93,7 +93,7 @@ describe('088 US8 UX-B1 — cert-scan attach → pin → immutable → cert-view
     await seedTenantFiscal({
       tenant,
       legalNameTh: 'หอการค้าไทย-สวีเดน',
-      legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+      legalNameEn: 'Thai-Swedish Chamber of Commerce',
       registeredAddressTh: 'กรุงเทพฯ',
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: 'SC',

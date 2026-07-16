@@ -132,7 +132,7 @@ describe('088 T069 — renewal parity: bill (ใบแจ้งหนี้) →
     await seedTenantFiscal({
       tenant,
       legalNameTh: 'หอการค้าไทย-สวีเดน',
-      legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+      legalNameEn: 'Thai-Swedish Chamber of Commerce',
       registeredAddressTh: 'กรุงเทพฯ',
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: 'SC',

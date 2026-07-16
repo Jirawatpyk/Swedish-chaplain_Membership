@@ -67,7 +67,7 @@ export interface BaseEmailLayoutProps {
   readonly privacyNoticeBody?: string;
 }
 
-const FOOTER_BRAND_DEFAULT = 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)';
+const FOOTER_BRAND_DEFAULT = 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)';
 
 const CONTAINER_STYLE: React.CSSProperties = {
   maxWidth: '560px',
@@ -210,7 +210,7 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
           <Section style={BRAND_HEADER_STYLE}>
             <Img
               src={emailLogoUrl()}
-              alt="SweCham — Thailand-Swedish Chamber of Commerce"
+              alt="SweCham — Thai-Swedish Chamber of Commerce"
               width={200}
               style={BRAND_LOGO_STYLE}
             />

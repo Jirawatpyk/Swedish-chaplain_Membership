@@ -47,7 +47,7 @@ const COPY: Record<EmailLocale, RevertCopy> = {
     expiryNotice: 'You have 48 hours to revert this change.',
     legitimateNotice:
       'If you requested this change, you can safely ignore this email. Your existing sessions have been signed out as a security precaution.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
   th: {
     subject: 'อีเมลติดต่อ SweCham ของคุณถูกเปลี่ยนแปลง',
@@ -71,7 +71,7 @@ const COPY: Record<EmailLocale, RevertCopy> = {
     expiryNotice: 'Du har 48 timmar på dig att återställa denna ändring.',
     legitimateNotice:
       'Om du begärde ändringen kan du ignorera det här e-postmeddelandet. Dina befintliga sessioner har loggats ut som en säkerhetsåtgärd.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
 };
 

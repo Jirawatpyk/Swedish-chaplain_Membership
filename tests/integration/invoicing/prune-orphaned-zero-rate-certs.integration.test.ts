@@ -118,7 +118,7 @@ describe('088 US8 UX-B2 — orphaned zero-rate cert TTL-sweep pin-probe (live Ne
     await seedTenantFiscal({
       tenant: tenantA,
       legalNameTh: 'หอการค้าไทย-สวีเดน',
-      legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+      legalNameEn: 'Thai-Swedish Chamber of Commerce',
       registeredAddressTh: 'กรุงเทพฯ',
       registeredAddressEn: 'Bangkok',
       invoiceNumberPrefix: 'SC',

@@ -43,7 +43,7 @@ const COPY: Record<EmailLocale, VerificationCopy> = {
     expiryNotice: 'This verification link expires in 24 hours.',
     ignoreNotice:
       'If you were not expecting this change, please contact your chamber administrator immediately — there is a revert link in the notification sent to your previous address.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
   th: {
     subject: 'ยืนยันอีเมลใหม่ของ SweCham',
@@ -65,7 +65,7 @@ const COPY: Record<EmailLocale, VerificationCopy> = {
     expiryNotice: 'Denna bekräftelselänk upphör att gälla om 24 timmar.',
     ignoreNotice:
       'Om du inte förväntade dig denna ändring, kontakta din kammaradministratör omedelbart — det finns en återställningslänk i meddelandet som skickades till din tidigare adress.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
 };
 
@@ -95,7 +95,7 @@ export function buildEmailVerificationEmail(
     <title>${escapeHtml(copy.subject)}</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px; color: #111;">
-    <img src="${emailLogoUrl()}" alt="SweCham — Thailand-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
+    <img src="${emailLogoUrl()}" alt="SweCham — Thai-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
     <h1 style="font-size: 20px; margin-bottom: 16px;">${escapeHtml(copy.heading)}</h1>
     <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="margin: 24px 0;">
