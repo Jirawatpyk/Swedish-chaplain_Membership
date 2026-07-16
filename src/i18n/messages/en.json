@@ -1667,7 +1667,7 @@
         "logo": "Logo",
         "seller": "Seller branch (§86/4)",
         "whtNote": "Withholding-tax note",
-        "terminationNotice": "Statutory termination notice",
+        "terminationNotice": "Termination notice",
         "bank": "Offline payment (bank transfer)"
       },
       "labels": {
@@ -1719,9 +1719,9 @@
         "whtNote": "Shown on membership documents only (invoice + tax receipt). Membership dues are WHT-exempt under §65 bis (13) (ruling กค 0811/8542) — the suggested wording is pre-filled below. Leave blank for none.",
         "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
         "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
-        "terminationNotice": "Shown on the invoice (ใบแจ้งหนี้/bill) only, never a tax receipt. Informs members of the statutory obligation to terminate unpaid membership. The example is a draft grounded in SweCham's spec — confirm the final text with SweCham before go-live. Leave blank for none.",
-        "terminationNoticeThExample": "SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ",
-        "terminationNoticeEnExample": "SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.",
+        "terminationNotice": "Shown on the invoice (ใบแจ้งหนี้/bill) only, never a tax receipt. Informs members of SweCham's obligation, under its bylaws, to terminate unpaid membership. The example is a compliance-reviewed draft; SweCham may cite a specific bylaw article. Leave blank for none.",
+        "terminationNoticeThExample": "SweCham มีหน้าที่ตามข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกเกิน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้",
+        "terminationNoticeEnExample": "Under its bylaws, SweCham is required to terminate the membership of members whose fees remain unpaid more than 60 days after the invoice due date.",
         "bank": "Shown on the invoice (ใบแจ้งหนี้) only, for offline bank-transfer payment. Leave blank for none.",
         "bankSwift": "8 or 11 characters (e.g. KASITHBK).",
         "bankAccountNo": "Digits, with optional dashes or spaces."

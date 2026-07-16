@@ -118,21 +118,31 @@ type CopyKey = `${RenewalReminderTier}.${RenewalReminderOffset}`;
 // English canonical copy. Templates have placeholders interpolated at
 // render time. Keep ≤500 chars per body; subject ≤120 chars (Gmail).
 /**
- * 065 §5.5 — the statutory-termination warning appended to every POST-expiry
- * reminder step (t+7/t+14/t+30), one sentence per locale (final-review:
- * was pasted verbatim into all 15 bodies — when SweCham legal finalises the
- * wording it must change in exactly THREE places, here). DRAFT wording
- * grounded in the SweCham member-fees spec, pending legal sign-off
- * (design §9.4). Two known couplings, both deliberate for the
- * single-tenant present: the tenant name "SweCham" and the "60 days"
- * figure (TERMINATION_DAYS_AFTER_DUE in lapse-cycles-on-grace-expiry.ts)
- * are literals — tokenise per-tenant before onboarding tenant #2
- * (design § Post-review follow-ups).
+ * 065 §5.5 — the termination warning appended to every POST-expiry reminder
+ * step (t+7/t+14/t+30), one sentence per locale (change it in exactly THREE
+ * places, here).
+ *
+ * Wording is BYLAW-based + compliance-reviewed 2026-07-16 (pdpa-gdpr +
+ * i18n reviews, CONFIRM-WITH-WORDING-FIX): a chamber's duty to terminate a
+ * non-paying member comes from its own registered bylaws (ข้อบังคับ /
+ * stadgar), NOT a statute — asserting a *law* compels it inside a dunning
+ * message is a misrepresentation of legal compulsion (GDPR Art. 5(1)(a)
+ * fairness; Thai Debt Collection Act; Swedish god inkassosed). The earlier
+ * "statutory/ตามกฎหมาย/lagstadgad" phrasing was the overclaim; removed.
+ * "more than 60 days after the due date" is code-accurate + fairer than the
+ * old "within 60 days" (the cron terminates only once today > due_date + 60,
+ * so the member keeps the full 60 days).
+ *
+ * Two known couplings, both deliberate for the single-tenant present: the
+ * tenant name "SweCham" and the "60 days" figure (TERMINATION_DAYS_AFTER_DUE
+ * in lapse-cycles-on-grace-expiry.ts) are literals — tokenise per-tenant
+ * before onboarding tenant #2 (design § Post-review follow-ups). SweCham may
+ * optionally cite a specific bylaw article later (precision, not a gate).
  */
 const STATUTORY_TERMINATION_WARNING: Record<RenewalEmailLocale, string> = {
-  en: 'SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
-  th: 'SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
-  sv: 'SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+  en: 'Under its bylaws, SweCham is required to terminate the membership of members whose fees remain unpaid more than 60 days after the invoice due date.',
+  th: 'SweCham มีหน้าที่ตามข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกเกิน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
+  sv: 'Enligt sina stadgar är SweCham skyldig att avsluta medlemskapet för medlemmar vars avgifter är obetalda mer än 60 dagar efter fakturans förfallodag.',
 };
 
 const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
