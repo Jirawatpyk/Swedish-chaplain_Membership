@@ -33,6 +33,8 @@ function snapshotWith(
     revenueTrend: [],
     memberGrowth: [],
     topInsights,
+    tierDistribution: [],
+    invoiceStatus: { buckets: [], draftCount: 0 },
     computedAt: '2026-06-15T05:00:00.000Z',
   };
 }

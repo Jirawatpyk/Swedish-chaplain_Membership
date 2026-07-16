@@ -59,6 +59,19 @@ const snapshotSchema = z.object({
       scopeRef: z.string().optional(),
     }),
   ),
+  tierDistribution: z.array(
+    z.object({ tierKey: z.string(), label: z.string(), count }),
+  ),
+  invoiceStatus: z.object({
+    buckets: z.array(
+      z.object({
+        bucket: z.enum(['paid', 'unpaid', 'overdue']),
+        satang: z.string().regex(/^\d+$/),
+        count,
+      }),
+    ),
+    draftCount: count,
+  }),
   computedAt: z.string(),
 });
 

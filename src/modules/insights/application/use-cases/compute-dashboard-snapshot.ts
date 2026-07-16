@@ -202,6 +202,10 @@ export async function computeDashboardSnapshot(
         revenueTrend,
         memberGrowth,
         topInsights,
+        // placeholder — computed in a later task (067 T5)
+        tierDistribution: [],
+        // placeholder — computed in a later task (067 T5)
+        invoiceStatus: { buckets: [], draftCount: 0 },
         computedAt: now.toISOString(),
       };
       await deps.snapshotRepo.upsertInTx(tx, snap, now);

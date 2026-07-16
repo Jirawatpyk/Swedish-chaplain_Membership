@@ -39,6 +39,26 @@ export interface MemberGrowthPoint {
   readonly cumulative: number;
 }
 
+/** One slice of the active-membership tier breakdown (067). */
+export interface TierDistributionSlice {
+  readonly tierKey: string; // plan slug, or 'unassigned'
+  readonly label: string; // display label ('unassigned' → a translatable sentinel key handled in presentation)
+  readonly count: number;
+}
+
+/** One bucket of the invoice-status distribution (067). */
+export interface InvoiceStatusBucket {
+  readonly bucket: 'paid' | 'unpaid' | 'overdue';
+  readonly satang: string; // net/outstanding amount, decimal string
+  readonly count: number;
+}
+
+/** Invoice-status distribution — buckets + drafts, excluded from the buckets themselves (067). */
+export interface InvoiceStatusDistribution {
+  readonly buckets: readonly InvoiceStatusBucket[];
+  readonly draftCount: number;
+}
+
 export interface DashboardSnapshot {
   readonly counts: MembershipCounts;
   /** Year-to-date PAID revenue in satang, serialized as a decimal string. */
@@ -52,6 +72,10 @@ export interface DashboardSnapshot {
   readonly memberGrowth: readonly MemberGrowthPoint[];
   /** Starter insight set, already filtered of dismissals (FR-004). */
   readonly topInsights: readonly SmartInsight[];
+  /** Active-membership breakdown by plan tier (067). */
+  readonly tierDistribution: readonly TierDistributionSlice[];
+  /** Invoice-status distribution — paid/unpaid/overdue buckets + drafts (067). */
+  readonly invoiceStatus: InvoiceStatusDistribution;
   /** "As of" time (FR-005) — ISO 8601 UTC; presentation renders per-locale. */
   readonly computedAt: string;
 }
@@ -66,6 +90,8 @@ export function emptySnapshot(computedAt: string): DashboardSnapshot {
     revenueTrend: [],
     memberGrowth: [],
     topInsights: [],
+    tierDistribution: [],
+    invoiceStatus: { buckets: [], draftCount: 0 },
     computedAt,
   };
 }
