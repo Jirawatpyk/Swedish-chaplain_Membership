@@ -278,6 +278,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
     },
     clock: { nowIso: () => '2026-03-15T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     currentTemplateVersion: 8,
     taxAtPayment: 'on',
   };

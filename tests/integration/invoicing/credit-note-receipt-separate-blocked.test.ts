@@ -68,6 +68,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -119,6 +120,7 @@ function makeAsPaidFixtureDeps(tenantSlug: string): IssueEventInvoiceAsPaidDeps 
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };
@@ -152,6 +154,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     currentTemplateVersion: 1,
   };
   return { deps, pdfRenderMock };

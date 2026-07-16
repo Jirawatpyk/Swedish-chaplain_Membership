@@ -428,6 +428,9 @@ export function makeProcessWebhookEventDeps(
     audit: f7AuditAdapter,
     clock: systemClock,
     emailTransactional: emailTransactionalBridge,
+    // Email-locale audit 2026-07-16 — tenant default fallback for the
+    // delivered-summary email (member preference wins when present).
+    notificationLocale: tenantDefaultLocaleFor(tenantId),
   };
 }
 
@@ -445,6 +448,8 @@ export function makeReconcileStuckSendingDeps(
       membersBridge,
       emailTransactional: emailTransactionalBridge,
       deliveriesRepo: makeDrizzleBroadcastDeliveriesRepo(tenantId),
+      // Email-locale audit 2026-07-16 — tenant default fallback.
+      notificationLocale: tenantDefaultLocaleFor(tenantId),
     },
   };
 }

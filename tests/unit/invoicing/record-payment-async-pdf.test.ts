@@ -196,6 +196,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-05-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),

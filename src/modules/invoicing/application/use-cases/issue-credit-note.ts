@@ -60,6 +60,8 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
   type InvoiceId,
@@ -300,6 +302,8 @@ export interface IssueCreditNoteDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly outbox: EmailOutboxPort;
+  /** Email-locale audit 2026-07-16 — member preference for the credit-note email. */
+  readonly recipientLocale: RecipientLocalePort;
   readonly currentTemplateVersion: number;
 }
 
@@ -1133,6 +1137,14 @@ export async function issueCreditNote(
       // `sent` on enqueue, `skipped_no_recipient` on the empty-email skip.
       let emailDelivery: CreditNoteEmailDelivery = 'not_requested';
       if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
+        // Email-locale audit 2026-07-16 — credit-note email in the member's
+        // language (live read; non-member event buyer → undefined → 'en').
+        const recipientLocale = await resolveRecipientLocale(
+          deps.recipientLocale,
+          tx,
+          input.tenantId,
+          memberId,
+        );
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',
@@ -1140,6 +1152,7 @@ export async function issueCreditNote(
           creditNoteId,
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
+          ...(recipientLocale ? { recipientLocale } : {}),
         });
         emailDelivery = 'sent';
       } else if (shouldAutoEmail) {

@@ -226,6 +226,12 @@ function makeDeps(
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),
     },
+    // Email-locale audit 2026-07-16 — default no stored preference (→ 'en'),
+    // preserving pre-fix behaviour for the existing assertions. Individual
+    // tests override to assert the locale is threaded onto the outbox row.
+    recipientLocale: {
+      getMemberEmailLocale: vi.fn(async () => null),
+    },
     currentTemplateVersion: 1,
     // Default: the flag is not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined` — the stranded-funds guard (keyed on 'off') stays
@@ -547,6 +553,31 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       expect.objectContaining({
         eventType: 'invoice_paid',
         recipientEmail: 'john@acme.example',
+      }),
+    );
+  });
+
+  it('member prefers Thai → receipt-email outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+    await recordPayment(deps, input);
+    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-swecham',
+      'member-1',
+    );
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_paid',
+        recipientEmail: 'john@acme.example',
+        recipientLocale: 'th',
       }),
     );
   });

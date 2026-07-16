@@ -30,6 +30,8 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
@@ -200,6 +202,12 @@ export interface RecordPaymentDeps {
   readonly clock: ClockPort;
   readonly outbox: EmailOutboxPort;
   readonly memberIdentity: MemberIdentityPort;
+  /**
+   * Email-locale audit 2026-07-16 — live member-preference read so the
+   * receipt email renders in the member's language (the outbox port's
+   * `recipientLocale` was never populated before; every F4 email shipped EN).
+   */
+  readonly recipientLocale: RecipientLocalePort;
   readonly currentTemplateVersion: number;
   /**
    * 088-invoice-tax-flow-redesign (T018 / T022) — FEATURE_088_TAX_AT_PAYMENT
@@ -1032,6 +1040,16 @@ export async function recordPayment(
         memberId === null && loaded.invoiceSubject === 'event'
           ? ('event_non_member' as const)
           : undefined;
+      // Email-locale audit 2026-07-16 — render the receipt email in the
+      // member's language. Live read (not the frozen snapshot) so a later
+      // preference change is honoured. A non-member event buyer (memberId
+      // null) has no preference → undefined → outbox 'en' default.
+      const recipientLocale = await resolveRecipientLocale(
+        deps.recipientLocale,
+        tx,
+        input.tenantId,
+        memberId,
+      );
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -1044,6 +1062,7 @@ export async function recordPayment(
         // send on `invoices.receipt_pdf_status='rendered'` to avoid
         // shipping a dead Blob link.
         dependsOnReceiptPdf: deps.asyncReceiptPdf === true,
+        ...(recipientLocale ? { recipientLocale } : {}),
         ...(privacyFooterKind ? { privacyFooterKind } : {}),
       });
       emailDispatch = 'sent';

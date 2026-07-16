@@ -162,16 +162,16 @@ export interface MembersBridgePort {
 
   /**
    * Verify-fix R4 (Types-#6, 2026-05-02) — member's preferred locale
-   * for transactional notifications. Currently returns `null` for
-   * every member (F3 schema does NOT yet store `preferred_locale`).
-   * Routes that need notification locale should fall back to
-   * `tenantDefaultLocaleFor(tenantSlug)` when this returns null.
+   * for transactional notifications. Reads `members.preferred_locale`
+   * (migration 0082) via the F3 barrel; returns `null` when the member
+   * left it unset (NULL = "use tenant default"). Callers that need a
+   * notification locale chain `getMemberPreferredLocale ?? tenantDefaultLocaleFor(tenantSlug)`.
    *
-   * Future extensibility hook: when F3 adds a `preferred_locale`
-   * column to `members` (or per-recipient locale tracking lands via
-   * F12 white-label config), the adapter swaps to read from there.
-   * Routes need no change — they already chain
-   * `getMemberPreferredLocale ?? tenantDefaultLocaleFor(...)`.
+   * NOTE (email-locale audit 2026-07-16): the concrete adapter now
+   * performs a real DB read (members-bridge.ts) — the older "returns null
+   * for every member" note was stale after the R5 verify-fix wired the
+   * lookup. Any caller that hardcoded 'en' "because this returns null"
+   * was a latent always-English bug.
    *
    * Best-effort: if the lookup throws (Neon outage), returning null
    * is acceptable — locale resolution falls back to tenant default.

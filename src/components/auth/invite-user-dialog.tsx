@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon, UserPlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -127,6 +127,12 @@ export function InviteUserDialog({
   const t = useTranslations('admin.users.invite');
   const tLink = useTranslations('admin.users.invite.linkMember');
   const tActions = useTranslations('admin.users.actions');
+  // Email-locale audit 2026-07-16 — carry the admin's UI locale as the invite
+  // default. The route threads it onward: for a NEW contact / staff user this
+  // is the best available signal; for an EXISTING member contact the use-case
+  // overrides it with the contact's stored preferred_language. Previously the
+  // dialog sent no locale, so every invitation from here shipped English.
+  const locale = useLocale();
   const router = useRouter();
 
   const [open, setOpen] = useState(false);
@@ -176,6 +182,7 @@ export function InviteUserDialog({
       const body: Record<string, unknown> = {
         email: email.trim().toLowerCase(),
         role,
+        locale,
       };
       if (role === 'member' && memberId) {
         body.memberId = memberId;

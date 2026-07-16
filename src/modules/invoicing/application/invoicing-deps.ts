@@ -22,6 +22,7 @@ import { vercelBlobAdapter } from '../infrastructure/adapters/vercel-blob-adapte
 import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-email-outbox-adapter';
 import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
+import { recipientLocaleAdapter } from '../infrastructure/adapters/recipient-locale-adapter';
 import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
@@ -110,6 +111,7 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // 088 T022 — new bill→§87-at-payment flow when the flag is on.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
@@ -144,6 +146,7 @@ export function makeIssueEventInvoiceAsPaidDeps(
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // 088 T022 — mirror record-payment's §87-RC-at-payment behaviour for the
     // event as-paid path when the flag is on (FR-005 / FR-006).
@@ -359,6 +362,7 @@ export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
   };
 }
@@ -396,6 +400,7 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
   };
 }
 
@@ -431,6 +436,7 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     audit: f4AuditAdapter,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
   };
 }
 
@@ -490,6 +496,7 @@ export function makeRecordPaymentDeps(
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     memberIdentity: memberIdentityAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,

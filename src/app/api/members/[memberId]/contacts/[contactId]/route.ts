@@ -179,11 +179,15 @@ export async function PATCH(
     }
 
     if (contact.linkedUserId) {
-      // FR-012a 6-step atomic transaction
+      // FR-012a 6-step atomic transaction.
+      // Email-locale audit 2026-07-16 — pass the form-supplied locale only when
+      // present + valid; when omitted the use-case falls back to the recipient
+      // contact's stored `preferred_language` (was hardcoded 'en' here, so a
+      // non-UI caller always produced English verification/revert emails).
       const localeRaw =
         typeof body.locale === 'string' && /^(en|th|sv)$/.test(body.locale)
           ? (body.locale as 'en' | 'th' | 'sv')
-          : 'en';
+          : undefined;
       const changeResult = await changeContactEmail(
         {
           tenant,
@@ -200,7 +204,7 @@ export async function PATCH(
           newEmailRaw: emailValue,
           actorUserId: ctx.current.user.id,
           requestId: ctx.requestId,
-          locale: localeRaw,
+          ...(localeRaw !== undefined && { locale: localeRaw }),
         },
       );
       if (!changeResult.ok) {

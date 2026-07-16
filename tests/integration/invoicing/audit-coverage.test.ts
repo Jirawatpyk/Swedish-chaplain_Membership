@@ -51,6 +51,7 @@ import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -445,6 +446,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       audit: f4AuditAdapter,
       clock: { nowIso: () => '2026-04-21T03:00:00Z' },
       outbox: resendEmailOutboxAdapter,
+      recipientLocale: recipientLocaleAdapter,
       currentTemplateVersion: 1,
       taxAtPayment: 'off',
     };

@@ -301,6 +301,7 @@ function makeDeps(tenantId: string): VoidInvoiceDeps & {
         outboxCalls.push(input);
       }),
     },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     renderCalls,
     uploadCalls,
     outboxCalls,

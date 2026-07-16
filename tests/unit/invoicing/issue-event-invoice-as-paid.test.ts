@@ -365,6 +365,10 @@ function makeDeps(
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
+    // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
+    recipientLocale: {
+      getMemberEmailLocale: vi.fn(async () => null),
+    },
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy path), exact-equivalent of the
     // pre-refactor `undefined`. Flag-on behaviour is covered by event-parity.
@@ -830,6 +834,22 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       // receipt_105-register RE number (US7/T050 split; 'RC' configured but ignored).
       expect(payload.receipt_document_number).toBe('RE-2026-000001');
     }
+  });
+
+  it('matched member prefers Thai → receipt-email outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember());
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+      OPAQUE_TX,
+      'test-swecham',
+      'member-1',
+    );
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      OPAQUE_TX,
+      expect.objectContaining({ eventType: 'invoice_paid', recipientLocale: 'th' }),
+    );
   });
 
   // --- happy TIN path -------------------------------------------------------------

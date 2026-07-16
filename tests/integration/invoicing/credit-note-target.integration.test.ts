@@ -110,6 +110,7 @@ function makeIssueDeps(
     audit: f4AuditAdapter,
     clock: { nowIso: () => `${ISSUE_DATE}T10:00:00Z` },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     currentTemplateVersion: 1,
     // Pin the flow EXPLICITLY rather than inheriting the ambient
     // FEATURE_088_TAX_AT_PAYMENT env flag (frozen at boot; ON in the dev env).
@@ -189,6 +190,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     currentTemplateVersion: 1,
   };
   return { deps, captured, uploads };

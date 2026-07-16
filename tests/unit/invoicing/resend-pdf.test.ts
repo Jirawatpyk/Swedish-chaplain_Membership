@@ -21,6 +21,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { resendPdf } from '@/modules/invoicing/application/use-cases/resend-pdf';
+import type { RecipientLocalePort } from '@/modules/invoicing/application/ports/recipient-locale-port';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId, type CreditNote } from '@/modules/invoicing/domain/credit-note';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -178,6 +179,10 @@ function makeDeps(
 ) {
   const audit = { emit: vi.fn(async () => {}) };
   const outbox = { enqueue: vi.fn(async () => {}) };
+  // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
+  const recipientLocale: RecipientLocalePort = {
+    getMemberEmailLocale: vi.fn(async () => null),
+  };
   const invoiceRepo = {
     withTx: vi.fn(),
     insertDraft: vi.fn(),
@@ -205,7 +210,7 @@ function makeDeps(
     findByOriginalInvoiceInTx: vi.fn(),
     listPaged: vi.fn(),
   } as unknown as import('@/modules/invoicing/application/ports/credit-note-repo').CreditNoteRepo;
-  return { invoiceRepo, creditNoteRepo, audit, outbox };
+  return { invoiceRepo, creditNoteRepo, audit, outbox, recipientLocale };
 }
 
 const adminActor = {
@@ -251,6 +256,51 @@ describe('resendPdf', () => {
     // payload (recipient_email_sha256) for correlation.
     expect(auditCall.summary).not.toContain('member@example.com');
     expect(auditCall.payload.recipient_email_sha256).toBeTruthy();
+  });
+
+  it('invoice variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const invoice = issuedInvoice();
+    const deps = makeDeps(invoice);
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+      null,
+      TENANT,
+      'member-m1',
+    );
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientLocale).toBe('th');
+  });
+
+  it('credit-note variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const cn = creditNoteFixture(); // originalInvoiceMemberId = 'member-m1'
+    const deps = makeDeps(null, cn);
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'credit_note',
+      creditNoteId: CN_UUID,
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+      null,
+      TENANT,
+      'member-m1',
+    );
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientLocale).toBe('th');
   });
 
   it('invoice variant — NON-MEMBER event invoice → emits invoice_pdf_resent with event_registration_id and NO member_id key', async () => {

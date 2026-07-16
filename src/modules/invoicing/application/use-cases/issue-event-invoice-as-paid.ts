@@ -73,6 +73,8 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
   canTransition,
@@ -202,6 +204,8 @@ export interface IssueEventInvoiceAsPaidDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly outbox: EmailOutboxPort;
+  /** Email-locale audit 2026-07-16 — member preference for the receipt email. */
+  readonly recipientLocale: RecipientLocalePort;
   /** PDF template version pinned on THIS issuance (T045 registry). */
   readonly currentTemplateVersion: number;
   /**
@@ -787,6 +791,14 @@ export async function issueEventInvoiceAsPaid(
         // the §87/3 PDPA transparency footer (recordPayment/issueInvoice
         // Task-14 B parity). An enqueue THROW still hard-fails the whole
         // issuance via tx rollback.
+        // Email-locale audit 2026-07-16 — matched-member receipt renders in the
+        // member's language (live read; non-member buyer → undefined → 'en').
+        const recipientLocale = await resolveRecipientLocale(
+          deps.recipientLocale,
+          tx,
+          input.tenantId,
+          memberId,
+        );
         emailDispatch = await enqueueInvoiceAutoEmail(deps.outbox, tx, {
           tenantId: input.tenantId,
           invoiceId,
@@ -795,6 +807,7 @@ export async function issueEventInvoiceAsPaid(
           recipientEmail: memberSnap.primary_contact_email ?? null,
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
+          recipientLocale,
           privacyFooterKind:
             memberId === null ? ('event_non_member' as const) : undefined,
           skipLogMessage:

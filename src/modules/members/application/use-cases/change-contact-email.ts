@@ -72,7 +72,13 @@ export type ChangeContactEmailInput = {
   readonly newEmailRaw: string;
   readonly actorUserId: string;
   readonly requestId: string;
-  readonly locale: 'en' | 'th' | 'sv';
+  /**
+   * Email-locale audit 2026-07-16 — OPTIONAL. The admin form sends the
+   * contact's (possibly just-edited) preferred-language value here; when a
+   * non-UI caller omits it the verification + revert emails fall back to the
+   * recipient's stored `contact.preferredLanguage` rather than a hardcoded 'en'.
+   */
+  readonly locale?: 'en' | 'th' | 'sv';
 };
 
 export type ChangeContactEmailError =
@@ -188,7 +194,9 @@ export async function changeContactEmail(
         {
           type: 'email_verification',
           toEmail: newEmail as string,
-          locale: input.locale,
+          // Email-locale audit 2026-07-16 — recipient's language; the admin
+          // form supplies the (possibly just-edited) value, else stored default.
+          locale: input.locale ?? contact.preferredLanguage,
           contextData: {
             token: verificationToken.plaintext,
             activatedAt: verificationActivated.toISOString(),
@@ -217,7 +225,9 @@ export async function changeContactEmail(
       const revertEnqueue = await deps.emails.enqueueInTx(tx, deps.tenant, {
         type: 'email_change_revert',
         toEmail: userUpdate.value.oldEmail,
-        locale: input.locale,
+        // Email-locale audit 2026-07-16 — same recipient person as the
+        // verification email; render the revert notice in their language.
+        locale: input.locale ?? contact.preferredLanguage,
         contextData: {
           token: revertToken.plaintext,
           oldEmail: userUpdate.value.oldEmail,

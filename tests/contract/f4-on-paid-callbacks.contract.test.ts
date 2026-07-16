@@ -220,6 +220,7 @@ function makeDepsWithCallbacks(
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),

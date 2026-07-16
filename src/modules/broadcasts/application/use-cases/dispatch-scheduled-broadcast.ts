@@ -349,6 +349,27 @@ export async function enqueueDispatchFailureNotification(args: {
     return;
   }
 
+  // Email-locale audit 2026-07-16 — render the failure notice in the member's
+  // language (was tenant-default only). Priority: member preferred → tenant
+  // default (deps.locale) → 'en'. Best-effort — a bridge throw falls through.
+  let memberPreferred: 'en' | 'th' | 'sv' | null = null;
+  try {
+    memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
+      deps.tenant,
+      broadcast.requestedByMemberId,
+    );
+  } catch (localeErr) {
+    logger.warn(
+      {
+        err: localeErr instanceof Error ? localeErr.message : String(localeErr),
+        tenantId: deps.tenant.slug,
+        broadcastId: broadcast.broadcastId as string,
+        memberId: broadcast.requestedByMemberId,
+      },
+      'broadcasts.dispatch_failure_email.locale_resolve_failed',
+    );
+  }
+
   try {
     await deps.emailTransactional.sendMemberEmail(
       deps.tenant,
@@ -366,7 +387,7 @@ export async function enqueueDispatchFailureNotification(args: {
               : now.toISOString(),
           reason,
         },
-        locale: deps.locale,
+        locale: memberPreferred ?? deps.locale,
       },
       null,
     );

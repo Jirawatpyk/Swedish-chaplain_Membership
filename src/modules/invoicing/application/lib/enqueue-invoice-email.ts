@@ -26,7 +26,11 @@ import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
 import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
-import type { EmailOutboxPort, F4OutboxEventType } from '../ports/email-outbox-port';
+import type {
+  EmailOutboxPort,
+  F4OutboxEventType,
+  F4OutboxLocale,
+} from '../ports/email-outbox-port';
 
 export interface EnqueueInvoiceAutoEmailArgs {
   readonly tenantId: string;
@@ -40,6 +44,12 @@ export interface EnqueueInvoiceAutoEmailArgs {
   readonly pdfTemplateVersion: number;
   /** §87/3 PDPA transparency footer (non-member event buyer only). */
   readonly privacyFooterKind?: 'event_non_member' | undefined;
+  /**
+   * Email-locale audit 2026-07-16 — the member's resolved email locale
+   * (undefined = non-member buyer / no stored preference → outbox 'en'
+   * default). The caller resolves this via `resolveRecipientLocale`.
+   */
+  readonly recipientLocale?: F4OutboxLocale | undefined;
   /** Caller-specific human text for the skip warn (structured fields are fixed). */
   readonly skipLogMessage: string;
 }
@@ -72,6 +82,7 @@ export async function enqueueInvoiceAutoEmail(
     invoiceId: args.invoiceId,
     pdfBlobKey: args.pdfBlobKey,
     pdfTemplateVersion: args.pdfTemplateVersion,
+    ...(args.recipientLocale ? { recipientLocale: args.recipientLocale } : {}),
     ...(args.privacyFooterKind ? { privacyFooterKind: args.privacyFooterKind } : {}),
   });
   return 'sent';

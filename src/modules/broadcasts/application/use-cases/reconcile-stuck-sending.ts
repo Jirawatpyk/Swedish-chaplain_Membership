@@ -98,6 +98,11 @@ export interface ReconcileNotificationDeps {
   readonly membersBridge: MembersBridgePort;
   readonly deliveriesRepo: BroadcastDeliveriesRepo;
   readonly emailTransactional?: EmailTransactionalPort;
+  /**
+   * Email-locale audit 2026-07-16 — tenant default locale, the fallback for the
+   * delivered-summary email when the member has no explicit `preferred_locale`.
+   */
+  readonly notificationLocale?: 'en' | 'th' | 'sv';
 }
 
 export interface ReconcileStuckSendingDeps {
@@ -290,7 +295,7 @@ async function markSent(
     // process-webhook-event.ts (single source of truth — review SIMPLIFY
     // consolidation, 2026-05-01).
     if (deps.notification !== undefined) {
-      const { membersBridge, emailTransactional, deliveriesRepo } =
+      const { membersBridge, emailTransactional, deliveriesRepo, notificationLocale } =
         deps.notification;
       // deliveriesRepo is now required inside the notification group
       // (review ERR-H3) so the summary email always carries truthful
@@ -317,6 +322,7 @@ async function markSent(
         estimatedRecipientCount: broadcast.estimatedRecipientCount,
         source: 'reconciliation',
         tx,
+        ...(notificationLocale !== undefined && { notificationLocale }),
       });
     }
 

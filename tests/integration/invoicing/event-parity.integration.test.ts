@@ -64,6 +64,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
@@ -142,6 +143,7 @@ function makeDeps(
     audit: f4AuditAdapter,
     clock: { nowIso: () => NOW_ISO },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     // PDF is mocked here, so the pinned version only decorates the blob key —
     // v1 matches the sibling as-paid use-case integration tests.
     currentTemplateVersion: 1,

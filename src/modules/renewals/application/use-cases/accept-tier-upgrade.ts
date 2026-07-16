@@ -611,7 +611,13 @@ export async function acceptTierUpgrade(
               memberId: suggestion.memberId,
               toEmail: dispatchInfo.primaryContact.email,
               toName: dispatchInfo.primaryContact.firstName,
-              preferredLocale: dispatchInfo.primaryContact.preferredLanguage,
+              // Email-locale audit 2026-07-16 — member.preferred_locale (explicit
+              // choice) wins over the contact column's NOT-NULL DEFAULT 'en'
+              // (was contact-only, so a TH/SV member with a default-'en' contact
+              // got an English upgrade-approval email).
+              preferredLocale:
+                dispatchInfo.member.preferredLocale ??
+                dispatchInfo.primaryContact.preferredLanguage,
             },
             memberCompanyName: dispatchInfo.member.companyName,
             targetPlanName: planName,

@@ -1083,6 +1083,67 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
   });
 });
 
+describe('process-webhook-event — delivered-summary locale (email-locale audit 2026-07-16)', () => {
+  it('renders the delivered-summary email in the member preferred locale, not hardcoded en', async () => {
+    const broadcasts = makeBroadcastsRepo({
+      currentBroadcast: baseBroadcast({ estimatedRecipientCount: 1 }),
+    });
+    const deliveries = makeDeliveriesRepo({
+      upsertInsertedSequence: [true],
+      aggregate: {
+        broadcastId,
+        sent: 0,
+        delivered: 1,
+        bounced: 0,
+        softBounced: 0,
+        complained: 0,
+      },
+    });
+    const unsub = makeUnsubscribesRepo();
+    const audit = makeAudit();
+    const members: MembersBridgePort = {
+      async getMembersBySegment() { return []; },
+      async getMemberPrimaryContact() {
+        return unsafeBrandEmailLower('alice@example.com');
+      },
+      async memberExistsInTenant() { return true; },
+      async lookupContactEmailInTenant() { return null; },
+      async lookupMemberPrimaryContactEmailInTenant() { return null; },
+      async getMembersHaltedInTenant() { return []; },
+      async setMemberHalt() { return ok(undefined); },
+      async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
+      // Member explicitly prefers Thai.
+      async getMemberPreferredLocale() { return 'th'; },
+    };
+    const sent: Array<{ templateKey: string; locale: string }> = [];
+    const capturingTransport: EmailTransactionalPort = {
+      async sendAdminNotification() {},
+      async sendMemberEmail(_ctx, msg) {
+        sent.push({ templateKey: msg.templateKey, locale: msg.locale });
+      },
+    };
+
+    const result = await processWebhookEvent(
+      {
+        tenant,
+        broadcastsRepo: broadcasts.port,
+        deliveriesRepo: deliveries.port,
+        marketingUnsubscribes: unsub.port,
+        membersBridge: members,
+        audit: audit.port,
+        clock: { now: () => FROZEN_NOW },
+        emailTransactional: capturingTransport,
+      },
+      { broadcastId, event: buildEvent('delivered'), requestId: null },
+    );
+
+    expect(result.ok).toBe(true);
+    const delivered = sent.find((s) => s.templateKey === 'broadcast_delivered');
+    expect(delivered).toBeDefined();
+    expect(delivered!.locale).toBe('th');
+  });
+});
+
 describe('process-webhook-event โ€” defence-in-depth checks', () => {
   it('rejects malformed recipient email', async () => {
     const broadcasts = makeBroadcastsRepo({

@@ -86,6 +86,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
@@ -472,6 +473,7 @@ function makeUseCaseDeps(
     audit: f4AuditAdapter,
     clock: { nowIso: () => opts.nowIso },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy §87 stream), exact-equivalent of the
     // pre-refactor `undefined`. The 088 RC-stream behaviour is covered elsewhere.

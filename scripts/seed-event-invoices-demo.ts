@@ -138,6 +138,7 @@ import {
 } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 
 // --- Inline dependency builders (mirror invoicing-deps.ts, minus F5) ---------
 
@@ -166,6 +167,7 @@ function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     taxAtPayment: 'off',
   };
@@ -180,6 +182,7 @@ function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
   };
 }
 

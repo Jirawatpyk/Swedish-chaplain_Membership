@@ -394,6 +394,7 @@ describe('invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neo
       audit: f4AuditAdapter,
       clock: { nowIso: () => '2026-06-10T10:00:00Z' },
       outbox: { enqueue: vi.fn(async () => {}) },
+      recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
       currentTemplateVersion: 1,
       taxAtPayment: 'off',
     };

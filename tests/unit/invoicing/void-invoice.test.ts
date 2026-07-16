@@ -337,6 +337,8 @@ function makeDeps(
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-06-11T03:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     ...overrides,
   };
 }
@@ -427,6 +429,16 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
     const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
       .calls[0]![0] as PdfRenderInput;
     expect(renderInput.voidUnderlyingKind).toBe('invoice');
+  });
+
+  it('member prefers Thai → invoice_voided outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const outboxCall = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(outboxCall![1].eventType).toBe('invoice_voided');
+    expect(outboxCall![1].recipientLocale).toBe('th');
   });
 
   // ---- 088 T068: gap 1 (legacy byte-identity regression) ----

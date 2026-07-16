@@ -109,6 +109,12 @@ export interface ProcessWebhookEventDeps {
    * it MUST assert no email was attempted.
    */
   readonly emailTransactional?: EmailTransactionalPort;
+  /**
+   * Email-locale audit 2026-07-16 — tenant default locale, the fallback for the
+   * delivered-summary email when the member has no explicit `preferred_locale`.
+   * Composition root passes `tenantDefaultLocaleFor(tenant.slug)`; omitted → 'en'.
+   */
+  readonly notificationLocale?: 'en' | 'th' | 'sv';
 }
 
 export interface ProcessWebhookEventInput {
@@ -626,6 +632,9 @@ export async function processWebhookEvent(
               estimatedRecipientCount: fresh.estimatedRecipientCount,
               source: 'webhook',
               tx,
+              ...(deps.notificationLocale !== undefined && {
+                notificationLocale: deps.notificationLocale,
+              }),
             });
           }
         }
@@ -764,6 +773,12 @@ export async function enqueueDeliverySummaryEmail(args: {
    * connection.
    */
   readonly tx: unknown | null;
+  /**
+   * Email-locale audit 2026-07-16 — tenant default locale, used as the
+   * fallback when the member has no explicit `preferred_locale`. Callers
+   * pass `tenantDefaultLocaleFor(tenant.slug)`; omitted → 'en'.
+   */
+  readonly notificationLocale?: 'en' | 'th' | 'sv';
 }): Promise<void> {
   if (args.emailTransactional === undefined) return;
 
@@ -800,6 +815,32 @@ export async function enqueueDeliverySummaryEmail(args: {
   const total = args.estimatedRecipientCount;
   const deliveryRate =
     total > 0 ? Math.round((args.aggregate.delivered / total) * 1000) / 10 : 0;
+
+  // Email-locale audit 2026-07-16 — resolve the recipient's language at ENQUEUE
+  // time (the outbox dispatcher renders `row.locale` verbatim and never
+  // re-looks-up the member — the prior "dispatcher will look it up" comment was
+  // wrong, so this email always shipped English). Priority chain mirrors
+  // approve/reject/cancel: member preferred → tenant default → 'en'. Best-effort
+  // — a bridge throw falls through to the tenant default.
+  let memberPreferred: 'en' | 'th' | 'sv' | null = null;
+  try {
+    memberPreferred = await args.membersBridge.getMemberPreferredLocale(
+      args.tenant,
+      args.memberId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenant.slug,
+        broadcastId: args.broadcastId,
+        memberId: args.memberId,
+      },
+      'broadcasts.delivered_email.locale_resolve_failed',
+    );
+  }
+  const locale = memberPreferred ?? args.notificationLocale ?? 'en';
+
   try {
     await args.emailTransactional.sendMemberEmail(
       args.tenant,
@@ -818,11 +859,7 @@ export async function enqueueDeliverySummaryEmail(args: {
           source: args.source,
           viaReconciliation: args.source === 'reconciliation',
         },
-        // Locale resolution: deferred to the F4 outbox dispatcher which
-        // will look up `members.preferred_locale` at render time. We
-        // pass 'en' as the enqueue-time fallback (dispatcher overrides
-        // when the member row carries a non-default preference).
-        locale: 'en',
+        locale,
       },
       args.tx,
     );

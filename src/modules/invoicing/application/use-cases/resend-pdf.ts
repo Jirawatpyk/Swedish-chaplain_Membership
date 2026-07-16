@@ -45,6 +45,8 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
+import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import { asInvoiceId, billFirstDocumentNumber } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
 
@@ -134,6 +136,12 @@ export interface ResendPdfDeps {
   readonly creditNoteRepo: CreditNoteRepo;
   readonly audit: AuditPort;
   readonly outbox: EmailOutboxPort;
+  /**
+   * Email-locale audit 2026-07-16 — resolves the member preference when the
+   * caller didn't supply `recipientLocale` (no production route ever did —
+   * the input field was dead code since R7-S2).
+   */
+  readonly recipientLocale: RecipientLocalePort;
 }
 
 export interface ResendPdfOutput {
@@ -248,6 +256,19 @@ async function resendInvoiceOrReceipt(
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
 
+  // Email-locale audit 2026-07-16 — resolve the member's language when the
+  // caller didn't pass one (no production route ever did). Standalone read
+  // (null tx → adapter self-scopes via runInTenant); non-member event buyer
+  // → undefined → outbox 'en'.
+  const recipientLocale =
+    input.recipientLocale ??
+    (await resolveRecipientLocale(
+      deps.recipientLocale,
+      null,
+      input.tenantId,
+      invoice.memberId,
+    ));
+
   // Outbox enqueue — uses PINNED templateVersion from the invoice's
   // stored PDF so the dispatcher re-signs the same Blob key rather
   // than re-rendering a drifted template (R3-E4).
@@ -255,7 +276,7 @@ async function resendInvoiceOrReceipt(
     tenantId: input.tenantId,
     eventType: outboxEventType,
     recipientEmail,
-    ...(input.recipientLocale ? { recipientLocale: input.recipientLocale } : {}),
+    ...(recipientLocale ? { recipientLocale } : {}),
     invoiceId: input.invoiceId,
     pdfBlobKey: pdf.blobKey,
     pdfTemplateVersion: pdf.templateVersion,
@@ -394,11 +415,22 @@ async function resendCreditNote(
   const recipientEmail =
     input.recipientEmailOverride ?? cn.memberIdentitySnapshot.primary_contact_email;
 
+  // Email-locale audit 2026-07-16 — resolve the member's language when the
+  // caller didn't pass one; non-member event CN → undefined → outbox 'en'.
+  const recipientLocale =
+    input.recipientLocale ??
+    (await resolveRecipientLocale(
+      deps.recipientLocale,
+      null,
+      input.tenantId,
+      cn.originalInvoiceMemberId,
+    ));
+
   await deps.outbox.enqueue(null, {
     tenantId: input.tenantId,
     eventType: 'credit_note_pdf_resent',
     recipientEmail,
-    ...(input.recipientLocale ? { recipientLocale: input.recipientLocale } : {}),
+    ...(recipientLocale ? { recipientLocale } : {}),
     creditNoteId: input.creditNoteId,
     pdfBlobKey: cn.pdf.blobKey,
     pdfTemplateVersion: cn.pdf.templateVersion,

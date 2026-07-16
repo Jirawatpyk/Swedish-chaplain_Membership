@@ -1201,10 +1201,13 @@ async function dispatchEmailStep(
       `dispatchEmailStep invariant: primaryContact null reached email branch — gate 11 regression`,
     );
   }
-  // Resolve recipient locale: contact's preferred_language wins over
-  // member.preferred_locale (contact-level is more specific). Fallback
-  // to 'en' when both are null.
-  const locale = primaryContact.preferredLanguage ?? member.preferredLocale ?? 'en';
+  // Email-locale audit 2026-07-16 — member.preferred_locale (an EXPLICIT
+  // member/admin choice, nullable) wins over contacts.preferred_language (NOT
+  // NULL DEFAULT 'en' — indistinguishable from "never chose"). The prior order
+  // let the contact default shadow a member who picked TH/SV in the portal
+  // (the 110 imported contacts all default 'en'), so those members got English.
+  // Fallback to 'en' only when both are unset.
+  const locale = member.preferredLocale ?? primaryContact.preferredLanguage ?? 'en';
 
   // External gateway call — outside tx (non-transactional).
   const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
