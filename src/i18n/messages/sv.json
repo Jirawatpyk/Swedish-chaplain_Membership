@@ -5660,6 +5660,7 @@
       "payment_canceled": "Betalning avbruten",
       "payment_cancel_attempt_failed": "Avbrytande av betalning misslyckades",
       "payment_method_switched": "Betalningsmetod bytt",
+      "payment_on_terminated_member": "Betalning mottagen för avslutat medlemskap",
       "payment_auto_refunded_stale_invoice": "Automatisk återbetalning — inaktuell faktura",
       "payment_auto_refunded_concurrent_manual_mark": "Automatisk återbetalning — faktura redan markerad som betald",
       "payment_environment_mismatch": "Betalningsmiljö stämmer inte överens",

@@ -222,6 +222,14 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     surrounding state-change tx to pair it with per Constitution
   //     Principle VIII — deferring IS the absence of a state change). ---
   'renewal_lapse_deferred_invoice_not_due',
+  // --- 066-renewal-swecham-round2 §4.4(2) — a post-termination payment was
+  //     CHARGED (and under FEATURE_088 a §86/4 receipt minted) while the
+  //     member's membership stays terminated. Emitted in F4's payment tx at
+  //     BOTH terminal heal sites (resolve-unlinked terminal_only +
+  //     mark-cycle-complete's linked-terminal skip). 10y retention
+  //     (tax-evidence class — explains an anomalous receipt; migration 0257
+  //     retention trigger). ---
+  'payment_on_terminated_member',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -230,9 +238,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 69
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 70
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 69';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 70';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1256,6 +1264,25 @@ export interface F8AuditPayloadShapes {
     readonly member_id: MemberId;
     readonly invoice_subject: 'membership';
     readonly due_date_frontier: string;
+  };
+  /**
+   * 066 §4.4(2) — a payment settled a MEMBERSHIP invoice for a member whose
+   * membership is terminated. Fields are the real F4InvoicePaidEvent fields
+   * (the event carries NO processor payment reference by design;
+   * payment_method + triggered_by distinguish the online/offline rails).
+   * `cycle_id` is the lapsed cycle when the payment arrived on a LINKED
+   * invoice (mark-cycle-complete site) and null on the unlinked terminal_only
+   * site. `heal_site` names which of the two exits observed it.
+   */
+  readonly payment_on_terminated_member: {
+    readonly invoice_id: string;
+    readonly member_id: MemberId;
+    readonly cycle_id: string | null;
+    readonly amount_satang: string;
+    readonly payment_method: string;
+    readonly triggered_by: string;
+    readonly paid_at: string;
+    readonly heal_site: 'terminal_only' | 'linked_terminal_skip';
   };
 }
 

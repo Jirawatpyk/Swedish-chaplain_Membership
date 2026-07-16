@@ -98,6 +98,7 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'broadcast_membership_suspended_blocked',
     'renewal_lapse_deferred_invoice_not_due',
     'event_attendance_by_suspended_member',
+    'payment_on_terminated_member',
   ],
 };
 
