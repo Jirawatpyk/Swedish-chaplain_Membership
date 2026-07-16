@@ -73,8 +73,30 @@ export const planSourceAdapter: PlanSource = {
     };
   },
 
-  async getPlanLabel(): Promise<string | null> {
-    // stub — implemented in 067 T4/T5
-    return null;
+  async getPlanLabel(
+    ctx: TenantContext,
+    planId: string,
+    planYear: number,
+  ): Promise<string | null> {
+    // Same "no resolvable plan" null-semantics as `getEntitlements` — a
+    // malformed/legacy plan identity or a plan/year not found both fall into
+    // the tier-distribution `unassigned` bucket rather than throwing.
+    let slug;
+    let year;
+    try {
+      slug = asPlanSlug(planId);
+      year = asPlanYear(planYear);
+    } catch {
+      return null;
+    }
+    const plan = await drizzlePlanRepo.findOne(ctx, slug, year);
+    if (!plan) return null;
+    // The cached dashboard snapshot has no per-viewer locale (one JSONB row
+    // per tenant, read by every admin/manager regardless of their own
+    // locale) — same constraint `AtRiskMemberRef.companyName` already
+    // accepts. Return the canonical EN name (F2 `LocaleText.en` is always
+    // required); TH/SV localisation of the tier label is out of scope until
+    // there is a per-viewer render path for this cache.
+    return plan.plan_name.en;
   },
 };

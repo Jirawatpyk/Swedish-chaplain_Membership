@@ -107,8 +107,13 @@ export interface PlanSource {
     planYear: number,
   ): Promise<BenefitEntitlements | null>;
   /**
-   * Localised tier label for a plan in a given membership year. Returns null
-   * when the plan/year is not found or cannot be resolved.
+   * Display label for a plan in a given membership year, for the dashboard
+   * tier-distribution chart (067). Returns the plan's canonical EN name (the
+   * cached `DashboardSnapshot` is one JSONB row per tenant with no
+   * per-viewer locale — TH/SV localisation is deferred until this cache
+   * gains a render-time locale). Returns null when the plan/year is not
+   * found or cannot be resolved (same null semantics as `getEntitlements`);
+   * the caller folds a null label into the `unassigned` tier bucket.
    */
   getPlanLabel(
     ctx: TenantContext,
