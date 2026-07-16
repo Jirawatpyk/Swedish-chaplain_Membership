@@ -139,10 +139,10 @@ describe('064 §86/4 membership line — real period + brand (live Neon)', () =>
     // Year = window START year (2026), brand from settings, plan from getPlanName,
     // [2026-06-30, 2027-06-30) → "June 2026 - May 2027".
     expect(line!.descriptionEn).toBe(
-      'SweCham Regular Corporate Membership Fee 2026 (June 2026 - May 2027)',
+      'SweCham Regular Corporate Membership Fee 2026\n(June 2026 - May 2027)',
     );
     expect(line!.descriptionTh).toBe(
-      'ค่าสมาชิก SweCham สมาชิกองค์กรทั่วไป ปี 2569 (มิถุนายน 2569 - พฤษภาคม 2570)',
+      'ค่าสมาชิก SweCham สมาชิกองค์กรทั่วไป ปี 2569\n(มิถุนายน 2569 - พฤษภาคม 2570)',
     );
   }, 120_000);
 });

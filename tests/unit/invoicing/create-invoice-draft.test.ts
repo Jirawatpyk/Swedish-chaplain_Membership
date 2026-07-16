@@ -280,10 +280,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         // 064 — {brand} {plan} Membership Fee {year} ({month range}).
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2026 (January 2026 - December 2026)',
+          'Regular Member Membership Fee 2026\n(January 2026 - December 2026)',
         );
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มกราคม 2569 - ธันวาคม 2569)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569\n(มกราคม 2569 - ธันวาคม 2569)',
         );
       }
     });
@@ -339,7 +339,7 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2027 (January 2027 - December 2027)',
+          'Regular Member Membership Fee 2027\n(January 2027 - December 2027)',
         );
         // The bug printed the FY containing "now" (2026) on a FY2027 document.
         expect(line.descriptionEn).not.toContain('2026');
@@ -365,10 +365,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569\n(12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
         );
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2026 (12 months, effective from the month of payment)',
+          'Regular Member Membership Fee 2026\n(12 months, effective from the month of payment)',
         );
       }
     });
@@ -387,10 +387,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569\n(12 เดือน เริ่มตั้งแต่เดือนที่ชำระค่าธรรมเนียม)',
         );
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2026 (12 months, effective from the month of payment)',
+          'Regular Member Membership Fee 2026\n(12 months, effective from the month of payment)',
         );
       }
     });
@@ -418,10 +418,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
         // BE 2570), NOT planYear (2026): the year must agree with the printed
         // window on a §86/4, even when the caller's planYear differs.
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2570 (มิถุนายน 2570 - พฤษภาคม 2571)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2570\n(มิถุนายน 2570 - พฤษภาคม 2571)',
         );
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2027 (June 2027 - May 2028)',
+          'Regular Member Membership Fee 2027\n(June 2027 - May 2028)',
         );
         // Stored verbatim on the persisted invoice line (insertDraft args).
         const stored = (deps as unknown as { _capturedLines: () => Invoice['lines'] })
@@ -446,10 +446,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionEn).toBe(
-          'SweCham Regular Member Membership Fee 2026 (August 2026 - July 2027)',
+          'SweCham Regular Member Membership Fee 2026\n(August 2026 - July 2027)',
         );
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก SweCham สมาชิกสามัญ ปี 2569 (สิงหาคม 2569 - กรกฎาคม 2570)',
+          'ค่าสมาชิก SweCham สมาชิกสามัญ ปี 2569\n(สิงหาคม 2569 - กรกฎาคม 2570)',
         );
       }
     });
@@ -472,10 +472,10 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
       if (result.ok) {
         const line = result.value.lines.find((l) => l.kind === 'membership_fee')!;
         expect(line.descriptionEn).toBe(
-          'Regular Member Membership Fee 2026 (June 2026 - May 2027)',
+          'Regular Member Membership Fee 2026\n(June 2026 - May 2027)',
         );
         expect(line.descriptionTh).toBe(
-          'ค่าสมาชิก สมาชิกสามัญ ปี 2569 (มิถุนายน 2569 - พฤษภาคม 2570)',
+          'ค่าสมาชิก สมาชิกสามัญ ปี 2569\n(มิถุนายน 2569 - พฤษภาคม 2570)',
         );
       }
     });
