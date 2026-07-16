@@ -92,7 +92,16 @@ function fakeDeps(
   );
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
-    dispatchCandidateRepo: { list: listMock, findOne: vi.fn() } as unknown as RenewalsDeps['dispatchCandidateRepo'],
+    // 066 F-4 — the due-track pass (listDueTrackCandidates) runs FIRST in
+    // runDispatchLoop. These tests exercise the STANDARD dispatch pass, so
+    // stub the due-track arm to an empty page (no due+N warnings) — leaving
+    // the standard `list` assertions below unaffected. Due-track behaviour is
+    // covered by dispatch-due-track.test.ts.
+    dispatchCandidateRepo: {
+      list: listMock,
+      findOne: vi.fn(),
+      listDueTrackCandidates: vi.fn(async () => ({ items: [], nextCursor: null })),
+    } as unknown as RenewalsDeps['dispatchCandidateRepo'],
     auditEmitter: { emit: auditEmitMock } as unknown as RenewalsDeps['auditEmitter'],
     memberRenewalFlagsRepo: {
       listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
