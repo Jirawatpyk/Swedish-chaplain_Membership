@@ -53,12 +53,20 @@ export async function POST(
     return NextResponse.json({ error: { code: 'invalid_json' } }, { status: 400 });
   }
 
+  // Client body is spread FIRST so the server-controlled fields below
+  // ALWAYS win — a request body must never override them (CWE-915 mass-
+  // assignment). `triggeredBy` in particular is a SECURITY-CONTROL
+  // discriminator since 066 §4.4(1): the terminated-membership gate is
+  // skipped only for the webhook rail, so this ADMIN route hard-pins it to
+  // 'admin_manual' — a client sending `{"triggeredBy":"webhook"}` cannot
+  // bypass the gate (nor spoof tenant/actor/requestId for RLS + audit).
   const parsed = recordPaymentSchema.safeParse({
+    ...((body as Record<string, unknown>) ?? {}),
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
     invoiceId,
-    ...((body as Record<string, unknown>) ?? {}),
+    triggeredBy: 'admin_manual',
   });
   if (!parsed.success) {
     return NextResponse.json(

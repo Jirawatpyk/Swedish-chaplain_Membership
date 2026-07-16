@@ -276,6 +276,57 @@ describe('recordPaymentSchema — paymentDate calendar validation', () => {
   });
 });
 
+describe('recordPayment — 066 §4.4(1) terminated-membership gate', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // A payable ISSUED membership bill returned by the pre-tx findById read.
+  function depsWithAccess(
+    access: 'full' | 'suspended' | 'terminated',
+    lookupOk = true,
+  ): RecordPaymentDeps {
+    const issued = makeIssuedInvoice({ status: 'issued' });
+    const base = makeDeps(true, issued, makeSettings());
+    return {
+      ...base,
+      invoiceRepo: { ...base.invoiceRepo, findById: vi.fn(async () => issued) },
+      membershipAccess: {
+        getMembershipAccess: vi.fn(async () =>
+          lookupOk
+            ? { ok: true as const, value: { access, reason: 'grace_expired' as const } }
+            : { ok: false as const, error: { kind: 'membership_access.lookup_error' as const } },
+        ),
+      },
+    };
+  }
+
+  it('terminated + admin-manual + membership → err membership_terminated (gate fires pre-tx)', async () => {
+    const r = await recordPayment(depsWithAccess('terminated'), input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_terminated');
+  });
+
+  it('suspended access → gate does NOT fire (not membership_terminated)', async () => {
+    const r = await recordPayment(depsWithAccess('suspended'), input);
+    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+  });
+
+  it('membership-access lookup ERROR → gate fails OPEN (payment not blocked)', async () => {
+    // §4.4(1) fail-open: availability of the money path beats the gate;
+    // the §4.4(2) heal-site net (keyed on in-tx cycle state, not the gate
+    // result) is the durable backstop for any slip.
+    const r = await recordPayment(depsWithAccess('terminated', /* lookupOk */ false), input);
+    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+  });
+
+  it('webhook trigger → gate SKIPPED even for terminated (money already captured)', async () => {
+    const r = await recordPayment(depsWithAccess('terminated'), {
+      ...input,
+      triggeredBy: 'webhook' as const,
+    });
+    if (!r.ok) expect(r.error.code).not.toBe('membership_terminated');
+  });
+});
+
 describe('recordPayment — CP-4.2 branch coverage', () => {
   beforeEach(() => vi.clearAllMocks());
 
