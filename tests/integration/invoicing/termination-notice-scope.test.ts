@@ -159,4 +159,22 @@ describe('065 §5.4 — statutory termination notice scope (bill-only, v12-gated
     expect(text).not.toContain(shapeThai(NOTICE_TH));
     expect(text).not.toContain(NOTICE_EN);
   });
+
+  it('does NOT render on an F6 EVENT-fee bill (kind=invoice, billMode=true, subject=event, v12) — 065 final-review V1', () => {
+    // A VAT-registrant event buyer's invoice renders isBill=true under
+    // FEATURE_088_TAX_AT_PAYMENT — a membership-termination claim on an
+    // event-ticket bill (possibly to a non-member company) would be a
+    // false statutory statement. The gate must require BOTH isBill AND
+    // invoiceSubject === 'membership'.
+    const text = allText(
+      makeInput({
+        templateVersion: 12,
+        kind: 'invoice',
+        billMode: true,
+        invoiceSubject: 'event',
+      }),
+    );
+    expect(text).not.toContain(shapeThai(NOTICE_TH));
+    expect(text).not.toContain(NOTICE_EN);
+  });
 });

@@ -54,6 +54,25 @@ import { makeF4AuditPort } from '@/modules/invoicing';
 // use-case. Previously all fields were unbounded `z.string().optional()`
 // which let oversized / malformed values reach the DB and audit
 // payload. CLAUDE.md § "zod validates every system boundary".
+
+// 065 final-review V6 — nullable FREE-TEXT settings fields normalise
+// ''/whitespace-only → null at the boundary. These columns' render gates
+// (WHT note, termination notice, bank block) are `!= null` checks, and the
+// values are PINNED immutably into each issued document's
+// TenantIdentitySnapshot (SC-003) — a raw-API PATCH of `""` meant "clear"
+// would otherwise pin a truthy-empty string that renders a stray blank
+// block on every subsequent document, permanently. The admin form already
+// orNull()-trims; this closes the API path. (Pattern-wide: applied to
+// every nullable free-text field here, not just the 065 pair — the
+// regex-constrained fields already reject ''.)
+const nullableText = (max: number) =>
+  z
+    .preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.string().max(max).nullable(),
+    )
+    .optional();
+
 const bodySchema = z.object({
   currency_code: z
     .string()
@@ -70,7 +89,7 @@ const bodySchema = z.object({
   legal_name_th: z.string().min(1).max(300).optional(),
   legal_name_en: z.string().min(1).max(300).optional(),
   // 064 — tenant short/brand name for the membership line prefix (null clears).
-  brand_name: z.string().max(100).nullable().optional(),
+  brand_name: nullableText(100),
   tax_id: z
     .string()
     .regex(/^\d{13}$/, 'tax_id must be 13 digits (Thai RD format)')
@@ -101,11 +120,11 @@ const bodySchema = z.object({
     .nullable()
     .optional(),
   // 088 US5 (T037 / FR-012) — tenant WHT footer note; null clears it.
-  wht_note_th: z.string().max(500).nullable().optional(),
-  wht_note_en: z.string().max(500).nullable().optional(),
+  wht_note_th: nullableText(500),
+  wht_note_en: nullableText(500),
   // 065 §5.4 — statutory termination notice (bill-only render); null clears it.
-  termination_notice_th: z.string().max(500).nullable().optional(),
-  termination_notice_en: z.string().max(500).nullable().optional(),
+  termination_notice_th: nullableText(500),
+  termination_notice_en: nullableText(500),
   // 088 US5 (T037 / § C.2) — seller §86/4 Head-Office/Branch (pairing enforced in
   // the superRefine below + the DB seller-branch CHECK).
   seller_is_head_office: z.boolean().optional(),
@@ -115,17 +134,17 @@ const bodySchema = z.object({
     .nullable()
     .optional(),
   // 088 US5 (T037 / FR-022) — offline-payment bank block; null clears each field.
-  bank_payee_name: z.string().max(200).nullable().optional(),
+  bank_payee_name: nullableText(200),
   bank_account_no: z
     .string()
     .regex(/^[0-9][0-9\s-]{3,}$/, 'bank_account_no must be digits (with optional - or space separators)')
     .max(50)
     .nullable()
     .optional(),
-  bank_account_type: z.string().max(50).nullable().optional(),
-  bank_name: z.string().max(200).nullable().optional(),
-  bank_branch: z.string().max(200).nullable().optional(),
-  bank_address: z.string().max(500).nullable().optional(),
+  bank_account_type: nullableText(50),
+  bank_name: nullableText(200),
+  bank_branch: nullableText(200),
+  bank_address: nullableText(500),
   bank_swift: z
     .string()
     .regex(
@@ -134,8 +153,8 @@ const bodySchema = z.object({
     )
     .nullable()
     .optional(),
-  payment_instructions_th: z.string().max(500).nullable().optional(),
-  payment_instructions_en: z.string().max(500).nullable().optional(),
+  payment_instructions_th: nullableText(500),
+  payment_instructions_en: nullableText(500),
 }).superRefine((val, ctx) => {
   // 088 US7 (review fix) — reserve 'RE' for the §105 `receipt_105` register.
   // Mirrors the use-case superRefine (updateTenantInvoiceSettingsSchema): a

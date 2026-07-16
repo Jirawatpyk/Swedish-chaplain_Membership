@@ -421,14 +421,21 @@ const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
 
 /**
  * 065 renewal-swecham-alignment (§5.4) — the tenant statutory termination notice
- * (`termination_notice_th/_en`, pinned in the snapshot) renders on the ใบแจ้งหนี้
- * (bill) ONLY, gated `isBill` EXACTLY like the v7 offline-payment bank block —
- * NEVER on a §86/4 tax invoice/receipt, §105 receipt, or §86/10 credit note.
- * `isBill` (kind invoice/invoice_preview + billMode) is the correct gate here,
- * NOT the `invoice_subject==='membership'` gate the WHT note uses (:858) — that
- * gate ALSO fires on the paid §86/4 receipt, which must never carry this notice.
- * v>=12 so a pinned pre-v12 document re-renders byte-stable (SC-003). Registry
- * log: template-registry.ts v12.
+ * (`termination_notice_th/_en`, pinned in the snapshot) renders on the MEMBERSHIP
+ * ใบแจ้งหนี้ (bill) ONLY, gated `isBill && invoiceSubject === 'membership'` —
+ * NEVER on a §86/4 tax invoice/receipt, §105 receipt, §86/10 credit note, or an
+ * F6 EVENT-fee bill. Both conjuncts are load-bearing (065 final-review V1):
+ *   - `isBill` alone is NOT enough — a VAT-registrant event buyer's bill also
+ *     renders `isBill` (issue-invoice.ts kind='invoice' + billMode), and a
+ *     membership-termination claim on an event-ticket bill (possibly to a
+ *     non-member company) would be a false statutory statement;
+ *   - `invoiceSubject === 'membership'` alone (the WHT note's gate, :858) is
+ *     NOT enough either — it ALSO fires on the paid §86/4 receipt, which must
+ *     never carry this notice.
+ * v>=12 so a pinned pre-v12 document re-renders byte-stable (SC-003) — and
+ * `invoiceSubject` (optional on legacy inputs) is always threaded by the v12+
+ * issue path, so the subject conjunct can never mis-drop the notice on a real
+ * membership bill. Registry log: template-registry.ts v12.
  */
 const TERMINATION_NOTICE_MIN_VERSION = 12;
 
@@ -1022,13 +1029,17 @@ function renderPageBody({
         </>
       )}
 
-      {/* 065 §5.4 — statutory termination notice on the ใบแจ้งหนี้ (bill) ONLY
-          (isBill-gated, like the bank block above — NEVER the §86/4 receipt,
-          §105 receipt, or §86/10 credit note). Gated v>=12 so pinned pre-v12
-          documents re-render byte-stable (SC-003). Each language line guarded
-          independently (a tenant may configure only one). The text rides the
-          PINNED snapshot (termination_notice_th/_en), never a template literal. */}
+      {/* 065 §5.4 — statutory termination notice on the MEMBERSHIP ใบแจ้งหนี้
+          (bill) ONLY: `isBill` keeps it off the §86/4 receipt / §105 receipt /
+          §86/10 credit note; `invoiceSubject === 'membership'` (final-review
+          V1) keeps it off an F6 EVENT-fee bill, where a membership-termination
+          claim would be a false statutory statement. Gated v>=12 so pinned
+          pre-v12 documents re-render byte-stable (SC-003). Each language line
+          guarded independently (a tenant may configure only one). The text
+          rides the PINNED snapshot (termination_notice_th/_en), never a
+          template literal. */}
       {isBill &&
+        input.invoiceSubject === 'membership' &&
         input.templateVersion >= TERMINATION_NOTICE_MIN_VERSION &&
         (input.tenant.termination_notice_th != null ||
           input.tenant.termination_notice_en != null) && (

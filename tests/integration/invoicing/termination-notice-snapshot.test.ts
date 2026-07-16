@@ -22,36 +22,25 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
-import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import {
   makeCreateInvoiceDraftDeps,
   makeIssueInvoiceDeps,
 } from '@/modules/invoicing/application/invoicing-deps';
+import {
+  updateTenantInvoiceSettings,
+  makeUpdateTenantInvoiceSettingsDeps,
+} from '@/modules/invoicing';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import type { IssueInvoiceDeps } from '@/modules/invoicing/application/use-cases/issue-invoice';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
-
-const MATRIX: BenefitMatrix = {
-  eblast_per_year: 1,
-  website_page_type: 'member_news_update',
-  homepage_logo_category: 'regular',
-  directory_listing_size: 'half_page',
-  event_discount_scope: 'all_employees',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: true,
-  business_referrals: true,
-  tailor_made_services: false,
-  partnership: null,
-};
 
 const FIXED_NOW = '2026-07-01T09:00:00Z';
 
@@ -110,15 +99,22 @@ describe('065 §5.4 — termination notice pinned into tenant_identity_snapshot 
       receiptNumberPrefix: 'RC',
     });
 
-    // Set the statutory notice directly on the settings row. `upsert`'s
-    // copyFields does not carry these columns until Task 7, so the pin path is
-    // exercised through a plain UPDATE + `getForIssue.identity` here.
-    await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .update(tenantInvoiceSettings)
-        .set({ terminationNoticeTh: NOTICE_TH, terminationNoticeEn: NOTICE_EN })
-        .where(eq(tenantInvoiceSettings.tenantId, tenant.ctx.slug)),
+    // Set the statutory notice through the REAL production write path (065
+    // final-review C8 — a stale comment here claimed upsert's copyFields
+    // "does not carry these columns until Task 7"; Task 7 landed in this
+    // same branch, so exercise settings-form → use-case → upsert copyFields
+    // end-to-end instead of a raw UPDATE: a future copyFields key-pair typo
+    // must fail THIS suite, not silently drop the admin's saved notice).
+    const updateRes = await updateTenantInvoiceSettings(
+      makeUpdateTenantInvoiceSettingsDeps(),
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        terminationNoticeTh: NOTICE_TH,
+        terminationNoticeEn: NOTICE_EN,
+      },
     );
+    expect(updateRes.ok).toBe(true);
 
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(membershipPlans).values({
@@ -136,7 +132,7 @@ describe('065 §5.4 — termination notice pinned into tenant_identity_snapshot 
         maxTurnoverMinorUnits: null,
         maxDurationYears: null,
         maxMemberAge: null,
-        benefitMatrix: MATRIX,
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         isActive: true,
         createdBy: user.userId,
         updatedBy: user.userId,
