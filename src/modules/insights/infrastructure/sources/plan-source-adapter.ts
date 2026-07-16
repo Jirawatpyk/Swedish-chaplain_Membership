@@ -72,4 +72,9 @@ export const planSourceAdapter: PlanSource = {
       activeBenefits: deriveActiveBenefits(matrix),
     };
   },
+
+  async getPlanLabel(): Promise<string | null> {
+    // stub — implemented in 067 T4/T5
+    return null;
+  },
 };

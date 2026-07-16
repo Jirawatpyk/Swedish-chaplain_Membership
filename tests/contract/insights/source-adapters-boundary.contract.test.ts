@@ -81,6 +81,7 @@ describe('F9 inter-module boundary contract [T017a / analyze R2-M1]', () => {
       expect(typeof port.getYtdPaidRevenueSatang).toBe('function');
       expect(typeof port.countOverdue).toBe('function');
       expect(typeof port.getMonthlyPaidRevenueSatang).toBe('function');
+      expect(typeof port.getInvoiceStatusDistribution).toBe('function');
     });
   });
 

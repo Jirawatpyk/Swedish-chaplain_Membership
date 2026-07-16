@@ -173,4 +173,16 @@ export const invoiceSourceAdapter: InvoiceSource = {
     } while (cursor !== null);
     return buckets;
   },
+
+  async getInvoiceStatusDistribution(): Promise<{
+    readonly buckets: ReadonlyArray<{
+      bucket: 'paid' | 'unpaid' | 'overdue';
+      satang: bigint;
+      count: number;
+    }>;
+    readonly draftCount: number;
+  }> {
+    // stub — implemented in 067 T4/T5
+    return { buckets: [], draftCount: 0 };
+  },
 };

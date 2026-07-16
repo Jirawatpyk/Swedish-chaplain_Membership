@@ -41,6 +41,10 @@ function makeDeps(over: {
           ? { eblastPerYear: 6, culturalTicketsPerYear: 4, activeBenefits: ['directory_listing'] }
           : over.entitlements;
       },
+      getPlanLabel: async () => {
+        // stub — implemented in 067 T4/T5
+        return null;
+      },
     },
     broadcastSource: {
       getEblastConsumption: async () => {
