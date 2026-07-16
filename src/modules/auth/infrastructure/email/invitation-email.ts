@@ -28,11 +28,11 @@ const COPY: Record<EmailLocale, InvitationEmailCopy> = {
     subject: "You're invited to SweCham / TSCC",
     heading: "You're invited",
     intro:
-      'An administrator has invited you to join the Thailand-Swedish Chamber of Commerce membership platform. Click the button below to set your password and activate your account.',
+      'An administrator has invited you to join the Thai-Swedish Chamber of Commerce membership platform. Click the button below to set your password and activate your account.',
     roleLine: 'You are being added as: {role}',
     cta: 'Set password and sign in',
     expiryNotice: 'This invitation expires in 7 days.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
   th: {
     subject: 'คุณได้รับคำเชิญเข้าร่วม SweCham / TSCC',
@@ -48,11 +48,11 @@ const COPY: Record<EmailLocale, InvitationEmailCopy> = {
     subject: 'Du är inbjuden till SweCham / TSCC',
     heading: 'Du är inbjuden',
     intro:
-      'En administratör har bjudit in dig till Thailand-Swedish Chamber of Commerce medlemsplattform. Klicka på knappen nedan för att välja ett lösenord och aktivera ditt konto.',
+      'En administratör har bjudit in dig till Thai-Swedish Chamber of Commerce medlemsplattform. Klicka på knappen nedan för att välja ett lösenord och aktivera ditt konto.',
     roleLine: 'Du läggs till som: {role}',
     cta: 'Välj lösenord och logga in',
     expiryNotice: 'Den här inbjudan upphör att gälla om 7 dagar.',
-    footer: 'Thailand-Swedish Chamber of Commerce (SweCham / TSCC)',
+    footer: 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)',
   },
 };
 
@@ -90,7 +90,7 @@ export function buildInvitationEmail(input: InvitationEmailInput): BuiltEmail {
     <title>${escapeHtml(copy.subject)}</title>
   </head>
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 40px auto; padding: 24px; color: #111;">
-    <img src="${emailLogoUrl()}" alt="SweCham — Thailand-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
+    <img src="${emailLogoUrl()}" alt="SweCham — Thai-Swedish Chamber of Commerce" width="200" style="display: block; border: 0; height: auto; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #eee;" />
     <h1 style="font-size: 20px; margin-bottom: 16px;">${escapeHtml(copy.heading)}</h1>
     <p style="line-height: 1.6;">${escapeHtml(copy.intro)}</p>
     <p style="line-height: 1.6;"><strong>${escapeHtml(roleLine)}</strong></p>

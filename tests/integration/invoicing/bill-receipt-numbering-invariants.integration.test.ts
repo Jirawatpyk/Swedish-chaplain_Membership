@@ -97,7 +97,7 @@ async function seedTenant(): Promise<{ tenant: TestTenant; user: TestUser; membe
   await seedTenantFiscal({
     tenant,
     legalNameTh: 'หอการค้าไทย-สวีเดน',
-    legalNameEn: 'Thailand-Swedish Chamber of Commerce',
+    legalNameEn: 'Thai-Swedish Chamber of Commerce',
     registeredAddressTh: 'กรุงเทพฯ',
     registeredAddressEn: 'Bangkok',
     invoiceNumberPrefix: 'SC',

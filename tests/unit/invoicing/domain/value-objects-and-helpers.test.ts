@@ -122,7 +122,7 @@ describe('Sha256Hex.ofUnsafe — throwing form for trusted producer paths', () =
 describe('makeTenantIdentitySnapshot', () => {
   const validSnapshot: TenantIdentitySnapshot = {
     legal_name_th: 'หอการค้าไทย-สวีเดน',
-    legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+    legal_name_en: 'Thai-Swedish Chamber of Commerce',
     tax_id: '0993000123456',
     address_th: '99/1 ถนนพระราม 4 กรุงเทพมหานคร',
     address_en: '99/1 Rama IV Rd, Bangkok',

@@ -115,7 +115,7 @@ async function renderOne(c: Case, seq: number): Promise<void> {
     kind: 'invoice_issued' as const,
     tenant: {
       legal_name_th: c.tenant.legal_name_th,
-      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
       address_th: c.tenant.address_th,
       address_en: '',
       tax_id: '0105558000000',

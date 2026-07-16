@@ -43,7 +43,7 @@ verify the platform implementation matches the documented record.
 ### Controller
 
 The chamber tenant operating the Chamber-OS deployment (single-tenant in
-F1 deployment = Thailand-Swedish Chamber of Commerce / SweCham). Each
+F1 deployment = Thai-Swedish Chamber of Commerce / SweCham). Each
 F-stack tenant in F11+ multi-tenant SaaS deployment is its own
 controller; the platform vendor (chamber-os.zyncdata.app maintainer) is
 a processor under contract.
@@ -616,7 +616,7 @@ This section documents **two distinct processing activities**:
 ### Controller
 
 Same as F7 — the chamber tenant operating the Chamber-OS deployment
-(single-tenant F1 deployment = Thailand-Swedish Chamber of Commerce /
+(single-tenant F1 deployment = Thai-Swedish Chamber of Commerce /
 SweCham / TSCC). For an event-fee invoice the chamber is the controller
 of the buyer's identity data: it decides to issue the tax document and
 holds the statutory obligation to retain it.
@@ -854,7 +854,7 @@ section) governs the Art. 17 / §33 lifecycle of this data.
 ### Controller
 
 The chamber tenant operating the Chamber-OS deployment (single-tenant F1
-deployment = Thailand-Swedish Chamber of Commerce / SweCham / TSCC). The chamber
+deployment = Thai-Swedish Chamber of Commerce / SweCham / TSCC). The chamber
 is the controller of its members' and contacts' identity data.
 
 ### Processors

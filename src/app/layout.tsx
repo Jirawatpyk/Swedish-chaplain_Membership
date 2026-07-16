@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     default: 'SweCham Membership',
     template: '%s · SweCham Membership',
   },
-  description: 'Thailand-Swedish Chamber of Commerce — membership system',
+  description: 'Thai-Swedish Chamber of Commerce — membership system',
   robots: {
     index: false,
     follow: false,

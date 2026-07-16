@@ -156,7 +156,7 @@ import { resendDashboardName } from '@/modules/broadcasts/application/format/res
 
 describe('resendDashboardName', () => {
   it('caps a long fromName + long subject to <= 70 code points', () => {
-    const name = resendDashboardName('E2E Alpha Co via Thailand-Swedish Chamber of Commerce', 'F7 Verify — E-Blast live send (test)');
+    const name = resendDashboardName('E2E Alpha Co via Thai-Swedish Chamber of Commerce', 'F7 Verify — E-Blast live send (test)');
     expect([...name].length).toBeLessThanOrEqual(70);
     expect(name.startsWith('E2E Alpha Co via')).toBe(true);
   });

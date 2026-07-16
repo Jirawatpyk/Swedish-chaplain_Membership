@@ -12,7 +12,7 @@
  * Spec defaults (docs/membership-benefits-analysis.md §):
  *   - VAT 7% (Thai RD standard rate)
  *   - Registration fee: 5,000 THB = 500,000 satang
- *   - Legal name: Thailand-Swedish Chamber of Commerce / หอการค้าไทย-สวีเดน
+ *   - Legal name: Thai-Swedish Chamber of Commerce / หอการค้าไทย-สวีเดน
  *   - Tax ID: placeholder — update before production seed
  *   - Prefix: SC (Swedish Chamber)
  *   - Combined receipt numbering (single ใบกำกับภาษี/ใบเสร็จรับเงิน)
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
         0.0700,
         500000,
         ${'หอการค้าไทย-สวีเดน'},
-        ${'Thailand-Swedish Chamber of Commerce'},
+        ${'Thai-Swedish Chamber of Commerce'},
         ${'0000000000000'},
         ${'กรุงเทพมหานคร 10110'},
         ${'Bangkok 10110'},

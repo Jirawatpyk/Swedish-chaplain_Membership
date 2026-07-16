@@ -59,7 +59,7 @@ const FY = fiscalYearFromUtcIso('2026-04-18T10:00:00Z', 1);
 
 const TENANT_SNAP: TenantIdentitySnapshot = Object.freeze({
   legal_name_th: 'หอการค้าไทย-สวีเดน',
-  legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+  legal_name_en: 'Thai-Swedish Chamber of Commerce',
   tax_id: '0000000000000',
   address_th: 'กรุงเทพฯ',
   address_en: 'Bangkok',

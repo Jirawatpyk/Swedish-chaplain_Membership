@@ -55,7 +55,7 @@ function makeVoidInput(): PdfRenderInput {
     dueDate: '2026-05-18',
     tenant: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
-      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
       tax_id: '0000000000000',
       address_th: 'กรุงเทพมหานคร',
       address_en: 'Bangkok',

@@ -2,7 +2,7 @@
   "name": "swecham-membership",
   "version": "0.1.0",
   "private": true,
-  "description": "SweCham / TSCC Membership System — Thailand-Swedish Chamber of Commerce",
+  "description": "SweCham / TSCC Membership System — Thai-Swedish Chamber of Commerce",
   "engines": {
     "node": ">=22.0.0"
   },

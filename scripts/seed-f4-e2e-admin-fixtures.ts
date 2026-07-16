@@ -169,7 +169,7 @@ async function seedIssuedInvoice(
     dueDate: '2026-05-15',
     tenant: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
-      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
       tax_id: '0000000000000',
       address_th: 'กรุงเทพมหานคร',
       address_en: 'Bangkok',
@@ -215,7 +215,7 @@ async function seedIssuedInvoice(
   // names exactly — used by PDF render and outbox.enqueue on any
   // downstream credit-note / resend / re-render path.
   const tenantSnap = {
-    legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+    legal_name_en: 'Thai-Swedish Chamber of Commerce',
     legal_name_th: 'หอการค้าไทย-สวีเดน',
     tax_id: '0000000000000',
     address_th: 'กรุงเทพมหานคร',

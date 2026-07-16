@@ -44,7 +44,7 @@ function buildRealisticInput(): PdfRenderInput {
     dueDate: '2026-05-18',
     tenant: {
       legal_name_th: 'หอการค้าไทย-สวีเดน',
-      legal_name_en: 'Thailand-Swedish Chamber of Commerce',
+      legal_name_en: 'Thai-Swedish Chamber of Commerce',
       tax_id: '0000000000000',
       address_th: '140/1 เมืองไทย-ภัทร คอมเพล็กซ์, ถ.รัชดาภิเษก, ดินแดง, กรุงเทพฯ 10400',
       address_en: '140/1 Muang Thai-Phatra Complex, Ratchadaphisek Rd, Din Daeng, Bangkok 10400',

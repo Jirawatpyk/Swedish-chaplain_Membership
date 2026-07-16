@@ -306,7 +306,7 @@ Follow-up TODOs:
 -->
 
 # SweCham / TSCC Membership Constitution
-<!-- Thailand-Swedish Chamber of Commerce — member, invoice, event, and renewal system -->
+<!-- Thai-Swedish Chamber of Commerce — member, invoice, event, and renewal system -->
 
 
 ## Core Principles

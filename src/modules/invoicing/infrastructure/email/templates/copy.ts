@@ -8,7 +8,7 @@
  *
  * Locale coverage: EN default, TH + SV verified via i18n CI.
  * Deliberately narrow to email subject + body + CTA copy; any
- * tenant-brand text (e.g. "Thailand-Swedish Chamber of Commerce")
+ * tenant-brand text (e.g. "Thai-Swedish Chamber of Commerce")
  * lives in `base-layout.tsx` as the email footer, not here.
  */
 

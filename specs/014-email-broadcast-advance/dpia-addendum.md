@@ -103,7 +103,7 @@ Append to the existing Chamber-OS ROPA register (`docs/ropa/swecham-ropa.yaml` �
 
 ```yaml
 - activity: "F7.1a Inline image embedding + virus scan (US2)"
-  controller: "SweCham (TSCC) — Thailand-Swedish Chamber of Commerce"
+  controller: "SweCham (TSCC) — Thai-Swedish Chamber of Commerce"
   data_classes: ["image_bytes (may contain PII)", "content_hash", "mime_type"]
   data_subjects: ["chamber members (uploaders)", "members of the chamber (potential subjects of uploaded images)"]
   purpose: "Enable chamber members to embed images in broadcasts they send via the E-Blast platform"
