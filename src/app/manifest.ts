@@ -12,14 +12,16 @@ import type { MetadataRoute } from 'next';
  * `scope: '/'` keeps any auth redirect (e.g. → `/portal/sign-in`) inside the
  * installed app rather than kicking the user out to the browser.
  *
- * Icons reference the brand tiles in `public/`:
- *   - `any`      → the rounded navy tile (iOS / desktop).
- *   - `maskable` → a full-bleed navy square with the link mark inside the
+ * Icons reference the brand tiles in `public/` (generated from the traced
+ * crown artwork `public/brand/tscc-mark.svg`):
+ *   - `any`      → the TSCC crown mark on a rounded WHITE tile. White is
+ *     load-bearing: the artwork's flag blue (#20419A) is 1.02:1 against the
+ *     brand navy and would vanish on a navy tile.
+ *   - `maskable` → a full-bleed white square with the mark inside the
  *     central safe zone, so Android can crop it to a circle/squircle without
- *     clipping the logo.
+ *     clipping the crowns.
  *
- * Colours are pinned to the brand navy so the install splash + status bar
- * stay on-brand.
+ * Splash/status-bar colours stay pinned to the brand navy.
  */
 const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
