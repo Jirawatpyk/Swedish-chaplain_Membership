@@ -23,6 +23,19 @@ import type {
 import type { AuditPort } from '../ports/audit-port';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 
+// 065 final-review V6 — nullable FREE-TEXT settings fields normalise
+// ''/whitespace-only -> null (mirrors the route boundary's nullableText).
+// These columns' render gates are `!= null` and the values pin immutably
+// into TenantIdentitySnapshot (SC-003) — a truthy-empty string would
+// render a stray blank block on every subsequent document, permanently.
+const nullableText = (max: number) =>
+  z
+    .preprocess(
+      (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.string().max(max).nullable(),
+    )
+    .optional();
+
 export const updateTenantInvoiceSettingsSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
@@ -43,7 +56,7 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   legalNameEn: z.string().min(1).max(300).optional(),
   // 064 — tenant SHORT / brand name (e.g. "SweCham") for the membership line
   // prefix. Nullable (null/empty clears it → the prefix is omitted).
-  brandName: z.string().max(100).nullable().optional(),
+  brandName: nullableText(100),
   taxId: z
     .string()
     .regex(/^\d{13}$/, 'taxId must be 13 digits (Thai RD format)')
@@ -65,8 +78,11 @@ export const updateTenantInvoiceSettingsSchema = z.object({
   autoEmailEnabled: z.boolean().optional(),
   logoBlobKey: z.string().max(500).nullable().optional(),
   // 088 US5 (T040 / FR-012) — tenant WHT footer note; null clears it.
-  whtNoteTh: z.string().max(500).nullable().optional(),
-  whtNoteEn: z.string().max(500).nullable().optional(),
+  whtNoteTh: nullableText(500),
+  whtNoteEn: nullableText(500),
+  // 065 §5.4 — statutory termination notice (bill-only render); null clears it.
+  terminationNoticeTh: nullableText(500),
+  terminationNoticeEn: nullableText(500),
   // 088 US5 (T040 / § C.2) — seller §86/4 Head-Office/Branch. Pairing validated
   // in the superRefine below (mirrors tenant_invoice_settings_seller_branch_ck).
   sellerIsHeadOffice: z.boolean().optional(),
@@ -76,17 +92,17 @@ export const updateTenantInvoiceSettingsSchema = z.object({
     .nullable()
     .optional(),
   // 088 US5 (T040 / FR-022) — offline-payment bank block; null clears each field.
-  bankPayeeName: z.string().max(200).nullable().optional(),
+  bankPayeeName: nullableText(200),
   bankAccountNo: z
     .string()
     .regex(/^[0-9][0-9\s-]{3,}$/, 'bankAccountNo must be digits (with optional - or space separators)')
     .max(50)
     .nullable()
     .optional(),
-  bankAccountType: z.string().max(50).nullable().optional(),
-  bankName: z.string().max(200).nullable().optional(),
-  bankBranch: z.string().max(200).nullable().optional(),
-  bankAddress: z.string().max(500).nullable().optional(),
+  bankAccountType: nullableText(50),
+  bankName: nullableText(200),
+  bankBranch: nullableText(200),
+  bankAddress: nullableText(500),
   bankSwift: z
     .string()
     .regex(
@@ -95,8 +111,8 @@ export const updateTenantInvoiceSettingsSchema = z.object({
     )
     .nullable()
     .optional(),
-  paymentInstructionsTh: z.string().max(500).nullable().optional(),
-  paymentInstructionsEn: z.string().max(500).nullable().optional(),
+  paymentInstructionsTh: nullableText(500),
+  paymentInstructionsEn: nullableText(500),
 }).superRefine((val, ctx) => {
   // 088 US7 (review fix) — reserve 'RE' for the §105 `receipt_105` register.
   // The §86/4 RC-role receipt register and the §105 register both write into
@@ -205,6 +221,9 @@ export async function updateTenantInvoiceSettings(
     // when explicitly provided so a partial PATCH never stomps unrelated columns.
     ...(input.whtNoteTh !== undefined && { whtNoteTh: input.whtNoteTh }),
     ...(input.whtNoteEn !== undefined && { whtNoteEn: input.whtNoteEn }),
+    // 065 §5.4 — statutory termination notice; threaded only when provided.
+    ...(input.terminationNoticeTh !== undefined && { terminationNoticeTh: input.terminationNoticeTh }),
+    ...(input.terminationNoticeEn !== undefined && { terminationNoticeEn: input.terminationNoticeEn }),
     ...(input.sellerIsHeadOffice !== undefined && { sellerIsHeadOffice: input.sellerIsHeadOffice }),
     ...(input.sellerBranchCode !== undefined && { sellerBranchCode: input.sellerBranchCode }),
     ...(input.bankPayeeName !== undefined && { bankPayeeName: input.bankPayeeName }),

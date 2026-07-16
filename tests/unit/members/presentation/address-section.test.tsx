@@ -433,6 +433,9 @@ describe('AddressSection — country ≠ TH falls back to plain manual fields', 
             company_name: 'Acme',
             country: 'TH',
             plan_id: 'premium',
+            // 065 §5.1 — required pick; seed it so this submit-path test isn't
+            // blocked by the billing-cycle field it doesn't exercise.
+            billing_cycle: 'rolling',
             address_line1: '99 Nimman Rd',
             postal_code: '10330',
             province: 'เชียงใหม่',

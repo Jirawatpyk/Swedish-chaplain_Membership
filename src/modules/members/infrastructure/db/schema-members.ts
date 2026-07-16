@@ -37,6 +37,8 @@ export const memberStatusEnum = pgEnum('member_status', [
   'archived',
 ]);
 
+export const billingCycleEnum = pgEnum('billing_cycle', ['calendar', 'rolling']);
+
 // --- members ------------------------------------------------------------------
 
 export const members = pgTable(
@@ -69,6 +71,15 @@ export const members = pgTable(
     // whether their TIN is required (ประกาศ 196). Never infer this from
     // `legalEntityType` — see migration 0250.
     isVatRegistered: boolean('is_vat_registered').notNull().default(false),
+    // 065 renewal-swecham-alignment (§5.1, migration 0255) — per-member billing
+    // cadence. FREE per-member choice (calendar-year 1/1–31/12 vs rolling
+    // anniversary), RECORDED not derived (not inferable from plan/dates).
+    // Foundation-only this round: drives NO lifecycle behaviour yet; consumed
+    // by the future auto-invoice phase (calendar → issue Dec 1; rolling → T-30).
+    // Default 'rolling' = today's de-facto anchor behaviour; backfilled from
+    // period dates in 0255. Backfill over-marks a rolling member who first-paid
+    // in January as 'calendar' (date-signature collision) — admin-review gate.
+    billingCycle: billingCycleEnum('billing_cycle').notNull().default('rolling'),
     website: text('website'),
     description: text('description'),
     foundedYear: integer('founded_year'),

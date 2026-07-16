@@ -29,6 +29,32 @@ export interface HasUnpaidNotYetDueMembershipInvoiceInput {
   readonly todayBkk: string;
 }
 
+/**
+ * 065 §5.2 — input for the member-scoped oldest-due lookup that drives the
+ * lapse cron's `due_date + 60` termination clock. Member-scoped (NOT
+ * `linked_invoice_id`): a §5.3 new-member initial cycle has
+ * `linked_invoice_id = NULL` and its first invoice is paid via the
+ * unlinked-payment hook (never linked), so a linked-invoice anchor would
+ * miss exactly the born-`awaiting_payment` cohort this feature targets.
+ */
+export interface OldestUnpaidMembershipInvoiceDueDateInput {
+  readonly tenantId: string;
+  readonly memberId: string;
+  /**
+   * 065 §5.2 review — lower bound (inclusive, Bangkok calendar date
+   * `YYYY-MM-DD`) on the invoice `due_date` to consider. The lapse cron
+   * passes `current_cycle.period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS` so a
+   * STALE unpaid `issued` membership invoice from a PRIOR lapsed cycle (or a
+   * historical-due invoice import) can never anchor the CURRENT period's
+   * termination clock. A legit current-period invoice is issued ≤ ~31 days
+   * before period start, while a prior period's invoice is ≥ ~334 days
+   * before it — so this floor cleanly admits the current invoice and excludes
+   * prior-period stragglers (which then fall to the no-invoice
+   * `expires_at + grace` backstop). See `lapse-cycles-on-grace-expiry.ts`.
+   */
+  readonly sinceDueDate: string;
+}
+
 export interface InvoiceDueBridge {
   /**
    * `true` iff the member has at least one `invoice_subject='membership'`
@@ -37,8 +63,41 @@ export interface InvoiceDueBridge {
    * `>= todayBkk` (not yet past due — mirrors the "not overdue" half of
    * `computeIsOverdue` in `derive-overdue.ts`, i.e. `due_date === today`
    * still counts as within the credit window).
+   *
+   * 065 §5.2 (final-review V2/V5) — consulted by the lapse cron AGAIN, as
+   * the full 059 shield alongside `oldestUnpaidMembershipInvoiceDueDate`:
+   *   - at the due+60 TERMINATE boundary — ANY not-yet-due unpaid
+   *     membership invoice protects the member (a stale/superseded
+   *     in-window invoice must not terminate a member inside a CORRECTED
+   *     invoice's credit window);
+   *   - on the no-in-window-invoice branch — a future-`period_from`
+   *     cycle's legitimately-issued invoice can fall below the oldest-due
+   *     floor while still being not-yet-due (this query has NO floor; its
+   *     own `due_date >= todayBkk` predicate keeps stale past-due
+   *     invoices out).
    */
   hasUnpaidNotYetDueMembershipInvoice(
     input: HasUnpaidNotYetDueMembershipInvoiceInput,
   ): Promise<boolean>;
+
+  /**
+   * 065 §5.2 — the `due_date` (Bangkok calendar date `YYYY-MM-DD`) of the
+   * member's OLDEST-DUE unpaid (`status='issued'`) membership invoice whose
+   * `due_date >= input.sinceDueDate` (065 §5.2 review — see
+   * `sinceDueDate`), or `null` if the member has none in that window.
+   * Member-scoped (NOT `linked_invoice_id`:
+   * a new member's initial cycle has `linked_invoice_id = NULL` and its
+   * first invoice is paid via the unlinked-payment hook, never linked, so
+   * a linked-invoice anchor would miss that cohort). The lapse cron
+   * derives its entire per-cycle decision from this one value:
+   *   - `null`                 → no membership invoice → backstop on
+   *                              `expires_at + grace`;
+   *   - `due_date >= today`    → not yet due → defer (059 guard preserved);
+   *   - `today <= due_date+60` → past due but inside the termination
+   *                              window → stay suspended;
+   *   - `today >  due_date+60` → terminate.
+   */
+  oldestUnpaidMembershipInvoiceDueDate(
+    input: OldestUnpaidMembershipInvoiceDueDateInput,
+  ): Promise<string | null>;
 }

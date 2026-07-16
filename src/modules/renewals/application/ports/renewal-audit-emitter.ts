@@ -323,10 +323,26 @@ export interface F8AuditPayloadShapes {
    *
    * `closed_reason` discriminator picks between the two real-world
    * causes the AS3 lapsed-tab badge differentiates:
-   *   - `'grace_expired'` — `now > expires_at + grace_period_days`,
-   *     no F5 payment attempts (member silently let it expire)
+   *   - `'grace_expired'` — no terminal-failed F5 payment attempts on the
+   *     cycle's LINKED invoice (member silently let the clock run out)
    *   - `'payment_failed'` — `>= 1` F5 attempt ended `status='failed'`
-   *     before the grace window expired (payment problem, not apathy)
+   *     before the termination clock expired (payment problem, not apathy)
+   *
+   * 065 §5.2 (final-review V9): the termination clock is now the member's
+   * oldest-due unpaid membership invoice `due_date + 60` (Bangkok days),
+   * with `expires_at + grace_period_days` only as the no-invoice backstop.
+   * `expires_at`/`grace_period_days` alone therefore no longer describe
+   * the decision — a due+60 termination of a §5.3 born-awaiting cycle
+   * carries a far-FUTURE `expires_at`. The payload records the actual
+   * anchor so SRE/compliance can reconstruct the branch:
+   *   - `due_date` — the anchoring invoice's due date (`YYYY-MM-DD`
+   *     Bangkok), or `null` on the backstop branch;
+   *   - `termination_basis` — which clock fired: `'due_plus_60'` (unpaid
+   *     membership invoice 60+ days past due) or `'no_invoice_backstop'`
+   *     (never invoiced; `expires_at + grace` elapsed).
+   * Note `closed_reason` still keys F5 attempts on `linked_invoice_id`
+   * (NULL for the born-awaiting cohort → always `'grace_expired'` there);
+   * `termination_basis` is the field that carries the true anchor.
    *
    * `'lapsed'` (legacy catch-all) is intentionally NOT in this union —
    * after K24, every `awaiting_payment → lapsed` transition writes a
@@ -340,6 +356,8 @@ export interface F8AuditPayloadShapes {
     readonly expires_at: string;
     readonly grace_period_days: number;
     readonly failed_payment_attempts: number;
+    readonly due_date: string | null;
+    readonly termination_basis: 'due_plus_60' | 'no_invoice_backstop';
   };
   /**
    * F8-completion slice 2 — typed payload for the `upcoming|reminded`

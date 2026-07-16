@@ -117,6 +117,24 @@ type CopyKey = `${RenewalReminderTier}.${RenewalReminderOffset}`;
 
 // English canonical copy. Templates have placeholders interpolated at
 // render time. Keep ≤500 chars per body; subject ≤120 chars (Gmail).
+/**
+ * 065 §5.5 — the statutory-termination warning appended to every POST-expiry
+ * reminder step (t+7/t+14/t+30), one sentence per locale (final-review:
+ * was pasted verbatim into all 15 bodies — when SweCham legal finalises the
+ * wording it must change in exactly THREE places, here). DRAFT wording
+ * grounded in the SweCham member-fees spec, pending legal sign-off
+ * (design §9.4). Two known couplings, both deliberate for the
+ * single-tenant present: the tenant name "SweCham" and the "60 days"
+ * figure (TERMINATION_DAYS_AFTER_DUE in lapse-cycles-on-grace-expiry.ts)
+ * are literals — tokenise per-tenant before onboarding tenant #2
+ * (design § Post-review follow-ups).
+ */
+const STATUTORY_TERMINATION_WARNING: Record<RenewalEmailLocale, string> = {
+  en: 'SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
+  th: 'SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
+  sv: 'SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+};
+
 const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   // Thai Alumni — light cadence (4 emails)
   'thai_alumni.t-30': {
@@ -136,7 +154,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore your benefits and stay connected with the chamber.',
+    body: `Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore your benefits and stay connected with the chamber. ${STATUTORY_TERMINATION_WARNING.en}`,
     cta: 'Reactivate now',
   },
 
@@ -168,7 +186,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore benefits.',
+    body: `Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore benefits. ${STATUTORY_TERMINATION_WARNING.en}`,
     cta: 'Reactivate now',
   },
 
@@ -200,7 +218,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership expired on {expiresAt}. Reactivate now to restore your chamber benefits.',
+    body: `Hi {firstName}, your {tier} membership expired on {expiresAt}. Reactivate now to restore your chamber benefits. ${STATUTORY_TERMINATION_WARNING.en}`,
     cta: 'Reactivate now',
   },
 
@@ -237,7 +255,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore Premium benefits.',
+    body: `Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore Premium benefits. ${STATUTORY_TERMINATION_WARNING.en}`,
     cta: 'Reactivate now',
   },
 
@@ -269,7 +287,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'Your {tier} agreement has lapsed',
-    body: 'Dear {firstName}, your {tier} agreement for {companyName} expired on {expiresAt}. Reactivate now or contact us to discuss renewal.',
+    body: `Dear {firstName}, your {tier} agreement for {companyName} expired on {expiresAt}. Reactivate now or contact us to discuss renewal. ${STATUTORY_TERMINATION_WARNING.en}`,
     cta: 'Reactivate now',
   },
 };
@@ -306,7 +324,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์และเชื่อมต่อกับเครือข่ายของหอการค้า',
+    body: `สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์และเชื่อมต่อกับเครือข่ายของหอการค้า ${STATUTORY_TERMINATION_WARNING.th}`,
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -340,7 +358,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ทั้งหมด',
+    body: `สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ทั้งหมด ${STATUTORY_TERMINATION_WARNING.th}`,
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -374,7 +392,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ของหอการค้า',
+    body: `สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ของหอการค้า ${STATUTORY_TERMINATION_WARNING.th}`,
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -413,7 +431,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ระดับ Premium',
+    body: `สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ระดับ Premium ${STATUTORY_TERMINATION_WARNING.th}`,
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -447,7 +465,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'ข้อตกลง {tier} ของคุณหมดอายุแล้ว',
-    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งหรือติดต่อเราเพื่อหารือเรื่องการต่ออายุ',
+    body: `เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งหรือติดต่อเราเพื่อหารือเรื่องการต่ออายุ ${STATUTORY_TERMINATION_WARNING.th}`,
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 };
@@ -483,7 +501,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå dina förmåner och hålla kontakten med kammaren.',
+    body: `Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå dina förmåner och hålla kontakten med kammaren. ${STATUTORY_TERMINATION_WARNING.sv}`,
     cta: 'Återaktivera nu',
   },
 
@@ -517,7 +535,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå förmånerna.',
+    body: `Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå förmånerna. ${STATUTORY_TERMINATION_WARNING.sv}`,
     cta: 'Återaktivera nu',
   },
 
@@ -551,7 +569,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap löpte ut den {expiresAt}. Återaktivera nu för att återfå dina kammarförmåner.',
+    body: `Hej {firstName}, ditt {tier}-medlemskap löpte ut den {expiresAt}. Återaktivera nu för att återfå dina kammarförmåner. ${STATUTORY_TERMINATION_WARNING.sv}`,
     cta: 'Återaktivera nu',
   },
 
@@ -590,7 +608,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå Premium-förmånerna.',
+    body: `Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå Premium-förmånerna. ${STATUTORY_TERMINATION_WARNING.sv}`,
     cta: 'Återaktivera nu',
   },
 
@@ -624,7 +642,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'Ditt {tier}-avtal har löpt ut',
-    body: 'Bästa {firstName}, ditt {tier}-avtal för {companyName} löpte ut den {expiresAt}. Återaktivera nu eller kontakta oss för att diskutera förnyelse.',
+    body: `Bästa {firstName}, ditt {tier}-avtal för {companyName} löpte ut den {expiresAt}. Återaktivera nu eller kontakta oss för att diskutera förnyelse. ${STATUTORY_TERMINATION_WARNING.sv}`,
     cta: 'Återaktivera nu',
   },
 };

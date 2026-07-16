@@ -44,19 +44,58 @@
  *
  * Audit: emits typed `renewal_lapsed` event per K24 audit-emitter
  * payload extension. `failed_payment_attempts` count is forensic so
- * SRE can verify the decision branch was correct.
+ * SRE can verify the decision branch was correct. 065 final-review V9:
+ * the payload now also carries `due_date` + `termination_basis`
+ * (`'due_plus_60'` | `'no_invoice_backstop'`) — under the §5.2 clock,
+ * `expires_at` + `grace_period_days` alone would tell a born-awaiting
+ * cohort termination story that looks ~9 months early; the basis fields
+ * make the actual decision branch reconstructable from the audit row.
+ * NOTE (065 final-review S3): `failed_payment_attempts` still keys on
+ * `cycle.linkedInvoiceId` (F5 attempts are per-invoice) — for the
+ * born-awaiting cohort `linked_invoice_id` is NULL by construction, so
+ * the count reads 0 and `closed_reason` lands `'grace_expired'` even
+ * when a real member-scoped invoice drove the due+60 clock; use
+ * `termination_basis`/`due_date` for the true anchor.
  *
  * RBAC: cron-only (`actorRole='cron'`, `actorUserId=null`). Route
  * handler validates Bearer `CRON_SECRET` before invoking.
  *
- * 059-membership-suspension Task 13 — credit-window guard. BEFORE the
- * F5 decision-branch read above, `processOne` consults the Task-12
- * `InvoiceDueBridge` (`deps.invoiceDueBridge.
- * hasUnpaidNotYetDueMembershipInvoice`) to check whether the cycle's
- * member has an unpaid (`status='issued'`), not-yet-past-due
- * MEMBERSHIP invoice (F4's 90-day net terms). If so, the lapse
- * transition is DEFERRED entirely — a member must not be suspended
- * for non-payment while the invoice they'd pay isn't even due yet.
+ * 065 §5.2 — the termination clock is driven by the member's oldest-due
+ * unpaid membership invoice `due_date`, NOT `expires_at + grace`. BEFORE
+ * the F5 decision-branch read above, `processOne` consults
+ * `deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate` (member-
+ * scoped — see the InvoiceDueBridge port note on why NOT
+ * `linked_invoice_id`; the lookup is floored at
+ * `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS` so a STALE prior-period
+ * invoice cannot anchor this period's clock — 065 §5.2 review) and decides
+ * per cycle:
+ *   - not-yet-due (`due_date >= today`) → DEFER (059 guard preserved;
+ *     emits `renewal_lapse_deferred_invoice_not_due`);
+ *   - past due but `today <= due_date + 60` → stay suspended (no
+ *     transition);
+ *   - `today > due_date + 60` → terminate — UNLESS the member also holds
+ *     a not-yet-due unpaid membership invoice (final-review V2 fix: the
+ *     full 059 guard is "ANY not-yet-due unpaid membership invoice
+ *     protects the member", so a stale/superseded in-window invoice an
+ *     admin forgot to void must not terminate a member who is inside a
+ *     CORRECTED invoice's credit window — `hasUnpaidNotYetDueMembership-
+ *     Invoice` is consulted at the terminate boundary only, so the
+ *     common single-invoice path costs no extra query);
+ *   - no membership invoice in the floored window (`due_date === null`)
+ *     → the same 059 shield first (final-review V5 fix: covers a
+ *     future-`period_from` cycle whose legitimately-issued invoice falls
+ *     BELOW the floor — it is still not-yet-due, so the member defers
+ *     with the proper audit trail instead of silently riding the
+ *     backstop), then backstop on `expires_at + grace_period_days` (the
+ *     only remaining role of the grace window — F4's 30-day net terms,
+ *     `default_net_days`, default 30, govern the normal path).
+ * A member must not be suspended for non-payment while the invoice they'd
+ * pay isn't even due yet.
+ * SweCham policy note (documented, deliberate): the 059 shield means a
+ * not-yet-due NEXT invoice can defer termination on an older unpaid one
+ * (059 shipped behaviour + design §5.2's stated intent). If SweCham later
+ * wants strict oldest-due termination, the right lever is enforcing
+ * void-on-reissue in F4, not weakening this guard.
  * Like the F5 bridge, this guard runs OUTSIDE the advisory-lock tx:
  * calling a cross-module bridge INSIDE the tx would open a second
  * pooled connection while holding the lock — the documented
@@ -81,7 +120,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { addDays, bangkokLocalDate } from '@/lib/fiscal-year';
 import { asTenantId, asMemberId } from '@/modules/members';
 import { asInvoiceId } from '@/modules/invoicing';
 import { parseInput } from './_lib/parse-input';
@@ -123,12 +162,29 @@ export interface LapseCyclesOnGraceExpiryOutput {
   /** Cycles where the transition lost the TOCTOU race + skipped silently. */
   readonly transitionRaceSkipped: number;
   /**
-   * Task 13 — cycles whose lapse was deferred because the member has
-   * an unpaid, not-yet-past-due MEMBERSHIP invoice (F4's 90-day net
-   * terms). No DB transition occurred; the cycle stays
-   * `awaiting_payment` and re-enters eligibility on tomorrow's run.
+   * 065 §5.2 — cycles whose lapse was deferred because the member has an
+   * unpaid, not-yet-past-due MEMBERSHIP invoice (F4's 30-day net terms —
+   * `tenant_invoice_settings.default_net_days`, default 30). No DB
+   * transition occurred; the cycle stays `awaiting_payment` and re-enters
+   * eligibility on tomorrow's run.
    */
   readonly deferredInvoiceNotDue: number;
+  /**
+   * 065 §5.2 — cycles PAST their membership invoice `due_date` but still
+   * inside the `due_date + 60` termination window. Benefits stay suspended
+   * (the `awaiting_payment` cycle is untouched); the member is re-evaluated
+   * daily and terminated once `today > due_date + 60`. Same benign "no
+   * transition, re-eligible tomorrow" bucket as `deferredInvoiceNotDue`.
+   */
+  readonly deferredWithinTerminationWindow: number;
+  /**
+   * 065 §5.2 — cycles with NO unpaid membership invoice whose
+   * `expires_at + grace_period_days` backstop has NOT yet elapsed. Only
+   * reachable for an `awaiting_payment` cycle that was never invoiced
+   * (auto-invoice is a deferred phase). No DB transition; re-evaluated
+   * daily. Same benign deferred bucket as `deferredInvoiceNotDue`.
+   */
+  readonly deferredNoInvoiceBackstop: number;
   /**
    * Task 13 — the `InvoiceDueBridge` guard itself threw. Deliberately
    * NOT folded into `errors`: a guard failure fails the member SAFE
@@ -164,6 +220,37 @@ export interface LapseCyclesOnGraceExpiryDeps
 
 const MS_PER_DAY = 86_400_000;
 
+/**
+ * 065 §5.2 — a member is terminated once today is strictly PAST
+ * `due_date + 60` (Bangkok calendar days) of their oldest-due unpaid
+ * membership invoice. Matches the SweCham member-fees spec: SweCham is
+ * regulatory-bound to terminate members with unpaid fees within 60 days
+ * of the invoice due date. Domain constant (may become a
+ * `tenant_renewal_settings` column if a second tenant needs a different
+ * value — Open Question §10).
+ */
+const TERMINATION_DAYS_AFTER_DUE = 60;
+
+/**
+ * 065 §5.2 review — the widest legitimate lead time between a current-period
+ * membership invoice's `due_date` and the cycle's `period_from`, used to
+ * FLOOR the oldest-due lookup (`sinceDueDate = period_from − this`) so a
+ * STALE unpaid `issued` invoice from a PRIOR lapsed cycle (or a
+ * historical-due invoice import) can never anchor the CURRENT period's
+ * termination clock — which would skip the 60-day grace on the current
+ * invoice and terminate the member the day after period-end.
+ *
+ * A legit current-period invoice is issued at most ~31 days before period
+ * start (calendar-year: issued Dec 1 for the Jan-1 period; rolling: T-30),
+ * so its `due_date` (issue + 30-day net terms) lands roughly AT period
+ * start, well within a 60-day floor below `period_from`. A prior period's
+ * invoice is ~334+ days before this period's start, so the 60-day lead
+ * window cleanly admits the current invoice and excludes prior-period
+ * stragglers — which then fall to the no-invoice `expires_at + grace`
+ * backstop.
+ */
+const MAX_INVOICE_ISSUANCE_LEAD_DAYS = 60;
+
 export async function lapseCyclesOnGraceExpiry(
   deps: LapseCyclesOnGraceExpiryDeps,
   rawInput: LapseCyclesOnGraceExpiryInput,
@@ -183,25 +270,43 @@ export async function lapseCyclesOnGraceExpiry(
   if (!settings) {
     return err({ kind: 'tenant_settings_not_found' });
   }
+  // 065 §5.2 — `grace_period_days` is now ONLY the no-invoice backstop
+  // (an `awaiting_payment` cycle with no membership invoice). The normal
+  // termination clock is the member's oldest-due unpaid membership
+  // invoice `due_date + 60`, computed per cycle in `processOne`.
   const gracePeriodDays = settings.gracePeriodDays;
 
-  // cutoffDate = now - grace_period_days. Any awaiting_payment cycle
-  // with `expires_at < cutoffDate` has crossed the grace boundary and
-  // is eligible for the lapse transition.
-  const cutoffMs = input.now.getTime() - gracePeriodDays * MS_PER_DAY;
-  const cutoffDate = new Date(cutoffMs).toISOString();
-
+  // 065 §5.2 — candidate selection is now ALL `awaiting_payment` cycles
+  // (no `expires_at` pre-filter): a §5.3 born-`awaiting_payment` new
+  // member has a far-future `expires_at` and must not be hidden. The
+  // per-cycle decision is made in `processOne`.
   const page = await deps.cyclesRepo.listCyclesEligibleForLapse(
     input.tenantId,
-    { cutoffDate, pageSize },
+    { pageSize },
   );
 
   let graceExpired = 0;
   let paymentFailed = 0;
   let transitionRaceSkipped = 0;
   let deferredInvoiceNotDue = 0;
+  let deferredWithinTerminationWindow = 0;
+  let deferredNoInvoiceBackstop = 0;
   let deferredGuardErrors = 0;
   let errors = 0;
+
+  // 065 final-review V14 — these three derive only from the injected
+  // `now` + tenant settings, identical for every cycle in the run: hoist
+  // them out of `processOne` instead of re-deriving per cycle (the js-joda
+  // zoned conversion + ISO serialisations are pure recomputed constants
+  // on the sweep's hot loop).
+  const runClock: LapseRunClock = {
+    now: input.now,
+    todayBkk: bangkokLocalDate(input.now.toISOString()),
+    backstopCutoffIso: new Date(
+      input.now.getTime() - gracePeriodDays * MS_PER_DAY,
+    ).toISOString(),
+    closedAtIso: input.now.toISOString(),
+  };
 
   for (const cycle of page.items) {
     try {
@@ -211,7 +316,7 @@ export async function lapseCyclesOnGraceExpiry(
         input.tenantId,
         gracePeriodDays,
         input.correlationId,
-        input.now,
+        runClock,
       );
       // Round 5 staff-review (K24-T2): exhaustive switch + `_exhaustive:
       // never` pin matches the F8-canonical pattern at
@@ -220,7 +325,8 @@ export async function lapseCyclesOnGraceExpiry(
       // the pin breaks the build until it does. Without this guard, a
       // new outcome would silently fall through and break the SC
       // invariant `graceExpired + paymentFailed + transitionRaceSkipped
-      // + deferredInvoiceNotDue + deferredGuardErrors + errors ===
+      // + deferredInvoiceNotDue + deferredWithinTerminationWindow +
+      // deferredNoInvoiceBackstop + deferredGuardErrors + errors ===
       // cyclesProcessed`.
       switch (outcome) {
         case 'grace_expired':
@@ -234,6 +340,12 @@ export async function lapseCyclesOnGraceExpiry(
           break;
         case 'deferred_invoice_not_due':
           deferredInvoiceNotDue += 1;
+          break;
+        case 'deferred_within_termination_window':
+          deferredWithinTerminationWindow += 1;
+          break;
+        case 'deferred_no_invoice_backstop':
+          deferredNoInvoiceBackstop += 1;
           break;
         case 'deferred_guard_error':
           deferredGuardErrors += 1;
@@ -271,6 +383,8 @@ export async function lapseCyclesOnGraceExpiry(
     paymentFailed,
     transitionRaceSkipped,
     deferredInvoiceNotDue,
+    deferredWithinTerminationWindow,
+    deferredNoInvoiceBackstop,
     deferredGuardErrors,
     errors,
   });
@@ -281,7 +395,25 @@ type ProcessOneOutcome =
   | 'payment_failed'
   | 'race_skipped'
   | 'deferred_invoice_not_due'
+  | 'deferred_within_termination_window'
+  | 'deferred_no_invoice_backstop'
   | 'deferred_guard_error';
+
+/**
+ * 065 final-review V14 — the run-invariant clock derivations, computed
+ * ONCE per cron run in `lapseCyclesOnGraceExpiry` and threaded into every
+ * `processOne` call (they depend only on the injected `now` + tenant
+ * grace setting, never on the cycle).
+ */
+interface LapseRunClock {
+  readonly now: Date;
+  /** Bangkok calendar date of `now` (`YYYY-MM-DD`). */
+  readonly todayBkk: string;
+  /** `now − grace_period_days`, canonical ISO instant (backstop boundary). */
+  readonly backstopCutoffIso: string;
+  /** `now.toISOString()` — the transition's `closedAt` (WRN-12). */
+  readonly closedAtIso: string;
+}
 
 async function processOne(
   deps: LapseCyclesOnGraceExpiryDeps,
@@ -289,45 +421,24 @@ async function processOne(
   tenantId: string,
   gracePeriodDays: number,
   correlationId: string,
-  now: Date,
+  clock: LapseRunClock,
 ): Promise<ProcessOneOutcome> {
-  // Task 13 — credit-window guard. Runs FIRST (and OUTSIDE the
-  // advisory-lock tx below): a member with an unpaid, not-yet-due
-  // membership invoice must never be suspended for non-payment, and
-  // checking this first also saves the F5 decision-branch round-trip
-  // on the (common) deferred path. Fail-SAFE: a bridge throw must
-  // never terminate benefit access — see file header + output-type
-  // docs for the full rationale.
-  const todayBkk = bangkokLocalDate(now.toISOString());
-  let withinCreditWindow: boolean;
-  try {
-    withinCreditWindow =
-      await deps.invoiceDueBridge.hasUnpaidNotYetDueMembershipInvoice({
-        tenantId,
-        memberId: cycle.memberId,
-        todayBkk,
-      });
-  } catch (e) {
-    logger.error(
-      {
-        errorId: 'F8.LAPSE.INVOICE_DUE_GUARD_FAILED',
-        tenantId,
-        cycleId: cycle.cycleId,
-        err: e instanceof Error ? e : new Error(String(e)),
-      },
-      '[lapse-cycles-on-grace-expiry] invoiceDueBridge threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error, NOT folded into the generic errors tally',
-    );
-    renewalsMetrics.lapseInvoiceDueGuardErrors.add(1, { tenant_id: tenantId });
-    return 'deferred_guard_error';
-  }
+  // 065 §5.2 — the termination decision. Runs FIRST (and OUTSIDE the
+  // advisory-lock tx below): the clock is the member's OLDEST-DUE unpaid
+  // membership invoice `due_date + 60`, NOT `expires_at + grace`.
+  // Fail-SAFE: a bridge throw must never terminate benefit access — see
+  // file header + output-type docs for the full rationale. `todayBkk` and
+  // `dueDate` are both Bangkok calendar dates (`YYYY-MM-DD`), so
+  // lexicographic string comparison is a correct date comparison.
+  const { todayBkk } = clock;
 
-  if (withinCreditWindow) {
-    // No state transition on this branch — nothing to pair the audit
-    // with in a tx (Constitution Principle VIII pairs a STATE CHANGE
-    // with its audit; deferring is the absence of a state change).
-    // `emit()` is the port's fire-and-forget path — it never throws to
-    // the caller, matching every other read-only forensic record in
-    // this module.
+  // Shared forensic emit for every "deferred because a not-yet-due unpaid
+  // membership invoice protects the member" exit (three sites below). No
+  // state transition on these branches — nothing to pair the audit with
+  // in a tx (Constitution Principle VIII pairs a STATE CHANGE with its
+  // audit; deferring is the absence of a state change). `emit()` is the
+  // port's fire-and-forget path — it never throws to the caller.
+  const emitDeferredNotDue = async (): Promise<void> => {
     await deps.auditEmitter.emit(
       {
         type: 'renewal_lapse_deferred_invoice_not_due' as const,
@@ -345,7 +456,137 @@ async function processOne(
         correlationId,
       },
     );
-    return 'deferred_invoice_not_due';
+  };
+  // Fail-SAFE wrapper shared by both InvoiceDueBridge reads (the oldest-due
+  // anchor and the 059 not-yet-due shield): a bridge throw must never
+  // terminate benefit access — log + metric + the distinguishable
+  // `deferred_guard_error` outcome instead of falling through to lapse.
+  const logGuardError = (e: unknown): void => {
+    logger.error(
+      {
+        errorId: 'F8.LAPSE.INVOICE_DUE_GUARD_FAILED',
+        tenantId,
+        cycleId: cycle.cycleId,
+        err: e instanceof Error ? e : new Error(String(e)),
+      },
+      '[lapse-cycles-on-grace-expiry] invoiceDueBridge threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error, NOT folded into the generic errors tally',
+    );
+    renewalsMetrics.lapseInvoiceDueGuardErrors.add(1, { tenant_id: tenantId });
+  };
+
+  // 065 §5.2 review — floor the oldest-due lookup at the CURRENT cycle's
+  // `period_from` minus the max legit issuance lead, so a stale unpaid
+  // invoice from a prior period cannot anchor this period's termination
+  // clock (see `MAX_INVOICE_ISSUANCE_LEAD_DAYS`). `cycle.periodFrom` is a
+  // canonical `toISOString()` UTC instant → `bangkokLocalDate` gives its
+  // Bangkok calendar date, then `addDays` is pure YYYY-MM-DD math.
+  const sinceDueDate = addDays(
+    bangkokLocalDate(cycle.periodFrom),
+    -MAX_INVOICE_ISSUANCE_LEAD_DAYS,
+  );
+  let dueDate: string | null;
+  try {
+    dueDate = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+      tenantId,
+      memberId: cycle.memberId,
+      sinceDueDate,
+    });
+  } catch (e) {
+    logGuardError(e);
+    return 'deferred_guard_error';
+  }
+
+  // 065 final-review V9 — recorded on the `renewal_lapsed` audit payload so
+  // the decision branch is reconstructable (an `expires_at`-only record
+  // reads ~9 months early for a due+60 born-awaiting termination).
+  let terminationBasis: 'due_plus_60' | 'no_invoice_backstop';
+
+  if (dueDate !== null) {
+    if (dueDate >= todayBkk) {
+      // Not yet due → DEFER (059 not-yet-due guard preserved).
+      await emitDeferredNotDue();
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'invoice_not_due',
+      });
+      return 'deferred_invoice_not_due';
+    }
+    // Past due. Terminate only once today is STRICTLY past `due_date + 60`.
+    // Pure Bangkok-calendar-day arithmetic (both are YYYY-MM-DD; no TZ/DST).
+    const terminateAfter = addDays(dueDate, TERMINATION_DAYS_AFTER_DUE);
+    if (todayBkk <= terminateAfter) {
+      // Past due but still inside the 60-day termination window → stay
+      // suspended (no transition; re-evaluated on tomorrow's run).
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'within_termination_window',
+      });
+      return 'deferred_within_termination_window';
+    }
+    // today > due_date + 60 → terminate, UNLESS the full 059 shield holds:
+    // ANY not-yet-due unpaid membership invoice protects the member (065
+    // final-review V2 — a stale/superseded in-window invoice the admin
+    // forgot to void must not terminate a member inside a CORRECTED
+    // invoice's credit window). Consulted only at this boundary, so the
+    // single-invoice common path pays no extra bridge query.
+    let shielded: boolean;
+    try {
+      shielded = await deps.invoiceDueBridge.hasUnpaidNotYetDueMembershipInvoice(
+        { tenantId, memberId: cycle.memberId, todayBkk },
+      );
+    } catch (e) {
+      logGuardError(e);
+      return 'deferred_guard_error';
+    }
+    if (shielded) {
+      await emitDeferredNotDue();
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'invoice_not_due',
+      });
+      return 'deferred_invoice_not_due';
+    }
+    terminationBasis = 'due_plus_60';
+  } else {
+    // No unpaid membership invoice inside the floored window. 059 shield
+    // FIRST (065 final-review V5): a future-`period_from` cycle (future-
+    // dated registration) can hold a legitimately-issued invoice whose
+    // `due_date` falls BELOW the floor — it is still not-yet-due
+    // (`due_date >= todayBkk` is the shield's own predicate, so a stale
+    // PAST-due below-floor invoice can never re-enter here), and the
+    // member must defer with the proper `renewal_lapse_deferred_invoice_
+    // not_due` audit trail rather than silently riding the backstop.
+    let shielded: boolean;
+    try {
+      shielded = await deps.invoiceDueBridge.hasUnpaidNotYetDueMembershipInvoice(
+        { tenantId, memberId: cycle.memberId, todayBkk },
+      );
+    } catch (e) {
+      logGuardError(e);
+      return 'deferred_guard_error';
+    }
+    if (shielded) {
+      await emitDeferredNotDue();
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'invoice_not_due',
+      });
+      return 'deferred_invoice_not_due';
+    }
+    // Backstop on `expires_at + grace_period_days`. `cycle.expiresAt` and
+    // `backstopCutoffIso` are both canonical `Date#toISOString()` strings
+    // (rowToDomain emits `.toISOString()`), so string `>=` is a correct
+    // instant comparison. `>=` defers (mirrors the OLD selection's
+    // `expires_at < cutoff` terminate boundary: equal → not yet eligible).
+    if (cycle.expiresAt >= clock.backstopCutoffIso) {
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'no_invoice_backstop',
+      });
+      return 'deferred_no_invoice_backstop';
+    }
+    // else expires_at + grace passed → fall through to terminate.
+    terminationBasis = 'no_invoice_backstop';
   }
 
   // Decision branch — count F5 failed-attempt rows for the cycle's
@@ -361,15 +602,15 @@ async function processOne(
           invoiceId: asInvoiceId(cycle.linkedInvoiceId),
         });
   const closedReason = failedAttempts >= 1 ? 'payment_failed' : 'grace_expired';
-  // Staff-Review-2026-05-09 WRN-12 fix: use the injected `now`
-  // (consistent with cutoffDate at the cron entry point) instead of
-  // wall-clock `new Date()` so the closedAt timestamp aligns with
-  // the cutoff cohort. Under heavy cron load wall-clock could drift
-  // from the listCyclesEligibleForLapse cutoff timestamp, making
-  // forensic audit traces harder to correlate. Also enables
-  // deterministic vi.setSystemTime testing without monkey-patching
-  // the use-case internals.
-  const closedAt = now.toISOString();
+  // Staff-Review-2026-05-09 WRN-12 fix: use the injected `now` (the same
+  // clock the due+60 / backstop decision above reads — hoisted to
+  // `clock.closedAtIso`, final-review V14) instead of wall-clock
+  // `new Date()` so the `closedAt` timestamp aligns with the decision
+  // cohort. Under heavy cron load wall-clock could drift from the
+  // decision instant, making forensic audit traces harder to correlate.
+  // Also enables deterministic vi.setSystemTime testing without
+  // monkey-patching the use-case internals.
+  const closedAt = clock.closedAtIso;
   const cycleId = cycle.cycleId as CycleId;
 
   // Single tx — advisory lock + tx-bound re-read + transition + audit
@@ -419,6 +660,12 @@ async function processOne(
           expires_at: cycle.expiresAt,
           grace_period_days: gracePeriodDays,
           failed_payment_attempts: failedAttempts,
+          // 065 final-review V9 — the ACTUAL decision anchor. Without
+          // these, a due+60 termination of a born-awaiting cycle (far-
+          // future `expires_at`) reads as ~9 months early under the old
+          // expires_at+grace framing and the branch is unreconstructable.
+          due_date: dueDate,
+          termination_basis: terminationBasis,
         },
       },
       {

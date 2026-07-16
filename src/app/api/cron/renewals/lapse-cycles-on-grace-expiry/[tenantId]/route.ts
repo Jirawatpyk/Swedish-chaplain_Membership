@@ -123,6 +123,17 @@ export async function POST(
         grace_expired: result.value.graceExpired,
         payment_failed: result.value.paymentFailed,
         transition_race_skipped: result.value.transitionRaceSkipped,
+        // 065 §5.2 (final-review V8) — the deferred branches are the bulk
+        // of `cycles_processed` now that selection is ALL awaiting_payment
+        // cycles; without them the operator surface (cron-job.org history)
+        // cannot verify the SC sum invariant: grace_expired +
+        // payment_failed + transition_race_skipped + the four counters
+        // below === cycles_processed.
+        deferred_invoice_not_due: result.value.deferredInvoiceNotDue,
+        deferred_within_termination_window:
+          result.value.deferredWithinTerminationWindow,
+        deferred_no_invoice_backstop: result.value.deferredNoInvoiceBackstop,
+        deferred_guard_errors: result.value.deferredGuardErrors,
         errors: result.value.errors,
         duration_ms: Date.now() - startedAt,
       });

@@ -133,7 +133,26 @@ test.describe('F8 — lapse-cycles cron coordinator HTTP route (T277f)', () => {
         expect(typeof r.grace_expired).toBe('number');
         expect(typeof r.payment_failed).toBe('number');
         expect(typeof r.transition_race_skipped).toBe('number');
+        // 065 §5.2 (final-review V8) — the deferred branches are the bulk
+        // of cycles_processed under the due+60 clock; without them the
+        // operator surface cannot verify the SC sum invariant below.
+        expect(typeof r.deferred_invoice_not_due).toBe('number');
+        expect(typeof r.deferred_within_termination_window).toBe('number');
+        expect(typeof r.deferred_no_invoice_backstop).toBe('number');
+        expect(typeof r.deferred_guard_errors).toBe('number');
         expect(typeof r.errors).toBe('number');
+        // SC sum invariant — every evaluated cycle lands in exactly one
+        // outcome bucket.
+        expect(
+          r.grace_expired +
+            r.payment_failed +
+            r.transition_race_skipped +
+            r.deferred_invoice_not_due +
+            r.deferred_within_termination_window +
+            r.deferred_no_invoice_backstop +
+            r.deferred_guard_errors +
+            r.errors,
+        ).toBe(r.cycles_processed);
       }
     }
   });

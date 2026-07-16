@@ -56,6 +56,8 @@ const BASE_VALUES: InvoiceSettingsFormInitialValues = {
   seller_branch_code: '00001',
   wht_note_th: null,
   wht_note_en: null,
+  termination_notice_th: null,
+  termination_notice_en: null,
   bank_payee_name: null,
   bank_account_no: null,
   bank_account_type: null,

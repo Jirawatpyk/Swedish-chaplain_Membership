@@ -1380,6 +1380,9 @@
           "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
           "planPlaceholder": "Välj paket…",
+          "billingCycle": "Faktureringscykel",
+          "billingCyclePlaceholder": "Välj faktureringscykel…",
+          "billingCycleOptions": { "calendar": "Kalenderår (jan–dec)", "rolling": "Rullande (årsdag)" },
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "registrationDateHint": "Standard är dagens datum. Detta datum är ankaret för förnyelsecykeln — backdatera det för en medlem som gick med tidigare.",
@@ -1664,6 +1667,7 @@
         "logo": "Logotyp",
         "seller": "Säljarens filial (§86/4)",
         "whtNote": "Notering om källskatt",
+        "terminationNotice": "Lagstadgad uppsägningsnotering",
         "bank": "Offlinebetalning (banköverföring)"
       },
       "labels": {
@@ -1691,6 +1695,8 @@
         "sellerBranchCode": "Filialkod",
         "whtNoteTh": "Källskattsnotering (thailändska)",
         "whtNoteEn": "Källskattsnotering (engelska)",
+        "terminationNoticeTh": "Uppsägningsnotering (thailändska)",
+        "terminationNoticeEn": "Uppsägningsnotering (engelska)",
         "bankPayeeName": "Kontonamn / betalningsmottagare",
         "bankAccountNo": "Kontonummer",
         "bankAccountType": "Kontotyp",
@@ -1713,6 +1719,9 @@
         "whtNote": "Visas endast på medlemsdokument (faktura + skattekvitto). Medlemsavgifter är befriade från källskatt enligt §65 bis (13) (beslut กค 0811/8542) — föreslagen text är förifylld nedan. Lämna tomt för inget.",
         "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
         "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
+        "terminationNotice": "Visas endast på fakturan (ใบแจ้งหนี้/bill), aldrig på ett skattekvitto. Informerar medlemmar om den lagstadgade skyldigheten att avsluta medlemmar med obetalda avgifter. Exempeltexten är ett utkast baserat på SweChams spec — bekräfta den slutliga texten med SweCham innan driftsättning. Lämna tomt för inget.",
+        "terminationNoticeThExample": "SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ",
+        "terminationNoticeEnExample": "SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.",
         "bank": "Visas endast på fakturan (ใบแจ้งหนี้), för betalning via banköverföring. Lämna tomt för inget.",
         "bankSwift": "8 eller 11 tecken (t.ex. KASITHBK).",
         "bankAccountNo": "Siffror, med valfria bindestreck eller mellanslag."

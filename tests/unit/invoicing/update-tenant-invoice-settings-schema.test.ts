@@ -65,3 +65,32 @@ describe('updateTenantInvoiceSettingsSchema — receiptNumberPrefix RE reservati
     expect(r.success, r.success ? 'ok' : JSON.stringify(r.error.issues)).toBe(true);
   });
 });
+
+describe('updateTenantInvoiceSettingsSchema — statutory termination notice (065 §5.4)', () => {
+  it('accepts termination_notice_th/_en text (mirrors whtNote shape)', () => {
+    const r = updateTenantInvoiceSettingsSchema.safeParse({
+      ...BASE,
+      terminationNoticeTh: 'PLACEHOLDER: ยุติสมาชิกภาพภายใน 60 วัน',
+      terminationNoticeEn: 'PLACEHOLDER: terminated within 60 days of the due date',
+    });
+    expect(r.success, r.success ? 'ok' : JSON.stringify(r.error.issues)).toBe(true);
+  });
+
+  it('accepts null (clearing the notice) and rejects an over-length note (>500)', () => {
+    const clear = updateTenantInvoiceSettingsSchema.safeParse({
+      ...BASE,
+      terminationNoticeTh: null,
+      terminationNoticeEn: null,
+    });
+    expect(clear.success, clear.success ? 'ok' : JSON.stringify(clear.error.issues)).toBe(true);
+
+    const tooLong = updateTenantInvoiceSettingsSchema.safeParse({
+      ...BASE,
+      terminationNoticeEn: 'x'.repeat(501),
+    });
+    expect(tooLong.success).toBe(false);
+    if (!tooLong.success) {
+      expect(tooLong.error.issues.some((i) => i.path.includes('terminationNoticeEn'))).toBe(true);
+    }
+  });
+});

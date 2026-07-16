@@ -48,6 +48,8 @@ const EDIT_BASE = {
   country: 'TH',
   plan_id: PLANS[0]!.plan_id,
   plan_year: 2026,
+  // 065 §5.1 — required pick; seed it so submit-path tests aren't blocked by it.
+  billing_cycle: 'rolling' as const,
   primary_contact: {
     first_name: 'A',
     last_name: 'B',

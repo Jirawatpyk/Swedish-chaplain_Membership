@@ -21,6 +21,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { fillRequiredMembershipAndAddress } from './helpers/member-form';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -66,9 +67,9 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     // (not a fillable text <input>); no explicit selection needed since
     // the form already defaults it to 'TH' (schema default).
 
-    // Select first available plan
-    await page.locator('#plan_id').click();
-    await page.getByRole('option').first().click();
+    // Required plan + billing_cycle picks and the 088 §86/4 TH address —
+    // shared helper so the next required field is added in ONE place.
+    await fillRequiredMembershipAndAddress(page);
 
     // Primary contact
     await fillField(page.locator('#first_name'), 'Portal');
@@ -76,7 +77,7 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     await fillField(page.locator('#contact_email'), `e2e-portal-${RUN_ID}@swecham.test`);
 
     // Submit
-    await page.getByRole('button', { name: /save|create|add/i }).click();
+    await page.getByRole('button', { name: /create member/i }).click();
 
     // Wait for detail page redirect
     await page.waitForURL(/\/admin\/members\/[a-f0-9-]+/, {

@@ -39,6 +39,15 @@ export interface TenantIdentitySnapshot {
   readonly wht_note_th?: string | null;
   readonly wht_note_en?: string | null;
   /**
+   * 065 renewal-swecham-alignment (§5.4) — statutory termination notice,
+   * rendered on the bill ONLY (isBill-gated) via a v12 template gate. Rides
+   * this pinned snapshot (immutable at issue, SC-003) — NEVER a template
+   * literal. OPTIONAL / undefined-guarded for historical snapshots (template:
+   * `?? null`).
+   */
+  readonly termination_notice_th?: string | null;
+  readonly termination_notice_en?: string | null;
+  /**
    * 088-invoice-tax-flow-redesign (US5 / T040 / FR-022) — tenant-configurable
    * offline-payment bank / payment-instructions block. Rendered on the
    * ใบแจ้งหนี้ (bill) ONLY (never the paid §86/4 tax receipt). Like the WHT note,

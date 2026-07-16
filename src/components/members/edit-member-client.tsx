@@ -423,6 +423,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           is_vat_registered: member.isVatRegistered ?? false,
           is_head_office: member.isHeadOffice ?? true,
           branch_code: member.branchCode ?? null,
+          // 065 §5.1 — per-member billing cadence (seed the picker with the
+          // member's recorded/backfilled value so the admin sees it before Save).
+          billing_cycle: member.billingCycle ?? 'rolling',
           // Round-4 R4-I3: the form schema now accepts `null` on input
           // (via `.nullable().optional()`) and transforms to `null` on
           // submit. Passing `member.notes` directly (string | null) is

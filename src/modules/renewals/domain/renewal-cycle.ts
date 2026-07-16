@@ -325,11 +325,20 @@ export interface MembershipAccessDecision {
 /**
  * Single source of truth for a member's benefit-access state.
  *
- *  - `terminated`: an ENDED-terminal cycle — `lapsed`/`cancelled` AND
- *    `expiresAt` in the past (mirrors `isMembershipLapsed`'s two-condition
- *    rule; a `cancelled` cycle whose period has NOT ended is not ended
- *    coverage → `full`). `completed` is NEVER terminated (057 R2: the member
- *    paid; re-prompting payment causes a duplicate).
+ *  - `terminated`: a `lapsed` cycle (ALWAYS — 065 §5.2⇄§5.3, see below), OR
+ *    a `cancelled` cycle whose `expiresAt` is in the past (a `cancelled`
+ *    cycle whose period has NOT ended is not ended coverage → `full`).
+ *    `completed` is NEVER terminated (057 R2: the member paid; re-prompting
+ *    payment causes a duplicate).
+ *    065 §5.2⇄§5.3 — `lapsed` no longer requires a past `expiresAt`.
+ *    `lapsed` is only ever written for NON-PAYMENT (the grace-expiry lapse
+ *    cron + the pending-reactivation timeout), so a lapsed member never has
+ *    paid coverage to preserve. The old `expiresAt < now` gate was only
+ *    coincidentally correct while every lapsed cycle had a past `expiresAt`;
+ *    §5.3's born-`awaiting_payment` new-member cohort carries a far-future
+ *    `expiresAt = period_to`, so the gate would wrongly flip a lapsed
+ *    non-payer back to `full`. `cancelled` keeps the expiry check because it
+ *    can befall a PAID cycle (archive cascade) whose coverage is still live.
  *  - `suspended`: `awaiting_payment`/`pending_admin_reactivation`, OR a
  *    NON-terminal cycle (`upcoming`/`reminded`) whose period already ended
  *    (closes the 06:15-cron gap — correct the instant the period ends, no
@@ -356,12 +365,20 @@ export function deriveMembershipAccess(
     return { access: 'full', reason: 'in_good_standing' };
   }
 
+  if (cycle.status === 'lapsed') {
+    // 065 §5.2⇄§5.3 — ALWAYS terminated, regardless of `expiresAt` (see the
+    // docstring). A born-`awaiting_payment` new member lapsed at
+    // `due_date + 60` has a far-future `expiresAt`; without this a lapsed
+    // non-payer would wrongly resolve to `full`.
+    return { access: 'terminated', reason: 'grace_expired' };
+  }
+
   const expiresMs = Date.parse(cycle.expiresAt);
   const expired = !Number.isFinite(expiresMs) || expiresMs < now.getTime();
 
-  if (cycle.status === 'lapsed' || cycle.status === 'cancelled') {
+  if (cycle.status === 'cancelled') {
     return expired
-      ? { access: 'terminated', reason: cycle.status === 'lapsed' ? 'grace_expired' : 'cancelled' }
+      ? { access: 'terminated', reason: 'cancelled' }
       : { access: 'full', reason: 'in_good_standing' };
   }
 
@@ -372,10 +389,19 @@ export function deriveMembershipAccess(
 }
 
 /**
- * A membership has LAPSED when its most-recent cycle is ended-terminal
- * (`lapsed` or `cancelled` — NOT `completed`, which means the member
- * paid/renewed and is in good standing) AND its coverage has ended
- * (`expiresAt` in the past, or unparseable → still treated as lapsed).
+ * A membership has LAPSED when its most-recent cycle resolves to
+ * `terminated` under `deriveMembershipAccess` (065 §5.2/§5.3):
+ *   - `lapsed`    → ALWAYS lapsed, regardless of `expiresAt`. The status
+ *     is only ever written for non-payment (the due+60 lapse cron and the
+ *     pending-reactivation timeout — both via `CYCLE_STATUS_TRANSITIONS`
+ *     + the repo's `assertCanTransition`), and a §5.3 born-awaiting cycle
+ *     terminated at due+60 carries a far-FUTURE `expiresAt` — an expiry
+ *     check here would wrongly resolve that cohort back to full access.
+ *   - `cancelled` → lapsed only once its coverage has ended (`expiresAt`
+ *     in the past, or unparseable → treated as ended). A cancellation can
+ *     legitimately close a PAID cycle mid-period, so paid-through coverage
+ *     is honoured until period end.
+ *   - `completed` → never lapsed (the member paid/renewed).
  *
  * The terminal-status gate is load-bearing: a NON-terminal cycle that is
  * merely past `expiresAt` is `overdue` (in grace), NOT lapsed — so the gate

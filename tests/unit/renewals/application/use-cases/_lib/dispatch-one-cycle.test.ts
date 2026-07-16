@@ -742,6 +742,68 @@ describe('dispatchOneCycle', () => {
       expect(gatewayMock).not.toHaveBeenCalled();
     });
 
+    // -----------------------------------------------------------------------
+    // 065 final-review V12 — an awaiting_payment cycle gets POST-expiry steps
+    // only. A renewer enters awaiting_payment at T-0, so a PRE-expiry step
+    // matching an awaiting cycle is definitionally the §5.3 born-awaiting /
+    // never-paid cohort (far-future expires_at) — "renew now to keep your
+    // benefits active" T-60/T-30 copy must not reach a suspended, never-paid
+    // member. Post-expiry (t+N) steps still fire — they carry the §5.5
+    // statutory ladder for genuine T-0 suspended renewers.
+    // -----------------------------------------------------------------------
+
+    it('V12 — awaiting_payment cycle at a PRE-expiry step (T-30 due today) → skipped not_due_today, gateway never called', async () => {
+      const { deps, gatewayMock, emitMock, emitInTxMock } = fakeDeps({});
+      // Default candidate: expires_at 2026-06-14 → the T-30 step is due
+      // exactly today (NOW_ISO 2026-05-15) — for an `upcoming` cycle this is
+      // the happy-path `sent`; on an awaiting_payment cycle it must filter.
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: { status: 'awaiting_payment' } as Partial<RenewalCycle>,
+        }),
+        happyCtx,
+      );
+      expect(result.kind).toBe('skipped');
+      if (result.kind !== 'skipped') return;
+      expect(result.reason).toBe('not_due_today');
+      expect(gatewayMock).not.toHaveBeenCalled();
+      expect(emitMock).not.toHaveBeenCalled();
+      expect(emitInTxMock).not.toHaveBeenCalled();
+    });
+
+    it('V12 — awaiting_payment cycle at a POST-expiry step (t+7 due today) → still fires (statutory §5.5 ladder unaffected)', async () => {
+      const { deps, gatewayMock } = fakeDeps({});
+      // expires_at = NOW − 7d → the t+7 post-expiry step is due exactly
+      // today; the V12 filter keeps offsetDays >= 0 steps.
+      const result = await dispatchOneCycle(
+        deps,
+        buildHappyCandidate({
+          cycle: {
+            status: 'awaiting_payment',
+            expiresAt: '2026-05-08T00:00:00.000Z',
+          } as Partial<RenewalCycle>,
+          schedulePolicy: {
+            tenantId: TENANT_ID,
+            tierBucket: 'regular' as const,
+            steps: [
+              {
+                stepId: 't+7.email',
+                offsetDays: 7,
+                channel: 'email' as const,
+                templateId: 'renewal.t+7.regular',
+              },
+            ],
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-04-01T00:00:00Z',
+          },
+        }),
+        happyCtx,
+      );
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledTimes(1);
+    });
+
     it('Gate 8 MOST-RECENT — two steps in window, most-recent ALREADY fired → fires the OLDER unfired one', async () => {
       // Policy: t-14 (due 2026-06-08 for expires 2026-06-22) + t-7 (due
       // 2026-06-15 == NOW_ISO). Window [NOW-7, NOW] includes both. The

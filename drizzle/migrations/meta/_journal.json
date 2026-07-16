@@ -1779,6 +1779,20 @@
       "when": 1798538200000,
       "tag": "0254_tenant_brand_name",
       "breakpoints": true
+    },
+    {
+      "idx": 257,
+      "version": "7",
+      "when": 1798538300000,
+      "tag": "0255_members_billing_cycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1798538400000,
+      "tag": "0256_tenant_invoice_settings_termination_notice",
+      "breakpoints": true
     }
   ]
 }

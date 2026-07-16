@@ -83,6 +83,13 @@ export interface TenantInvoiceSettingsPatch {
   readonly whtNoteTh?: string | null;
   readonly whtNoteEn?: string | null;
   /**
+   * 065 renewal-swecham-alignment (§5.4) — tenant-configurable statutory
+   * termination notice. `null` clears it. Pinned into the tenant snapshot at
+   * issue; rendered on the ใบแจ้งหนี้ (bill) ONLY (v12 + isBill).
+   */
+  readonly terminationNoticeTh?: string | null;
+  readonly terminationNoticeEn?: string | null;
+  /**
    * 088 US5 / T040 (§ C.2) — seller §86/4 Head-Office/Branch. The pairing
    * (head-office ⇒ NULL code; branch ⇒ 5-digit code) is validated in the
    * use-case superRefine + enforced by `tenant_invoice_settings_seller_branch_ck`.

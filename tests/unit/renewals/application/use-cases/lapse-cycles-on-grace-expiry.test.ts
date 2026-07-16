@@ -71,10 +71,26 @@ function fakeDeps(args: {
   emitInTxImpl?: () => Promise<void>;
   emitImpl?: () => Promise<void>;
   transitionImpl?: () => Promise<RenewalCycle>;
-  /** Task 13 — `InvoiceDueBridge` stub. Defaults to `false` (no credit-
-   * window protection) so every pre-existing test keeps its original
-   * grace_expired/payment_failed behaviour unless it opts in. */
+  /** 065 §5.2 — `InvoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate`
+   * stub. Defaults to `null` (member has NO unpaid membership invoice → the
+   * use-case falls back to the `expires_at + grace` backstop), so every
+   * pre-existing test keeps its original grace_expired/payment_failed
+   * behaviour — their cycles are seeded well past grace — unless it opts in
+   * by returning a `due_date` string. */
   invoiceDueImpl?: (input: {
+    tenantId: string;
+    memberId: string;
+    // 065 §5.2 review — the use-case now floors the lookup at
+    // `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS`; the mock accepts (and
+    // ignores) it so the input type matches the port.
+    sinceDueDate: string;
+  }) => Promise<string | null>;
+  /** 065 final-review V2/V5 — the 059 not-yet-due shield
+   * (`hasUnpaidNotYetDueMembershipInvoice`), consulted at the due+60
+   * terminate boundary and on the no-in-window-invoice branch. Defaults to
+   * `false` (no shielding invoice) so every pre-existing terminate-path
+   * test keeps its original behaviour. */
+  hasUnpaidImpl?: (input: {
     tenantId: string;
     memberId: string;
     todayBkk: string;
@@ -86,6 +102,7 @@ function fakeDeps(args: {
   countMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   invoiceDueMock: ReturnType<typeof vi.fn>;
+  hasUnpaidMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -117,9 +134,13 @@ function fakeDeps(args: {
   const f5Bridge: F5PaymentAttemptsBridge = {
     countFailedAttemptsForInvoice: countMock as never,
   };
-  const invoiceDueMock = vi.fn(args.invoiceDueImpl ?? (async () => false));
+  const invoiceDueMock = vi.fn(args.invoiceDueImpl ?? (async () => null));
+  const hasUnpaidMock = vi.fn(args.hasUnpaidImpl ?? (async () => false));
   const invoiceDueBridge: InvoiceDueBridge = {
-    hasUnpaidNotYetDueMembershipInvoice: invoiceDueMock as never,
+    // 065 final-review V2/V5 — the 059 shield, consulted at the terminate
+    // boundary + on the no-in-window-invoice branch (see hasUnpaidImpl doc).
+    hasUnpaidNotYetDueMembershipInvoice: hasUnpaidMock as never,
+    oldestUnpaidMembershipInvoiceDueDate: invoiceDueMock as never,
   };
 
   const findByTenantMock = vi.fn(async () =>
@@ -161,7 +182,15 @@ function fakeDeps(args: {
     f5PaymentAttemptsBridge: f5Bridge,
     invoiceDueBridge,
   };
-  return { deps, emitInTxMock, emitMock, countMock, transitionMock, invoiceDueMock };
+  return {
+    deps,
+    emitInTxMock,
+    emitMock,
+    countMock,
+    transitionMock,
+    invoiceDueMock,
+    hasUnpaidMock,
+  };
 }
 
 const baseInput = {
@@ -388,13 +417,19 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
   });
 
-  describe('Task 13 — InvoiceDueBridge credit-window guard (runs BEFORE the advisory-lock tx)', () => {
+  describe('065 §5.2 — InvoiceDueBridge due-date decision (runs BEFORE the advisory-lock tx)', () => {
+    // NOW = 2026-05-08 → bangkokLocalDate(NOW) = '2026-05-08'. A due date
+    // AT/AFTER today is not-yet-due (defer); a due date > 60 days in the
+    // past falls through to terminate.
+    const NOT_YET_DUE_DATE = '2026-06-01'; // >= todayBkk → defer
+    const PAST_DUE_PLUS_60 = '2026-01-01'; // today > due+60 → terminate
+
     it('unpaid not-yet-due membership invoice → defers lapse (deferred_invoice_not_due), no DB transition, audit via emit() not emitInTx()', async () => {
       const cycle = expiredCycle({});
       const { deps, transitionMock, emitInTxMock, emitMock, invoiceDueMock } =
         fakeDeps({
           cycles: [cycle],
-          invoiceDueImpl: async () => true,
+          invoiceDueImpl: async () => NOT_YET_DUE_DATE,
         });
       const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
       expect(r.ok).toBe(true);
@@ -428,21 +463,87 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       );
     });
 
-    it('no unpaid not-yet-due invoice → guard consulted, returns false, cycle lapses as before', async () => {
+    it('no membership invoice + expires_at past grace → backstop terminates (grace_expired), guard consulted once', async () => {
+      // daysPastGrace default 1 → expires_at = NOW - 15d; grace = 14 →
+      // backstop cutoff = NOW - 14d; expires < cutoff → fall through to
+      // terminate.
       const cycle = expiredCycle({});
       const { deps, invoiceDueMock, transitionMock } = fakeDeps({
         cycles: [cycle],
-        invoiceDueImpl: async () => false,
+        invoiceDueImpl: async () => null,
       });
       const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
       expect(r.ok).toBe(true);
       if (r.ok) {
         expect(r.value.graceExpired).toBe(1);
         expect(r.value.deferredInvoiceNotDue).toBe(0);
+        expect(r.value.deferredNoInvoiceBackstop).toBe(0);
         expect(r.value.deferredGuardErrors).toBe(0);
       }
       expect(invoiceDueMock).toHaveBeenCalledOnce();
       expect(transitionMock).toHaveBeenCalledOnce();
+    });
+
+    it('past due but within due+60 window → deferred_within_termination_window (no transition, no audit)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, emitMock, emitInTxMock } = fakeDeps({
+        cycles: [cycle],
+        // Due 2026-05-01 (before today 2026-05-08) but due+60 = 2026-06-30
+        // is in the future → stay suspended, re-check tomorrow.
+        invoiceDueImpl: async () => '2026-05-01',
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredWithinTerminationWindow).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.deferredInvoiceNotDue).toBe(0);
+        expect(r.value.errors).toBe(0);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+      // No forensic audit on this benign "keep suspended" path (only the
+      // not-yet-due branch emits).
+      expect(emitMock).not.toHaveBeenCalled();
+      expect(emitInTxMock).not.toHaveBeenCalled();
+    });
+
+    it('today > due+60 → falls through to terminate (grace_expired when no F5 failures)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock } = fakeDeps({
+        cycles: [cycle],
+        // Due 2026-01-01 → due+60 = 2026-03-02, well before today 2026-05-08.
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.graceExpired).toBe(1);
+      expect(transitionMock).toHaveBeenCalledOnce();
+      expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+        closedReason: 'grace_expired',
+      });
+    });
+
+    it('no membership invoice + expires_at still inside grace → deferred_no_invoice_backstop (no transition)', async () => {
+      // expires_at only 1 day past expiry — still inside the 14-day grace
+      // backstop (cutoff = NOW - 14d; expires = NOW - 1d ≥ cutoff → defer).
+      const cycle = buildCycleShared({
+        cycleId: '00000000-0000-0000-0000-00000000c009' as never,
+        status: 'awaiting_payment',
+        expiresAt: new Date(NOW.getTime() - 1 * 86_400_000).toISOString(),
+        linkedInvoiceId: null,
+      });
+      const { deps, transitionMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => null,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredNoInvoiceBackstop).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.errors).toBe(0);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
     });
 
     it('guard throws → fails SAFE (member NOT lapsed), outcome deferred_guard_error — NOT folded into errors, observable via metric + logger.error', async () => {
@@ -480,6 +581,198 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       } finally {
         metricSpy.mockRestore();
         loggerSpy.mockRestore();
+      }
+    });
+
+    // ── 065 final-review V2/V5 — the full 059 not-yet-due shield ─────────
+
+    it('V2 shield: oldest invoice 60+ days past due BUT a not-yet-due invoice also exists → defers (deferred_invoice_not_due), no termination', async () => {
+      // The stale/superseded-invoice scenario: admin reissued a corrected
+      // membership invoice (due in the future) without voiding the original
+      // (60+ days past due). The 059 guard — "ANY not-yet-due unpaid
+      // membership invoice protects the member" — must win over the stale
+      // anchor's due+60 clock.
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, emitMock, hasUnpaidMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+        hasUnpaidImpl: async () => true,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredInvoiceNotDue).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.paymentFailed).toBe(0);
+        expect(r.value.errors).toBe(0);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+      expect(emitMock).toHaveBeenCalledOnce();
+      expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+        type: 'renewal_lapse_deferred_invoice_not_due',
+      });
+      // Shield consulted with member scope + today's Bangkok date.
+      expect(hasUnpaidMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: TENANT_ID,
+          memberId: cycle.memberId,
+          todayBkk: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      );
+    });
+
+    it('V2 shield economy: within the due+60 window the shield is NOT consulted (no extra bridge query on the common path)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, hasUnpaidMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => '2026-05-01', // past due, inside window
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.deferredWithinTerminationWindow).toBe(1);
+      expect(hasUnpaidMock).not.toHaveBeenCalled();
+    });
+
+    it('V5 shield: NO in-window invoice but a below-floor not-yet-due invoice exists (future-period_from) → deferred_invoice_not_due, not backstop', async () => {
+      // Future-dated registration → future period_from → the floored
+      // oldest-due lookup misses a legitimately-issued, still-not-yet-due
+      // invoice. The shield (no floor; its own predicate is
+      // due_date >= today) must route the cycle to the proper
+      // deferred_invoice_not_due bucket + audit, not the silent backstop.
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, emitMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => null,
+        hasUnpaidImpl: async () => true,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredInvoiceNotDue).toBe(1);
+        expect(r.value.deferredNoInvoiceBackstop).toBe(0);
+        expect(r.value.graceExpired).toBe(0);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+      expect(emitMock).toHaveBeenCalledOnce();
+    });
+
+    it('V2 shield throws at the terminate boundary → fails SAFE as deferred_guard_error (member NOT lapsed)', async () => {
+      const metricSpy = vi.spyOn(
+        renewalsMetrics.lapseInvoiceDueGuardErrors,
+        'add',
+      );
+      const loggerSpy = vi
+        .spyOn(logger, 'error')
+        .mockImplementation(() => logger);
+      try {
+        const cycle = expiredCycle({});
+        const { deps, transitionMock } = fakeDeps({
+          cycles: [cycle],
+          invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+          hasUnpaidImpl: async () => {
+            throw new Error('bridge connection lost');
+          },
+        });
+        const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+          expect(r.value.deferredGuardErrors).toBe(1);
+          expect(r.value.graceExpired).toBe(0);
+          expect(r.value.errors).toBe(0);
+        }
+        expect(transitionMock).not.toHaveBeenCalled();
+        expect(metricSpy).toHaveBeenCalledWith(1, { tenant_id: TENANT_ID });
+      } finally {
+        metricSpy.mockRestore();
+        loggerSpy.mockRestore();
+      }
+    });
+
+    // ── 065 final-review V9 — renewal_lapsed forensic anchor fields ──────
+
+    it('V9 payload: due+60 termination records due_date + termination_basis=due_plus_60', async () => {
+      const cycle = expiredCycle({});
+      const { deps, emitInTxMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      expect(emitInTxMock).toHaveBeenCalledOnce();
+      expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+        type: 'renewal_lapsed',
+        payload: expect.objectContaining({
+          due_date: PAST_DUE_PLUS_60,
+          termination_basis: 'due_plus_60',
+        }),
+      });
+    });
+
+    it('V9 payload: no-invoice backstop termination records due_date=null + termination_basis=no_invoice_backstop', async () => {
+      const cycle = expiredCycle({});
+      const { deps, emitInTxMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => null,
+      });
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      expect(emitInTxMock).toHaveBeenCalledOnce();
+      expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+        type: 'renewal_lapsed',
+        payload: expect.objectContaining({
+          due_date: null,
+          termination_basis: 'no_invoice_backstop',
+        }),
+      });
+    });
+
+    // ── 065 final-review V10 — deferred branches are metric-visible ──────
+
+    it('V10 metric: each deferred branch increments renewals_lapse_deferred_total with its reason', async () => {
+      const metricSpy = vi.spyOn(renewalsMetrics.lapseDeferred, 'add');
+      try {
+        // within_termination_window
+        const c1 = expiredCycle({ cycleSuffix: 'd001' });
+        const r1 = await lapseCyclesOnGraceExpiry(
+          fakeDeps({ cycles: [c1], invoiceDueImpl: async () => '2026-05-01' })
+            .deps,
+          baseInput,
+        );
+        expect(r1.ok).toBe(true);
+        expect(metricSpy).toHaveBeenCalledWith(1, {
+          tenant_id: TENANT_ID,
+          reason: 'within_termination_window',
+        });
+        // no_invoice_backstop (expires 1d ago, inside 14d grace)
+        const c2 = buildCycleShared({
+          cycleId: '00000000-0000-0000-0000-00000000d002' as never,
+          status: 'awaiting_payment',
+          expiresAt: new Date(NOW.getTime() - 1 * 86_400_000).toISOString(),
+          linkedInvoiceId: null,
+        });
+        const r2 = await lapseCyclesOnGraceExpiry(
+          fakeDeps({ cycles: [c2], invoiceDueImpl: async () => null }).deps,
+          baseInput,
+        );
+        expect(r2.ok).toBe(true);
+        expect(metricSpy).toHaveBeenCalledWith(1, {
+          tenant_id: TENANT_ID,
+          reason: 'no_invoice_backstop',
+        });
+        // invoice_not_due
+        const c3 = expiredCycle({ cycleSuffix: 'd003' });
+        const r3 = await lapseCyclesOnGraceExpiry(
+          fakeDeps({ cycles: [c3], invoiceDueImpl: async () => NOT_YET_DUE_DATE })
+            .deps,
+          baseInput,
+        );
+        expect(r3.ok).toBe(true);
+        expect(metricSpy).toHaveBeenCalledWith(1, {
+          tenant_id: TENANT_ID,
+          reason: 'invoice_not_due',
+        });
+      } finally {
+        metricSpy.mockRestore();
       }
     });
   });

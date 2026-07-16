@@ -16,6 +16,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { fillRequiredMembershipAndAddress } from './helpers/member-form';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -52,9 +53,9 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
     // (not a fillable text <input>); no explicit selection is needed here
     // since the form already defaults it to 'TH' (schema default in
     // member-form.tsx), matching what this line used to type by hand.
-    // Plan select trigger has id="plan_id"; pick the first option.
-    await page.locator('#plan_id').click();
-    await page.getByRole('option').first().click();
+    // Required plan + billing_cycle picks and the 088 §86/4 TH address —
+    // shared helper so the next required field is added in ONE place.
+    await fillRequiredMembershipAndAddress(page);
     await fillField(page.locator('#first_name'), 'Auto');
     await fillField(page.locator('#last_name'), 'Test');
     await fillField(

@@ -67,6 +67,9 @@ const VALID_INITIAL_VALUES: Partial<MemberFormValues> = {
   city: 'Stockholm',
   plan_id: 'premium',
   plan_year: 2026,
+  // 065 §5.1 — billing_cycle is a required pick; seed it so submit is gated
+  // only by what each test actually exercises (the secondary-contact fieldset).
+  billing_cycle: 'rolling',
   primary_contact: {
     first_name: 'Anna',
     last_name: 'Andersson',

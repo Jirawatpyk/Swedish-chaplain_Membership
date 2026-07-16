@@ -145,6 +145,43 @@ describe('create-member integration (T041, US1)', () => {
     expect(eventTypes).toContain('contact_created');
   });
 
+  // 065 §5.1 — the admin's billing-cycle choice must persist verbatim.
+  it('persists an explicit billing_cycle choice (calendar)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const input = { ...goodInput(planId), billing_cycle: 'calendar' as const };
+    const result = await createMember(
+      input,
+      { actorUserId: user.userId, requestId: `rq-bc-${Date.now()}` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(rows[0]!.billingCycle).toBe('calendar');
+  });
+
+  // 065 §5.1 — a direct API caller that omits billing_cycle takes the DB
+  // DEFAULT ('rolling') — EXACT parity with is_vat_registered's lenient server
+  // default. (The admin FORM makes it a required pick client-side.)
+  it('defaults billing_cycle to rolling when omitted (server-lenient / DB default)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const result = await createMember(
+      goodInput(planId),
+      { actorUserId: user.userId, requestId: `rq-bc-def-${Date.now()}` },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(members).where(eq(members.memberId, result.value.memberId)),
+    );
+    expect(rows[0]!.billingCycle).toBe('rolling');
+  });
+
   it('rejects creating a member onto a SOFT-DELETED plan → plan_not_found (code-review #9-#14 follow-up)', async () => {
     const deps = buildMembersDeps(tenant.ctx);
     const deletedPlanId = `test-deleted-${randomUUID().slice(0, 8)}`;

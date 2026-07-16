@@ -45,6 +45,11 @@ describe('deriveMembershipAccess', () => {
     ['completed, PAST expiry',        { status: 'completed', expiresAt: PAST, closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1' }, 'full', 'in_good_standing'],
     ['completed, future expiry',      { status: 'completed', expiresAt: FUTURE, closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1' }, 'full', 'in_good_standing'],
     ['lapsed, past expiry',           { status: 'lapsed', expiresAt: PAST, closedAt: PAST, closedReason: 'lapsed' }, 'terminated', 'grace_expired'],
+    // 065 §5.2⇄§5.3 — a `lapsed` cycle is terminated REGARDLESS of expiry: a
+    // born-`awaiting_payment` new member lapsed at due+60 carries a far-future
+    // `expiresAt = period_to` but has never paid, so they must lose access
+    // (the old `expiresAt < now` gate would have wrongly resolved this `full`).
+    ['lapsed, FUTURE expiry (065 born-awaiting)', { status: 'lapsed', expiresAt: FUTURE, closedAt: PAST, closedReason: 'lapsed' }, 'terminated', 'grace_expired'],
     ['cancelled, PAST expiry',        { status: 'cancelled', expiresAt: PAST, closedAt: PAST, closedReason: 'cancelled' }, 'terminated', 'cancelled'],
     ['cancelled, FUTURE expiry',      { status: 'cancelled', expiresAt: FUTURE, closedAt: PAST, closedReason: 'cancelled' }, 'full', 'in_good_standing'],
   ] as const)('%s', (_label, over, access, reason) => {

@@ -158,6 +158,9 @@ const styles = StyleSheet.create({
   // renders only that line. `maxWidth:'100%'` for the Thai wrap safeguard.
   whtNoteBlock: { marginTop: 16, width: '100%' },
   whtNoteLine: { fontSize: 8, color: '#555', maxWidth: '100%', marginBottom: 2 },
+  // 065 §5.4 — statutory termination notice on the bill (mirrors whtNote*).
+  terminationNoticeBlock: { marginTop: 12, width: '100%' },
+  terminationNoticeLine: { fontSize: 8, color: '#555', maxWidth: '100%', marginBottom: 2 },
   // 088 US8 (T058 / FR-025) — §80/1(5) zero-rate note block on the §86/4 tax
   // receipt. Framed with a left accent border (matches the bank/credit-note
   // reference-block pattern) so it reads as the tax-basis callout. Muted body.
@@ -415,6 +418,26 @@ export const STATUS_STAMP_FAINT_MIN_VERSION = 10;
  * Registry log: template-registry.ts v11.
  */
 const TAX_ID_REGISTRANT_GATE_MIN_VERSION = 11;
+
+/**
+ * 065 renewal-swecham-alignment (§5.4) — the tenant statutory termination notice
+ * (`termination_notice_th/_en`, pinned in the snapshot) renders on the MEMBERSHIP
+ * ใบแจ้งหนี้ (bill) ONLY, gated `isBill && invoiceSubject === 'membership'` —
+ * NEVER on a §86/4 tax invoice/receipt, §105 receipt, §86/10 credit note, or an
+ * F6 EVENT-fee bill. Both conjuncts are load-bearing (065 final-review V1):
+ *   - `isBill` alone is NOT enough — a VAT-registrant event buyer's bill also
+ *     renders `isBill` (issue-invoice.ts kind='invoice' + billMode), and a
+ *     membership-termination claim on an event-ticket bill (possibly to a
+ *     non-member company) would be a false statutory statement;
+ *   - `invoiceSubject === 'membership'` alone (the WHT note's gate, :858) is
+ *     NOT enough either — it ALSO fires on the paid §86/4 receipt, which must
+ *     never carry this notice.
+ * v>=12 so a pinned pre-v12 document re-renders byte-stable (SC-003) — and
+ * `invoiceSubject` (optional on legacy inputs) is always threaded by the v12+
+ * issue path, so the subject conjunct can never mis-drop the notice on a real
+ * membership bill. Registry log: template-registry.ts v12.
+ */
+const TERMINATION_NOTICE_MIN_VERSION = 12;
 
 /**
  * 088 US8 — the §80/1(5) zero-rate note lines (bilingual, hardcoded literal per
@@ -1024,6 +1047,34 @@ function renderPageBody({
           </View>
         </>
       )}
+
+      {/* 065 §5.4 — statutory termination notice on the MEMBERSHIP ใบแจ้งหนี้
+          (bill) ONLY: `isBill` keeps it off the §86/4 receipt / §105 receipt /
+          §86/10 credit note; `invoiceSubject === 'membership'` (final-review
+          V1) keeps it off an F6 EVENT-fee bill, where a membership-termination
+          claim would be a false statutory statement. Gated v>=12 so pinned
+          pre-v12 documents re-render byte-stable (SC-003). Each language line
+          guarded independently (a tenant may configure only one). The text
+          rides the PINNED snapshot (termination_notice_th/_en), never a
+          template literal. */}
+      {isBill &&
+        input.invoiceSubject === 'membership' &&
+        input.templateVersion >= TERMINATION_NOTICE_MIN_VERSION &&
+        (input.tenant.termination_notice_th != null ||
+          input.tenant.termination_notice_en != null) && (
+          <View style={styles.terminationNoticeBlock}>
+            {input.tenant.termination_notice_th != null && (
+              <Text style={styles.terminationNoticeLine}>
+                {shapeThai(input.tenant.termination_notice_th)}
+              </Text>
+            )}
+            {input.tenant.termination_notice_en != null && (
+              <Text style={styles.terminationNoticeLine}>
+                {input.tenant.termination_notice_en}
+              </Text>
+            )}
+          </View>
+        )}
 
       {/* 088 T016 — the ใบแจ้งหนี้ (bill) carries NO Revenue-Code §-citation
           footer (its legal identity rests on the non-tax title alone).

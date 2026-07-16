@@ -75,6 +75,17 @@ export function f8OnCreateMemberCallbacks(
             actorUserId: null,
             actorRole: 'system',
             correlationId: evt.correlationId,
+            // 065 §5.3 — a new member has NO benefits until the FIRST invoice is
+            // paid. Born 'awaiting_payment' → deriveMembershipAccess = suspended
+            // (renewal-cycle.ts). First payment classifies 'first_payment'
+            // (settledCycleCount===0 && anchoredAt===null — start status is not
+            // part of that predicate) → reanchorFirstPaymentCycleInTx sets
+            // 'upcoming' + anchored → full. This gate is applied ONLY here (the
+            // new-member creation site): the import cold-start
+            // (scripts/import-members.ts) and the steady-state renewal
+            // (create-next-cycle-on-paid.ts) both OMIT startStatus, so imported
+            // members + renewal cycles stay 'upcoming' = full.
+            startStatus: 'awaiting_payment',
             // 068 R2-1 — advance a BACKDATED registration_date to the current
             // membership period (the admin "New member" form is a free
             // <input type=date> with no not-in-past constraint, so an admin

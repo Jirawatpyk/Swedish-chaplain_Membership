@@ -172,6 +172,12 @@ describe('cron lapse-cycles-on-grace-expiry-coordinator route (Round-5 M1)', () 
         grace_expired: 3,
         payment_failed: 2,
         transition_race_skipped: 0,
+        // 065 §5.2 (final-review V8) — deferred counters forwarded by the
+        // per-tenant route; 0 here keeps the 3+2 sum invariant intact.
+        deferred_invoice_not_due: 0,
+        deferred_within_termination_window: 0,
+        deferred_no_invoice_backstop: 0,
+        deferred_guard_errors: 0,
         errors: 0,
         duration_ms: 800,
       }),

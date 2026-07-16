@@ -11,6 +11,13 @@
  * functions that fix it, so they get direct coverage here.
  */
 import type { MemberFormValues } from './member-form';
+// 065 §5.1 (final-review) — the canonical cadence union, minted alongside
+// BILLING_CYCLES "so the schema enum, form, and both zod boundaries agree";
+// re-declaring the literals here would let a future third cadence silently
+// diverge at this layer (the exact silent-no-PATCH class hasFieldDiff's
+// comments document). Type-only import — pure TS, zero framework deps
+// (same review-blessed posture as member-form/schema.ts's Domain imports).
+import type { BillingCycle } from '@/modules/members/domain/member';
 
 export type MemberInitialValues = {
   readonly memberId: string;
@@ -47,6 +54,10 @@ export type MemberInitialValues = {
   // 059 / PR-A — the RECORDED §86/4 VAT-registrant flag that gates the branch
   // pair above. Same optional posture, same default-normalising diff.
   readonly isVatRegistered?: boolean;
+  // 065 §5.1 — per-member billing cadence. Optional (like the pair above) so
+  // pre-existing fixtures stay non-breaking; the edit page always supplies it
+  // (`billingCycle ?? 'rolling'`). The diff normalises both sides to 'rolling'.
+  readonly billingCycle?: BillingCycle;
 };
 
 export type EditablePrimaryContact = {
@@ -103,6 +114,10 @@ export function buildFieldPayload(
     // 059 / PR-A — the RECORDED §86/4 discriminator. Sent on every field PATCH
     // so an admin ticking ONLY this box still persists (see hasFieldDiff).
     is_vat_registered: values.is_vat_registered ?? false,
+    // 065 §5.1 — per-member billing cadence. Sent on every field PATCH (the
+    // client zod requires a pick, so `values.billing_cycle` is always set;
+    // `?? 'rolling'` mirrors is_vat_registered's `?? false` default-normalise).
+    billing_cycle: values.billing_cycle ?? 'rolling',
   };
 }
 
@@ -141,7 +156,11 @@ export function hasFieldDiff(
       : values.branch_code?.trim() || null) !== (member.branchCode ?? null) ||
     // 059 / PR-A — without this leg, ticking ONLY the VAT box produces no diff,
     // so no PATCH fires and the flag silently fails to save.
-    (values.is_vat_registered ?? false) !== (member.isVatRegistered ?? false)
+    (values.is_vat_registered ?? false) !== (member.isVatRegistered ?? false) ||
+    // 065 §5.1 — without this leg, changing ONLY the billing cycle produces no
+    // diff, so no PATCH fires and the change silently fails to save. Both sides
+    // normalise to 'rolling' so a fixture omitting either does not false-trigger.
+    (values.billing_cycle ?? 'rolling') !== (member.billingCycle ?? 'rolling')
   );
 }
 
