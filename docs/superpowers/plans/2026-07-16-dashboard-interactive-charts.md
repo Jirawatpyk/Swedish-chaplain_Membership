@@ -327,3 +327,41 @@ export function groupActiveMembersByTier(
 Plan complete. Two execution options:
 1. **Subagent-Driven (recommended)** — fresh subagent per task + two-stage review.
 2. **Inline Execution** — batch with checkpoints.
+
+---
+
+## Task 15: KPI card count-up animation (added mid-execution, user request)
+
+**Files:**
+- Create: `src/components/dashboard/count-up.tsx` (`'use client'`)
+- Modify: the dashboard headline KPI cards (find where `MembershipCounts` — total/active/atRisk/overdue — and the YTD-revenue number render; likely a `KpiCard`/stat component used by `src/app/(staff)/admin/(home)/page.tsx`). Wrap each headline NUMBER in `<CountUp>`.
+- Test: `tests/unit/dashboard/count-up.test.tsx`
+
+**Interfaces — Produces:**
+```ts
+// value = the numeric target; format = formats a number to the display string
+// (the SAME formatter the card already uses — money THB / thousands-separator);
+// durationMs default ~800.
+function CountUp(props: {
+  readonly value: number;
+  readonly format: (n: number) => string;
+  readonly durationMs?: number;
+  readonly className?: string;
+}): JSX.Element;
+```
+
+**Behavior (constraints — all required):**
+- **SSR-safe / no hydration mismatch:** the server render AND the first client render output `format(value)` (the final number) — so no-JS, SR, SEO, and CLS all see the final value. The animation starts only in a client effect after hydration.
+- **Count-up:** on mount (client), if motion is allowed, animate a displayed number from `0` → `value` over `durationMs` via `requestAnimationFrame` (ease-out), reformatting each frame with `format`. Avoid a visible final→0 flash (set the from-0 start before paint, e.g. `useLayoutEffect`/first rAF, guarded to run client-only).
+- **Reduced motion (WCAG):** if `matchMedia('(prefers-reduced-motion: reduce)').matches`, DO NOT animate — render `format(value)` immediately. Default to no-animation on the server / before the media query is known (SSR-safe).
+- **A11y:** no `aria-live` on the animating element (a per-frame live region would spam screen readers). The element's accessible text is the number; SR reads the current DOM value (final at rest). Do not add role/aria that announces intermediate frames.
+- **Zero-dep:** hand-rolled rAF; no new npm dependency (Constitution X).
+- **Re-animate on value change** is NOT required (dashboard reads a cached snapshot; a static mount animation is enough) — keep it simple (animate once on mount).
+
+**TDD:**
+- [ ] Write failing tests (jsdom, @testing-library/react): (1) renders `format(value)` synchronously on first render (SSR-parity — assert the final string is in the DOM immediately, before timers); (2) with `prefers-reduced-motion: reduce` mocked (`matchMedia`), the value is the final formatted string and no animation frames run; (3) no `aria-live` attribute on the output. (Animating intermediate frames is timing/rAF — you may fake timers/rAF to assert it eventually reaches `format(value)`, but the load-bearing assertions are SSR-parity + reduced-motion + no-aria-live.)
+- [ ] Run → FAIL, implement, run → PASS.
+- [ ] Wire `<CountUp>` into each headline KPI number (money card passes its THB formatter; count cards pass the integer/thousands formatter). Verify the cards still render the final numbers server-side (`pnpm typecheck` + the KPI card test if one exists).
+- [ ] Commit `feat(dashboard): count-up animation on KPI cards (reduced-motion + SSR-safe)`.
+
+**Note:** this is dashboard UX polish, independent of the chart data pipeline; it touches no snapshot/insights code.
