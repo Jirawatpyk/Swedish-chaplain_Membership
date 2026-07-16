@@ -44,16 +44,26 @@
  * text IS the number; SR users read it at rest (the final value), same as
  * any other static text node.
  *
- * Re-animating when `value`/`locale`/`variant` changes is intentionally NOT
- * implemented — the dashboard renders once per page load from a cached
- * snapshot, so a single mount-time animation is enough (see task brief).
- * `hasStartedRef` guards against a second run if `allowMotion` itself
- * changes after mount (e.g. the OS-level `prefers-reduced-motion` toggles
- * mid-animation).
+ * No run-once entry guard (e.g. a `hasStartedRef`) on top of the mount
+ * effect: an earlier version used one to stop a second animation pass if
+ * `allowMotion` flipped after mount, but that guard is fatal under
+ * `reactStrictMode: true` (`next.config.ts`; also how Playwright's e2e dev
+ * server runs) — StrictMode intentionally mounts, cleans up, and re-mounts
+ * every effect once in development. The cleanup's `cancelAnimationFrame`
+ * cancels the first scheduled frame before it ever paints, and the guard
+ * then blocked the second (persisting) effect run from scheduling a
+ * replacement — so the animation never visibly played in `pnpm dev` or
+ * Playwright (production is unaffected; StrictMode double-invoke is
+ * dev-only). The effect below has no such guard: it depends on
+ * `[value, allowMotion, durationMs]` and simply (re)schedules an rAF loop
+ * every time it runs. StrictMode's mount→cleanup→remount is safe because
+ * the cleanup (`cancelAnimationFrame`) is symmetric with the effect
+ * (`requestAnimationFrame`) — the cancelled first frame never fires, and the
+ * second (real) mount schedules its own frame and animates normally.
  */
 'use client';
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   getAllowMotion,
   getServerAllowMotion,
@@ -109,14 +119,13 @@ export function CountUp({
   // see the docblock above for why this must be a lazy initializer, not a
   // plain `useState(0)`.
   const [display, setDisplay] = useState(() => formatter.format(value));
-  const hasStartedRef = useRef(false);
 
   useEffect(() => {
-    // Animate once on mount only — see docblock ("re-animating ... NOT
-    // implemented"). Reduced motion: leave `display` at the final value,
-    // schedule nothing.
-    if (hasStartedRef.current || !allowMotion) return;
-    hasStartedRef.current = true;
+    // Reduced motion: leave `display` at the final value, schedule nothing.
+    if (!allowMotion) {
+      setDisplay(formatter.format(value));
+      return;
+    }
 
     let rafId: number;
     let startTime: number | null = null;
@@ -125,18 +134,26 @@ export function CountUp({
       if (startTime === null) startTime = timestamp;
       const elapsed = timestamp - startTime;
       const progress = Math.min(1, durationMs > 0 ? elapsed / durationMs : 1);
-      setDisplay(formatter.format(Math.round(value * easeOutCubic(progress))));
-      if (progress < 1) {
-        rafId = requestAnimationFrame(step);
+      if (progress >= 1) {
+        // Land exactly on `value` — avoids a rounding/float-epsilon near-miss
+        // on the final frame instead of trusting `value * easeOutCubic(1)`.
+        setDisplay(formatter.format(value));
+        return;
       }
+      setDisplay(formatter.format(Math.round(value * easeOutCubic(progress))));
+      rafId = requestAnimationFrame(step);
     };
     rafId = requestAnimationFrame(step);
 
     return () => cancelAnimationFrame(rafId);
-    // Mount-once animation (see docblock's "Re-animating ... NOT
-    // implemented") — value/formatter/durationMs are intentionally omitted.
+    // No entry guard here (see docblock, "No run-once entry guard") — this
+    // effect re-runs and reschedules whenever `value`, `allowMotion`, or
+    // `durationMs` changes, which is also what makes it StrictMode-safe.
+    // `formatter` is intentionally omitted: it's derived from `locale`/
+    // `variant` via `useMemo` and re-deriving it inside the effect buys
+    // nothing extra here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allowMotion]);
+  }, [value, allowMotion, durationMs]);
 
   return <span className={className}>{display}</span>;
 }

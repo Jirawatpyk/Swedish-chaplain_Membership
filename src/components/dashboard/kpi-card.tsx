@@ -5,9 +5,9 @@
  *
  * `value` widened from `string` to `ReactNode` (Task 15,
  * 067-dashboard-interactive-charts) so a caller can pass
- * `<CountUp value={n} format={fmt} />` for the rolling-number animation
- * without this component needing to know anything about it — plain string
- * callers keep working unchanged.
+ * `<CountUp value={n} locale={locale} variant="integer" />` for the
+ * rolling-number animation without this component needing to know anything
+ * about it — plain string callers keep working unchanged.
  */
 import type { ReactNode } from 'react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

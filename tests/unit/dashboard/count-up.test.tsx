@@ -31,10 +31,49 @@
  * `TypeError: … is not a function`) — same as every other 067 chart test
  * (see `tests/unit/components/dashboard/mini-series-chart.test.tsx`'s
  * docblock) — every test here stubs it.
+ *
+ * A 6th test (regression) renders `<CountUp>` inside `<StrictMode>` and
+ * drives a REAL (id-tracking) fake `requestAnimationFrame`/
+ * `cancelAnimationFrame` pair — not the trivial no-op `cancelAnimationFrame`
+ * stub the earlier "drives frames" test uses — because the bug this guards
+ * against only reproduces when a cancelled frame is actually removed from
+ * the pending queue, exactly like a real browser. See that test's own
+ * comment for why "shows the final value" alone would NOT catch the
+ * regression (the SSR-safe lazy initializer already shows the final value
+ * before any effect runs, bug or not).
  */
+import { StrictMode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { CountUp } from '@/components/dashboard/count-up';
+
+/**
+ * A minimal but REAL rAF/cAF pair: `cancelAnimationFrame` actually removes
+ * the pending callback (unlike a no-op stub), so a cancelled frame never
+ * fires — matching real browser behavior closely enough to reproduce the
+ * StrictMode mount→cleanup→remount bug this test guards against.
+ */
+function createFakeRaf() {
+  let nextId = 0;
+  const pending = new Map<number, FrameRequestCallback>();
+  const raf = vi.fn((cb: FrameRequestCallback) => {
+    nextId += 1;
+    pending.set(nextId, cb);
+    return nextId;
+  });
+  const caf = vi.fn((id: number) => {
+    pending.delete(id);
+  });
+  /** Invoke every currently-pending callback once, then clear them — frames
+   * scheduled DURING this flush (i.e. the loop rescheduling itself) land in
+   * `pending` for the next flush, matching real rAF semantics. */
+  function flush(time: number) {
+    const callbacks = [...pending.values()];
+    pending.clear();
+    callbacks.forEach((cb) => cb(time));
+  }
+  return { raf, caf, pending, flush };
+}
 
 /** jsdom has no `matchMedia` at all — stub it so
  * `useSyncExternalStore(subscribeMotionPreference, getAllowMotion, …)` can
@@ -127,5 +166,52 @@ describe('CountUp', () => {
     }
 
     expect(screen.getByText(new Intl.NumberFormat('en').format(1000))).toBeInTheDocument();
+  });
+
+  it('plays the count-up animation on a persisting mount under React StrictMode (regression: a run-once entry guard is defeated by StrictMode double-invoke)', () => {
+    // Regression coverage for the bug fixed alongside this test: the mount
+    // effect used to guard itself with a `hasStartedRef` "run once" latch.
+    // Under StrictMode (`reactStrictMode: true` in next.config.ts — also how
+    // Playwright's e2e dev server runs), React mounts the effect, runs its
+    // cleanup, then mounts it again, all before the first paint. The
+    // cleanup's `cancelAnimationFrame` cancelled the first scheduled frame;
+    // the guard then blocked the SECOND (persisting) mount from scheduling a
+    // replacement, so NO animation frame ever survived and `display` stayed
+    // stuck at its initial value forever.
+    stubMatchMedia(false); // motion allowed
+    const { raf, caf, pending, flush } = createFakeRaf();
+    vi.stubGlobal('requestAnimationFrame', raf);
+    vi.stubGlobal('cancelAnimationFrame', caf);
+
+    render(
+      <StrictMode>
+        <CountUp value={500} locale="en" variant="integer" durationMs={100} />
+      </StrictMode>,
+    );
+
+    // The persisting (second) StrictMode mount must have left exactly one
+    // live frame queued — proves the cancelled first frame did NOT survive
+    // and a replacement WAS scheduled (the bug: this map is empty here).
+    expect(pending.size).toBeGreaterThan(0);
+
+    // Driving that surviving frame at t=0 must show 0 — proves the
+    // animation actually (re)started from 0. Asserting the final value
+    // alone would NOT catch the bug: the SSR-safe lazy initializer already
+    // renders the final formatted value before any effect runs, so a
+    // permanently-stuck display would still pass a "shows final value"
+    // assertion taken in isolation.
+    act(() => flush(0));
+    expect(screen.getByText('0')).toBeInTheDocument();
+
+    // Drive every subsequently-queued frame to completion.
+    let now = 0;
+    let iterations = 0;
+    while (pending.size > 0 && iterations < 50) {
+      now += 20;
+      act(() => flush(now));
+      iterations += 1;
+    }
+
+    expect(screen.getByText(new Intl.NumberFormat('en').format(500))).toBeInTheDocument();
   });
 });
