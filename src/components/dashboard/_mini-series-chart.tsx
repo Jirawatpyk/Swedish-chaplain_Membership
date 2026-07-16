@@ -1,23 +1,42 @@
 /**
- * F9 (FR-001a) — internal self-built SVG mini chart for the dashboard trend
- * cards. NO charting dependency (Constitution X). Pure presentational server
- * component with a STABLE display-ready prop contract — the SVG renderer is a
- * swappable internal (research R8); callers never depend on its markup.
+ * F9 (FR-001a) — dashboard trend-card sparkline. Migrated
+ * (067-dashboard-interactive-charts, Task 9 — Decision #2) from a hand-rolled
+ * SVG to Recharts — `variant="bar"` (revenue trend) renders a Recharts
+ * `<BarChart><Bar/></BarChart>`; `variant="line"` (member growth) renders a
+ * Recharts `<LineChart><Line/></LineChart>`. This preserves each caller's
+ * original chart TYPE 1:1 (the old `BarSvg` drew `<rect>` bars, `LineSvg` drew
+ * a `<polyline>`) — only the drawing engine changed, not the shape. Client
+ * component — Recharts renders via the DOM/ResizeObserver, so this can't stay
+ * a server component; callers still pass display-ready props (no data
+ * fetching here).
  *
  * Readability: a prominent `summary` stat (sized to match `KpiCard`) + a
- * per-chart `caption` (per-month vs cumulative) + first→last month range labels
- * give at-a-glance meaning even when the sparkline is sparse; a baseline axis +
- * per-month marks (slot ticks in the bar variant, dots in the line variant)
- * keep the 12-month frame legible. Each datum carries a native `<title>` for
- * pointer hover.
+ * per-chart `caption` (per-month vs cumulative) + first→last month range
+ * labels give at-a-glance meaning even when the sparkline is sparse; a
+ * dashed max-value reference line + baseline keep the 12-month frame
+ * legible. Hovering/focusing a point shows a tooltip (month + value) — a
+ * bonus, never the only way to read the data (see Accessibility below).
  *
- * Accessibility (WCAG 1.4.1 — no colour-only): the `<svg>` is decorative
- * (`aria-hidden`); data is conveyed by the visible summary + the visually-hidden
- * `<table>` (accessible equivalent, rendered when data is present; the
- * empty-state paragraph is the SR equivalent otherwise) + bar height / line
- * position — never colour. The optional delta chip pairs a ▲/▼ glyph + text
- * with colour so it is not colour-only.
+ * Accessibility (WCAG 1.1.1 / 1.3.1 / 1.4.1 — canvas is decorative, never
+ * colour-only): the Recharts canvas sits inside an `aria-hidden="true"`
+ * wrapper and sets `accessibilityLayer={false}` — the single a11y model
+ * shared by every 067 chart (see `chart-data-table.tsx`'s docblock). The
+ * accessible equivalent is the shared `<ChartDataTable>` (rendered when
+ * data is present; the empty-state paragraph is the SR equivalent
+ * otherwise) — the tooltip is never the sole way to read a value. The
+ * optional delta chip pairs a ▲/▼ glyph + text with colour so it is not
+ * colour-only.
+ *
+ * Reduced motion: `isAnimationActive` defaults to `false` on the server
+ * snapshot and the client's hydration-matching first render (SSR-safe — no
+ * hydration mismatch), then flips to `true` once the browser confirms
+ * `prefers-reduced-motion: no-preference` post-mount — same
+ * `useSyncExternalStore` idiom as `components/plans/plan-list-skeleton.tsx`.
  */
+'use client';
+
+import { useSyncExternalStore } from 'react';
+import { Bar, BarChart, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import {
   Card,
   CardContent,
@@ -25,16 +44,18 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
+import { ChartDataTable } from './chart-data-table';
 
 export interface MiniSeriesPoint {
   /** Stable key (e.g. 'YYYY-MM'). */
   readonly key: string;
   /** Localised axis/row label (e.g. 'Jun 2026'). */
   readonly label: string;
-  /** Numeric magnitude for the SVG geometry. */
+  /** Numeric magnitude for the chart geometry. */
   readonly value: number;
-  /** Display-ready value for the table cell + hover title (e.g. '฿1,200'). */
+  /** Display-ready value for the table cell + tooltip (e.g. '฿1,200'). */
   readonly valueLabel: string;
 }
 
@@ -55,136 +76,136 @@ export interface MiniSeriesDelta {
   readonly label: string;
 }
 
-const VIEW_W = 320;
-const VIEW_H = 110;
-const PAD = 6;
-const BASE_Y = VIEW_H - PAD; // baseline (x-axis)
-const TOP_Y = PAD;
-const PLOT_H = BASE_Y - TOP_Y;
-const MIN_BAR = 3; // floor so a small non-zero value is a crisp mark, not a blob
-
-function MaxGridline({ maxLabel }: { readonly maxLabel: string | null }) {
-  // Faint dashed top gridline = the Y-scale ceiling. The max-value label sits
-  // top-LEFT (not right): these trends peak at the most-recent (right-most)
-  // point, so a right-aligned label collided with the peak bar/dot — the left
-  // is empty for a growth series.
-  return (
-    <>
-      <line
-        x1={PAD}
-        y1={TOP_Y}
-        x2={VIEW_W - PAD}
-        y2={TOP_Y}
-        className="stroke-border"
-        strokeWidth={1}
-        strokeDasharray="3 3"
-      />
-      {maxLabel ? (
-        <text x={PAD} y={TOP_Y + 11} className="fill-muted-foreground" fontSize={10}>
-          {maxLabel}
-        </text>
-      ) : null}
-    </>
-  );
-}
-
-function BarSvg({
-  points,
-  max,
-  maxLabel,
-}: {
-  readonly points: readonly MiniSeriesPoint[];
-  readonly max: number;
-  readonly maxLabel: string | null;
-}) {
-  const innerW = VIEW_W - PAD * 2;
-  const slot = innerW / points.length;
-  const barW = Math.max(2, slot * 0.6);
-  return (
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="h-28 w-full" aria-hidden="true">
-      <MaxGridline maxLabel={maxLabel} />
-      <line x1={PAD} y1={BASE_Y} x2={VIEW_W - PAD} y2={BASE_Y} className="stroke-border" strokeWidth={1} />
-      {points.map((p, i) => {
-        const cx = PAD + i * slot + slot / 2;
-        const h = max > 0 && p.value > 0 ? Math.max((p.value / max) * PLOT_H, MIN_BAR) : 0;
-        return (
-          <g key={p.key}>
-            {/* faint per-month slot tick so all 12 months read as a frame */}
-            <line x1={cx} y1={BASE_Y} x2={cx} y2={BASE_Y + 2} className="stroke-border" strokeWidth={1} />
-            {h > 0 ? (
-              <rect
-                x={cx - barW / 2}
-                y={BASE_Y - h}
-                width={barW}
-                height={h}
-                rx={h < 4 ? 0 : 1}
-                className="fill-primary"
-              >
-                <title>{`${p.label}: ${p.valueLabel}`}</title>
-              </rect>
-            ) : (
-              // Zero / no-data month → faint baseline dot, distinct from the tick.
-              <circle cx={cx} cy={BASE_Y} r={1} className="fill-muted-foreground/40">
-                <title>{`${p.label}: ${p.valueLabel}`}</title>
-              </circle>
-            )}
-          </g>
-        );
-      })}
-    </svg>
-  );
-}
-
-function LineSvg({
-  points,
-  max,
-  maxLabel,
-}: {
-  readonly points: readonly MiniSeriesPoint[];
-  readonly max: number;
-  readonly maxLabel: string | null;
-}) {
-  const innerW = VIEW_W - PAD * 2;
-  const yOf = (v: number): number => BASE_Y - (max > 0 ? (v / max) * PLOT_H : 0);
-  if (points.length === 1) {
-    const only = points[0]!;
-    return (
-      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="h-28 w-full" aria-hidden="true">
-        <MaxGridline maxLabel={maxLabel} />
-        <line x1={PAD} y1={BASE_Y} x2={VIEW_W - PAD} y2={BASE_Y} className="stroke-border" strokeWidth={1} />
-        <circle cx={VIEW_W / 2} cy={yOf(only.value)} r={3} className="fill-primary">
-          <title>{`${only.label}: ${only.valueLabel}`}</title>
-        </circle>
-      </svg>
-    );
-  }
-  const step = innerW / (points.length - 1);
-  const coords = points.map((p, i) => ({ x: PAD + i * step, y: yOf(p.value), p }));
-  const linePath = coords.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
-  // Subtle area fill under the line → a flat-then-spike series reads as growth.
-  const areaPath =
-    `M ${coords[0]!.x.toFixed(1)},${BASE_Y} ` +
-    coords.map((c) => `L ${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ') +
-    ` L ${coords.at(-1)!.x.toFixed(1)},${BASE_Y} Z`;
-  return (
-    <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="h-28 w-full" aria-hidden="true">
-      <MaxGridline maxLabel={maxLabel} />
-      <line x1={PAD} y1={BASE_Y} x2={VIEW_W - PAD} y2={BASE_Y} className="stroke-border" strokeWidth={1} />
-      <path d={areaPath} className="fill-primary/15" />
-      <polyline points={linePath} fill="none" className="stroke-primary" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-      {/* A dot per month so flat (baseline-hugging) months read as "present, low"
-          — not an empty axis — with the latest point emphasised. */}
-      {coords.map((c, i) => (
-        <circle key={c.p.key} cx={c.x} cy={c.y} r={i === coords.length - 1 ? 3 : 1.5} className="fill-primary">
-          <title>{`${c.p.label}: ${c.p.valueLabel}`}</title>
-        </circle>
-      ))}
-    </svg>
-  );
-}
-
 /** Below this many months carrying a non-zero value the series is "sparse". */
 const SPARSE_THRESHOLD = 3;
+
+function subscribeMotionPreference(callback: () => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+  mq.addEventListener('change', callback);
+  return () => mq.removeEventListener('change', callback);
+}
+
+function getAllowMotion(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/** SSR-safe default: no animation until the browser confirms motion is OK,
+ * post-mount — avoids a hydration mismatch (design doc § Accessibility
+ * "Reduced-motion"). */
+function getServerAllowMotion(): boolean {
+  return false;
+}
+
+interface SeriesTooltipPayloadEntry {
+  readonly payload?: MiniSeriesPoint;
+}
+
+/** Custom tooltip content — reads the ORIGINAL `MiniSeriesPoint` off the
+ * hovered payload entry directly (its pre-formatted `label`/`valueLabel`),
+ * rather than fighting shadcn's config/nameKey-driven `ChartTooltipContent`,
+ * which is built for multi-series/legend charts, not this single-series
+ * sparkline. Never the sole way to read a value — see module docblock. */
+function SeriesTooltipContent({
+  active,
+  payload,
+}: {
+  readonly active?: boolean;
+  readonly payload?: readonly SeriesTooltipPayloadEntry[];
+}) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  return (
+    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+      <span className="font-medium text-foreground">{point.label}</span>
+      <span className="text-muted-foreground">{point.valueLabel}</span>
+    </div>
+  );
+}
+
+/** Renders the max-gridline's label as a plain SVG `<text>` (not Recharts'
+ * canvas-measuring `Text` component) — left-aligned at the reference line's
+ * position so it never collides with the peak point (these trends peak at
+ * the most-recent, right-most point), matching the original hand-rolled
+ * `MaxGridline` annotation 1:1. */
+function renderMaxReferenceLabel(maxLabel: string) {
+  return function MaxReferenceLabel({ viewBox }: { viewBox?: { x: number; y: number } }) {
+    if (!viewBox) return null;
+    return (
+      <text x={viewBox.x} y={viewBox.y + 11} className="fill-muted-foreground" fontSize={10}>
+        {maxLabel}
+      </text>
+    );
+  };
+}
+
+const CHART_MARGIN = { top: 12, right: 8, bottom: 4, left: 8 };
+
+function SeriesCanvas({
+  points,
+  max,
+  maxLabel,
+  variant,
+  allowMotion,
+}: {
+  readonly points: readonly MiniSeriesPoint[];
+  readonly max: number;
+  readonly maxLabel: string | null;
+  readonly variant: 'bar' | 'line';
+  readonly allowMotion: boolean;
+}) {
+  const chartConfig = {
+    value: { color: 'var(--primary)' },
+  } satisfies ChartConfig;
+  const maxReferenceLineProps = maxLabel ? { label: renderMaxReferenceLabel(maxLabel) } : {};
+
+  return (
+    <div aria-hidden="true" data-chart-variant={variant}>
+      <ChartContainer config={chartConfig} className="aspect-auto h-28 w-full">
+        {variant === 'bar' ? (
+          // Revenue trend — the original `BarSvg` drew a `<rect>` per month;
+          // preserve that as a Recharts `<Bar>` (NOT a Line — a bar series
+          // rendered as a line would be a visual regression).
+          <BarChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
+            <YAxis hide domain={[0, max]} />
+            <XAxis dataKey="key" hide />
+            <ReferenceLine y={0} stroke="var(--border)" />
+            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
+            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
+            <Bar
+              dataKey="value"
+              fill="var(--color-value)"
+              radius={[2, 2, 0, 0]}
+              maxBarSize={28}
+              isAnimationActive={allowMotion}
+            />
+          </BarChart>
+        ) : (
+          // Member growth — the original `LineSvg` drew a `<polyline>`;
+          // preserve that as a Recharts `<Line>`.
+          <LineChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
+            <YAxis hide domain={[0, max]} />
+            <XAxis dataKey="key" hide />
+            <ReferenceLine y={0} stroke="var(--border)" />
+            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
+            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
+            <Line
+              dataKey="value"
+              type="monotone"
+              stroke="var(--color-value)"
+              strokeWidth={2}
+              dot={{ r: 1.5, strokeWidth: 0, fill: 'var(--color-value)' }}
+              activeDot={{ r: 4 }}
+              isAnimationActive={allowMotion}
+            />
+          </LineChart>
+        )}
+      </ChartContainer>
+    </div>
+  );
+}
 
 export function MiniSeriesChart({
   title,
@@ -211,6 +232,11 @@ export function MiniSeriesChart({
   readonly delta?: MiniSeriesDelta;
   readonly points: readonly MiniSeriesPoint[];
 }) {
+  const allowMotion = useSyncExternalStore(
+    subscribeMotionPreference,
+    getAllowMotion,
+    getServerAllowMotion,
+  );
   const hasData = points.length > 0 && points.some((p) => p.value > 0);
   const dataMonths = points.reduce((n, p) => (p.value > 0 ? n + 1 : n), 0);
   const isSparse = hasData && dataMonths < SPARSE_THRESHOLD;
@@ -256,11 +282,13 @@ export function MiniSeriesChart({
               <span className="text-right text-caption text-muted-foreground">{summary.label}</span>
             </div>
             <div className="mt-3">
-              {variant === 'bar' ? (
-                <BarSvg points={points} max={max} maxLabel={maxLabel} />
-              ) : (
-                <LineSvg points={points} max={max} maxLabel={maxLabel} />
-              )}
+              <SeriesCanvas
+                points={points}
+                max={max}
+                maxLabel={maxLabel}
+                variant={variant}
+                allowMotion={allowMotion}
+              />
             </div>
             {first && last ? (
               <div className="mt-1 flex justify-between text-caption text-muted-foreground tabular-nums">
@@ -271,25 +299,14 @@ export function MiniSeriesChart({
             {isSparse && sparseLabel ? (
               <p className="mt-2 text-caption text-muted-foreground">{sparseLabel}</p>
             ) : null}
-            {/* Accessible equivalent (WCAG 1.4.1) — visually hidden when data is
-                present; the empty-state paragraph is the SR equivalent otherwise. */}
-            <table className="sr-only">
-              <caption>{title}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{labelHeader}</th>
-                  <th scope="col">{valueHeader}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {points.map((p) => (
-                  <tr key={p.key}>
-                    <th scope="row">{p.label}</th>
-                    <td>{p.valueLabel}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
+                SR/no-JS data path; visually hidden when data is present, the
+                empty-state paragraph above is the SR equivalent otherwise. */}
+            <ChartDataTable
+              caption={title}
+              columns={[labelHeader, valueHeader]}
+              rows={points.map((p) => [p.label, p.valueLabel])}
+            />
           </>
         )}
       </CardContent>
