@@ -113,4 +113,23 @@ describe('groupActiveMembersByTier', () => {
 
     expect(result).toEqual([]);
   });
+
+  it('(e) collapses two members with different unresolved planIds into a single unassigned slice', () => {
+    const members: MemberPlanRef[] = [
+      { memberId: 'm1', planId: 'plan-b', planYear: 2026 },
+      { memberId: 'm2', planId: 'plan-c', planYear: 2026 },
+    ];
+
+    // Both plan-b and plan-c return null (unresolved)
+    const labelOf = (planId: string) => null;
+
+    const result = groupActiveMembersByTier(members, labelOf);
+
+    // Should have exactly one unassigned slice
+    expect(result).toHaveLength(1);
+
+    const unassigned = result[0];
+    expect(unassigned.tierKey).toBe(UNASSIGNED_TIER_KEY);
+    expect(unassigned.count).toBe(2);
+  });
 });
