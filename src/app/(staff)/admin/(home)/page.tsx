@@ -11,6 +11,7 @@ import {
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { KpiCard } from '@/components/dashboard/kpi-card';
+import { CountUp } from '@/components/dashboard/count-up';
 import {
   NeedsAttentionList,
   type NeedsAttentionItem,
@@ -148,6 +149,14 @@ export default async function StaffHomePage() {
 
   const { metrics, computedAt } = dashResult.value;
   const numberFmt = new Intl.NumberFormat(locale);
+  // Hoisted above the KPI cards (Task 15) — the revenue KPI's <CountUp>
+  // needs this same formatter, and `revenueTrendPoints`/`revenueSummary`
+  // further down reuse it too (was previously redeclared there).
+  const thbFmt = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    maximumFractionDigits: 0,
+  });
   const asOf = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -156,13 +165,6 @@ export default async function StaffHomePage() {
     // (mirrors the audit page's dual-timestamp fix).
     timeZone: env.tenant.timezone,
   }).format(new Date(computedAt));
-  // FR-007: revenue is visible to all staff (admin + the "read-only on finance"
-  // manager role); only members are denied the dashboard (handled upstream).
-  const revenueDisplay = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'THB',
-    maximumFractionDigits: 0,
-  }).format(Number(metrics.ytdPaidRevenueSatang) / 100);
 
   if (feedSettled.status === 'rejected') {
     // The adapter swallows source read errors to [] (logged upstream), so a
@@ -176,15 +178,35 @@ export default async function StaffHomePage() {
   const feed =
     feedSettled.status === 'fulfilled' && feedSettled.value.ok ? feedSettled.value.value : [];
 
+  // Task 15 (067-dashboard-interactive-charts): carry the RAW display-unit
+  // number + a serializable `variant` tag (rather than a pre-formatted
+  // string, or a `format` FUNCTION — this page is a Server Component and
+  // <CountUp> is a Client Component, and functions cannot cross that RSC
+  // boundary) so the JSX below can wrap each headline number in <CountUp>.
+  // <CountUp> builds its own Intl.NumberFormat internally, mirroring
+  // `numberFmt`/`thbFmt` exactly (see count-up.tsx's `buildFormatter`), so
+  // the FINAL displayed string is byte-identical to before this change
+  // (FR: "do NOT change what the final displayed strings look like").
   const kpis: ReadonlyArray<{
     key: string;
     label: string;
-    value: string;
+    rawValue: number;
+    variant: 'integer' | 'thb';
   }> = [
-    { key: 'total', label: t('kpi.total'), value: numberFmt.format(metrics.counts.total) },
-    { key: 'active', label: t('kpi.active'), value: numberFmt.format(metrics.counts.active) },
-    { key: 'atRisk', label: t('kpi.atRisk'), value: numberFmt.format(metrics.counts.atRisk) },
-    { key: 'revenue', label: t('kpi.revenue'), value: revenueDisplay },
+    { key: 'total', label: t('kpi.total'), rawValue: metrics.counts.total, variant: 'integer' },
+    { key: 'active', label: t('kpi.active'), rawValue: metrics.counts.active, variant: 'integer' },
+    { key: 'atRisk', label: t('kpi.atRisk'), rawValue: metrics.counts.atRisk, variant: 'integer' },
+    // FR-007: revenue is visible to all staff (admin + the "read-only on
+    // finance" manager role); only members are denied the dashboard
+    // (handled upstream). Satang → THB conversion happens HERE (at the call
+    // site, a plain number), not inside <CountUp> — it only ever receives a
+    // baht value, mirroring the previous one-shot `revenueDisplay` computation.
+    {
+      key: 'revenue',
+      label: t('kpi.revenue'),
+      rawValue: Number(metrics.ytdPaidRevenueSatang) / 100,
+      variant: 'thb',
+    },
   ];
 
   // Only surface items that actually need attention (FR-006) — a "0" with a
@@ -293,12 +315,8 @@ export default async function StaffHomePage() {
 
   // FR-001a trend charts — display-ready points (visible to all staff; the
   // empty state shows only when a tenant genuinely has no paid revenue yet).
+  // `thbFmt` is declared above (hoisted for the revenue KPI's <CountUp>).
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
-  const thbFmt = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'THB',
-    maximumFractionDigits: 0,
-  });
   const monthLabel = (key: string): string =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
   const revenueTrendPoints = metrics.revenueTrend.map((p) => ({
@@ -342,7 +360,11 @@ export default async function StaffHomePage() {
         className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         {kpis.map((kpi) => (
-          <KpiCard key={kpi.key} label={kpi.label} value={kpi.value} />
+          <KpiCard
+            key={kpi.key}
+            label={kpi.label}
+            value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} />}
+          />
         ))}
       </section>
 
