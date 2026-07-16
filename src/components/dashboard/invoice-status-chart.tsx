@@ -56,21 +56,40 @@
  * `useSyncExternalStore` triad, explicit boolean `isAnimationActive` (NOT
  * Recharts 3.9's built-in `"auto"` Pie default) so every 067 chart is gated
  * by the SAME app-level media-query subscription.
+ *
+ * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
+ * `<PieChart>` rendering lives in `./invoice-status-canvas` and is mounted
+ * here via `next/dynamic(..., { ssr: false })`, so recharts never lands in
+ * `/admin`'s first-load JS. This file still computes `rows` (needed for the
+ * canvas, the centre total, the visible legend, AND the accessible table)
+ * and renders everything except the donut itself eagerly. `BUCKET_FILL` is
+ * declared HERE (not in the canvas) because the eager legend below also
+ * needs it as a real runtime value for its swatch colours — see
+ * `invoice-status-canvas.tsx`'s docblock for why that import direction is
+ * bundle-safe. The donut's aspect is fixed (not data-dependent, unlike the
+ * tier bar), so the `loading` skeleton just reuses the same
+ * `mx-auto aspect-square max-h-64 w-full` className as the real canvas —
+ * no wrapper-height gymnastics needed (contrast `membership-tier-chart.tsx`).
  */
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSyncExternalStore } from 'react';
-import { Cell, Pie, PieChart } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
 import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
+import { ChartSkeleton } from './chart-skeleton';
 import {
   getAllowMotion,
   getServerAllowMotion,
   subscribeMotionPreference,
 } from './use-motion-preference';
+
+const InvoiceStatusCanvas = dynamic(
+  () => import('./invoice-status-canvas').then((m) => m.InvoiceStatusCanvas),
+  { ssr: false, loading: () => <ChartSkeleton className="mx-auto aspect-square max-h-64 w-full" /> },
+);
 
 export interface InvoiceStatusChartProps {
   readonly distribution: InvoiceStatusDistribution;
@@ -82,8 +101,11 @@ const BUCKET_ORDER = ['paid', 'unpaid', 'overdue'] as const;
 type Bucket = (typeof BUCKET_ORDER)[number];
 
 /** Semantic (not categorical) colour — the bucket IS a state, not an
- * arbitrary series identity. */
-const BUCKET_FILL: Record<Bucket, string> = {
+ * arbitrary series identity. Exported: the lazy `./invoice-status-canvas`
+ * needs this as a real value for its `<Cell fill=…>`s (see that file's
+ * docblock for why this import direction — canvas importing FROM the eager
+ * chart file — is the bundle-safe one). */
+export const BUCKET_FILL: Record<Bucket, string> = {
   paid: 'var(--success)',
   unpaid: 'var(--warning)',
   overdue: 'var(--destructive)',
@@ -91,8 +113,9 @@ const BUCKET_FILL: Record<Bucket, string> = {
 
 /** Row shape fed to Recharts — `satangNumber` is the Pie's arc-sizing value
  * (VALUE basis, never count); every other field is display-ready text so
- * the tooltip/table need no further formatting. */
-interface BucketRow {
+ * the tooltip/table need no further formatting. Exported as a type-only
+ * dependency for `./invoice-status-canvas` (erased at compile time). */
+export interface BucketRow {
   readonly bucket: Bucket;
   readonly label: string;
   readonly satangNumber: number;
@@ -132,37 +155,6 @@ function allocatePercentages(values: readonly number[]): number[] {
     result[index] = (result[index] ?? 0) + 1;
   }
   return result;
-}
-
-interface BucketTooltipPayloadEntry {
-  readonly payload?: BucketRow;
-}
-
-/** Custom tooltip — reads the ORIGINAL `BucketRow` off the hovered payload
- * entry directly (its resolved `label`/`amountLabel`/`countLabel`/
- * `pctLabel`), mirroring `membership-tier-chart.tsx`'s `TierTooltipContent`:
- * shadcn's config/nameKey-driven `ChartTooltipContent` is built for multi-
- * series/legend charts, not this single-series donut. Never the sole way to
- * read a value — the hidden `<ChartDataTable>` below is. */
-function BucketTooltipContent({
-  active,
-  payload,
-}: {
-  readonly active?: boolean;
-  readonly payload?: readonly BucketTooltipPayloadEntry[];
-}) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
-  return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{row.label}</span>
-      <span className="text-muted-foreground">{row.amountLabel}</span>
-      <span className="text-muted-foreground">
-        {row.countLabel} · {row.pctLabel}
-      </span>
-    </div>
-  );
 }
 
 export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
@@ -215,12 +207,6 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
   const draftCount = distribution.draftCount;
 
-  const chartConfig = {
-    paid: { label: t('bucket.paid') },
-    unpaid: { label: t('bucket.unpaid') },
-    overdue: { label: t('bucket.overdue') },
-  } satisfies ChartConfig;
-
   const draftCaption =
     draftCount > 0 ? (
       <p className="mt-2 text-center text-caption text-muted-foreground">
@@ -243,24 +229,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
           <>
             <div className="relative">
               <div aria-hidden="true">
-                <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-64 w-full">
-                  <PieChart accessibilityLayer={false}>
-                    <ChartTooltip cursor={false} content={<BucketTooltipContent />} />
-                    <Pie
-                      data={rows}
-                      dataKey="satangNumber"
-                      nameKey="label"
-                      innerRadius="60%"
-                      outerRadius="100%"
-                      paddingAngle={2}
-                      isAnimationActive={allowMotion}
-                    >
-                      {rows.map((r) => (
-                        <Cell key={r.bucket} fill={BUCKET_FILL[r.bucket]} stroke="var(--card)" strokeWidth={3} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ChartContainer>
+                <InvoiceStatusCanvas rows={rows} allowMotion={allowMotion} />
               </div>
               {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
                   of the aria-hidden canvas div, NOT inside it, so screen

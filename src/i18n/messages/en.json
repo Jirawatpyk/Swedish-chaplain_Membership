@@ -447,6 +447,9 @@
       "trends": {
         "sectionLabel": "Trend charts"
       },
+      "breakdown": {
+        "sectionLabel": "Breakdown charts"
+      },
       "revenueTrend": {
         "title": "Revenue trend (12 months)",
         "empty": "No paid revenue recorded yet.",

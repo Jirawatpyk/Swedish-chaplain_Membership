@@ -14,14 +14,19 @@
  * convention, so a dangling `t()` key reference surfaces as a real
  * `MISSING_MESSAGE` failure rather than silently rendering the raw key.
  *
+ * **Task 12 split**: the actual `<BarChart>` rendering was extracted into
+ * `./membership-tier-canvas.tsx` and is now mounted here via
+ * `next/dynamic(..., { ssr: false })`, so recharts stays out of `/admin`'s
+ * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
+ * fallback, never the resolved Recharts markup — the Recharts-primitive
+ * assertions moved to `membership-tier-canvas.test.tsx`, which renders
+ * `<MembershipTierCanvas>` directly. The table + empty-state assertions
+ * below are unaffected (they render outside the dynamic boundary).
+ *
  * jsdom workarounds (identical to `mini-series-chart.test.tsx`):
  *   - `window.matchMedia` — jsdom has no implementation at all; every test
  *     stubs it so `useSyncExternalStore(subscribeMotionPreference, …)` can
  *     read a `MediaQueryList`-shaped value instead of throwing.
- *   - Recharts' `<ResponsiveContainer>` needs no `ResizeObserver` stub:
- *     `ChartContainer`'s default `initialDimension` (320×200) seeds it
- *     synchronously, and its resize-observing effect no-ops when
- *     `typeof ResizeObserver === 'undefined'` (true in jsdom).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -92,41 +97,17 @@ describe('MembershipTierChart', () => {
     expect(screen.getByRole('rowheader', { name: 'Gold' })).toBeInTheDocument();
   });
 
-  it('renders a single, single-colour <Bar> — not one <Cell>/colour per slice', () => {
-    // Force reduced-motion (allowMotion=false → isAnimationActive=false) for
-    // THIS assertion only: react-smooth's `Animate` wrapper (engaged when
-    // isAnimationActive=true) defers the actual `<path>` paint past this
-    // synchronous render — a jsdom/rAF timing gap, not a component bug (the
-    // fill/single-Bar structure is identical either way; verified empirically
-    // that motion=on renders 3 real `.recharts-bar-rectangle` GROUPS with an
-    // empty `.recharts-inactive-bar` child, motion=off paints the `<path>`).
-    stubMatchMedia(true);
-    const { container } = renderChart([GOLD, SILVER, UNASSIGNED]);
-    const bars = container.querySelectorAll('.recharts-bar');
-    expect(bars).toHaveLength(1);
-    // No per-slice <Cell> children (that would be the multi-colour pattern
-    // this design doc explicitly rejects for up to 9 tiers).
-    expect(container.querySelectorAll('.recharts-bar .recharts-layer.recharts-bar-rectangle')).toHaveLength(3);
-    expect(container.querySelectorAll('.recharts-pie-sector, [class*="cell-"]')).toHaveLength(0);
-    // Every rectangle shares the single navy chart token, not a per-index hue.
-    const rects = container.querySelectorAll('.recharts-bar-rectangle path');
-    expect(rects.length).toBe(3);
-    rects.forEach((rect) => {
-      expect(rect).toHaveAttribute('fill', 'var(--chart-1)');
-    });
-    // End-of-bar "count (pct%)" labels (design doc: "count + % end-labels"),
-    // % of the ACTIVE TOTAL (10): Gold 6/10=60%, Silver 3/10=30%, unassigned 1/10=10%.
-    const labelTexts = Array.from(container.querySelectorAll('.recharts-label-list text')).map(
-      (n) => n.textContent,
-    );
-    expect(labelTexts).toEqual(['6 (60%)', '3 (30%)', '1 (10%)']);
-  });
-
-  it('wraps the canvas in aria-hidden, and the table is never aria-hidden', () => {
+  it('wraps the (lazy-loaded) canvas slot in aria-hidden, and the table is never aria-hidden', () => {
+    // The Recharts-primitive "wraps the canvas in aria-hidden" assertion
+    // (querying `.recharts-responsive-container`) moved to
+    // `membership-tier-canvas.test.tsx` — a synchronous render here only
+    // ever sees the `loading` fallback (Task 12 dynamic(ssr:false) split).
+    // This test keeps the chart-level guarantee: the definite-height
+    // wrapper div that will eventually hold the canvas is ALREADY
+    // `aria-hidden="true"` from the very first paint, and the accessible
+    // table is never hidden either way.
     const { container } = renderChart([GOLD]);
-    const canvas = container.querySelector('.recharts-responsive-container');
-    expect(canvas).toBeInTheDocument();
-    expect(canvas?.closest('[aria-hidden="true"]')).toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
   });
 

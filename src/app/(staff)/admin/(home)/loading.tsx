@@ -80,6 +80,34 @@ export default async function Loading() {
             ))}
           </div>
 
+          {/* Breakdown charts (Task 12) — membership-by-tier bar + invoice-
+              status donut. Distinct shapes (rectangular bar block vs. a
+              circular donut block + a reserved legend line) so the skeleton
+              reads as "two different chart types" rather than two identical
+              placeholders, matching the real Breakdown section below. */}
+          <div aria-hidden className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <SkeletonBlock className="h-5 w-40" />
+              </CardHeader>
+              <CardContent>
+                <SkeletonBlock className="h-32 w-full" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <SkeletonBlock className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-3">
+                <SkeletonBlock className="h-40 w-40 rounded-full" />
+                {/* Reserves the visible legend row's height (WCAG 1.4.1 —
+                    the real donut always renders a paid/unpaid/overdue
+                    legend below the canvas). */}
+                <SkeletonBlock className="h-4 w-56" />
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Activity feed — full-width card. Header mirrors the real
               ActivityFeed (title + right-aligned Refresh button) to avoid CLS. */}
           <Card aria-hidden>

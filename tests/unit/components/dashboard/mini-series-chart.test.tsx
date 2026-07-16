@@ -25,16 +25,21 @@
  * row count here (not by the SVG's internal geometry, which jsdom can't lay
  * out).
  *
+ * **Task 12 split**: the actual Recharts canvas (`<BarChart>`/`<AreaChart>`)
+ * was extracted into `./mini-series-canvas.tsx` and is now mounted here via
+ * `next/dynamic(..., { ssr: false })` so recharts stays out of `/admin`'s
+ * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
+ * fallback (`<ChartSkeleton>`), never the resolved Recharts markup — so
+ * every assertion that used to inspect `.recharts-*` DOM here moved to
+ * `mini-series-canvas.test.tsx`, which renders `<MiniSeriesCanvas>` directly
+ * (no dynamic boundary in the way). Everything that renders OUTSIDE that
+ * boundary (summary stat, delta chip, range labels, sparse hint, empty
+ * state, the accessible `<ChartDataTable>`) is unaffected and stays here.
+ *
  * jsdom workarounds:
  *   - `window.matchMedia` — the component reads `prefers-reduced-motion` via
  *     `useSyncExternalStore`; jsdom has NO `matchMedia` implementation at
  *     all (throws `TypeError: … is not a function`), so every test stubs it.
- *   - Recharts' `<ResponsiveContainer>` (inside `ChartContainer`) needs no
- *     `ResizeObserver` stub here: `ChartContainer`'s default
- *     `initialDimension` (320×200) seeds `ResponsiveContainer`'s size state
- *     directly, and its resize-observing effect no-ops when
- *     `typeof ResizeObserver === 'undefined'` (true in jsdom) — so the chart
- *     renders at a fixed 320×200 without any observer at all.
  *
  * The `max === 0` division guard in the old BarSvg/LineSvg is moot post-
  * migration (Recharts owns the scale math); the all-zero case is still the
@@ -95,46 +100,18 @@ describe('MiniSeriesChart', () => {
     expect(screen.queryByText('THB 1,200')).not.toBeInTheDocument();
   });
 
-  it('renders a Recharts BAR canvas for variant="bar" (migrated off the hand-rolled SVG), wrapped in aria-hidden', () => {
+  it('renders the accessible table (never aria-hidden) for a real series, regardless of the canvas dynamic-loading state', () => {
+    // Task 12: the canvas is now a `next/dynamic(..., { ssr: false })`
+    // boundary (`./mini-series-canvas`) — a synchronous RTL render sees its
+    // `loading` fallback, not the resolved Recharts markup (see
+    // `mini-series-canvas.test.tsx` for the recharts-primitive assertions).
+    // The accessible table renders OUTSIDE that boundary and must be
+    // unaffected either way.
     const points = [pt('2026-01', 100, 'THB 100'), pt('2026-02', 200, 'THB 200')];
-    const { container } = render(<MiniSeriesChart {...BASE} variant="bar" points={points} />);
-    // Recharts-specific marker classes — proves the canvas is the real
-    // migrated chart, not a hand-rolled <svg> (which carried no such class),
-    // AND that a 'bar' variant renders a Bar, never a Line.
-    const canvas = container.querySelector('.recharts-responsive-container');
-    expect(canvas).toBeInTheDocument();
-    expect(container.querySelector('.recharts-bar')).toBeInTheDocument();
-    expect(container.querySelector('.recharts-line')).not.toBeInTheDocument();
-    // The canvas is decorative (WCAG 1.1.1/1.3.1/1.4.1) — its nearest
-    // ancestor must be aria-hidden, and the accessible table must NOT be.
-    expect(canvas?.closest('[aria-hidden="true"]')).toBeInTheDocument();
+    render(<MiniSeriesChart {...BASE} variant="bar" points={points} />);
     const table = screen.getByRole('table');
     expect(table).not.toHaveAttribute('aria-hidden');
-  });
-
-  it('renders a Recharts AREA canvas for variant="line" (filled area under the curve, never a Bar)', () => {
-    const points = [pt('2026-01', 5, '5'), pt('2026-02', 8, '8')];
-    const { container } = render(
-      <MiniSeriesChart {...BASE} variant="line" summary={{ value: '8', label: 'Total members' }} points={points} />,
-    );
-    // The original LineSvg drew a filled `fill-primary/15` area UNDER the
-    // stroked polyline — a bare Recharts <Line> would drop that fill, so
-    // this must be an <Area>, not a <Line>.
-    const area = container.querySelector('.recharts-area');
-    expect(area).toBeInTheDocument();
-    expect(container.querySelector('.recharts-bar')).not.toBeInTheDocument();
-    // The filled region (the area's own <path>, not the stroke-only curve)
-    // carries the fill colour + reduced opacity, matching `fill-primary/15`.
-    const fillPath = container.querySelector('.recharts-area-area');
-    expect(fillPath).toBeInTheDocument();
-    expect(fillPath).toHaveAttribute('fill', 'var(--color-value)');
-    expect(fillPath).toHaveAttribute('fill-opacity', '0.15');
-    // Per-point dots — original LineSvg comment: "a dot per month … with the
-    // latest point emphasised" (r=3 for the last point, r=1.5 otherwise).
-    const dots = container.querySelectorAll('.recharts-area-dots circle');
-    expect(dots).toHaveLength(2);
-    expect(dots[0]).toHaveAttribute('r', '1.5');
-    expect(dots[1]).toHaveAttribute('r', '3');
+    expect(within(table).getAllByRole('row')).toHaveLength(3); // header + 2 data
   });
 
   it('renders the summary stat + accessible <table> equivalent for a full series', () => {
@@ -183,8 +160,11 @@ describe('MiniSeriesChart', () => {
   });
 
   it('renders the line variant with a single data point without crashing', () => {
+    // The Recharts-primitive assertion (`.recharts-area` presence) for this
+    // exact single-point fixture moved to `mini-series-canvas.test.tsx` —
+    // the canvas is behind a dynamic(ssr:false) boundary here (Task 12).
     const points = [pt('2026-06', 42, '42')];
-    const { container } = render(
+    render(
       <MiniSeriesChart
         {...BASE}
         variant="line"
@@ -197,12 +177,13 @@ describe('MiniSeriesChart', () => {
     const table = screen.getByRole('table');
     expect(table).toBeInTheDocument();
     expect(within(table).getAllByRole('row')).toHaveLength(2); // header + 1 datum
-    expect(container.querySelector('.recharts-area')).toBeInTheDocument();
   });
 
-  it('renders the bar variant with a single data point without crashing (Recharts fixes the old polyline gap)', () => {
+  it('renders the bar variant with a single data point without crashing', () => {
+    // The Recharts-primitive assertion (`.recharts-bar` presence) for this
+    // exact single-point fixture moved to `mini-series-canvas.test.tsx`.
     const points = [pt('2026-06', 900, 'THB 900')];
-    const { container } = render(
+    render(
       <MiniSeriesChart
         {...BASE}
         variant="bar"
@@ -212,20 +193,19 @@ describe('MiniSeriesChart', () => {
     );
     expect(screen.getAllByText('THB 900').length).toBeGreaterThan(0);
     expect(screen.getByRole('table')).toBeInTheDocument();
-    expect(container.querySelector('.recharts-bar')).toBeInTheDocument();
   });
 
-  it('renders a visible bar rectangle for zero-value months (minPointSize floor)', () => {
-    // A series with zero, non-zero, and zero again to ensure every month
-    // shows a crisp mark (even zeros) — matching the original hand-rolled
-    // SVG's MIN_BAR = 3 px floor. Without minPointSize, zero and tiny bars
-    // are invisible/sub-pixel, breaking the "all 12 months in a frame" model.
+  it('includes zero-value months in the accessible table alongside non-zero ones', () => {
+    // The Recharts-primitive assertion (`.recharts-bar-rectangle` / the
+    // minPointSize floor that keeps zero-value bars visible) moved to
+    // `mini-series-canvas.test.tsx`. This test keeps the chart-level
+    // guarantee: the table must never silently drop a zero-value point.
     const points = [
       pt('2026-01', 0, 'THB 0'),
       pt('2026-02', 150, 'THB 150'),
       pt('2026-03', 0, 'THB 0'),
     ];
-    const { container } = render(
+    render(
       <MiniSeriesChart
         {...BASE}
         variant="bar"
@@ -233,11 +213,6 @@ describe('MiniSeriesChart', () => {
         points={points}
       />,
     );
-    // Recharts renders a .recharts-bar-rectangle per data point; zero-value
-    // rectangles must be present and visible (via minPointSize={3}).
-    const barRects = container.querySelectorAll('.recharts-bar-rectangle');
-    expect(barRects.length).toBeGreaterThanOrEqual(3);
-    // Verify the table includes all three points (all-zero-and-non-zero rows).
     const table = screen.getByRole('table');
     expect(table).toBeInTheDocument();
     expect(within(table).getAllByRole('row')).toHaveLength(4); // header + 3 data

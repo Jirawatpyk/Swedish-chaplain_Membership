@@ -17,15 +17,18 @@
  * `en.json` (not a stub) so a dangling `t()` key reference surfaces as a
  * real `MISSING_MESSAGE` failure rather than silently rendering the raw key.
  *
+ * **Task 12 split**: the actual `<PieChart>` rendering was extracted into
+ * `./invoice-status-canvas.tsx` and is now mounted here via
+ * `next/dynamic(..., { ssr: false })`, so recharts stays out of `/admin`'s
+ * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
+ * fallback, never the resolved Recharts markup — the Recharts-primitive
+ * sector/fill assertions moved to `invoice-status-canvas.test.tsx`, which
+ * renders `<InvoiceStatusCanvas>` directly. The table, centre-total,
+ * legend, draft-caption, and empty-state assertions below are unaffected
+ * (they all render outside the dynamic boundary).
+ *
  * jsdom workarounds (identical to `membership-tier-chart.test.tsx`):
  *   - `window.matchMedia` stub for `useSyncExternalStore(subscribeMotionPreference, …)`.
- *   - `<ResponsiveContainer>` needs no `ResizeObserver` stub — `ChartContainer`'s
- *     default `initialDimension` (320×200) seeds it synchronously.
- *   - Reduced motion is forced (`stubMatchMedia(true)`) for the ONE assertion
- *     that inspects a painted `<path fill>` attribute on a pie sector — the
- *     same react-smooth/rAF timing gap documented in Task 10's report
- *     (motion=on renders the sector group but defers the actual shape paint
- *     past a synchronous RTL render).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -126,30 +129,19 @@ describe('InvoiceStatusChart', () => {
     expect(screen.queryByText(/draft invoice/)).not.toBeInTheDocument();
   });
 
-  it('renders one <Cell>/sector per bucket with 3 distinct semantic fills, each also text-labelled', () => {
-    // Force reduced-motion so the pie sector <path fill> is painted
-    // synchronously (see module docblock / Task 10's report).
-    stubMatchMedia(true);
-    const { container } = renderChart(FULL);
-    const sectors = container.querySelectorAll('.recharts-pie-sector');
-    expect(sectors).toHaveLength(3);
-    const fills = Array.from(container.querySelectorAll('.recharts-pie-sector path')).map((p) =>
-      p.getAttribute('fill'),
-    );
-    expect(fills).toEqual(['var(--success)', 'var(--warning)', 'var(--destructive)']);
-    // Colour is never the sole signal — every bucket also has a text label
-    // in the hidden table (never colour-only).
-    const table = screen.getByRole('table');
-    expect(within(table).getByRole('rowheader', { name: 'Paid' })).toBeInTheDocument();
-    expect(within(table).getByRole('rowheader', { name: 'Unpaid' })).toBeInTheDocument();
-    expect(within(table).getByRole('rowheader', { name: 'Overdue' })).toBeInTheDocument();
-  });
+  // The Recharts-primitive "one <Cell>/sector per bucket with 3 distinct
+  // semantic fills" assertion moved to `invoice-status-canvas.test.tsx`
+  // (Task 12 dynamic(ssr:false) split — a synchronous render here only ever
+  // sees the `loading` fallback). The "colour is never the sole signal —
+  // every bucket also has a text label" guarantee stays pinned by the
+  // rowheader assertions already in the first test above.
 
-  it('wraps the canvas in aria-hidden, and the table is never aria-hidden', () => {
+  it('wraps the (lazy-loaded) canvas slot in aria-hidden, and the table is never aria-hidden', () => {
+    // This test keeps the chart-level guarantee: the wrapper div that will
+    // eventually hold the canvas is ALREADY `aria-hidden="true"` from the
+    // very first paint, and the accessible table is never hidden either way.
     const { container } = renderChart(FULL);
-    const canvas = container.querySelector('.recharts-responsive-container');
-    expect(canvas).toBeInTheDocument();
-    expect(canvas?.closest('[aria-hidden="true"]')).toBeInTheDocument();
+    expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
   });
 

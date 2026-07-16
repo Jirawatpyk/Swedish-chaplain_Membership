@@ -24,6 +24,8 @@ import { activityTimeLabels } from '@/components/dashboard/activity-time';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
 import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
+import { MembershipTierChart } from '@/components/dashboard/membership-tier-chart';
+import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
@@ -382,6 +384,17 @@ export default async function StaffHomePage() {
           {...(memberDelta ? { delta: memberDelta } : {})}
           points={memberGrowthPoints}
         />
+      </section>
+
+      {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
+          invoice-status donut. Both are self-contained i18n (no title/label
+          props — see each component's own docblock) and both lazy-load their
+          recharts canvas internally (`next/dynamic(..., { ssr: false })`),
+          so this section, like Trends above, SSRs its accessible
+          `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
+      <section aria-label={t('breakdown.sectionLabel')} className="grid gap-4 lg:grid-cols-2">
+        <MembershipTierChart slices={metrics.tierDistribution} />
+        <InvoiceStatusChart distribution={metrics.invoiceStatus} />
       </section>
 
       <ActivityFeed

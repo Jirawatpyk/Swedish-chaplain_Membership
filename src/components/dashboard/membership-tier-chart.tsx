@@ -28,39 +28,45 @@
  * Reduced motion: shares `./use-motion-preference` with `_mini-series-chart`
  * (same SSR-safe `useSyncExternalStore` triad, extracted in this task so
  * neither chart file duplicates the `matchMedia` idiom).
+ *
+ * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
+ * `<BarChart>` rendering lives in `./membership-tier-canvas` and is mounted
+ * here via `next/dynamic(..., { ssr: false })`, so recharts never lands in
+ * `/admin`'s first-load JS. This file still computes `rows` (needed for
+ * both the canvas AND the accessible table below) and renders the table +
+ * empty state eagerly. CLS: the canvas's height is DATA-DEPENDENT (scales
+ * with tier count), so the definite-height wrapper div lives HERE (computed
+ * synchronously from `rows.length`, known before the dynamic import ever
+ * resolves) — both the `loading` skeleton and the resolved canvas simply
+ * fill `h-full w-full` of that wrapper, so the height never changes across
+ * the swap.
  */
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useTranslations } from 'next-intl';
 import { useSyncExternalStore } from 'react';
-import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
-import { UNASSIGNED_TIER_KEY, type TierDistributionSlice } from '@/modules/insights';
+import type { TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
+import { ChartSkeleton } from './chart-skeleton';
+import type { TierRow } from './membership-tier-canvas';
 import {
   getAllowMotion,
   getServerAllowMotion,
   subscribeMotionPreference,
 } from './use-motion-preference';
 
+const MembershipTierCanvas = dynamic(
+  () => import('./membership-tier-canvas').then((m) => m.MembershipTierCanvas),
+  { ssr: false, loading: () => <ChartSkeleton className="h-full" /> },
+);
+
 export interface MembershipTierChartProps {
   /** Already sorted count-desc with `unassigned` forced last (Task 3's
    * `groupActiveMembersByTier`) — this component renders them in the given
    * order and does NOT re-sort. */
   readonly slices: readonly TierDistributionSlice[];
-}
-
-/** Row shape fed to Recharts — `displayLabel` is the (possibly translated)
- * text shown on the Y axis + tooltip; `barLabel` is the pre-formatted
- * "count (pct%)" end-of-bar label (a plain data field, not a Recharts
- * `formatter`, so `<LabelList>` needs no canvas-measuring render function). */
-interface TierRow {
-  readonly tierKey: string;
-  readonly displayLabel: string;
-  readonly count: number;
-  readonly pctLabel: string;
-  readonly barLabel: string;
 }
 
 /** % is always of the ACTIVE TOTAL (sum of every slice's count) — never a
@@ -70,35 +76,6 @@ function formatPct(count: number, total: number): string {
   return `${Math.round((count / total) * 100)}%`;
 }
 
-interface TierTooltipPayloadEntry {
-  readonly payload?: TierRow;
-}
-
-/** Custom tooltip — reads the ORIGINAL `TierRow` off the hovered payload
- * entry directly (its resolved `displayLabel` + pre-formatted `barLabel`),
- * mirroring `_mini-series-chart.tsx`'s `SeriesTooltipContent`: shadcn's
- * config/nameKey-driven `ChartTooltipContent` is built for multi-series/
- * legend charts, not this single-series bar. Never the sole way to read a
- * value — the hidden `<ChartDataTable>` below is. */
-function TierTooltipContent({
-  active,
-  payload,
-}: {
-  readonly active?: boolean;
-  readonly payload?: readonly TierTooltipPayloadEntry[];
-}) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
-  return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{row.displayLabel}</span>
-      <span className="text-muted-foreground">{row.barLabel}</span>
-    </div>
-  );
-}
-
-const CHART_MARGIN = { top: 4, right: 44, bottom: 4, left: 4 };
 /** Per-row plot height (px) — a horizontal bar list scales with the number of
  * tiers (up to ~9 per the design doc), unlike the sparklines' fixed height. */
 const ROW_HEIGHT_PX = 36;
@@ -116,7 +93,13 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   const hasData = slices.length > 0 && total > 0;
 
   const rows: TierRow[] = slices.map((s) => {
-    const displayLabel = s.tierKey === UNASSIGNED_TIER_KEY ? t('unassignedTier') : s.label;
+    // 'unassigned' === UNASSIGNED_TIER_KEY (insights domain). Compared as a
+    // literal because a client component cannot runtime-import the insights
+    // barrel — it pulls server-only infra (revalidateTag) into the client
+    // bundle. The domain constant's value is pinned by its own unit test
+    // (tests/unit/insights/domain/tier-distribution.test.ts) as the drift
+    // guard, so this literal cannot silently go stale.
+    const displayLabel = s.tierKey === 'unassigned' ? t('unassignedTier') : s.label;
     const pctLabel = formatPct(s.count, total);
     return {
       tierKey: s.tierKey,
@@ -128,9 +111,7 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   });
 
   const max = rows.reduce((m, r) => Math.max(m, r.count), 0);
-  const chartConfig = {
-    count: { label: t('countColumnHeader') },
-  } satisfies ChartConfig;
+  const chartHeightPx = Math.max(MIN_CHART_HEIGHT_PX, rows.length * ROW_HEIGHT_PX);
 
   return (
     <Card>
@@ -142,38 +123,13 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
           <p className="text-body text-muted-foreground">{t('empty')}</p>
         ) : (
           <>
-            <div aria-hidden="true">
-              <ChartContainer
-                config={chartConfig}
-                className="aspect-auto w-full"
-                style={{ height: Math.max(MIN_CHART_HEIGHT_PX, rows.length * ROW_HEIGHT_PX) }}
-              >
-                <BarChart layout="vertical" accessibilityLayer={false} data={rows} margin={CHART_MARGIN}>
-                  <YAxis
-                    type="category"
-                    dataKey="displayLabel"
-                    width={110}
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <XAxis type="number" hide domain={[0, max]} />
-                  <ChartTooltip cursor={false} content={<TierTooltipContent />} />
-                  {/* Single colour, single <Bar> — never one <Cell>/colour per
-                      slice (the design doc rejects per-tier hue: only 5 chart
-                      tokens across 2 lightness clusters can't distinguish up
-                      to 9 tiers, a CVD fail). */}
-                  <Bar
-                    dataKey="count"
-                    fill="var(--chart-1)"
-                    radius={[0, 4, 4, 0]}
-                    minPointSize={2}
-                    isAnimationActive={allowMotion}
-                  >
-                    <LabelList dataKey="barLabel" position="right" className="fill-foreground" fontSize={12} />
-                  </Bar>
-                </BarChart>
-              </ChartContainer>
+            <div aria-hidden="true" style={{ height: chartHeightPx }}>
+              <MembershipTierCanvas
+                rows={rows}
+                max={max}
+                allowMotion={allowMotion}
+                countColumnHeader={t('countColumnHeader')}
+              />
             </div>
             {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
                 SR/no-JS data path; visually hidden when data is present, the

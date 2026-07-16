@@ -37,11 +37,22 @@
  * `useSyncExternalStore` idiom as `components/plans/plan-list-skeleton.tsx`.
  * The subscribe/snapshot triad lives in the shared `./use-motion-preference`
  * (Task 10 — extracted so `membership-tier-chart.tsx` doesn't duplicate it).
+ *
+ * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
+ * Recharts rendering (`<BarChart>`/`<AreaChart>` + their tooltip/label/dot
+ * helpers) lives in `./mini-series-canvas` and is mounted here via
+ * `next/dynamic(..., { ssr: false })`, so recharts never lands in `/admin`'s
+ * first-load JS. Everything in THIS file (summary stat, delta chip, range
+ * labels, sparse hint, empty state, `<ChartDataTable>`) renders eagerly —
+ * only the decorative canvas is deferred, and its `loading` fallback
+ * (`<ChartSkeleton className="h-28" />`) matches the canvas's own `h-28`
+ * height exactly, so swapping the skeleton for the real chart causes no
+ * layout shift.
  */
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';
-import { Area, AreaChart, Bar, BarChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import {
   Card,
   CardContent,
@@ -49,14 +60,19 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
 import { ChartDataTable } from './chart-data-table';
+import { ChartSkeleton } from './chart-skeleton';
 import {
   getAllowMotion,
   getServerAllowMotion,
   subscribeMotionPreference,
 } from './use-motion-preference';
+
+const MiniSeriesCanvas = dynamic(
+  () => import('./mini-series-canvas').then((m) => m.MiniSeriesCanvas),
+  { ssr: false, loading: () => <ChartSkeleton className="h-28" /> },
+);
 
 export interface MiniSeriesPoint {
   /** Stable key (e.g. 'YYYY-MM'). */
@@ -88,150 +104,6 @@ export interface MiniSeriesDelta {
 
 /** Below this many months carrying a non-zero value the series is "sparse". */
 const SPARSE_THRESHOLD = 3;
-
-interface SeriesTooltipPayloadEntry {
-  readonly payload?: MiniSeriesPoint;
-}
-
-/** Custom tooltip content — reads the ORIGINAL `MiniSeriesPoint` off the
- * hovered payload entry directly (its pre-formatted `label`/`valueLabel`),
- * rather than fighting shadcn's config/nameKey-driven `ChartTooltipContent`,
- * which is built for multi-series/legend charts, not this single-series
- * sparkline. Never the sole way to read a value — see module docblock. */
-function SeriesTooltipContent({
-  active,
-  payload,
-}: {
-  readonly active?: boolean;
-  readonly payload?: readonly SeriesTooltipPayloadEntry[];
-}) {
-  if (!active || !payload?.length) return null;
-  const point = payload[0]?.payload;
-  if (!point) return null;
-  return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{point.label}</span>
-      <span className="text-muted-foreground">{point.valueLabel}</span>
-    </div>
-  );
-}
-
-/** Renders the max-gridline's label as a plain SVG `<text>` (not Recharts'
- * canvas-measuring `Text` component) — left-aligned at the reference line's
- * position so it never collides with the peak point (these trends peak at
- * the most-recent, right-most point), matching the original hand-rolled
- * `MaxGridline` annotation 1:1. */
-function renderMaxReferenceLabel(maxLabel: string) {
-  return function MaxReferenceLabel({ viewBox }: { viewBox?: { x: number; y: number } }) {
-    if (!viewBox) return null;
-    return (
-      <text x={viewBox.x} y={viewBox.y + 11} className="fill-muted-foreground" fontSize={10}>
-        {maxLabel}
-      </text>
-    );
-  };
-}
-
-/** Custom per-point dot for the `line`/`Area` variant — mirrors the original
- * `LineSvg` comment ("a dot per month … with the latest point emphasised"):
- * every point gets a small dot (`r=1.5`) except the last, which is bigger
- * (`r=3`). A plain `dot={{ r: 1.5 }}` object config applies uniformly to
- * every point, so this needs a render function closing over the series
- * length to single out the final index. */
-function makeSeriesDot(lastIndex: number) {
-  return function SeriesDot({
-    cx,
-    cy,
-    index,
-  }: {
-    readonly cx?: number;
-    readonly cy?: number;
-    readonly index?: number;
-  }) {
-    if (cx === undefined || cy === undefined) return null;
-    return (
-      <circle
-        key={index}
-        cx={cx}
-        cy={cy}
-        r={index === lastIndex ? 3 : 1.5}
-        fill="var(--color-value)"
-        strokeWidth={0}
-      />
-    );
-  };
-}
-
-const CHART_MARGIN = { top: 12, right: 8, bottom: 4, left: 8 };
-
-function SeriesCanvas({
-  points,
-  max,
-  maxLabel,
-  variant,
-  allowMotion,
-}: {
-  readonly points: readonly MiniSeriesPoint[];
-  readonly max: number;
-  readonly maxLabel: string | null;
-  readonly variant: 'bar' | 'line';
-  readonly allowMotion: boolean;
-}) {
-  const chartConfig = {
-    value: { color: 'var(--primary)' },
-  } satisfies ChartConfig;
-  const maxReferenceLineProps = maxLabel ? { label: renderMaxReferenceLabel(maxLabel) } : {};
-
-  return (
-    <div aria-hidden="true" data-chart-variant={variant}>
-      <ChartContainer config={chartConfig} className="aspect-auto h-28 w-full">
-        {variant === 'bar' ? (
-          // Revenue trend — the original `BarSvg` drew a `<rect>` per month;
-          // preserve that as a Recharts `<Bar>` (NOT a Line — a bar series
-          // rendered as a line would be a visual regression).
-          <BarChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
-            <YAxis hide domain={[0, max]} />
-            <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke="var(--border)" />
-            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
-            <Bar
-              dataKey="value"
-              fill="var(--color-value)"
-              radius={[2, 2, 0, 0]}
-              maxBarSize={28}
-              minPointSize={3}
-              isAnimationActive={allowMotion}
-            />
-          </BarChart>
-        ) : (
-          // Member growth — the original `LineSvg` drew a filled area
-          // (`fill-primary/15`) UNDER a stroked polyline, not a bare line;
-          // an `<Area>` (fill + stroke) is required, or the blue fill under
-          // the curve is a visual regression.
-          <AreaChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
-            <YAxis hide domain={[0, max]} />
-            <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke="var(--border)" />
-            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
-            <Area
-              dataKey="value"
-              type="monotone"
-              stroke="var(--color-value)"
-              strokeWidth={2}
-              fill="var(--color-value)"
-              fillOpacity={0.15}
-              dot={makeSeriesDot(points.length - 1)}
-              activeDot={{ r: 4 }}
-              isAnimationActive={allowMotion}
-            />
-          </AreaChart>
-        )}
-      </ChartContainer>
-    </div>
-  );
-}
 
 export function MiniSeriesChart({
   title,
@@ -308,7 +180,7 @@ export function MiniSeriesChart({
               <span className="text-right text-caption text-muted-foreground">{summary.label}</span>
             </div>
             <div className="mt-3">
-              <SeriesCanvas
+              <MiniSeriesCanvas
                 points={points}
                 max={max}
                 maxLabel={maxLabel}
