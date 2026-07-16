@@ -2,11 +2,13 @@
  * F9 067-dashboard-interactive-charts Task 4 —
  * `invoiceSourceAdapter.getInvoiceStatusDistribution` against LIVE Neon.
  *
- * Bucket rules (from the 067 design, pinned by this test):
- *   - `paid`    = status 'paid'                          → NET-of-VAT paid
- *                 revenue (mirrors `netPaidRevenueSatang`, the same figure
- *                 `getYtdPaidRevenueSatang` sums — VAT excluded, it's a
- *                 liability, not income).
+ * Bucket rules (from the 067 design § Data & correctness, pinned by this
+ * test) — a part-to-whole donut needs ONE consistent basis, so ALL THREE
+ * buckets are VAT-INCLUSIVE, net-of-credit (`total − creditedTotal`), NOT
+ * the ex-VAT `netPaidRevenueSatang` figure the separate revenue-KPI methods
+ * (`getYtdPaidRevenueSatang` / `getMonthlyPaidRevenueSatang`) sum:
+ *   - `paid`    = status 'paid'                          → `total −
+ *                 creditedTotal` (gross amount actually received).
  *   - `unpaid`  = status 'issued' AND NOT computeIsOverdue → outstanding
  *                 balance (`total − creditedTotal`, VAT-INCLUSIVE — the
  *                 actual amount the member still owes).
@@ -195,8 +197,9 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
     const pastDue = addDays(todayBkk, -30);
 
     beforeAll(async () => {
-      // paid: subtotal 100_000 + vat 7_000 = total 107_000 → net-of-VAT
-      // revenue is exactly 100_000 (107_000 × 100_000 / 107_000).
+      // paid: subtotal 100_000 + vat 7_000 = total 107_000 → the paid bucket
+      // is the GROSS, net-of-credit amount (no credit here, so 107_000 −
+      // 0 == 107_000), NOT the ex-VAT 100_000 `netPaidRevenueSatang` figure.
       await seedInvoice({
         tenant: tenantA,
         memberId: memberA,
@@ -245,7 +248,7 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
       const nowIso = new Date().toISOString();
       const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso);
 
-      expect(bucket(dist, 'paid')).toEqual({ bucket: 'paid', satang: 100_000n, count: 1 });
+      expect(bucket(dist, 'paid')).toEqual({ bucket: 'paid', satang: 107_000n, count: 1 });
       expect(bucket(dist, 'unpaid')).toEqual({ bucket: 'unpaid', satang: 53_500n, count: 1 });
       expect(bucket(dist, 'overdue')).toEqual({ bucket: 'overdue', satang: 85_600n, count: 1 });
       expect(dist.draftCount).toBe(1);

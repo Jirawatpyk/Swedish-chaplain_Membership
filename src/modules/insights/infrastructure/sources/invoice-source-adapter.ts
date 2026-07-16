@@ -80,13 +80,16 @@ const netPaidRevenueSatang = (inv: {
 };
 
 /**
- * Outstanding balance for the unpaid/overdue distribution buckets — the
- * VAT-INCLUSIVE amount the member still owes (`total − creditedTotal`), NOT
- * the ex-VAT revenue figure `netPaidRevenueSatang` computes. These are
- * distinct concepts: `paid` reports realised revenue (VAT excluded, it's a
- * liability not income); `unpaid`/`overdue` report accounts-receivable — the
- * money still due, which legitimately includes VAT. A `partially_credited`
- * invoice nets down by exactly the credited amount, same as the revenue KPI.
+ * Gross, net-of-credit amount (`total − creditedTotal`) for the status-
+ * distribution donut — used for ALL THREE `paid`/`unpaid`/`overdue` buckets.
+ * A part-to-whole chart needs one consistent basis (067 design § Data &
+ * correctness): amounts are VAT-INCLUSIVE, the way accounts-receivable is
+ * actually booked (§86/4 tax invoices always include VAT), NOT the ex-VAT
+ * `netPaidRevenueSatang` figure the separate revenue-KPI methods
+ * (`getYtdPaidRevenueSatang` / `getMonthlyPaidRevenueSatang`) sum — mixing
+ * ex-VAT `paid` with gross `unpaid`/`overdue` would distort the slice
+ * proportions. A `partially_credited` invoice nets down by exactly the
+ * credited amount, same as the revenue KPI.
  */
 const netBalanceSatang = (inv: {
   total: { satang: bigint } | null;
@@ -248,7 +251,7 @@ export const invoiceSourceAdapter: InvoiceSource = {
             draftCount += 1;
             break;
           case 'paid':
-            paidSatang += netPaidRevenueSatang(inv);
+            paidSatang += netBalanceSatang(inv);
             paidCount += 1;
             break;
           case 'issued':
