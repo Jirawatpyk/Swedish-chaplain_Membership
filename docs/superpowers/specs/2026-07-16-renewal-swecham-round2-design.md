@@ -84,9 +84,9 @@ Confirmed by an adversarial 3-lens panel (§9) + the user's "rare" call:
 ### 4.3 What already exists (verified — shrinks Gate's scope)
 
 - **Portal Pay CTA already hidden for terminal cycles:** `is-renewal-payable.ts` returns `false` for any status outside `{awaiting_payment, upcoming, reminded}` (a terminated member's cycle is `lapsed`). Presentation-only.
-- **Offline admin mark-paid already rejects terminal cycles:** `mark-paid-offline.ts` `PAYABLE_STATUSES = {awaiting_payment, upcoming}` → a `lapsed` cycle returns `cycle_not_payable`. No change needed here beyond confirming the error routing points the admin to the reactivate-first comeback.
+- **Offline admin mark-paid already rejects terminal cycles:** `mark-paid-offline.ts` `PAYABLE_STATUSES = {awaiting_payment, upcoming}` → a `lapsed` cycle returns `cycle_not_payable`. Server-side no change; the admin-facing guidance for this block is part (4) in §4.4.
 
-### 4.4 Gate's real work (three parts)
+### 4.4 Gate's real work (four parts)
 
 **(1) Server-side guard on `initiate-payment`** (defense-in-depth beyond the UI hide). Add one step after Step 4 (`initiate-payment.ts:~383`): if the member's membership access is `terminated`, return a new `InitiatePaymentError` code `membership-terminated` → route maps to **409** with a member-facing notice: *"Your membership has been terminated. Please contact the chamber to reactivate before paying."*
 
@@ -97,6 +97,8 @@ Confirmed by an adversarial 3-lens panel (§9) + the user's "rare" call:
 
 **(3) Payments → membership-access port/bridge** to power (1). This is the 4th copy of the established consumer-owns-port pattern (events / members / broadcasts each ship an identical ~55-line port + ~20-line bridge composing F8's pure `deriveMembershipAccess` + `findLatestCycleForMember`). Clean Architecture: payments reads membership state through this port, never reaching into the renewals domain.
 
+**(4) Admin comeback guidance on the blocked offline path.** When an admin hits the existing `cycle_not_payable` block on a terminal (`lapsed`) cycle, the error surface currently dead-ends. Upgrade the admin-facing error copy to state the comeback explicitly: *"This member's membership has been terminated — use Renew Lapsed Member to reactivate and re-invoice, then record the payment."* (EN/TH/SV). Presentation + i18n only (the mark-paid / record-payment error routing surface); no server behaviour change. Closes the §9 steelman friction point — an admin holding out-of-band money must see the path, not a dead end.
+
 ### 4.5 Known limitation (documented, accepted)
 
 Gate controls **Chamber-OS payment rails only** (Stripe + admin mark-paid). It cannot refuse a **bank transfer / PromptPay pushed directly to the chamber's account** — that cash lands out-of-band. This is not a regression Gate introduces: the offline mark-paid block already exists today, and the designed comeback for money-already-arrived is **reactivate-first** (`admin-renew-lapsed-member` re-invoices, then apply the payment) — **not** a refund. The audit-net + admin-visible signal make the residual online-race case (Payment Intent created pre-termination, confirmed post-termination — the one path the `initiate-payment` 409 cannot catch) visible for the admin to reactivate-or-refund. Given the user's "rare + relationship-driven" call, the human reactivate-first path is the correct comeback; a self-service accept-and-reconcile queue is Full (deferred).
@@ -106,6 +108,7 @@ Gate controls **Chamber-OS payment rails only** (Stripe + admin mark-paid). It c
 - **Integration (live Neon):** `initiate-payment` returns 409 `membership-terminated` for a terminated member; the `terminal_only` heal path emits the `payment_on_terminated_member` audit event + metric (+ escalation task if adopted) instead of the silent warn. **Mandatory cross-tenant integration test** for the new payments→membership read (Principle I, Review-Gate blocker).
 - **Contract:** the new `InitiatePaymentError` code + route mapping; the payments membership-access port.
 - **Unit:** the terminated-detection predicate on the bridge.
+- **i18n:** new member-facing 409 notice + admin comeback-guidance keys EN/TH/SV; parity test.
 
 ---
 
