@@ -338,6 +338,30 @@ describe('recordPayment — 066 §4.4(1) terminated-membership gate', () => {
     expect(r.ok).toBe(true);
     expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
   });
+
+  // 066 review polish #2 — the offline-mark rail is exempt (same as the §87
+  // payment-date guard); it has its OWN terminated gate at the F8 layer and
+  // its invoice isn't visible to this non-tx findById anyway.
+  it('admin_offline_mark trigger → gate SKIPPED (F8 offline rail owns its gate)', async () => {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, {
+      ...input,
+      triggeredBy: 'admin_offline_mark' as const,
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
+
+  // 066 review polish #3 — asTenantContext throws on a malformed slug; the
+  // gate must fail OPEN as a Result, NEVER escape recordPayment as an uncaught
+  // throw (Principle III). A z.string().min(1) tenantId can be a non-slug.
+  it('gate throw (invalid tenant slug) fails OPEN; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, { ...input, tenantId: 'Bad_Slug' });
+    expect(r.ok).toBe(true);
+    // asTenantContext threw before the bridge call — access was never read.
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
 });
 
 describe('recordPayment — CP-4.2 branch coverage', () => {

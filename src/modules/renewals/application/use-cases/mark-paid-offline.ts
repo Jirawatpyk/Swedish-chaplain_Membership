@@ -47,7 +47,11 @@ import { runInTenant } from '@/lib/db';
 import { addMonthsUtc } from '@/lib/dates';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
-import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
+import {
+  parseCycleId,
+  isMembershipLapsed,
+  type CycleId,
+} from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
 import { applyPendingTierUpgradeInTx } from './apply-pending-tier-upgrade';
@@ -137,6 +141,15 @@ export type MarkPaidOfflineError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'cycle_not_found' }
   | { readonly kind: 'cycle_not_payable'; readonly currentStatus: string }
+  /**
+   * 066 review polish #1 — the MEMBER is terminated (their LATEST cycle
+   * resolves to `terminated` under `deriveMembershipAccess`) even though the
+   * cycle being marked is in a payable status. Mirrors the F4 record-payment
+   * §4.4(1) gate: refuse the offline settlement + direct the admin to the
+   * reactivation flow, so no §86/4 receipt is minted to a non-member. Distinct
+   * from `cycle_not_payable` (that cycle IS payable; the member is not).
+   */
+  | { readonly kind: 'member_terminated' }
   /**
    * Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry will not help). Kept
    * distinct from `f4_failure` (transient/infra faults → "please try again")
@@ -253,6 +266,40 @@ export async function markPaidOffline(
       kind: 'cycle_not_payable',
       currentStatus: preLoad.status,
     });
+  }
+
+  // 066 review polish #1 — defense-in-depth terminated gate for the F8 offline
+  // rail (the F4 record-payment gate at §4.4(1) does NOT cover this rail: it
+  // creates the invoice inside this use-case's externalTx, invisible to that
+  // gate's non-tx findById). Refuse the offline-mark when the MEMBER is
+  // terminated even though the cycle being marked is payable: a member whose
+  // LATEST cycle is `lapsed` (deriveMembershipAccess → 'terminated') could
+  // still own an OLDER upcoming/awaiting cycle (a coexisting lapsed+upcoming
+  // data anomaly), and marking that older cycle paid would mint a §86/4 receipt
+  // to a non-member. Mirror the F4 gate's verdict: block → reactivate first.
+  //
+  // Non-tx read (membership state is immutable across the click, same rationale
+  // as the F4 gate). The COMMON case — the cycle being marked IS the member's
+  // latest and is in a payable status — derives `full`/`suspended`, never
+  // `terminated`, so a normal renewal is never blocked. `input.paymentDate`
+  // (the settlement instant) is the evaluation clock; a `lapsed` latest cycle
+  // resolves terminated regardless of it.
+  const latestCycle = await deps.cyclesRepo.findLatestCycleForMember(
+    input.tenantId,
+    preLoad.memberId,
+  );
+  if (latestCycle && isMembershipLapsed(latestCycle, new Date(input.paymentDate))) {
+    logger.warn(
+      {
+        cycleId,
+        memberId: preLoad.memberId,
+        tenantId: input.tenantId,
+        latestCycleId: latestCycle.cycleId,
+        latestStatus: latestCycle.status,
+      },
+      'markPaidOffline: member is terminated (latest cycle lapsed) — refusing offline-mark; reactivate first',
+    );
+    return err({ kind: 'member_terminated' });
   }
 
   // FR-022 frozen-price invariant (068 cluster A): the offline §86/4 bills

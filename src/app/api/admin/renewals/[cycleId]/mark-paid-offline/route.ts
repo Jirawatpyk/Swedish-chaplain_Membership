@@ -173,6 +173,15 @@ export async function POST(
             correlationId: ctx.correlationId,
             details: { current_status: result.error.currentStatus },
           });
+        case 'member_terminated':
+          // 066 review polish #1 — the member is terminated (latest cycle
+          // lapsed); mirror the F4 record-payment §4.4(1) gate's 409 →
+          // "reactivate first" copy. No orphan invoice (blocked pre-chain).
+          return errorResponse({
+            status: 409,
+            code: 'member_terminated',
+            correlationId: ctx.correlationId,
+          });
         case 'f4_permanent_failure': {
           // Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry never helps).
           // Unlike `f4_failure` (whose free-text reason is scrubbed), `reason`

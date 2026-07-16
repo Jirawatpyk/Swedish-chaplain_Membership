@@ -323,38 +323,64 @@ export async function recordPayment(
   // row yet.
   if (!settings) return err({ code: 'settings_missing' });
 
-  // 066 §4.4(1) — TERMINATED-MEMBERSHIP GATE (admin-manual rails only).
+  // 066 §4.4(1) — TERMINATED-MEMBERSHIP GATE (F4 admin dialog rail only).
   // Runs BEFORE `withTx`, like the settings load above: the membership-
   // access bridge opens its OWN `runInTenant`, so calling it inside the
   // payment tx is the pool-starvation/deadlock class the pre-tx settings
   // read avoids. This uses a non-tx `findById` for the gate decision only
   // (membership state is immutable during a payment; the in-tx re-read +
-  // row lock below stay authoritative for the payment itself). The webhook
-  // rail is EXEMPT — its money is already captured, so the §4.4(2) heal-
-  // site audit net is that path's control, not a reject.
+  // row lock below stay authoritative for the payment itself).
+  //
+  // EXEMPT rails — the SAME two the §87 payment-date guard below exempts,
+  // for the same reasons:
+  //   • webhook            — F5 money is already captured; blocking would
+  //     strand it, so the §4.4(2) heal-site net is that path's control.
+  //   • admin_offline_mark — the F8 offline-mark rail creates the invoice
+  //     inside the caller's externalTx (this non-tx `findById` cannot see it
+  //     anyway) AND has its OWN terminated gate at the F8 layer
+  //     (mark-paid-offline). Gating here would be a wasted round-trip while
+  //     the caller holds the outer tx + per-cycle advisory lock.
   const eventTrigger = input.triggeredBy ?? 'admin_manual';
-  if (eventTrigger !== 'webhook') {
+  if (eventTrigger !== 'webhook' && eventTrigger !== 'admin_offline_mark') {
     const preInvoice = await deps.invoiceRepo.findById(invoiceId, input.tenantId);
     if (
       preInvoice &&
       preInvoice.invoiceSubject === 'membership' &&
       preInvoice.memberId !== null
     ) {
-      const access = await deps.membershipAccess.getMembershipAccess(
-        asTenantContext(input.tenantId),
-        preInvoice.memberId,
-      );
-      if (access.ok && access.value.access === 'terminated') {
-        return err({ code: 'membership_terminated' });
-      }
-      if (!access.ok) {
-        // FAIL-OPEN — availability of the money path beats the gate; the
-        // §4.4(2) heal-site net is the backstop for anything that slips.
+      // FAIL-OPEN on ANY gate error (availability of the money path beats the
+      // gate; the §4.4(2) heal-site net is the backstop). `asTenantContext`
+      // throws on a malformed slug, and — defensively — a future
+      // `getMembershipAccess` impl could reject; either must degrade to "skip
+      // the gate", NEVER escape recordPayment as an uncaught throw (Principle
+      // III: Application surfaces failures as Result, never throws). This runs
+      // above the `try` below, so the wrapper here is what keeps it Result-safe.
+      let terminated = false;
+      try {
+        const access = await deps.membershipAccess.getMembershipAccess(
+          asTenantContext(input.tenantId),
+          preInvoice.memberId,
+        );
+        if (access.ok) {
+          terminated = access.value.access === 'terminated';
+        } else {
+          logger.warn(
+            { invoiceId, memberId: preInvoice.memberId, tenantId: input.tenantId },
+            '[record-payment] membership-access lookup failed — failing OPEN (gate skipped)',
+          );
+        }
+      } catch (gateErr) {
         logger.warn(
-          { invoiceId, memberId: preInvoice.memberId, tenantId: input.tenantId },
-          '[record-payment] membership-access lookup failed — failing OPEN (gate skipped)',
+          {
+            err: gateErr instanceof Error ? gateErr.message : String(gateErr),
+            invoiceId,
+            memberId: preInvoice.memberId,
+            tenantId: input.tenantId,
+          },
+          '[record-payment] membership-access gate threw — failing OPEN (gate skipped)',
         );
       }
+      if (terminated) return err({ code: 'membership_terminated' });
     }
   }
 

@@ -3455,6 +3455,7 @@
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
+            "member_terminated": "This member's latest membership has lapsed — reactivate the member before recording a payment.",
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
             "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year before marking paid.",

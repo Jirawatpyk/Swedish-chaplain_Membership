@@ -266,6 +266,12 @@ function fakeDeps(
     cyclesRepo: {
       findById: vi.fn(async () => cycle),
       findByIdInTx: vi.fn(async () => cycle),
+      // 066 review polish #1 — the terminated-gate's latest-cycle read.
+      // Default to the SAME (payable) cycle being marked → the common case
+      // where latest == the marked cycle → deriveMembershipAccess is
+      // suspended/full, NOT terminated → gate passes → untouched tests stay
+      // green. The terminated-case test overrides this with a lapsed cycle.
+      findLatestCycleForMember: vi.fn(async () => cycle),
       transitionStatus: transitionMock,
       acquireCycleLockInTx: vi.fn(async () => {}),
       findByInvoiceIdInTx: findByInvoiceIdInTxMock,
@@ -346,6 +352,45 @@ const baseInput = {
   actorRole: 'admin' as const,
   correlationId: 'corr-1',
 };
+
+describe('markPaidOffline (066 review #1) — terminated-membership gate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('refuses when the member is terminated (latest cycle lapsed) → member_terminated, no F4 chain', async () => {
+    // The cycle being marked is payable (awaiting_payment), but the member's
+    // LATEST cycle is a DIFFERENT, lapsed one → deriveMembershipAccess
+    // 'terminated'. The offline rail must block (mirror the F4 §4.4(1) gate)
+    // so no §86/4 receipt is minted to a non-member.
+    const cycle = buildCycle({ status: 'awaiting_payment', memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    (
+      deps.cyclesRepo.findLatestCycleForMember as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(buildCycle({ status: 'lapsed' }));
+
+    const r = await markPaidOffline(deps, baseInput);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('member_terminated');
+    // Blocked BEFORE the F4 chain — no invoice/§86/4 issued, no lock taken.
+    expect(
+      deps.f4InvoiceBridge.issueAndMarkPaid as ReturnType<typeof vi.fn>,
+    ).not.toHaveBeenCalled();
+    expect(
+      deps.cyclesRepo.acquireCycleLockInTx as ReturnType<typeof vi.fn>,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('does NOT block a normal renewal (latest == the payable cycle being marked)', async () => {
+    // Default fakeDeps: findLatestCycleForMember returns the SAME payable
+    // cycle → deriveMembershipAccess suspended/full, never terminated.
+    const cycle = buildCycle({ status: 'awaiting_payment', memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+  });
+});
 
 describe('markPaidOffline (T059) — happy path', () => {
   beforeEach(() => {
