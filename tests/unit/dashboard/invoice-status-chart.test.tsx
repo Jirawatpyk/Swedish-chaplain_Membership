@@ -201,4 +201,68 @@ describe('InvoiceStatusChart', () => {
     renderChart({ buckets: [PAID, UNPAID, OVERDUE], draftCount: 1 });
     expect(screen.getByText('1 draft invoice not shown')).toBeInTheDocument();
   });
+
+  // WCAG 1.4.1 (Use of Color) — the donut's success/warning/destructive
+  // fills are near-equal luminance (fail CVD separation), and until now the
+  // only text labels were in the sr-only table + hover-only tooltip: a
+  // sighted colour-blind user saw three indistinguishable slices with no
+  // persistent on-screen label. Fix: a visible legend row (swatch + label +
+  // %) below the donut, `aria-hidden` because it duplicates the sr-only
+  // table's data (same double-announce rationale as the aria-hidden canvas).
+  it('renders a persistent, visible legend (swatch + label + %) per bucket, hidden from SR', () => {
+    const { container } = renderChart(FULL);
+    const legend = container.querySelector('ul[aria-hidden="true"]');
+    expect(legend).toBeInTheDocument();
+    const items = legend?.querySelectorAll('li') ?? [];
+    expect(items).toHaveLength(3);
+    const texts = Array.from(items).map((li) => li.textContent);
+    expect(texts[0]).toContain('Paid');
+    expect(texts[0]).toContain('50%');
+    expect(texts[1]).toContain('Unpaid');
+    expect(texts[1]).toContain('30%');
+    expect(texts[2]).toContain('Overdue');
+    expect(texts[2]).toContain('20%');
+    // Every entry carries its own colour swatch (never colour-only, but the
+    // swatch is present alongside the text label).
+    items.forEach((li) => {
+      expect(li.querySelector('span[style]')).toBeInTheDocument();
+    });
+    // The sr-only <ChartDataTable> (which already carries this data) must
+    // NOT be aria-hidden — only the new visible legend duplicate is.
+    expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
+  });
+
+  // Minor: naive independent `Math.round(share / total * 100)` per bucket
+  // can fail to sum to 100 (e.g. three equal thirds round to 33/33/33 = 99).
+  // Largest-remainder allocation must make the displayed bucket %s always
+  // sum to exactly 100, matching the Total row.
+  it('allocates bucket %s via largest-remainder so they sum to exactly 100 (equal thirds would naively round to 99)', () => {
+    const distribution: InvoiceStatusDistribution = {
+      buckets: [
+        { bucket: 'paid', satang: '100', count: 1 },
+        { bucket: 'unpaid', satang: '100', count: 1 },
+        { bucket: 'overdue', satang: '100', count: 1 },
+      ],
+      draftCount: 0,
+    };
+    const { container } = renderChart(distribution);
+    const table = screen.getByRole('table');
+    const rowHeaders = within(table)
+      .getAllByRole('rowheader')
+      .map((el) => el.textContent);
+    // First index (Paid) wins the tie-break and gets the extra point: 34%,
+    // the rest stay at the floor: 33% each. Total row is still 100%.
+    expect(rowHeaders).toEqual(['Paid', 'Unpaid', 'Overdue', 'Total']);
+    expect(within(table).getByText('34%')).toBeInTheDocument();
+    expect(within(table).getAllByText('33%')).toHaveLength(2);
+    expect(within(table).getByText('100%')).toBeInTheDocument(); // Total row
+    expect(34 + 33 + 33).toBe(100);
+    // The visible legend (Minor fix) shares the SAME computed `pctLabel` —
+    // must also read 34/33/33, never an independently-rounded 33/33/33.
+    const legend = container.querySelector('ul[aria-hidden="true"]');
+    const legendTexts = Array.from(legend?.querySelectorAll('li') ?? []).map((li) => li.textContent);
+    expect(legendTexts[0]).toContain('34%');
+    expect(legendTexts[1]).toContain('33%');
+    expect(legendTexts[2]).toContain('33%');
+  });
 });

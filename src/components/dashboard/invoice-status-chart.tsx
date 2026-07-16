@@ -106,6 +106,34 @@ function zeroBucket(bucket: Bucket): InvoiceStatusBucket {
   return { bucket, satang: '0', count: 0 };
 }
 
+/** Largest-remainder ("Hare quota") allocation — NOT independent
+ * `Math.round(n / total * 100)` per bucket. Three shares rounded
+ * independently can land on e.g. 33/33/33 (sum 99) or 34/34/34 (sum 101)
+ * for a total that isn't a clean multiple of the bucket count, which then
+ * contradicts the hard-coded "100%" Total row. This guarantees the returned
+ * integers always sum to exactly 100 whenever `total > 0`: floor every raw
+ * share, then hand the leftover percentage points (an integer, since it's
+ * 100 minus a sum of integers) one-by-one to the buckets with the largest
+ * fractional remainder, tie-broken by original index for determinism. */
+function allocatePercentages(values: readonly number[]): number[] {
+  const total = values.reduce((sum, v) => sum + v, 0);
+  if (total <= 0) return values.map(() => 0);
+
+  const raw = values.map((v) => (v / total) * 100);
+  const floors = raw.map((r) => Math.floor(r));
+  const leftover = 100 - floors.reduce((sum, f) => sum + f, 0);
+
+  const byRemainderDesc = raw
+    .map((r, index) => ({ index, frac: r - Math.floor(r) }))
+    .sort((a, b) => b.frac - a.frac || a.index - b.index);
+
+  const result = [...floors];
+  for (const { index } of byRemainderDesc.slice(0, leftover)) {
+    result[index] = (result[index] ?? 0) + 1;
+  }
+  return result;
+}
+
 interface BucketTooltipPayloadEntry {
   readonly payload?: BucketRow;
 }
@@ -157,19 +185,21 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   });
 
   const byBucket = new Map(distribution.buckets.map((b) => [b.bucket, b] as const));
+  const bucketsInOrder = BUCKET_ORDER.map((key) => byBucket.get(key) ?? zeroBucket(key));
+  const satangNumbers = bucketsInOrder.map((b) => Number(b.satang));
 
-  const totalSatangNumber = BUCKET_ORDER.reduce((sum, key) => {
-    const b = byBucket.get(key) ?? zeroBucket(key);
-    return sum + Number(b.satang);
-  }, 0);
+  const totalSatangNumber = satangNumbers.reduce((sum, n) => sum + n, 0);
   const hasData = totalSatangNumber > 0;
 
-  const pctOf = (n: number): string =>
-    totalSatangNumber <= 0 ? '0%' : `${Math.round((n / totalSatangNumber) * 100)}%`;
+  // Largest-remainder allocation (see `allocatePercentages` doc) so the
+  // displayed bucket %s always sum to exactly 100 — keeping the hard-coded
+  // Total row's "100%" honest.
+  const pctAllocations = allocatePercentages(satangNumbers);
 
-  const rows: BucketRow[] = BUCKET_ORDER.map((key) => {
-    const b = byBucket.get(key) ?? zeroBucket(key);
-    const satangNumber = Number(b.satang);
+  const rows: BucketRow[] = BUCKET_ORDER.map((key, i) => {
+    const b = bucketsInOrder[i] ?? zeroBucket(key);
+    const satangNumber = satangNumbers[i] ?? 0;
+    const pct = pctAllocations[i] ?? 0;
     return {
       bucket: key,
       label: t(`bucket.${key}`),
@@ -177,7 +207,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
       amountLabel: thbFmt.format(satangNumber / 100),
       count: b.count,
       countLabel: t('invoiceCountLabel', { count: b.count }),
-      pctLabel: pctOf(satangNumber),
+      pctLabel: `${pct}%`,
     };
   });
 
@@ -235,12 +265,38 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
               {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
                   of the aria-hidden canvas div, NOT inside it, so screen
                   readers reach it in normal reading order. Visually overlaid
-                  on the donut hole via CSS position, not Recharts geometry. */}
+                  on the donut hole via CSS position, not Recharts geometry.
+                  Label BEFORE value (not value-then-label) so SR/reading
+                  order says "Total outstanding. THB 10,000." rather than
+                  the bare amount followed by an unattached caption. */}
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-2xl font-semibold tabular-nums">{totalLabel}</span>
                 <span className="text-caption text-muted-foreground">{t('totalLabel')}</span>
+                <span className="text-2xl font-semibold tabular-nums">{totalLabel}</span>
               </div>
             </div>
+            {/* Persistent, VISIBLE legend (WCAG 1.4.1 — colour is never the
+                sole signal): the donut's semantic success/warning/destructive
+                fills fail CVD separation (near-equal luminance in this
+                theme), and without this row the only text labels live in the
+                sr-only table + the hover-only tooltip, leaving a sighted
+                colour-blind user unable to tell paid/unpaid/overdue apart.
+                `aria-hidden` because its data 100% duplicates the sr-only
+                `<ChartDataTable>` below — same double-announce rationale as
+                the aria-hidden canvas. */}
+            <ul
+              aria-hidden="true"
+              className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-caption text-muted-foreground"
+            >
+              {rows.map((r) => (
+                <li key={r.bucket} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
+                  />
+                  {r.label} · {r.pctLabel}
+                </li>
+              ))}
+            </ul>
             {draftCaption}
             {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
                 SR/no-JS data path; visually hidden when data is present, the
