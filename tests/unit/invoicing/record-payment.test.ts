@@ -362,6 +362,22 @@ describe('recordPayment — 066 §4.4(1) terminated-membership gate', () => {
     // asTenantContext threw before the bridge call — access was never read.
     expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
   });
+
+  // Companion to the slug-throw case above: a NON-Error throw from the bridge
+  // exercises the catch's `String(gateErr)` log arm (the slug case throws an
+  // Error subclass → only the `.message` arm). Both arms must run to hold
+  // record-payment.ts at branches:100.
+  it('gate lookup throws a non-Error → fails OPEN; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('terminated');
+    (
+      deps.membershipAccess.getMembershipAccess as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(async () => {
+      throw 'boom'; // non-Error primitive → String(gateErr) log arm
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('recordPayment — CP-4.2 branch coverage', () => {

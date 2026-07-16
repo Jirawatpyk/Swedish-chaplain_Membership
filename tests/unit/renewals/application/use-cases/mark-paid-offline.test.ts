@@ -390,6 +390,43 @@ describe('markPaidOffline (066 review #1) — terminated-membership gate', () =>
     const r = await markPaidOffline(deps, baseInput);
     expect(r.ok).toBe(true);
   });
+
+  it('null latest cycle (lookup returns null) → gate skipped, payment PROCEEDS', async () => {
+    // Exercises the `latestCycle &&` false-branch (a member with no cycle row
+    // for the latest read — defensive; never terminated when null).
+    const cycle = buildCycle({ status: 'awaiting_payment', memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    (
+      deps.cyclesRepo.findLatestCycleForMember as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(null);
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+  });
+
+  it('gate lookup throws (Error) → fails OPEN, payment PROCEEDS', async () => {
+    // Defense-in-depth gate must NOT block a legitimate settlement on a
+    // transient blip (mirrors the F4 gate's fail-open posture). Error arm.
+    const cycle = buildCycle({ status: 'awaiting_payment', memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    (
+      deps.cyclesRepo.findLatestCycleForMember as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('neon blip'));
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+  });
+
+  it('gate lookup throws (non-Error) → fails OPEN, payment PROCEEDS', async () => {
+    // String(gateErr) log arm.
+    const cycle = buildCycle({ status: 'awaiting_payment', memberId: 'mem-1' });
+    const { deps } = fakeDeps(cycle);
+    (
+      deps.cyclesRepo.findLatestCycleForMember as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(async () => {
+      throw 'boom';
+    });
+    const r = await markPaidOffline(deps, baseInput);
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('markPaidOffline (T059) — happy path', () => {

@@ -51,6 +51,7 @@ import {
   parseCycleId,
   isMembershipLapsed,
   type CycleId,
+  type RenewalCycle,
 } from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { createNextCycleOnPaidInTx } from './create-next-cycle-on-paid';
@@ -281,14 +282,35 @@ export async function markPaidOffline(
   // Non-tx read (membership state is immutable across the click, same rationale
   // as the F4 gate). The COMMON case — the cycle being marked IS the member's
   // latest and is in a payable status — derives `full`/`suspended`, never
-  // `terminated`, so a normal renewal is never blocked. `input.paymentDate`
-  // (the settlement instant) is the evaluation clock; a `lapsed` latest cycle
-  // resolves terminated regardless of it.
-  const latestCycle = await deps.cyclesRepo.findLatestCycleForMember(
-    input.tenantId,
-    preLoad.memberId,
-  );
-  if (latestCycle && isMembershipLapsed(latestCycle, new Date(input.paymentDate))) {
+  // `terminated`, so a normal renewal is never blocked.
+  //
+  // FAIL-OPEN (mirrors the F4 §4.4(1) gate): this is defense-in-depth on top of
+  // the cycle-payable precondition, and the read sits ABOVE this use-case's own
+  // `try` — so a transient blip must degrade to "skip the gate" rather than
+  // escape as an uncaught throw (Principle III) OR block a legitimate offline
+  // settlement. Evaluate termination against the WALL CLOCK (`deps.clock.now()`
+  // — a "now" property of the member), NOT the admin-backdatable
+  // `input.paymentDate`, so a backdated receipt can't flip a `cancelled`-expiry
+  // verdict. A `lapsed` latest cycle (the dominant case) is terminated
+  // regardless of the clock.
+  let latestCycle: RenewalCycle | null = null;
+  try {
+    latestCycle = await deps.cyclesRepo.findLatestCycleForMember(
+      input.tenantId,
+      preLoad.memberId,
+    );
+  } catch (gateErr) {
+    logger.warn(
+      {
+        err: gateErr instanceof Error ? gateErr.message : String(gateErr),
+        cycleId,
+        memberId: preLoad.memberId,
+        tenantId: input.tenantId,
+      },
+      'markPaidOffline: terminated-gate lookup threw — failing OPEN (gate skipped)',
+    );
+  }
+  if (latestCycle && isMembershipLapsed(latestCycle, deps.clock.now())) {
     logger.warn(
       {
         cycleId,
