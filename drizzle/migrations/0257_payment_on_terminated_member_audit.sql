@@ -30,8 +30,15 @@
 -- ---------------------------------------------------------------------------
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'payment_on_terminated_member';--> statement-breakpoint
 
+-- `SET search_path` is RE-DECLARED here: CREATE OR REPLACE reassigns ALL
+-- function properties from this command, so it would otherwise STRIP the
+-- `ALTER FUNCTION … SET search_path = pg_catalog, public` hardening applied
+-- by migration 0124 (PR #24 W10). Re-declaring it in the body keeps the
+-- security setting intact across this body change.
 CREATE OR REPLACE FUNCTION audit_log_default_retention_for_f4_tax_docs()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SET search_path = pg_catalog, public
+AS $$
 BEGIN
   -- Tax-document events promoted to 10y per Thai RD §87/3 + §86/10 + GDPR
   -- Art. 6(1)(c) legal-obligation retention basis.
