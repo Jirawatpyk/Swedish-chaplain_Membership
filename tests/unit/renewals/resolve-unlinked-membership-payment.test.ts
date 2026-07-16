@@ -34,7 +34,7 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock('@/lib/metrics', () => ({
-  renewalsMetrics: { unlinkedPaymentResolved: vi.fn() },
+  renewalsMetrics: { unlinkedPaymentResolved: vi.fn(), paymentOnTerminatedMember: vi.fn() },
 }));
 
 import { logger } from '@/lib/logger';
@@ -93,6 +93,7 @@ function fakeDeps(args: {
 } = {}): {
   deps: ResolveUnlinkedMembershipPaymentDeps;
   mocks: {
+    escalationInsert: ReturnType<typeof vi.fn>;
     readGuards: ReturnType<typeof vi.fn>;
     countCycles: ReturnType<typeof vi.fn>;
     countSettledCycles: ReturnType<typeof vi.fn>;
@@ -158,6 +159,7 @@ function fakeDeps(args: {
     args.memberPlan === undefined ? { planId: 'p1', isArchived: false } : args.memberPlan,
   );
   const emitInTx = vi.fn(async () => {});
+  const escalationInsert = vi.fn(async () => ({ created: true, row: { taskId: 'task-1' } }));
   // FIX-3 (PR #173 review, 2026-07-09) — default January; the pre-existing
   // FY-crossing tests below already assume a January-start tenant.
   const getFiscalYearStartMonthInTx = vi.fn(async () => 1);
@@ -178,11 +180,13 @@ function fakeDeps(args: {
     memberRenewalFlagsRepo: { readReactivationGuardsInTx: readGuards } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberRenewalFlagsRepo'],
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlan } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
     fiscalYearSettings: { getFiscalYearStartMonthInTx },
+    escalationTaskRepo: { insertIfAbsent: escalationInsert } as unknown as ResolveUnlinkedMembershipPaymentDeps['escalationTaskRepo'],
   };
 
   return {
     deps,
     mocks: {
+      escalationInsert,
       readGuards,
       countCycles,
       countSettledCycles,
@@ -230,11 +234,26 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 2: erased member', 
 });
 
 describe('resolveUnlinkedMembershipPaymentInTx — behaviour 6: terminal_only', () => {
-  it('cycles exist but none open → skipped:terminal_only + warn log', async () => {
-    const { deps } = fakeDeps({ cycleCountForMember: 2, openCycle: null });
+  it('cycles exist but none open → skipped:terminal_only + 066 §4.4(2) net (audit + escalation + metric)', async () => {
+    const { deps, mocks } = fakeDeps({ cycleCountForMember: 2, openCycle: null });
     const r = await resolveUnlinkedMembershipPaymentInTx(deps, buildEvent(), SENTINEL_TX);
     expect(r).toEqual({ kind: 'skipped', reason: 'terminal_only' });
-    expect(logger.warn).toHaveBeenCalled();
+    // 066 §4.4(2) — the payment_on_terminated_member audit event, in-tx.
+    const auditCall = mocks.emitInTx.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeDefined();
+    expect(
+      (auditCall![1] as { payload: { heal_site: string; cycle_id: null } }).payload,
+    ).toMatchObject({ heal_site: 'terminal_only', cycle_id: null });
+    // Idempotent admin work-item.
+    expect(mocks.escalationInsert).toHaveBeenCalledTimes(1);
+    expect(mocks.escalationInsert.mock.calls[0]![1]).toMatchObject({
+      taskType: 'post_termination_payment_review',
+      assignedToRole: 'admin',
+      cycleId: null,
+    });
+    expect(renewalsMetrics.paymentOnTerminatedMember).toHaveBeenCalledWith('terminal_only');
     expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('skipped');
   });
 });
@@ -955,6 +974,7 @@ function makeInterplayDeps(cyclesRepo: ReturnType<typeof makeInMemoryCyclesRepo>
     // FIX-3 (PR #173 review, 2026-07-09) — January default; none of the
     // interplay tests below exercise a fiscal-year crossing.
     fiscalYearSettings: { getFiscalYearStartMonthInTx: vi.fn(async () => 1) },
+    escalationTaskRepo: { insertIfAbsent: vi.fn(async () => ({ created: true, row: { taskId: 'task-1' } })) } as unknown as ResolveUnlinkedMembershipPaymentDeps['escalationTaskRepo'],
   };
   return { deps, cyclesRepo };
 }

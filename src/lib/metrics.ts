@@ -2794,6 +2794,22 @@ export const renewalsMetrics = {
     });
   },
 
+  /**
+   * 066 §4.4(2) — a payment settled a MEMBERSHIP invoice for a member whose
+   * membership is terminated (under 088 a §86/4 receipt is minted to a
+   * non-member). `site` names which terminal heal exit observed it:
+   * `terminal_only` (unlinked invoice) or `linked_terminal_skip` (the
+   * lapsed cycle's own linked invoice — the webhook-race path).
+   */
+  paymentOnTerminatedMember(site: 'terminal_only' | 'linked_terminal_skip'): void {
+    safeMetric(() => {
+      counter(
+        'renewals_payment_on_terminated_member_total',
+        'Payments settled against a terminated membership, by heal site',
+      ).add(1, { site });
+    });
+  },
+
   // ==========================================================================
   // F8 Phase 9 / T231 — business-volume counters per spec FR-054 + § 23.1
   //

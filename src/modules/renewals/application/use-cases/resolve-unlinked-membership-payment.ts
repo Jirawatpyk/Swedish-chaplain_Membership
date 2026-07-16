@@ -44,8 +44,11 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { randomUUID } from 'node:crypto';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
-import type { MemberId } from '@/modules/members';
+import { asMemberId, type MemberId } from '@/modules/members';
+import { asTaskId } from '../../domain/renewal-escalation-task';
+import type { RenewalEscalationTaskRepo } from '../ports/renewal-escalation-task-repo';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
 import { asCycleId, type RenewalCycle } from '../../domain/renewal-cycle';
@@ -137,6 +140,13 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
     FiscalYearStartMonthPort,
     'getFiscalYearStartMonthInTx'
   >;
+  /**
+   * 066 §4.4(2) — the terminal_only branch raises an idempotent admin
+   * work-item so a post-termination payment is admin-visible, not just a
+   * log line. In-tx via `insertIfAbsent` (the open-status partial unique
+   * index absorbs at-least-once webhook redelivery).
+   */
+  readonly escalationTaskRepo: Pick<RenewalEscalationTaskRepo, 'insertIfAbsent'>;
 };
 
 const AUDIT_ACTOR = { actorUserId: null, actorRole: 'system' as const };
@@ -239,26 +249,50 @@ export async function resolveUnlinkedMembershipPaymentInTx(
     case 'not_applicable': {
       // Only reachable with reason='terminal_only' here — 'erased' already
       // returned above. Members with only terminal cycles are owned by the
-      // admin-comeback flow (loud log per design doc).
+      // admin-comeback flow.
       //
-      // 065 final-review S2 (tracked in the design doc's Post-review
-      // follow-ups; needs a SweCham decision): under the §5.2 due+60
-      // clock a TERMINATED member's bill is deliberately left open, so a
-      // post-termination payment lands HERE routinely — the member is
-      // charged (and under FEATURE_088_TAX_AT_PAYMENT a §86/4 receipt is
-      // minted) while membership stays terminated, with only this warn +
-      // metric as the trail (no audit event, no admin work-queue entry,
-      // no member-facing messaging). Pending SweCham: auto-refund vs
-      // admin-reactivation-queue vs keep-and-notify.
-      logger.warn(
+      // 066 §4.4(2) — under the §5.2 due+60 clock a TERMINATED member's bill
+      // is deliberately left open, so a post-termination payment lands HERE:
+      // the member is charged (and under FEATURE_088_TAX_AT_PAYMENT a §86/4
+      // receipt is minted) while membership stays terminated. The F4 admin
+      // rails are now gated (§4.4(1)), so this branch is the residual
+      // webhook-race / out-of-band path — make it audit-visible AND
+      // admin-visible, atomically in F4's payment tx (Principle VIII).
+      await deps.auditEmitter.emitInTx(
+        tx,
         {
-          invoiceId: evt.invoiceId,
-          tenantId: evt.tenantId,
-          memberId: evt.memberId,
-          reason: classification.reason,
+          type: 'payment_on_terminated_member' as const,
+          payload: {
+            invoice_id: evt.invoiceId,
+            member_id: asMemberId(evt.memberId),
+            cycle_id: null,
+            amount_satang: evt.amountSatang.toString(),
+            payment_method: evt.paymentMethod,
+            triggered_by: evt.triggeredBy,
+            paid_at: evt.paidAt,
+            heal_site: 'terminal_only' as const,
+          },
         },
-        '[resolve-unlinked-payment] member has only terminal cycles — payment does not affect renewal state (use admin-comeback flow)',
+        { tenantId: evt.tenantId, ...AUDIT_ACTOR, correlationId: correlationId(evt) },
       );
+      // Admin work-item. The primary redelivery idempotency is
+      // recordPayment's paid-invoice REPLAY guard (an already-paid invoice
+      // never re-fires the on-paid chain). The (tenant, member, cycle,
+      // task_type) WHERE status='open' index is a secondary dedup — note it
+      // does NOT dedupe here because cycle_id is NULL (Postgres NULLS
+      // DISTINCT); that is acceptable given the primary guard. In-tx and
+      // NEVER swallowed: an infra throw rolls the payment tx back and the
+      // webhook retry heals (this hook's contract).
+      await deps.escalationTaskRepo.insertIfAbsent(tx, {
+        tenantId: evt.tenantId,
+        taskId: asTaskId(randomUUID()),
+        memberId: evt.memberId,
+        cycleId: null,
+        taskType: 'post_termination_payment_review',
+        assignedToRole: 'admin',
+        dueAt: new Date(Date.parse(evt.paidAt) + 7 * 86_400_000).toISOString(),
+      });
+      renewalsMetrics.paymentOnTerminatedMember('terminal_only');
       renewalsMetrics.unlinkedPaymentResolved('skipped');
       return { kind: 'skipped', reason: classification.reason };
     }

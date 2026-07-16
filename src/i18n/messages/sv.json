@@ -3650,6 +3650,7 @@
           "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
           "manual_outreach_required": "Manuell kontakt krävs",
           "termination_warning_blocked": "Avslut uppskjutet - ingen stadgeenlig varning äldre än 14 dagar",
+          "post_termination_payment_review": "Betalning efter avslutat medlemskap — granska",
           "manual_admin_reactivation_review": "Granska reaktivering"
         },
         "yearInCycle": {

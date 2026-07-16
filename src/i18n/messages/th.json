@@ -3650,6 +3650,7 @@
           "verify_pending_tier_upgrade": "ตรวจสอบการอัปเกรดที่รออยู่",
           "manual_outreach_required": "ต้องติดต่อด้วยตนเอง",
           "termination_warning_blocked": "เลื่อนการยุติสมาชิกภาพ - ยังไม่มีคำเตือนตามข้อบังคับที่ครบ 14 วัน",
+          "post_termination_payment_review": "มีการชำระเงินหลังยุติสมาชิกภาพ — ตรวจสอบ",
           "manual_admin_reactivation_review": "ตรวจสอบการเปิดใช้ใหม่"
         },
         "yearInCycle": {

@@ -60,10 +60,14 @@ import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
+import { randomUUID } from 'node:crypto';
 import {
   asCycleId,
+  isMembershipLapsed,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
+import { asTaskId } from '../../domain/renewal-escalation-task';
+import { asMemberId } from '@/modules/members';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -145,6 +149,10 @@ export type MarkCycleCompleteDeps = Pick<
   // below, so the FY-crossing re-freeze check uses the tenant's REAL
   // configured fiscal-year-start-month.
   | 'fiscalYearSettings'
+  // 066 §4.4(2) — threaded into BOTH the unlinked hook (its terminal_only
+  // net) and the linked-terminal skip branch below, so a post-termination
+  // payment raises an idempotent admin work-item at either exit.
+  | 'escalationTaskRepo'
 >;
 
 /**
@@ -230,6 +238,7 @@ export async function markCycleCompleteInTx(
         idFactory: deps.cycleIdFactory,
         memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,
         fiscalYearSettings: deps.fiscalYearSettings,
+        escalationTaskRepo: deps.escalationTaskRepo,
       },
       event,
       tx,
@@ -394,6 +403,46 @@ export async function markCycleCompleteInTx(
   }
 
   if (cycle.status !== 'awaiting_payment') {
+    // 066 §4.4(2) review C2 — a payment on the LAPSED cycle's OWN linked
+    // invoice (the webhook race: PaymentIntent created pre-termination,
+    // confirmed post-termination) lands HERE, not in resolve-unlinked. If
+    // the cycle is terminal (membership terminated), instrument the same
+    // net — audit event + metric + idempotent admin work-item — atomically
+    // in F4's payment tx, so the residual race is never a silent leak.
+    if (isMembershipLapsed(cycle, new Date(event.paidAt))) {
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'payment_on_terminated_member' as const,
+          payload: {
+            invoice_id: event.invoiceId,
+            member_id: asMemberId(cycle.memberId),
+            cycle_id: cycle.cycleId,
+            amount_satang: event.amountSatang.toString(),
+            payment_method: event.paymentMethod,
+            triggered_by: event.triggeredBy,
+            paid_at: event.paidAt,
+            heal_site: 'linked_terminal_skip' as const,
+          },
+        },
+        {
+          tenantId: event.tenantId,
+          actorUserId: null,
+          actorRole: 'system',
+          correlationId: `f4-paid:${event.invoiceId}`,
+        },
+      );
+      await deps.escalationTaskRepo.insertIfAbsent(tx, {
+        tenantId: event.tenantId,
+        taskId: asTaskId(randomUUID()),
+        memberId: cycle.memberId,
+        cycleId: cycle.cycleId,
+        taskType: 'post_termination_payment_review',
+        assignedToRole: 'admin',
+        dueAt: new Date(Date.parse(event.paidAt) + 7 * 86_400_000).toISOString(),
+      });
+      renewalsMetrics.paymentOnTerminatedMember('linked_terminal_skip');
+    }
     logger.warn(
       {
         cycleId: cycle.cycleId,
