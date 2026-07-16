@@ -971,6 +971,14 @@ export function makeDrizzleRenewalCycleRepo(
         // members this feature targets. RLS scopes to the tenant context.
         // Order by `expires_at ASC` so oldest expiries are processed first
         // (smallest blast radius if the cron is partially executed).
+        // Scaling note (065 §5.2 review, immaterial at current scale): with
+        // MORE than `pageSize` concurrent `awaiting_payment` cycles, the
+        // §5.3 born-`awaiting_payment` cohort (far-future `expires_at`, so
+        // sorted LAST by this ASC order) can be pushed past the LIMIT and
+        // DEFERRED to a later run — its due+60 termination just lands a run
+        // or two late. At TSCC's ~110 members (default pageSize 1000) this
+        // never triggers; revisit with keyset pagination if a tenant ever
+        // sustains >pageSize simultaneously-awaiting cycles.
         const rows = await tx
           .select()
           .from(renewalCycles)

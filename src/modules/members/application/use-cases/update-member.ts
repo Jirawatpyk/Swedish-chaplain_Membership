@@ -27,7 +27,7 @@ import { asTaxId } from '../../domain/value-objects/tax-id';
 // catalogue here too (was client-only, see create-member.ts for the
 // full rationale).
 import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
-import type { Member, MemberId } from '../../domain/member';
+import { BILLING_CYCLES, type Member, type MemberId } from '../../domain/member';
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -52,7 +52,7 @@ export const updateMemberSchema = z
     // 065 §5.1 — per-member billing cadence (admin-managed edit). Optional on
     // update (mirrors is_vat_registered): absent from a partial patch means
     // unchanged; the DB column is NOT NULL so an existing row always has one.
-    billing_cycle: z.enum(['calendar', 'rolling']).optional(),
+    billing_cycle: z.enum(BILLING_CYCLES).optional(),
     // `.url()` accepts javascript:/data:; block hostile schemes since this is
     // rendered as an <a href> on the member-detail page (safe-url.ts sink is
     // the guarantee, this is the early boundary error).

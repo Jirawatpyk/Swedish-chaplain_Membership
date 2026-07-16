@@ -44,7 +44,7 @@ import {
 import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
 import { checkAgeEligibility } from '../../domain/policies/age-eligibility-policy';
 import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
-import { asPlanId } from '../../domain/member';
+import { asPlanId, BILLING_CYCLES } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
 import type {
@@ -80,7 +80,7 @@ export const createMemberSchema = z.object({
   // makes it a REQUIRED free choice (client zod has no default / no '' arm);
   // this lenient server default only backstops a direct caller and keeps the
   // ~19 inline-payload create integration tests green.
-  billing_cycle: z.enum(['calendar', 'rolling']).optional(),
+  billing_cycle: z.enum(BILLING_CYCLES).optional(),
   // `.url()` alone accepts javascript:/data: (any scheme new URL() parses),
   // and this value is later rendered as an <a href>; block hostile schemes.
   // See src/lib/safe-url.ts (render sink safeExternalHref is the guarantee).

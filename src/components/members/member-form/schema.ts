@@ -20,6 +20,10 @@ import { isIsoCountryCode } from '@/modules/members/domain/value-objects/iso-cou
 // 059 / PR-A Task 3b — the closed 12-code catalogue (same deep-import
 // rationale: pure TS, zero framework deps, safe in this client component).
 import { LEGAL_ENTITY_TYPES } from '@/modules/members/domain/value-objects/legal-entity-type';
+// 065 §5.1 — single-sourced billing-cycle tuple (same pure-domain deep-import
+// rationale as LEGAL_ENTITY_TYPES above; `member.ts` pulls only branded-type
+// helpers + the Domain-only tenants module, no framework deps).
+import { BILLING_CYCLES } from '@/modules/members/domain/member';
 import { type Translator } from '@/lib/zod-i18n';
 
 // --- Form shape --------------------------------------------------------------
@@ -87,7 +91,7 @@ export function buildMemberFormSchema(
   // empty-string arm, unlike legal_entity_type above): every member must carry
   // a billing cycle (the DB column is NOT NULL). On EDIT the backfilled value
   // loads; on CREATE the admin must pick one — there is no default.
-  billing_cycle: z.enum(['calendar', 'rolling'], {
+  billing_cycle: z.enum(BILLING_CYCLES, {
     errorMap: () => ({ message: tf('errors.required') }),
   }),
   country: z
