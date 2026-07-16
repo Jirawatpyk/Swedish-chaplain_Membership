@@ -3021,6 +3021,10 @@
         "admin_rejected_with_refund": "Återbetald",
         "pending_reactivation_timed_out": "Återaktivering tog slut"
       },
+      "terminationBasis": {
+        "due_plus_60": "Obetald mer än 60 dagar efter förfallodagen",
+        "no_invoice_backstop": "Ingen förnyelsefaktura utfärdades någonsin"
+      },
       "urgencyPill": {
         "t_90": "Förfaller om 90 d",
         "t_60": "Förfaller om 60 d",
@@ -3497,6 +3501,8 @@
           "enteredPendingAt": "Avvaktar sedan",
           "closedAt": "Avslutad",
           "closedReason": "Avslutsorsak",
+          "terminationBasis": "Grund för avslut",
+          "terminationBasisWithDue": "{basis} (förfaller {date})",
           "createdAt": "Skapad",
           "updatedAt": "Uppdaterad",
           "invoiceNumber": "Fakturanr",

@@ -210,6 +210,9 @@ function fakeDeps(args: {
     reminderAuditQuery: {
       findReminderAuditsForCycle:
         reminderAuditQueryMock as unknown as ReconcilePendingReactivationsDeps['reminderAuditQuery']['findReminderAuditsForCycle'],
+      // 066 S3 — reconcile never reads the lapse basis, but the port now
+      // requires the method; stub it so the deps object satisfies the type.
+      findRenewalLapsedForCycle: vi.fn(async () => null),
     },
   };
   return {

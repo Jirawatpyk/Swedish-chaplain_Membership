@@ -29,9 +29,13 @@ function buildCycle(overrides: Partial<RenewalCycle> = {}): RenewalCycle {
   });
 }
 
-function fakeDeps(cycle: RenewalCycle | null): {
+function fakeDeps(
+  cycle: RenewalCycle | null,
+  lapseAuditMock: ReturnType<typeof vi.fn> = vi.fn(async () => null),
+): {
   deps: RenewalsDeps;
   emitMock: ReturnType<typeof vi.fn>;
+  lapseAuditMock: ReturnType<typeof vi.fn>;
 } {
   const emitMock = vi.fn(async () => {});
   const deps: RenewalsDeps = {
@@ -42,8 +46,12 @@ function fakeDeps(cycle: RenewalCycle | null): {
       emit: emitMock,
       emitInTx: vi.fn(),
     },
+    reminderAuditQuery: {
+      findReminderAuditsForCycle: vi.fn(async () => new Set()),
+      findRenewalLapsedForCycle: lapseAuditMock,
+    },
   } as unknown as RenewalsDeps;
-  return { deps, emitMock };
+  return { deps, emitMock, lapseAuditMock };
 }
 
 const baseInput = {
@@ -158,5 +166,53 @@ describe('loadCycleDetail (T057)', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+  });
+
+  // 066 S3 — termination-basis surfacing.
+  it('populates lapseInfo from the renewal_lapsed audit for a lapsed cycle', async () => {
+    const cycle = buildCycle({ status: 'lapsed', closedReason: 'grace_expired' });
+    const lapseAuditMock = vi.fn(async () => ({
+      terminationBasis: 'due_plus_60' as const,
+      dueDate: '2026-01-15',
+    }));
+    const { deps } = fakeDeps(cycle, lapseAuditMock);
+    const r = await loadCycleDetail(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(lapseAuditMock).toHaveBeenCalledWith(TENANT_ID, VALID_UUID);
+      expect(r.value.lapseInfo).toEqual({
+        terminationBasis: 'due_plus_60',
+        dueDate: '2026-01-15',
+      });
+    }
+  });
+
+  it('leaves lapseInfo null and skips the audit read for a non-lapsed cycle', async () => {
+    // Default buildCycle status is 'awaiting_payment' (a live, non-terminal cycle).
+    const cycle = buildCycle();
+    const lapseAuditMock = vi.fn(async () => ({
+      terminationBasis: 'due_plus_60' as const,
+      dueDate: '2026-01-15',
+    }));
+    const { deps } = fakeDeps(cycle, lapseAuditMock);
+    const r = await loadCycleDetail(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(lapseAuditMock).not.toHaveBeenCalled();
+      expect(r.value.lapseInfo).toBeNull();
+    }
+  });
+
+  it('degrades lapseInfo to null when the audit read throws', async () => {
+    const cycle = buildCycle({ status: 'lapsed', closedReason: 'grace_expired' });
+    const lapseAuditMock = vi.fn(async () => {
+      throw new Error('db blip');
+    });
+    const { deps } = fakeDeps(cycle, lapseAuditMock);
+    const r = await loadCycleDetail(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.lapseInfo).toBeNull();
+    }
   });
 });

@@ -13,6 +13,7 @@ import {
   REMINDER_LADDER_AUDIT_TYPES,
   type ReminderAuditQueryPort,
   type ReminderLadderAuditType,
+  type RenewalLapsedAuditInfo,
 } from '../../application/ports/reminder-audit-query-repo';
 
 export const drizzleReminderAuditQueryRepo: ReminderAuditQueryPort = {
@@ -43,5 +44,33 @@ export const drizzleReminderAuditQueryRepo: ReminderAuditQueryPort = {
       out.add(r.eventType as ReminderLadderAuditType);
     }
     return out;
+  },
+
+  async findRenewalLapsedForCycle(
+    tenantId: string,
+    cycleId: string,
+  ): Promise<RenewalLapsedAuditInfo | null> {
+    const rows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenantId),
+          sql`${auditLog.eventType} = 'renewal_lapsed'::audit_event_type`,
+          sql`${auditLog.payload}->>'cycle_id' = ${cycleId}`,
+        ),
+      )
+      .orderBy(sql`${auditLog.timestamp} DESC`)
+      .limit(1);
+    const payload = rows[0]?.payload as
+      | { termination_basis?: unknown; due_date?: unknown }
+      | undefined;
+    if (!payload) return null;
+    const tb = payload.termination_basis;
+    return {
+      terminationBasis:
+        tb === 'due_plus_60' || tb === 'no_invoice_backstop' ? tb : null,
+      dueDate: typeof payload.due_date === 'string' ? payload.due_date : null,
+    };
   },
 };

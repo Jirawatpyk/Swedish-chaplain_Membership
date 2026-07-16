@@ -49,4 +49,23 @@ export interface ReminderAuditQueryPort {
     tenantId: string,
     cycleId: string,
   ): Promise<ReadonlySet<ReminderLadderAuditType>>;
+
+  /**
+   * 066 S3 — the termination BASIS + anchoring due_date for a lapsed cycle,
+   * read off the `renewal_lapsed` audit payload (V9 recorded them there;
+   * they are NOT columns on `renewal_cycles`). Returns null when no
+   * `renewal_lapsed` row exists (e.g. a pre-066 termination, or a
+   * non-lapsed cycle). The admin cycle-detail page uses this to show WHY a
+   * member was terminated ("unpaid >60d past due" vs "never invoiced").
+   */
+  findRenewalLapsedForCycle(
+    tenantId: string,
+    cycleId: string,
+  ): Promise<RenewalLapsedAuditInfo | null>;
+}
+
+export interface RenewalLapsedAuditInfo {
+  readonly terminationBasis: 'due_plus_60' | 'no_invoice_backstop' | null;
+  /** Bangkok 'YYYY-MM-DD' anchoring due date, or null for the backstop basis. */
+  readonly dueDate: string | null;
 }

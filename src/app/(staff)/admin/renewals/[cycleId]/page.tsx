@@ -76,6 +76,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
 
   const t = await getTranslations('admin.renewals.cycleDetail');
   const tStatus = await getTranslations('admin.renewals.lapsedReason');
+  const tBasis = await getTranslations('admin.renewals.terminationBasis');
   const tTier = await getTranslations('admin.renewals.tierBadge');
   // C-1 (UX R3): translate F4 invoice status enums (`issued`, `paid`,
   // `partially_credited`, …) — previously rendered as raw lowercase
@@ -237,6 +238,18 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
       : closedReason
         ? `${closedReason} (untranslated)`
         : null;
+
+  // 066 S3 — termination BASIS (why the member was terminated), read off
+  // the `renewal_lapsed` audit payload by load-cycle-detail. Non-null only
+  // for a lapsed cycle carrying a basis; renders under the closed-reason
+  // field. Loud-fall-back to the raw enum matches closedReason/tierLabel.
+  const terminationBasis = v.lapseInfo?.terminationBasis ?? null;
+  const terminationBasisLabel = terminationBasis
+    ? tBasis.has(terminationBasis)
+      ? tBasis(terminationBasis)
+      : `${terminationBasis} (untranslated)`
+    : null;
+  const terminationBasisDueDate = v.lapseInfo?.dueDate ?? null;
 
   const invoiceTotal = v.linkedInvoice
     ? formatter.number(Number(v.linkedInvoice.totalSatang) / 100, {
@@ -703,6 +716,19 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                 <Field
                   label={t('fields.closedReason')}
                   value={closedReasonLabel}
+                />
+              )}
+              {terminationBasisLabel && (
+                <Field
+                  label={t('fields.terminationBasis')}
+                  value={
+                    terminationBasisDueDate
+                      ? t('fields.terminationBasisWithDue', {
+                          basis: terminationBasisLabel,
+                          date: fmtDateOnly(terminationBasisDueDate),
+                        })
+                      : terminationBasisLabel
+                  }
                 />
               )}
             </dl>

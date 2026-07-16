@@ -3021,6 +3021,10 @@
         "admin_rejected_with_refund": "Refunded",
         "pending_reactivation_timed_out": "Reactivation timed out"
       },
+      "terminationBasis": {
+        "due_plus_60": "Unpaid more than 60 days after the due date",
+        "no_invoice_backstop": "No renewal invoice was ever issued"
+      },
       "urgencyPill": {
         "t_90": "Due in 90d",
         "t_60": "Due in 60d",
@@ -3497,6 +3501,8 @@
           "enteredPendingAt": "Entered pending at",
           "closedAt": "Closed at",
           "closedReason": "Closed reason",
+          "terminationBasis": "Termination basis",
+          "terminationBasisWithDue": "{basis} (due {date})",
           "createdAt": "Created at",
           "updatedAt": "Updated at",
           "invoiceNumber": "Invoice #",

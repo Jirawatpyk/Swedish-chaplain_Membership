@@ -3021,6 +3021,10 @@
         "admin_rejected_with_refund": "คืนเงินแล้ว",
         "pending_reactivation_timed_out": "หมดเวลาฟื้นฟูสถานะ"
       },
+      "terminationBasis": {
+        "due_plus_60": "ค้างชำระเกิน 60 วันหลังวันครบกำหนด",
+        "no_invoice_backstop": "ไม่เคยออกใบแจ้งหนี้ต่ออายุ"
+      },
       "urgencyPill": {
         "t_90": "ครบใน 90 วัน",
         "t_60": "ครบใน 60 วัน",
@@ -3497,6 +3501,8 @@
           "enteredPendingAt": "เข้าสถานะรอ",
           "closedAt": "ปิดเมื่อ",
           "closedReason": "เหตุผลการปิด",
+          "terminationBasis": "เหตุแห่งการสิ้นสุดสมาชิกภาพ",
+          "terminationBasisWithDue": "{basis} (ครบกำหนด {date})",
           "createdAt": "สร้างเมื่อ",
           "updatedAt": "ปรับปรุงล่าสุด",
           "invoiceNumber": "เลขที่ใบแจ้งหนี้",
