@@ -475,6 +475,23 @@
         "totalRowLabel": "Total",
         "unassignedTier": "No plan assigned"
       },
+      "invoiceStatus": {
+        "title": "Receivables by value",
+        "empty": "No outstanding receivables yet.",
+        "totalLabel": "Total outstanding",
+        "draftCaption": "{count, plural, one {# draft invoice not shown} other {# draft invoices not shown}}",
+        "statusColumnHeader": "Status",
+        "amountColumnHeader": "Amount",
+        "countColumnHeader": "Invoices",
+        "pctColumnHeader": "% of total",
+        "totalRowLabel": "Total",
+        "invoiceCountLabel": "{count, plural, one {# invoice} other {# invoices}}",
+        "bucket": {
+          "paid": "Paid",
+          "unpaid": "Unpaid",
+          "overdue": "Overdue"
+        }
+      },
       "insights": {
         "title": "Smart insights",
         "empty": "No insights right now — all clear.",
