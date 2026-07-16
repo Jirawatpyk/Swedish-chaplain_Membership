@@ -372,6 +372,12 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
   });
 
   describe('oldestUnpaidMembershipInvoiceDueDate (065 §5.2)', () => {
+    // 065 §5.2 review — a floor far below every seeded due_date, so these
+    // cases exercise the ordering/subject/status/RLS filters WITHOUT the
+    // `sinceDueDate` window excluding anything. The window itself has its
+    // own dedicated case below.
+    const SINCE_ALL = '2000-01-01';
+
     it('returns the OLDEST due_date among multiple issued membership invoices', async () => {
       const memberId = await seedMember();
       const older = addDays(todayBkk, 5);
@@ -384,6 +390,7 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
       const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
         tenantId: tenant.ctx.slug,
         memberId,
+        sinceDueDate: SINCE_ALL,
       });
       expect(got).toBe(older);
     });
@@ -394,6 +401,7 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
       const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
         tenantId: tenant.ctx.slug,
         memberId,
+        sinceDueDate: SINCE_ALL,
       });
       expect(got).toBeNull();
     });
@@ -408,6 +416,7 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
       const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
         tenantId: tenant.ctx.slug,
         memberId,
+        sinceDueDate: SINCE_ALL,
       });
       expect(got).toBeNull();
     });
@@ -420,8 +429,40 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
       const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
         tenantId: tenant.ctx.slug,
         memberId,
+        sinceDueDate: SINCE_ALL,
       });
       expect(got).toBeNull();
+    });
+
+    it('excludes an invoice due BEFORE sinceDueDate — a STALE prior-period invoice never anchors (065 §5.2 review)', async () => {
+      const memberId = await seedMember();
+      const stale = addDays(todayBkk, -400); // ~13 months ago (prior period)
+      const current = addDays(todayBkk, -10); // this period, already past due
+      // Stale is the OLDEST-due of the two, so without the floor it would win
+      // the ORDER BY due_date ASC LIMIT 1 and anchor the clock on an ancient
+      // invoice. The floor between the two due dates must exclude it.
+      await seedMembershipInvoice({ memberId, status: 'issued', dueDate: stale });
+      await seedMembershipInvoice({ memberId, status: 'issued', dueDate: current });
+
+      const deps = makeRenewalsDeps(tenant.ctx.slug);
+      const floorBetween = addDays(todayBkk, -60);
+      const got = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        sinceDueDate: floorBetween,
+      });
+      // The stale invoice is excluded → the current one governs, even though
+      // it is NOT the oldest-due row for the member.
+      expect(got).toBe(current);
+
+      // A floor ABOVE both due dates → the member has none in-window → null
+      // (would fall to the no-invoice backstop in the lapse cron).
+      const gotNone = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        sinceDueDate: addDays(todayBkk, 5),
+      });
+      expect(gotNone).toBeNull();
     });
 
     it("cross-tenant: tenant B cannot see tenant A's invoice due_date (RLS)", async () => {
@@ -434,6 +475,7 @@ describe('InvoiceDueBridge — integration (059 Task 12)', () => {
         const gotUnderB = await depsB.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
           tenantId: tenantB.ctx.slug,
           memberId,
+          sinceDueDate: SINCE_ALL,
         });
         expect(gotUnderB).toBeNull();
       } finally {

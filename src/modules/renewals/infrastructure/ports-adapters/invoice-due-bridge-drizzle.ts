@@ -54,15 +54,19 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
       input: OldestUnpaidMembershipInvoiceDueDateInput,
     ): Promise<string | null> {
       // 065 §5.2 — the member's OLDEST-DUE unpaid membership invoice
-      // `due_date` (or null). Member-scoped, NOT `linked_invoice_id`: a
+      // `due_date` (or null), restricted to invoices due on/after
+      // `input.sinceDueDate`. Member-scoped, NOT `linked_invoice_id`: a
       // §5.3 born-`awaiting_payment` initial cycle has no linked invoice,
       // so anchoring the lapse clock on the cycle's linked invoice would
       // miss exactly that cohort. `status='issued'` = unpaid (draft/paid/
       // void/credited never count); `ORDER BY due_date ASC LIMIT 1` picks
       // the oldest so a member with several unpaid invoices is judged by
-      // the one they were asked to pay first. RLS scopes to the tenant via
-      // `runInTenant`; the explicit `tenantId` predicate is defence-in-
-      // depth alongside RLS (Constitution Principle I § 1).
+      // the one they were asked to pay first. The
+      // `gte(dueDate, sinceDueDate)` floor (065 §5.2 review) keeps a STALE
+      // prior-period invoice from anchoring the CURRENT period's
+      // termination clock — see the port's `sinceDueDate` note. RLS scopes
+      // to the tenant via `runInTenant`; the explicit `tenantId` predicate
+      // is defence-in-depth alongside RLS (Constitution Principle I § 1).
       return runInTenant(ctx, async (tx) => {
         const rows = await tx
           .select({ dueDate: invoicesTable.dueDate })
@@ -74,6 +78,7 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
               eq(invoicesTable.invoiceSubject, 'membership'),
               eq(invoicesTable.status, 'issued'),
               isNotNull(invoicesTable.dueDate),
+              gte(invoicesTable.dueDate, input.sinceDueDate),
             ),
           )
           .orderBy(sql`${invoicesTable.dueDate} ASC`)

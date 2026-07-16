@@ -250,6 +250,11 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     // unpaid membership invoice whose due date is already > 60 days past.
     const m = await seedMember();
     await seedMembershipInvoice(m, '2026-01-01'); // due+60 = 2026-03-02
+    // `seedAwaitingCycle` sets period_from = expires_at − 365d = 2026-01-01,
+    // so the invoice's due_date (2026-01-01) lands exactly at period start —
+    // WELL within the `sinceDueDate = period_from − 60d` floor (2025-11-02),
+    // i.e. this is a real CURRENT-period invoice that must still anchor the
+    // clock and terminate (065 §5.2 review floor does not exclude it).
     await seedAwaitingCycle(m, bkk('2027-01-01')); // expires_at ~9mo AFTER the run
 
     const r = await runLapse(bkk('2026-03-03')); // due+61, expires_at still far future
@@ -261,6 +266,44 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     // despite the future expires_at (065 §5.2⇄§5.3 domain fix) — a never-paid
     // member must lose benefits, not regain `full`.
     expect(await access(m, bkk('2026-03-03'))).toBe('terminated');
+  });
+
+  it('065 §5.2 review — a STALE prior-period invoice does NOT anchor the current period (member falls to the no-invoice backstop, not terminated)', async () => {
+    // An ACTIVE member mid-current-period (awaiting_payment, expires_at in the
+    // FUTURE) whose ONLY unpaid `issued` membership invoice is a STALE one
+    // from a prior lapsed cycle — due ~13 months before this period's start.
+    // Without the `sinceDueDate` floor the lapse cron would anchor on that
+    // ancient invoice (due+60 long past) and terminate the member the day
+    // after period-end, SKIPPING the 60-day grace on the current invoice. The
+    // floor (`period_from − 60d = 2026-04-02`) excludes the stale invoice
+    // (due 2025-05-01) → the bridge returns null → the member falls to the
+    // `expires_at + grace` backstop, which has NOT elapsed.
+    const m = await seedMember();
+    await seedMembershipInvoice(m, '2025-05-01'); // stale: due+60 = 2025-06-30
+    await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01, expires 2027-06-01
+
+    const r = await runLapse(bkk('2026-07-15'));
+    expect(r.deferredNoInvoiceBackstop).toBe(1);
+    expect(r.graceExpired).toBe(0);
+    expect(await cycleStatus(m)).toBe('awaiting_payment');
+    expect(await access(m, bkk('2026-07-15'))).toBe('suspended');
+  });
+
+  it('065 §5.2 review — a stale invoice is IGNORED; the current-period invoice governs the due+60 clock (terminate)', async () => {
+    // Same shape, but WITH a current-period invoice (due at period start) that
+    // is now past due+60. The stale invoice is the OLDEST-due row, so without
+    // the floor `ORDER BY due_date ASC LIMIT 1` would pick it; the floor
+    // excludes it → the current invoice is the anchor → terminate at its
+    // due+60, NOT the stale one's.
+    const m = await seedMember();
+    await seedMembershipInvoice(m, '2025-05-01'); // stale (excluded by the floor)
+    await seedMembershipInvoice(m, '2026-06-01'); // current: due+60 = 2026-07-31
+    await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01
+
+    const r = await runLapse(bkk('2026-08-01')); // current due+61
+    expect(r.graceExpired).toBe(1);
+    expect(await cycleStatus(m)).toBe('lapsed');
+    expect(await access(m, bkk('2026-08-01'))).toBe('terminated');
   });
 
   it('no-invoice backstop: terminates at expires_at + grace when the member has no membership invoice', async () => {

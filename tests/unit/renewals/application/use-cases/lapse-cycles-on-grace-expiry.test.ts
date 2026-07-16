@@ -80,6 +80,10 @@ function fakeDeps(args: {
   invoiceDueImpl?: (input: {
     tenantId: string;
     memberId: string;
+    // 065 §5.2 review — the use-case now floors the lookup at
+    // `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS`; the mock accepts (and
+    // ignores) it so the input type matches the port.
+    sinceDueDate: string;
   }) => Promise<string | null>;
 }): {
   deps: LapseCyclesOnGraceExpiryDeps;

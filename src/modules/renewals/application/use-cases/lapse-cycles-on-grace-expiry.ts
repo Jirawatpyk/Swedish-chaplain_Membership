@@ -54,7 +54,10 @@
  * the F5 decision-branch read above, `processOne` consults
  * `deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate` (member-
  * scoped — see the InvoiceDueBridge port note on why NOT
- * `linked_invoice_id`) and decides per cycle:
+ * `linked_invoice_id`; the lookup is floored at
+ * `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS` so a STALE prior-period
+ * invoice cannot anchor this period's clock — 065 §5.2 review) and decides
+ * per cycle:
  *   - not-yet-due (`due_date >= today`) → DEFER (059 guard preserved;
  *     emits `renewal_lapse_deferred_invoice_not_due`);
  *   - past due but `today <= due_date + 60` → stay suspended (no
@@ -200,6 +203,26 @@ const MS_PER_DAY = 86_400_000;
  * value — Open Question §10).
  */
 const TERMINATION_DAYS_AFTER_DUE = 60;
+
+/**
+ * 065 §5.2 review — the widest legitimate lead time between a current-period
+ * membership invoice's `due_date` and the cycle's `period_from`, used to
+ * FLOOR the oldest-due lookup (`sinceDueDate = period_from − this`) so a
+ * STALE unpaid `issued` invoice from a PRIOR lapsed cycle (or a
+ * historical-due invoice import) can never anchor the CURRENT period's
+ * termination clock — which would skip the 60-day grace on the current
+ * invoice and terminate the member the day after period-end.
+ *
+ * A legit current-period invoice is issued at most ~31 days before period
+ * start (calendar-year: issued Dec 1 for the Jan-1 period; rolling: T-30),
+ * so its `due_date` (issue + 30-day net terms) lands roughly AT period
+ * start, well within a 60-day floor below `period_from`. A prior period's
+ * invoice is ~334+ days before this period's start, so the 60-day lead
+ * window cleanly admits the current invoice and excludes prior-period
+ * stragglers — which then fall to the no-invoice `expires_at + grace`
+ * backstop.
+ */
+const MAX_INVOICE_ISSUANCE_LEAD_DAYS = 60;
 
 export async function lapseCyclesOnGraceExpiry(
   deps: LapseCyclesOnGraceExpiryDeps,
@@ -351,11 +374,22 @@ async function processOne(
   // `dueDate` are both Bangkok calendar dates (`YYYY-MM-DD`), so
   // lexicographic string comparison is a correct date comparison.
   const todayBkk = bangkokLocalDate(now.toISOString());
+  // 065 §5.2 review — floor the oldest-due lookup at the CURRENT cycle's
+  // `period_from` minus the max legit issuance lead, so a stale unpaid
+  // invoice from a prior period cannot anchor this period's termination
+  // clock (see `MAX_INVOICE_ISSUANCE_LEAD_DAYS`). `cycle.periodFrom` is a
+  // canonical `toISOString()` UTC instant → `bangkokLocalDate` gives its
+  // Bangkok calendar date, then `addDays` is pure YYYY-MM-DD math.
+  const sinceDueDate = addDays(
+    bangkokLocalDate(cycle.periodFrom),
+    -MAX_INVOICE_ISSUANCE_LEAD_DAYS,
+  );
   let dueDate: string | null;
   try {
     dueDate = await deps.invoiceDueBridge.oldestUnpaidMembershipInvoiceDueDate({
       tenantId,
       memberId: cycle.memberId,
+      sinceDueDate,
     });
   } catch (e) {
     logger.error(
