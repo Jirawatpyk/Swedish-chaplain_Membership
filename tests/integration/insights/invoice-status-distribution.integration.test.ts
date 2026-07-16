@@ -7,17 +7,17 @@
  * buckets are VAT-INCLUSIVE, net-of-credit (`total − creditedTotal`), NOT
  * the ex-VAT `netPaidRevenueSatang` figure the separate revenue-KPI methods
  * (`getYtdPaidRevenueSatang` / `getMonthlyPaidRevenueSatang`) sum:
- *   - `paid`    = status 'paid'                          → `total −
- *                 creditedTotal` (gross amount actually received).
+ *   - `paid`    = status 'paid' OR 'partially_credited'  → `total −
+ *                 creditedTotal` (gross amount actually received/retained).
+ *                 `partially_credited` is reachable ONLY from `paid`
+ *                 (`canTransition` in invoice.ts: `paid →
+ *                 ['partially_credited', 'credited', 'void']`), so it was
+ *                 paid FIRST — its net balance is already-collected cash,
+ *                 never an outstanding receivable, regardless of `dueDate`.
  *   - `unpaid`  = status 'issued' AND NOT computeIsOverdue → outstanding
  *                 balance (`total − creditedTotal`, VAT-INCLUSIVE — the
  *                 actual amount the member still owes).
  *   - `overdue` = status 'issued' AND computeIsOverdue      → same balance.
- *   - `partially_credited` invoices fold into unpaid/overdue by DUE DATE at
- *     their NET balance. `computeIsOverdue` gates on `status === 'issued'`
- *     (partially_credited never is), so the adapter reuses it via a status
- *     override for the date check only — same Bangkok-date rule, not
- *     re-implemented.
  *   - `draft` is counted separately (`draftCount`); `void` and fully
  *     `credited` are excluded from every bucket AND from `draftCount`.
  *
@@ -31,11 +31,11 @@
  *   - Tenant B — a FIXED synthetic `nowIso` ("2026-07-15T17:30:00.000Z" =
  *     2026-07-16T00:30 Asia/Bangkok, i.e. UTC is still on the PRIOR day)
  *     proves (a) the tz-boundary case (`due_date === today` → NOT overdue)
- *     and (b) the partially_credited fold + full-credit exclusion. This is
- *     kept OUT of Tenant A deliberately: `countOverdue` only lists
- *     `status: 'issued'` invoices, so a partially_credited row folded into
- *     the distribution's overdue bucket would break the Tenant-A equivalence
- *     pin (the two would disagree by exactly the folded row).
+ *     and (b) the partially_credited → paid fold + full-credit exclusion.
+ *     Kept OUT of Tenant A only to keep the two scenarios' fixtures
+ *     independent — the `overdue == countOverdue` equivalence now holds
+ *     regardless of whether a `partially_credited` row is present, since it
+ *     never lands in `overdue` (or `unpaid`) at all.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -280,10 +280,12 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
         subtotalSatang: 10_000n,
         totalSatang: 10_000n,
       });
-      // partially_credited, clearly past due (30 days before todayBkk) →
-      // must fold into OVERDUE at its NET balance (120_000 − 20_000 = 100_000),
-      // even though computeIsOverdue's own status gate would normally say
-      // "not issued, so never overdue".
+      // partially_credited, with a due date 30 days in the past — must fold
+      // into PAID at its NET balance (120_000 − 20_000 = 100_000), NOT
+      // overdue: it is reachable only from `paid`, so it was already
+      // collected before this (irrelevant) due date. The past due date is
+      // deliberately chosen to prove the fix — a naive due-date fold would
+      // have misrouted this row into `overdue`.
       await seedInvoice({
         tenant: tenantB,
         memberId: memberB,
@@ -306,14 +308,18 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
       });
     }, 60_000);
 
-    it('boundary invoice is NOT overdue; partially_credited folds into overdue at NET balance; fully-credited is invisible', async () => {
+    it('boundary invoice is NOT overdue; partially_credited folds into paid at NET balance; fully-credited is invisible', async () => {
       const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantB.ctx, nowIso);
 
-      expect(bucket(dist, 'paid')).toEqual({ bucket: 'paid', satang: 0n, count: 0 });
+      // The partially_credited invoice (net 120_000 − 20_000 = 100_000) is
+      // the only paid row — it was reached FROM `paid`, so its due date
+      // (30 days in the past) is irrelevant to the bucket it lands in.
+      expect(bucket(dist, 'paid')).toEqual({ bucket: 'paid', satang: 100_000n, count: 1 });
       // The boundary invoice (10_000, NOT overdue) is the only unpaid row.
       expect(bucket(dist, 'unpaid')).toEqual({ bucket: 'unpaid', satang: 10_000n, count: 1 });
-      // The partially_credited invoice (net 100_000) is the only overdue row.
-      expect(bucket(dist, 'overdue')).toEqual({ bucket: 'overdue', satang: 100_000n, count: 1 });
+      // Nothing lands in overdue: the boundary invoice isn't overdue, and
+      // partially_credited never reaches this bucket regardless of due date.
+      expect(bucket(dist, 'overdue')).toEqual({ bucket: 'overdue', satang: 0n, count: 0 });
       expect(dist.draftCount).toBe(0);
     });
   });

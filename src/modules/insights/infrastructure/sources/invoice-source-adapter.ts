@@ -18,7 +18,6 @@ import {
   makeListInvoicesDeps,
   computeIsOverdue,
   drizzleTenantSettingsRepo,
-  type Invoice,
 } from '@/modules/invoicing';
 import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import type { TenantContext } from '@/modules/tenants';
@@ -89,7 +88,12 @@ const netPaidRevenueSatang = (inv: {
  * (`getYtdPaidRevenueSatang` / `getMonthlyPaidRevenueSatang`) sum — mixing
  * ex-VAT `paid` with gross `unpaid`/`overdue` would distort the slice
  * proportions. A `partially_credited` invoice nets down by exactly the
- * credited amount, same as the revenue KPI.
+ * credited amount, same as the revenue KPI — and (review fix) it is bucketed
+ * into `paid`, not `unpaid`/`overdue`: `canTransition` in
+ * `invoice.ts` only reaches `partially_credited` FROM `paid`
+ * (`paid → ['partially_credited', 'credited', 'void']`), so every
+ * `partially_credited` invoice was paid first — its net balance is already-
+ * collected cash, not an outstanding receivable, regardless of `dueDate`.
  */
 const netBalanceSatang = (inv: {
   total: { satang: bigint } | null;
@@ -98,21 +102,6 @@ const netBalanceSatang = (inv: {
   const total = inv.total?.satang ?? 0n;
   return total - (inv.creditedTotal?.satang ?? 0n);
 };
-
-/**
- * `computeIsOverdue` gates on `status === 'issued'` (its own docstring: rule
- * 1), so a `partially_credited` invoice — which by definition is never
- * `'issued'` — always evaluates false through it. The distribution still
- * must fold a partially_credited invoice into unpaid/overdue by the SAME
- * Bangkok-local due-date rule (design rule: "partially_credited → fold into
- * unpaid/overdue by its due date"), so this overrides `status` to `'issued'`
- * ONLY for the purposes of this date check — reusing `computeIsOverdue`'s
- * comparison rather than re-implementing the Bangkok-date math. The override
- * is local to this call; the invoice's REAL status still drives the bucket
- * switch below (and is untouched everywhere else — audit, PDF, etc.).
- */
-const isPastDueByDate = (inv: Invoice, nowIso: string): boolean =>
-  computeIsOverdue(inv.status === 'issued' ? inv : { ...inv, status: 'issued' }, nowIso);
 
 export const invoiceSourceAdapter: InvoiceSource = {
   async getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint> {
@@ -235,8 +224,9 @@ export const invoiceSourceAdapter: InvoiceSource = {
     do {
       // `status:'all'` + `includeDrafts:true` — this method (unlike the
       // other reads above) needs EVERY status in one pass: draft (for
-      // draftCount), issued/partially_credited (bucketed below), and
-      // paid/void/credited (paid summed, void/credited excluded).
+      // draftCount), issued (bucketed unpaid/overdue by due date below), and
+      // paid/partially_credited (both counted as `paid`, net of credit) /
+      // void/credited (excluded).
       const result = await listInvoices(deps, {
         tenantId: ctx.slug,
         status: 'all',
@@ -251,12 +241,16 @@ export const invoiceSourceAdapter: InvoiceSource = {
             draftCount += 1;
             break;
           case 'paid':
+          case 'partially_credited':
+            // `partially_credited` is reachable ONLY from `paid`
+            // (`canTransition` in invoice.ts) — it was paid first, so its
+            // net balance is already-collected cash, not a receivable. Never
+            // route it through the overdue-by-due-date check below.
             paidSatang += netBalanceSatang(inv);
             paidCount += 1;
             break;
           case 'issued':
-          case 'partially_credited':
-            if (isPastDueByDate(inv, nowIso)) {
+            if (computeIsOverdue(inv, nowIso)) {
               overdueSatang += netBalanceSatang(inv);
               overdueCount += 1;
             } else {

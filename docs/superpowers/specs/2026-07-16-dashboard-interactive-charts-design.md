@@ -131,9 +131,12 @@ way to read a value — keep the summary + first/last labels + a y reference.
   distort the slice proportions (paid would read ~6.5% small) and make the centre
   total meaningless. The ex-VAT *recognised revenue* view already lives in the
   revenue-trend chart (`netPaidRevenueSatang`) — do not duplicate it here.
-  `partially_credited` folds into unpaid/overdue at its net (`total −
-  creditedTotal`) balance; fully `credited`, `void`, and `draft` are excluded
-  from the outstanding total; `draft` count shown as a caption.
+  `partially_credited` counts as **PAID** at its net (`total − creditedTotal`)
+  balance — it is reachable only FROM `paid` (`canTransition`: `paid →
+  ['partially_credited', 'credited', 'void']`), i.e. it was already collected,
+  so it is never routed through the overdue-by-due-date check; fully
+  `credited`, `void`, and `draft` are excluded from the outstanding total;
+  `draft` count shown as a caption.
 
 ## Accessibility (must not regress; axe gate is a hard check)
 

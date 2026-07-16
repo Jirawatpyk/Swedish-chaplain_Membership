@@ -7,6 +7,15 @@ import type { MemberPlanRef } from '@/modules/insights/domain/quota-underuse';
 import type { TierDistributionSlice } from '@/modules/insights/domain/dashboard-snapshot';
 
 describe('groupActiveMembersByTier', () => {
+  // Drift guard for `membership-tier-chart.tsx`'s client-side literal
+  // `s.tierKey === 'unassigned'` (a client component cannot runtime-import
+  // this domain barrel — see that file's comment). Pins the constant's
+  // actual VALUE, not just its identity, so the literal can't silently go
+  // stale if `UNASSIGNED_TIER_KEY` is ever renamed.
+  it('UNASSIGNED_TIER_KEY is the literal "unassigned" the client component compares against', () => {
+    expect(UNASSIGNED_TIER_KEY).toBe('unassigned');
+  });
+
   it('(a) groups two members with the same plan into one slice with count 2', () => {
     const members: MemberPlanRef[] = [
       { memberId: 'm1', planId: 'plan-a', planYear: 2026 },
