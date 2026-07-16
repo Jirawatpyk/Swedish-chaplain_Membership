@@ -514,14 +514,30 @@ async function dispatchOneCycleInner(
   // anchored on each step's DUE-date (`stepYearInCycleOf`), so the catch-up
   // pass resolves the step to the SAME year the original send recorded.
   const yearInCycle = computeYearInCycle(cycle.periodFrom, ctx.nowIso);
-  const windowSteps = findDueStepsForDate(
+  const allWindowSteps = findDueStepsForDate(
     schedulePolicy,
     new Date(cycle.expiresAt),
     new Date(ctx.nowIso),
   );
+  // 065 final-review V12 — an `awaiting_payment` cycle gets POST-expiry
+  // steps only (`offsetDays >= 0`, the t+7/t+14/t+30 §5.5 statutory-warning
+  // ladder). A renewer only enters `awaiting_payment` at T-0, so a
+  // PRE-expiry step matching an awaiting cycle is definitionally the §5.3
+  // born-awaiting / never-paid cohort (far-future `expires_at`, surviving
+  // on the no-invoice backstop) — sending that suspended, never-paid member
+  // "renew now to keep your benefits active" T-60/T-30 copy would present
+  // them as in good standing. DO NOT key this on `anchoredAt IS NULL`
+  // instead: anchored_at is NULL on ALL renewal cycles and the imported
+  // cohort, so that gate would suppress the post-expiry statutory ladder
+  // for genuine T-0 suspended renewers (design §5.3 MUST-NOT).
+  const windowSteps =
+    cycle.status === 'awaiting_payment'
+      ? allWindowSteps.filter((s) => s.offsetDays >= 0)
+      : allWindowSteps;
   if (windowSteps.length === 0) {
-    // No step is due-or-overdue within the lookback (a future step, or a
-    // step stale beyond the lookback). Silent no-op (not an audit event —
+    // No step is due-or-overdue within the lookback (a future step, a
+    // step stale beyond the lookback, or a pre-expiry step suppressed on
+    // an awaiting_payment cycle above). Silent no-op (not an audit event —
     // too noisy; FR-012).
     return { kind: 'skipped', reason: 'not_due_today' };
   }
