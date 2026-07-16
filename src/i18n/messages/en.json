@@ -3367,6 +3367,10 @@
         "noLinkedInvoice": "No invoice linked to this cycle yet.",
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
+        "terminatedCallout": {
+          "title": "This membership is terminated",
+          "body": "To accept a payment (including a bank transfer already received): use Renew Lapsed Member to reactivate and re-invoice, record the payment against the new invoice, then void the old open bill."
+        },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",
         "refundSettlingNoticeTitle": "Rejected — refund settling",
@@ -5363,6 +5367,7 @@
         "reasonRateLimited": "Too many attempts. Please wait a moment and try again.",
         "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
         "reasonAuth": "Your session expired. Please sign in again.",
+        "reasonMembershipTerminated": "Your membership has been terminated. Please contact the chamber to reactivate your membership before paying.",
         "reasonServer": "Our payment service is temporarily unavailable.",
         "reasonNetwork": "Network error. Check your connection and try again.",
         "reasonCardDeclined": "Your card was declined.",

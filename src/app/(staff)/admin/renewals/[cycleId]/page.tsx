@@ -398,6 +398,24 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           </Alert>
         ))}
 
+      {/* 066 §4.4(4) — terminated-membership comeback guidance. A lapsed
+          cycle's bill can no longer be paid in place (the F4 record-payment
+          gate + the offline mark-paid block reject it); make the reactivate-
+          first path VISIBLE so an admin holding out-of-band money (a bank
+          transfer already received) is not left at a dead end. */}
+      {c.status === 'lapsed' && (
+        <Alert
+          role="note"
+          className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+        >
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{t('terminatedCallout.title')}</AlertTitle>
+          <AlertDescription className="text-amber-800 dark:text-amber-200">
+            {t('terminatedCallout.body')}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* 070 F8 item #18 — admin approve / reject-with-refund actions.
           The client component renders nothing unless the cycle is in
           `pending_admin_reactivation`, so it's safe to mount

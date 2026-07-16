@@ -3367,6 +3367,10 @@
         "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
+        "terminatedCallout": {
+          "title": "Detta medlemskap är avslutat",
+          "body": "För att ta emot en betalning (inklusive en redan mottagen banköverföring): använd Renew Lapsed Member för att återaktivera och fakturera på nytt, registrera betalningen mot den nya fakturan och makulera sedan den gamla öppna fakturan."
+        },
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
         "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
@@ -5363,6 +5367,7 @@
         "reasonRateLimited": "För många försök. Vänta en stund och försök igen.",
         "reasonRateLimitedWithSeconds": "För många försök. Vänta {seconds} sekunder och försök igen.",
         "reasonAuth": "Din session har gått ut. Logga in igen.",
+        "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
         "reasonCardDeclined": "Ditt kort avvisades.",
