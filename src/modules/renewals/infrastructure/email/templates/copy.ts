@@ -136,7 +136,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore your benefits and stay connected with the chamber. PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.',
+    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore your benefits and stay connected with the chamber. SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
     cta: 'Reactivate now',
   },
 
@@ -168,7 +168,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore benefits. PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.',
+    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore benefits. SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
     cta: 'Reactivate now',
   },
 
@@ -200,7 +200,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership expired on {expiresAt}. Reactivate now to restore your chamber benefits. PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.',
+    body: 'Hi {firstName}, your {tier} membership expired on {expiresAt}. Reactivate now to restore your chamber benefits. SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
     cta: 'Reactivate now',
   },
 
@@ -237,7 +237,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'Your {tier} membership has lapsed',
-    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore Premium benefits. PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.',
+    body: 'Hi {firstName}, your {tier} membership for {companyName} expired on {expiresAt}. Reactivate now to restore Premium benefits. SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
     cta: 'Reactivate now',
   },
 
@@ -269,7 +269,7 @@ const EN: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'Your {tier} agreement has lapsed',
-    body: 'Dear {firstName}, your {tier} agreement for {companyName} expired on {expiresAt}. Reactivate now or contact us to discuss renewal. PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.',
+    body: 'Dear {firstName}, your {tier} agreement for {companyName} expired on {expiresAt}. Reactivate now or contact us to discuss renewal. SweCham has a statutory and regulatory obligation to terminate the membership of members with unpaid fees within 60 days of the invoice due date.',
     cta: 'Reactivate now',
   },
 };
@@ -306,7 +306,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์และเชื่อมต่อกับเครือข่ายของหอการค้า PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} กรุณาเปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์และเชื่อมต่อกับเครือข่ายของหอการค้า SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -340,7 +340,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ทั้งหมด PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ทั้งหมด SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -374,7 +374,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ของหอการค้า PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ของหอการค้า SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -413,7 +413,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'การเป็นสมาชิก {tier} ของคุณหมดอายุแล้ว',
-    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ระดับ Premium PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ',
+    body: 'สวัสดีคุณ {firstName} การเป็นสมาชิก {tier} ของ {companyName} หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งเพื่อกลับมารับสิทธิประโยชน์ระดับ Premium SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 
@@ -447,7 +447,7 @@ const TH: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'ข้อตกลง {tier} ของคุณหมดอายุแล้ว',
-    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งหรือติดต่อเราเพื่อหารือเรื่องการต่ออายุ PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ',
+    body: 'เรียนคุณ {firstName} ข้อตกลง {tier} ของ {companyName} ได้หมดอายุไปเมื่อวันที่ {expiresAt} เปิดใช้งานอีกครั้งหรือติดต่อเราเพื่อหารือเรื่องการต่ออายุ SweCham มีหน้าที่ตามกฎหมายและระเบียบข้อบังคับที่ต้องยุติสมาชิกภาพของสมาชิกที่ค้างชำระค่าสมาชิกภายใน 60 วันนับจากวันครบกำหนดชำระในใบแจ้งหนี้',
     cta: 'เปิดใช้งานอีกครั้ง',
   },
 };
@@ -483,7 +483,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'thai_alumni.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå dina förmåner och hålla kontakten med kammaren. PLACEHOLDER: SweCham är enligt föreskrift skyldig att avsluta medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå dina förmåner och hålla kontakten med kammaren. SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
     cta: 'Återaktivera nu',
   },
 
@@ -517,7 +517,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'start_up.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå förmånerna. PLACEHOLDER: SweCham är enligt föreskrift skyldig att avsluta medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå förmånerna. SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
     cta: 'Återaktivera nu',
   },
 
@@ -551,7 +551,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'regular.t+7': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap löpte ut den {expiresAt}. Återaktivera nu för att återfå dina kammarförmåner. PLACEHOLDER: SweCham är enligt föreskrift skyldig att avsluta medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap löpte ut den {expiresAt}. Återaktivera nu för att återfå dina kammarförmåner. SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
     cta: 'Återaktivera nu',
   },
 
@@ -590,7 +590,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'premium.t+14': {
     subject: 'Ditt {tier}-medlemskap har löpt ut',
-    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå Premium-förmånerna. PLACEHOLDER: SweCham är enligt föreskrift skyldig att avsluta medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+    body: 'Hej {firstName}, ditt {tier}-medlemskap för {companyName} löpte ut den {expiresAt}. Återaktivera nu för att återfå Premium-förmånerna. SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
     cta: 'Återaktivera nu',
   },
 
@@ -624,7 +624,7 @@ const SV: Partial<Record<CopyKey, ReminderEmailCopy>> = {
   },
   'partnership.t+30': {
     subject: 'Ditt {tier}-avtal har löpt ut',
-    body: 'Bästa {firstName}, ditt {tier}-avtal för {companyName} löpte ut den {expiresAt}. Återaktivera nu eller kontakta oss för att diskutera förnyelse. PLACEHOLDER: SweCham är enligt föreskrift skyldig att avsluta medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
+    body: 'Bästa {firstName}, ditt {tier}-avtal för {companyName} löpte ut den {expiresAt}. Återaktivera nu eller kontakta oss för att diskutera förnyelse. SweCham har en lagstadgad skyldighet enligt sina föreskrifter att avsluta medlemskap för medlemmar med obetalda avgifter inom 60 dagar från fakturans förfallodag.',
     cta: 'Återaktivera nu',
   },
 };

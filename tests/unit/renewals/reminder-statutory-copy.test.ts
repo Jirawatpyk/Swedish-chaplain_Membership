@@ -3,9 +3,12 @@
  * statutory-termination warning (SweCham is regulatory-bound to terminate members
  * with unpaid fees within 60 days of the invoice due date) in all three locales.
  *
- * Copy is PLACEHOLDER pending SweCham's legally-approved wording (design §9.4) —
- * this test pins the presence of the warning marker (not the exact wording), so a
- * legal reword keeps the guarantee without churning the assertion.
+ * Copy is a DRAFT grounded in SweCham's own spec language ("statutory and
+ * regulatory obligation to delete members with unpaid fees") — still pending
+ * SweCham's final legal sign-off (design §9.4), but no longer a literal
+ * "PLACEHOLDER:" that would ship to members verbatim. This test pins the
+ * presence of the warning marker (not the exact wording), so a legal reword
+ * keeps the guarantee without churning the assertion.
  *
  * Post-due steps only: the tier ladders each end with one post-expiry step
  * (thai_alumni/start_up/regular t+7, premium t+14, partnership t+30). The pre-due

@@ -1719,9 +1719,9 @@
         "whtNote": "แสดงบนเอกสารสมาชิกเท่านั้น (ใบแจ้งหนี้ + ใบกำกับภาษี) ค่าบำรุงสมาชิกได้รับยกเว้นภาษีหัก ณ ที่จ่าย ตามมาตรา 65 ทวิ (13) (หนังสือ กค 0811/8542) — มีข้อความแนะนำแสดงไว้ด้านล่าง เว้นว่างหากไม่มี",
         "whtNoteThExample": "ค่าบำรุงสมาชิกได้รับยกเว้นไม่ต้องนำมารวมคำนวณเป็นรายได้ตามมาตรา 65 ทวิ (13) แห่งประมวลรัษฎากร ผู้จ่ายจึงไม่มีหน้าที่หักภาษีเงินได้ ณ ที่จ่าย",
         "whtNoteEnExample": "Membership dues are exempt from income-tax computation under Section 65 bis (13) of the Revenue Code; the payer is not required to withhold income tax at source.",
-        "terminationNotice": "แสดงบนใบแจ้งหนี้เท่านั้น ไม่แสดงบนใบกำกับภาษี/ใบเสร็จ แจ้งสมาชิกถึงหน้าที่ตามกฎหมายในการยุติสมาชิกภาพของผู้ค้างชำระ ข้อความยังเป็น PLACEHOLDER รอ SweCham อนุมัติ เว้นว่างหากไม่มี",
-        "terminationNoticeThExample": "PLACEHOLDER: SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ",
-        "terminationNoticeEnExample": "PLACEHOLDER: SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.",
+        "terminationNotice": "แสดงบนใบแจ้งหนี้เท่านั้น ไม่แสดงบนใบกำกับภาษี/ใบเสร็จ แจ้งสมาชิกถึงหน้าที่ตามกฎหมายในการยุติสมาชิกภาพของผู้ค้างชำระ ข้อความตัวอย่างเป็นร่างอิงจากสเปค SweCham ควรยืนยันถ้อยคำสุดท้ายกับ SweCham ก่อนใช้จริง เว้นว่างหากไม่มี",
+        "terminationNoticeThExample": "SweCham มีหน้าที่ตามระเบียบต้องยุติสมาชิกภาพของผู้ค้างชำระภายใน 60 วันนับจากวันครบกำหนดชำระ",
+        "terminationNoticeEnExample": "SweCham is regulatory-bound to terminate members with unpaid fees within 60 days of the invoice due date.",
         "bank": "แสดงบนใบแจ้งหนี้เท่านั้น สำหรับการชำระเงินโอนผ่านธนาคาร เว้นว่างหากไม่มี",
         "bankSwift": "8 หรือ 11 อักขระ (เช่น KASITHBK)",
         "bankAccountNo": "ตัวเลข อาจมีขีดหรือเว้นวรรคได้"
