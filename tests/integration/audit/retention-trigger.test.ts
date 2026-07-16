@@ -50,7 +50,8 @@ async function insertAuditRow(eventType: string): Promise<number> {
     VALUES (${eventType}::audit_event_type, 'system:test', ${MARKER}, ${randomUUID()})
     RETURNING retention_years
   `);
-  return Number((rows as unknown as Array<{ retention_years: number }>)[0].retention_years);
+  const first = (rows as unknown as Array<{ retention_years: number }>)[0];
+  return Number(first!.retention_years);
 }
 
 describe('audit_log retention trigger — behavioral guard (066 T6-review B2)', () => {
