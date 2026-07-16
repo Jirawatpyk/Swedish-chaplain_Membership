@@ -3,12 +3,15 @@
  * (067-dashboard-interactive-charts, Task 9 — Decision #2) from a hand-rolled
  * SVG to Recharts — `variant="bar"` (revenue trend) renders a Recharts
  * `<BarChart><Bar/></BarChart>`; `variant="line"` (member growth) renders a
- * Recharts `<LineChart><Line/></LineChart>`. This preserves each caller's
- * original chart TYPE 1:1 (the old `BarSvg` drew `<rect>` bars, `LineSvg` drew
- * a `<polyline>`) — only the drawing engine changed, not the shape. Client
- * component — Recharts renders via the DOM/ResizeObserver, so this can't stay
- * a server component; callers still pass display-ready props (no data
- * fetching here).
+ * Recharts `<AreaChart><Area/></AreaChart>` (NOT a bare `<Line>` — the
+ * original `LineSvg` drew a filled `fill-primary/15` area under the curve
+ * PLUS the stroked polyline on top, so the Recharts replacement must be an
+ * `<Area>` with both `fill`+`fillOpacity` and `stroke` set, or the blue fill
+ * is a visual regression). This preserves each caller's original chart
+ * shape 1:1 (the old `BarSvg` drew `<rect>` bars) — only the drawing engine
+ * changed. Client component — Recharts renders via the DOM/ResizeObserver,
+ * so this can't stay a server component; callers still pass display-ready
+ * props (no data fetching here).
  *
  * Readability: a prominent `summary` stat (sized to match `KpiCard`) + a
  * per-chart `caption` (per-month vs cumulative) + first→last month range
@@ -36,7 +39,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import { Bar, BarChart, Line, LineChart, ReferenceLine, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, ReferenceLine, XAxis, YAxis } from 'recharts';
 import {
   Card,
   CardContent,
@@ -141,6 +144,36 @@ function renderMaxReferenceLabel(maxLabel: string) {
   };
 }
 
+/** Custom per-point dot for the `line`/`Area` variant — mirrors the original
+ * `LineSvg` comment ("a dot per month … with the latest point emphasised"):
+ * every point gets a small dot (`r=1.5`) except the last, which is bigger
+ * (`r=3`). A plain `dot={{ r: 1.5 }}` object config applies uniformly to
+ * every point, so this needs a render function closing over the series
+ * length to single out the final index. */
+function makeSeriesDot(lastIndex: number) {
+  return function SeriesDot({
+    cx,
+    cy,
+    index,
+  }: {
+    readonly cx?: number;
+    readonly cy?: number;
+    readonly index?: number;
+  }) {
+    if (cx === undefined || cy === undefined) return null;
+    return (
+      <circle
+        key={index}
+        cx={cx}
+        cy={cy}
+        r={index === lastIndex ? 3 : 1.5}
+        fill="var(--color-value)"
+        strokeWidth={0}
+      />
+    );
+  };
+}
+
 const CHART_MARGIN = { top: 12, right: 8, bottom: 4, left: 8 };
 
 function SeriesCanvas({
@@ -183,24 +216,28 @@ function SeriesCanvas({
             />
           </BarChart>
         ) : (
-          // Member growth — the original `LineSvg` drew a `<polyline>`;
-          // preserve that as a Recharts `<Line>`.
-          <LineChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
+          // Member growth — the original `LineSvg` drew a filled area
+          // (`fill-primary/15`) UNDER a stroked polyline, not a bare line;
+          // an `<Area>` (fill + stroke) is required, or the blue fill under
+          // the curve is a visual regression.
+          <AreaChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
             <YAxis hide domain={[0, max]} />
             <XAxis dataKey="key" hide />
             <ReferenceLine y={0} stroke="var(--border)" />
             <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
             <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
-            <Line
+            <Area
               dataKey="value"
               type="monotone"
               stroke="var(--color-value)"
               strokeWidth={2}
-              dot={{ r: 1.5, strokeWidth: 0, fill: 'var(--color-value)' }}
+              fill="var(--color-value)"
+              fillOpacity={0.15}
+              dot={makeSeriesDot(points.length - 1)}
               activeDot={{ r: 4 }}
               isAnimationActive={allowMotion}
             />
-          </LineChart>
+          </AreaChart>
         )}
       </ChartContainer>
     </div>

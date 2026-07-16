@@ -112,13 +112,29 @@ describe('MiniSeriesChart', () => {
     expect(table).not.toHaveAttribute('aria-hidden');
   });
 
-  it('renders a Recharts LINE canvas for variant="line" (never a Bar)', () => {
+  it('renders a Recharts AREA canvas for variant="line" (filled area under the curve, never a Bar)', () => {
     const points = [pt('2026-01', 5, '5'), pt('2026-02', 8, '8')];
     const { container } = render(
       <MiniSeriesChart {...BASE} variant="line" summary={{ value: '8', label: 'Total members' }} points={points} />,
     );
-    expect(container.querySelector('.recharts-line')).toBeInTheDocument();
+    // The original LineSvg drew a filled `fill-primary/15` area UNDER the
+    // stroked polyline — a bare Recharts <Line> would drop that fill, so
+    // this must be an <Area>, not a <Line>.
+    const area = container.querySelector('.recharts-area');
+    expect(area).toBeInTheDocument();
     expect(container.querySelector('.recharts-bar')).not.toBeInTheDocument();
+    // The filled region (the area's own <path>, not the stroke-only curve)
+    // carries the fill colour + reduced opacity, matching `fill-primary/15`.
+    const fillPath = container.querySelector('.recharts-area-area');
+    expect(fillPath).toBeInTheDocument();
+    expect(fillPath).toHaveAttribute('fill', 'var(--color-value)');
+    expect(fillPath).toHaveAttribute('fill-opacity', '0.15');
+    // Per-point dots — original LineSvg comment: "a dot per month … with the
+    // latest point emphasised" (r=3 for the last point, r=1.5 otherwise).
+    const dots = container.querySelectorAll('.recharts-area-dots circle');
+    expect(dots).toHaveLength(2);
+    expect(dots[0]).toHaveAttribute('r', '1.5');
+    expect(dots[1]).toHaveAttribute('r', '3');
   });
 
   it('renders the summary stat + accessible <table> equivalent for a full series', () => {
@@ -181,7 +197,7 @@ describe('MiniSeriesChart', () => {
     const table = screen.getByRole('table');
     expect(table).toBeInTheDocument();
     expect(within(table).getAllByRole('row')).toHaveLength(2); // header + 1 datum
-    expect(container.querySelector('.recharts-line')).toBeInTheDocument();
+    expect(container.querySelector('.recharts-area')).toBeInTheDocument();
   });
 
   it('renders the bar variant with a single data point without crashing (Recharts fixes the old polyline gap)', () => {
