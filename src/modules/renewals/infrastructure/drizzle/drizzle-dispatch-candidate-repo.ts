@@ -487,8 +487,8 @@ export function makeDrizzleDispatchCandidateRepo(
           // the defensive branch keeps it exact either way (and the
           // live-Neon test asserts exact equality as the tripwire).
           billDueDate:
-            r.billDueDate instanceof Date
-              ? r.billDueDate.toISOString().slice(0, 10)
+            (r.billDueDate as unknown) instanceof Date
+              ? (r.billDueDate as unknown as Date).toISOString().slice(0, 10)
               : String(r.billDueDate).slice(0, 10),
         }));
         const nextCursor =
