@@ -121,14 +121,14 @@ describe('groupActiveMembersByTier', () => {
     ];
 
     // Both plan-b and plan-c return null (unresolved)
-    const labelOf = (planId: string) => null;
+    const labelOf = (_planId: string): string | null => null;
 
     const result = groupActiveMembersByTier(members, labelOf);
 
     // Should have exactly one unassigned slice
     expect(result).toHaveLength(1);
 
-    const unassigned = result[0];
+    const unassigned = result[0]!;
     expect(unassigned.tierKey).toBe(UNASSIGNED_TIER_KEY);
     expect(unassigned.count).toBe(2);
   });
