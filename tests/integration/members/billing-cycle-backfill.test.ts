@@ -21,6 +21,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { db, runInTenant } from '@/lib/db';
 import { createMember } from '@/modules/members';
@@ -33,22 +35,30 @@ import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
-// The exact backfill UPDATE from migration 0255. Run inside runInTenant so RLS
-// scopes it to the test tenant's rows only (the migration runs it un-scoped).
-const BACKFILL_SQL = sql`
-  UPDATE "members" m
-  SET "billing_cycle" = 'calendar'
-  FROM (
-    SELECT DISTINCT ON (rc."member_id")
-      rc."tenant_id", rc."member_id", rc."period_from"
-    FROM "renewal_cycles" rc
-    ORDER BY rc."member_id", rc."created_at" DESC, rc."cycle_id" DESC
-  ) latest
-  WHERE latest."tenant_id" = m."tenant_id"
-    AND latest."member_id" = m."member_id"
-    AND EXTRACT(MONTH FROM (latest."period_from" AT TIME ZONE 'Asia/Bangkok')) = 1
-    AND EXTRACT(DAY   FROM (latest."period_from" AT TIME ZONE 'Asia/Bangkok')) = 1
-`;
+// The backfill UPDATE, extracted from migration 0255 AT TEST TIME (065
+// final-review Simp7 — a hand-maintained copy here would silently keep
+// passing against a stale predicate if the migration's classification SQL
+// were tweaked pre-merge, which is exactly the drift this test exists to
+// catch). Run inside runInTenant so RLS scopes it to the test tenant's rows
+// only (the migration runs it un-scoped).
+const MIGRATION_0255 = readFileSync(
+  join(__dirname, '../../../drizzle/migrations/0255_members_billing_cycle.sql'),
+  'utf8',
+);
+const backfillUpdate = MIGRATION_0255
+  .split('--> statement-breakpoint')
+  .map((stmt) =>
+    // Strip line comments so the statement match is structural, not
+    // comment-sensitive.
+    stmt.replace(/^\s*--.*$/gm, '').trim(),
+  )
+  .find((stmt) => stmt.startsWith('UPDATE "members"'));
+if (!backfillUpdate) {
+  throw new Error(
+    'billing-cycle-backfill.test: migration 0255 no longer contains the UPDATE "members" backfill statement — update this extractor',
+  );
+}
+const BACKFILL_SQL = sql.raw(backfillUpdate.replace(/;$/, ''));
 
 describe('Integration — billing_cycle default + derive-from-dates backfill (065 §5.1)', () => {
   let tenant: TestTenant;

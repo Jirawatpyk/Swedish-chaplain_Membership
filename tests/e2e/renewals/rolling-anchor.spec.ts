@@ -34,6 +34,7 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import { expect, fillField, test } from '../fixtures';
 import { createThrowawayTenant } from '../helpers/throwaway-tenant';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
+import { fillRequiredMembershipAndAddress } from '../helpers/member-form';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -102,20 +103,9 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       // PR-B task 5 — #country is now a searchable combobox trigger <button>
       // (not a fillable text <input>); no explicit selection needed since
       // the form already defaults it to 'TH' (schema default).
-      await page.locator('#plan_id').click();
-      await page.getByRole('option').first().click();
-      // 065 §5.1 — billing_cycle is a new REQUIRED Select; pick the first option.
-      await page.locator('#billing_cycle').click();
-      await page.getByRole('option').first().click();
-      // 088 §86/4 — a TH member (country defaults to 'TH') now REQUIRES a full
-      // buyer address. Fill line 1 + an unambiguous Bangkok postcode (10800 →
-      // Bang Sue) whose lookup auto-fills province/city/sub_district; wait for
-      // that to land before submit or the schema superRefine blocks the POST.
-      await fillField(page.locator('#address_line1'), '99 Test Tower');
-      await fillField(page.locator('#postal_code'), '10800');
-      await expect(page.locator('#province')).toContainText(/bangkok/i, {
-        timeout: 10_000,
-      });
+      // Required plan + billing_cycle picks and the 088 §86/4 TH address —
+      // shared helper so the next required field is added in ONE place.
+      await fillRequiredMembershipAndAddress(page);
       await fillField(page.locator('#first_name'), 'Anchor');
       await fillField(page.locator('#last_name'), 'Tester');
       await fillField(

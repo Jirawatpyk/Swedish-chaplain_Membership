@@ -11,6 +11,13 @@
  * functions that fix it, so they get direct coverage here.
  */
 import type { MemberFormValues } from './member-form';
+// 065 §5.1 (final-review) — the canonical cadence union, minted alongside
+// BILLING_CYCLES "so the schema enum, form, and both zod boundaries agree";
+// re-declaring the literals here would let a future third cadence silently
+// diverge at this layer (the exact silent-no-PATCH class hasFieldDiff's
+// comments document). Type-only import — pure TS, zero framework deps
+// (same review-blessed posture as member-form/schema.ts's Domain imports).
+import type { BillingCycle } from '@/modules/members/domain/member';
 
 export type MemberInitialValues = {
   readonly memberId: string;
@@ -50,7 +57,7 @@ export type MemberInitialValues = {
   // 065 §5.1 — per-member billing cadence. Optional (like the pair above) so
   // pre-existing fixtures stay non-breaking; the edit page always supplies it
   // (`billingCycle ?? 'rolling'`). The diff normalises both sides to 'rolling'.
-  readonly billingCycle?: 'calendar' | 'rolling';
+  readonly billingCycle?: BillingCycle;
 };
 
 export type EditablePrimaryContact = {
