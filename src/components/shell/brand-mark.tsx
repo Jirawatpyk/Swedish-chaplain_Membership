@@ -13,6 +13,10 @@
  *     tile behind the crowns in dark mode. Surfaces that are dark in BOTH
  *     themes (the navy staff sidebar) must add their own always-on white
  *     chip at the call site — the tile here is dark-theme-only.
+ *     A reverse recolour for dark surfaces (blue stroke → white; in-house
+ *     derivative, not TSCC-official) exists at
+ *     public/brand/tscc-mark-reverse.svg if a tile-free treatment is ever
+ *     preferred.
  *   - Wordmark text keeps `currentColor` (navy on light, white on dark, via
  *     the root utilities) and the gold rule stays pinned to --brand-accent,
  *     so lockup/vertical still reverse with the theme.
