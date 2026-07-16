@@ -96,7 +96,7 @@ export default async function MemberLayout({ children }: { children: ReactNode }
               href="/portal"
               className="flex min-w-0 items-center gap-2"
             >
-              {/* Brand: Interlocking Link mark + tenant wordmark. The mark is
+              {/* Brand: TSCC crown mark + tenant wordmark. The mark is
                   decorative — the adjacent text names the portal. The Link is
                   `min-w-0` (shrinkable) + the wordmark `truncate`s, so the name
                   shows in FULL whenever there is room and only ellipsises on

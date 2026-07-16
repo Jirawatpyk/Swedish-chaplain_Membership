@@ -1,13 +1,17 @@
 /**
- * Unit tests for <BrandMark> — the official SweCham "Interlocking Link" logo.
+ * Unit tests for <BrandMark> — the real TSCC crown logo (three Swedish
+ * crowns + Thai-flag brush strokes, referenced from /brand/tscc-mark.svg).
  *
  * Covers the contract every consuming surface relies on:
  *   - decorative by default (aria-hidden, no accessible name) so an adjacent
  *     wordmark isn't double-announced;
  *   - labelled + role="img" when a `title` is supplied (auth pages);
- *   - all three variants render their SVG geometry;
- *   - the gold ring stays pinned to the --brand-accent token and the navy/white
- *     ring uses currentColor so the mark reverses with the theme;
+ *   - all three variants keep their viewBox (call-site sizing is unchanged)
+ *     and embed the crown artwork via <image href>;
+ *   - every variant carries the dark-theme white tile — the artwork's flag
+ *     blue is 1.02:1 on dark surfaces and needs it to stay visible;
+ *   - wordmark text still reverses via currentColor + root colour utilities,
+ *     and the gold rule stays pinned to --brand-accent;
  *   - caller classes compose with the default colour utilities.
  */
 import { describe, it, expect, afterEach } from 'vitest';
@@ -15,6 +19,8 @@ import { render, cleanup } from '@testing-library/react';
 import { BrandMark } from '@/components/shell/brand-mark';
 
 afterEach(cleanup);
+
+const MARK_SRC = '/brand/tscc-mark.svg';
 
 describe('<BrandMark>', () => {
   it('is decorative by default (aria-hidden, no img role)', () => {
@@ -33,15 +39,6 @@ describe('<BrandMark>', () => {
     expect(svg.getAttribute('aria-hidden')).toBeNull();
   });
 
-  it('reverses with the theme: navy/white ring via currentColor, gold pinned to the token', () => {
-    const { container } = render(<BrandMark />);
-    const strokes = Array.from(container.querySelectorAll('circle')).map((c) =>
-      c.getAttribute('stroke'),
-    );
-    expect(strokes).toContain('currentColor');
-    expect(strokes).toContain('var(--brand-accent)');
-  });
-
   it('applies the default reversible colour utilities and composes caller classes', () => {
     const { container } = render(<BrandMark className="size-8 shrink-0" />);
     const cls = container.querySelector('svg')!.getAttribute('class') ?? '';
@@ -55,23 +52,44 @@ describe('<BrandMark>', () => {
     ['mark', '0 0 104 96'],
     ['lockup', '0 0 516 120'],
     ['vertical', '0 0 330 248'],
-  ] as const)('renders the %s variant', (variant, viewBox) => {
+  ] as const)('renders the %s variant around the crown artwork', (variant, viewBox) => {
     const { container } = render(<BrandMark variant={variant} />);
     const svg = container.querySelector('svg')!;
     expect(svg.getAttribute('viewBox')).toBe(viewBox);
-    // every variant draws the three-circle woven symbol
-    expect(container.querySelectorAll('circle').length).toBe(3);
+    const image = svg.querySelector('image')!;
+    expect(image).toBeTruthy();
+    expect(image.getAttribute('href')).toBe(MARK_SRC);
   });
 
-  it('generates a unique weave clip-path id per instance', () => {
-    const { container } = render(
-      <>
-        <BrandMark />
-        <BrandMark />
-      </>,
-    );
-    const ids = Array.from(container.querySelectorAll('clipPath')).map((c) => c.id);
-    expect(ids).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
+  it.each([['mark'], ['lockup'], ['vertical']] as const)(
+    '%s variant carries the dark-theme white tile behind the crowns',
+    (variant) => {
+      const { container } = render(<BrandMark variant={variant} />);
+      const tile = Array.from(container.querySelectorAll('rect')).find((r) =>
+        (r.getAttribute('class') ?? '').includes('dark:opacity-100'),
+      )!;
+      expect(tile).toBeTruthy();
+      expect((tile.getAttribute('class') ?? '')).toContain('fill-white');
+      expect((tile.getAttribute('class') ?? '')).toContain('opacity-0');
+    },
+  );
+
+  it('lockup + vertical keep the theme-reversing wordmark and the gold rule', () => {
+    for (const variant of ['lockup', 'vertical'] as const) {
+      const { container } = render(<BrandMark variant={variant} />);
+      const texts = Array.from(container.querySelectorAll('text'));
+      expect(texts.some((t) => t.textContent === 'SweCham')).toBe(true);
+      expect(texts.some((t) => t.getAttribute('fill') === 'currentColor')).toBe(true);
+      const gold = Array.from(container.querySelectorAll('rect')).find(
+        (r) => r.getAttribute('fill') === 'var(--brand-accent)',
+      );
+      expect(gold).toBeTruthy();
+      cleanup();
+    }
+  });
+
+  it('the bare mark renders no wordmark text (adjacent text names the brand)', () => {
+    const { container } = render(<BrandMark variant="mark" />);
+    expect(container.querySelectorAll('text').length).toBe(0);
   });
 });
