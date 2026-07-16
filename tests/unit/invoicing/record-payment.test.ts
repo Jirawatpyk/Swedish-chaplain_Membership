@@ -38,6 +38,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { invoicingMetrics } from '@/lib/metrics';
+import { membershipAccessStub } from '../../helpers/membership-access-stub';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
@@ -189,6 +190,9 @@ function makeDeps(
       applyReceiptPdfFailure: vi.fn(),
       applyIssueAsPaid: vi.fn(),
     },
+    // 066 §4.4(1) — default full access so the terminated-membership gate
+    // never fires (findById also returns undefined here → gate short-circuits).
+    membershipAccess: membershipAccessStub(),
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),

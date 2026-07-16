@@ -45,6 +45,7 @@ import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
+import { membershipAccessStub } from '../helpers/membership-access-stub';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000f001';
 const MEMBER_ID = 'member-on-paid-cb';
@@ -162,6 +163,7 @@ function makeDepsWithCallbacks(
 ): RecordPaymentDeps {
   const opaqueTx = { execute: vi.fn(async () => [{ status: 'issued' }]) };
   return {
+    membershipAccess: membershipAccessStub(), // 066 §4.4(1)
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),

@@ -109,6 +109,9 @@ export async function POST(
       // 088 SEC-MED — the symmetric case: a new-flow bill cannot be paid while
       // the flag is OFF (would mint no §87); restore the flag → 409.
       : result.error.code === 'new_flow_bill_requires_flag_on' ? 409
+      // 066 §4.4(1) — terminated member: refuse the admin-manual payment
+      // (reactivate + re-invoice first, then pay the new invoice).
+      : result.error.code === 'membership_terminated' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'no_snapshot_on_invoice' ? 422
       : result.error.code === 'overflow' ? 422

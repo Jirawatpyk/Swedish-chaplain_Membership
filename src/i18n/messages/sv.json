@@ -2532,6 +2532,7 @@
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
           "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
           "legacy_invoice_needs_reissue": "Detta är en äldre faktura utan fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
+          "membership_terminated": "Medlemmens medlemskap har avslutats — använd Renew Lapsed Member för att återaktivera och fakturera på nytt, registrera sedan betalningen mot den nya fakturan och makulera denna gamla faktura.",
           "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
           "concurrent": "Denna faktura har redan betalats eller ändrats i en annan session. Uppdatera för att se den senaste statusen och kvittots (RC) nummer.",
           "refreshAction": "Uppdatera",

@@ -35,6 +35,8 @@ import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
+import { asTenantContext } from '@/modules/tenants';
 import {
   asInvoiceId,
   type Invoice,
@@ -173,6 +175,16 @@ export type RecordPaymentError =
    * ON (or void + re-issue under the legacy flow).
    */
   | { code: 'new_flow_bill_requires_flag_on' }
+  /**
+   * 066 §4.4(1) — the member's membership is TERMINATED (latest renewal
+   * cycle lapsed / expired-cancelled). Admin-manual payments against a
+   * MEMBERSHIP bill are refused so no charge and no §86/4 receipt reaches
+   * a non-member; comeback = Renew Lapsed Member → pay the NEW invoice →
+   * void this bill (design §4.4(4)). NEVER returned on the webhook path:
+   * the money is already captured at Stripe, so rejecting would wedge the
+   * retrying webhook — that rail's control is the §4.4(2) heal-site net.
+   */
+  | { code: 'membership_terminated' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -195,6 +207,14 @@ class RecordPaymentInternalError extends TxAbort<RecordPaymentError> {
 export interface RecordPaymentDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
+  /**
+   * 066 §4.4(1) — cross-module read of the member's F8 membership-access
+   * state, used to refuse an admin-manual payment against a MEMBERSHIP
+   * bill for a TERMINATED member. Consumer fails OPEN on lookup error
+   * (see the gate below). Wired to `membershipAccessBridge` in
+   * `makeRecordPaymentDeps`.
+   */
+  readonly membershipAccess: MembershipAccessPort;
   readonly sequenceAllocator: SequenceAllocatorPort;
   readonly pdfRender: PdfRenderPort;
   readonly blob: BlobStoragePort;
@@ -302,6 +322,41 @@ export async function recordPayment(
   // useless round-trip + probe audit emit when the tenant has no settings
   // row yet.
   if (!settings) return err({ code: 'settings_missing' });
+
+  // 066 §4.4(1) — TERMINATED-MEMBERSHIP GATE (admin-manual rails only).
+  // Runs BEFORE `withTx`, like the settings load above: the membership-
+  // access bridge opens its OWN `runInTenant`, so calling it inside the
+  // payment tx is the pool-starvation/deadlock class the pre-tx settings
+  // read avoids. This uses a non-tx `findById` for the gate decision only
+  // (membership state is immutable during a payment; the in-tx re-read +
+  // row lock below stay authoritative for the payment itself). The webhook
+  // rail is EXEMPT — its money is already captured, so the §4.4(2) heal-
+  // site audit net is that path's control, not a reject.
+  const eventTrigger = input.triggeredBy ?? 'admin_manual';
+  if (eventTrigger !== 'webhook') {
+    const preInvoice = await deps.invoiceRepo.findById(invoiceId, input.tenantId);
+    if (
+      preInvoice &&
+      preInvoice.invoiceSubject === 'membership' &&
+      preInvoice.memberId !== null
+    ) {
+      const access = await deps.membershipAccess.getMembershipAccess(
+        asTenantContext(input.tenantId),
+        preInvoice.memberId,
+      );
+      if (access.ok && access.value.access === 'terminated') {
+        return err({ code: 'membership_terminated' });
+      }
+      if (!access.ok) {
+        // FAIL-OPEN — availability of the money path beats the gate; the
+        // §4.4(2) heal-site net is the backstop for anything that slips.
+        logger.warn(
+          { invoiceId, memberId: preInvoice.memberId, tenantId: input.tenantId },
+          '[record-payment] membership-access lookup failed — failing OPEN (gate skipped)',
+        );
+      }
+    }
+  }
 
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
