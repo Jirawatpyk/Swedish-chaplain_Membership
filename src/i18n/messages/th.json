@@ -447,6 +447,9 @@
       "trends": {
         "sectionLabel": "กราฟแนวโน้ม"
       },
+      "breakdown": {
+        "sectionLabel": "กราฟสัดส่วน"
+      },
       "revenueTrend": {
         "title": "แนวโน้มรายได้ (12 เดือน)",
         "empty": "ยังไม่มีรายได้ที่ชำระแล้ว",
@@ -465,6 +468,34 @@
         "netNew": "+{count} ปีนี้",
         "month": "เดือน",
         "count": "สมาชิก"
+      },
+      "membershipTier": {
+        "title": "สมาชิกตามระดับ",
+        "empty": "ยังไม่มีสมาชิกที่ใช้งานอยู่",
+        "tierColumnHeader": "ระดับ",
+        "countColumnHeader": "สมาชิก",
+        "pctColumnHeader": "% ของทั้งหมด",
+        "totalRowLabel": "รวม",
+        "unassignedTier": "ไม่ได้กำหนดแพ็กเกจ",
+        "activeMembersLabel": "สมาชิกที่ใช้งาน",
+        "topTier": "สูงสุด: {tier} · {pct}"
+      },
+      "invoiceStatus": {
+        "title": "ลูกหนี้ตามมูลค่า",
+        "empty": "ยังไม่มีลูกหนี้ค้างชำระ",
+        "totalLabel": "ยอดค้างชำระทั้งหมด",
+        "draftCaption": "{count, plural, other {ไม่แสดงใบแจ้งหนี้ฉบับร่าง # ใบ}}",
+        "statusColumnHeader": "สถานะ",
+        "amountColumnHeader": "จำนวนเงิน",
+        "countColumnHeader": "ใบแจ้งหนี้",
+        "pctColumnHeader": "% ของทั้งหมด",
+        "totalRowLabel": "รวม",
+        "invoiceCountLabel": "{count, plural, other {ใบแจ้งหนี้ # ใบ}}",
+        "bucket": {
+          "paid": "ชำระแล้ว",
+          "unpaid": "ยังไม่ชำระ",
+          "overdue": "เกินกำหนด"
+        }
       },
       "insights": {
         "title": "ข้อมูลเชิงลึกอัจฉริยะ",
