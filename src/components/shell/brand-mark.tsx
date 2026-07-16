@@ -1,25 +1,26 @@
-'use client';
-
-import { useId } from 'react';
-
 /**
- * SweCham / TSCC official brand mark — the "Interlocking Link".
+ * SweCham / TSCC brand mark — the chamber's real logo: three Swedish crowns
+ * behind Thai-flag brush strokes (artwork supplied by TSCC, 2026-07; source
+ * rasters in docs/import/, vectorised to public/brand/tscc-mark.svg).
  *
- * Two woven rings reading as a Thailand–Sweden partnership and the twin "C"s
- * of Chamber of Commerce. Single source of truth for the logo across the app
- * (sidebar, portal, auth pages, empty states).
+ * The crown artwork is referenced via SVG <image> rather than inlined: its
+ * ~84KB of traced path data stays out of the JS bundle and the asset is
+ * fetched and cached once for the whole app.
  *
- * Colour model (theme-aware, no hard-coded brand drift):
- *   - Ring A + wordmark use `currentColor` so the mark reverses automatically:
- *     navy on light surfaces, white on dark. Default text colour is set on the
- *     root via Tailwind (`text-[#0B2A4A] dark:text-white`) and can be overridden
- *     by passing a `text-*` utility through `className`.
- *   - Ring B (gold) is pinned to the product accent token `--brand-accent`
- *     (#C9A227) so the logo gold and the UI accent stay in lock-step.
+ * Colour rules:
+ *   - The artwork's flag blue (#20419A) is near-invisible on dark surfaces
+ *     (1.02:1 against the sidebar navy), so every variant paints a white
+ *     tile behind the crowns in dark mode. Surfaces that are dark in BOTH
+ *     themes (the navy staff sidebar) must add their own always-on white
+ *     chip at the call site — the tile here is dark-theme-only.
+ *   - Wordmark text keeps `currentColor` (navy on light, white on dark, via
+ *     the root utilities) and the gold rule stays pinned to --brand-accent,
+ *     so lockup/vertical still reverse with the theme.
  *
- * Accessibility: when `title` is provided the SVG is exposed as an image with
- * that label; otherwise it is decorative (`aria-hidden`) — use the decorative
- * form whenever an adjacent text node already names the brand.
+ * Accessibility (unchanged contract): when `title` is provided the SVG is
+ * exposed as an image with that label; otherwise it is decorative
+ * (`aria-hidden`) — use the decorative form whenever an adjacent text node
+ * already names the brand.
  */
 export type BrandVariant = 'mark' | 'lockup' | 'vertical';
 
@@ -30,14 +31,22 @@ interface BrandMarkProps {
   readonly title?: string;
 }
 
+const MARK_SRC = '/brand/tscc-mark.svg';
 const GOLD = 'var(--brand-accent)';
 const WORDMARK_FONT = 'var(--font-geist-sans), "Segoe UI", system-ui, sans-serif';
 
-export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps) {
-  const rawId = useId();
-  // clipPath ids must be unique per instance AND valid CSS selectors.
-  const clipId = `swecham-weave-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+/** White tile behind the crowns — visible only on the dark theme. */
+function DarkTile(props: {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly rx: number;
+}) {
+  return <rect {...props} className="fill-white opacity-0 dark:opacity-100" />;
+}
 
+export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps) {
   const a11y = title
     ? ({ role: 'img', 'aria-label': title } as const)
     : ({ 'aria-hidden': true, focusable: false } as const);
@@ -46,34 +55,13 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
     .filter(Boolean)
     .join(' ');
 
-  // The interlocking-link symbol, shared by every variant. Gold ring is drawn
-  // over navy everywhere; navy is then redrawn (clipped to the top crossing)
-  // so it sits over gold there — producing a true woven chain link.
-  const symbol = (
-    <>
-      <circle cx="42" cy="48" r="20" fill="none" stroke="currentColor" strokeWidth="11" />
-      <circle cx="62" cy="48" r="20" fill="none" stroke={GOLD} strokeWidth="11" />
-      <g clipPath={`url(#${clipId})`}>
-        <circle cx="42" cy="48" r="20" fill="none" stroke="currentColor" strokeWidth="11" />
-      </g>
-    </>
-  );
-
-  const defs = (
-    <defs>
-      <clipPath id={clipId}>
-        <rect x="44" y="18" width="16" height="24" />
-      </clipPath>
-    </defs>
-  );
-
   if (variant === 'lockup') {
     return (
       <svg viewBox="0 0 516 120" className={rootClass} {...a11y}>
-        {defs}
-        <g transform="translate(6,12) scale(0.92)">{symbol}</g>
+        <DarkTile x={0} y={2} width={140} height={116} rx={14} />
+        <image href={MARK_SRC} x="8" y="10" width="124" height="100" />
         <text
-          x="116"
+          x="160"
           y="62"
           fontFamily={WORDMARK_FONT}
           fontSize="46"
@@ -83,9 +71,9 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
         >
           SweCham
         </text>
-        <rect x="118" y="74" width="60" height="3.5" rx="1.75" fill={GOLD} />
+        <rect x="162" y="74" width="60" height="3.5" rx="1.75" fill={GOLD} />
         <text
-          x="118"
+          x="162"
           y="96"
           fontFamily={WORDMARK_FONT}
           fontSize="11.5"
@@ -102,8 +90,8 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
   if (variant === 'vertical') {
     return (
       <svg viewBox="0 0 330 248" className={rootClass} {...a11y}>
-        {defs}
-        <g transform="translate(91,12) scale(1.42)">{symbol}</g>
+        <DarkTile x={76} y={0} width={178} height={148} rx={16} />
+        <image href={MARK_SRC} x="88" y="10" width="154" height="128" />
         <text
           x="165"
           y="200"
@@ -135,8 +123,8 @@ export function BrandMark({ variant = 'mark', className, title }: BrandMarkProps
 
   return (
     <svg viewBox="0 0 104 96" className={rootClass} {...a11y}>
-      {defs}
-      {symbol}
+      <DarkTile x={0} y={4} width={104} height={88} rx={12} />
+      <image href={MARK_SRC} x="4" y="8" width="96" height="80" />
     </svg>
   );
 }

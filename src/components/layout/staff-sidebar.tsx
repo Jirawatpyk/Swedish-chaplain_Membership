@@ -61,10 +61,13 @@ export function StaffSidebar({
     >
       <SidebarHeader className="border-b border-sidebar-border py-3 px-2">
         <div className="flex items-center gap-2">
-          {/* Official Interlocking Link mark. Decorative — the adjacent
-              wordmark names the brand. Reverses navy→white in dark mode via
-              currentColor; gold ring pinned to the --brand-accent token. */}
-          <BrandMark variant="mark" className="size-8 shrink-0" />
+          {/* TSCC crown mark. Decorative — the adjacent wordmark names the
+              brand. The always-on white chip is load-bearing, not styling:
+              the artwork's flag blue (#20419A) is 1.02:1 against the navy
+              rail and vanishes without it. */}
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white p-0.5">
+            <BrandMark variant="mark" className="size-7" />
+          </span>
           <span className="truncate text-sm font-semibold group-data-[collapsible=icon]:hidden">
             {tenantName}
           </span>
