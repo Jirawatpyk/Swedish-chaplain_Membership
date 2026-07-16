@@ -78,6 +78,8 @@ import type { BlobStoragePort } from '../ports/blob-storage-port';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
+import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
   type Invoice,
@@ -123,6 +125,8 @@ export interface VoidInvoiceDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   readonly outbox: EmailOutboxPort;
+  /** Email-locale audit 2026-07-16 — member preference for the cancellation email. */
+  readonly recipientLocale: RecipientLocalePort;
 }
 
 /**
@@ -530,6 +534,14 @@ export async function voidInvoice(
       const shouldAutoEmail =
         loaded.autoEmailOnIssue ?? settings.autoEmailEnabled;
       if (shouldAutoEmail) {
+        // Email-locale audit 2026-07-16 — cancellation email in the member's
+        // language (live read; non-member event buyer → undefined → 'en').
+        const recipientLocale = await resolveRecipientLocale(
+          deps.recipientLocale,
+          tx,
+          input.tenantId,
+          memberId,
+        );
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'invoice_voided',
@@ -537,6 +549,7 @@ export async function voidInvoice(
           invoiceId,
           pdfBlobKey: loaded.pdf.blobKey,
           pdfTemplateVersion: loaded.pdf.templateVersion,
+          ...(recipientLocale ? { recipientLocale } : {}),
           documentNumber: mainDocNum.raw,
           // B-1 / FR-036 — admin-entered reason rendered into the
           // cancellation email body. Plaintext in the OUTBOX

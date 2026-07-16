@@ -31,6 +31,7 @@ import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -194,6 +195,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
       audit: f4AuditAdapter,
       clock: { nowIso: () => '2026-04-18T10:00:00Z' },
       outbox: resendEmailOutboxAdapter,
+      recipientLocale: recipientLocaleAdapter,
       currentTemplateVersion: 1,
       taxAtPayment: 'off',
     };

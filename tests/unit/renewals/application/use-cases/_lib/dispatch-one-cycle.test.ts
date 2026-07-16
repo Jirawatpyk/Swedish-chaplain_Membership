@@ -339,6 +339,30 @@ describe('dispatchOneCycle', () => {
       );
     });
 
+    it('locale: member.preferred_locale wins over the contact default (email-locale audit 2026-07-16)', async () => {
+      // The member picked Thai in the portal (member.preferred_locale='th'); the
+      // primary contact still carries the NOT-NULL DEFAULT 'en' (imported rows).
+      // The reminder must render in the member's choice, not the contact default.
+      const { deps, gatewayMock } = fakeDeps({});
+      const candidate = buildHappyCandidate({
+        member: { preferredLocale: 'th' },
+        primaryContact: {
+          contactId: 'contact-1',
+          email: 'admin@acme.com',
+          firstName: 'Anna',
+          lastName: 'Adm',
+          preferredLanguage: 'en',
+        },
+      });
+      const result = await dispatchOneCycle(deps, candidate, happyCtx);
+      expect(result.kind).toBe('sent');
+      expect(gatewayMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipient: expect.objectContaining({ preferredLocale: 'th' }),
+        }),
+      );
+    });
+
     // J10-M5: parametrize the happy-path across all 5 tier buckets.
     // Previously only `regular` was exercised; the other 4 tiers
     // (thai_alumni / start_up / premium / partnership) had distinct

@@ -226,6 +226,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): Re
     },
     clock: { nowIso: () => '2026-05-20T03:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),

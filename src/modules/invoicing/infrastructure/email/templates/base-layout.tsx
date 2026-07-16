@@ -69,6 +69,17 @@ export interface BaseEmailLayoutProps {
 
 const FOOTER_BRAND_DEFAULT = 'Thai-Swedish Chamber of Commerce (SweCham / TSCC)';
 
+/**
+ * Email-locale audit 2026-07-16 — the button-fallback line was a hardcoded
+ * English literal rendered into every F4 email in all locales. Localise it off
+ * the layout's already-threaded `locale` so a TH/SV email is fully translated.
+ */
+const LINK_FALLBACK_COPY: Record<InvoiceAutoEmailLocale, string> = {
+  en: 'If the button does not work, copy this link:',
+  th: 'หากปุ่มไม่ทำงาน โปรดคัดลอกลิงก์นี้:',
+  sv: 'Om knappen inte fungerar, kopiera den här länken:',
+};
+
 const CONTAINER_STYLE: React.CSSProperties = {
   maxWidth: '560px',
   margin: '0 auto',
@@ -237,7 +248,7 @@ export function BaseEmailLayout(props: BaseEmailLayoutProps) {
             </Button>
           </Section>
           <Text style={LINK_FALLBACK_STYLE}>
-            If the button does not work, copy this link:
+            {LINK_FALLBACK_COPY[props.locale]}
             <br />
             <a href={props.ctaHref} style={{ color: '#666', wordBreak: 'break-all' }}>
               {props.ctaHref}

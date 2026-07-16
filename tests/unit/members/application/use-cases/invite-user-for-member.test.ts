@@ -159,6 +159,11 @@ type DepsOverrides = {
   auditRecordInTxResult?: 'ok' | 'fail';
   /** go-live #12-13 follow-up — force the SAGA compensation to fail. */
   compensationFails?: boolean;
+  /**
+   * Email-locale audit 2026-07-16 — the stored preferred_language on the
+   * existing unlinked contact returned by findByEmail (default 'en').
+   */
+  existingContactLocale?: 'en' | 'th' | 'sv';
 };
 
 function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
@@ -196,7 +201,12 @@ function makeDeps(overrides: DepsOverrides = {}): InviteUserForMemberDeps {
     findByEmail: vi.fn(async () => {
       switch (overrides.findByEmailResult ?? 'not_found') {
         case 'same_member_unlinked':
-          return ok(makeExistingUnlinkedContact({ linkedUserId: null }));
+          return ok(
+            makeExistingUnlinkedContact({
+              linkedUserId: null,
+              preferredLanguage: overrides.existingContactLocale ?? 'en',
+            }),
+          );
         case 'same_member_linked':
           return ok(makeExistingUnlinkedContact({ linkedUserId: 'already-linked-user-id' as never }));
         case 'different_member':
@@ -492,6 +502,20 @@ describe('inviteUserForMember — error union coverage (Gap 2)', () => {
     it('passes locale to createUser when provided', async () => {
       const deps = makeDeps();
       await inviteUserForMember(deps, { ...baseInput, locale: 'th' });
+
+      expect(deps.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ locale: 'th' }),
+      );
+    });
+
+    it('link_existing: invitation uses the existing contact stored language, not the admin locale (email-locale audit 2026-07-16)', async () => {
+      // The member's own contact prefers Thai; the admin dialog defaulted to
+      // English. A member-facing invitation must follow the recipient.
+      const deps = makeDeps({
+        findByEmailResult: 'same_member_unlinked',
+        existingContactLocale: 'th',
+      });
+      await inviteUserForMember(deps, { ...baseInput, locale: 'en' });
 
       expect(deps.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ locale: 'th' }),

@@ -350,6 +350,10 @@ function makeDeps(
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
+    // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
+    recipientLocale: {
+      getMemberEmailLocale: vi.fn(async () => null),
+    },
     currentTemplateVersion: 1,
     ...overrides,
   };
@@ -470,6 +474,35 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     // MEDIUM-5 — the email WAS enqueued, so the signal reports 'sent'.
     if (!r.ok) throw new Error('cn failed');
     expect(r.value.emailDelivery).toBe('sent');
+  });
+
+  it('matched member prefers Thai → credit_note_issued outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const invoice = makeIssuedEventInvoice({
+      memberId: 'member-1',
+      // Matched member must be a VAT registrant for the §86/10 creditability gate.
+      memberIdentitySnapshot: Object.freeze({
+        ...BUYER_SNAP_WITH_EMAIL,
+        buyer_is_vat_registrant: true,
+      }),
+    });
+    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: true }));
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-locale',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-swecham',
+      'member-1',
+    );
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'credit_note_issued', recipientLocale: 'th' }),
+    );
   });
 
   it('email NOT requested (auto-email disabled) → emailDelivery=not_requested, no enqueue', async () => {

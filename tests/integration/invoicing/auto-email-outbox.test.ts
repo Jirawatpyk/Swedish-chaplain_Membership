@@ -58,6 +58,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/adapters/postgres-sequence-allocator';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { env } from '@/lib/env';
@@ -260,6 +261,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };
@@ -275,6 +277,7 @@ function makePaymentDeps(tenant: TestTenant): RecordPaymentDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     memberIdentity: makeIssueDeps(tenant).memberIdentity,
     currentTemplateVersion: 1,
     taxAtPayment: 'off',

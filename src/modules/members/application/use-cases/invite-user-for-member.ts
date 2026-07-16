@@ -178,7 +178,14 @@ export async function inviteUserForMember(
   //   found, member_id matches, unlinked     -> path B: link existing contact
   type Decision =
     | { readonly mode: 'create_new' }
-    | { readonly mode: 'link_existing'; readonly contactId: ContactId };
+    | {
+        readonly mode: 'link_existing';
+        readonly contactId: ContactId;
+        // Email-locale audit 2026-07-16 — the existing contact's stored
+        // language, so the invitation renders in the member's own preference
+        // rather than the admin's UI locale.
+        readonly preferredLanguage: PreferredLanguage;
+      };
   let decision: Decision;
 
   if (existing.ok) {
@@ -208,7 +215,11 @@ export async function inviteUserForMember(
     if (existing.value.linkedUserId !== null) {
       return err({ type: 'contact_already_linked' });
     }
-    decision = { mode: 'link_existing', contactId: existing.value.contactId };
+    decision = {
+      mode: 'link_existing',
+      contactId: existing.value.contactId,
+      preferredLanguage: existing.value.preferredLanguage,
+    };
   } else {
     if (existing.error.code !== 'repo.not_found') {
       return err({
@@ -226,6 +237,16 @@ export async function inviteUserForMember(
     emailResult.value,
     input.displayName,
   );
+  // Email-locale audit 2026-07-16 — a member-facing invitation email follows
+  // the RECIPIENT's language. For an existing contact that is their stored
+  // `preferred_language` (was ignored — the dialog's `input.locale`, itself
+  // usually the admin UI locale, wrongly won). A brand-new contact has no
+  // stored preference yet, so the admin's locale (input.locale) is the best
+  // available default.
+  const inviteLocale =
+    decision.mode === 'link_existing'
+      ? decision.preferredLanguage
+      : input.locale;
   const created = await deps.createUser({
     email: emailResult.value,
     role: 'member',
@@ -233,7 +254,7 @@ export async function inviteUserForMember(
     actorUserId: input.actorUserId,
     sourceIp: input.sourceIp,
     requestId: input.requestId,
-    locale: input.locale,
+    locale: inviteLocale,
     tenantId: deps.tenant.slug,
   });
   if (!created.ok) {

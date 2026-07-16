@@ -66,6 +66,7 @@ import { postgresSequenceAllocator } from '@/modules/invoicing/infrastructure/ad
 import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
 import { resendEmailOutboxAdapter } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -316,6 +317,7 @@ function makeAsPaidDeps(
     audit: f4AuditAdapter,
     clock: { nowIso: () => B_NOW_ISO },
     outbox: resendEmailOutboxAdapter,
+    recipientLocale: recipientLocaleAdapter,
     // The REAL constant — this is the point of §B: the bumped version
     // flows from the registry into the row pin + the rendered bytes.
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,

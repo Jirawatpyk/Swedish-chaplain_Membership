@@ -89,10 +89,11 @@ export async function POST(
       memberId: memberId as MemberId,
       actorUserId: current.user.id,
       requestId,
-      // Admin tenant doesn't carry a session locale on the request — we
-      // default to English; a richer UX can pass ?locale=th|sv when the
-      // admin UI exposes locale selection (follow-up ticket).
-      locale: 'en',
+      // Email-locale audit 2026-07-16 — locale is DELIBERATELY omitted: the
+      // use-case renders the verification email in the recipient contact's
+      // stored `preferred_language`. The admin's UI locale is not the right
+      // choice for a member-facing email (was hardcoded 'en' — always-English
+      // bug for TH/SV members). Mirrors the resend-invite route.
     },
   );
 

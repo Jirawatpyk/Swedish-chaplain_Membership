@@ -362,6 +362,7 @@ function makeEmailTransactional(opts: {
 function makeMembersBridge(opts: {
   recipients?: ReadonlyArray<MemberRecipient>;
   primaryContact?: string | null;
+  preferredLocale?: 'en' | 'th' | 'sv' | null;
 }): MembersBridgePort {
   return {
     async getMembersBySegment() {
@@ -388,7 +389,7 @@ function makeMembersBridge(opts: {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
-    async getMemberPreferredLocale() { return null; },
+    async getMemberPreferredLocale() { return opts.preferredLocale ?? null; },
   };
 }
 
@@ -1715,6 +1716,45 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
     expect(email.memberCalls[0]?.to).toBe('sender@example.com');
     expect(email.memberCalls[0]?.payload['broadcastId']).toBe(broadcastId);
+  });
+
+  it('dispatch-failure email renders in the member preferred locale, not the tenant default (email-locale audit 2026-07-16)', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+    });
+    const gw = makeGateway({
+      throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
+    });
+    const email = makeEmailTransactional();
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+          // Member explicitly prefers Thai; the tenant default below is 'en'.
+          preferredLocale: 'th',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(false);
+    expect(email.memberCalls).toHaveLength(1);
+    expect(email.memberCalls[0]?.templateKey).toBe('broadcast_failed_to_dispatch');
+    expect(email.memberCalls[0]?.locale).toBe('th');
   });
 
   // =====================================================================

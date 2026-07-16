@@ -121,6 +121,7 @@ function creditNoteDepsFlagOn(slug: string, captured?: PdfRenderInput[]): IssueC
     ...mockPdfBlob(captured),
     clock: { nowIso: () => FIXED_NOW },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
   };
 }
 

@@ -84,6 +84,7 @@ function makeDeps(tenantId: string): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
+    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };

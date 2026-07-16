@@ -281,6 +281,10 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
+    // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
+    recipientLocale: {
+      getMemberEmailLocale: vi.fn(async () => null),
+    },
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy §86/4-at-issue), exact-equivalent of the
     // pre-refactor `undefined`. Flag-specific behaviour is covered by the
@@ -728,6 +732,21 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     );
     expect(deps.blob.uploadPdf).toHaveBeenCalledTimes(1);
     expect(deps.invoiceRepo.applyIssue).toHaveBeenCalledTimes(1);
+  });
+
+  it('member prefers Thai → invoice_issued outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice({ autoEmailOnIssue: null }),
+      makeSettings({ autoEmailEnabled: true }),
+      makeMember(),
+    );
+    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'invoice_issued', recipientLocale: 'th' }),
+    );
   });
 
   it('happy path — draft.autoEmailOnIssue=false overrides tenant true → no outbox', async () => {

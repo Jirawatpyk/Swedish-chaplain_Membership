@@ -58,7 +58,14 @@ export type ResendVerificationInput = {
   readonly memberId: string;
   readonly actorUserId: string;
   readonly requestId: string;
-  readonly locale: 'en' | 'th' | 'sv';
+  /**
+   * Email-locale audit 2026-07-16 — OPTIONAL. When omitted (the route's
+   * normal path), the email renders in the recipient's stored
+   * `contact.preferredLanguage` — a member-facing verification email must
+   * follow the RECIPIENT's language, never the admin's UI locale (mirrors
+   * `resendBouncedInvite`). An explicit value still overrides.
+   */
+  readonly locale?: 'en' | 'th' | 'sv';
 };
 
 export type ResendVerificationError =
@@ -173,7 +180,10 @@ export async function resendVerificationEmail(
       const enqueued = await deps.emails.enqueueInTx(tx, deps.tenant, {
         type: 'email_verification_resent',
         toEmail: contact.email,
-        locale: input.locale,
+        // Email-locale audit 2026-07-16 — a member-facing verification email
+        // follows the RECIPIENT's stored language; an explicit input.locale
+        // (rare) still wins. Mirrors resendBouncedInvite.
+        locale: input.locale ?? contact.preferredLanguage,
         contextData: {
           token: token.plaintext,
           activatedAt: activatedAt.toISOString(),

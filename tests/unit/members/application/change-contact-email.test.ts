@@ -351,4 +351,26 @@ describe('changeContactEmail — happy path', () => {
       'email_change',
     );
   });
+
+  it('falls back to the contact preferred language when no locale is passed (email-locale audit 2026-07-16)', async () => {
+    // A non-UI caller omits locale; the verification (new address) + revert
+    // (old address) emails must render in the recipient's stored language,
+    // not a hardcoded 'en'.
+    const thaiDeps = makeDeps({
+      findByIdResult: ok(makeContact({ preferredLanguage: 'th' })),
+    });
+    (thaiDeps.emails.enqueueInTx as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-v' }))
+      .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-r' }));
+
+    const { locale: _omit, ...inputNoLocale } = baseInput;
+    const result = await changeContactEmail(thaiDeps, inputNoLocale);
+
+    expect(result.ok).toBe(true);
+    const enqueue = thaiDeps.emails.enqueueInTx as ReturnType<typeof vi.fn>;
+    // Both the verification email and the revert email carry 'th'.
+    for (const call of enqueue.mock.calls) {
+      expect((call[2] as { locale: string }).locale).toBe('th');
+    }
+  });
 });

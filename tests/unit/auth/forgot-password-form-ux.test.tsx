@@ -15,15 +15,31 @@ beforeEach(() => {
   vi.useRealTimers();
 });
 
-function renderForm() {
+function renderForm(locale: 'en' | 'th' | 'sv' = 'en') {
   return render(
-    <NextIntlClientProvider locale="en" messages={enMessages}>
+    <NextIntlClientProvider locale={locale} messages={enMessages}>
       <ForgotPasswordForm />
     </NextIntlClientProvider>,
   );
 }
 
 describe('ForgotPasswordForm', () => {
+  it('sends the active UI locale so the reset email is not always English (email-locale audit 2026-07-16)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderForm('th');
+    fireEvent.change(container.querySelector('#email')!, {
+      target: { value: 'thai.user@example.com' },
+    });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string);
+    expect(body.email).toBe('thai.user@example.com');
+    expect(body.locale).toBe('th');
+    vi.unstubAllGlobals();
+  });
+
   it('moves focus to the status card on a successful submit', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }));
     const { container } = renderForm();

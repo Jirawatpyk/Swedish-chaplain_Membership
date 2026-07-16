@@ -18,7 +18,7 @@
  *     NOT want Esc to clear the form since that is surprising).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -42,6 +42,11 @@ export function ForgotPasswordForm() {
   const t = useTranslations('auth.forgotPassword');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
+  // Email-locale audit 2026-07-16 — the reset email must arrive in the language
+  // the requester is using (requester = recipient, so the active UI locale is
+  // the right signal). The API already accepts an optional `locale`; the form
+  // just never sent it, so every reset email shipped English.
+  const locale = useLocale();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [remaining, setRemaining] = useState(0);
@@ -110,7 +115,7 @@ export function ForgotPasswordForm() {
         const response = await fetch('/api/auth/forgot-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
+          body: JSON.stringify({ email, locale }),
         });
         if (response.status === 429) {
           // Actionable rate-limit copy instead of a generic "went wrong".
@@ -129,7 +134,7 @@ export function ForgotPasswordForm() {
         setSubmitting(false);
       }
     },
-    [startCountdown, t, tErrors],
+    [startCountdown, t, tErrors, locale],
   );
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {

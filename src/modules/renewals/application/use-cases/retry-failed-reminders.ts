@@ -245,9 +245,11 @@ async function attemptRetry(
   }
   // Re-fire the gateway with the SAME idempotency key as the original
   // attempt — Resend dedupes server-side.
+  // Email-locale audit 2026-07-16 — member.preferred_locale (explicit choice)
+  // wins over the contact column's NOT-NULL DEFAULT 'en' (see dispatch-one-cycle).
   const locale =
-    candidate.primaryContact.preferredLanguage ??
     candidate.member.preferredLocale ??
+    candidate.primaryContact.preferredLanguage ??
     'en';
   const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
     tenantId: event.tenantId,
