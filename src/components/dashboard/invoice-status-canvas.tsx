@@ -87,6 +87,22 @@ export function InvoiceStatusCanvas({ rows, allowMotion }: InvoiceStatusCanvasPr
           outerRadius="94%"
           paddingAngle={2}
           isAnimationActive={allowMotion}
+          // Task 14 QA fix — unlike Bar/Area/Line, `<Pie>` defaults its OWN
+          // `rootTabIndex` to `0` (recharts source: `defaultPieProps` in
+          // `polar/Pie.js`), independent of the parent `<PieChart
+          // accessibilityLayer={false}>` flag above (that flag only
+          // suppresses the chart-surface-level keyboard layer; it never
+          // reached this component's own tabIndex default). Left unset, the
+          // donut's `<g class="recharts-pie" tabindex="0">` sat inside the
+          // `aria-hidden="true"` wrapper (`invoice-status-chart.tsx`) —
+          // axe-core's `aria-hidden-focus` rule ("ARIA hidden element must
+          // not be focusable nor contain focusable elements") flagged this
+          // as a serious violation on EVERY `/admin` load, not just on
+          // hover. Caught by the new interaction-level a11y E2E spec
+          // (`tests/e2e/dashboard-charts-a11y.spec.ts`, Task 14) — the
+          // static scan failed before any hover ever happened, proving the
+          // violation was unconditional, not tooltip-state-dependent.
+          rootTabIndex={-1}
         >
           {rows.map((r) => (
             <Cell key={r.bucket} fill={BUCKET_FILL[r.bucket]} stroke="var(--card)" strokeWidth={3} />
