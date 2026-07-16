@@ -971,14 +971,20 @@ export function makeDrizzleRenewalCycleRepo(
         // members this feature targets. RLS scopes to the tenant context.
         // Order by `expires_at ASC` so oldest expiries are processed first
         // (smallest blast radius if the cron is partially executed).
-        // Scaling note (065 §5.2 review, immaterial at current scale): with
-        // MORE than `pageSize` concurrent `awaiting_payment` cycles, the
-        // §5.3 born-`awaiting_payment` cohort (far-future `expires_at`, so
-        // sorted LAST by this ASC order) can be pushed past the LIMIT and
-        // DEFERRED to a later run — its due+60 termination just lands a run
-        // or two late. At TSCC's ~110 members (default pageSize 1000) this
-        // never triggers; revisit with keyset pagination if a tenant ever
-        // sustains >pageSize simultaneously-awaiting cycles.
+        // Scaling LIMITATION (065 final-review V3 — the earlier "lands a
+        // run or two late" wording here UNDERSTATED it): `nextCursor` is
+        // hardwired null and the caller does not page, while the deferred
+        // outcomes leave rows in `awaiting_payment` — so under a SUSTAINED
+        // overload of more than `pageSize` concurrent awaiting cycles, the
+        // same first page re-fills every run and the §5.3 born-awaiting
+        // cohort (far-future `expires_at`, sorted LAST by this ASC order)
+        // is STARVED for as long as the overload lasts — its due+60
+        // termination does not fire at all during that period, and nothing
+        // in the response distinguishes a truncated pass from a complete
+        // one. Immaterial at TSCC's ~110 members vs default pageSize 1000;
+        // the tracked fix (design doc § Post-review follow-ups) is keyset
+        // pagination on `(expires_at, cycle_id)` + a page loop with a time
+        // budget in the use-case + batching the per-member invoice probe.
         const rows = await tx
           .select()
           .from(renewalCycles)

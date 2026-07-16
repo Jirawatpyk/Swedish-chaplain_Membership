@@ -64,10 +64,17 @@ export interface InvoiceDueBridge {
    * `computeIsOverdue` in `derive-overdue.ts`, i.e. `due_date === today`
    * still counts as within the credit window).
    *
-   * 065 §5.2 — RETAINED but no longer consulted by the lapse cron (which
-   * switched to `oldestUnpaidMembershipInvoiceDueDate`). Kept for its
-   * dedicated contract coverage + any future caller that only needs the
-   * cheap boolean "is there a not-yet-due membership invoice?" question.
+   * 065 §5.2 (final-review V2/V5) — consulted by the lapse cron AGAIN, as
+   * the full 059 shield alongside `oldestUnpaidMembershipInvoiceDueDate`:
+   *   - at the due+60 TERMINATE boundary — ANY not-yet-due unpaid
+   *     membership invoice protects the member (a stale/superseded
+   *     in-window invoice must not terminate a member inside a CORRECTED
+   *     invoice's credit window);
+   *   - on the no-in-window-invoice branch — a future-`period_from`
+   *     cycle's legitimately-issued invoice can fall below the oldest-due
+   *     floor while still being not-yet-due (this query has NO floor; its
+   *     own `due_date >= todayBkk` predicate keeps stale past-due
+   *     invoices out).
    */
   hasUnpaidNotYetDueMembershipInvoice(
     input: HasUnpaidNotYetDueMembershipInvoiceInput,

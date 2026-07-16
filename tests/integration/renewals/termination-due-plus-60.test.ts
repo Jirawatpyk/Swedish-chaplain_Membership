@@ -372,4 +372,44 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     expect(await cycleStatus(m)).toBe('awaiting_payment');
     expect(await access(m, bkk('2026-02-01'))).toBe('suspended');
   });
+
+  it('065 final-review V2 — the 059 shield: an in-window invoice 60+ days past due does NOT terminate a member who also holds a not-yet-due invoice', async () => {
+    // The superseded-invoice scenario: admin reissued a corrected membership
+    // invoice (due in the future) without voiding the original. The stale
+    // original is INSIDE the floor window (unlike the prior-period stale
+    // test above), 60+ days past due — without the shield it anchors and
+    // terminates; with the shield the corrected invoice's credit window
+    // protects the member (059: "ANY not-yet-due unpaid membership invoice
+    // protects").
+    const m = await seedMember();
+    await seedMembershipInvoice(m, '2026-06-05'); // superseded: due+60 = 2026-08-04
+    await seedMembershipInvoice(m, '2026-09-15'); // corrected: not yet due at run
+    await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01 → floor 2026-04-02 admits BOTH
+
+    // 2026-08-10: superseded invoice is past due+60 (would terminate alone —
+    // exactly the "stale is IGNORED → terminate" run above proves that);
+    // the corrected invoice (due 2026-09-15) shields → deferred, not lapsed.
+    const r = await runLapse(bkk('2026-08-10'));
+    expect(r.deferredInvoiceNotDue).toBe(1);
+    expect(r.graceExpired).toBe(0);
+    expect(await cycleStatus(m)).toBe('awaiting_payment');
+    expect(await access(m, bkk('2026-08-10'))).toBe('suspended');
+  });
+
+  it('065 final-review V5 — future period_from: a legitimately-issued invoice BELOW the floor still defers via the shield (proper bucket + audit), not the silent backstop', async () => {
+    // Future-dated registration → future period_from (2027-06-01) → floor =
+    // 2027-04-02. Staff issue the joining invoice TODAY (due 2026-08-15):
+    // below the floor, so the oldest-due lookup misses it — but it is still
+    // not-yet-due, so the shield must route to deferred_invoice_not_due
+    // (with its audit trail), NOT deferredNoInvoiceBackstop.
+    const m = await seedMember();
+    await seedMembershipInvoice(m, '2026-08-15'); // below floor, not yet due
+    await seedAwaitingCycle(m, bkk('2028-06-01')); // period_from 2027-06-01 (future)
+
+    const r = await runLapse(bkk('2026-07-15'));
+    expect(r.deferredInvoiceNotDue).toBe(1);
+    expect(r.deferredNoInvoiceBackstop).toBe(0);
+    expect(r.graceExpired).toBe(0);
+    expect(await cycleStatus(m)).toBe('awaiting_payment');
+  });
 });

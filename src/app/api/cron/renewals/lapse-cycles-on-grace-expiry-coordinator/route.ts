@@ -42,6 +42,14 @@ interface PerTenantResult {
   readonly grace_expired?: number;
   readonly payment_failed?: number;
   readonly transition_race_skipped?: number;
+  // 065 §5.2 (final-review V8) — forwarded from the per-tenant route so
+  // the coordinator's response (the surface cron-job.org retains) can
+  // reconcile the SC sum invariant now that `cycles_processed` counts the
+  // whole awaiting_payment cohort, most of which defers on any given day.
+  readonly deferred_invoice_not_due?: number;
+  readonly deferred_within_termination_window?: number;
+  readonly deferred_no_invoice_backstop?: number;
+  readonly deferred_guard_errors?: number;
   readonly errors?: number;
   readonly duration_ms?: number;
   readonly error?: string;
@@ -177,6 +185,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           grace_expired: numFromJson(json, 'grace_expired'),
           payment_failed: numFromJson(json, 'payment_failed'),
           transition_race_skipped: numFromJson(json, 'transition_race_skipped'),
+          deferred_invoice_not_due: numFromJson(json, 'deferred_invoice_not_due'),
+          deferred_within_termination_window: numFromJson(
+            json,
+            'deferred_within_termination_window',
+          ),
+          deferred_no_invoice_backstop: numFromJson(
+            json,
+            'deferred_no_invoice_backstop',
+          ),
+          deferred_guard_errors: numFromJson(json, 'deferred_guard_errors'),
           errors: numFromJson(json, 'errors'),
           duration_ms: numFromJson(json, 'duration_ms'),
         };

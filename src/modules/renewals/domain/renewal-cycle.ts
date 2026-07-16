@@ -389,10 +389,19 @@ export function deriveMembershipAccess(
 }
 
 /**
- * A membership has LAPSED when its most-recent cycle is ended-terminal
- * (`lapsed` or `cancelled` — NOT `completed`, which means the member
- * paid/renewed and is in good standing) AND its coverage has ended
- * (`expiresAt` in the past, or unparseable → still treated as lapsed).
+ * A membership has LAPSED when its most-recent cycle resolves to
+ * `terminated` under `deriveMembershipAccess` (065 §5.2/§5.3):
+ *   - `lapsed`    → ALWAYS lapsed, regardless of `expiresAt`. The status
+ *     is only ever written for non-payment (the due+60 lapse cron and the
+ *     pending-reactivation timeout — both via `CYCLE_STATUS_TRANSITIONS`
+ *     + the repo's `assertCanTransition`), and a §5.3 born-awaiting cycle
+ *     terminated at due+60 carries a far-FUTURE `expiresAt` — an expiry
+ *     check here would wrongly resolve that cohort back to full access.
+ *   - `cancelled` → lapsed only once its coverage has ended (`expiresAt`
+ *     in the past, or unparseable → treated as ended). A cancellation can
+ *     legitimately close a PAID cycle mid-period, so paid-through coverage
+ *     is honoured until period end.
+ *   - `completed` → never lapsed (the member paid/renewed).
  *
  * The terminal-status gate is load-bearing: a NON-terminal cycle that is
  * merely past `expiresAt` is `overdue` (in grace), NOT lapsed — so the gate

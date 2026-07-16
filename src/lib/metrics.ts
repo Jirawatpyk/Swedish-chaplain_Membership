@@ -2658,6 +2658,44 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_lapse_deferred_total{tenant,reason}` — 065 §5.2
+   * (final-review V10): one increment per cycle the daily lapse cron
+   * evaluated and deliberately did NOT transition, labelled with the
+   * deferred branch:
+   *   - `invoice_not_due`            — 059 guard: an unpaid membership
+   *                                    invoice exists but is not yet due;
+   *   - `within_termination_window`  — past due but still inside the
+   *                                    `due_date + 60` window;
+   *   - `no_invoice_backstop`        — never invoiced; `expires_at +
+   *                                    grace` not yet elapsed.
+   * Before this counter the two new §5.2 branches were silent (no audit,
+   * no metric) — asymmetric with `renewal_lapse_deferred_invoice_not_due`
+   * — so the routine countdown-to-termination cohort was invisible to
+   * operators. Reconciles against the cron route's per-branch counters:
+   * sum over reasons + terminated + raceSkipped + guardErrors + errors
+   * === cycles_processed.
+   */
+  lapseDeferred: {
+    add(
+      value: number,
+      attrs: {
+        tenant_id: string;
+        reason:
+          | 'invoice_not_due'
+          | 'within_termination_window'
+          | 'no_invoice_backstop';
+      },
+    ): void {
+      safeMetric(() => {
+        counter(
+          'renewals_lapse_deferred_total',
+          'F8 lapseCyclesOnGraceExpiry deferred-branch tally (invoice_not_due | within_termination_window | no_invoice_backstop) — the no-transition outcomes of the 065 §5.2 due+60 termination clock, so the past-due countdown cohort is operator-visible',
+        ).add(value, { tenant: attrs.tenant_id, reason: attrs.reason });
+      });
+    },
+  },
+
+  /**
    * `renewals_enter_awaiting_cycles_errors_total{tenant}` —
    * F8-completion slice 2: per-cycle errors during the daily
    * `enterAwaitingPaymentOnExpiry` (T-0) cron (DB transition throw /
