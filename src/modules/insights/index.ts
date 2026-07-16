@@ -41,9 +41,13 @@ export { cycleKeyFor } from './domain/insight-cycle-key';
 export {
   emptySnapshot,
   type DashboardSnapshot,
+  type InvoiceStatusBucket,
+  type InvoiceStatusDistribution,
   type MembershipCounts,
   type NeedsAttention,
+  type TierDistributionSlice,
 } from './domain/dashboard-snapshot';
+export { UNASSIGNED_TIER_KEY } from './domain/tier-distribution';
 
 // --- Domain (US4 — benefit usage) -----------------------------------------
 export {

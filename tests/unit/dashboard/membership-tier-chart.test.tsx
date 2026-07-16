@@ -28,8 +28,7 @@ import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { MembershipTierChart } from '@/components/dashboard/membership-tier-chart';
-import { UNASSIGNED_TIER_KEY } from '@/modules/insights/domain/tier-distribution';
-import type { TierDistributionSlice } from '@/modules/insights/domain/dashboard-snapshot';
+import { UNASSIGNED_TIER_KEY, type TierDistributionSlice } from '@/modules/insights';
 
 function stubMatchMedia(matches = false) {
   vi.stubGlobal(

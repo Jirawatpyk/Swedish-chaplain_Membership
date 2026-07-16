@@ -36,8 +36,7 @@ import { useSyncExternalStore } from 'react';
 import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
-import type { TierDistributionSlice } from '@/modules/insights/domain/dashboard-snapshot';
-import { UNASSIGNED_TIER_KEY } from '@/modules/insights/domain/tier-distribution';
+import { UNASSIGNED_TIER_KEY, type TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
 import {
   getAllowMotion,
