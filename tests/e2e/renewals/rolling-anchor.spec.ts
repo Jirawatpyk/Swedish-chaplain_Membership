@@ -104,6 +104,9 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       // the form already defaults it to 'TH' (schema default).
       await page.locator('#plan_id').click();
       await page.getByRole('option').first().click();
+      // 065 §5.1 — billing_cycle is a new REQUIRED Select; pick the first option.
+      await page.locator('#billing_cycle').click();
+      await page.getByRole('option').first().click();
       await fillField(page.locator('#first_name'), 'Anchor');
       await fillField(page.locator('#last_name'), 'Tester');
       await fillField(

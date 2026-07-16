@@ -69,6 +69,9 @@ test.describe('US5 Member self-service portal @f3 @a11y @i18n', () => {
     // Select first available plan
     await page.locator('#plan_id').click();
     await page.getByRole('option').first().click();
+    // 065 §5.1 — billing_cycle is a new REQUIRED Select; pick the first option.
+    await page.locator('#billing_cycle').click();
+    await page.getByRole('option').first().click();
 
     // Primary contact
     await fillField(page.locator('#first_name'), 'Portal');

@@ -55,6 +55,10 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
     // Plan select trigger has id="plan_id"; pick the first option.
     await page.locator('#plan_id').click();
     await page.getByRole('option').first().click();
+    // 065 §5.1 — billing_cycle is a new REQUIRED Select (no default); pick the
+    // first option or the form fails validation on submit.
+    await page.locator('#billing_cycle').click();
+    await page.getByRole('option').first().click();
     await fillField(page.locator('#first_name'), 'Auto');
     await fillField(page.locator('#last_name'), 'Test');
     await fillField(
