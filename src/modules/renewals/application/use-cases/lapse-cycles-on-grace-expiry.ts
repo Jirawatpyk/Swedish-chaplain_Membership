@@ -86,12 +86,11 @@
  * mode this guard exists to avoid.
  */
 import { z } from 'zod';
-import { LocalDate } from '@js-joda/core';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { addDays, bangkokLocalDate } from '@/lib/fiscal-year';
 import { asTenantId, asMemberId } from '@/modules/members';
 import { asInvoiceId } from '@/modules/invoicing';
 import { parseInput } from './_lib/parse-input';
@@ -400,11 +399,8 @@ async function processOne(
       return 'deferred_invoice_not_due';
     }
     // Past due. Terminate only once today is STRICTLY past `due_date + 60`.
-    // `LocalDate.parse(dueDate).plusDays(60)` is Bangkok-calendar-day
-    // arithmetic (the same engine as `@/lib/fiscal-year`'s `addDays`).
-    const terminateAfter = LocalDate.parse(dueDate)
-      .plusDays(TERMINATION_DAYS_AFTER_DUE)
-      .toString();
+    // Pure Bangkok-calendar-day arithmetic (both are YYYY-MM-DD; no TZ/DST).
+    const terminateAfter = addDays(dueDate, TERMINATION_DAYS_AFTER_DUE);
     if (todayBkk <= terminateAfter) {
       // Past due but still inside the 60-day termination window → stay
       // suspended (no transition; re-evaluated on tomorrow's run).
