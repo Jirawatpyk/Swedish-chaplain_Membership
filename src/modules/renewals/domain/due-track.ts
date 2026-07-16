@@ -41,6 +41,21 @@ export const DUE_TRACK_STEPS: readonly DueTrackStep[] = [
  */
 export const MIN_WARNING_NOTICE_DAYS = 14;
 
+/**
+ * 065 §5.2 (hoisted here in 066 so the warning track and the termination
+ * clock share ONE floor constant) — the widest legitimate lead time between
+ * a current-period membership invoice's `due_date` and the cycle's
+ * `period_from`. Both the lapse cron's oldest-due lookup
+ * (`sinceDueDate = period_from − this`) and the due-track candidate query
+ * floor on it, so a STALE unpaid `issued` invoice from a PRIOR lapsed cycle
+ * (or a historical-due invoice import) can never anchor the CURRENT
+ * period's warnings or termination clock. A legit current-period invoice is
+ * issued at most ~31 days before period start (calendar-year: Dec 1 for the
+ * Jan-1 period; rolling: T-30), so its due_date lands well within this
+ * window; prior-period stragglers fall to the no-invoice backstop.
+ */
+export const MAX_INVOICE_ISSUANCE_LEAD_DAYS = 60;
+
 const MS_PER_DAY = 86_400_000;
 
 /**

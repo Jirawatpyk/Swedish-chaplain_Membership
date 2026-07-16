@@ -131,6 +131,7 @@ import type {
   CycleId,
   RenewalCycle,
 } from '../../domain/renewal-cycle';
+import { MAX_INVOICE_ISSUANCE_LEAD_DAYS } from '../../domain/due-track';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -231,25 +232,13 @@ const MS_PER_DAY = 86_400_000;
  */
 const TERMINATION_DAYS_AFTER_DUE = 60;
 
-/**
- * 065 §5.2 review — the widest legitimate lead time between a current-period
- * membership invoice's `due_date` and the cycle's `period_from`, used to
- * FLOOR the oldest-due lookup (`sinceDueDate = period_from − this`) so a
- * STALE unpaid `issued` invoice from a PRIOR lapsed cycle (or a
- * historical-due invoice import) can never anchor the CURRENT period's
- * termination clock — which would skip the 60-day grace on the current
- * invoice and terminate the member the day after period-end.
- *
- * A legit current-period invoice is issued at most ~31 days before period
- * start (calendar-year: issued Dec 1 for the Jan-1 period; rolling: T-30),
- * so its `due_date` (issue + 30-day net terms) lands roughly AT period
- * start, well within a 60-day floor below `period_from`. A prior period's
- * invoice is ~334+ days before this period's start, so the 60-day lead
- * window cleanly admits the current invoice and excludes prior-period
- * stragglers — which then fall to the no-invoice `expires_at + grace`
- * backstop.
- */
-const MAX_INVOICE_ISSUANCE_LEAD_DAYS = 60;
+// 065 §5.2 review — the oldest-due lookup is FLOORED at
+// `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS` so a STALE unpaid invoice
+// from a PRIOR lapsed cycle can never anchor the CURRENT period's clock.
+// 066: the constant lives in `domain/due-track.ts` (imported above) so the
+// due-track warning anchor and this termination clock share ONE floor —
+// they must never anchor on different invoices. Full rationale on the
+// constant's docblock.
 
 export async function lapseCyclesOnGraceExpiry(
   deps: LapseCyclesOnGraceExpiryDeps,
