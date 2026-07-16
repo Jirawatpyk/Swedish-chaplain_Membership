@@ -244,6 +244,34 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     expect(await access(m, bkk('2026-05-01'))).toBe('suspended');
   });
 
+  it('065 §5.2 — late-issued invoice: the clock anchors on due+60, NOT expires_at+grace', async () => {
+    // The whole point of the due-date anchor: for a LATE-issued invoice the
+    // termination clock must run 60 days after the member was actually asked
+    // to pay, not 60 days after the period end. expires_at is Jan-1
+    // (expires_at+grace = 2026-03-02), but the invoice was issued late and is
+    // due Jun-1 (due+60 = 2026-07-31). Under the old expires_at+grace model
+    // the member would lapse in early March; under the due-date anchor they
+    // must not.
+    const m = await seedMember();
+    await seedMembershipInvoice(m, '2026-06-01'); // due+60 = 2026-07-31
+    await seedAwaitingCycle(m, bkk('2026-01-01')); // expires_at+grace = 2026-03-02
+
+    // 2026-04-01 is PAST expires_at+grace but the invoice is not yet due →
+    // deferred (059 not-yet-due guard), decisively NOT terminated on the old
+    // grace clock.
+    const past = await runLapse(bkk('2026-04-01'));
+    expect(past.graceExpired).toBe(0);
+    expect(past.deferredInvoiceNotDue).toBe(1);
+    expect(await cycleStatus(m)).toBe('awaiting_payment');
+    expect(await access(m, bkk('2026-04-01'))).toBe('suspended');
+
+    // due+61 (2026-08-01) → terminate on the due-date anchor.
+    const t61 = await runLapse(bkk('2026-08-01'));
+    expect(t61.graceExpired).toBe(1);
+    expect(await cycleStatus(m)).toBe('lapsed');
+    expect(await access(m, bkk('2026-08-01'))).toBe('terminated');
+  });
+
   it('terminates a born-awaiting new member (far-future expires_at) at due+60 — the §5.2⇄§5.3 coupling', async () => {
     // §5.3 born-`awaiting_payment` shape: initial cycle carries a far-future
     // `expires_at ≈ registration + 12 months`, no linked invoice, but an

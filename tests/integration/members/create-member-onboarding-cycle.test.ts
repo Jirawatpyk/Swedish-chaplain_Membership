@@ -21,13 +21,20 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
+import { asSatang } from '@/lib/money';
 import { createMember } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { deriveMembershipAccess, f8OnCreateMemberCallbacks } from '@/modules/renewals';
+import {
+  deriveMembershipAccess,
+  f8OnCreateMemberCallbacks,
+  f8OnPaidCallbacks,
+} from '@/modules/renewals';
 import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -60,11 +67,87 @@ describe('Integration — createMember onboarding listener creates the initial c
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug))
       .catch(() => {});
     await db
+      .delete(invoices)
+      .where(eq(invoices.tenantId, tenant.ctx.slug))
+      .catch(() => {});
+    await db
       .delete(members)
       .where(eq(members.tenantId, tenant.ctx.slug))
       .catch(() => {});
     await tenant.cleanup().catch(() => {});
   }, 60_000);
+
+  /** An `issued` MEMBERSHIP invoice for the created member (full snapshot to
+   *  satisfy `invoices_non_draft_has_snapshots`), UNLINKED to any cycle — so
+   *  paying it drives the §5.3 unlinked-payment reanchor heal path. */
+  async function seedIssuedMembershipInvoice(memberId: string): Promise<string> {
+    const invoiceId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        memberId,
+        planYear: 2026,
+        planId,
+        status: 'issued',
+        pdfDocKind: 'invoice',
+        draftByUserId: user.userId,
+        fiscalYear: 2026,
+        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900_000) + 100_000)}`,
+        issueDate: '2026-07-01',
+        dueDate: '2026-07-31',
+        currency: 'THB',
+        subtotalSatang: asSatang(5_000_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(5_350_000n),
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'Heal Co',
+          country: 'SE',
+          legal_name: 'Heal Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'heal@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+      }),
+    );
+    return invoiceId;
+  }
+
+  /** Fire the REAL `f8OnPaidCallbacks` chain against one threaded tx —
+   *  exactly F4 `recordPayment`'s callback loop for an OFFLINE payment. */
+  async function fireOnPaidChainInTx(
+    invoiceId: string,
+    memberId: string,
+    paymentDate: string,
+  ): Promise<void> {
+    const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
+    await runInTenant(tenant.ctx, async (tx) => {
+      const evt: F4InvoicePaidEvent = {
+        tenantId: tenant.ctx.slug,
+        invoiceId,
+        memberId,
+        paidAt: '2026-07-20T09:00:00.000Z',
+        amountSatang: asSatang(5_350_000n),
+        vatSatang: asSatang(350_000n),
+        currency: 'THB',
+        paymentMethod: 'bank_transfer',
+        triggeredBy: 'admin_manual',
+        invoiceSubject: 'membership',
+        paymentDate,
+      };
+      for (const cb of callbacks) {
+        await cb(evt, tx);
+      }
+    });
+  }
 
   it('creates exactly one awaiting_payment cycle (065 §5.3) anchored at registration_date, frozen at the plan price', async () => {
     const deps = buildMembersDeps(tenant.ctx);
@@ -181,6 +264,51 @@ describe('Integration — createMember onboarding listener creates the initial c
     expect(decision.access).toBe('suspended');
     expect(decision.reason).toBe('unpaid');
   }, 60_000);
+
+  it('065 §5.3 — the first OFFLINE payment HEALS a born-awaiting member to FULL (reanchor)', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const seedSlug = randomUUID().slice(0, 8);
+    const created = await createMember(
+      {
+        company_name: `Heal Co ${seedSlug}`,
+        country: 'SE',
+        plan_id: planId,
+        plan_year: 2026,
+        registration_date: '2026-05-10',
+        primary_contact: {
+          first_name: 'Hana',
+          last_name: 'Heal',
+          email: `${seedSlug}@heal.test`,
+          preferred_language: 'en' as const,
+        },
+      },
+      { actorUserId: user.userId, requestId: `heal-${seedSlug}` },
+      { ...deps, onboardingListeners: f8OnCreateMemberCallbacks(tenant.ctx.slug) },
+    );
+    if (!created.ok)
+      throw new Error(`create failed: ${JSON.stringify(created.error)}`);
+    const memberId = created.value.memberId;
+    const repo = makeDrizzleRenewalCycleRepo(tenant.ctx);
+
+    // Born awaiting_payment → suspended (no benefit until first payment).
+    const born = await repo.findLatestCycleForMember(tenant.ctx.slug, memberId);
+    expect(born?.status).toBe('awaiting_payment');
+    expect(deriveMembershipAccess(born, new Date()).access).toBe('suspended');
+
+    // Admin records the first payment OFFLINE — F4's recordPayment fires the
+    // F8 onPaid callback chain, which classifies `first_payment` on the
+    // never-anchored initial cycle and REANCHORS it to the payment month
+    // (upcoming + anchoredAt), the §5.3 heal path.
+    const invoiceId = await seedIssuedMembershipInvoice(memberId);
+    await fireOnPaidChainInTx(invoiceId, memberId, '2026-07-20');
+
+    // The reanchor heals the member to FULL: the initial cycle is now an
+    // anchored `upcoming` cycle whose period covers `now`.
+    const healed = await repo.findLatestCycleForMember(tenant.ctx.slug, memberId);
+    expect(healed?.status).toBe('upcoming');
+    expect(healed?.anchoredAt).not.toBeNull();
+    expect(deriveMembershipAccess(healed, new Date()).access).toBe('full');
+  }, 120_000);
 
   it('068 R2-1 — a BACKDATED registration_date is anchored to the CURRENT period (cycle expires in the FUTURE, not immediately lapse-eligible)', async () => {
     const deps = buildMembersDeps(tenant.ctx);
