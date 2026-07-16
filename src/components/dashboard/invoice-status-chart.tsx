@@ -176,6 +176,26 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
     maximumFractionDigits: 0,
   });
 
+  // Centre-total ONLY: a compact "฿2.0M"-scale display so the headline
+  // number fits the donut hole at any locale/currency-string length (bug:
+  // en-US/sv-SE THB has no native "฿" glyph, so the FULL string is
+  // "THB 2,000,000" — wide enough to spill past the hole onto the arcs).
+  // `minimumFractionDigits: 0` is required alongside `maximumFractionDigits:
+  // 1` — currency style otherwise resolves BOTH to the currency's native
+  // fraction digits (2 for THB), which get clamped down to
+  // `maximumFractionDigits` and render a spurious ".0" even on whole numbers
+  // below the compact threshold (e.g. "฿500.0" instead of "฿500"). The FULL
+  // exact amount stays everywhere else — the tooltip, the visible legend,
+  // and the hidden `<ChartDataTable>`'s Total row — this compacting is
+  // cosmetic to the centre overlay alone.
+  const compactThbFmt = new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    notation: 'compact',
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  });
+
   const byBucket = new Map(distribution.buckets.map((b) => [b.bucket, b] as const));
   const bucketsInOrder = BUCKET_ORDER.map((key) => byBucket.get(key) ?? zeroBucket(key));
   const satangNumbers = bucketsInOrder.map((b) => Number(b.satang));
@@ -204,6 +224,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   });
 
   const totalLabel = thbFmt.format(totalSatangNumber / 100);
+  const compactTotalLabel = compactThbFmt.format(totalSatangNumber / 100);
   const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
   const draftCount = distribution.draftCount;
 
@@ -228,7 +249,20 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
         ) : (
           <>
             <div className="relative">
-              <div aria-hidden="true">
+              {/* `relative z-10` gives this wrapper its OWN stacking context
+                  (position + explicit z-index) so everything painted inside
+                  it — the arcs AND, critically, the Recharts hover tooltip —
+                  stacks ABOVE the centre-total overlay below (z-0). Before
+                  this fix both divs were plain siblings with the centre-total
+                  positioned (`absolute`) and this canvas wrapper `static`: a
+                  positioned box ALWAYS paints above a non-positioned one
+                  regardless of DOM order, so the total silently won every
+                  time — hiding the tooltip on hover (bug) and, wherever the
+                  total's text ran wider than the hole, drawing over the arcs
+                  too (bug). The hole stays transparent outside the ring, so
+                  the total still shows through at rest — this only changes
+                  who wins where the two would otherwise collide. */}
+              <div aria-hidden="true" className="relative z-10">
                 <InvoiceStatusCanvas rows={rows} allowMotion={allowMotion} />
               </div>
               {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
@@ -236,11 +270,19 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
                   readers reach it in normal reading order. Visually overlaid
                   on the donut hole via CSS position, not Recharts geometry.
                   Label BEFORE value (not value-then-label) so SR/reading
-                  order says "Total outstanding. THB 10,000." rather than
-                  the bare amount followed by an unattached caption. */}
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  order says "Total outstanding. THB 10K." rather than the
+                  bare amount followed by an unattached caption.
+                  `z-0` pairs with the canvas's `z-10` above; `px-6` + the
+                  compact `compactTotalLabel` (vs. the full `totalLabel`)
+                  keep this comfortably inside the donut hole
+                  (`innerRadius="65%"` in `invoice-status-canvas.tsx`)
+                  instead of spilling onto the ring — the exact amount is
+                  never lost, it's still the tooltip/legend/table's value. */}
+              <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center">
                 <span className="text-caption text-muted-foreground">{t('totalLabel')}</span>
-                <span className="text-2xl font-semibold tabular-nums">{totalLabel}</span>
+                <span className="text-xl font-semibold leading-tight tabular-nums">
+                  {compactTotalLabel}
+                </span>
               </div>
             </div>
             {/* Persistent, VISIBLE legend (WCAG 1.4.1 — colour is never the

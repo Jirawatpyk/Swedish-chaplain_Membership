@@ -85,6 +85,27 @@ describe('MembershipTierChart', () => {
     expect(within(table).getByText('33%')).toBeInTheDocument();
   });
 
+  // Enterprise-detail pass: the tier bar previously had no KPI-sized
+  // headline (unlike the sparklines' summary stat) — this pins the fix.
+  it('renders a headline stat (active-member total, KPI/dashboard-hero scale) above the bar chart', () => {
+    renderChart([GOLD, SILVER]);
+    expect(screen.getByText('9', { selector: 'span' })).toBeInTheDocument();
+    expect(screen.getByText('Active members')).toBeInTheDocument();
+  });
+
+  it('highlights the top (most populous) tier next to the headline stat', () => {
+    renderChart([GOLD, SILVER]);
+    // Gold = 6/9 ≈ 67% and sorts first (design doc: count-desc) → top tier.
+    expect(screen.getByText('Top: Gold · 67%')).toBeInTheDocument();
+  });
+
+  it('omits the top-tier chip when the only slice is the unassigned bucket (never highlights "No plan assigned" as the top tier)', () => {
+    renderChart([UNASSIGNED]);
+    expect(screen.queryByText(/^Top:/)).not.toBeInTheDocument();
+    // The headline stat itself still renders (1 active member, unassigned).
+    expect(screen.getByText('1', { selector: 'span' })).toBeInTheDocument();
+  });
+
   it('renders the unassigned slice with a translated sentinel label, never the literal "unassigned"', () => {
     renderChart([GOLD, UNASSIGNED]);
     const table = screen.getByRole('table');

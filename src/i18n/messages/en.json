@@ -476,7 +476,9 @@
         "countColumnHeader": "Members",
         "pctColumnHeader": "% of total",
         "totalRowLabel": "Total",
-        "unassignedTier": "No plan assigned"
+        "unassignedTier": "No plan assigned",
+        "activeMembersLabel": "Active members",
+        "topTier": "Top: {tier} · {pct}"
       },
       "invoiceStatus": {
         "title": "Receivables by value",

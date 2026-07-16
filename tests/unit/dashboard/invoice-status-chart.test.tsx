@@ -111,11 +111,32 @@ describe('InvoiceStatusChart', () => {
     expect(rowHeaders).toEqual(['Paid', 'Unpaid', 'Overdue', 'Total']);
   });
 
-  it('renders the centre total as REAL DOM text, outside the aria-hidden canvas', () => {
+  it('renders the centre total as REAL DOM text (compact format), outside the aria-hidden canvas', () => {
     renderChart(FULL);
-    const total = screen.getByText('THB 10,000', { selector: 'span' });
+    // Compact ("THB 10K"), not the full "THB 10,000" — the centre overlay
+    // must fit the donut hole at any locale's currency-string length; the
+    // FULL exact amount stays in the hidden table's Total row (asserted in
+    // the first test above) and the tooltip.
+    const total = screen.getByText('THB 10K', { selector: 'span' });
     expect(total).toBeInTheDocument();
     expect(total.closest('[aria-hidden="true"]')).not.toBeInTheDocument();
+  });
+
+  // Bug fix: the centre-total overlay used to be a plain (non-positioned)
+  // sibling next to the aria-hidden canvas wrapper, so the browser's default
+  // stacking rules (a POSITIONED box always paints above a non-positioned
+  // one, regardless of DOM order) made the total win every time — hiding
+  // the Recharts hover tooltip behind it, and spilling over the arcs
+  // whenever the total's text ran wider than the hole. The fix promotes the
+  // canvas wrapper to its own higher-z-index stacking context so the arcs
+  // AND the tooltip painted inside it always win over the total underneath.
+  it('stacks the canvas wrapper ABOVE the centre-total overlay (z-index) so the hover tooltip is never hidden behind it', () => {
+    const { container } = renderChart(FULL);
+    const canvasWrapper = container.querySelector('[aria-hidden="true"]');
+    expect(canvasWrapper).toHaveClass('relative', 'z-10');
+    const total = screen.getByText('THB 10K', { selector: 'span' });
+    const totalWrapper = total.closest('div');
+    expect(totalWrapper).toHaveClass('absolute', 'z-0');
   });
 
   it('renders the draftCount caption as real DOM text when draftCount > 0', () => {

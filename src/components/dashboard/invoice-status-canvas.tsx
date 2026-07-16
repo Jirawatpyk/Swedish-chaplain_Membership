@@ -78,8 +78,13 @@ export function InvoiceStatusCanvas({ rows, allowMotion }: InvoiceStatusCanvasPr
           data={rows}
           dataKey="satangNumber"
           nameKey="label"
-          innerRadius="60%"
-          outerRadius="100%"
+          // A bigger hole (up from 60%) gives the caller's compact centre-
+          // total ("฿2.0M") comfortable room, and a slight inset on the
+          // outer edge (down from 100%) leaves breathing room from the card
+          // bounds — both requested by the enterprise-polish pass alongside
+          // the z-index overlap fix in `invoice-status-chart.tsx`.
+          innerRadius="65%"
+          outerRadius="94%"
           paddingAngle={2}
           isAnimationActive={allowMotion}
         >

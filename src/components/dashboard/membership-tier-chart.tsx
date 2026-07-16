@@ -44,7 +44,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useSyncExternalStore } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TierDistributionSlice } from '@/modules/insights';
@@ -83,6 +83,7 @@ const MIN_CHART_HEIGHT_PX = 120;
 
 export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   const t = useTranslations('admin.dashboard.membershipTier');
+  const locale = useLocale();
   const allowMotion = useSyncExternalStore(
     subscribeMotionPreference,
     getAllowMotion,
@@ -113,6 +114,22 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   const max = rows.reduce((m, r) => Math.max(m, r.count), 0);
   const chartHeightPx = Math.max(MIN_CHART_HEIGHT_PX, rows.length * ROW_HEIGHT_PX);
 
+  // Headline stat (enterprise-detail parity with the sparklines' KPI-sized
+  // summary stat — see `_mini-series-chart.tsx`) — locale-aware count, the
+  // same convention as the KPI cards / `InvoiceStatusChart`'s `thbFmt`.
+  const numberFmt = new Intl.NumberFormat(locale);
+  // Secondary chip next to the headline: the top REAL tier (never the
+  // `unassigned` sentinel — see the literal-comparison note above; a
+  // "Top: No plan assigned" chip would read as noise, not insight).
+  // `noUncheckedIndexedAccess` makes `rows[0]` possibly `undefined`; folding
+  // the whole check + the label build into one expression (rather than a
+  // separate boolean flag consulted later) lets TS narrow `topSlice` here.
+  const topSlice = rows[0];
+  const topTierChipLabel =
+    topSlice && topSlice.tierKey !== 'unassigned'
+      ? t('topTier', { tier: topSlice.displayLabel, pct: topSlice.pctLabel })
+      : null;
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -123,7 +140,26 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
           <p className="text-body text-muted-foreground">{t('empty')}</p>
         ) : (
           <>
-            <div aria-hidden="true" style={{ height: chartHeightPx }}>
+            {/* Headline stat (enterprise-detail parity with the sparklines'
+                KPI-sized summary stat) — the active-member total the bars
+                sum to, at the SAME `text-3xl` "dashboard hero number" scale
+                as `KpiCard`/`MiniSeriesChart`'s summary (ux-standards.md's
+                type-scale table), plus the top tier as a secondary chip —
+                mirrors the summary+chip+label layout used there. */}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="flex items-baseline gap-2">
+                <span className="text-3xl tabular-nums">{numberFmt.format(total)}</span>
+                {topTierChipLabel ? (
+                  <span className="text-caption font-medium text-muted-foreground">
+                    {topTierChipLabel}
+                  </span>
+                ) : null}
+              </span>
+              <span className="text-right text-caption text-muted-foreground">
+                {t('activeMembersLabel')}
+              </span>
+            </div>
+            <div aria-hidden="true" className="mt-3" style={{ height: chartHeightPx }}>
               <MembershipTierCanvas
                 rows={rows}
                 max={max}
