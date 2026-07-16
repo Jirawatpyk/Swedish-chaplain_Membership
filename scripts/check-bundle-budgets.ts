@@ -75,6 +75,18 @@
  *     /admin/members/new              1223 KB measured → ≤ 1330 KB
  *     /admin/members/[memberId]/edit  1247 KB measured → ≤ 1350 KB
  *
+ *   067 dashboard-interactive-charts (Task 7 — charting infra setup):
+ *     /admin                           992 KB measured → ≤ 1100 KB
+ *       (measured 2026-07-16, BEFORE any route imports recharts — this
+ *       is the pre-chart baseline. `recharts@^3` + `ui/chart.tsx` are
+ *       installed by this task but not yet wired into any admin page;
+ *       charts land via dynamic `import()` in a later task so this
+ *       ceiling is what catches recharts leaking into /admin's eager
+ *       first-load bundle instead of staying behind a lazy boundary.
+ *       Re-measure and grow this ceiling deliberately once the chart
+ *       widgets ship — do not silently bump it if it breaches.)
+ *
+
  * Run as a post-build step:
  *
  *   pnpm build
@@ -138,6 +150,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // is deliberately kept well under 367 KB.
   { route: '/admin/members/new', maxKb: 1330 },
   { route: '/admin/members/[memberId]/edit', maxKb: 1350 },
+  // --- 067 dashboard-interactive-charts (Task 7) ------------------------
+  // Pre-chart baseline — see docblock above for the measurement note.
+  { route: '/admin', maxKb: 1100 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
