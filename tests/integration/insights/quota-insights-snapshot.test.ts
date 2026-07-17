@@ -183,7 +183,7 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
       await seedF8MembershipPlan(tx, {
         tenantSlug: tenant.ctx.slug,
         planId: planA,
-        planName: { en: 'Quota Plan A' },
+        planName: { en: 'Quota Plan A', th: 'แผนโควตา เอ' },
         benefitMatrix: PLAN_A_MATRIX,
         createdBy: admin.userId,
       });
@@ -264,9 +264,10 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
   // 067 Task 5 — the SAME real snapshot compute also resolves the tier +
   // invoice-status chart aggregates. This suite already seeds TWO distinct
   // plans (planA/planB) with real `plan_name` rows, so it is a natural place
-  // to pin `getPlanLabel` end-to-end (F2 `planRepo.findOne` -> `plan_name.en`)
-  // alongside the existing quota assertions, rather than a third bespoke tenant.
-  it('067: tierDistribution resolves real plan labels (F2 plan_name.en); invoiceStatus reads zeroed (no invoices seeded)', async () => {
+  // to pin `getPlanLabel` end-to-end (F2 `planRepo.findOne` -> full `plan_name`
+  // LocaleText, TH included) alongside the existing quota assertions, rather
+  // than a third bespoke tenant.
+  it('067: tierDistribution resolves real plan labels as full LocaleText (TH round-trips); invoiceStatus reads zeroed (no invoices seeded)', async () => {
     const r = await computeDashboardSnapshot(tenant.ctx, makeComputeDashboardSnapshotDeps(tenant.ctx.slug));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -274,8 +275,14 @@ describe('F9 quota insights — cross-member roll-up (P1-4 / FR-004, live Neon)'
     // 5 members on planA (mA,mB,mC,mE,mF) + 1 on planB (mD) = 6 active; every
     // member's plan resolves a label, so there is NO 'unassigned' bucket.
     const byTier = new Map(r.value.tierDistribution.map((s) => [s.tierKey, s]));
-    expect(byTier.get(planA)).toEqual({ tierKey: planA, label: 'Quota Plan A', count: 5 });
-    expect(byTier.get(planB)).toEqual({ tierKey: planB, label: 'Quota Plan B', count: 1 });
+    // Full LocaleText round-trips through compute → snapshot (TH preserved),
+    // so a Thai/Swedish admin sees the localised tier name, not the EN fallback.
+    expect(byTier.get(planA)).toEqual({
+      tierKey: planA,
+      label: { en: 'Quota Plan A', th: 'แผนโควตา เอ' },
+      count: 5,
+    });
+    expect(byTier.get(planB)).toEqual({ tierKey: planB, label: { en: 'Quota Plan B' }, count: 1 });
     expect(byTier.has('unassigned')).toBe(false);
     expect(r.value.tierDistribution.reduce((sum, s) => sum + s.count, 0)).toBe(
       r.value.counts.active,

@@ -4,7 +4,6 @@ import {
   groupActiveMembersByTier,
 } from '@/modules/insights/domain/tier-distribution';
 import type { MemberPlanRef } from '@/modules/insights/domain/quota-underuse';
-import type { TierDistributionSlice } from '@/modules/insights/domain/dashboard-snapshot';
 
 describe('groupActiveMembersByTier', () => {
   // Drift guard for `membership-tier-chart.tsx`'s client-side literal
@@ -23,14 +22,14 @@ describe('groupActiveMembersByTier', () => {
     ];
 
     const labelOf = (planId: string) =>
-      planId === 'plan-a' ? 'Corporate Tier' : null;
+      planId === 'plan-a' ? { en: 'Corporate Tier' } : null;
 
     const result = groupActiveMembersByTier(members, labelOf);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       tierKey: 'plan-a',
-      label: 'Corporate Tier',
+      label: { en: 'Corporate Tier' },
       count: 2,
     });
   });
@@ -44,7 +43,7 @@ describe('groupActiveMembersByTier', () => {
 
     // Only plan-a has a label; plan-b and others return null
     const labelOf = (planId: string) =>
-      planId === 'plan-a' ? 'Corporate' : null;
+      planId === 'plan-a' ? { en: 'Corporate' } : null;
 
     const result = groupActiveMembersByTier(members, labelOf);
 
@@ -75,11 +74,11 @@ describe('groupActiveMembersByTier', () => {
     const labelOf = (planId: string) => {
       switch (planId) {
         case 'plan-a':
-          return 'Corporate';
+          return { en: 'Corporate' };
         case 'plan-b':
-          return 'Partnership';
+          return { en: 'Partnership' };
         case 'plan-c':
-          return 'Associate';
+          return { en: 'Associate' };
         default:
           return null; // plan-d is unresolved
       }
@@ -93,22 +92,22 @@ describe('groupActiveMembersByTier', () => {
     // Verify the order: desc by count, then asc by label, unassigned last
     expect(result[0]).toMatchObject({
       tierKey: 'plan-a',
-      label: 'Corporate',
+      label: { en: 'Corporate' },
       count: 3,
     });
     expect(result[1]).toMatchObject({
       tierKey: 'plan-b',
-      label: 'Partnership',
+      label: { en: 'Partnership' },
       count: 2,
     });
     expect(result[2]).toMatchObject({
       tierKey: 'plan-c',
-      label: 'Associate',
+      label: { en: 'Associate' },
       count: 1,
     });
     expect(result[3]).toMatchObject({
       tierKey: UNASSIGNED_TIER_KEY,
-      label: UNASSIGNED_TIER_KEY,
+      label: { en: UNASSIGNED_TIER_KEY },
       count: 1,
     });
   });
@@ -116,7 +115,7 @@ describe('groupActiveMembersByTier', () => {
   it('(d) returns empty array for empty input', () => {
     const members: MemberPlanRef[] = [];
 
-    const labelOf = (planId: string) => `Label for ${planId}`;
+    const labelOf = (planId: string) => ({ en: `Label for ${planId}` });
 
     const result = groupActiveMembersByTier(members, labelOf);
 
@@ -130,7 +129,7 @@ describe('groupActiveMembersByTier', () => {
     ];
 
     // Both plan-b and plan-c return null (unresolved)
-    const labelOf = (_planId: string): string | null => null;
+    const labelOf = (_planId: string): { en: string } | null => null;
 
     const result = groupActiveMembersByTier(members, labelOf);
 
@@ -140,5 +139,26 @@ describe('groupActiveMembersByTier', () => {
     const unassigned = result[0]!;
     expect(unassigned.tierKey).toBe(UNASSIGNED_TIER_KEY);
     expect(unassigned.count).toBe(2);
+  });
+
+  it('(f) picks each slice label from the resolved LocaleText (all locales preserved)', () => {
+    const members: MemberPlanRef[] = [
+      { memberId: 'm1', planId: 'plan-a', planYear: 2026 },
+    ];
+
+    const labelOf = (planId: string) =>
+      planId === 'plan-a'
+        ? { en: 'Regular Corporate', th: 'สมาชิกองค์กรทั่วไป', sv: 'Vanlig företagsmedlem' }
+        : null;
+
+    const result = groupActiveMembersByTier(members, labelOf);
+
+    // The full LocaleText round-trips into the slice so presentation can pick
+    // the viewer's locale (never lossily flattened to EN at compute time).
+    expect(result[0]?.label).toEqual({
+      en: 'Regular Corporate',
+      th: 'สมาชิกองค์กรทั่วไป',
+      sv: 'Vanlig företagsmedlem',
+    });
   });
 });

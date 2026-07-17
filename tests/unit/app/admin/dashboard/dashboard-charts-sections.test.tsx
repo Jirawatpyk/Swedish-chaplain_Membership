@@ -113,8 +113,8 @@ const SNAPSHOT = vi.hoisted(
     memberGrowth: [{ month: '2026-01', cumulative: 5 }],
     topInsights: [],
     tierDistribution: [
-      { tierKey: 'gold-2026', label: 'Gold', count: 6 },
-      { tierKey: 'unassigned', label: 'unassigned', count: 1 },
+      { tierKey: 'gold-2026', label: { en: 'Gold' }, count: 6 },
+      { tierKey: 'unassigned', label: { en: 'unassigned' }, count: 1 },
     ],
     invoiceStatus: {
       buckets: [

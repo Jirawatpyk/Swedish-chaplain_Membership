@@ -48,6 +48,7 @@ import {
   type QuotaEntitlement,
 } from '../../domain/quota-underuse';
 import { groupActiveMembersByTier } from '../../domain/tier-distribution';
+import type { LocaleText } from '@/modules/plans';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type {
   BenefitConsumptionAggregateSource,
@@ -170,7 +171,7 @@ export async function computeDashboardSnapshot(
     // year's label wins — deterministically, whichever `getPlanLabel` promise
     // happens to settle first. A first-to-resolve guard (`!has()`) would pick a
     // Promise-scheduling-dependent winner that can flip between cron runs.
-    const labelByPlanId = new Map<string, { planYear: number; label: string }>();
+    const labelByPlanId = new Map<string, { planYear: number; label: LocaleText }>();
     await Promise.all(
       [...distinctPlans].map(async ([key, ref]) => {
         const [ent, label] = await Promise.all([

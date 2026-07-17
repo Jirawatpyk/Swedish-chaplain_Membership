@@ -23,6 +23,7 @@
  *
  * Method set is grounded in spec FR-001/002/019/021 + data-model R1/R2.
  */
+import type { LocaleText } from '@/modules/plans';
 import type { TenantContext } from '@/modules/tenants';
 import type { RiskBand } from '../../domain/engagement-score';
 import type { MemberPlanRef } from '../../domain/quota-underuse';
@@ -108,18 +109,18 @@ export interface PlanSource {
   ): Promise<BenefitEntitlements | null>;
   /**
    * Display label for a plan in a given membership year, for the dashboard
-   * tier-distribution chart (067). Returns the plan's canonical EN name (the
-   * cached `DashboardSnapshot` is one JSONB row per tenant with no
-   * per-viewer locale — TH/SV localisation is deferred until this cache
-   * gains a render-time locale). Returns null when the plan/year is not
-   * found or cannot be resolved (same null semantics as `getEntitlements`);
-   * the caller folds a null label into the `unassigned` tier bucket.
+   * tier-distribution chart (067). Returns the plan's `plan_name` in every
+   * stored locale (`LocaleText`, `en` always present) — the snapshot caches
+   * all locales so the chart can pick the viewer's at render time. Returns
+   * null when the plan/year is not found or cannot be resolved (same null
+   * semantics as `getEntitlements`); the caller folds a null label into the
+   * `unassigned` tier bucket.
    */
   getPlanLabel(
     ctx: TenantContext,
     planId: string,
     planYear: number,
-  ): Promise<string | null>;
+  ): Promise<LocaleText | null>;
 }
 
 /**

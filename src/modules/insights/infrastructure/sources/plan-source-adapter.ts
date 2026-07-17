@@ -13,7 +13,7 @@
  * from the matrix's boolean/enum flags; presentation localises them. They have
  * no numeric ratio and never enter the under-use aggregate.
  */
-import { asPlanSlug, asPlanYear, type BenefitMatrix } from '@/modules/plans';
+import { asPlanSlug, asPlanYear, type BenefitMatrix, type LocaleText } from '@/modules/plans';
 import { planRepo as drizzlePlanRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import type { TenantContext } from '@/modules/tenants';
 import type {
@@ -77,7 +77,7 @@ export const planSourceAdapter: PlanSource = {
     ctx: TenantContext,
     planId: string,
     planYear: number,
-  ): Promise<string | null> {
+  ): Promise<LocaleText | null> {
     // Same "no resolvable plan" null-semantics as `getEntitlements` — a
     // malformed/legacy plan identity or a plan/year not found both fall into
     // the tier-distribution `unassigned` bucket rather than throwing.
@@ -91,12 +91,10 @@ export const planSourceAdapter: PlanSource = {
     }
     const plan = await drizzlePlanRepo.findOne(ctx, slug, year);
     if (!plan) return null;
-    // The cached dashboard snapshot has no per-viewer locale (one JSONB row
-    // per tenant, read by every admin/manager regardless of their own
-    // locale) — same constraint `AtRiskMemberRef.companyName` already
-    // accepts. Return the canonical EN name (F2 `LocaleText.en` is always
-    // required); TH/SV localisation of the tier label is out of scope until
-    // there is a per-viewer render path for this cache.
-    return plan.plan_name.en;
+    // Return the plan name in EVERY stored locale (F2 `plan_name` LocaleText);
+    // the snapshot caches all locales and the tier chart picks the viewer's at
+    // render time, falling back to the always-present `en` (the F2 LocaleText
+    // invariant guarantees a non-empty `en`).
+    return plan.plan_name;
   },
 };

@@ -10,6 +10,7 @@
  * Money is carried as a satang STRING (JSONB has no bigint); the presentation
  * layer formats per-locale (THB primary, FR-034). Pure Domain — no framework.
  */
+import type { LocaleText } from '@/modules/plans';
 import type { SmartInsight } from './smart-insight';
 
 /** Headline membership counts (FR-001). */
@@ -42,7 +43,12 @@ export interface MemberGrowthPoint {
 /** One slice of the active-membership tier breakdown (067). */
 export interface TierDistributionSlice {
   readonly tierKey: string; // plan slug, or 'unassigned'
-  readonly label: string; // display label ('unassigned' → a translatable sentinel key handled in presentation)
+  /** Plan display name in every stored locale (F2 `plan_name`) — the chart
+   * picks the viewer's locale at render, falling back to the always-present
+   * `en`. For the `unassigned` bucket this is `{ en: 'unassigned' }`, a
+   * sentinel the presentation replaces with a translated label (never shown
+   * verbatim). */
+  readonly label: LocaleText;
   readonly count: number;
 }
 
