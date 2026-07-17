@@ -112,6 +112,12 @@ The queue surfaces a **price-vs-catalogue drift flag** (§13.5) and a **bill-yea
 
 Net: auto-draft owns the bulk happy path; `confirm-renewal` the self-service/plan-change lane; `admin-renew-lapsed` the comeback lane — all feed one F4 mint point.
 
+### 5.8a F8 reminder-stream coordination (ladder + due-track) — **live in prod**
+`FEATURE_F8_RENEWALS` is **`true` in production** (confirmed 2026-07-17), so two member-facing reminder streams already send and must be coordinated with auto-invoice **before #2 ships**:
+- **Ladder** (tier×offset, anchored on `expires_at`, daily 06:00 ICT, respects per-member opt-out): a generic "renew" nudge that references **no specific invoice**. It overlaps auto-draft's ~T-30 window but is **not** a double-email (auto-draft is silent); a member self-serving off the ladder CTA is made safe by the eligibility dedup + #1's draft-discard extension.
+- **Due-track** (due+7 / due+30, anchored on the **bill `due_date`**, `awaiting_payment` cycles only, **ignores opt-out** — contractual): references an **invoice**. A `draft` never triggers it (no issued bill; cycle still `upcoming|reminded`), so auto-draft **cannot** produce a "your invoice is overdue" email for a bill that does not exist.
+- **Required handoff (the tune, a ship requirement):** `issueAutoDraftedRenewal` must move the cycle `upcoming|reminded → awaiting_payment`, **and a new ladder gate must stand the ladder down when the cycle has a live unpaid membership bill** — so the member is dunned by exactly **one** stream: *ladder before a bill exists → due-track after*. This new gate also cleans up the **pre-existing 066 double-track** that already fires ladder + due-track together on `confirm-renewal`-issued bills today — so it is a small **global** improvement, not auto-invoice-only. (Today the ladder skips only on an *unreconciled paid* invoice, not on an issued-but-unpaid one — that is the exact gate to add.)
+
 ### 5.9 Email policy
 Per-action, **default silent** (§13.2). The cron enqueues **zero** email (drafts have no outbox). The draft stores `autoEmailOnIssue=false` **explicitly, never null** — `issueInvoice` resolves `draft.autoEmailOnIssue ?? settings.autoEmailEnabled`, and `auto_email_enabled` defaults **true**, so a null would silently email. "Issue + Send" is the only path that sets `true`, inside the issue tx.
 
@@ -174,6 +180,7 @@ Plus the **paid-race latch** (§5.4) is a #2 addition (renewals-side), because v
 10. **Missed-day self-heal** — skip a cron day → next run still drafts the cohort (range window).
 11. **Cross-tenant** — eligibility + issue are tenant-scoped (RLS + explicit filter); a peer tenant is never drafted/issued.
 12. **Flag-off / read-only** → `200 {skipped}`, nothing created.
+13. **Reminder handoff (F8 live)** — a `draft` (pre-issue) triggers **neither** an invoice-referencing ladder nudge **nor** due-track (cycle still `upcoming|reminded`, no bill). After `issueAutoDraftedRenewal`, the cycle is `awaiting_payment` and the expiry-anchored ladder no longer fires for it (the new live-unpaid-bill gate); due-track owns post-bill dunning — exactly one stream.
 
 ---
 
@@ -189,6 +196,7 @@ Plus the **paid-race latch** (§5.4) is a #2 addition (renewals-side), because v
 | Frozen-price staleness industrialised (rubber-stamped "Issue all" after a dues change) | medium | Price-vs-catalogue **drift flag** in the queue; keep frozen faithful but visible; treat "Issue all" as reviewed, not blind. |
 | Over-build vs 110-member scale | medium | Lean review surface (filtered invoices view + renewals action), reuse existing rendering; `auto_draft_invoice_id` + prune cron are optional v1 levers. |
 | FY-boundary click timing (Dec-31→Jan-1 scatters SC-YYYY across two FY) | low | Surface bill-year ≠ coverage-year in the queue + runbook; issue the December batch before year-end. A3 already removes the *cron*-timing seam (number minted at the click). |
+| **Reminder double-track** — F8 ladder (expiry) + due-track (bill-due) both fire on an issued unpaid bill; `FEATURE_F8_RENEWALS` is **ON in prod**, and auto-invoice makes issued bills more frequent | medium | The §5.8a handoff: `issueAutoDraftedRenewal` moves the cycle → `awaiting_payment`, and a **new ladder gate** stands the ladder down when a live unpaid membership bill exists → exactly one dunning stream. Pre-existing 066 behaviour; this is a global cleanup, and a **ship requirement** for #2. |
 
 ---
 
