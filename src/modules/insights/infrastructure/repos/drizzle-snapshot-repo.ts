@@ -64,7 +64,18 @@ const snapshotSchema = z.object({
   // null → the caller's existing cold-start path recomputes a fresh, valid
   // snapshot. See tests/integration/insights/snapshot-repo-legacy-row.test.ts.
   tierDistribution: z.array(
-    z.object({ tierKey: z.string(), label: z.string(), count }),
+    z.object({
+      tierKey: z.string(),
+      // 067 follow-up — label is now a `LocaleText` (all stored plan-name
+      // locales, `en` required). A pre-follow-up row has `label: <string>`,
+      // which fails this object shape → `safeParse` miss → recompute.
+      label: z.object({
+        en: z.string(),
+        th: z.string().optional(),
+        sv: z.string().optional(),
+      }),
+      count,
+    }),
   ),
   invoiceStatus: z.object({
     buckets: z.array(

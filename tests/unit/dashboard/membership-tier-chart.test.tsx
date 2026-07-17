@@ -63,9 +63,9 @@ function renderChart(slices: readonly TierDistributionSlice[]) {
   );
 }
 
-const GOLD: TierDistributionSlice = { tierKey: 'gold-2026', label: 'Gold', count: 6 };
-const SILVER: TierDistributionSlice = { tierKey: 'silver-2026', label: 'Silver', count: 3 };
-const UNASSIGNED: TierDistributionSlice = { tierKey: UNASSIGNED_TIER_KEY, label: 'unassigned', count: 1 };
+const GOLD: TierDistributionSlice = { tierKey: 'gold-2026', label: { en: 'Gold' }, count: 6 };
+const SILVER: TierDistributionSlice = { tierKey: 'silver-2026', label: { en: 'Silver' }, count: 3 };
+const UNASSIGNED: TierDistributionSlice = { tierKey: UNASSIGNED_TIER_KEY, label: { en: 'unassigned' }, count: 1 };
 
 describe('MembershipTierChart', () => {
   it('renders the hidden data table with one row per tier + a Total row', () => {
@@ -140,7 +140,7 @@ describe('MembershipTierChart', () => {
   });
 
   it('renders the empty-state text when every slice has a zero count', () => {
-    renderChart([{ tierKey: 'gold-2026', label: 'Gold', count: 0 }]);
+    renderChart([{ tierKey: 'gold-2026', label: { en: 'Gold' }, count: 0 }]);
     expect(screen.getByText('No active members yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
@@ -154,5 +154,31 @@ describe('MembershipTierChart', () => {
     expect(screen.getByText('Membership by tier', { selector: '[data-slot="card-title"]' })).toBeInTheDocument();
     const table = screen.getByRole('table');
     expect(within(table).getByText('Membership by tier')).toBeInTheDocument();
+  });
+
+  it('renders each plan label in the viewer locale (TH), falling back to EN when that locale is missing', () => {
+    const thSlice: TierDistributionSlice = {
+      tierKey: 'regular-corporate-2026',
+      label: { en: 'Regular Corporate', th: 'สมาชิกองค์กรทั่วไป' },
+      count: 4,
+    };
+    const enOnlySlice: TierDistributionSlice = {
+      tierKey: 'startup-2026',
+      label: { en: 'Start-up' }, // no TH variant → must fall back to EN
+      count: 1,
+    };
+    // locale="th" drives the LocaleText pick; `messages={en}` only backs the
+    // static microcopy (the label itself is tenant data, not an i18n key).
+    render(
+      <NextIntlClientProvider locale="th" messages={en}>
+        <MembershipTierChart slices={[thSlice, enOnlySlice]} />
+      </NextIntlClientProvider>,
+    );
+    const table = screen.getByRole('table');
+    expect(within(table).getByRole('rowheader', { name: 'สมาชิกองค์กรทั่วไป' })).toBeInTheDocument();
+    // The localised plan's EN name is NOT shown when TH is present.
+    expect(within(table).queryByRole('rowheader', { name: 'Regular Corporate' })).not.toBeInTheDocument();
+    // The EN-only plan falls back to its EN name (never blank, never the key).
+    expect(within(table).getByRole('rowheader', { name: 'Start-up' })).toBeInTheDocument();
   });
 });

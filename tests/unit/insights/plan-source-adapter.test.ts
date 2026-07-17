@@ -122,13 +122,13 @@ describe('planSourceAdapter.getEntitlements — active-benefit derivation', () =
 });
 
 describe('planSourceAdapter.getPlanLabel — 067 tier-distribution label resolution', () => {
-  it('resolved plan → the canonical EN plan_name', async () => {
+  it('resolved plan → the full plan_name LocaleText (every stored locale, for per-viewer render)', async () => {
     findOneMock.mockResolvedValueOnce({
       plan_name: { en: 'Corporate Gold', th: 'ทองคำ' },
       benefit_matrix: {},
     });
     const r = await planSourceAdapter.getPlanLabel(CTX, 'corporate-gold', 2026);
-    expect(r).toBe('Corporate Gold');
+    expect(r).toEqual({ en: 'Corporate Gold', th: 'ทองคำ' });
   });
 
   it('missing plan → null (folds into the unassigned tier bucket)', async () => {

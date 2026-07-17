@@ -93,6 +93,9 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   const total = slices.reduce((sum, s) => sum + s.count, 0);
   const hasData = slices.length > 0 && total > 0;
 
+  // next-intl locale → LocaleText key (this app's locales are exactly en/th/sv).
+  const localeKey = locale === 'th' || locale === 'sv' ? locale : 'en';
+
   const rows: TierRow[] = slices.map((s) => {
     // 'unassigned' === UNASSIGNED_TIER_KEY (insights domain). Compared as a
     // literal because a client component cannot runtime-import the insights
@@ -100,7 +103,18 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
     // bundle. The domain constant's value is pinned by its own unit test
     // (tests/unit/insights/domain/tier-distribution.test.ts) as the drift
     // guard, so this literal cannot silently go stale.
-    const displayLabel = s.tierKey === 'unassigned' ? t('unassignedTier') : s.label;
+    //
+    // `label` is the plan name in every stored locale (F2 `plan_name`); pick
+    // the viewer's, falling back to the always-present `en`. Inlined rather
+    // than `@/modules/plans`'s `pickLocaleText` for the same bundle reason —
+    // that helper is a runtime value in the plans module graph.
+    const localized = s.label[localeKey];
+    const displayLabel =
+      s.tierKey === 'unassigned'
+        ? t('unassignedTier')
+        : localized && localized.trim().length > 0
+          ? localized
+          : s.label.en;
     const pctLabel = formatPct(s.count, total);
     return {
       tierKey: s.tierKey,

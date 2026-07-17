@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { TenantContext } from '@/modules/tenants';
+import type { LocaleText } from '@/modules/plans';
 import type { ComputeDashboardSnapshotDeps } from '@/modules/insights/application/use-cases/compute-dashboard-snapshot';
 import type { MemberPlanRef } from '@/modules/insights/domain/quota-underuse';
 import { groupActiveMembersByTier } from '@/modules/insights/domain/tier-distribution';
@@ -41,9 +42,9 @@ const ACTIVE_MEMBERS: readonly MemberPlanRef[] = [
   m('m4', PLAN_UNKNOWN), // unresolved plan/year -> 'unassigned' bucket
 ];
 
-const LABELS: Record<string, string> = {
-  [PLAN_GOLD.planId]: 'Corporate Gold',
-  [PLAN_SILVER.planId]: 'Corporate Silver',
+const LABELS: Record<string, LocaleText> = {
+  [PLAN_GOLD.planId]: { en: 'Corporate Gold' },
+  [PLAN_SILVER.planId]: { en: 'Corporate Silver' },
 };
 
 const INVOICE_DISTRIBUTION = {
@@ -98,9 +99,9 @@ describe('computeDashboardSnapshot — 067 chart aggregates', () => {
     const expected = groupActiveMembersByTier(ACTIVE_MEMBERS, (id) => LABELS[id] ?? null);
     expect(r.value.tierDistribution).toEqual(expected);
     expect(r.value.tierDistribution).toEqual([
-      { tierKey: 'corporate-gold', label: 'Corporate Gold', count: 2 },
-      { tierKey: 'corporate-silver', label: 'Corporate Silver', count: 1 },
-      { tierKey: 'unassigned', label: 'unassigned', count: 1 },
+      { tierKey: 'corporate-gold', label: { en: 'Corporate Gold' }, count: 2 },
+      { tierKey: 'corporate-silver', label: { en: 'Corporate Silver' }, count: 1 },
+      { tierKey: 'unassigned', label: { en: 'unassigned' }, count: 1 },
     ]);
   });
 
@@ -114,9 +115,9 @@ describe('computeDashboardSnapshot — 067 chart aggregates', () => {
       m('m1', { planId: 'corp', planYear: 2025 }), // older — listed first
       m('m2', { planId: 'corp', planYear: 2026 }), // newer
     ];
-    const labelByYear: Record<number, string> = {
-      2025: 'Corporate 2025',
-      2026: 'Corporate 2026',
+    const labelByYear: Record<number, LocaleText> = {
+      2025: { en: 'Corporate 2025' },
+      2026: { en: 'Corporate 2026' },
     };
     const deps = makeDeps();
     const overridden: ComputeDashboardSnapshotDeps = {
@@ -138,7 +139,7 @@ describe('computeDashboardSnapshot — 067 chart aggregates', () => {
     if (!r.ok) return;
 
     expect(r.value.tierDistribution).toEqual([
-      { tierKey: 'corp', label: 'Corporate 2026', count: 2 },
+      { tierKey: 'corp', label: { en: 'Corporate 2026' }, count: 2 },
     ]);
   });
 
