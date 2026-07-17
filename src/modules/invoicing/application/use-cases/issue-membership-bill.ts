@@ -96,6 +96,10 @@ export async function issueMembershipBill(
         newBill.memberId,
         {
           excludeInvoiceId: newBill.invoiceId,
+          // `new Date(...)` truncates to ms (Postgres timestamptz is µs) —
+          // intentional and safe here: the new bill is excluded from
+          // candidacy via `excludeInvoiceId` regardless of any µs rounding,
+          // and reissue timing is human-scale, not sub-ms concurrent writes.
           createdAt: new Date(newBill.createdAt),
           invoiceId: newBill.invoiceId,
         },
@@ -107,23 +111,31 @@ export async function issueMembershipBill(
     }
   }
 
-  // 4. Void each, own tx, best-effort. Never fatal to the issue.
+  // 4. Void each, own tx, best-effort. Never fatal to the issue — a THROW
+  //    (e.g. an infra error inside voidInvoice's withTx/applyVoid/audit path)
+  //    is caught and treated exactly like a returned non-invalid_status
+  //    failure, symmetric with the try/catch around the list call above.
   for (const bill of older) {
-    const voided = await voidInvoice(deps.voidDeps, {
-      tenantId: input.tenantId,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      invoiceId: bill.invoiceId,
-      voidReason: `auto-void: superseded by renewal reissue ${newBill.invoiceId}`,
-      requireStatus: 'issued',
-      suppressCancellationEmail: true,
-      supersededByInvoiceId: newBill.invoiceId,
-    });
-    if (!voided.ok) {
-      // invalid_status = expected no-op (already void, or raced to paid → correctly preserved).
-      if (voided.error.code === 'invalid_status') continue;
+    try {
+      const voided = await voidInvoice(deps.voidDeps, {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        invoiceId: bill.invoiceId,
+        voidReason: `auto-void: superseded by renewal reissue ${newBill.invoiceId}`,
+        requireStatus: 'issued',
+        suppressCancellationEmail: true,
+        supersededByInvoiceId: newBill.invoiceId,
+      });
+      if (!voided.ok) {
+        // invalid_status = expected no-op (already void, or raced to paid → correctly preserved).
+        if (voided.error.code === 'invalid_status') continue;
+        invoicingMetrics.voidOnReissueFailed(input.tenantId);
+        supersedeWarnings.push(`supersede: void of ${bill.invoiceId} failed (${voided.error.code})`);
+      }
+    } catch {
       invoicingMetrics.voidOnReissueFailed(input.tenantId);
-      supersedeWarnings.push(`supersede: void of ${bill.invoiceId} failed (${voided.error.code})`);
+      supersedeWarnings.push(`supersede: void of ${bill.invoiceId} threw`);
     }
   }
   return ok({ ...newBill, supersedeWarnings });

@@ -235,4 +235,26 @@ describe('issueMembershipBill', () => {
     if (res.ok) expect(res.value.supersedeWarnings).toEqual([]); // invalid_status = expected no-op
     expect(metricSpy.voidOnReissueFailed).not.toHaveBeenCalled();
   });
+
+  it('a THROWN void error is non-fatal: issue still returns ok + warning + metric (symmetric with the returned-error case)', async () => {
+    const deps = makeDeps({ enabled: true, issued: OK_ISSUED, olderBills: ['old-1'] });
+    voidInvoiceMock.mockRejectedValue(new Error('infra'));
+    const res = await issueMembershipBill(deps, ISSUE_INPUT);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+  });
+
+  it('memberId null → never lists/voids, empty warnings (defence-in-depth guard)', async () => {
+    const deps = makeDeps({
+      enabled: true,
+      issued: makeIssued({ memberId: null }),
+      olderBills: ['old-1'],
+    });
+    const res = await issueMembershipBill(deps, ISSUE_INPUT);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.supersedeWarnings).toEqual([]);
+    expect(deps.invoiceRepo.listSupersedableMembershipBills).not.toHaveBeenCalled();
+    expect(voidInvoiceMock).not.toHaveBeenCalled();
+  });
 });
