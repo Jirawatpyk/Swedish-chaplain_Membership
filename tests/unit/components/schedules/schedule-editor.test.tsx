@@ -390,14 +390,20 @@ describe('<ScheduleEditor> — two consecutive "Add step" clicks (guards Issue 3
     // remains (the persistent bottom toolbar one).
     fireEvent.click(screen.getByRole('button', { name: /add step/i }));
 
-    // Both steps default to Email — the reminder timeline's
-    // screen-reader text-alternative list renders one <li> per step
-    // (inactive tier tabs stay `hidden`, so this only reflects the
-    // active tab's 2 steps). Two DISTINCT offsets is direct evidence of
-    // two DISTINCT step_ids (the bug this guards against: two IDENTICAL
-    // `t-30.email` entries would render identical text here).
+    // Both steps default to Email — the reminder timeline (Stepper-based,
+    // Timeline-A follow-up) renders one list item per step PLUS a
+    // synthetic due-date node (inactive tier tabs stay `hidden`, so this
+    // only reflects the active tab's 2 steps + 1 due node — both default
+    // offsets are negative, so the due node lands last). Two DISTINCT
+    // offsets among the step nodes is direct evidence of two DISTINCT
+    // step_ids (the bug this guards against: two IDENTICAL `t-30.email`
+    // entries would render identical timing-sentence text here).
     const items = screen.getAllByRole('listitem');
-    expect(items).toHaveLength(2);
-    expect(items[0]!.textContent).not.toBe(items[1]!.textContent);
+    expect(items).toHaveLength(3);
+    const stepLabels = items
+      .map((li) => li.textContent ?? '')
+      .filter((text) => !text.includes('Due date'));
+    expect(stepLabels).toHaveLength(2);
+    expect(stepLabels[0]).not.toBe(stepLabels[1]);
   });
 });

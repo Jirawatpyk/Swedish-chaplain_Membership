@@ -4,50 +4,51 @@
  * F8 Phase 4 Wave I2 · Task 6 — read-only reminder timeline strip, shown
  * atop each tier tab in the schedule editor (spec §5.1).
  *
- * Renders pins along a `[-120, +30]`-day axis (email = blue `--chart-1`,
- * task = amber `--chart-5`) plus a red due-date marker at day 0, backed by
- * a visually-hidden `<ol>` text alternative that is the SOLE data path for
- * screen readers / no-JS (WCAG 1.1.1 / 1.3.1 — same "canvas is
- * `aria-hidden`, a real DOM list carries the data" pattern the 067
- * dashboard charts use, see `components/dashboard/membership-tier-chart.tsx`).
- * The axis + due-date marker render unconditionally, including with zero
- * steps (design doc §5.1: "a tier with zero steps renders the due-date
- * marker only (no pins)") — only the per-step pins are conditional.
+ * Timeline-A follow-up (`.superpowers/sdd/followup-timeline-a-brief.md`):
+ * user feedback on the original pins-on-an-axis rendering was "confusing +
+ * ugly" (ไม่เข้าใจ และไม่สวย) — negative offsets dominate the
+ * `[-120, +30]`-day axis so pins bunched to one side. Reworked to reuse
+ * the canonical `<Stepper>` primitive (the same "evenly-spaced connected
+ * circles + labels" shape the F2 plan wizard and F6 webhook-config-wizard
+ * already use) instead of a scaled axis, via two new OPTIONAL Stepper
+ * props — `indicator` + `tone` (see `components/ui/stepper.tsx`) — that
+ * let this read-only "journey" colour nodes by MEANING (email/task/due)
+ * rather than by wizard PROGRESS. Every node's `status` is `'upcoming'`
+ * (colour comes entirely from `tone`); there is no notion of "current
+ * step" here, so `aria-current` never fires for this timeline.
  *
- * Colour token note: the design contract calls for "email = blue,
- * task = amber". `globals.css` defines `--chart-1` as the navy/blue token
- * in both themes, but `--chart-4` is ALSO a blue (navy / deep-blue) in
- * both light and dark mode — `--chart-5` is the amber token. Using
- * `--chart-4` here (as an earlier draft of this brief's skeleton
- * suggested) would render two visually-indistinguishable blue pins.
- * Confirmed against `src/app/globals.css` lines ~204-208 (light) and
- * ~340-344 (dark) before choosing `--chart-5`. Colour is never the SOLE
- * differentiator regardless — the `Mail`/`ListTodo` icons plus a third
- * `bg-destructive` swatch in the legend, and the "Email"/"Task" words in
- * the SR list, carry the same distinctions (WCAG 1.1.1 / 1.4.1) — the red
- * due marker in particular previously had no text equivalent at all,
- * fixed by adding the `timeline.dueLabel` legend entry.
+ * Node order: earliest-before-renewal … due-date … latest-after-renewal.
+ * The due-date node is synthetic (Flag icon, danger tone) and is spliced
+ * in at its sorted position (offset 0) UNLESS a real step already sits at
+ * `offset_days === 0` — a "day 0" reminder is a standard offset for 4 of
+ * the 5 tiers (see `TIER_REMINDER_OFFSETS`), so this is common, not an
+ * edge case. When it happens, the existing step already marks the due
+ * position, so no duplicate node is added.
  *
- * ID prefixing: Base UI `Tabs.Panel` (see `../schedule-editor.tsx`) keeps
- * all 5 tier panels mounted simultaneously (toggling `hidden`, not
- * unmounting) so this component renders once per tier bucket at all
- * times. Every `id` in this file is namespaced `${tierBucket}-…` via the
- * local `id()` helper so 5 concurrently-mounted instances never collide
- * (WCAG 4.1.1).
+ * a11y: the Stepper's `<ol role="list">` + visible per-node labels ARE
+ * the accessible representation (WCAG 1.1.1 / 1.3.1) — the old hand-
+ * rolled `sr-only` `<ol>` text-alternative from the pins-on-an-axis
+ * version is gone; there is nothing left for it to duplicate. Channel/
+ * due icons stay `aria-hidden` — the visible label (a plain-language
+ * timing sentence, never the cryptic "T-N" form — see `timingSentence`)
+ * carries the meaning. Colour is never the sole differentiator: icon
+ * shape + label text + the legend below all carry the same distinction
+ * (WCAG 1.4.1).
+ *
+ * ID prefixing: `Stepper` uses `step.id` as a React key only (it renders
+ * no DOM `id=` attribute), so the historical Base-UI-`Tabs` duplicate-
+ * DOM-id hazard from the old sr-only-list version does not apply here.
+ * Ids are still namespaced by `tierBucket` for React-key stability, since
+ * Base UI `Tabs.Panel` keeps all 5 tier panels mounted simultaneously
+ * (toggling `hidden`, not unmounting) — 5 `<ReminderTimeline>` instances
+ * render concurrently.
  */
 import { useTranslations } from 'next-intl';
-import { Mail, ListTodo } from 'lucide-react';
+import { Mail, ListTodo, Flag } from 'lucide-react';
+import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import type { EditorStep } from './schedule-editor';
 import type { TierBucket } from '@/modules/renewals/client';
 import { timingSentence } from './format-offset';
-
-const AXIS_MIN = -120;
-const AXIS_MAX = 30;
-
-function pct(day: number): number {
-  const clamped = Math.min(AXIS_MAX, Math.max(AXIS_MIN, day));
-  return ((clamped - AXIS_MIN) / (AXIS_MAX - AXIS_MIN)) * 100;
-}
 
 export interface ReminderTimelineProps {
   readonly tierBucket: TierBucket;
@@ -61,54 +62,63 @@ export interface ReminderTimelineProps {
 
 export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
-  const id = (suffix: string) => `${tierBucket}-tl-${suffix}`;
   const sorted = [...steps].sort((a, b) => a.offset_days - b.offset_days);
+  const hasDueStep = sorted.some((s) => s.offset_days === 0);
+
+  const dueNode: StepperStep = {
+    id: `${tierBucket}-due`,
+    label: t('timeline.dueLabel'),
+    status: 'upcoming',
+    tone: 'danger',
+    indicator: <Flag aria-hidden="true" className="size-4" />,
+  };
+
+  // Reminder nodes in sorted order, with the synthetic due-date node
+  // spliced in at the offset-0 position — unless a real step already
+  // occupies it (see file doc comment above).
+  const stepperSteps: StepperStep[] = [];
+  let dueInserted = hasDueStep;
+  for (const s of sorted) {
+    if (!dueInserted && s.offset_days > 0) {
+      stepperSteps.push(dueNode);
+      dueInserted = true;
+    }
+    stepperSteps.push({
+      id: `${tierBucket}-${s._uiKey}`,
+      label: timingSentence(s.offset_days, t),
+      status: 'upcoming',
+      tone: s.channel === 'email' ? 'info' : 'warning',
+      indicator:
+        s.channel === 'email' ? (
+          <Mail aria-hidden="true" className="size-4" />
+        ) : (
+          <ListTodo aria-hidden="true" className="size-4" />
+        ),
+    });
+  }
+  // Every step was before the due date (or there were no steps at all) —
+  // the due node hasn't been placed yet, so it goes last.
+  if (!dueInserted) {
+    stepperSteps.push(dueNode);
+  }
 
   return (
-    <div className="rounded-md border bg-muted/30 p-4" role="group" aria-labelledby={id('cap')}>
-      <p id={id('cap')} className="sr-only">
-        {t('timeline.textAlt', { count: steps.length })}
-      </p>
+    <div className="rounded-md border bg-muted/30 p-4">
+      <Stepper
+        orientation="horizontal"
+        steps={stepperSteps}
+        aria-label={t('timeline.ariaLabel', { tier: t(`tabs.${tierBucket}`) })}
+      />
 
-      {/* Axis + due-date marker — ALWAYS rendered, even with zero steps
-          (design contract §5.1: "a tier with zero steps renders the
-          due-date marker only (no pins)"). Only the per-step pins are
-          conditional on `sorted.length`. */}
-      <div className="relative mt-6 h-0.5 bg-border" aria-hidden="true">
-        {/* Due-date marker, always at day 0 regardless of axis clamping. */}
-        <span
-          className="absolute top-[-7px] h-4 w-0.5 -translate-x-1/2 bg-destructive"
-          style={{ left: `${pct(0)}%` }}
-        />
-        {sorted.map((s) => (
-          <span
-            key={s._uiKey}
-            className={`absolute top-[-5px] h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${
-              s.channel === 'email' ? 'bg-chart-1' : 'bg-chart-5'
-            }`}
-            style={{ left: `${pct(s.offset_days)}%` }}
-          />
-        ))}
-      </div>
-
+      {/* Zero real steps → the Stepper above renders the due-date node
+          only (design contract §5.1); this caption explains why. */}
       {sorted.length === 0 ? (
-        <p className="mt-2 text-center text-caption text-muted-foreground">{t('timeline.emptyDue')}</p>
+        <p className="mt-4 text-center text-caption text-muted-foreground">
+          {t('timeline.emptyDue')}
+        </p>
       ) : null}
 
-      {/* Text alternative — ALWAYS rendered (not conditionally hidden by
-          the pin-strip branch above) so assistive tech gets the same
-          "N reminder(s)" overview via the `timeline.textAlt` caption even
-          when `sorted.length === 0` (the caption itself reads "0 reminders"
-          via the ICU plural, matching the visible empty-due copy). */}
-      <ol className="sr-only">
-        {sorted.map((s) => (
-          <li key={s._uiKey}>
-            {timingSentence(s.offset_days, t)} {'·'} {t(`stepCard.channel.${s.channel}`)}
-          </li>
-        ))}
-      </ol>
-
-      <div className="mt-6 flex justify-center gap-4 text-caption text-muted-foreground">
+      <div className="mt-6 flex flex-wrap justify-center gap-4 text-caption text-muted-foreground">
         <span className="flex items-center gap-1">
           <Mail aria-hidden="true" className="h-3 w-3 text-chart-1" />
           {t('timeline.legendEmail')}
@@ -118,7 +128,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
           {t('timeline.legendTask')}
         </span>
         <span className="flex items-center gap-1">
-          <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-destructive" />
+          <Flag aria-hidden="true" className="h-3 w-3 text-destructive" />
           {t('timeline.dueLabel')}
         </span>
       </div>

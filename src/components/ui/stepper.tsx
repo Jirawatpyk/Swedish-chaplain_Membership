@@ -27,6 +27,23 @@ import { cn } from "@/lib/utils"
  *   - Defaults to false so existing consumers (F6 webhook-config-
  *     wizard) keep labels at all breakpoints.
  *
+ * Extended per-step overrides (`indicator` / `tone` — Timeline-A follow-up,
+ * `.superpowers/sdd/followup-timeline-a-brief.md`):
+ *   - Both fields are OPTIONAL. Omitting them (the F2 plan wizard + F6
+ *     webhook-config-wizard consumers do) reproduces the exact rendering
+ *     documented above — these are additive, backward-compatible escape
+ *     hatches for a second use case (F8 reminder timeline), which needs a
+ *     read-only "journey" of nodes coloured by MEANING (email/task/due),
+ *     not by wizard PROGRESS.
+ *   - `indicator`, when set, renders INSTEAD of the index number / Check /
+ *     AlertCircle inside the circle — regardless of `status`.
+ *   - `tone`, when set to anything other than `'default'`, colours the
+ *     circle by that fixed meaning instead of by `status`. Maps to
+ *     existing theme tokens only (no hardcoded hex): `brand`→primary,
+ *     `info`→`--chart-1`, `warning`→`--chart-5`, `danger`→destructive,
+ *     `muted`→border/muted (same look as `status='upcoming'`).
+ *     `'default'` (or omitted) keeps the current status-based colouring.
+ *
  * Accessibility:
  *   - The container exposes role=list and `aria-label` required.
  *   - The current step carries `aria-current="step"` so SR users can
@@ -37,6 +54,13 @@ import { cn } from "@/lib/utils"
  */
 export type StepperStatus = "complete" | "current" | "upcoming" | "error"
 
+/**
+ * Fixed-meaning colour for a step's indicator circle, overriding the
+ * status-based colouring. `'default'` (or omitting `tone` entirely)
+ * preserves the original status-driven look.
+ */
+export type StepperTone = "default" | "brand" | "info" | "warning" | "danger" | "muted"
+
 export interface StepperStep {
   /** Unique per stepper instance; used as React key. */
   id: string
@@ -45,6 +69,33 @@ export interface StepperStep {
   /** Optional secondary description; appears below label at smaller size. */
   description?: string
   status: StepperStatus
+  /**
+   * Optional custom content rendered inside the circle INSTEAD of the
+   * index number / Check / AlertCircle — regardless of `status`. Always
+   * wrapped `aria-hidden` (the visible label carries the meaning).
+   */
+  indicator?: React.ReactNode
+  /**
+   * Optional fixed colour for the circle, overriding status-based
+   * colouring. Omit (or use `'default'`) to keep the existing look.
+   */
+  tone?: StepperTone
+}
+
+/**
+ * Literal Tailwind class strings (never template-interpolated — Tailwind's
+ * scanner needs static substrings) for each non-default tone. All are
+ * outlined (`bg-background`, matching the `status='current'` shape) rather
+ * than filled — a tone step has no wizard-error/complete semantics, so it
+ * must never look like the filled `status='complete'`/`status='error'`
+ * circles.
+ */
+const TONE_INDICATOR_CLASSES: Record<Exclude<StepperTone, "default">, string> = {
+  brand: "border-primary bg-background text-primary",
+  info: "border-chart-1 bg-background text-chart-1",
+  warning: "border-chart-5 bg-background text-chart-5",
+  danger: "border-destructive bg-background text-destructive",
+  muted: "border-border bg-muted text-muted-foreground",
 }
 
 export interface StepperProps
@@ -143,17 +194,25 @@ function Stepper({
                 data-slot="stepper-indicator"
                 className={cn(
                   "relative z-[1] flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-medium transition-colors",
-                  step.status === "complete" &&
-                    "border-primary bg-primary text-primary-foreground",
-                  step.status === "current" &&
-                    "border-primary bg-background text-primary",
-                  step.status === "upcoming" &&
-                    "border-border bg-muted text-muted-foreground",
-                  step.status === "error" &&
-                    "border-destructive bg-destructive text-destructive-foreground",
+                  step.tone && step.tone !== "default"
+                    ? TONE_INDICATOR_CLASSES[step.tone]
+                    : cn(
+                        step.status === "complete" &&
+                          "border-primary bg-primary text-primary-foreground",
+                        step.status === "current" &&
+                          "border-primary bg-background text-primary",
+                        step.status === "upcoming" &&
+                          "border-border bg-muted text-muted-foreground",
+                        step.status === "error" &&
+                          "border-destructive bg-destructive text-destructive-foreground",
+                      ),
                 )}
               >
-                {step.status === "complete" ? (
+                {step.indicator ? (
+                  <span aria-hidden="true" className="flex items-center justify-center">
+                    {step.indicator}
+                  </span>
+                ) : step.status === "complete" ? (
                   <Check aria-hidden="true" className="size-4" />
                 ) : step.status === "error" ? (
                   <AlertCircle aria-hidden="true" className="size-4" />
