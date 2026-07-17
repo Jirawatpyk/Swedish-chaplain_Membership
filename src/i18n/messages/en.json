@@ -447,6 +447,9 @@
       "trends": {
         "sectionLabel": "Trend charts"
       },
+      "breakdown": {
+        "sectionLabel": "Breakdown charts"
+      },
       "revenueTrend": {
         "title": "Revenue trend (12 months)",
         "empty": "No paid revenue recorded yet.",
@@ -465,6 +468,34 @@
         "netNew": "+{count} this year",
         "month": "Month",
         "count": "Members"
+      },
+      "membershipTier": {
+        "title": "Membership by tier",
+        "empty": "No active members yet.",
+        "tierColumnHeader": "Tier",
+        "countColumnHeader": "Members",
+        "pctColumnHeader": "% of total",
+        "totalRowLabel": "Total",
+        "unassignedTier": "No plan assigned",
+        "activeMembersLabel": "Active members",
+        "topTier": "Top: {tier} · {pct}"
+      },
+      "invoiceStatus": {
+        "title": "Receivables by value",
+        "empty": "No outstanding receivables yet.",
+        "totalLabel": "Total outstanding",
+        "draftCaption": "{count, plural, one {# draft invoice not shown} other {# draft invoices not shown}}",
+        "statusColumnHeader": "Status",
+        "amountColumnHeader": "Amount",
+        "countColumnHeader": "Invoices",
+        "pctColumnHeader": "% of total",
+        "totalRowLabel": "Total",
+        "invoiceCountLabel": "{count, plural, one {# invoice} other {# invoices}}",
+        "bucket": {
+          "paid": "Paid",
+          "unpaid": "Unpaid",
+          "overdue": "Overdue"
+        }
       },
       "insights": {
         "title": "Smart insights",

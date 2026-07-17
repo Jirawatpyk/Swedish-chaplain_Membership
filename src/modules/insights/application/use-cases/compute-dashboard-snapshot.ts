@@ -17,6 +17,13 @@
  * the pure `countUnderUsedQuota` domain rule. Threshold = "any shortfall"
  * (`used < entitlement`), distinct from the FR-021 US4 25pt-gap member view.
  *
+ * `tierDistribution` (067) reuses the `activeMembers` enumeration + the SAME
+ * memoized `PlanSource` fan-out (adds `getPlanLabel` alongside
+ * `getEntitlements`) and folds them through the pure
+ * `groupActiveMembersByTier` domain rule. `invoiceStatus` (067) is a single
+ * additional `InvoiceSource.getInvoiceStatusDistribution` read, satang mapped
+ * bigint → decimal string for the JSONB cache.
+ *
  * Application layer: orchestrates Domain + ports; `runInTenant` only wraps the
  * tenant-scoped dismissal-check + upsert (the MemberSource reads self-scope via
  * the members repo). Pure of ORM/framework imports beyond `@/lib/db`.
@@ -30,6 +37,7 @@ import { cycleKeyFor } from '../../domain/insight-cycle-key';
 import { lastNMonthKeys } from '../../domain/trend-window';
 import type {
   DashboardSnapshot,
+  InvoiceStatusDistribution,
   MemberGrowthPoint,
   RevenueTrendPoint,
 } from '../../domain/dashboard-snapshot';
@@ -39,6 +47,7 @@ import {
   planKey,
   type QuotaEntitlement,
 } from '../../domain/quota-underuse';
+import { groupActiveMembersByTier } from '../../domain/tier-distribution';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type {
   BenefitConsumptionAggregateSource,
@@ -103,6 +112,7 @@ export async function computeDashboardSnapshot(
       activeMembers,
       eblastUsedByMember,
       culturalUsedByMember,
+      invoiceStatusRaw,
     ] = await Promise.all([
       deps.memberSource.countByStatus(ctx),
       deps.memberSource.countAtRisk(ctx),
@@ -119,6 +129,8 @@ export async function computeDashboardSnapshot(
       deps.memberEnumeration.listActiveWithPlan(ctx),
       deps.consumptionAggregate.eblastUsedByMember(ctx, year),
       deps.consumptionAggregate.culturalUsedByMember(ctx, year),
+      // 067 — invoice-status distribution chart (paid/unpaid/overdue + drafts).
+      deps.invoiceSource.getInvoiceStatusDistribution(ctx, now.toISOString()),
     ]);
     const total = statusCounts.active + statusCounts.inactive + statusCounts.archived;
 
@@ -139,20 +151,46 @@ export async function computeDashboardSnapshot(
     // map and therefore excluded by `countUnderUsedQuota` (cannot assess under-use
     // without an entitlement baseline). Threshold = "any shortfall" (used <
     // entitlement) — intentionally distinct from the FR-021 US4 25pt-gap rule.
+    //
+    // 067 — the SAME fan-out also resolves each distinct plan's display LABEL
+    // (`getPlanLabel`), memoized per `planId` (not per plan-year key) since the
+    // tier-distribution chart collapses plan year (`groupActiveMembersByTier`
+    // groups by planId only). A plan/year that fails to resolve a label is
+    // simply absent from the map — `groupActiveMembersByTier` folds it into
+    // the `unassigned` bucket, same null-handling as the quota entitlements.
     const distinctPlans = new Map<string, { planId: string; planYear: number }>();
     for (const m of activeMembers) {
       const key = planKey(m.planId, m.planYear);
       if (!distinctPlans.has(key)) distinctPlans.set(key, m);
     }
     const entitlementByPlanKey = new Map<string, QuotaEntitlement>();
+    // 067 — resolved plan label per `planId`, tagged with the plan YEAR it came
+    // from. When one plan slug (planId) is held under multiple active plan-years
+    // with DIFFERENT stored names (a clone+rename mid-migration), the NEWEST
+    // year's label wins — deterministically, whichever `getPlanLabel` promise
+    // happens to settle first. A first-to-resolve guard (`!has()`) would pick a
+    // Promise-scheduling-dependent winner that can flip between cron runs.
+    const labelByPlanId = new Map<string, { planYear: number; label: string }>();
     await Promise.all(
       [...distinctPlans].map(async ([key, ref]) => {
-        const ent = await deps.planSource.getEntitlements(ctx, ref.planId, ref.planYear);
+        const [ent, label] = await Promise.all([
+          deps.planSource.getEntitlements(ctx, ref.planId, ref.planYear),
+          deps.planSource.getPlanLabel(ctx, ref.planId, ref.planYear),
+        ]);
         if (ent !== null) {
           entitlementByPlanKey.set(key, {
             eblastPerYear: ent.eblastPerYear,
             culturalTicketsPerYear: ent.culturalTicketsPerYear,
           });
+        }
+        if (label !== null) {
+          // No `await` between this get and set — a callback body runs
+          // atomically on the event loop, so concurrent callbacks (all resolved
+          // by the same `Promise.all`) can never interleave the read/write.
+          const existing = labelByPlanId.get(ref.planId);
+          if (existing === undefined || ref.planYear > existing.planYear) {
+            labelByPlanId.set(ref.planId, { planYear: ref.planYear, label });
+          }
         }
       }),
     );
@@ -162,6 +200,25 @@ export async function computeDashboardSnapshot(
       culturalUsedByMember,
       entitlementByPlanKey,
     });
+
+    // 067 — active-membership tier breakdown (unassigned bucket for members
+    // whose plan/year label didn't resolve; sorted, sums to `statusCounts.active`).
+    const tierDistribution = groupActiveMembersByTier(
+      activeMembers,
+      (planId) => labelByPlanId.get(planId)?.label ?? null,
+    );
+
+    // 067 — invoice-status distribution chart. `satang` is a bigint on the
+    // port's return shape (matches the money convention elsewhere); mapped to
+    // a decimal string here — JSONB (the snapshot cache column) has no bigint.
+    const invoiceStatus: InvoiceStatusDistribution = {
+      buckets: invoiceStatusRaw.buckets.map((b) => ({
+        bucket: b.bucket,
+        satang: b.satang.toString(),
+        count: b.count,
+      })),
+      draftCount: invoiceStatusRaw.draftCount,
+    };
 
     // Candidate insights — at-risk follow-up + the 2 quota cards. A count=0 card
     // is NOT emitted (parity with the at-risk gate); dismissals are filtered next.
@@ -202,6 +259,8 @@ export async function computeDashboardSnapshot(
         revenueTrend,
         memberGrowth,
         topInsights,
+        tierDistribution,
+        invoiceStatus,
         computedAt: now.toISOString(),
       };
       await deps.snapshotRepo.upsertInTx(tx, snap, now);

@@ -80,6 +80,46 @@ export default async function Loading() {
             ))}
           </div>
 
+          {/* Breakdown charts (Task 12) — membership-by-tier bar + invoice-
+              status donut. Distinct shapes (rectangular bar block vs. a
+              circular donut block + a reserved legend line) so the skeleton
+              reads as "two different chart types" rather than two identical
+              placeholders, matching the real Breakdown section below. */}
+          <div aria-hidden className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <SkeletonBlock className="h-5 w-40" />
+              </CardHeader>
+              <CardContent>
+                {/* Headline row (text-3xl active total + right-aligned caption)
+                    — mirrors MembershipTierChart's summary row so the
+                    skeleton→real swap doesn't insert a new line and push the
+                    bars (and the activity feed below) down (CLS). */}
+                <div className="flex items-baseline justify-between gap-2">
+                  <SkeletonBlock className="h-8 w-16" />
+                  <SkeletonBlock className="h-3 w-24" />
+                </div>
+                {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
+                    (120px). The real canvas grows 36px per tier above 3 tiers,
+                    so many-tier tenants expand DOWNWARD from here — a skeleton
+                    cannot know the tier count before the snapshot resolves. */}
+                <SkeletonBlock className="mt-3 h-[120px] w-full" />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <SkeletonBlock className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-3">
+                <SkeletonBlock className="h-40 w-40 rounded-full" />
+                {/* Reserves the visible legend row's height (WCAG 1.4.1 —
+                    the real donut always renders a paid/unpaid/overdue
+                    legend below the canvas). */}
+                <SkeletonBlock className="h-4 w-56" />
+              </CardContent>
+            </Card>
+          </div>
+
           {/* Activity feed — full-width card. Header mirrors the real
               ActivityFeed (title + right-aligned Refresh button) to avoid CLS. */}
           <Card aria-hidden>

@@ -447,6 +447,9 @@
       "trends": {
         "sectionLabel": "Trenddiagram"
       },
+      "breakdown": {
+        "sectionLabel": "Fördelningsdiagram"
+      },
       "revenueTrend": {
         "title": "Intäktstrend (12 månader)",
         "empty": "Inga betalda intäkter registrerade ännu.",
@@ -465,6 +468,34 @@
         "netNew": "+{count} i år",
         "month": "Månad",
         "count": "Medlemmar"
+      },
+      "membershipTier": {
+        "title": "Medlemmar per nivå",
+        "empty": "Inga aktiva medlemmar ännu.",
+        "tierColumnHeader": "Nivå",
+        "countColumnHeader": "Medlemmar",
+        "pctColumnHeader": "% av totalt",
+        "totalRowLabel": "Totalt",
+        "unassignedTier": "Ingen plan tilldelad",
+        "activeMembersLabel": "Aktiva medlemmar",
+        "topTier": "Topp: {tier} · {pct}"
+      },
+      "invoiceStatus": {
+        "title": "Fordringar efter belopp",
+        "empty": "Inga utestående fordringar ännu.",
+        "totalLabel": "Totalt utestående",
+        "draftCaption": "{count, plural, one {# utkastfaktura visas inte} other {# utkastfakturor visas inte}}",
+        "statusColumnHeader": "Status",
+        "amountColumnHeader": "Belopp",
+        "countColumnHeader": "Fakturor",
+        "pctColumnHeader": "% av totalt",
+        "totalRowLabel": "Totalt",
+        "invoiceCountLabel": "{count, plural, one {# faktura} other {# fakturor}}",
+        "bucket": {
+          "paid": "Betald",
+          "unpaid": "Obetald",
+          "overdue": "Förfallen"
+        }
       },
       "insights": {
         "title": "Smarta insikter",

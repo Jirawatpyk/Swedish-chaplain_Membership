@@ -1,7 +1,9 @@
 /**
- * F9 `InvoiceSource` adapter (US1 Increment 2 / T017).
+ * F9 `InvoiceSource` adapter (US1 Increment 2 / T017; `getInvoiceStatusDistribution`
+ * added 067-dashboard-interactive-charts Task 4).
  *
- * Reads YTD paid revenue + overdue-invoice count via the invoicing PUBLIC
+ * Reads YTD paid revenue, overdue-invoice count, and the invoice-status
+ * distribution (paid/unpaid/overdue + draft count) via the invoicing PUBLIC
  * BARREL only (`listInvoices` + `makeListInvoicesDeps` + pure `computeIsOverdue`)
  * — no deep/foreign-table imports (Constitution Principle III). Composes from
  * the existing exports (no invoicing surgery): paginates the filtered list and
@@ -74,6 +76,31 @@ const netPaidRevenueSatang = (inv: {
   if (total <= 0n) return 0n;
   const netOfCredit = total - (inv.creditedTotal?.satang ?? 0n);
   return (netOfCredit * (inv.subtotal?.satang ?? 0n)) / total;
+};
+
+/**
+ * Gross, net-of-credit amount (`total − creditedTotal`) for the status-
+ * distribution donut — used for ALL THREE `paid`/`unpaid`/`overdue` buckets.
+ * A part-to-whole chart needs one consistent basis (067 design § Data &
+ * correctness): amounts are VAT-INCLUSIVE, the way accounts-receivable is
+ * actually booked (§86/4 tax invoices always include VAT), NOT the ex-VAT
+ * `netPaidRevenueSatang` figure the separate revenue-KPI methods
+ * (`getYtdPaidRevenueSatang` / `getMonthlyPaidRevenueSatang`) sum — mixing
+ * ex-VAT `paid` with gross `unpaid`/`overdue` would distort the slice
+ * proportions. A `partially_credited` invoice nets down by exactly the
+ * credited amount, same as the revenue KPI — and (review fix) it is bucketed
+ * into `paid`, not `unpaid`/`overdue`: `canTransition` in
+ * `invoice.ts` only reaches `partially_credited` FROM `paid`
+ * (`paid → ['partially_credited', 'credited', 'void']`), so every
+ * `partially_credited` invoice was paid first — its net balance is already-
+ * collected cash, not an outstanding receivable, regardless of `dueDate`.
+ */
+const netBalanceSatang = (inv: {
+  total: { satang: bigint } | null;
+  creditedTotal: { satang: bigint } | null;
+}): bigint => {
+  const total = inv.total?.satang ?? 0n;
+  return total - (inv.creditedTotal?.satang ?? 0n);
 };
 
 export const invoiceSourceAdapter: InvoiceSource = {
@@ -172,5 +199,81 @@ export const invoiceSourceAdapter: InvoiceSource = {
       cursor = result.value.nextCursor;
     } while (cursor !== null);
     return buckets;
+  },
+
+  async getInvoiceStatusDistribution(
+    ctx: TenantContext,
+    nowIso: string,
+  ): Promise<{
+    readonly buckets: ReadonlyArray<{
+      bucket: 'paid' | 'unpaid' | 'overdue';
+      satang: bigint;
+      count: number;
+    }>;
+    readonly draftCount: number;
+  }> {
+    const deps = makeListInvoicesDeps(ctx.slug);
+    let cursor: string | null = null;
+    let paidSatang = 0n;
+    let paidCount = 0;
+    let unpaidSatang = 0n;
+    let unpaidCount = 0;
+    let overdueSatang = 0n;
+    let overdueCount = 0;
+    let draftCount = 0;
+    do {
+      // `status:'all'` + `includeDrafts:true` — this method (unlike the
+      // other reads above) needs EVERY status in one pass: draft (for
+      // draftCount), issued (bucketed unpaid/overdue by due date below), and
+      // paid/partially_credited (both counted as `paid`, net of credit) /
+      // void/credited (excluded).
+      const result = await listInvoices(deps, {
+        tenantId: ctx.slug,
+        status: 'all',
+        pageSize: PAGE,
+        cursor,
+        includeDrafts: true,
+      });
+      if (!result.ok) throw new Error('InvoiceSource: status-distribution list failed');
+      for (const inv of result.value.rows) {
+        switch (inv.status) {
+          case 'draft':
+            draftCount += 1;
+            break;
+          case 'paid':
+          case 'partially_credited':
+            // `partially_credited` is reachable ONLY from `paid`
+            // (`canTransition` in invoice.ts) — it was paid first, so its
+            // net balance is already-collected cash, not a receivable. Never
+            // route it through the overdue-by-due-date check below.
+            paidSatang += netBalanceSatang(inv);
+            paidCount += 1;
+            break;
+          case 'issued':
+            if (computeIsOverdue(inv, nowIso)) {
+              overdueSatang += netBalanceSatang(inv);
+              overdueCount += 1;
+            } else {
+              unpaidSatang += netBalanceSatang(inv);
+              unpaidCount += 1;
+            }
+            break;
+          case 'void':
+          case 'credited':
+            // Excluded from every bucket AND draftCount (design rules).
+            break;
+        }
+      }
+      cursor = result.value.nextCursor;
+    } while (cursor !== null);
+
+    return {
+      buckets: [
+        { bucket: 'paid', satang: paidSatang, count: paidCount },
+        { bucket: 'unpaid', satang: unpaidSatang, count: unpaidCount },
+        { bucket: 'overdue', satang: overdueSatang, count: overdueCount },
+      ],
+      draftCount,
+    };
   },
 };

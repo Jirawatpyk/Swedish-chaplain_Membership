@@ -120,3 +120,31 @@ describe('planSourceAdapter.getEntitlements — active-benefit derivation', () =
     expect(findOneMock).not.toHaveBeenCalled();
   });
 });
+
+describe('planSourceAdapter.getPlanLabel — 067 tier-distribution label resolution', () => {
+  it('resolved plan → the canonical EN plan_name', async () => {
+    findOneMock.mockResolvedValueOnce({
+      plan_name: { en: 'Corporate Gold', th: 'ทองคำ' },
+      benefit_matrix: {},
+    });
+    const r = await planSourceAdapter.getPlanLabel(CTX, 'corporate-gold', 2026);
+    expect(r).toBe('Corporate Gold');
+  });
+
+  it('missing plan → null (folds into the unassigned tier bucket)', async () => {
+    findOneMock.mockResolvedValueOnce(undefined);
+    expect(await planSourceAdapter.getPlanLabel(CTX, 'ghost', 2026)).toBeNull();
+  });
+
+  it('malformed planId → null, not a thrown 500 (same R#1 contract as getEntitlements)', async () => {
+    const r = await planSourceAdapter.getPlanLabel(CTX, 'NOT_A_SLUG', 2026);
+    expect(r).toBeNull();
+    expect(findOneMock).not.toHaveBeenCalled();
+  });
+
+  it('out-of-range planYear → null, not a thrown 500', async () => {
+    const r = await planSourceAdapter.getPlanLabel(CTX, 'corporate-gold', 1999);
+    expect(r).toBeNull();
+    expect(findOneMock).not.toHaveBeenCalled();
+  });
+});

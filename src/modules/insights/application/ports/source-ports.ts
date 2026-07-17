@@ -106,6 +106,20 @@ export interface PlanSource {
     planId: string,
     planYear: number,
   ): Promise<BenefitEntitlements | null>;
+  /**
+   * Display label for a plan in a given membership year, for the dashboard
+   * tier-distribution chart (067). Returns the plan's canonical EN name (the
+   * cached `DashboardSnapshot` is one JSONB row per tenant with no
+   * per-viewer locale — TH/SV localisation is deferred until this cache
+   * gains a render-time locale). Returns null when the plan/year is not
+   * found or cannot be resolved (same null semantics as `getEntitlements`);
+   * the caller folds a null label into the `unassigned` tier bucket.
+   */
+  getPlanLabel(
+    ctx: TenantContext,
+    planId: string,
+    planYear: number,
+  ): Promise<string | null>;
 }
 
 /**
@@ -212,4 +226,19 @@ export interface InvoiceSource {
     monthKeys: readonly string[],
     timeZone: string,
   ): Promise<Readonly<Record<string, bigint>>>;
+  /**
+   * Invoice status distribution for the tenant (buckets: paid/unpaid/overdue,
+   * net-of-credit revenue; plus draft count). Used by dashboard charts (FR-001).
+   */
+  getInvoiceStatusDistribution(
+    ctx: TenantContext,
+    nowIso: string,
+  ): Promise<{
+    readonly buckets: ReadonlyArray<{
+      bucket: 'paid' | 'unpaid' | 'overdue';
+      satang: bigint;
+      count: number;
+    }>;
+    readonly draftCount: number;
+  }>;
 }

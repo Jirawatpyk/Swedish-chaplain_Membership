@@ -29,6 +29,8 @@ const SNAP: DashboardSnapshot = {
   revenueTrend: [{ month: '2026-06', satang: '240000000' }],
   memberGrowth: [{ month: '2026-06', cumulative: 10 }],
   topInsights: [{ key: 'at_risk_followup', count: 2 }],
+  tierDistribution: [],
+  invoiceStatus: { buckets: [], draftCount: 0 },
   computedAt: '2026-06-15T05:00:00.000Z',
 };
 

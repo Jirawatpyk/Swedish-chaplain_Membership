@@ -54,6 +54,8 @@ function makeDeps(o: Overrides = {}): ComputeDashboardSnapshotDeps {
       getYtdPaidRevenueSatang: async () => 0n,
       countOverdue: async () => 0,
       getMonthlyPaidRevenueSatang: async () => ({}),
+      // 067 — not under test here; the use-case still calls it in the batch.
+      getInvoiceStatusDistribution: async () => ({ buckets: [], draftCount: 0 }),
     },
     broadcastSource: { countAwaitingApproval: async () => 0 },
     memberEnumeration: {
@@ -71,6 +73,9 @@ function makeDeps(o: Overrides = {}): ComputeDashboardSnapshotDeps {
         const e = entitlements[planId];
         return e ? { ...e, activeBenefits: [] } : null;
       },
+      // 067 — not under test here; the use-case still calls it in the same
+      // fan-out as getEntitlements.
+      getPlanLabel: async () => null,
     },
     snapshotRepo: { upsertInTx: async () => {} },
     dismissalRepo: {

@@ -75,6 +75,27 @@
  *     /admin/members/new              1223 KB measured → ≤ 1330 KB
  *     /admin/members/[memberId]/edit  1247 KB measured → ≤ 1350 KB
  *
+ *   067 dashboard-interactive-charts:
+ *     /admin  Task 7 (pre-chart) baseline: 992 KB measured → ≤ 1100 KB
+ *       (measured 2026-07-16, BEFORE any route imports recharts —
+ *       `recharts@^3` + `ui/chart.tsx` installed but not yet wired into
+ *       any admin page.)
+ *     /admin  Task 14 (post-chart) re-baseline: 1004.8 KB measured → ≤ 1110 KB
+ *       (measured 2026-07-17, `pnpm build` AFTER all four charts —
+ *       revenue-trend + member-growth sparklines, membership-tier bar,
+ *       invoice-status donut — are wired into `(staff)/admin/(home)/page.tsx`.
+ *       `firstLoadUncompressedJsBytes` = 1,028,918 bytes, a mere +12.9 KB
+ *       (+1.3%) over the pre-chart baseline — proof recharts (~100-400 KB
+ *       uncompressed for the library alone) did NOT leak into first-load:
+ *       every chart's actual `<BarChart>`/`<AreaChart>`/`<PieChart>` canvas
+ *       is behind its own `next/dynamic(..., { ssr: false })` boundary
+ *       (`*-canvas.tsx` files), confirmed by grepping every EAGER
+ *       `*-chart.tsx` file for a direct `recharts` import (zero hits — only
+ *       the lazy `*-canvas.tsx` siblings import it). Re-baselined ceiling
+ *       per this file's own rule: `ceil(1004.8/10)*10 + 100 = 1110`. This
+ *       supersedes the Task 7 pre-chart ceiling — do not revert to 1100.)
+ *
+
  * Run as a post-build step:
  *
  *   pnpm build
@@ -138,6 +159,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // is deliberately kept well under 367 KB.
   { route: '/admin/members/new', maxKb: 1330 },
   { route: '/admin/members/[memberId]/edit', maxKb: 1350 },
+  // --- 067 dashboard-interactive-charts (Task 14 post-chart re-baseline) -
+  // 1004.8 KB measured with all four charts wired — see docblock above.
+  { route: '/admin', maxKb: 1110 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

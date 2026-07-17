@@ -59,6 +59,23 @@ const snapshotSchema = z.object({
       scopeRef: z.string().optional(),
     }),
   ),
+  // 067 T6 — REQUIRED (not `.optional()`/`.default(...)`): a legacy pre-067
+  // row lacks these two keys, so it MUST fail `safeParse` → `read()` returns
+  // null → the caller's existing cold-start path recomputes a fresh, valid
+  // snapshot. See tests/integration/insights/snapshot-repo-legacy-row.test.ts.
+  tierDistribution: z.array(
+    z.object({ tierKey: z.string(), label: z.string(), count }),
+  ),
+  invoiceStatus: z.object({
+    buckets: z.array(
+      z.object({
+        bucket: z.enum(['paid', 'unpaid', 'overdue']),
+        satang: z.string().regex(/^\d+$/),
+        count,
+      }),
+    ),
+    draftCount: count,
+  }),
   computedAt: z.string(),
 });
 
