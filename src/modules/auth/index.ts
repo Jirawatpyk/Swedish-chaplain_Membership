@@ -131,6 +131,18 @@ export {
   type ResendStaffInvitationDeps,
 } from './application/resend-staff-invitation';
 
+// Staff Invitation Lifecycle Task 3 — permanently deletes a `pending`
+// invited user (admin "Revoke" action). `contacts.linked_user_id` FK is
+// `ON DELETE SET NULL`, so a member-linked pending user is safely unlinked,
+// never destroying member data. Emits `invitation_revoked`.
+export {
+  revokeInvitation,
+  type RevokeInvitationInput,
+  type RevokeInvitationSuccess,
+  type RevokeInvitationError,
+  type RevokeInvitationDeps,
+} from './application/revoke-invitation';
+
 export {
   enableUser,
   type EnableUserInput,

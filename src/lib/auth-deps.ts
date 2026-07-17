@@ -93,6 +93,7 @@ import type { DeleteInvitedUserDeps } from '@/modules/auth/application/delete-in
 import type { EraseUserDeps } from '@/modules/auth/application/erase-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import type { ResendStaffInvitationDeps } from '@/modules/auth/application/resend-staff-invitation';
+import type { RevokeInvitationDeps } from '@/modules/auth/application/revoke-invitation';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
@@ -280,6 +281,19 @@ export const defaultReissueInvitationDeps: ReissueInvitationDeps = {
  */
 export const defaultResendStaffInvitationDeps: ResendStaffInvitationDeps = {
   reissue: reissueInvitation,
+  audit: auditRepo,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 3 — `revokeInvitation` deps. Owner-role
+ * (`db.transaction`, imported inside the use case itself) deletion of a
+ * pending user + its queued by-email invite outbox row(s) + the
+ * `invitation_revoked` audit, all atomic. `userRepo` implements both new
+ * RA-2 methods (`deleteInvitedPendingInTx` RETURNING email,
+ * `deleteInviteOutboxByEmailInTx`).
+ */
+export const defaultRevokeInvitationDeps: RevokeInvitationDeps = {
+  users: userRepo,
   audit: auditRepo,
 };
 

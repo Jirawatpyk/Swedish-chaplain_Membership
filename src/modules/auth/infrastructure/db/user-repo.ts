@@ -7,7 +7,7 @@
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
-import { users, type UserRow } from './schema';
+import { users, notificationsOutbox, type UserRow } from './schema';
 import {
   asEmailAddress,
   asPasswordHash,
@@ -120,10 +120,39 @@ export interface UserRepo {
    * F3 `invitePortal` SAGA compensation (go-live #12-13) which must atomically
    * delete the just-created pending user + its queued outbox row + append a
    * compensation audit in ONE owner-role tx. Same `status='pending'` guard:
-   * returns `{ deleted: 0 }` (a no-op) if the user was already redeemed/active —
-   * a redeemed account is NEVER destroyed.
+   * returns `{ deleted: 0, email: null }` (a no-op) if the user was already
+   * redeemed/active — a redeemed account is NEVER destroyed.
+   *
+   * RA-2 (Staff Invitation Lifecycle, Task 3) — also RETURNs the deleted
+   * row's `email` so callers can read-before-delete the address for a
+   * downstream by-email cleanup (e.g. `deleteInviteOutboxByEmailInTx`)
+   * without a second query against a now-gone user row. `email` is `null`
+   * only when `deleted === 0` (no row matched); the `users.email` column is
+   * itself `NOT NULL`, so a successful delete (`deleted > 0`) always yields
+   * a non-null email. Purely additive — existing callers that destructure
+   * only `{ deleted }` are unaffected.
    */
-  deleteInvitedPendingInTx(tx: DbTx, id: UserId): Promise<{ deleted: number }>;
+  deleteInvitedPendingInTx(
+    tx: DbTx,
+    id: UserId,
+  ): Promise<{ deleted: number; email: string | null }>;
+  /**
+   * RA-2 (Staff Invitation Lifecycle, Task 3) — deletes this email's
+   * still-undispatched `member_invitation` outbox row(s), scoped to a single
+   * tenant. `notifications_outbox` has no `user_id` column (schema.ts —
+   * see the table header), so the linkage is by `to_email` (case-insensitive)
+   * rather than by user id. Scoped to `notification_type='member_invitation'`
+   * AND `status='pending'` so it never touches a different notification kind
+   * or a row that already dispatched; scoped to `tenant_id` so a revoke in
+   * one tenant can never delete another tenant's queued invite for the same
+   * email address (Principle I — the table is FORCE-RLS but this runs on the
+   * owner-role BYPASSRLS tx, so the tenant filter here is the only guard).
+   */
+  deleteInviteOutboxByEmailInTx(
+    tx: DbTx,
+    email: string,
+    tenantId: string,
+  ): Promise<void>;
   /**
    * COMP-1 US2a — anonymise an F1 login account so a GDPR-Art.17 /
    * PDPA-§33-erased member can no longer authenticate. Email → a
@@ -351,11 +380,27 @@ export const userRepo: UserRepo = {
     // Same `status='pending'` guard as deletePending — a redeemed/active
     // account is never destroyed. RETURNING lets the SAGA distinguish a real
     // rollback (deleted:1) from a race no-op (deleted:0, user already active).
+    // RA-2: also RETURNs `email` (read-before-delete) so callers can clean up
+    // the by-email `notifications_outbox` rows without a second query against
+    // a now-gone user row.
     const rows = await tx
       .delete(users)
       .where(and(eq(users.id, id), eq(users.status, 'pending')))
-      .returning({ id: users.id });
-    return { deleted: rows.length };
+      .returning({ id: users.id, email: users.email });
+    return { deleted: rows.length, email: rows[0]?.email ?? null };
+  },
+
+  async deleteInviteOutboxByEmailInTx(tx, email, tenantId) {
+    await tx
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          sql`lower(${notificationsOutbox.toEmail}) = lower(${email})`,
+          eq(notificationsOutbox.notificationType, 'member_invitation'),
+          eq(notificationsOutbox.status, 'pending'),
+          eq(notificationsOutbox.tenantId, tenantId),
+        ),
+      );
   },
 
   async anonymiseErasedInTx(tx, userId) {
