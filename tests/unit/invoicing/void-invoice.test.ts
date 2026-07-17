@@ -752,6 +752,14 @@ describe('void-on-reissue options', () => {
       requireStatus: 'issued',
     });
     expect(res.ok).toBe(true);
+    // No supersededByInvoiceId was passed → the audit payload must omit the key
+    // entirely (mirrors the presence test below for the sibling ternary-spread
+    // field), not merely carry it as `undefined`.
+    const voidedEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    const payload = voidedEmit![1].payload as Record<string, unknown>;
+    expect('superseded_by_invoice_id' in payload).toBe(false);
   });
 
   it('suppressCancellationEmail:true enqueues NO outbox row (tenant auto_email_enabled=true)', async () => {
