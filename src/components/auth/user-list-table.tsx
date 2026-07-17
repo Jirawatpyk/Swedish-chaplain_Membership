@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BanIcon, CircleCheckIcon } from 'lucide-react';
+import { BanIcon, CircleCheckIcon, MailIcon, Trash2Icon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,6 +53,7 @@ export interface UserListTableProps {
 type PendingAction =
   | { readonly kind: 'disable'; readonly user: UserRow }
   | { readonly kind: 'enable'; readonly user: UserRow }
+  | { readonly kind: 'revoke'; readonly user: UserRow }
   | null;
 
 const statusVariant: Record<Status, 'default' | 'secondary' | 'outline' | 'destructive'> = {
@@ -89,6 +90,12 @@ export function UserListTable({
   const router = useRouter();
   const [pending, setPending] = useState<PendingAction>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Nit fix (found reviewing Task 5): compute `now` once at mount instead of
+  // fresh on every render — this is a Client Component that renders on the
+  // server AND hydrates on the client, so a `new Date()` read directly in
+  // the render body can straddle a day boundary between the two passes and
+  // produce a hydration text mismatch on the "expires in N days" hint.
+  const [now] = useState(() => new Date());
 
   const isAdmin = currentUserRole === 'admin';
 
@@ -131,6 +138,45 @@ export function UserListTable({
     }
   }
 
+  async function handleRevoke(user: UserRow) {
+    setBusyId(user.id);
+    const ok = await runAction(`/api/auth/users/${user.id}/revoke-invite`, 'POST');
+    setBusyId(null);
+    if (ok) {
+      toast.success(t('toast.revoked', { email: user.email }));
+      router.refresh();
+    }
+  }
+
+  /**
+   * Staff Invitation Lifecycle Task 8 — resend is NON-destructive and fires
+   * directly (no confirm dialog), unlike disable/enable/revoke. It needs its
+   * own status-code handling (rather than the shared `runAction`) because a
+   * 429 from the per-target reissue-invite throttle (RA-1) gets a distinct
+   * "try later" toast instead of the generic error toast.
+   */
+  async function handleResend(user: UserRow) {
+    setBusyId(user.id);
+    try {
+      const response = await fetch(`/api/auth/users/${user.id}/reissue-invite`, { method: 'POST' });
+      if (response.ok) {
+        toast.success(t('toast.resent', { email: user.email }));
+        router.refresh();
+        return;
+      }
+      if (response.status === 429) {
+        toast.error(t('toast.resendRateLimited'));
+        return;
+      }
+      const err = (await response.json().catch(() => ({}))) as { error?: string };
+      toast.error(err.error ?? tErrors('generic'));
+    } catch {
+      toast.error(tErrors('generic'));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <>
       {/* Matches /admin/members table style — uppercase muted header
@@ -161,13 +207,15 @@ export function UserListTable({
               const isSelf = user.id === currentUserId;
               const canDisable = isAdmin && !isSelf && user.status === 'active';
               const canEnable = isAdmin && user.status === 'disabled';
+              const canManageInvite = isAdmin && user.status === 'pending';
               const busy = busyId === user.id;
+              const daysRemaining = user.invitationExpiresAt
+                ? daysUntil(user.invitationExpiresAt, now)
+                : null;
               const invitationExpiryLabel =
-                user.status === 'pending' && user.invitationExpiresAt
-                  ? daysUntil(user.invitationExpiresAt, new Date()) > 0
-                    ? t('invite.expiresIn', {
-                        days: daysUntil(user.invitationExpiresAt, new Date()),
-                      })
+                user.status === 'pending' && daysRemaining !== null
+                  ? daysRemaining > 0
+                    ? t('invite.expiresIn', { days: daysRemaining })
                     : t('invite.expired')
                   : null;
               return (
@@ -226,7 +274,29 @@ export function UserListTable({
                         {t('actions.enable')}
                       </Button>
                     ) : null}
-                    {!canDisable && !canEnable ? (
+                    {canManageInvite ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void handleResend(user)}
+                      >
+                        <MailIcon className="size-4" aria-hidden />
+                        {busy ? t('invite.submitting') : t('actions.resend')}
+                      </Button>
+                    ) : null}
+                    {canManageInvite ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setPending({ kind: 'revoke', user })}
+                      >
+                        <Trash2Icon className="size-4" aria-hidden />
+                        {t('actions.revoke')}
+                      </Button>
+                    ) : null}
+                    {!canDisable && !canEnable && !canManageInvite ? (
                       <span className="text-xs text-muted-foreground">
                         {isSelf ? t('actions.self') : '—'}
                       </span>
@@ -251,24 +321,35 @@ export function UserListTable({
         onOpenChange={(open) => {
           if (!open) setPending(null);
         }}
-        title={pending?.kind === 'disable' ? t('confirm.disable.title') : t('confirm.enable.title')}
+        title={
+          pending?.kind === 'disable'
+            ? t('confirm.disable.title')
+            : pending?.kind === 'enable'
+              ? t('confirm.enable.title')
+              : t('confirm.revoke.title')
+        }
         description={
           pending?.kind === 'disable'
             ? t('confirm.disable.description', { email: pending.user.email })
             : pending?.kind === 'enable'
               ? t('confirm.enable.description', { email: pending.user.email })
-              : ''
+              : pending?.kind === 'revoke'
+                ? t('confirm.revoke.description', { email: pending.user.email })
+                : ''
         }
         confirmLabel={
           pending?.kind === 'disable'
             ? t('actions.disable')
-            : t('actions.enable')
+            : pending?.kind === 'enable'
+              ? t('actions.enable')
+              : t('confirm.revoke.confirm')
         }
         cancelLabel={t('confirm.cancel')}
-        destructive={pending?.kind === 'disable'}
+        destructive={pending?.kind === 'disable' || pending?.kind === 'revoke'}
         onConfirm={async () => {
           if (pending?.kind === 'disable') await handleDisable(pending.user);
           else if (pending?.kind === 'enable') await handleEnable(pending.user);
+          else if (pending?.kind === 'revoke') await handleRevoke(pending.user);
         }}
       />
     </>
