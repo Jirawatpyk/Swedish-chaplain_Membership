@@ -99,7 +99,7 @@ function resolveFrom(): string {
  * Derive the offset_day from a stepId like `t-30.email`.
  * Returns null when the stepId doesn't follow the expected shape.
  */
-function deriveOffsetFromStepId(stepId: string): RenewalReminderOffset | null {
+export function deriveOffsetFromStepId(stepId: string): RenewalReminderOffset | null {
   const dotIdx = stepId.indexOf('.');
   const offsetPart = dotIdx === -1 ? stepId : stepId.slice(0, dotIdx);
   if (
@@ -114,7 +114,7 @@ function deriveOffsetFromStepId(stepId: string): RenewalReminderOffset | null {
  * Derive the tier from a templateId like `renewal.t-30.thai-alumni`.
  * Returns null when the templateId doesn't carry a recognized tier.
  */
-function deriveTierFromTemplateId(
+export function deriveTierFromTemplateId(
   templateId: string,
 ): RenewalReminderTier | null {
   for (const tier of RENEWAL_REMINDER_TIERS) {
