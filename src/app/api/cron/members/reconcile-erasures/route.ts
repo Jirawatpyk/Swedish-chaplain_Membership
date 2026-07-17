@@ -65,6 +65,13 @@ const MAX_PER_TICK = 50;
 const SYSTEM_ACTOR = 'system:cron';
 const SYSTEM_REQUEST_ID = 'system:erase-reconcile';
 
+// Vercel-native Cron invokes each scheduled path with a GET; this handler's
+// Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
+// both the Vercel cron (GET) and the legacy cron-job.org trigger (POST)
+// during migration. POST is hoisted, so the forward ref is safe.
+// See docs/runbooks/cron-jobs.md § "Migration path: Pro plan".
+export const GET = POST;
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Constant-time Bearer check via the shared helper (parity with the F4/F5/F7
   // cron routes) — closes the timing side-channel on a CRON_SECRET brute-force.

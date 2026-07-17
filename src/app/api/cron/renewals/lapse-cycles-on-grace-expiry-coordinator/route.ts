@@ -57,6 +57,13 @@ interface PerTenantResult {
   readonly error?: string;
 }
 
+// Vercel-native Cron invokes each scheduled path with a GET; this handler's
+// Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
+// both the Vercel cron (GET) and the legacy cron-job.org trigger (POST)
+// during migration. POST is hoisted, so the forward ref is safe.
+// See docs/runbooks/cron-jobs.md § "Migration path: Pro plan".
+export const GET = POST;
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Round-4 review-finding C2 — shared bearer-auth gate emits the
   // `cron_bearer_auth_rejected` audit + IP rate-limit on rejection

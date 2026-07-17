@@ -6,22 +6,42 @@
 external cron trigger driving Chamber-OS. Per-job operational playbooks
 (symptoms, on-call response) live in their own runbooks linked below.
 
-## Why cron-job.org instead of Vercel Cron
+## ⚡ Status (2026-07-17): MIGRATED to native Vercel Cron (Pro plan)
 
-The SweCham deployment runs on Vercel Hobby plan, which **rate-limits
-native `vercel.json` crons to once-per-day per project**. Several
-Chamber-OS features need 5-minute cadence (F5 stale-pending detection,
-F7 scheduled-broadcast dispatch). To keep these features functional
-without forcing a Pro upgrade we trigger them from
-[cron-job.org](https://cron-job.org), which:
+**As of 2026-07-17 SweCham is on the Vercel Pro plan and ALL cron jobs
+below are driven by native Vercel Cron (`vercel.json` `crons`), not
+cron-job.org.** cron-job.org is retained as a **paused standby** (do not
+delete) per the completed migration in § "Migration path: Pro plan
+(DONE — 2026-07-17)" at the bottom of this file — that section is the
+authoritative `vercel.json` ↔ cron-job.org mapping, including the **UTC
+schedule conversions** (Vercel Cron is UTC-only; the Asia/Bangkok jobs
+use converted expressions).
 
-- Supports cron expressions down to 1-minute granularity (free tier)
-- Sends Bearer-authenticated HTTP GET to our internal endpoints
-- Alerts via email on consecutive failures
-- Has an attempt-history view useful for forensics
+Two facts drove the migration mechanics (both detailed in the mapping
+section):
 
-Native Vercel Cron `vercel.json` entries are intentionally **NOT** added
-for these endpoints — see § "Migration path: Pro plan" below.
+1. **Vercel Cron triggers each path with a GET request.** Handlers that
+   previously exported only `POST` now also `export const GET = POST`
+   (the same Bearer-gated body — no cron handler reads a request body).
+   The shared `CRON_SECRET` Bearer gate is unchanged: Vercel
+   auto-injects `Authorization: Bearer ${CRON_SECRET}` on every cron
+   request when the env var is set.
+2. **Vercel Cron schedules are UTC.** Jobs that ran on cron-job.org in
+   the Asia/Bangkok timezone are shifted −7h into UTC (e.g. F8 dispatch
+   06:00 ICT → `0 23 * * *`). The relative ordering of the F8 daily
+   chain (dispatch → enter-awaiting → lapse → reconcile) is preserved
+   because the whole chain shifts uniformly.
+
+### Historical context (pre-2026-07-17, Hobby plan)
+
+The SweCham deployment previously ran on Vercel Hobby, which
+**rate-limits native `vercel.json` crons to once-per-day per project**.
+Several features need 5-minute cadence (F5 stale-pending detection, F7
+scheduled-broadcast dispatch, the outbox email dispatcher), so they were
+triggered from [cron-job.org](https://cron-job.org) — 1-minute
+granularity (free tier), Bearer-authenticated HTTP, email alerts on
+consecutive failures, attempt-history for forensics. That constraint is
+gone on Pro.
 
 ## Job catalogue
 
@@ -56,11 +76,17 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F6 recompute match-rate gauge** (Phase 10 T126) | **`POST /api/internal/observability/recompute-match-rate`** | **`0 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | [f6-match-rate-degradation-triage.md](./f6-match-rate-degradation-triage.md) — refreshes `eventcreate_match_rate_gauge` per tenant; powers SC-002 dashboard |
 | **COMP-1 reconcile-erasures** (US2d) | **`POST /api/cron/members/reconcile-erasures`** | **`*/30 * * * *`** (every 30 min) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Members — reconcile-erasures) — re-drives stuck member erasures (`erased_at` set, `member_erased` absent); kill-switch `FEATURE_MEMBER_ERASURE_RECONCILE`; **retry ON** (500-on-error → cron-job.org retries) |
 
-**Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
-accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
-externals on Hobby. F6 sweep cron handlers themselves ship in Phase 10
-(T115/T116) — the entries above register the schedule + auth contract
-ahead of the handler landing so operators can pre-configure cron-job.org.
+> **⚡ Superseded 2026-07-17 (Pro migration):** ALL jobs above now run on
+> native Vercel Cron. The **Cadence** column shows each job's *logical*
+> schedule (some annotated Asia/Bangkok); the authoritative **UTC**
+> `vercel.json` expression for each is in § "Migration path: Pro plan
+> (DONE — 2026-07-17)". cron-job.org is a paused standby.
+>
+> *Pre-migration note (kept for history):* daily-cadence jobs fit Hobby's
+> 1×/day limit and stayed in `vercel.json`; 5-minute jobs were mandatory
+> cron-job.org externals. F6 sweep cron handlers shipped in Phase 10
+> (T115/T116); the catalogue entries registered the schedule + auth
+> contract ahead of the handler landing.
 
 ## Retry policy contract (READ BEFORE CONFIGURING ANY F7 JOB)
 
@@ -657,20 +683,129 @@ Recovery:
    'approved' AND scheduled_for < NOW();` — manually trigger
    dispatch via the endpoint if backlog is non-empty.
 
-## Migration path: Pro plan
+## Migration path: Pro plan (DONE — 2026-07-17)
 
-When SweCham upgrades to Vercel Pro the following changes ship:
+SweCham upgraded to Vercel Pro and **all 32 cron jobs now run on native
+Vercel Cron** via `vercel.json`. This section is the authoritative
+mapping. cron-job.org is a **paused standby** (kept, not deleted).
 
-1. Add `vercel.json` cron entries at `*/5 * * * *` for each
-   currently-external job (F5 stale-pending-count, F7 dispatch).
-2. Disable the corresponding cron-job.org jobs (do NOT delete — keep
-   as standby in case Pro plan limits change again).
-3. Update this runbook's catalogue table.
-4. Re-run smoke tests for each affected runbook.
+### Why the handler code changed (GET alias)
 
-The route handlers are unchanged. The Bearer-auth pattern continues
-to work — Vercel Cron supplies the same `Authorization: Bearer
-${CRON_SECRET}` header.
+Vercel Cron triggers each path with a **GET**. Cron handlers that were
+`POST`-only now also `export const GET = POST` (25 handlers). This is
+safe: no cron handler reads a request body (verified), the shared
+`CRON_SECRET` Bearer gate applies identically to both verbs, and Vercel
+auto-injects `Authorization: Bearer ${CRON_SECRET}` when the env var is
+set. The `POST` export is retained so cron-job.org can still fire during
+the standby window. Pattern mirrors the pre-existing `export const POST =
+GET` in `lockout-cleanup` / `outbox-dispatch`.
+
+### Why the schedules look shifted (UTC conversion)
+
+Vercel Cron is **UTC-only** — there is no per-job timezone. Jobs that ran
+on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
+`vercel.json`. The F8 daily chain keeps its load-bearing ordering
+(dispatch → enter-awaiting → lapse → reconcile) because every job shifts
+uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
+Sat ICT → Fri UTC).
+
+### Authoritative `vercel.json` ↔ logical-schedule mapping (32 jobs)
+
+Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
+
+| `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
+|---|---|---|---|
+| `/api/cron/outbox-dispatch` | `* * * * *` | every 60s (transactional email drainer) | GET+POST |
+| `/api/internal/metrics/stale-pending-count` | `*/5 * * * *` | every 5 min | GET |
+| `/api/internal/metrics/broadcasts-gauges` | `*/5 * * * *` | every 5 min | GET |
+| `/api/cron/broadcasts/dispatch-scheduled` | `*/5 * * * *` | every 5 min | GET+POST |
+| `/api/cron/broadcasts/split-large-broadcasts` | `*/5 * * * *` | every 5 min | GET+POST |
+| `/api/cron/broadcasts/dispatch-batches` | `*/5 * * * *` | every 5 min | GET+POST |
+| `/api/cron/broadcasts/reconcile-stuck-sending` | `*/15 * * * *` | every 15 min | GET+POST |
+| `/api/cron/broadcasts/cleanup-audiences` | `*/15 * * * *` | every 15 min | GET+POST |
+| `/api/cron/broadcasts/reclaim-orphan-audiences` | `30 3 * * *` | 03:30 UTC (10:30 ICT) | GET+POST |
+| `/api/cron/broadcasts/prune-expired-drafts` | `30 4 * * *` | 04:30 UTC (11:30 ICT) | GET+POST |
+| `/api/cron/insights/snapshot-refresh-coordinator` | `*/5 * * * *` | every 5 min | GET+POST |
+| `/api/cron/insights/process-export-jobs` | `*/5 * * * *` | every 5 min | GET+POST |
+| `/api/cron/members/reconcile-erasures` | `*/30 * * * *` | every 30 min | GET+POST |
+| `/api/internal/observability/recompute-match-rate` | `0 * * * *` | hourly | GET+POST |
+| `/api/cron/renewals/dispatch-coordinator` | `0 23 * * *` | **06:00 ICT** | GET+POST |
+| `/api/cron/renewals/enter-awaiting-payment-coordinator` | `15 23 * * *` | **06:15 ICT** | GET+POST |
+| `/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator` | `30 23 * * *` | **06:30 ICT** | GET+POST |
+| `/api/cron/renewals/reconcile-pending-reactivations-coordinator` | `0 0 * * *` | **07:00 ICT** | GET+POST |
+| `/api/cron/renewals/at-risk-recompute-coordinator` | `0 19 * * 6` | **Sun 02:00 ICT** (Sat 19:00 UTC) | GET+POST |
+| `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | `0 20 * * 6` | **Sun 03:00 ICT** (Sat 20:00 UTC) | GET+POST |
+| `/api/cron/renewals/prune-consumed-tokens` | `0 21 * * 5` | **Sat 04:00 ICT** (Fri 21:00 UTC) | GET+POST |
+| `/api/cron/renewals/reconcile-pending-applications` | `0 22 * * 5` | **Sat 05:00 ICT** (Fri 22:00 UTC) | GET+POST |
+| `/api/cron/invoicing/redact-expired-event-buyers` | `0 5 * * *` | 05:00 UTC (12:00 ICT) | GET+POST |
+| `/api/cron/invoicing/redact-expired-member-invoices` | `0 5 * * *` | 05:00 UTC (12:00 ICT) | GET+POST |
+| `/api/cron/invoicing/prune-orphaned-zero-rate-certs` | `0 21 * * *` | 21:00 UTC (04:00 ICT next day) | GET+POST |
+| `/api/internal/retention/sweep-eventcreate-idempotency` | `30 20 * * *` | **03:30 ICT** (20:30 UTC) | GET+POST |
+| `/api/internal/retention/pseudonymise-eventcreate` | `0 21 * * *` | **04:00 ICT** (21:00 UTC) | GET+POST |
+| `/api/internal/retention/sweep-error-csv-blobs` | `0 22 * * *` | 22:00 UTC (05:00 ICT) | GET+POST |
+| `/api/cron/outbox-purge` | `15 20 * * *` | 20:15 UTC (native since Hobby) | GET |
+| `/api/cron/sweep-stale-pending-refunds` | `0 3 * * *` | 03:00 UTC (native since Hobby) | GET |
+| `/api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` | 03:30 UTC (native since Hobby) | GET |
+| `/api/cron/lockout-cleanup` | `45 3 * * *` | 03:45 UTC (native since Hobby) | GET |
+
+> **`reconcile-erasures` retry note:** on cron-job.org this job used
+> retry-ON (500 → retry). Vercel Cron has **no auto-retry** — the
+> `*/30 * * * *` cadence *is* the retry, and the idempotent
+> `NOT EXISTS member_erased` anti-join makes a re-run safe. This also
+> removes the concurrent-double-`member_erased` window the cron-job.org
+> retry created (the 300s-timeout mitigation is no longer needed once the
+> job is Vercel-native).
+
+### Operator steps
+
+**One-time, on the deploy that ships this change:**
+
+1. **Confirm `CRON_SECRET` is set** in Vercel Production env (it already
+   is — the 4 pre-existing native crons depend on it). Vercel only
+   injects the `Authorization: Bearer ${CRON_SECRET}` header when this
+   env var exists; without it every cron 401s.
+   ```bash
+   vercel env ls | grep CRON_SECRET     # expect a Production entry
+   ```
+2. **Deploy to Production.** Cron jobs in `vercel.json` are registered
+   **only on a production deploy** (not preview). Merge to `main` /
+   `vercel --prod`.
+3. **Verify registration:** Vercel Dashboard → Project → **Settings →
+   Cron Jobs** should list all 32 (or `vercel crons ls`). Each shows its
+   next run time in UTC.
+4. **Smoke-test a few** without waiting for the schedule:
+   ```bash
+   vercel crons run /api/cron/outbox-dispatch
+   vercel crons run /api/cron/renewals/dispatch-coordinator
+   ```
+   Or curl directly (GET, with the secret):
+   ```bash
+   curl -H "Authorization: Bearer $CRON_SECRET" \
+     https://swecham.zyncdata.app/api/cron/outbox-dispatch
+   ```
+   Expect `200`. Feature-flag-OFF jobs return `200 { skipped: true }`
+   (dark-launch-safe) — that is correct, not a failure.
+5. **Watch one full cycle** of the 5-min jobs in Vercel logs (Dashboard →
+   Deployments → Functions) — confirm `dispatch-scheduled`,
+   `outbox-dispatch`, `stale-pending-count`, `broadcasts-gauges` fire and
+   return 200.
+
+**After Vercel crons are confirmed firing (overlap window is safe —**
+**every handler is advisory-locked / idempotent, so a double-fire from**
+**cron-job.org + Vercel in the same window no-ops the second run):**
+
+6. **Pause (do NOT delete)** every cron-job.org job in the SweCham ops
+   account. Keep them as standby in case Pro limits ever change again.
+   The job catalogue table at the top of this file is the complete list
+   to pause.
+7. Leave this runbook's status banner as the source of truth.
+
+### Rollback
+
+Revert the `vercel.json` change (removes the native crons on the next
+prod deploy) and un-pause the cron-job.org jobs. The `export const GET =
+POST` handler aliases are additive and harmless to leave in place. No DB
+or data migration is involved.
 
 ## F7.1a — split + dispatch-batches (NEW — F7.1a US1, ship-day T141)
 
