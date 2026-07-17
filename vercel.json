@@ -1,21 +1,46 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    {
-      "path": "/api/cron/outbox-purge",
-      "schedule": "15 20 * * *"
-    },
-    {
-      "path": "/api/cron/sweep-stale-pending-refunds",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/internal/cron/receipt-pdf-reconcile",
-      "schedule": "30 3 * * *"
-    },
-    {
-      "path": "/api/cron/lockout-cleanup",
-      "schedule": "45 3 * * *"
-    }
+    { "path": "/api/cron/outbox-dispatch", "schedule": "* * * * *" },
+
+    { "path": "/api/internal/metrics/stale-pending-count", "schedule": "*/5 * * * *" },
+    { "path": "/api/internal/metrics/broadcasts-gauges", "schedule": "*/5 * * * *" },
+
+    { "path": "/api/cron/broadcasts/dispatch-scheduled", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/broadcasts/split-large-broadcasts", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/broadcasts/dispatch-batches", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/broadcasts/reconcile-stuck-sending", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/broadcasts/cleanup-audiences", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/broadcasts/reclaim-orphan-audiences", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/broadcasts/prune-expired-drafts", "schedule": "30 4 * * *" },
+
+    { "path": "/api/cron/insights/snapshot-refresh-coordinator", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/insights/process-export-jobs", "schedule": "*/5 * * * *" },
+
+    { "path": "/api/cron/members/reconcile-erasures", "schedule": "*/30 * * * *" },
+
+    { "path": "/api/internal/observability/recompute-match-rate", "schedule": "0 * * * *" },
+
+    { "path": "/api/cron/renewals/dispatch-coordinator", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/renewals/enter-awaiting-payment-coordinator", "schedule": "15 23 * * *" },
+    { "path": "/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator", "schedule": "30 23 * * *" },
+    { "path": "/api/cron/renewals/reconcile-pending-reactivations-coordinator", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/renewals/at-risk-recompute-coordinator", "schedule": "0 19 * * 6" },
+    { "path": "/api/cron/renewals/tier-upgrade-evaluate-coordinator", "schedule": "0 20 * * 6" },
+    { "path": "/api/cron/renewals/prune-consumed-tokens", "schedule": "0 21 * * 5" },
+    { "path": "/api/cron/renewals/reconcile-pending-applications", "schedule": "0 22 * * 5" },
+
+    { "path": "/api/cron/invoicing/redact-expired-event-buyers", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/invoicing/redact-expired-member-invoices", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/invoicing/prune-orphaned-zero-rate-certs", "schedule": "0 21 * * *" },
+
+    { "path": "/api/internal/retention/sweep-eventcreate-idempotency", "schedule": "30 20 * * *" },
+    { "path": "/api/internal/retention/pseudonymise-eventcreate", "schedule": "0 21 * * *" },
+    { "path": "/api/internal/retention/sweep-error-csv-blobs", "schedule": "0 22 * * *" },
+
+    { "path": "/api/cron/outbox-purge", "schedule": "15 20 * * *" },
+    { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "0 3 * * *" },
+    { "path": "/api/internal/cron/receipt-pdf-reconcile", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/lockout-cleanup", "schedule": "45 3 * * *" }
   ]
 }

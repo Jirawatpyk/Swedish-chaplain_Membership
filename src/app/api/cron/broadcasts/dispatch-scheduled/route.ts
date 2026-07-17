@@ -63,6 +63,13 @@ export const dynamic = 'force-dynamic';
 // review.)
 export const maxDuration = 300;
 
+// Vercel-native Cron invokes each scheduled path with a GET; this handler's
+// Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
+// both the Vercel cron (GET) and the legacy cron-job.org trigger (POST)
+// during migration. POST is hoisted, so the forward ref is safe.
+// See docs/runbooks/cron-jobs.md § "Migration path: Pro plan".
+export const GET = POST;
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
   // via shared `verifyCronBearer` helper (matches F4 outbox + F5

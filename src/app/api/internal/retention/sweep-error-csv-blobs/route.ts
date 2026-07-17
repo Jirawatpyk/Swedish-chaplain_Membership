@@ -43,11 +43,18 @@ export const dynamic = 'force-dynamic';
 
 const ROUTE = '/api/internal/retention/sweep-error-csv-blobs';
 
-// Use POST — this route mutates state (deletes Blob objects + clears DB
-// columns). GET semantics imply safe + idempotent, which web crawlers,
-// browser prefetch, and Vercel edge cache assume. cron-job.org accepts
-// POST trigger; the docs/runbooks/cron-jobs.md coordinator entry must
-// be updated on ship day.
+// Vercel-native Cron invokes this path with a GET; the mutating logic
+// lives in POST (deletes expired error-CSV Blob objects + clears the DB
+// columns). Alias GET → POST so one handler serves both the Vercel cron
+// (GET) and the legacy cron-job.org trigger (POST) during migration.
+// The earlier "GET is unsafe" concern (web crawler / browser prefetch /
+// Vercel edge cache triggering the mutation) is neutralised two ways: the
+// shared CRON_SECRET Bearer gate means no secret → no run, and because the
+// handler reads the Authorization header the route is rendered dynamically
+// (never statically cached). POST is hoisted, so the forward reference is
+// safe. See docs/runbooks/cron-jobs.md § "Migration path: Pro plan".
+export const GET = POST;
+
 export async function POST(request: NextRequest): Promise<Response> {
   // CR-2 / I-2 (R1 — code-reviewer): use the shared `gateCronBearerOrRespond`
   // helper to align with F8/F4/F5/F7 cron coordinators. The helper emits
