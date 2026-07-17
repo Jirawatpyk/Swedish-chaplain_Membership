@@ -3267,10 +3267,10 @@
           },
           "timeline": {
             "ariaLabel": "Reminder timeline for {tier}",
+            "scrollRegionLabel": "Reminder timeline for {tier}, scrollable",
             "dueLabel": "Due date",
             "legendEmail": "Email",
             "legendTask": "Task",
-            "textAlt": "{count, plural, one {# reminder} other {# reminders}} on this timeline",
             "emptyDue": "No reminders yet — only the due date is shown."
           },
           "actions": {

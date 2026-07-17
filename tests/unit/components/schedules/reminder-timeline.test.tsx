@@ -138,3 +138,24 @@ it('shows a legend with Email / Task / Due date entries, each carrying its own i
   expect(container.querySelectorAll('svg.lucide-list-todo').length).toBeGreaterThanOrEqual(2);
   expect(container.querySelectorAll('svg.lucide-flag').length).toBeGreaterThanOrEqual(2);
 });
+
+// Fix round 1 (`.superpowers/sdd/followup-timeline-a-report.md`) — narrow-
+// viewport density fix: wide tiers (up to 8 nodes) scroll horizontally
+// instead of cramming, via an overflow-x-auto region wrapping the Stepper.
+it('wraps the Stepper in a keyboard-focusable scroll region with a DISTINCT aria-label from the Stepper list', () => {
+  renderTL([emailBefore, taskAfter]);
+  const region = screen.getByRole('region', { name: 'Reminder timeline for Regular, scrollable' });
+  expect(region.getAttribute('tabindex')).toBe('0');
+  expect(region.className).toContain('overflow-x-auto');
+  // Distinct text from the region label — same-text nested landmarks would
+  // double-announce to screen readers.
+  expect(screen.getByRole('list', { name: 'Reminder timeline for Regular' })).toBeInTheDocument();
+});
+
+it('scales the scroll region inner min-width with node count (~80px/node) so short tiers never scroll unnecessarily', () => {
+  const { container } = renderTL([emailBefore, taskAfter]);
+  // 2 reminder steps + 1 synthetic due node = 3 nodes.
+  const inner = container.querySelector('[role="region"] > div');
+  expect(inner).not.toBeNull();
+  expect((inner as HTMLElement).style.minWidth).toBe('240px');
+});

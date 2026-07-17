@@ -3267,10 +3267,10 @@
           },
           "timeline": {
             "ariaLabel": "ไทม์ไลน์การแจ้งเตือนสำหรับ {tier}",
+            "scrollRegionLabel": "ไทม์ไลน์การแจ้งเตือนสำหรับ {tier} เลื่อนได้",
             "dueLabel": "วันครบกำหนด",
             "legendEmail": "อีเมล",
             "legendTask": "งานติดตาม",
-            "textAlt": "{count, plural, other {# การแจ้งเตือน}} บนไทม์ไลน์นี้",
             "emptyDue": "ยังไม่มีการแจ้งเตือน — แสดงเฉพาะวันครบกำหนดเท่านั้น"
           },
           "actions": {

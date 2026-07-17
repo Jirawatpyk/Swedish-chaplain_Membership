@@ -3267,10 +3267,10 @@
           },
           "timeline": {
             "ariaLabel": "Påminnelsetidslinje för {tier}",
+            "scrollRegionLabel": "Påminnelsetidslinje för {tier}, rullningsbar",
             "dueLabel": "Förfallodatum",
             "legendEmail": "E-post",
             "legendTask": "Uppgift",
-            "textAlt": "{count, plural, one {# påminnelse} other {# påminnelser}} på denna tidslinje",
             "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas."
           },
           "actions": {

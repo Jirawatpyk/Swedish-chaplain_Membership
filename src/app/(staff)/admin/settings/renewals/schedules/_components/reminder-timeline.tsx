@@ -25,7 +25,10 @@
  * edge case. When it happens, the existing step already marks the due
  * position, so no duplicate node is added.
  *
- * a11y: the Stepper's `<ol role="list">` + visible per-node labels ARE
+ * a11y: the Stepper renders a native `<ol>` (no explicit `role="list"` —
+ * it relies on the ordered-list's native accessible role, which is why
+ * `list-style: none` can strip it in Safari/VoiceOver if ever added; see
+ * `components/ui/stepper.tsx`) plus visible per-node labels, and that IS
  * the accessible representation (WCAG 1.1.1 / 1.3.1) — the old hand-
  * rolled `sr-only` `<ol>` text-alternative from the pins-on-an-axis
  * version is gone; there is nothing left for it to duplicate. Channel/
@@ -104,11 +107,36 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
 
   return (
     <div className="rounded-md border bg-muted/30 p-4">
-      <Stepper
-        orientation="horizontal"
-        steps={stepperSteps}
-        aria-label={t('timeline.ariaLabel', { tier: t(`tabs.${tierBucket}`) })}
-      />
+      {/* Review-round fix (`.superpowers/sdd/followup-timeline-a-report.md`
+          Fix round 1) — Premium/Partnership tiers can carry up to 8 nodes,
+          which crammed into unreadable multi-line labels at 320-375px.
+          `overflow-x-auto` + a per-node `min-width` on the inner wrapper is
+          the standard responsive fix: wide content scrolls horizontally
+          instead of squashing. The min-width SCALES with `stepperSteps.
+          length` (≈80px/node, inside the 72-88px comfortable-column range)
+          so short tiers (fewer nodes) never gain an unwanted scrollbar —
+          only tiers dense enough to actually overflow the viewport do.
+          On desktop the inner wrapper's `width: auto` still stretches to
+          fill the card normally (min-width is a floor, not a fixed width).
+          `role="region"` + `tabIndex={0}` + a DISTINCT aria-label from the
+          Stepper's own landmark below satisfy WCAG 2.1.1
+          scrollable-region-focusable — same pattern as `ui/table.tsx` and
+          `month-bar-chart.tsx`; identical nested landmark text would
+          double-announce to screen readers (067 review-fix precedent). */}
+      <div
+        role="region"
+        aria-label={t('timeline.scrollRegionLabel', { tier: t(`tabs.${tierBucket}`) })}
+        tabIndex={0}
+        className="overflow-x-auto focus-visible:rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div style={{ minWidth: `${stepperSteps.length * 80}px` }}>
+          <Stepper
+            orientation="horizontal"
+            steps={stepperSteps}
+            aria-label={t('timeline.ariaLabel', { tier: t(`tabs.${tierBucket}`) })}
+          />
+        </div>
+      </div>
 
       {/* Zero real steps → the Stepper above renders the due-date node
           only (design contract §5.1); this caption explains why. */}
