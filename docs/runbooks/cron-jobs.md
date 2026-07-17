@@ -745,7 +745,7 @@ Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
 | `/api/internal/retention/sweep-error-csv-blobs` | `0 22 * * *` | 22:00 UTC (05:00 ICT) | GET+POST |
 | `/api/cron/outbox-purge` | `15 20 * * *` | 20:15 UTC (native since Hobby) | GET |
 | `/api/cron/sweep-stale-pending-refunds` | `0 3 * * *` | 03:00 UTC (native since Hobby) | GET |
-| `/api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` | 03:30 UTC (native since Hobby) | GET |
+| `/api/internal/cron/receipt-pdf-reconcile` | `*/5 * * * *` | every 5 min (≤5-min receipt-PDF recovery SLA) | GET |
 | `/api/cron/lockout-cleanup` | `45 3 * * *` | 03:45 UTC (native since Hobby) | GET |
 
 > **`reconcile-erasures` retry note:** on cron-job.org this job used
@@ -755,6 +755,17 @@ Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
 > removes the concurrent-double-`member_erased` window the cron-job.org
 > retry created (the 300s-timeout mitigation is no longer needed once the
 > job is Vercel-native).
+
+> **`receipt-pdf-reconcile` cadence correction:** on Hobby this job's
+> **primary** trigger was cron-job.org at **`*/5 * * * *`** (its ≤5-min
+> receipt-PDF recovery SLA — a failed render must re-enqueue within 5 min
+> per T166-11); the Hobby `vercel.json` entry was only a **daily
+> fallback** (`30 3 * * *`). On Pro the native entry takes over the
+> primary 5-minute cadence directly, so pausing cron-job.org does NOT
+> degrade the recovery SLA. The other 3 pre-existing native jobs
+> (`outbox-purge` 03:15 ICT, `sweep-stale-pending-refunds` daily,
+> `lockout-cleanup` daily) were already at their intended cadence and are
+> unchanged.
 
 ### Operator steps
 
