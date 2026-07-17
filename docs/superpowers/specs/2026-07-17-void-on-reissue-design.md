@@ -1,4 +1,4 @@
-# void-on-reissue @ renewal-bridge — Design
+# void-on-reissue @ F4 mint point — Design
 
 > **Date:** 2026-07-17 · **Branch:** `106-void-on-reissue` · **Sub-project #1** of the deferred renewal-invoicing workstream (066 §8 rows L175/L176).
 > **Supersedes:** the 066 design's manual "void the old bill" runbook step (§4.4(4), §4.5) and the L175/L176 deferrals.
@@ -10,7 +10,7 @@
 
 When a **new membership bill is issued for a member** through the renewal path, **automatically void that member's prior outstanding (unpaid, `issued`) membership bill(s)** — in one place — so a member never carries two open bills for overlapping coverage. This kills the duplicate-§86/4 risk and retires the manual "void the old bill" runbook step.
 
-One sentence: *reissue supersedes — the old unpaid bill dies when the new one is born, at the single chokepoint every renewal bill passes through.*
+One sentence: *reissue supersedes — the old unpaid bill dies when the new one is born, enforced at F4's `issueInvoice` so every membership-bill mint path (renewal bridge, auto-draft issue, manual) inherits it.*
 
 ---
 
@@ -19,16 +19,16 @@ One sentence: *reissue supersedes — the old unpaid bill dies when the new one 
 - **Reactivation leaves a dangling bill.** `admin-renew-lapsed-member.ts` creates a **fresh** `awaiting_payment` cycle and issues a **new** invoice via the bridge (`:468`), but **never touches the member's old unpaid bill** from the lapsed cycle. After reactivation the member is no longer terminated, so the old bill becomes payable again → **two open bills for one membership → duplicate §86/4 risk.**
 - **Today's mitigation is manual + forgettable.** 066 §4.4(4)/§4.5 tell the admin to "void the old open bill" via the F4 admin UI (`/admin/invoices/[invoiceId]` → void). A missed step is a tax-hygiene incident.
 - **`voidInvoice` already does the hard part** (`src/modules/invoicing/application/use-cases/void-invoice.ts`): accepts `issued`; void is terminal, keeps the §87 number (no-gap), re-stamps the PDF with the VOID/ยกเลิก overlay, emits `invoice_voided`. Crucially — **voiding an `issued` (pre-receipt) bill needs NO §86/10 credit note** (no §86/4 exists yet), so it is fully tax-clean.
-- **No "reissue/supersedes" concept exists** on the invoice aggregate (no `replaces`/`replaced_by`/`supersedes` column). This design adds the *behaviour* at the renewal chokepoint, not a new invoice column.
-- **The chokepoint is real and single.** All renewal bill issuance flows through `F4InvoicingForRenewalBridge.issueInvoiceForRenewal` (port `src/modules/renewals/application/ports/f4-invoicing-bridge.ts`; adapter `src/modules/renewals/infrastructure/ports-adapters/f4-invoicing-for-renewal-bridge-drizzle.ts`, which composes `createInvoiceDraft → issueInvoice`). Callers: `admin-renew-lapsed-member.ts:468` (reactivate), `confirm-renewal.ts:523-538` (member self-service), and — in the future — auto-invoice.
+- **No "reissue/supersedes" concept exists** on the invoice aggregate (no `replaces`/`replaced_by`/`supersedes` column). This design adds the *behaviour* at the F4 issue layer, not a new invoice column.
+- **The true universal mint point is F4 `issueInvoice`.** Today's renewal issuance flows through `F4InvoicingForRenewalBridge.issueInvoiceForRenewal` (adapter `src/modules/renewals/infrastructure/ports-adapters/f4-invoicing-for-renewal-bridge-drizzle.ts`, composing `createInvoiceDraft → issueInvoice`) — callers `admin-renew-lapsed-member.ts:468` (reactivate) + `confirm-renewal.ts:523-538` (member self-service). **But that bridge wrapper is NOT the only membership-bill mint path**: Sub-project #2 (auto-invoice, A3) issues a pre-existing draft through a *different* entry point that never touches the create-and-issue wrapper. The one point every membership bill passes through is F4 `issueInvoice` itself — so that is where this design places the supersede (revised from an earlier bridge-wrapper placement after the #2 design review showed the wrapper would miss #2's issue path).
 
 ---
 
 ## 3. Scope + non-goals
 
 ### In scope
-- Extend `issueInvoiceForRenewal` so that, **after** the new bill is issued, it voids the member's other outstanding `issued` membership bills.
-- Add a `suppressCancellationEmail` option to `voidInvoice` (default `false` — manual voids via the UI keep sending the cancellation email exactly as today).
+- Enforce, at the **F4 membership-bill issue layer**, that issuing a membership bill voids the member's other outstanding `issued` membership bills — so every mint path inherits it (the renewals bridge → reactivate + member-confirm, Sub-project #2's auto-draft issue, and any manual membership-bill issue).
+- Add a `voidInvoice` options object: `requireStatus?: 'issued'` (the tax-safety guard) + `suppressCancellationEmail?: boolean` (default `false` — manual voids via the UI keep sending the cancellation email exactly as today).
 - An F4 read capability: "list the member's outstanding `issued` membership bills."
 - Retire the manual void step in the 066 admin copy/runbook (§4.4(4), §4.5).
 
@@ -43,8 +43,8 @@ One sentence: *reissue supersedes — the old unpaid bill dies when the new one 
 
 ## 4. Design
 
-### 4.1 Trigger + chokepoint
-The auto-void runs **inside `issueInvoiceForRenewal`** (the bridge adapter), right after `issueInvoice` returns the new issued invoice. Because every renewal bill (admin reactivate, member confirm, future auto-invoice) passes through this one adapter, all three paths get void-on-reissue for free — DRY, single point of truth.
+### 4.1 Trigger (F4 mint point)
+The supersede runs **inside the F4 invoice-issue layer** (`issueInvoice`, or a thin F4 composition over `issueInvoice` + `voidInvoice` — exact shape at plan time), **scoped to `invoice_subject = 'membership'`**, right after the new bill is issued. Placing it at the **F4 mint point** — not the renewals bridge — means *every* path that mints a membership bill inherits it: the renewals bridge (`issueInvoiceForRenewal` → admin reactivate + member confirm), **and** Sub-project #2's auto-draft issue path (`issueAutoDraftedRenewal`, a different entry point that does **not** go through the bridge wrapper), **and** any manual membership-bill issue. This is the correct altitude — it is an F4 invoice-integrity invariant (*"a member holds at most one open membership bill"*), not a renewals concern — and it is the load-bearing dependency that makes Sub-project #2 safe. An event or manual (non-membership) invoice is untouched (the subject filter).
 
 ### 4.2 Which bills get voided (matching rule)
 Query F4 for the member's **outstanding** membership bills and void each:
@@ -79,12 +79,11 @@ Query F4 for the member's **outstanding** membership bills and void each:
 
 ## 5. Architecture & boundaries (Principle III)
 
-- The behaviour lives in the **renewals-owned** bridge adapter (`f4-invoicing-for-renewal-bridge-drizzle.ts`, Infrastructure) — it *composes* F4 through F4's **public barrel**, exactly as it already composes `createInvoiceDraft` + `issueInvoice`. No deep-import into F4 internals is added.
-- Two things must be **exported from the F4 (`@/modules/invoicing`) barrel** (confirm at plan time; export if missing):
-  1. `voidInvoice` + its deps factory.
-  2. A read use-case/port: `listOutstandingMembershipBills(tenant, memberId) → issued membership invoice ids`. Prefer a thin new F4 read use-case over a raw query in the bridge (keeps the Drizzle type inside F4 infrastructure).
-- The bridge **port interface** (`F4InvoicingForRenewalBridge.issueInvoiceForRenewal`) gains a warnings channel on its result type (e.g. `supersedeWarnings?: string[]`); no signature break for callers that ignore it.
-- No Domain change; no new module.
+- The behaviour lives **inside the F4 invoicing module** (Application layer), not in renewals. When a membership bill is issued, the F4 issue use-case (or a thin F4 composition over `issueInvoice` + `voidInvoice`) enforces the supersede invariant. Renewals callers opt in simply by issuing through this path; they do **not** orchestrate the void themselves. This keeps a membership-invoice-integrity rule in the module that owns invoices — the right altitude under Principle III — and covers every issue entry point uniformly.
+- Everything the supersede needs is **F4-internal**: `invoice.invoice_subject`, `invoice.member_id`, the invoice-status query, and `voidInvoice`. So **no new cross-module import is introduced** — F4 does not reach into renewals; the existing renewals→F4 bridge direction is unchanged.
+- New F4 internals (Application/Infrastructure): a read to list a member's outstanding `issued` membership bills; the supersede composition; the `voidInvoice` options object (`requireStatus`, `suppressCancellationEmail`). The Drizzle-inferred type stays inside F4 infrastructure.
+- The membership-issue path surfaces a non-fatal `supersedeWarnings?: string[]` on its result; the renewals bridge (`issueInvoiceForRenewal`) forwards it up so `admin-renew-lapsed-member` → the `/admin/renewals` UI can show a warning when a void failed. No signature break for callers that ignore it.
+- No Domain change; no new module; no new invoice status/enum.
 
 ---
 
@@ -127,6 +126,10 @@ Coverage: the new F4 read use-case + the void-composition logic hit Application-
 
 ---
 
-## 10. Dependency for Sub-project #2 (auto-invoice)
+## 10. Dependency for Sub-project #2 (auto-invoice, A3 auto-draft + admin review)
 
-Auto-invoice will issue renewal bills on a cron (calendar → issue ~Dec 1; rolling → T-30) **through this same `issueInvoiceForRenewal` chokepoint**. Because void-on-reissue lives at the chokepoint, an auto-invoice **re-run or overlap cannot create a second open bill** — the prior `issued` bill is superseded automatically. That is precisely why 066 §8 names void-on-reissue the HARD-dependency of auto-invoice. This design must therefore land (and its idempotency/failure semantics hold) before #2 starts.
+Sub-project #2 was designed (2026-07-17, adversarial 4-lens workflow → stance **A3**: a cron pre-fills renewal **drafts**; the treasurer reviews a queue and clicks Issue / Discard per row). It issues a cron-created draft through **`issueAutoDraftedRenewal`** — a **different entry point** than the bridge's create-and-issue wrapper. Because *this* design places the supersede at the **F4 `issueInvoice` mint point**, that path inherits void-on-reissue automatically. (Had #1 stayed in the bridge wrapper, #2's issue path would have bypassed it and two open §-era bills could coexist — the exact hole the #2 review surfaced, and the reason this spec was revised to the mint point.) That is why 066 §8 names void-on-reissue the HARD-dependency of auto-invoice: **this design must land, with its mint-point placement + idempotency/failure semantics, before #2 starts.**
+
+Two follow-ons belong to **#2, not here**:
+1. **Draft-discard extension.** #2 also needs to discard stale `draft` membership invoices (orphan auto-drafts) for the same member when a bill is issued — void-on-reissue only touches `issued` bills. A #2-scoped extension of the same F4 invariant.
+2. **Paid-race latch (renewals-side).** The `requireStatus:'issued'` guard correctly refuses to void a `paid` bill, so it does **not** cover the race where an *active* member pays an existing bill concurrently with a new issue. #2 closes this with a renewals-side latch (set `renewal_cycles.linked_invoice_id` in the issue tx + a pre-issue re-read) — which lives in renewals because F4 must not write renewal tables. **#1 does not need it:** #1's only new caller is reactivation, where the member is *terminated* and cannot concurrently pay (059 portal chokepoint + `membership_terminated` admin gate), so the paid-race cannot materialise in #1's scope.
