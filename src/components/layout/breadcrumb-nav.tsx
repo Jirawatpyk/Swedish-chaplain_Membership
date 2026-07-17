@@ -172,6 +172,14 @@ const STATIC_LABEL_KEYS = {
   // page itself (clickable / current page).
   integrations: 'integrations',
   eventcreate: 'eventcreate',
+  // COMP-1 — `/admin/compliance/erasure-log` breadcrumb segments. `compliance`
+  // is an organisational section whose only page is a redirect to its single
+  // child (handled by NON_ROUTE_BY_PARENT in breadcrumb-path.ts so the segment
+  // renders non-clickable). `erasure-log` is the DPO evidence log itself (the
+  // current page). Without these labels the trail showed raw slugs
+  // "compliance / erasure-log" (incident 2026-07-18, PR #223 follow-up).
+  compliance: 'compliance',
+  'erasure-log': 'erasureLog',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent

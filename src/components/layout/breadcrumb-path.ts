@@ -103,6 +103,15 @@ export function parseBreadcrumbPath({
     // error). `registrations` is the structural opener; the UUID
     // `registrationId` beneath it is handled by the subtree cascade below.
     ['events', new Set(['registrations'])],
+    // COMP-1 (incident 2026-07-18) — `/admin/compliance/erasure-log`: the
+    // `compliance` level has no content page (only a redirect-index to its
+    // single child, `src/app/(staff)/admin/compliance/page.tsx`). Its semantic
+    // parent IS `admin` (it sits directly under `/admin/`, unlike `integrations`
+    // which lives under `settings`). Marking it non-route renders the crumb as
+    // non-clickable plain text so its `<Link>` prefetch never hits the
+    // `/admin/compliance` 404 that aborted client-side soft-nav to the leaf
+    // (the redirect page fixed the route; this stops the prefetch entirely).
+    ['admin', new Set(['compliance'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;

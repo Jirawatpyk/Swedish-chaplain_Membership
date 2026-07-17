@@ -4728,7 +4728,9 @@
     "broadcasts": "ส่งอีเมล",
     "templates": "เทมเพลต",
     "newTemplate": "เพิ่มเทมเพลต",
-    "editTemplate": "แก้ไขเทมเพลต"
+    "editTemplate": "แก้ไขเทมเพลต",
+    "compliance": "การปฏิบัติตามกฎ",
+    "erasureLog": "บันทึกการลบข้อมูล"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",
