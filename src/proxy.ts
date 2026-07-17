@@ -492,5 +492,45 @@ export function proxy(request: NextRequest): NextResponse {
  * file system — no point running the proxy on the favicon).
  */
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: [
+    // `/api/*` — ALWAYS run the proxy. The CSRF Origin allow-list, the
+    // READ_ONLY_MODE write-freeze, and the feature kill-switches are enforced
+    // ONLY here (route handlers do not all re-check them). Next.js router
+    // prefetch NEVER targets `/api`, so keeping `/api` out of the prefetch-skip
+    // below costs nothing for the CSP fix — and it stops a client-forged
+    // `next-router-prefetch` / `purpose: prefetch` header on a MUTATING `/api`
+    // request from skipping the proxy and bypassing those proxy-only controls
+    // (security review 2026-07-18; CWE-807 / CWE-693).
+    '/api/:path*',
+    {
+      source:
+        '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+      // Skip the proxy for Next.js router PREFETCH requests. A per-request CSP
+      // nonce (`generateNonce()`) is incompatible with prefetch: Next stamps
+      // the PREFETCH response's nonce onto the route's chunk `<link
+      // rel="preload" as="script" nonce=…>` tags, but the browser enforces the
+      // ORIGINAL document's CSP nonce. The two differ (fresh nonce per request),
+      // so `'strict-dynamic'` blocks the prefetched chunk and the client-side
+      // (soft) navigation to that route silently fails — the nav link "does
+      // nothing" while a hard URL load (single request, matching nonce) works.
+      // First surfaced on `/admin/compliance/erasure-log`, whose route chunk is
+      // not shared with any already-loaded page (incident 2026-07-18).
+      //
+      // Excluding prefetch lets Next load the route's chunks through the
+      // already-trusted runtime (`'strict-dynamic'` propagation) instead of
+      // nonce-stamped preloads. Mirrors the canonical Next.js CSP example
+      // (vercel/next.js examples/with-strict-csp).
+      //
+      // Safe for this full proxy: in production tenant resolution is a constant
+      // (`env.tenant.slug`; the `x-tenant` override is dev/E2E-only — see
+      // `src/lib/tenant-context.ts`), and every page self-gates via
+      // `requireSession`, so a prefetch that bypasses the proxy still renders
+      // correctly and leaks nothing. Prefetch RSC payloads are not documents,
+      // so they need none of the response security headers the proxy sets.
+      missing: [
+        { type: 'header', key: 'next-router-prefetch' },
+        { type: 'header', key: 'purpose', value: 'prefetch' },
+      ],
+    },
+  ],
 };
