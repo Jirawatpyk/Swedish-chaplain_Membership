@@ -96,7 +96,9 @@ function fakeDeps(
     // runDispatchLoop. These tests exercise the STANDARD dispatch pass, so
     // stub the due-track arm to an empty page (no due+N warnings) — leaving
     // the standard `list` assertions below unaffected. Due-track behaviour is
-    // covered by dispatch-due-track.test.ts.
+    // covered by tests/integration/renewals/due-track-dispatch.test.ts (sends,
+    // gates, suppression, idempotency, year-anchoring) + tests/unit/renewals/
+    // due-track.test.ts (the pure step model).
     dispatchCandidateRepo: {
       list: listMock,
       findOne: vi.fn(),
