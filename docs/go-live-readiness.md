@@ -236,9 +236,8 @@ Feature-specific (set before flipping the feature on):
 - [ ] **F7.1a** (when US2 images on): **`CLAMAV_SCAN_URL`** (HTTPS scan-wrapper, e.g. `https://clamav-swecham.fly.dev/scan`) + **`CLAMAV_SCAN_SECRET`** (≥32) — Option D HTTP wrapper, NOT legacy `CLAMAV_HOST`/`CLAMAV_PORT` ← **was missing**
 - [ ] **F9**: `EXPORT_DOWNLOAD_TOKEN_SECRET`, `BLOB_PRIVATE_READ_WRITE_TOKEN` (private export store — verified round-trip per T101a)
 
-### 6.2 External cron (cron-job.org) — see `docs/runbooks/cron-jobs.md`
-Register the 5-minute-cadence jobs (Vercel Hobby caps native cron at 1×/day).
-Key launch-critical entries (Bearer `CRON_SECRET`, **retry OFF** per runbook):
+### 6.2 Cron jobs — native Vercel Cron since 2026-07-17 (see `docs/runbooks/cron-jobs.md`)
+All jobs run on native Vercel Cron (`vercel.json`), registered on the production deploy; cron-job.org is a paused standby. Confirm present in Vercel → Settings → Cron Jobs (Bearer `CRON_SECRET` auto-injected):
 - [ ] F9 `snapshot-refresh-coordinator` `*/5` (**POST**) + `process-export-jobs` `*/5` **(T101)**
 - [ ] F7 `dispatch-scheduled` `*/5`, `reconcile-stuck-sending` `*/15`, `dispatch-batches` `*/5`, `split-large-broadcasts` `*/5`, `broadcasts-gauges` `*/5`, **`prune-expired-drafts` `30 4 * * *`** ← was missing, **`cleanup-audiences` `*/15`** (PR-2 #5 — deletes terminal broadcasts' ephemeral Resend audiences) ← new
 - [ ] F5 `stale-pending-count` `*/5`
@@ -319,7 +318,7 @@ Ship only when ALL are true:
 | Member importer is net-new code | Validation + dedupe + RLS-correct tx are the hard parts | Stage 3 |
 | Excel PII handling | File is gitignored; runs only on operator machine; no PII in logs | Policy clear |
 | 79-commit merge to `main` | Large; ensure no `main` drift; consider merge (not squash) to preserve `[Spec Kit]` provenance | Decide at Stage 5 |
-| Hobby-plan cron dependency | cron-job.org is a 3rd-party single point; runbook documents Pro-plan migration path | Accepted |
+| Hobby-plan cron dependency | RESOLVED 2026-07-17 — upgraded to Vercel Pro; all 32 crons migrated to native `vercel.json` (PR #216/#218); cron-job.org paused standby | Resolved |
 | Launch date | **No deadline set (2026-05-30).** Decision: **depth-first audit** — sweep all readiness dimensions (1–7) deeply across every module, no fast P0/P1-only shortcut. Quality over speed. | RESOLVED |
 | 🟡 **Stripe still in TEST mode** | F5 online payment is not production-live until live keys + products + PromptPay + live webhook are cut over. **Launch-minimal option**: launch members/invoicing first; online payment as a fast-follow once Stripe live. Decide at Stage 4. | OPEN — operator action |
 | 🟡 **No privacy policy / PDPA consent** | Importing 131 real members' PII without a privacy notice + lawful-basis/consent is a PDPA/GDPR exposure. Member-facing surfaces, broadcast unsubscribe footer, and GDPR export reference a policy URL. **Blocker for real-data go-live** (legal, operator/customer to produce — Claude cannot author legal text). | OPEN — operator/customer |

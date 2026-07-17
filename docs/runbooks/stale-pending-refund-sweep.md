@@ -10,7 +10,7 @@
 
 ## Vercel Cron setup
 
-Scheduled via Vercel Cron (Hobby plan: 2 crons/project, 1 daily invocation each — `vercel.json` entry):
+Scheduled via native Vercel Cron (`vercel.json` entry; Pro plan since 2026-07-17):
 
 ```json
 {

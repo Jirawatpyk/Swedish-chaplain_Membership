@@ -203,10 +203,18 @@ Members reference plan tiers + tenant_id, so 1→2 must precede the import (§9)
 the natural retry; cron-job.org's retry storm would hammer endpoints during an outage). Full
 per-job operational detail + response-code tables live in `docs/runbooks/cron-jobs.md`.
 
-### 5.1 cron-job.org externals (Hobby plan caps native cron at 1×/day)
+### 5.1 Cron jobs — native Vercel Cron since 2026-07-17 (Pro plan)
+
+> **⚡ Updated 2026-07-17:** these now run on **native Vercel Cron**
+> (`vercel.json`), registered automatically on the production deploy.
+> Vercel auto-injects the `CRON_SECRET` Bearer and triggers every path via
+> **GET** (POST-only handlers gained `export const GET = POST`).
+> cron-job.org is a paused standby. The **Method** column below is each
+> handler's native verb (all also accept GET now); the exact UTC
+> `vercel.json` schedules are in `cron-jobs.md`.
 
 Header on all: `Authorization: Bearer <CRON_SECRET>`. URL prefix `https://swecham.zyncdata.app`.
-Method + cadence are exact (UTC unless noted ICT = Asia/Bangkok):
+Cadence below is the *logical* schedule (UTC unless noted ICT = Asia/Bangkok):
 
 | Feature | Endpoint | Method | Cadence | Register when |
 |---------|----------|--------|---------|---------------|

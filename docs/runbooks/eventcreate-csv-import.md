@@ -32,11 +32,11 @@ Two flags, both validated by zod at boot (`src/lib/env.ts`):
 
 ## 2. Daily TTL sweep cron
 
-**Endpoint**: `POST /api/internal/retention/sweep-error-csv-blobs` (POST because the route mutates state — deletes Blob objects + clears DB columns; verb chosen 2026-05-15 to avoid web-crawler / browser-prefetch / Vercel-edge-cache GET-idempotency assumptions)
+**Endpoint**: `GET /api/internal/retention/sweep-error-csv-blobs` (native Vercel Cron triggers via GET since 2026-07-17; the handler also accepts POST — `export const GET = POST` — for the paused cron-job.org standby. Bearer-gated + dynamic-rendered, so the earlier crawler / browser-prefetch / edge-cache GET-idempotency concern does not apply)
 **Authentication**: `Authorization: Bearer ${CRON_SECRET}` (≥16 chars; strict in ALL envs — no dev bypass).
 **Runtime**: Node.js.
 
-**Cadence**: Daily 05:00 Asia/Bangkok via cron-job.org (T058 operator gate). Vercel Hobby plan does not host this cron; if cron-job.org is unreachable, run manually (§ 2.2).
+**Cadence**: Daily `0 22 * * *` UTC (= 05:00 Asia/Bangkok) via **native Vercel Cron** (`vercel.json`, since the 2026-07-17 Pro migration; previously cron-job.org). If needed, trigger manually (§ 2.2).
 
 ### 2.1 Healthy response
 

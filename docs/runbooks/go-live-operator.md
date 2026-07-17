@@ -72,17 +72,25 @@ BOOTSTRAP_ADMIN_EMAIL=jirawat.p@eqho.com pnpm tsx scripts/seed-bootstrap-admin.t
 
 ---
 
-## 3. External cron (cron-job.org) — full catalogue in `cron-jobs.md`
+## 3. Cron jobs — native Vercel Cron since 2026-07-17 (full catalogue in `cron-jobs.md`)
 
-For every job: **Bearer `CRON_SECRET`**, **retry OFF** (per `cron-jobs.md`).
-Launch-critical 5-min jobs (Hobby plan can't do these natively):
-- [ ] **F9** `POST /api/cron/insights/snapshot-refresh-coordinator` `*/5` **+** `POST /api/cron/insights/process-export-jobs` `*/5` ← **T101** (both POST — route exports POST only; GET → 405)
+> **⚡ Updated 2026-07-17 (Pro migration):** all jobs below now run on
+> **native Vercel Cron** (`vercel.json`), registered automatically on the
+> production deploy — no manual cron-job.org setup needed. cron-job.org is
+> a paused standby. "Register" now means "confirm present in Vercel →
+> Settings → Cron Jobs". Vercel auto-injects the `CRON_SECRET` Bearer and
+> triggers every path via GET.
+
+For every job: **Bearer `CRON_SECRET`** (auto-injected), retry is N/A
+(Vercel Cron has no retry — the cadence is the natural retry).
+Launch-critical 5-min jobs (previously needed cron-job.org on Hobby):
+- [ ] **F9** `/api/cron/insights/snapshot-refresh-coordinator` `*/5` **+** `/api/cron/insights/process-export-jobs` `*/5` ← **T101** (both now GET+POST — `export const GET = POST` so Vercel's GET cron reaches them)
 - [ ] **F7** `dispatch-scheduled` `*/5` · `reconcile-stuck-sending` `*/15` · `dispatch-batches` `*/5` · `split-large-broadcasts` `*/5` · `broadcasts-gauges` `*/5` · `prune-expired-drafts` `30 4 * * *`
 - [ ] **F5** `stale-pending-count` `*/5`
 - [ ] **F8** all 7: `dispatch-coordinator` · `at-risk-recompute-coordinator` · `tier-upgrade-evaluate-coordinator` · `reconcile-pending-reactivations-coordinator` · `lapse-cycles-on-grace-expiry-coordinator` · `prune-consumed-tokens` · `reconcile-pending-applications`
 - [ ] **F6** 4 jobs: idempotency sweep · PII pseudonymisation sweep (compliance-critical) · error-CSV blob TTL sweep · match-rate gauge (hourly)
 - [ ] Native `vercel.json` daily jobs deployed (outbox purge, receipt-pdf reconcile, stale-refund sweep)
-> All endpoints **POST** unless `cron-jobs.md` states otherwise.
+> Handlers are POST-native unless `cron-jobs.md` says GET, but all now also accept GET (Vercel-native cron triggers via GET).
 
 Verify: trigger one manually with the Bearer token → expect `2xx`.
 

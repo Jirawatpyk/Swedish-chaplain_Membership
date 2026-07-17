@@ -1,19 +1,18 @@
 /**
- * T138 — Stale-pending-count metric trigger (external cron-job.org handler).
+ * T138 — Stale-pending-count metric trigger (native Vercel Cron since 2026-07-17).
  *
  * Plan authority: `specs/009-online-payment/plan.md` § VII.Metrics —
  * `payments.stale_pending_count{tenant}` gauge surfaces Stripe-webhook-giveup
  * zombies (rows where `status='pending'` AND `initiated_at < now() - 24h`).
  *
- * **Why external cron-job.org rather than Vercel Cron**:
- * Vercel Hobby plan caps native crons at once-per-day, which is incompatible
- * with the 5-min cadence this gauge needs. cron-job.org fires every 5 minutes
- * with `Authorization: Bearer CRON_SECRET` against this route. Configuration
- * lives in `docs/runbooks/stale-pending-count.md` so re-creation is reproducible
- * if the external account is lost.
+ * **Scheduling**: native Vercel Cron (`vercel.json`) every 5 minutes since
+ * the 2026-07-17 Pro migration; Vercel auto-injects the `CRON_SECRET`
+ * Bearer. Before Pro this ran on cron-job.org (Hobby caps native crons at
+ * 1×/day, incompatible with the 5-min cadence this gauge needs);
+ * cron-job.org is now a paused standby. Catalogue: docs/runbooks/cron-jobs.md.
  *
  * **Without this trigger** the gauge stays at 0 and the alert never fires —
- * the cron-job.org entry is mandatory, not optional.
+ * the cron entry is mandatory, not optional.
  *
  * Idempotent: GET-only, read-only. Re-running emits identical samples.
  *
