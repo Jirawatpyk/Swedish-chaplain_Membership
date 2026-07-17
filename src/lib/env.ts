@@ -44,6 +44,13 @@ const csvList = z
   )
   .refine((items) => items.length > 0, 'must contain at least one entry');
 
+// A comma-separated list where every entry must be a valid email. Reuses
+// `csvList` for the split/trim/non-empty contract, then validates each item —
+// a single typo'd address fails the boot (same fail-fast contract as every
+// other env var). Used for multi-recipient contact channels (e.g. the
+// offline-payment "contact us" mailto, which can reach more than one person).
+const emailCsvList = csvList.pipe(z.array(z.string().email()));
+
 // --- Schema -------------------------------------------------------------------
 
 const schema = z.object({
@@ -114,6 +121,16 @@ const schema = z.object({
   // single-tenant deploy works out of the box; override per deployment
   // (tenant-config-ready for multi-tenant onboarding). Not a secret.
   SUPPORT_EMAIL: z.string().email().default('info@swecham.se'),
+
+  // Billing / offline-payment contact — the `mailto:` recipients on the
+  // invoice-detail "online payment unavailable" card (OnlinePaymentDisabledCard).
+  // Comma-separated so payment queries can reach more than one person (mailto
+  // supports multiple recipients). Optional — when unset the card falls back to
+  // SUPPORT_EMAIL (which always has a value), so a deploy that never sets this
+  // still renders a working CTA. Deliberately SEPARATE from BOOTSTRAP_ADMIN_EMAIL,
+  // which is an ADMIN-ACCOUNT IDENTITY (scripts look it up by exact match), not a
+  // contact channel. Not a secret.
+  BILLING_CONTACT_EMAILS: emailCsvList.optional(),
 
   // Logging
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
@@ -929,6 +946,15 @@ export const env = {
 
   // Member-facing support contact (mailto on portal lapsed/invoice cards).
   supportEmail: raw.SUPPORT_EMAIL,
+
+  // Billing / offline-payment contact recipients (mailto on the invoice-detail
+  // "online payment unavailable" card). Prefer BILLING_CONTACT_EMAILS; fall back
+  // to the general SUPPORT_EMAIL (always present) so the CTA is never dead.
+  // Always a non-empty `string[]`.
+  billingContactEmails:
+    raw.BILLING_CONTACT_EMAILS && raw.BILLING_CONTACT_EMAILS.length > 0
+      ? raw.BILLING_CONTACT_EMAILS
+      : [raw.SUPPORT_EMAIL],
 
   // F2: Single-tenant deployment — constant resolved by
   // `src/lib/tenant-context.ts` for every request. Extended in F10
