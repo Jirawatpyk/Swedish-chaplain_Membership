@@ -591,6 +591,8 @@
         "invite": "Bjud in användare",
         "disable": "Inaktivera",
         "enable": "Aktivera",
+        "resend": "Skicka inbjudan igen",
+        "revoke": "Återkalla",
         "self": "Det är du"
       },
       "confirm": {
@@ -602,11 +604,19 @@
         "enable": {
           "title": "Återaktivera det här kontot?",
           "description": "{email} återfår åtkomst och kan logga in igen."
+        },
+        "revoke": {
+          "title": "Återkalla den här inbjudan?",
+          "description": "{email} kan inte längre acceptera den här inbjudan. Deras väntande konto tas bort och e-postadressen blir ledig för en ny inbjudan.",
+          "confirm": "Återkalla inbjudan"
         }
       },
       "toast": {
         "disabled": "{email} inaktiverad.",
-        "enabled": "{email} återaktiverad."
+        "enabled": "{email} återaktiverad.",
+        "resent": "Inbjudan skickad på nytt till {email}.",
+        "resendRateLimited": "För många omsändningar. Vänta en stund och försök igen.",
+        "revoked": "Inbjudan återkallad för {email}."
       },
       "invite": {
         "title": "Bjud in en ny användare",
@@ -647,7 +657,9 @@
           "disabledHint": "Välj rollen Medlem för att länka",
           "lockedFallback": "Vald medlem",
           "lockedHelpText": "Denna inbjudan är förkopplad till det aktuella medlemsbolaget."
-        }
+        },
+        "expiresIn": "{days, plural, one {Går ut om # dag} other {Går ut om # dagar}}",
+        "expired": "Inbjudan har gått ut"
       }
     },
     "plans": {
