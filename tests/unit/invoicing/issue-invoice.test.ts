@@ -206,6 +206,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),
+      listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(async (_tx, input) =>
         ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf, pdfDocKind: input.pdfDocKind }) as Invoice,
       ),

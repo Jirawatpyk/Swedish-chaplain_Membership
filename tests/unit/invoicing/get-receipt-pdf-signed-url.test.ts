@@ -205,6 +205,7 @@ function makeDeps(invoice: Invoice | null) {
       findByIdInTx: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),
+      listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),

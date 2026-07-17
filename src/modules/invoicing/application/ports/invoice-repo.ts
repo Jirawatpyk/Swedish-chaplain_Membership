@@ -150,6 +150,18 @@ export interface InvoiceRepo {
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 
+  /**
+   * void-on-reissue: the member's strictly-older outstanding new-flow membership
+   * bills (status='issued', bill_document_number_raw NOT NULL, document_number
+   * NULL, (created_at, invoice_id) < bound). Asymmetric ordering makes the newest
+   * bill un-voidable → deterministic single survivor under concurrent issue.
+   */
+  listSupersedableMembershipBills(
+    tenantId: string,
+    memberId: string,
+    bound: { readonly excludeInvoiceId: string; readonly createdAt: Date; readonly invoiceId: string },
+  ): Promise<ReadonlyArray<{ readonly invoiceId: string }>>;
+
   /** Apply post-issue UPDATE: status=issued + set snapshots + seq + document_number + pdf. */
   applyIssue(
     tx: unknown,
