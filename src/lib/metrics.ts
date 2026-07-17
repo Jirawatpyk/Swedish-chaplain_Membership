@@ -732,6 +732,24 @@ export const invoicingMetrics = {
       ).add(1, { outcome, tenant: tenantId });
     });
   },
+
+  /**
+   * 106-void-on-reissue — an automated supersede-void (triggered by
+   * `issueMembershipBill` re-issuing a member's bill) failed for a reason
+   * OTHER than `invalid_status` (which is an expected no-op — already void,
+   * raced to paid, or a legacy §86/4 the filter excluded). A dangling
+   * duplicate outstanding bill remains; metric-only signal (no dedicated
+   * audit event — see `issueMembershipBill` composition rationale). Alert:
+   * any sustained non-zero rate.
+   */
+  voidOnReissueFailed(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_void_on_reissue_failed_total',
+        'void-on-reissue: an automated supersede-void failed → a dangling duplicate bill remains',
+      ).add(1, { tenant });
+    });
+  },
 } as const;
 
 // --- COMP-1 member-erasure metrics -------------------------------------------

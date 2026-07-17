@@ -62,6 +62,7 @@ import type { RenderReceiptPdfDeps } from './use-cases/render-receipt-pdf';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
+import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 import type { ResendPdfDeps } from './use-cases/resend-pdf';
@@ -402,6 +403,22 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     recipientLocale: recipientLocaleAdapter,
+  };
+}
+
+/**
+ * 106-void-on-reissue — composition for `issueMembershipBill`. Wires the
+ * SAME `issueInvoice` + `voidInvoice` deps a route would build individually
+ * (`makeIssueInvoiceDeps` / `makeVoidInvoiceDeps`), plus a dedicated
+ * `invoiceRepo` for the `listSupersedableMembershipBills` read. Flag default
+ * false (ships dark) — see `env.ts` schema docstring.
+ */
+export function makeIssueMembershipBillDeps(tenantId: string): IssueMembershipBillDeps {
+  return {
+    issueDeps: makeIssueInvoiceDeps(tenantId),
+    voidDeps: makeVoidInvoiceDeps(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    voidOnReissueEnabled: env.features.voidOnReissue,
   };
 }
 
