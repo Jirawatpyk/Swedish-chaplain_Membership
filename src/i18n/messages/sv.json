@@ -3012,6 +3012,12 @@
         "lapsedDef": "Respitperioden har löpt ut — medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "tabs": {
+        "ariaLabel": "Förnyelsesektioner",
+        "pipeline": "Pipeline",
+        "tasks": "Uppgifter",
+        "tierUpgrades": "Nivåhöjningar"
+      },
       "pendingReview": {
         "tab": "Väntar på granskning",
         "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
@@ -4245,6 +4251,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {Inga nya rader — alla har redan importerats.} one {1 rad importerad.} other {# rader importerade.}}",
         "retryCta": "Försök igen",
         "uploadAnother": "Ladda upp en till CSV",
+        "viewHistory": "Visa importhistorik",
         "preview": {
           "fileNameLabel": "Fil",
           "columnMappingTitle": "Identifierade kolumner",

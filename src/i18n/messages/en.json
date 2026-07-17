@@ -3012,6 +3012,12 @@
         "lapsedDef": "The grace period has run out — the membership has ended and needs admin reactivation."
       },
       "subtitle": "Active members by renewal date and tier.",
+      "tabs": {
+        "ariaLabel": "Renewals sections",
+        "pipeline": "Pipeline",
+        "tasks": "Tasks",
+        "tierUpgrades": "Tier upgrades"
+      },
       "pendingReview": {
         "tab": "Pending review",
         "sectionTitle": "Reactivations awaiting your decision",
@@ -4245,6 +4251,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {No new rows — all already imported.} one {1 row imported.} other {# rows imported.}}",
         "retryCta": "Try again",
         "uploadAnother": "Upload another CSV",
+        "viewHistory": "View import history",
         "preview": {
           "fileNameLabel": "File",
           "columnMappingTitle": "Detected columns",
