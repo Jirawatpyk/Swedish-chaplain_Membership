@@ -2563,6 +2563,7 @@
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
           "legacy_no_tin_event_needs_remediation": "Denna evenemangsfaktura utfärdades till en köpare utan skatte-ID enligt det gamla flödet — det utfärdade dokumentet är redan det officiella kvittot, så en betalningsregistrering skulle skapa ett andra kvitto. Följ åtgärdsrutinen i stället.",
           "legacy_invoice_needs_reissue": "Detta är en äldre faktura utan fakturanummer — den måste annulleras och utfärdas på nytt innan en betalning kan registreras.",
+          "membership_terminated": "Medlemmens medlemskap har avslutats — använd Renew Lapsed Member för att återaktivera och fakturera på nytt, registrera sedan betalningen mot den nya fakturan och makulera denna gamla faktura.",
           "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
           "concurrent": "Denna faktura har redan betalats eller ändrats i en annan session. Uppdatera för att se den senaste statusen och kvittots (RC) nummer.",
           "refreshAction": "Uppdatera",
@@ -3051,6 +3052,10 @@
         "admin_rejected_with_refund": "Återbetald",
         "pending_reactivation_timed_out": "Återaktivering tog slut"
       },
+      "terminationBasis": {
+        "due_plus_60": "Obetald mer än 60 dagar efter förfallodagen",
+        "no_invoice_backstop": "Ingen förnyelsefaktura utfärdades någonsin"
+      },
       "urgencyPill": {
         "t_90": "Förfaller om 90 d",
         "t_60": "Förfaller om 60 d",
@@ -3397,6 +3402,10 @@
         "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
+        "terminatedCallout": {
+          "title": "Detta medlemskap är avslutat",
+          "body": "För att ta emot en betalning (inklusive en redan mottagen banköverföring): använd Renew Lapsed Member för att återaktivera och fakturera på nytt, registrera betalningen mot den nya fakturan och makulera sedan den gamla öppna fakturan."
+        },
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
         "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
@@ -3477,6 +3486,7 @@
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
             "cycle_not_payable": "Denna cykel kan inte längre markeras som betald i sitt nuvarande tillstånd.",
+            "member_terminated": "Medlemmens senaste medlemskap har upphört — återaktivera medlemmen innan du registrerar en betalning.",
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
             "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret innan du markerar som betald.",
@@ -3523,6 +3533,8 @@
           "enteredPendingAt": "Avvaktar sedan",
           "closedAt": "Avslutad",
           "closedReason": "Avslutsorsak",
+          "terminationBasis": "Grund för avslut",
+          "terminationBasisWithDue": "{basis} (förfaller {date})",
           "createdAt": "Skapad",
           "updatedAt": "Uppdaterad",
           "invoiceNumber": "Fakturanr",
@@ -3679,6 +3691,8 @@
           "board_escalation": "Eskalering till styrelsen",
           "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
           "manual_outreach_required": "Manuell kontakt krävs",
+          "termination_warning_blocked": "Avslut uppskjutet - ingen stadgeenlig varning äldre än 14 dagar",
+          "post_termination_payment_review": "Betalning efter avslutat medlemskap — granska",
           "manual_admin_reactivation_review": "Granska reaktivering"
         },
         "yearInCycle": {
@@ -5391,6 +5405,7 @@
         "reasonRateLimited": "För många försök. Vänta en stund och försök igen.",
         "reasonRateLimitedWithSeconds": "För många försök. Vänta {seconds} sekunder och försök igen.",
         "reasonAuth": "Din session har gått ut. Logga in igen.",
+        "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
         "reasonCardDeclined": "Ditt kort avvisades.",
@@ -5690,6 +5705,7 @@
       "payment_canceled": "Betalning avbruten",
       "payment_cancel_attempt_failed": "Avbrytande av betalning misslyckades",
       "payment_method_switched": "Betalningsmetod bytt",
+      "payment_on_terminated_member": "Betalning mottagen för avslutat medlemskap",
       "payment_auto_refunded_stale_invoice": "Automatisk återbetalning — inaktuell faktura",
       "payment_auto_refunded_concurrent_manual_mark": "Automatisk återbetalning — faktura redan markerad som betald",
       "payment_environment_mismatch": "Betalningsmiljö stämmer inte överens",

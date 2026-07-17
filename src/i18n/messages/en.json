@@ -2563,6 +2563,7 @@
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
           "legacy_no_tin_event_needs_remediation": "This event invoice was issued to a buyer without a tax ID under the old flow — its issued PDF is already the official receipt, so recording a payment would create a second receipt. Please follow the remediation runbook instead.",
           "legacy_invoice_needs_reissue": "This is a legacy invoice with no bill number — it must be voided and re-issued before a payment can be recorded.",
+          "membership_terminated": "This member's membership has been terminated — use Renew Lapsed Member to reactivate and re-invoice, then record the payment against the new invoice, and void this old bill.",
           "new_flow_bill_requires_flag_on": "This bill was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the bill, before recording payment.",
           "concurrent": "This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.",
           "refreshAction": "Refresh",
@@ -3051,6 +3052,10 @@
         "admin_rejected_with_refund": "Refunded",
         "pending_reactivation_timed_out": "Reactivation timed out"
       },
+      "terminationBasis": {
+        "due_plus_60": "Unpaid more than 60 days after the due date",
+        "no_invoice_backstop": "No renewal invoice was ever issued"
+      },
       "urgencyPill": {
         "t_90": "Due in 90d",
         "t_60": "Due in 60d",
@@ -3397,6 +3402,10 @@
         "noLinkedInvoice": "No invoice linked to this cycle yet.",
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
+        "terminatedCallout": {
+          "title": "This membership is terminated",
+          "body": "To accept a payment (including a bank transfer already received): use Renew Lapsed Member to reactivate and re-invoice, record the payment against the new invoice, then void the old open bill."
+        },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",
         "refundSettlingNoticeTitle": "Rejected — refund settling",
@@ -3477,6 +3486,7 @@
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
+            "member_terminated": "This member's latest membership has lapsed — reactivate the member before recording a payment.",
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
             "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year before marking paid.",
@@ -3523,6 +3533,8 @@
           "enteredPendingAt": "Entered pending at",
           "closedAt": "Closed at",
           "closedReason": "Closed reason",
+          "terminationBasis": "Termination basis",
+          "terminationBasisWithDue": "{basis} (due {date})",
           "createdAt": "Created at",
           "updatedAt": "Updated at",
           "invoiceNumber": "Invoice #",
@@ -3679,6 +3691,8 @@
           "board_escalation": "Board escalation",
           "verify_pending_tier_upgrade": "Verify pending tier upgrade",
           "manual_outreach_required": "Manual outreach required",
+          "termination_warning_blocked": "Termination deferred - no statutory warning ≥ 14 days old",
+          "post_termination_payment_review": "Post-termination payment — review",
           "manual_admin_reactivation_review": "Manual reactivation review"
         },
         "yearInCycle": {
@@ -5391,6 +5405,7 @@
         "reasonRateLimited": "Too many attempts. Please wait a moment and try again.",
         "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
         "reasonAuth": "Your session expired. Please sign in again.",
+        "reasonMembershipTerminated": "Your membership has been terminated. Please contact the chamber to reactivate your membership before paying.",
         "reasonServer": "Our payment service is temporarily unavailable.",
         "reasonNetwork": "Network error. Check your connection and try again.",
         "reasonCardDeclined": "Your card was declined.",
@@ -5690,6 +5705,7 @@
       "payment_canceled": "Payment canceled",
       "payment_cancel_attempt_failed": "Payment cancellation failed",
       "payment_method_switched": "Payment method switched",
+      "payment_on_terminated_member": "Payment received on a terminated membership",
       "payment_auto_refunded_stale_invoice": "Auto-refunded — stale invoice",
       "payment_auto_refunded_concurrent_manual_mark": "Auto-refunded — invoice already marked paid",
       "payment_environment_mismatch": "Payment environment mismatch",

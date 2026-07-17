@@ -139,6 +139,8 @@ test.describe('F8 — lapse-cycles cron coordinator HTTP route (T277f)', () => {
         expect(typeof r.deferred_invoice_not_due).toBe('number');
         expect(typeof r.deferred_within_termination_window).toBe('number');
         expect(typeof r.deferred_no_invoice_backstop).toBe('number');
+        // 066 (3.2(3)) - dormancy-guard deferrals join the invariant.
+        expect(typeof r.deferred_no_prior_warning).toBe('number');
         expect(typeof r.deferred_guard_errors).toBe('number');
         expect(typeof r.errors).toBe('number');
         // SC sum invariant — every evaluated cycle lands in exactly one
@@ -150,6 +152,7 @@ test.describe('F8 — lapse-cycles cron coordinator HTTP route (T277f)', () => {
             r.deferred_invoice_not_due +
             r.deferred_within_termination_window +
             r.deferred_no_invoice_backstop +
+            r.deferred_no_prior_warning +
             r.deferred_guard_errors +
             r.errors,
         ).toBe(r.cycles_processed);

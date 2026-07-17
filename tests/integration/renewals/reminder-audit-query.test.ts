@@ -209,3 +209,175 @@ describe('F8 drizzleReminderAuditQueryRepo — integration (Round 2 I-3)', () =>
     expect(result.size).toBe(2);
   });
 });
+
+/**
+ * 066 S3 — `findRenewalLapsedForCycle` integration (live Neon).
+ *
+ * The admin cycle-detail page reads the termination BASIS off the
+ * `renewal_lapsed` audit payload. This proves the adapter:
+ *   1. maps `termination_basis` + `due_date` off the JSONB payload;
+ *   2. scopes by tenant (permissive audit_log RLS → the explicit
+ *      `WHERE tenant_id` is the only guard, same as the reminder query);
+ *   3. returns the LATEST row when a cycle lapsed more than once
+ *      (e.g. re-lapse after a reactivation) — `ORDER BY timestamp DESC`;
+ *   4. returns null for a cycle with no `renewal_lapsed` row.
+ */
+describe('066 findRenewalLapsedForCycle — integration (S3)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  const lapsedCycleId = randomUUID();
+  const backstopCycleId = randomUUID();
+
+  beforeAll(async () => {
+    const pair = await createTwoTestTenants();
+    tenantA = pair.a;
+    tenantB = pair.b;
+
+    const LAPSED = 'renewal_lapsed' as AuditLogInsert['eventType'];
+    const rows: AuditLogInsert[] = [
+      // Tenant A — lapsedCycleId — an EARLIER lapse (no_invoice_backstop),
+      // then a LATER lapse (due_plus_60). The adapter must return the later.
+      {
+        tenantId: tenantA.ctx.slug,
+        eventType: LAPSED,
+        actorUserId: 'system:cron',
+        targetUserId: null,
+        summary: 'tenant A earlier lapse',
+        requestId: randomUUID(),
+        timestamp: new Date('2026-01-01T00:00:00Z'),
+        payload: {
+          cycle_id: lapsedCycleId,
+          termination_basis: 'no_invoice_backstop',
+          due_date: null,
+        },
+      },
+      {
+        tenantId: tenantA.ctx.slug,
+        eventType: LAPSED,
+        actorUserId: 'system:cron',
+        targetUserId: null,
+        summary: 'tenant A later lapse (authoritative)',
+        requestId: randomUUID(),
+        timestamp: new Date('2026-03-01T00:00:00Z'),
+        payload: {
+          cycle_id: lapsedCycleId,
+          termination_basis: 'due_plus_60',
+          due_date: '2026-01-15',
+        },
+      },
+      // Tenant A — backstopCycleId — a backstop lapse (null due_date).
+      {
+        tenantId: tenantA.ctx.slug,
+        eventType: LAPSED,
+        actorUserId: 'system:cron',
+        targetUserId: null,
+        summary: 'tenant A backstop lapse',
+        requestId: randomUUID(),
+        payload: {
+          cycle_id: backstopCycleId,
+          termination_basis: 'no_invoice_backstop',
+          due_date: null,
+        },
+      },
+      // Tenant B — SAME lapsedCycleId — must NOT leak into tenant A's read.
+      {
+        tenantId: tenantB.ctx.slug,
+        eventType: LAPSED,
+        actorUserId: 'system:cron',
+        targetUserId: null,
+        summary: 'tenant B lapse for the shared cycle id',
+        requestId: randomUUID(),
+        payload: {
+          cycle_id: lapsedCycleId,
+          termination_basis: 'no_invoice_backstop',
+          due_date: null,
+        },
+      },
+      // Tenant A — SAME lapsedCycleId — a NON-lapsed audit row (reminder
+      // ladder) with a LATER timestamp than the authoritative due_plus_60
+      // lapse. It carries `cycle_id` but no `termination_basis`. If the
+      // adapter's `event_type = 'renewal_lapsed'` predicate were dropped,
+      // this newer row would win ORDER BY timestamp DESC and blank the basis
+      // (termination_basis → null). The predicate must exclude it.
+      {
+        tenantId: tenantA.ctx.slug,
+        eventType:
+          'lapsed_member_admin_reactivation_reminder_t-7' as AuditLogInsert['eventType'],
+        actorUserId: 'system:cron',
+        targetUserId: null,
+        summary: 'tenant A newer NON-lapse reminder for the lapsed cycle',
+        requestId: randomUUID(),
+        timestamp: new Date('2026-04-01T00:00:00Z'),
+        payload: { cycle_id: lapsedCycleId, member_id: randomUUID() },
+      },
+    ];
+    await db.insert(auditLog).values(rows);
+  }, 120_000);
+
+  afterAll(async () => {
+    for (const t of [tenantA, tenantB]) {
+      await db
+        .delete(auditLog)
+        .where(eq(auditLog.tenantId, t.ctx.slug))
+        .catch(() => {});
+      await t.cleanup().catch(() => {});
+    }
+  }, 120_000);
+
+  it('returns the LATEST lapse basis + anchoring due_date for the cycle', async () => {
+    const info = await drizzleReminderAuditQueryRepo.findRenewalLapsedForCycle(
+      tenantA.ctx.slug,
+      lapsedCycleId,
+    );
+    expect(info).toEqual({
+      terminationBasis: 'due_plus_60',
+      dueDate: '2026-01-15',
+    });
+  });
+
+  it('maps the backstop basis with a null due_date', async () => {
+    const info = await drizzleReminderAuditQueryRepo.findRenewalLapsedForCycle(
+      tenantA.ctx.slug,
+      backstopCycleId,
+    );
+    expect(info).toEqual({
+      terminationBasis: 'no_invoice_backstop',
+      dueDate: null,
+    });
+  });
+
+  it('cross-tenant isolation: tenant B row for the shared cycle does not leak', async () => {
+    // Tenant B seeded a `no_invoice_backstop` row for lapsedCycleId. If the
+    // tenant filter failed, tenant B's row could win the ORDER BY and flip
+    // the basis. Tenant A must still see its own `due_plus_60`.
+    const info = await drizzleReminderAuditQueryRepo.findRenewalLapsedForCycle(
+      tenantA.ctx.slug,
+      lapsedCycleId,
+    );
+    expect(info?.terminationBasis).toBe('due_plus_60');
+  });
+
+  it('returns null for a cycle with no renewal_lapsed row', async () => {
+    const info = await drizzleReminderAuditQueryRepo.findRenewalLapsedForCycle(
+      tenantA.ctx.slug,
+      randomUUID(),
+    );
+    expect(info).toBeNull();
+  });
+
+  it('event_type predicate excludes a NEWER non-lapse row on the same cycle', async () => {
+    // A reminder-ladder audit row for the same tenant+cycle was seeded with
+    // a timestamp (2026-04-01) LATER than the authoritative due_plus_60 lapse
+    // (2026-03-01). Only the `event_type = 'renewal_lapsed'` filter keeps the
+    // adapter from returning that newer non-lapse row (which would map the
+    // basis to null). The lapsed basis must still win.
+    const info = await drizzleReminderAuditQueryRepo.findRenewalLapsedForCycle(
+      tenantA.ctx.slug,
+      lapsedCycleId,
+    );
+    expect(info).toEqual({
+      terminationBasis: 'due_plus_60',
+      dueDate: '2026-01-15',
+    });
+  });
+});

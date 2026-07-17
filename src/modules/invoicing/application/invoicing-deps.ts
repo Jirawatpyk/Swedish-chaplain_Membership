@@ -15,6 +15,7 @@ import {
   makeDrizzleTaxRegisterRepo,
 } from '../infrastructure/repos/drizzle-invoice-repo';
 import { makeDrizzleCreditNoteRepo } from '../infrastructure/repos/drizzle-credit-note-repo';
+import { membershipAccessBridge } from '../infrastructure/membership-access-bridge';
 import { drizzleTenantSettingsRepo } from '../infrastructure/repos/drizzle-tenant-settings-repo';
 import { postgresSequenceAllocator } from '../infrastructure/adapters/postgres-sequence-allocator';
 import { reactPdfRenderAdapter } from '../infrastructure/adapters/react-pdf-render-adapter';
@@ -489,6 +490,9 @@ export function makeRecordPaymentDeps(
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
+    // 066 §4.4(1) — terminated-membership gate read (F8 via the invoicing
+    // membership-access bridge).
+    membershipAccess: membershipAccessBridge,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
     blob: vercelBlobAdapter,

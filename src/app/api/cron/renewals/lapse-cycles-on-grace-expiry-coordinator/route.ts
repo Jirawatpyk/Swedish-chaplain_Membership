@@ -49,6 +49,8 @@ interface PerTenantResult {
   readonly deferred_invoice_not_due?: number;
   readonly deferred_within_termination_window?: number;
   readonly deferred_no_invoice_backstop?: number;
+  /** 066 §3.2(3) — dormancy-guard deferrals (no statutory warning yet). */
+  readonly deferred_no_prior_warning?: number;
   readonly deferred_guard_errors?: number;
   readonly errors?: number;
   readonly duration_ms?: number;
@@ -189,6 +191,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           deferred_within_termination_window: numFromJson(
             json,
             'deferred_within_termination_window',
+          ),
+          deferred_no_prior_warning: numFromJson(
+            json,
+            'deferred_no_prior_warning',
           ),
           deferred_no_invoice_backstop: numFromJson(
             json,

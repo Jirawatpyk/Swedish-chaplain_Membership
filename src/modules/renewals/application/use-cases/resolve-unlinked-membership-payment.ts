@@ -45,10 +45,16 @@ import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
-import type { MemberId } from '@/modules/members';
+import { type MemberId } from '@/modules/members';
+import { emitPaymentOnTerminatedNet } from './_lib/emit-payment-on-terminated-net';
+import type { RenewalEscalationTaskRepo } from '../ports/renewal-escalation-task-repo';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
-import { asCycleId, type RenewalCycle } from '../../domain/renewal-cycle';
+import {
+  asCycleId,
+  isMembershipLapsed,
+  type RenewalCycle,
+} from '../../domain/renewal-cycle';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -111,6 +117,7 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
     | 'countCyclesForMemberInTx'
     | 'countSettledCyclesForMemberInTx'
     | 'findOpenCycleForMemberInTx'
+    | 'findLatestCycleForMemberInTx'
     | 'reanchorPeriodInTx'
     | 'transitionStatus'
   >;
@@ -137,6 +144,13 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
     FiscalYearStartMonthPort,
     'getFiscalYearStartMonthInTx'
   >;
+  /**
+   * 066 §4.4(2) — the terminal_only branch raises an idempotent admin
+   * work-item so a post-termination payment is admin-visible, not just a
+   * log line. In-tx via `insertIfAbsent` (the open-status partial unique
+   * index absorbs at-least-once webhook redelivery).
+   */
+  readonly escalationTaskRepo: Pick<RenewalEscalationTaskRepo, 'insertIfAbsent'>;
 };
 
 const AUDIT_ACTOR = { actorUserId: null, actorRole: 'system' as const };
@@ -239,26 +253,56 @@ export async function resolveUnlinkedMembershipPaymentInTx(
     case 'not_applicable': {
       // Only reachable with reason='terminal_only' here — 'erased' already
       // returned above. Members with only terminal cycles are owned by the
-      // admin-comeback flow (loud log per design doc).
+      // admin-comeback flow.
       //
-      // 065 final-review S2 (tracked in the design doc's Post-review
-      // follow-ups; needs a SweCham decision): under the §5.2 due+60
-      // clock a TERMINATED member's bill is deliberately left open, so a
-      // post-termination payment lands HERE routinely — the member is
-      // charged (and under FEATURE_088_TAX_AT_PAYMENT a §86/4 receipt is
-      // minted) while membership stays terminated, with only this warn +
-      // metric as the trail (no audit event, no admin work-queue entry,
-      // no member-facing messaging). Pending SweCham: auto-refund vs
-      // admin-reactivation-queue vs keep-and-notify.
-      logger.warn(
-        {
-          invoiceId: evt.invoiceId,
-          tenantId: evt.tenantId,
-          memberId: evt.memberId,
-          reason: classification.reason,
-        },
-        '[resolve-unlinked-payment] member has only terminal cycles — payment does not affect renewal state (use admin-comeback flow)',
+      // 066 §4.4(2) — under the §5.2 due+60 clock a TERMINATED member's bill
+      // is deliberately left open, so a post-termination payment lands HERE:
+      // the member is charged (and under FEATURE_088_TAX_AT_PAYMENT a §86/4
+      // receipt is minted) while membership stays terminated. The F4 admin
+      // rails are now gated (§4.4(1)), so this branch is the residual
+      // webhook-race / out-of-band path — make it audit-visible AND
+      // admin-visible, atomically in F4's payment tx (Principle VIII).
+      //
+      // 066 F-5 whole-branch review — the `terminal_only` classification
+      // ("member has cycles but NONE open") is BROADER than "terminated": a
+      // suspended member (`pending_admin_reactivation` → access 'suspended')
+      // and a still-covered cancelled member (`cancelled`, future expiry →
+      // access 'full') also land here. Only fire the payment_on_terminated_
+      // member net (a 10y tax-evidence event + admin work-item, both implying
+      // a §86/4 receipt minted to a NON-member) when the member is ACTUALLY
+      // terminated on the paid-at instant — the SAME `isMembershipLapsed`
+      // gate the LINKED path (markCycleCompleteInTx) uses, so the two heal
+      // sites never disagree. Otherwise this is an ordinary ad-hoc-invoice
+      // payment for a member in good standing / suspended: log + skip.
+      const latestCycle = await deps.cyclesRepo.findLatestCycleForMemberInTx(
+        tx,
+        evt.tenantId,
+        evt.memberId,
       );
+      const terminated =
+        latestCycle !== null &&
+        isMembershipLapsed(latestCycle, new Date(evt.paidAt));
+      if (!terminated) {
+        logger.info(
+          {
+            invoiceId: evt.invoiceId,
+            tenantId: evt.tenantId,
+            memberId: evt.memberId,
+            latestStatus: latestCycle?.status ?? null,
+          },
+          '[resolve-unlinked-payment] no open cycle but member not terminated — ad-hoc payment, no terminated-member net',
+        );
+        renewalsMetrics.unlinkedPaymentResolved('skipped');
+        return { kind: 'skipped', reason: classification.reason };
+      }
+      // 066 §4.4(2) — shared net (audit + admin task + metric), atomic in F4's
+      // payment tx. Identical shape to the linked_terminal_skip site.
+      await emitPaymentOnTerminatedNet(deps, tx, {
+        event: evt,
+        memberId: evt.memberId,
+        cycleId: null,
+        healSite: 'terminal_only',
+      });
       renewalsMetrics.unlinkedPaymentResolved('skipped');
       return { kind: 'skipped', reason: classification.reason };
     }

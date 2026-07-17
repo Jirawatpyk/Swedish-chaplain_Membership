@@ -39,7 +39,9 @@ import type {
   DispatchCandidateListArgs,
   DispatchCandidatePage,
   DispatchCandidateRepo,
+  DueTrackCandidatePage,
 } from '../../application/ports/dispatch-candidate-repo';
+import { MAX_INVOICE_ISSUANCE_LEAD_DAYS } from '../../domain/due-track';
 
 // ---------------------------------------------------------------------------
 // Locale narrowing helper — F3's `preferred_locale` is `text` (CHECK
@@ -393,6 +395,107 @@ export function makeDrizzleDispatchCandidateRepo(
           .limit(1);
         const r = rows[0];
         return r ? rowToDispatchCandidate(r) : null;
+      });
+    },
+
+    async listDueTrackCandidates(
+      _tenantId: string,
+      args: { readonly pageSize: number; readonly cursor: string | null },
+    ): Promise<DueTrackCandidatePage> {
+      return runInTenant(tenant, async (tx) => {
+        // 066 §3.2(1) — the member's oldest-due unpaid MEMBERSHIP bill,
+        // FLOORED at (period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS) so the
+        // warning anchor can never diverge from the §5.2 termination
+        // clock's anchor (same constant, same Bangkok calendar-date
+        // semantics as `bangkokLocalDate` in the lapse cron). Batched as a
+        // correlated scalar subquery — one round-trip for the whole page,
+        // never a per-candidate bridge call (the FIX-6 lesson). RLS also
+        // guards `invoices` inside the runInTenant session.
+        const oldestBillDueDate = sql<string | null>`(
+          SELECT MIN(inv.due_date)
+            FROM invoices inv
+           WHERE inv.tenant_id = ${renewalCycles.tenantId}
+             AND inv.member_id = ${renewalCycles.memberId}
+             AND inv.invoice_subject = 'membership'
+             AND inv.status = 'issued'
+             AND inv.due_date >= (
+               (${renewalCycles.periodFrom} AT TIME ZONE 'Asia/Bangkok')::date
+                 - ${MAX_INVOICE_ISSUANCE_LEAD_DAYS}::int
+             )
+        )`;
+        // NO expires_at pre-filter — a §5.3 born-awaiting cycle's
+        // expires_at is ~12 months out and must not be hidden (review C1;
+        // mirrors listCyclesEligibleForLapse's no-pre-filter precedent).
+        const filters: SQL[] = [
+          sql`${renewalCycles.status} = 'awaiting_payment'`,
+          // COMP-1 H4 — never dispatch to a GDPR-erased member.
+          sql`${members.erasedAt} IS NULL`,
+          // Only cycles WITH an anchorable bill ride this arm; the
+          // never-invoiced cohort keeps the expires_at t+N ladder.
+          sql`${oldestBillDueDate} IS NOT NULL`,
+        ];
+        if (args.cursor) {
+          filters.push(sql`${renewalCycles.cycleId} > ${args.cursor}`);
+        }
+        const rows = await tx
+          .select({
+            ...dispatchCandidateProjection,
+            billDueDate: oldestBillDueDate.as('bill_due_date'),
+          })
+          .from(renewalCycles)
+          .innerJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalCycles.tenantId),
+              eq(members.memberId, renewalCycles.memberId),
+            ),
+          )
+          .leftJoin(
+            contacts,
+            and(
+              eq(contacts.tenantId, renewalCycles.tenantId),
+              eq(contacts.memberId, renewalCycles.memberId),
+              eq(contacts.isPrimary, true),
+              sql`${contacts.removedAt} IS NULL`,
+            ),
+          )
+          .leftJoin(
+            tenantRenewalSchedulePolicies,
+            and(
+              eq(
+                tenantRenewalSchedulePolicies.tenantId,
+                renewalCycles.tenantId,
+              ),
+              eq(
+                tenantRenewalSchedulePolicies.tierBucket,
+                renewalCycles.tierAtCycleStart,
+              ),
+            ),
+          )
+          .where(and(...filters))
+          .orderBy(asc(renewalCycles.cycleId))
+          .limit(args.pageSize + 1);
+
+        const hasMore = rows.length > args.pageSize;
+        const pageRows = hasMore ? rows.slice(0, args.pageSize) : rows;
+        const items = pageRows.map((r) => ({
+          ...rowToDispatchCandidate(r),
+          // The IS NOT NULL filter guarantees a value. T3-review M1: the
+          // 'YYYY-MM-DD' wire string relies on drizzle's postgres-js
+          // transparent date parser (OID 1082 pass-through); a driver that
+          // parses dates to JS Date would corrupt String().slice(0,10) —
+          // the defensive branch keeps it exact either way (and the
+          // live-Neon test asserts exact equality as the tripwire).
+          billDueDate:
+            (r.billDueDate as unknown) instanceof Date
+              ? (r.billDueDate as unknown as Date).toISOString().slice(0, 10)
+              : String(r.billDueDate).slice(0, 10),
+        }));
+        const nextCursor =
+          hasMore && pageRows.length > 0
+            ? pageRows[pageRows.length - 1]!.cycleId
+            : null;
+        return { items, nextCursor };
       });
     },
   };

@@ -68,6 +68,9 @@ export const CANCEL_CYCLE_ERROR_CODES = [
 export const MARK_PAID_OFFLINE_ERROR_CODES = [
   'cycle_not_found',
   'cycle_not_payable',
+  // 066 review polish #1 — member terminated (latest cycle lapsed): distinct
+  // "reactivate first" copy, not the generic cycle_not_payable message.
+  'member_terminated',
   'f4_orphan_invoice',
   'f4_failure',
   // Cluster 5 (Finding 2) — permanent F4 rejects (actionable, not "retry").

@@ -35,6 +35,8 @@ import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
+import type { MembershipAccessPort } from '../ports/membership-access-port';
+import { asTenantContext } from '@/modules/tenants';
 import {
   asInvoiceId,
   type Invoice,
@@ -173,6 +175,16 @@ export type RecordPaymentError =
    * ON (or void + re-issue under the legacy flow).
    */
   | { code: 'new_flow_bill_requires_flag_on' }
+  /**
+   * 066 §4.4(1) — the member's membership is TERMINATED (latest renewal
+   * cycle lapsed / expired-cancelled). Admin-manual payments against a
+   * MEMBERSHIP bill are refused so no charge and no §86/4 receipt reaches
+   * a non-member; comeback = Renew Lapsed Member → pay the NEW invoice →
+   * void this bill (design §4.4(4)). NEVER returned on the webhook path:
+   * the money is already captured at Stripe, so rejecting would wedge the
+   * retrying webhook — that rail's control is the §4.4(2) heal-site net.
+   */
+  | { code: 'membership_terminated' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -195,6 +207,14 @@ class RecordPaymentInternalError extends TxAbort<RecordPaymentError> {
 export interface RecordPaymentDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
+  /**
+   * 066 §4.4(1) — cross-module read of the member's F8 membership-access
+   * state, used to refuse an admin-manual payment against a MEMBERSHIP
+   * bill for a TERMINATED member. Consumer fails OPEN on lookup error
+   * (see the gate below). Wired to `membershipAccessBridge` in
+   * `makeRecordPaymentDeps`.
+   */
+  readonly membershipAccess: MembershipAccessPort;
   readonly sequenceAllocator: SequenceAllocatorPort;
   readonly pdfRender: PdfRenderPort;
   readonly blob: BlobStoragePort;
@@ -303,6 +323,73 @@ export async function recordPayment(
   // row yet.
   if (!settings) return err({ code: 'settings_missing' });
 
+  // 066 §4.4(1) — TERMINATED-MEMBERSHIP GATE (F4 admin dialog rail only).
+  // Runs BEFORE `withTx`, like the settings load above: the membership-
+  // access bridge opens its OWN `runInTenant`, so calling it inside the
+  // payment tx is the pool-starvation/deadlock class the pre-tx settings
+  // read avoids. This uses a non-tx `findById` for the gate decision only
+  // (membership state is immutable during a payment; the in-tx re-read +
+  // row lock below stay authoritative for the payment itself).
+  //
+  // EXEMPT rails — the SAME two the §87 payment-date guard below exempts,
+  // for the same reasons:
+  //   • webhook            — F5 money is already captured; blocking would
+  //     strand it, so the §4.4(2) heal-site net is that path's control.
+  //   • admin_offline_mark — the F8 offline-mark rail creates the invoice
+  //     inside the caller's externalTx (this non-tx `findById` cannot see it
+  //     anyway) AND has its OWN terminated gate at the F8 layer
+  //     (mark-paid-offline). Gating here would be a wasted round-trip while
+  //     the caller holds the outer tx + per-cycle advisory lock.
+  const eventTrigger = input.triggeredBy ?? 'admin_manual';
+  // The F4 admin-dialog rail (neither webhook nor offline-mark). BOTH the
+  // terminated gate (below) and the §87 payment-date guard (deeper) fire only
+  // on this rail — compute the exempt-rail set ONCE so the two guards can never
+  // diverge if a third exempt rail is ever added.
+  const isAdminDialogRail =
+    eventTrigger !== 'webhook' && eventTrigger !== 'admin_offline_mark';
+  if (isAdminDialogRail) {
+    const preInvoice = await deps.invoiceRepo.findById(invoiceId, input.tenantId);
+    if (
+      preInvoice &&
+      preInvoice.invoiceSubject === 'membership' &&
+      preInvoice.memberId !== null
+    ) {
+      // FAIL-OPEN on ANY gate error (availability of the money path beats the
+      // gate; the §4.4(2) heal-site net is the backstop). `asTenantContext`
+      // throws on a malformed slug, and — defensively — a future
+      // `getMembershipAccess` impl could reject; either must degrade to "skip
+      // the gate", NEVER escape recordPayment as an uncaught throw (Principle
+      // III: Application surfaces failures as Result, never throws). This runs
+      // above the `try` below, so the wrapper here is what keeps it Result-safe.
+      let terminated = false;
+      try {
+        const access = await deps.membershipAccess.getMembershipAccess(
+          asTenantContext(input.tenantId),
+          preInvoice.memberId,
+        );
+        if (access.ok) {
+          terminated = access.value.access === 'terminated';
+        } else {
+          logger.warn(
+            { invoiceId, memberId: preInvoice.memberId, tenantId: input.tenantId },
+            '[record-payment] membership-access lookup failed — failing OPEN (gate skipped)',
+          );
+        }
+      } catch (gateErr) {
+        logger.warn(
+          {
+            err: gateErr instanceof Error ? gateErr.message : String(gateErr),
+            invoiceId,
+            memberId: preInvoice.memberId,
+            tenantId: input.tenantId,
+          },
+          '[record-payment] membership-access gate threw — failing OPEN (gate skipped)',
+        );
+      }
+      if (terminated) return err({ code: 'membership_terminated' });
+    }
+  }
+
   try {
   return await deps.invoiceRepo.withTx(async (tx) => {
     // Row-lock first — guards against concurrent pay/void/credit-note
@@ -380,14 +467,12 @@ export async function recordPayment(
     // `bangkokLocalDate` (the SAME helper that stamps `issue_date`); a
     // UTC bound would reject same-Bangkok-day payments for ~7h/day — the
     // exact client-side bug this mirrors. Runs BEFORE any write so a
-    // rejection burns no §87 receipt number. Exempt:
+    // rejection burns no §87 receipt number. Exempt (same set as the
+    // terminated gate above — see `isAdminDialogRail`):
     //   • `webhook`            — F5 processor-authoritative settlement date.
     //   • `admin_offline_mark` — F8 renewal offline-mark owns its own
     //                            date handling; not the F4 dialog surface.
-    if (
-      input.triggeredBy !== 'webhook' &&
-      input.triggeredBy !== 'admin_offline_mark'
-    ) {
+    if (isAdminDialogRail) {
       const bangkokToday = bangkokLocalDate(deps.clock.nowIso());
       if (
         (loaded.issueDate !== null && input.paymentDate < loaded.issueDate) ||

@@ -244,6 +244,10 @@ const F8_ENUM_SHIPPED_TUPLE = [
   // first_payment branches. WHITELIST MOVE only — the pgEnum value shipped
   // in migration 0238 alongside the anchor columns.
   'renewal_cycle_reanchored',
+  // --- 066-renewal-swecham-round2 §4.4(2) — SHIPPED from day one: the emit
+  //     sites (resolve-unlinked terminal_only + mark-cycle-complete
+  //     linked-terminal skip) land in the SAME branch (Task 9). ---
+  'payment_on_terminated_member',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(

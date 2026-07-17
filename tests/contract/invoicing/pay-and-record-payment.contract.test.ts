@@ -39,6 +39,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { F4AuditEvent } from '@/modules/invoicing/application/ports/audit-port';
+import { membershipAccessStub } from '../../helpers/membership-access-stub';
 
 const INVOICE_ID = '08800000-0000-4000-8000-0000000000bb';
 
@@ -168,6 +169,7 @@ interface Cap {
 function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): RecordPaymentDeps {
   const loaded = issuedMembership(legacy);
   return {
+    membershipAccess: membershipAccessStub(), // 066 §4.4(1)
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(Symbol('tx'))),
       insertDraft: vi.fn(),

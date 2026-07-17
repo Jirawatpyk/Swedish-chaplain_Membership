@@ -414,6 +414,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F8_AUDIT_EVENT_TYPES (renewals audit port) — the F8 audit-count
   //     parity tests enforce it. ---
   'renewal_lapse_deferred_invoice_not_due',
+  // 066-renewal-swecham-round2 §4.4(2) — post-termination payment (F8 taxonomy, 10y retention via migration 0257 trigger).
+  'payment_on_terminated_member',
   // --- 059 PR-A Task 4 fix (migration 0251, 2026-07-14) — F4 write-time
   //     buyer-identity-snapshot invariant reject. Emitted from the outer
   //     catch of issueInvoice / issueEventInvoiceAsPaid when the resolved

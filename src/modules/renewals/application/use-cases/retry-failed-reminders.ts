@@ -31,6 +31,7 @@
  * Per-event fault isolation: one event's exception MUST NOT crash the
  * loop. Counted as `passErrors` in summary; logged at error level.
  */
+import { DUE_TRACK_STEP_IDS } from '../../domain/due-track';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
@@ -171,9 +172,18 @@ async function attemptRetry(
     return { kind: 'candidate_not_found' };
   }
   // Re-validate gates that would have skipped the original dispatch.
+  // 066 §3.2(2) (T4-review H1) — the opt-out gate must NOT re-block a
+  // DUE-TRACK warning retry: due+7/due+30 are contractual/bylaw dunning
+  // notices that BYPASS the marketing opt-out at dispatch, so a transient
+  // send failure for an opted-out member must stay retryable (else the
+  // exhaustion pass marks it permanent and the dormancy guard defers the
+  // member's termination forever).
+  const isDueTrackStep = (DUE_TRACK_STEP_IDS as readonly string[]).includes(
+    event.stepId,
+  );
   if (
     candidate.member.status === 'archived' ||
-    candidate.member.renewalRemindersOptedOut ||
+    (!isDueTrackStep && candidate.member.renewalRemindersOptedOut) ||
     candidate.member.emailUnverified ||
     candidate.cycle.status === 'completed' ||
     candidate.cycle.status === 'cancelled' ||

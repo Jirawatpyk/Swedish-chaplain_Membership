@@ -103,6 +103,7 @@ function fakeDeps(args: {
   transitionMock: ReturnType<typeof vi.fn>;
   invoiceDueMock: ReturnType<typeof vi.fn>;
   hasUnpaidMock: ReturnType<typeof vi.fn>;
+  listForCycleWarningsMock: ReturnType<typeof vi.fn>;
 } {
   const listMock = vi.fn(async () => ({
     items: args.cycles,
@@ -163,6 +164,14 @@ function fakeDeps(args: {
       : args.settings,
   );
 
+  const listForCycleWarningsMock = vi.fn(async () => [
+    {
+      stepId: 'due+30.email',
+      status: 'sent',
+      channel: 'email',
+      dispatchedAt: new Date(NOW.getTime() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ]);
   const deps: LapseCyclesOnGraceExpiryDeps = {
     tenant: { slug: TENANT_ID } as LapseCyclesOnGraceExpiryDeps['tenant'],
     cyclesRepo: {
@@ -181,6 +190,12 @@ function fakeDeps(args: {
     },
     f5PaymentAttemptsBridge: f5Bridge,
     invoiceDueBridge,
+    // 066 §3.2(3) — default: a qualifying due+30 warning sent 20d before
+    // NOW, so every pre-066 terminate-path test still terminates. The
+    // dormancy-guard tests override listForCycle explicitly.
+    reminderEventRepo: {
+      listForCycle: listForCycleWarningsMock,
+    } as unknown as LapseCyclesOnGraceExpiryDeps['reminderEventRepo'],
   };
   return {
     deps,
@@ -190,6 +205,7 @@ function fakeDeps(args: {
     transitionMock,
     invoiceDueMock,
     hasUnpaidMock,
+    listForCycleWarningsMock,
   };
 }
 
@@ -521,6 +537,44 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
         closedReason: 'grace_expired',
       });
+    });
+
+    it('066 §3.2(3): today > due+60 but NO statutory warning → deferred_no_prior_warning (no transition)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, listForCycleWarningsMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      // No qualifying warning exists for this cycle.
+      listForCycleWarningsMock.mockResolvedValueOnce([]);
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredNoPriorWarning).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.deferredNoPriorWarningCycles).toHaveLength(1);
+        expect(r.value.deferredNoPriorWarningCycles[0]?.cycleId).toBe(cycle.cycleId);
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
+    });
+
+    it('066 §3.2(3): dormancy-guard read (listForCycle) throws → deferred_guard_error, fail-safe (no transition)', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, listForCycleWarningsMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      listForCycleWarningsMock.mockRejectedValueOnce(
+        new Error('reminder-event repo connection lost'),
+      );
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(r.value.deferredGuardErrors).toBe(1);
+        expect(r.value.graceExpired).toBe(0);
+        expect(r.value.errors).toBe(0); // fail-SAFE, NOT folded into errors
+      }
+      expect(transitionMock).not.toHaveBeenCalled();
     });
 
     it('no membership invoice + expires_at still inside grace → deferred_no_invoice_backstop (no transition)', async () => {

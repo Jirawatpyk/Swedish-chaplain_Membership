@@ -153,4 +153,55 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — legacy no-TIN event g
     // Exactly the typed code — no reason / message / remediation detail.
     expect(body.error).toEqual({ code: 'legacy_no_tin_event_needs_remediation' });
   });
+
+  it('409 membership_terminated — bare code (066 §4.4(1) gate → route 409 map)', async () => {
+    // Pins the branch's new `: result.error.code === 'membership_terminated'
+    // ? 409` arm. Without this, that arm could be dropped and the ternary's
+    // `: 422` tail would silently misclassify a terminated-member refusal —
+    // every unit test still green (same latent class the legacy_no_tin pin
+    // above guards).
+    recordPaymentMock.mockResolvedValueOnce(err({ code: 'membership_terminated' }));
+
+    const { POST } = await importRoute();
+    const res = await POST(makePostRequest(), routeParams);
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: Record<string, unknown> };
+    expect(body.error).toEqual({ code: 'membership_terminated' });
+  });
+
+  it('SECURITY (066 §4.4(1)): client-supplied triggeredBy/tenantId/actorUserId are overridden server-side — the terminated gate cannot be bypassed', async () => {
+    // CWE-915 regression guard: a client sending `triggeredBy:'webhook'`
+    // (the ONE trigger the gate exempts) must NOT reach the use-case — the
+    // route hard-pins it to 'admin_manual'. Same for the RLS/audit fields.
+    recordPaymentMock.mockResolvedValueOnce(err({ code: 'settings_missing' }));
+
+    const { POST } = await importRoute();
+    const malicious = new NextRequest(
+      `http://localhost:3100/api/invoices/${VALID_INVOICE_ID}/pay`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          paymentMethod: 'bank_transfer',
+          paymentDate: '2026-01-15',
+          triggeredBy: 'webhook', // ← attempt to skip the gate
+          tenantId: 'evil-tenant', // ← attempt to cross tenants
+          actorUserId: 'evil-actor', // ← attempt to spoof the audit actor
+        }),
+      },
+    );
+    await POST(malicious, routeParams);
+
+    // The route passes (deps, input) to recordPayment; assert the SERVER
+    // values won, not the client's.
+    const passedInput = recordPaymentMock.mock.calls[0]![1] as {
+      triggeredBy?: string;
+      tenantId: string;
+      actorUserId: string;
+    };
+    expect(passedInput.triggeredBy).toBe('admin_manual');
+    expect(passedInput.tenantId).toBe('test-swecham');
+    expect(passedInput.actorUserId).toBe('admin-user-1');
+  });
 });

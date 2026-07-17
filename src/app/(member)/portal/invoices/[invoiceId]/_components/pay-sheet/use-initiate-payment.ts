@@ -191,8 +191,22 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
         if (cancelled) return;
         if (!response.ok) {
           const t = optsRef.current.translateRef.current;
+          // 066 §4.4(3) — a TERMINATED member's Pay-now click is blocked at
+          // the 059 portal-scope chokepoint (403 membership_access_restricted)
+          // BEFORE initiate-payment runs. Read the body code so we can show
+          // the honest "contact the chamber to reactivate" notice rather than
+          // the generic "session expired" auth message.
+          let bodyCode: string | null = null;
+          try {
+            const body = (await response.json()) as { error?: { code?: string } };
+            bodyCode = body?.error?.code ?? null;
+          } catch {
+            /* non-JSON body — fall through to status mapping */
+          }
           let reason: string;
-          if (response.status === 429) {
+          if (response.status === 403 && bodyCode === 'membership_access_restricted') {
+            reason = t('retry.reasonMembershipTerminated');
+          } else if (response.status === 429) {
             const retryAfter = response.headers.get('Retry-After');
             const seconds = retryAfter
               ? Number.parseInt(retryAfter, 10)

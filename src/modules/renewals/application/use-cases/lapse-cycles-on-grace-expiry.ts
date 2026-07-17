@@ -132,6 +132,10 @@ import type {
   RenewalCycle,
 } from '../../domain/renewal-cycle';
 import {
+  MAX_INVOICE_ISSUANCE_LEAD_DAYS,
+  hasSatisfiedWarningRequirement,
+} from '../../domain/due-track';
+import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
@@ -193,6 +197,19 @@ export interface LapseCyclesOnGraceExpiryOutput {
    * lapseInvoiceDueGuardErrors` for the paired counter.
    */
   readonly deferredGuardErrors: number;
+  /**
+   * 066 §3.2(3) — cycles whose due_plus_60 termination was deferred by the
+   * DORMANCY GUARD: no sent statutory warning (due+30.email or a post-due
+   * t+N email) at least MIN_WARNING_NOTICE_DAYS old exists for the cycle.
+   * Fail-safe direction only (stays suspended). The cron route creates an
+   * idempotent `termination_warning_blocked` escalation task per entry so
+   * the structurally-unwarnable cohort is ADMIN-visible, not just a counter.
+   */
+  readonly deferredNoPriorWarning: number;
+  readonly deferredNoPriorWarningCycles: ReadonlyArray<{
+    readonly cycleId: string;
+    readonly memberId: string;
+  }>;
   /** F5 bridge query / audit emit / DB transition that threw — for SRE alert. */
   readonly errors: number;
 }
@@ -208,6 +225,9 @@ export interface LapseCyclesOnGraceExpiryDeps
     | 'cyclesRepo'
     | 'auditEmitter'
     | 'tenantRenewalSettingsRepo'
+    // 066 §3.2(3) — the dormancy guard reads the cycle's reminder events
+    // at the due_plus_60 terminate boundary (runtime deps already carry it).
+    | 'reminderEventRepo'
   > {
   readonly f5PaymentAttemptsBridge: F5PaymentAttemptsBridge;
   /**
@@ -231,25 +251,13 @@ const MS_PER_DAY = 86_400_000;
  */
 const TERMINATION_DAYS_AFTER_DUE = 60;
 
-/**
- * 065 §5.2 review — the widest legitimate lead time between a current-period
- * membership invoice's `due_date` and the cycle's `period_from`, used to
- * FLOOR the oldest-due lookup (`sinceDueDate = period_from − this`) so a
- * STALE unpaid `issued` invoice from a PRIOR lapsed cycle (or a
- * historical-due invoice import) can never anchor the CURRENT period's
- * termination clock — which would skip the 60-day grace on the current
- * invoice and terminate the member the day after period-end.
- *
- * A legit current-period invoice is issued at most ~31 days before period
- * start (calendar-year: issued Dec 1 for the Jan-1 period; rolling: T-30),
- * so its `due_date` (issue + 30-day net terms) lands roughly AT period
- * start, well within a 60-day floor below `period_from`. A prior period's
- * invoice is ~334+ days before this period's start, so the 60-day lead
- * window cleanly admits the current invoice and excludes prior-period
- * stragglers — which then fall to the no-invoice `expires_at + grace`
- * backstop.
- */
-const MAX_INVOICE_ISSUANCE_LEAD_DAYS = 60;
+// 065 §5.2 review — the oldest-due lookup is FLOORED at
+// `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS` so a STALE unpaid invoice
+// from a PRIOR lapsed cycle can never anchor the CURRENT period's clock.
+// 066: the constant lives in `domain/due-track.ts` (imported above) so the
+// due-track warning anchor and this termination clock share ONE floor —
+// they must never anchor on different invoices. Full rationale on the
+// constant's docblock.
 
 export async function lapseCyclesOnGraceExpiry(
   deps: LapseCyclesOnGraceExpiryDeps,
@@ -292,6 +300,11 @@ export async function lapseCyclesOnGraceExpiry(
   let deferredWithinTerminationWindow = 0;
   let deferredNoInvoiceBackstop = 0;
   let deferredGuardErrors = 0;
+  let deferredNoPriorWarning = 0;
+  const deferredNoPriorWarningCycles: Array<{
+    readonly cycleId: string;
+    readonly memberId: string;
+  }> = [];
   let errors = 0;
 
   // 065 final-review V14 — these three derive only from the injected
@@ -350,6 +363,13 @@ export async function lapseCyclesOnGraceExpiry(
         case 'deferred_guard_error':
           deferredGuardErrors += 1;
           break;
+        case 'deferred_no_prior_warning':
+          deferredNoPriorWarning += 1;
+          deferredNoPriorWarningCycles.push({
+            cycleId: cycle.cycleId,
+            memberId: cycle.memberId,
+          });
+          break;
         default: {
           const _exhaustive: never = outcome;
           void _exhaustive;
@@ -386,6 +406,8 @@ export async function lapseCyclesOnGraceExpiry(
     deferredWithinTerminationWindow,
     deferredNoInvoiceBackstop,
     deferredGuardErrors,
+    deferredNoPriorWarning,
+    deferredNoPriorWarningCycles,
     errors,
   });
 }
@@ -397,7 +419,8 @@ type ProcessOneOutcome =
   | 'deferred_invoice_not_due'
   | 'deferred_within_termination_window'
   | 'deferred_no_invoice_backstop'
-  | 'deferred_guard_error';
+  | 'deferred_guard_error'
+  | 'deferred_no_prior_warning';
 
 /**
  * 065 final-review V14 — the run-invariant clock derivations, computed
@@ -545,6 +568,42 @@ async function processOne(
         reason: 'invoice_not_due',
       });
       return 'deferred_invoice_not_due';
+    }
+    // 066 §3.2(3) DORMANCY GUARD — never terminate on due_plus_60 without
+    // a SENT statutory warning (due+30.email, or a post-due t+N ladder
+    // email — all carry the bylaw sentence) dispatched at least
+    // MIN_WARNING_NOTICE_DAYS ago. Fail-safe direction only: defer keeps
+    // the member suspended; the cron route turns each deferral into an
+    // idempotent admin escalation task. The no_invoice_backstop branch is
+    // deliberately unguarded (no bill → the expires_at t+N ladder warns
+    // that cohort inside the candidate window before the backstop fires).
+    let reminderEvents;
+    try {
+      reminderEvents = await deps.reminderEventRepo.listForCycle(
+        tenantId,
+        cycle.cycleId,
+      );
+    } catch (e) {
+      // Same fail-safe posture as the invoice-due guard: an infra throw
+      // must never terminate benefit access.
+      logger.error(
+        {
+          errorId: 'F8.LAPSE.WARNING_GUARD_FAILED',
+          tenantId,
+          cycleId: cycle.cycleId,
+          err: e instanceof Error ? e : new Error(String(e)),
+        },
+        '[lapse-cycles-on-grace-expiry] reminderEventRepo.listForCycle threw — failing SAFE (member NOT lapsed); counted as deferred_guard_error',
+      );
+      renewalsMetrics.lapseInvoiceDueGuardErrors.add(1, { tenant_id: tenantId });
+      return 'deferred_guard_error';
+    }
+    if (!hasSatisfiedWarningRequirement(reminderEvents, clock.closedAtIso)) {
+      renewalsMetrics.lapseDeferred.add(1, {
+        tenant_id: tenantId,
+        reason: 'no_prior_warning',
+      });
+      return 'deferred_no_prior_warning';
     }
     terminationBasis = 'due_plus_60';
   } else {

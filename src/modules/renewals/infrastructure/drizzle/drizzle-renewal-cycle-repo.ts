@@ -1603,6 +1603,25 @@ export function makeDrizzleRenewalCycleRepo(
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
 
+    // 066 F-5 review — in-tx latest cycle across ALL statuses. Mirrors
+    // `findLatestCycleForMember`'s ORDER key but threads the caller's tx
+    // (no nested runInTenant) so the terminal_only net can derive access on
+    // the payment tx's own connection (RLS already SET on it).
+    async findLatestCycleForMemberInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(eq(renewalCycles.memberId, memberId))
+        .orderBy(desc(renewalCycles.createdAt), desc(renewalCycles.cycleId))
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    },
+
     /**
      * Rolling-anchor refactor (migration 0238) — rolling first-payment
      * re-anchor (spec rev 2 §2). Guarded single UPDATE: only an

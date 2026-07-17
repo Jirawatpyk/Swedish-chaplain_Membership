@@ -1793,6 +1793,13 @@
       "when": 1798538400000,
       "tag": "0256_tenant_invoice_settings_termination_notice",
       "breakpoints": true
+    },
+    {
+      "idx": 259,
+      "version": "7",
+      "when": 1798538500000,
+      "tag": "0257_payment_on_terminated_member_audit",
+      "breakpoints": true
     }
   ]
 }

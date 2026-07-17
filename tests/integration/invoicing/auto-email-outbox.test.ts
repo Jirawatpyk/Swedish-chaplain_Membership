@@ -66,6 +66,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { membershipAccessStub } from '../../helpers/membership-access-stub';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -269,6 +270,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
 
 function makePaymentDeps(tenant: TestTenant): RecordPaymentDeps {
   return {
+    membershipAccess: membershipAccessStub(), // 066 §4.4(1)
     invoiceRepo: makeDrizzleInvoiceRepo(tenant.ctx.slug),
     tenantSettingsRepo: makeIssueDeps(tenant).tenantSettingsRepo,
     sequenceAllocator: postgresSequenceAllocator,

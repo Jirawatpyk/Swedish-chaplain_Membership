@@ -62,8 +62,10 @@ import { classifyMembershipPayment } from '../../domain/classify-membership-paym
 import { loadClassificationCounts } from './_lib/classification-input';
 import {
   asCycleId,
+  isMembershipLapsed,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
+import { emitPaymentOnTerminatedNet } from './_lib/emit-payment-on-terminated-net';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -145,6 +147,10 @@ export type MarkCycleCompleteDeps = Pick<
   // below, so the FY-crossing re-freeze check uses the tenant's REAL
   // configured fiscal-year-start-month.
   | 'fiscalYearSettings'
+  // 066 §4.4(2) — threaded into BOTH the unlinked hook (its terminal_only
+  // net) and the linked-terminal skip branch below, so a post-termination
+  // payment raises an idempotent admin work-item at either exit.
+  | 'escalationTaskRepo'
 >;
 
 /**
@@ -230,6 +236,7 @@ export async function markCycleCompleteInTx(
         idFactory: deps.cycleIdFactory,
         memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,
         fiscalYearSettings: deps.fiscalYearSettings,
+        escalationTaskRepo: deps.escalationTaskRepo,
       },
       event,
       tx,
@@ -394,6 +401,22 @@ export async function markCycleCompleteInTx(
   }
 
   if (cycle.status !== 'awaiting_payment') {
+    // 066 §4.4(2) review C2 — a payment on the LAPSED cycle's OWN linked
+    // invoice (the webhook race: PaymentIntent created pre-termination,
+    // confirmed post-termination) lands HERE, not in resolve-unlinked. If
+    // the cycle is terminal (membership terminated), instrument the same
+    // net — audit event + metric + idempotent admin work-item — atomically
+    // in F4's payment tx, so the residual race is never a silent leak.
+    if (isMembershipLapsed(cycle, new Date(event.paidAt))) {
+      // 066 §4.4(2) — shared net (audit + admin task + metric), atomic in F4's
+      // payment tx. Identical shape to the terminal_only site.
+      await emitPaymentOnTerminatedNet(deps, tx, {
+        event,
+        memberId: cycle.memberId,
+        cycleId: cycle.cycleId,
+        healSite: 'linked_terminal_skip',
+      });
+    }
     logger.warn(
       {
         cycleId: cycle.cycleId,

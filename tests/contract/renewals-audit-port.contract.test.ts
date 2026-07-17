@@ -62,7 +62,7 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 69 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+  it('catalogue contains exactly 70 event types (matches compile-time _AssertF8AuditEventCount)', () => {
     // Renewal rolling-anchor refactor (migration 0238): 65 → 66, +1
     // `renewal_cycle_reanchored`.
     // 059-membership-suspension Task 8: 66 → 68, +2
@@ -70,7 +70,9 @@ describe('F8 audit-port contract (T258)', () => {
     // 059-membership-suspension Task 13: 68 → 69, +1
     // (`renewal_lapse_deferred_invoice_not_due` — InvoiceDueBridge
     // credit-window guard forensic event).
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(69);
+    // 066-renewal-swecham-round2 Task 6: 69 → 70, +1
+    // (`payment_on_terminated_member` — post-termination payment forensic).
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(70);
   });
 
   it('catalogue contains no duplicate event types', () => {
@@ -234,6 +236,24 @@ describe('F8 audit-port contract (T258)', () => {
     };
     expect(event.payload.invoice_subject).toBe('membership');
     expect(event.payload.due_date_frontier).toBe('2026-05-30');
+  });
+
+  it('payment_on_terminated_member — canonical payload accepted (066 §4.4(2))', () => {
+    const event: F8AuditEvent<'payment_on_terminated_member'> = {
+      type: 'payment_on_terminated_member',
+      payload: {
+        invoice_id: '00000000-0000-0000-0000-000000000006',
+        member_id: '00000000-0000-0000-0000-000000000007' as never,
+        cycle_id: null,
+        amount_satang: '1070000',
+        payment_method: 'stripe_card',
+        triggered_by: 'webhook',
+        paid_at: '2026-08-01T00:00:00.000Z',
+        heal_site: 'terminal_only',
+      },
+    };
+    expect(event.payload.heal_site).toBe('terminal_only');
+    expect(event.payload.cycle_id).toBeNull();
   });
 
   it('renewal_cycle_reanchored — canonical payload accepted (heal_no_cycle branch, nullable old_* + invoice_id)', () => {

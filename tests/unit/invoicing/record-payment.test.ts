@@ -38,6 +38,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { invoicingMetrics } from '@/lib/metrics';
+import { membershipAccessStub } from '../../helpers/membership-access-stub';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
@@ -189,6 +190,9 @@ function makeDeps(
       applyReceiptPdfFailure: vi.fn(),
       applyIssueAsPaid: vi.fn(),
     },
+    // 066 §4.4(1) — default full access so the terminated-membership gate
+    // never fires (findById also returns undefined here → gate short-circuits).
+    membershipAccess: membershipAccessStub(),
     tenantSettingsRepo: {
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
@@ -269,6 +273,110 @@ describe('recordPaymentSchema — paymentDate calendar validation', () => {
     expect(
       recordPaymentSchema.safeParse({ ...input, paymentDate: '2028-02-29' }).success,
     ).toBe(true);
+  });
+});
+
+describe('recordPayment — 066 §4.4(1) terminated-membership gate', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // A payable ISSUED membership bill returned by the pre-tx findById read.
+  function depsWithAccess(
+    access: 'full' | 'suspended' | 'terminated',
+    lookupOk = true,
+  ): RecordPaymentDeps {
+    const issued = makeIssuedInvoice({ status: 'issued' });
+    const base = makeDeps(true, issued, makeSettings());
+    return {
+      ...base,
+      invoiceRepo: { ...base.invoiceRepo, findById: vi.fn(async () => issued) },
+      membershipAccess: {
+        getMembershipAccess: vi.fn(async () =>
+          lookupOk
+            ? { ok: true as const, value: { access, reason: 'grace_expired' as const } }
+            : { ok: false as const, error: { kind: 'membership_access.lookup_error' as const } },
+        ),
+      },
+    };
+  }
+
+  it('terminated + admin-manual + membership → err membership_terminated (gate fires pre-tx)', async () => {
+    const r = await recordPayment(depsWithAccess('terminated'), input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('membership_terminated');
+  });
+
+  it('suspended access → gate does NOT fire; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('suspended');
+    const r = await recordPayment(deps, input);
+    // Positive assertion (a fail-CLOSED regression under any other code would
+    // otherwise slip past a bare `not.toBe('membership_terminated')`).
+    expect(r.ok).toBe(true);
+    // The gate ran (access was checked) and let a non-terminated member pay.
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('membership-access lookup ERROR → gate fails OPEN; payment PROCEEDS', async () => {
+    // §4.4(1) fail-open: availability of the money path beats the gate;
+    // the §4.4(2) heal-site net (keyed on in-tx cycle state, not the gate
+    // result) is the durable backstop for any slip. Assert the payment
+    // completed so a fail-CLOSED regression (blocking on lookup error under
+    // ANY error code) is caught, not just a code rename.
+    const deps = depsWithAccess('terminated', /* lookupOk */ false);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('webhook trigger → gate SKIPPED even for terminated (money already captured)', async () => {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, {
+      ...input,
+      triggeredBy: 'webhook' as const,
+    });
+    // Payment proceeds AND the gate never even reads membership access on the
+    // webhook rail (money already moved — blocking would strand it).
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
+
+  // 066 review polish #2 — the offline-mark rail is exempt (same as the §87
+  // payment-date guard); it has its OWN terminated gate at the F8 layer and
+  // its invoice isn't visible to this non-tx findById anyway.
+  it('admin_offline_mark trigger → gate SKIPPED (F8 offline rail owns its gate)', async () => {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, {
+      ...input,
+      triggeredBy: 'admin_offline_mark' as const,
+    });
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
+
+  // 066 review polish #3 — asTenantContext throws on a malformed slug; the
+  // gate must fail OPEN as a Result, NEVER escape recordPayment as an uncaught
+  // throw (Principle III). A z.string().min(1) tenantId can be a non-slug.
+  it('gate throw (invalid tenant slug) fails OPEN; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('terminated');
+    const r = await recordPayment(deps, { ...input, tenantId: 'Bad_Slug' });
+    expect(r.ok).toBe(true);
+    // asTenantContext threw before the bridge call — access was never read.
+    expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
+  });
+
+  // Companion to the slug-throw case above: a NON-Error throw from the bridge
+  // exercises the catch's `String(gateErr)` log arm (the slug case throws an
+  // Error subclass → only the `.message` arm). Both arms must run to hold
+  // record-payment.ts at branches:100.
+  it('gate lookup throws a non-Error → fails OPEN; payment PROCEEDS', async () => {
+    const deps = depsWithAccess('terminated');
+    (
+      deps.membershipAccess.getMembershipAccess as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(async () => {
+      throw 'boom'; // non-Error primitive → String(gateErr) log arm
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.membershipAccess.getMembershipAccess).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -45,6 +45,9 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   'legacy_no_tin_event_needs_remediation',
   'legacy_invoice_needs_reissue',
   'new_flow_bill_requires_flag_on',
+  // 066 §4.4(1) — terminated member: refuse the admin-manual payment with
+  // the reactivate-first comeback copy (§4.4(4)).
+  'membership_terminated',
 ]);
 
 export function routeRecordPaymentError(

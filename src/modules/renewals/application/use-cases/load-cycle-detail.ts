@@ -34,6 +34,7 @@ import {
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
 import type { ReminderEvent } from '../ports/renewal-reminder-event-repo';
+import type { RenewalLapsedAuditInfo } from '../ports/reminder-audit-query-repo';
 import type { RenewalEscalationTask } from '../../domain/renewal-escalation-task';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 
@@ -61,6 +62,13 @@ export interface LoadCycleDetailOutput {
     readonly status: string;
     readonly totalSatang: Satang;
   } | null;
+  /**
+   * 066 S3 — termination basis + anchoring due_date, read off the
+   * `renewal_lapsed` audit payload. Non-null only for a lapsed cycle that
+   * carries a `renewal_lapsed` row (a pre-066 lapse or a non-lapsed cycle
+   * yields null). Degrades to null on a query error (card still renders).
+   */
+  readonly lapseInfo: RenewalLapsedAuditInfo | null;
 }
 
 export type LoadCycleDetailError =
@@ -225,10 +233,32 @@ export async function loadCycleDetail(
     );
   }
 
+  // 066 S3 — the termination basis, only for a lapsed cycle. Degraded
+  // (null) on error so the card still renders (same posture as the lists).
+  let lapseInfo: RenewalLapsedAuditInfo | null = null;
+  if (cycle.status === 'lapsed') {
+    try {
+      lapseInfo = await deps.reminderAuditQuery.findRenewalLapsedForCycle(
+        input.tenantId,
+        cycleId,
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: input.tenantId,
+          cycleId,
+        },
+        'load-cycle-detail: renewal_lapsed audit fetch failed — basis hidden',
+      );
+    }
+  }
+
   return ok({
     cycle,
     reminderHistory,
     escalationTasks,
     linkedInvoice,
+    lapseInfo,
   });
 }

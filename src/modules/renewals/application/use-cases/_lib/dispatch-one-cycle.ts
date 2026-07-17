@@ -134,6 +134,17 @@ export interface DispatchContext {
    * never a DB call.
    */
   readonly unreconciledMemberIds: ReadonlySet<string>;
+  /**
+   * 066 §3.2(2) track precedence — cycleIds served by the DUE-ANCHORED
+   * warning track this pass (awaiting_payment + an unpaid membership
+   * bill). For these cycles the expires_at-anchored t+N EMAIL steps are
+   * suppressed (the due track is their dunning channel; two overlapping
+   * dunning tracks would double-email a T-0 suspended renewer whose bill
+   * due_date ≈ expires_at). Task-channel steps still run. Computed ONCE
+   * per cron pass by `dispatchRenewalCycle` (same batching convention as
+   * `unreconciledMemberIds`); empty for the admin single-cycle path.
+   */
+  readonly dueTrackCycleIds: ReadonlySet<string>;
 }
 
 /**
@@ -208,6 +219,77 @@ export type DispatchOneCycleOutcome =
       readonly reason: string;
     };
 
+/**
+ * Per-candidate dispatcher-crash isolation (K1-C8). When a
+ * `dispatchOneCycle` / `dispatchDueTrackCycle` call THROWS (a fault that
+ * escaped the inner runInTenant boundary), isolate it: log the failure,
+ * fire-and-forget a `renewal_reminder_send_failed` (`dispatcher_crash`) audit
+ * so the cron tally and audit_log agree (Principle VIII state↔audit atomicity),
+ * and return the synthetic `failed_transient` outcome. Shared by BOTH
+ * dispatchRenewalCycle passes (the main ladder + the 066 due-track) so the
+ * crash-audit payload, the 200-char truncation, and the synthetic-outcome
+ * shape live in ONE place and cannot drift between the two passes. A
+ * probe-audit emit failure is logged but NEVER re-thrown (would break the
+ * chunk's peer-isolation invariant). `pass` only labels the log messages for
+ * triage; the audit + return shape are identical.
+ */
+export async function handleDispatcherCrash(
+  deps: Pick<RenewalsDeps, 'auditEmitter'>,
+  ctx: { readonly tenantId: string; readonly correlationId: string },
+  candidate: DispatchCandidate,
+  e: unknown,
+  pass: 'main' | 'due-track',
+): Promise<DispatchOneCycleOutcome> {
+  const errMsg = e instanceof Error ? e.message : String(e);
+  const passLabel = pass === 'due-track' ? 'due-track ' : '';
+  logger.error(
+    {
+      err: e instanceof Error ? e : new Error(String(e)),
+      cycleId: candidate.cycle.cycleId,
+      memberId: candidate.member.memberId,
+      tenantId: ctx.tenantId,
+      correlationId: ctx.correlationId,
+    },
+    `dispatchRenewalCycle: ${passLabel}per-cycle dispatch failed (isolated)`,
+  );
+  try {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_reminder_send_failed',
+        payload: {
+          cycle_id: candidate.cycle.cycleId,
+          member_id: candidate.member.memberId,
+          failure_kind: 'dispatcher_crash',
+          failure_message: errMsg.slice(0, 200),
+          via_retry_pass: false,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: null,
+        actorRole: 'cron',
+        correlationId: ctx.correlationId,
+        requestId: null,
+      },
+    );
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr : new Error(String(auditErr)),
+        cycleId: candidate.cycle.cycleId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+      },
+      `dispatchRenewalCycle: ${passLabel}dispatcher_crash audit emit failed`,
+    );
+  }
+  return {
+    kind: 'failed_transient' as const,
+    reminderEventId: '',
+    reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -221,7 +303,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * the bounded lookback). `stepDueDate` is the ISO date the step was
  * originally due (UTC day boundary) for forensic correlation.
  */
-interface CatchUpInfo {
+export interface CatchUpInfo {
   readonly caughtUp: boolean;
   readonly stepDueDate: string;
 }
@@ -246,7 +328,7 @@ export function computeCycleYears(cycleLengthMonths: number): number {
 // Returns the outcome shape for caller convenience.
 // ---------------------------------------------------------------------------
 
-async function emitSkipAudit(
+export async function emitSkipAudit(
   deps: RenewalsDeps,
   candidate: DispatchCandidate,
   ctx: DispatchContext,
@@ -530,9 +612,16 @@ async function dispatchOneCycleInner(
   // instead: anchored_at is NULL on ALL renewal cycles and the imported
   // cohort, so that gate would suppress the post-expiry statutory ladder
   // for genuine T-0 suspended renewers (design §5.3 MUST-NOT).
+  // 066 §3.2(2) — see `DispatchContext.dueTrackCycleIds` docblock: a cycle
+  // on the due-anchored track gets NO t+N ladder EMAILS (suppressed here);
+  // task-channel escalations still run.
   const windowSteps =
     cycle.status === 'awaiting_payment'
-      ? allWindowSteps.filter((s) => s.offsetDays >= 0)
+      ? allWindowSteps.filter(
+          (s) =>
+            s.offsetDays >= 0 &&
+            !(ctx.dueTrackCycleIds.has(cycle.cycleId) && s.channel === 'email'),
+        )
       : allWindowSteps;
   if (windowSteps.length === 0) {
     // No step is due-or-overdue within the lookback (a future step, a
@@ -1071,7 +1160,7 @@ async function fireStep(
  * exhaustion sweep (Wave I2e Pass 2) to eventually mark the row
  * permanently failed once retry_until expires.
  */
-async function defensivelyMarkFailedForRetry(
+export async function defensivelyMarkFailedForRetry(
   deps: RenewalsDeps,
   candidate: DispatchCandidate,
   ctx: DispatchContext,
@@ -1185,7 +1274,7 @@ async function defensivelyMarkFailedForRetry(
 // Email step dispatch — gateway call + transition + audit
 // ---------------------------------------------------------------------------
 
-async function dispatchEmailStep(
+export async function dispatchEmailStep(
   deps: RenewalsDeps,
   candidate: DispatchCandidate,
   ctx: DispatchContext,

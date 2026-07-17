@@ -117,6 +117,11 @@ export async function sendReminderNow(
       unreconciledMemberIds: hasUnreconciledInvoice
         ? new Set([candidate.member.memberId])
         : new Set(),
+      // 066 §3.2(2) — empty on the admin single-cycle path: an explicit
+      // admin "send now" may fire a ladder step even for a due-track
+      // cycle (deliberate human override; the cron pass computes the
+      // real suppression set).
+      dueTrackCycleIds: new Set(),
     });
     return ok(outcome);
   } catch (e) {

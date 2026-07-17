@@ -152,6 +152,7 @@ function fakeDeps(args: {
   findByIdCycle?: RenewalCycle | null;
 }): {
   deps: MarkCycleCompleteDeps;
+  escalationInsertMock: ReturnType<typeof vi.fn>;
   findByInvoiceMock: ReturnType<typeof vi.fn>;
   findByIdMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
@@ -223,6 +224,7 @@ function fakeDeps(args: {
   // file exercises a non-January-start tenant's re-freeze decision (that's
   // covered by `_lib/reanchor-first-payment.test.ts`'s dedicated suite).
   const getFiscalYearStartMonthInTxMock = vi.fn(async () => 1);
+  const escalationInsertMock = vi.fn(async () => ({ created: true, row: { taskId: 'task-1' } }));
   const deps: MarkCycleCompleteDeps = {
     tenant: { slug: TENANT_ID } as MarkCycleCompleteDeps['tenant'],
     cyclesRepo: {
@@ -255,9 +257,15 @@ function fakeDeps(args: {
     fiscalYearSettings: {
       getFiscalYearStartMonthInTx: getFiscalYearStartMonthInTxMock,
     },
+    // 066 §4.4(2) — default: task insert succeeds; the terminal-skip net
+    // tests assert insertIfAbsent was called with the right args.
+    escalationTaskRepo: {
+      insertIfAbsent: escalationInsertMock,
+    } as unknown as MarkCycleCompleteDeps['escalationTaskRepo'],
   };
   return {
     deps,
+    escalationInsertMock,
     findByInvoiceMock,
     findByIdMock,
     transitionMock,
@@ -295,6 +303,48 @@ describe('markCycleCompleteFromInvoicePaid (T123) — auto-complete branch', () 
       type: 'renewal_completed',
       payload: { invoice_id: INVOICE_UUID, payment_method: 'stripe_card' },
     });
+  });
+
+  it('066 §4.4(2): payment on a LAPSED cycle’s linked invoice → linked_terminal_skip net', async () => {
+    // The webhook race — a payment settling the lapsed cycle's OWN linked
+    // invoice. openCycleInput is null for a lapsed cycle, so the code reaches
+    // the non-awaiting skip branch and instruments the net.
+    const cycle = buildCycle({
+      status: 'lapsed',
+      closedReason: 'grace_expired',
+      closedAt: '2026-08-01T00:00:00.000Z',
+    });
+    const { deps, emitInTxMock, escalationInsertMock } = fakeDeps({ cycle });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('cycle_not_payable');
+    const auditCall = emitInTxMock.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeDefined();
+    expect((auditCall![1] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      heal_site: 'linked_terminal_skip',
+      cycle_id: cycle.cycleId,
+    });
+    expect(escalationInsertMock).toHaveBeenCalledTimes(1);
+    expect(escalationInsertMock.mock.calls[0]![1]).toMatchObject({
+      taskType: 'post_termination_payment_review',
+      cycleId: cycle.cycleId,
+    });
+  });
+
+  it('066 §4.4(2): payment on a COMPLETED cycle (idempotent replay) → NO net', async () => {
+    const cycle = buildCycle({
+      status: 'completed',
+      closedReason: 'paid',
+      closedAt: '2026-08-01T00:00:00.000Z',
+    });
+    const { deps, emitInTxMock, escalationInsertMock } = fakeDeps({ cycle });
+    await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    const auditCall = emitInTxMock.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeUndefined();
+    expect(escalationInsertMock).not.toHaveBeenCalled();
   });
 
   it('blocked=null (member missing) — proceeds with auto-complete (defensive)', async () => {

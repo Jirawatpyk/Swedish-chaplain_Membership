@@ -552,6 +552,23 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * 066 F-5 review — the in-tx sibling of `findLatestCycleForMember`: the
+   * member's single most-recent cycle across ALL statuses (incl. lapsed /
+   * cancelled), threaded on the caller's tx so a settlement hook can derive
+   * `deriveMembershipAccess` on the SAME snapshot it just classified against.
+   * Same ORDER key (created_at DESC, cycle_id DESC) so the in-tx and non-tx
+   * reads never disagree on "latest". Backs the terminal_only net's
+   * "is this member actually terminated?" gate in
+   * `resolveUnlinkedMembershipPaymentInTx` (which runs inside F4's payment tx,
+   * so it must NOT reach for the non-tx `runInTenant` variant).
+   */
+  findLatestCycleForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Rolling first-payment re-anchor (spec rev 2 §2). Guarded single UPDATE:
    * only an un-anchored open cycle qualifies; status resets to 'upcoming'
    * (sanctioned TRANSITIONS bypass — documented at the SQL); linked_invoice_id

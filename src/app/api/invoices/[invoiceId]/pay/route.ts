@@ -53,12 +53,21 @@ export async function POST(
     return NextResponse.json({ error: { code: 'invalid_json' } }, { status: 400 });
   }
 
+  // Client body is spread FIRST so the server-controlled fields below
+  // ALWAYS win — a request body must never override them (CWE-915 mass-
+  // assignment). `triggeredBy` in particular is a SECURITY-CONTROL
+  // discriminator since 066 §4.4(1): the terminated-membership gate is
+  // skipped for the `webhook` AND `admin_offline_mark` rails (record-payment.ts
+  // exempts both), so this ADMIN route hard-pins it to 'admin_manual' — a
+  // client sending `{"triggeredBy":"webhook"}` (or "admin_offline_mark")
+  // cannot bypass the gate (nor spoof tenant/actor/requestId for RLS + audit).
   const parsed = recordPaymentSchema.safeParse({
+    ...((body as Record<string, unknown>) ?? {}),
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
     invoiceId,
-    ...((body as Record<string, unknown>) ?? {}),
+    triggeredBy: 'admin_manual',
   });
   if (!parsed.success) {
     return NextResponse.json(
@@ -109,6 +118,9 @@ export async function POST(
       // 088 SEC-MED — the symmetric case: a new-flow bill cannot be paid while
       // the flag is OFF (would mint no §87); restore the flag → 409.
       : result.error.code === 'new_flow_bill_requires_flag_on' ? 409
+      // 066 §4.4(1) — terminated member: refuse the admin-manual payment
+      // (reactivate + re-invoice first, then pay the new invoice).
+      : result.error.code === 'membership_terminated' ? 409
       : result.error.code === 'settings_missing' ? 409
       : result.error.code === 'no_snapshot_on_invoice' ? 422
       : result.error.code === 'overflow' ? 422

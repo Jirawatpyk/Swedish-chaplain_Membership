@@ -69,6 +69,21 @@ export interface DispatchCandidatePage {
   readonly nextCursor: string | null;
 }
 
+/**
+ * 066 Round-2 §3.2(1) — a due-track candidate is a dispatch candidate plus
+ * the member's oldest-due unpaid membership bill due_date (the anchor of
+ * the due+7/due+30 warning steps), batched into the candidate query.
+ */
+export interface DueTrackCandidate extends DispatchCandidate {
+  /** Oldest-due unpaid membership bill for the member, Bangkok 'YYYY-MM-DD'. */
+  readonly billDueDate: string;
+}
+
+export interface DueTrackCandidatePage {
+  readonly items: ReadonlyArray<DueTrackCandidate>;
+  readonly nextCursor: string | null;
+}
+
 export interface DispatchCandidateRepo {
   /**
    * Cursor-paginated list of cycles eligible for dispatch evaluation.
@@ -91,4 +106,32 @@ export interface DispatchCandidateRepo {
     tenantId: string,
     cycleId: CycleId,
   ): Promise<DispatchCandidate | null>;
+
+  /**
+   * 066 Round-2 §3.2(1) — SECOND candidate arm (review C1).
+   *
+   * Selects `awaiting_payment` cycles that have an unpaid
+   * (status='issued') MEMBERSHIP-subject invoice for the same member,
+   * WITH NO `expires_at` pre-filter — a §5.3 born-awaiting cycle's
+   * expires_at is ~12 months out and must not be hidden (mirror of
+   * `listCyclesEligibleForLapse`'s documented no-pre-filter precedent).
+   * The oldest-due bill's due_date is threaded onto the row (batched in
+   * the query — never a per-candidate bridge round-trip; the FIX-6
+   * lesson).
+   *
+   * Floor: only invoices with `due_date >= (period_from − 60d)` anchor
+   * the track — the SAME floor as the §5.2 termination clock
+   * (MAX_INVOICE_ISSUANCE_LEAD_DAYS), so warning and clock can never
+   * anchor on different invoices. Erased members excluded (COMP-1 H4).
+   *
+   * Ordered by `cycle_id ASC` (keyset cursor = last cycle_id — this arm
+   * has no expires_at sort dimension). The cursor is INTERNAL-ONLY (plain
+   * cycle_id consumed by the in-process cron loop): it must never be
+   * externalised to a browser/API surface without switching to the
+   * HMAC-signed `encodeCursor` the main arm uses (Wave H1 W-08).
+   */
+  listDueTrackCandidates(
+    tenantId: string,
+    args: { readonly pageSize: number; readonly cursor: string | null },
+  ): Promise<DueTrackCandidatePage>;
 }

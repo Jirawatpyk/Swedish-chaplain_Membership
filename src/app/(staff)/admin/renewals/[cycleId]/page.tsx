@@ -44,7 +44,10 @@ import {
   fetchMemberDisplay,
   fetchPlanDisplay,
 } from './_lib/cycle-detail-fetchers';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
+import {
+  getDateFormatLocale,
+  formatLocalisedDate,
+} from '@/lib/format-date-localised';
 
 export async function generateMetadata({
   params,
@@ -76,6 +79,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
 
   const t = await getTranslations('admin.renewals.cycleDetail');
   const tStatus = await getTranslations('admin.renewals.lapsedReason');
+  const tBasis = await getTranslations('admin.renewals.terminationBasis');
   const tTier = await getTranslations('admin.renewals.tierBadge');
   // C-1 (UX R3): translate F4 invoice status enums (`issued`, `paid`,
   // `partially_credited`, …) — previously rendered as raw lowercase
@@ -226,6 +230,15 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     s ? dtFmtFull.format(new Date(s)) : '—';
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
+  // 066 S3 — a value that is ALREADY a Bangkok calendar date
+  // (`YYYY-MM-DD`), not a timestamptz instant. Route it through the shared,
+  // UTC-pinned `formatLocalisedDate` so `new Date('2026-01-15')` (UTC
+  // midnight) never renders one day early on a negative-UTC-offset host
+  // (local dev / CI TZ=America/*). The timestamptz fields keep `dtFmtDay`.
+  const fmtCalendarDate = (s: string | null | undefined): string =>
+    s
+      ? formatLocalisedDate(s, locale, { dateStyle: 'long', timeZone: 'UTC' })
+      : '—';
 
   const closedReason =
     c.status === 'lapsed' || c.status === 'cancelled'
@@ -237,6 +250,18 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
       : closedReason
         ? `${closedReason} (untranslated)`
         : null;
+
+  // 066 S3 — termination BASIS (why the member was terminated), read off
+  // the `renewal_lapsed` audit payload by load-cycle-detail. Non-null only
+  // for a lapsed cycle carrying a basis; renders under the closed-reason
+  // field. Loud-fall-back to the raw enum matches closedReason/tierLabel.
+  const terminationBasis = v.lapseInfo?.terminationBasis ?? null;
+  const terminationBasisLabel = terminationBasis
+    ? tBasis.has(terminationBasis)
+      ? tBasis(terminationBasis)
+      : `${terminationBasis} (untranslated)`
+    : null;
+  const terminationBasisDueDate = v.lapseInfo?.dueDate ?? null;
 
   const invoiceTotal = v.linkedInvoice
     ? formatter.number(Number(v.linkedInvoice.totalSatang) / 100, {
@@ -397,6 +422,24 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
             <AlertDescription>{t('pendingNoticeBody')}</AlertDescription>
           </Alert>
         ))}
+
+      {/* 066 §4.4(4) — terminated-membership comeback guidance. A lapsed
+          cycle's bill can no longer be paid in place (the F4 record-payment
+          gate + the offline mark-paid block reject it); make the reactivate-
+          first path VISIBLE so an admin holding out-of-band money (a bank
+          transfer already received) is not left at a dead end. */}
+      {c.status === 'lapsed' && (
+        <Alert
+          role="note"
+          className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100"
+        >
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{t('terminatedCallout.title')}</AlertTitle>
+          <AlertDescription className="text-amber-800 dark:text-amber-200">
+            {t('terminatedCallout.body')}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* 070 F8 item #18 — admin approve / reject-with-refund actions.
           The client component renders nothing unless the cycle is in
@@ -685,6 +728,19 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                 <Field
                   label={t('fields.closedReason')}
                   value={closedReasonLabel}
+                />
+              )}
+              {terminationBasisLabel && (
+                <Field
+                  label={t('fields.terminationBasis')}
+                  value={
+                    terminationBasisDueDate
+                      ? t('fields.terminationBasisWithDue', {
+                          basis: terminationBasisLabel,
+                          date: fmtCalendarDate(terminationBasisDueDate),
+                        })
+                      : terminationBasisLabel
+                  }
                 />
               )}
             </dl>
