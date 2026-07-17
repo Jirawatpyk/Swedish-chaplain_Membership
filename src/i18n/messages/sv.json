@@ -4728,7 +4728,9 @@
     "broadcasts": "Utskick",
     "templates": "Mallar",
     "newTemplate": "Ny mall",
-    "editTemplate": "Redigera mall"
+    "editTemplate": "Redigera mall",
+    "compliance": "Efterlevnad",
+    "erasureLog": "Raderingslogg"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

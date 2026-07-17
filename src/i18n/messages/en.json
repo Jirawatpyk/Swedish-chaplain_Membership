@@ -4728,7 +4728,9 @@
     "broadcasts": "Broadcasts",
     "templates": "Templates",
     "newTemplate": "New Template",
-    "editTemplate": "Edit Template"
+    "editTemplate": "Edit Template",
+    "compliance": "Compliance",
+    "erasureLog": "Erasure log"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

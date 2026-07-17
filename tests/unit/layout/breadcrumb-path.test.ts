@@ -112,6 +112,32 @@ describe('parseBreadcrumbPath', () => {
     expect(result.at(-1)?.isCurrent).toBe(true);
   });
 
+  it('marks /admin/compliance non-linkable and resolves the erasure-log leaf', () => {
+    // COMP-1 (incident 2026-07-18, PR #223 + follow-up) — `/admin/compliance`
+    // has no content page (only a redirect-index to its single child). The
+    // `compliance` crumb MUST render as non-linkable plain text: a real
+    // `<Link>` there prefetches `/admin/compliance` whose 404 aborted the
+    // client-side soft-nav to the leaf. `erasure-log` is the real current
+    // route. `compliance`'s semantic parent is `admin` (directly under
+    // `/admin/`), so its NON_ROUTE_BY_PARENT rule is keyed there.
+    const result = parseBreadcrumbPath({
+      pathname: '/admin/compliance/erasure-log',
+      staticLabels: {
+        ...staticLabels,
+        compliance: 'Compliance',
+        'erasure-log': 'Erasure log',
+      },
+      dynamicLabels: new Map(),
+    });
+
+    expect(result.map((s) => s.segment)).toEqual(['compliance', 'erasure-log']);
+    const seg = (s: string) => result.find((r) => r.segment === s)!;
+    expect(seg('compliance').isLinkable).toBe(false); // redirect-only section
+    expect(seg('compliance').label).toBe('Compliance');
+    expect(seg('erasure-log').isCurrent).toBe(true); // real current route
+    expect(seg('erasure-log').label).toBe('Erasure log');
+  });
+
   it('marks structural segments non-linkable on the F6 erase deep-route (subtree cascade)', () => {
     // `/admin/events/<id>/registrations/<id>/erase` has a page.tsx only at
     // the `erase` leaf. Both `registrations` and the UUID `registrationId`
