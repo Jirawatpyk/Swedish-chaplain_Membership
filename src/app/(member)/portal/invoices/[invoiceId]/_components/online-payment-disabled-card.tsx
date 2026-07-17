@@ -13,10 +13,11 @@
  *   - Card container wrapped by the page's DetailContainer (72rem).
  *   - Icon (lucide `CreditCardOff`, 48×48, muted-foreground) top-center.
  *   - Bilingual title + 1–2 line body (i18n-driven).
- *   - Primary CTA opens a `mailto:` to the tenant contact email with
- *     a prefilled subject referring to the invoice number. Falls
+ *   - Primary CTA opens a `mailto:` to the tenant contact email(s) with
+ *     a prefilled subject referring to the invoice number. Multiple
+ *     recipients are comma-joined into the mailto `to` field. Falls
  *     through to a disabled button + inline help when the tenant has
- *     no `contactEmail` configured.
+ *     no contact email configured.
  *
  * PCI
  * ---
@@ -63,23 +64,29 @@ function CreditCardOff({
 
 export interface OnlinePaymentDisabledCardProps {
   readonly invoiceNumber: string;
-  readonly tenantContactEmail: string | null;
+  /**
+   * Contact recipients for the `mailto:` CTA. Comma-joined into the mailto `to`
+   * field, so an empty list renders the disabled "no email configured" state.
+   */
+  readonly tenantContactEmails: readonly string[];
 }
 
 export function OnlinePaymentDisabledCard({
   invoiceNumber,
-  tenantContactEmail,
+  tenantContactEmails,
 }: OnlinePaymentDisabledCardProps) {
   const t = useTranslations('portal.payment.disabled');
 
   // Subject line is i18n-driven so Thai/Swedish members email Thai/
   // Swedish admins in the member's own language rather than a
-  // hardcoded English string (audit 2026-04-25 finding #8).
-  const mailtoHref = tenantContactEmail
-    ? `mailto:${tenantContactEmail}?subject=${encodeURIComponent(
-        t('mailSubject', { invoiceNumber }),
-      )}`
-    : null;
+  // hardcoded English string (audit 2026-04-25 finding #8). Multiple
+  // recipients are comma-joined per the mailto spec (RFC 6068 `to`).
+  const mailtoHref =
+    tenantContactEmails.length > 0
+      ? `mailto:${tenantContactEmails.join(',')}?subject=${encodeURIComponent(
+          t('mailSubject', { invoiceNumber }),
+        )}`
+      : null;
 
   return (
     <Card data-testid="online-payment-disabled-card">

@@ -796,15 +796,16 @@ export default async function PortalInvoiceDetailPage({
             tenantPublishableKey={paymentSettings.processorPublishableKey}
           />
         ) : (
-          // FR-030 (#145) — the kill-switch fallback offers a "Contact
-          // administrator" mailto. No per-tenant contact_email column exists yet
-          // (multi-tenant / Phase 9 admin payment-settings), so fall back to the
-          // bootstrap admin email; the card degrades to the disabled "no email
-          // configured" state when BOOTSTRAP_ADMIN_EMAIL is unset at runtime.
+          // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
+          // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a
+          // multi-recipient list) which falls back to SUPPORT_EMAIL when unset —
+          // so this is DECOUPLED from BOOTSTRAP_ADMIN_EMAIL (an admin-account
+          // identity, not a contact channel) and always non-empty. A per-tenant
+          // contact column is still deferred to multi-tenant / Phase 9.
           // 088 — `invoiceNumber` uses `headerNumber` (bill-first SC number).
           <OnlinePaymentDisabledCard
             invoiceNumber={headerNumber}
-            tenantContactEmail={env.bootstrap.adminEmail ?? null}
+            tenantContactEmails={env.billingContactEmails}
           />
         )
       ) : null}
