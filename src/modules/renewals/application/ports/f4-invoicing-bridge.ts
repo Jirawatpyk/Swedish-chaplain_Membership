@@ -101,6 +101,15 @@ export type IssueInvoiceForRenewalResult =
       readonly invoiceId: string;
       readonly invoiceNumber: string;
       readonly totalSatang: Satang;
+      /**
+       * 106-void-on-reissue (Task 4) — best-effort supersede-void warnings
+       * from `issueMembershipBill`'s auto-void pass, threaded verbatim.
+       * Empty when `FEATURE_VOID_ON_REISSUE` is off, nothing was
+       * outstanding to supersede, or every supersede-void succeeded.
+       * Optional (not `readonly string[]`) so the F5R3-era callers that
+       * predate this field don't need updating just to destructure it.
+       */
+      readonly supersedeWarnings?: readonly string[];
     }
   | {
       readonly status: 'create_failed';

@@ -1,24 +1,32 @@
 /**
  * F8 Phase 5 Wave C → Production · `F4InvoicingForRenewalBridge`.
  *
- * Composes F4's `createInvoiceDraft` + `issueInvoice` use-cases via
+ * Composes F4's `createInvoiceDraft` + `issueMembershipBill` use-cases via
  * the F4 barrel exports. Used by the T122 confirm-renewal use-case.
  *
  * Atomicity: each F4 call opens its own internal `withTx` transaction.
- * `createInvoiceDraft` commits BEFORE `issueInvoice` runs (it must — the
- * draft row is the issue target). If `issueInvoice` fails AFTER
+ * `createInvoiceDraft` commits BEFORE `issueMembershipBill` runs (it must —
+ * the draft row is the issue target). If `issueMembershipBill` fails AFTER
  * createDraft committed, an orphan `draft` invoice exists in F4. The
  * F8 use-case (T122) handles this trade-off via the
  * `invoice_creation_failed` error variant + downstream admin recovery.
+ *
+ * 106-void-on-reissue (Task 4) — swapped the bare `issueInvoice` primitive
+ * for `issueMembershipBill`, which wraps the SAME issue with a best-effort
+ * supersede-void of the member's strictly-older outstanding new-flow
+ * membership bills (gated on `FEATURE_VOID_ON_REISSUE`; off → identical to
+ * the old bare-`issueInvoice` behaviour). See
+ * `tests/integration/invoicing/issue-membership-bill.test.ts` case E for
+ * the live-Neon proof of this routing.
  *
  * Pure Infrastructure — only F4 barrel imports + the port interface.
  */
 import {
   billFirstDocumentNumber,
   createInvoiceDraft,
-  issueInvoice,
+  issueMembershipBill,
   makeCreateInvoiceDraftDeps,
-  makeIssueInvoiceDeps,
+  makeIssueMembershipBillDeps,
 } from '@/modules/invoicing';
 import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
@@ -69,13 +77,22 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     }
     const draft = createResult.value;
 
-    // ---- Step 2: issueInvoice — promotes draft → issued, renders the
-    // bilingual PDF, uploads to Vercel Blob. Number stream depends on
-    // FEATURE_088_TAX_AT_PAYMENT (read inside the F4 deps): flag ON allocates
-    // the NON-§87 `SC` bill number (ใบแจ้งหนี้; the §86/4 §87 `RC` number is
-    // minted later at payment); flag OFF allocates the legacy §87 §86/4 number.
-    const issueResult = await issueInvoice(
-      makeIssueInvoiceDeps(input.tenantId),
+    // ---- Step 2: issueMembershipBill — promotes draft → issued (via the
+    // UNCHANGED issueInvoice primitive), renders the bilingual PDF, uploads
+    // to Vercel Blob. Number stream depends on FEATURE_088_TAX_AT_PAYMENT
+    // (read inside the F4 deps): flag ON allocates the NON-§87 `SC` bill
+    // number (ใบแจ้งหนี้; the §86/4 §87 `RC` number is minted later at
+    // payment); flag OFF allocates the legacy §87 §86/4 number.
+    //
+    // 106-void-on-reissue (Task 4) — `issueMembershipBill` wraps that same
+    // issue with a best-effort supersede-void of the member's strictly-older
+    // outstanding new-flow membership bills (gated on
+    // `FEATURE_VOID_ON_REISSUE`, off by default). This is the renewal path's
+    // entry point into the auto-void behaviour: an online reissue through
+    // this bridge now cleans up the member's stale duplicate bill(s) the
+    // same way an admin-triggered reissue does.
+    const issueResult = await issueMembershipBill(
+      makeIssueMembershipBillDeps(input.tenantId),
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
@@ -119,6 +136,7 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
       invoiceId: issued.invoiceId,
       invoiceNumber,
       totalSatang,
+      supersedeWarnings: issued.supersedeWarnings,
     };
   },
 };

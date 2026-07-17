@@ -28,9 +28,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/modules/invoicing', () => ({
   createInvoiceDraft: vi.fn(),
-  issueInvoice: vi.fn(),
+  // 106-void-on-reissue (Task 4) — the bridge now routes through
+  // `issueMembershipBill` / `makeIssueMembershipBillDeps` instead of bare
+  // `issueInvoice` / `makeIssueInvoiceDeps`.
+  issueMembershipBill: vi.fn(),
   makeCreateInvoiceDraftDeps: vi.fn(() => ({})),
-  makeIssueInvoiceDeps: vi.fn(() => ({})),
+  makeIssueMembershipBillDeps: vi.fn(() => ({})),
   // The barrel's runtime graph is server-only (pino/node-crypto), so this mock
   // is a hand-rolled literal (not `importOriginal`). `billFirstDocumentNumber`
   // is a pure Domain function the bridge now calls through the barrel; provide a
@@ -43,27 +46,31 @@ vi.mock('@/modules/invoicing', () => ({
   }): string | null => inv.billDocumentNumberRaw ?? inv.documentNumber?.raw ?? null,
 }));
 
-import { createInvoiceDraft, issueInvoice } from '@/modules/invoicing';
+import { createInvoiceDraft, issueMembershipBill } from '@/modules/invoicing';
 import { f4InvoicingForRenewalBridge } from '@/modules/renewals/infrastructure/ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
 import { parseThbDecimal } from '@/lib/money';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
 
 const mockedCreate = vi.mocked(createInvoiceDraft);
-const mockedIssue = vi.mocked(issueInvoice);
+const mockedIssue = vi.mocked(issueMembershipBill);
 
-/** Minimal issued-Invoice shape the bridge actually reads. */
+/** Minimal issued-Invoice shape the bridge actually reads, plus the
+ * `supersedeWarnings` field `issueMembershipBill` always adds (106-void-
+ * on-reissue Task 4 — threaded verbatim onto the port's 'issued' arm). */
 function issuedFixture(overrides: {
   documentNumber: DocumentNumber | null;
   billDocumentNumberRaw: string | null;
-}): Invoice {
+  supersedeWarnings?: readonly string[];
+}): Invoice & { supersedeWarnings: readonly string[] } {
   return {
     invoiceId: 'inv-1',
     status: 'issued',
     total: { satang: 1_284_000n },
     documentNumber: overrides.documentNumber,
     billDocumentNumberRaw: overrides.billDocumentNumberRaw,
-  } as unknown as Invoice;
+    supersedeWarnings: overrides.supersedeWarnings ?? [],
+  } as unknown as Invoice & { supersedeWarnings: readonly string[] };
 }
 
 const BASE_INPUT = {
@@ -94,7 +101,7 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
         documentNumber: null,
         billDocumentNumberRaw: 'SC-2026-000123',
       }),
-    } as unknown as Awaited<ReturnType<typeof issueInvoice>>);
+    } as unknown as Awaited<ReturnType<typeof issueMembershipBill>>);
 
     const result = await f4InvoicingForRenewalBridge.issueInvoiceForRenewal(BASE_INPUT);
 
@@ -102,6 +109,9 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
     if (result.status !== 'issued') throw new Error('expected issued');
     expect(result.invoiceNumber).toBe('SC-2026-000123');
     expect(result.invoiceNumber).not.toBe('');
+    // 106-void-on-reissue (Task 4) — `supersedeWarnings` threaded verbatim
+    // from `issueMembershipBill` onto the port's 'issued' arm.
+    expect(result.supersedeWarnings).toEqual([]);
   });
 
   it('LEGACY flow: surfaces documentNumber.raw (never "[object Object]")', async () => {
@@ -113,7 +123,7 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
         documentNumber: legacyDoc.value,
         billDocumentNumberRaw: null,
       }),
-    } as unknown as Awaited<ReturnType<typeof issueInvoice>>);
+    } as unknown as Awaited<ReturnType<typeof issueMembershipBill>>);
 
     const result = await f4InvoicingForRenewalBridge.issueInvoiceForRenewal(BASE_INPUT);
 
@@ -127,7 +137,7 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
     mockedIssue.mockResolvedValue({
       ok: true,
       value: issuedFixture({ documentNumber: null, billDocumentNumberRaw: null }),
-    } as unknown as Awaited<ReturnType<typeof issueInvoice>>);
+    } as unknown as Awaited<ReturnType<typeof issueMembershipBill>>);
 
     const result = await f4InvoicingForRenewalBridge.issueInvoiceForRenewal(BASE_INPUT);
 
