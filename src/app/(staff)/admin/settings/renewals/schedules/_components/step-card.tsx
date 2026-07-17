@@ -274,7 +274,7 @@ export function StepCard({
             <Label htmlFor={`timing-days-${idPrefix}`}>
               {t('stepCard.timing.daysLabel')}
             </Label>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"

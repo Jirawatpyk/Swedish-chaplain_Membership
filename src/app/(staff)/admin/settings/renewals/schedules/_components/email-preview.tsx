@@ -35,7 +35,7 @@ export function EmailPreview({ tierBucket, offsetDays }: EmailPreviewProps) {
 
   if (!covered) {
     return (
-      <p role="alert" className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <p role="status" className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
         {t('stepCard.preview.noCopyWarning')}
       </p>
     );

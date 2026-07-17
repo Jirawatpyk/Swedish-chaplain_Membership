@@ -7,8 +7,11 @@
  *     constants), never the infrastructure `copy.ts` — that module pulls
  *     in the full 3-locale copy matrix and is server-only.
  *   - If `offsetDays` is NOT one of the tier's `TIER_REMINDER_OFFSETS` →
- *     render a destructive `role="alert"` "will not be sent" warning
- *     (`stepCard.preview.noCopyWarning`).
+ *     render a destructive `role="status"` (polite live region) "will not
+ *     be sent" warning (`stepCard.preview.noCopyWarning`). Polite, not
+ *     assertive: this warning remounts on every ± stepper click / typed
+ *     day change in the parent `StepCard`, and an assertive `role="alert"`
+ *     would interrupt screen-reader users on each keystroke.
  *   - If it IS covered → render the `stepCard.preview.heading` label plus
  *     a localized one-line summary built from `stepCard.offsetDay.*`.
  */
@@ -22,7 +25,7 @@ const wrap = (ui: React.ReactNode) =>
 
 it('warns when the offset has no copy for the tier', () => {
   wrap(<EmailPreview tierBucket="regular" offsetDays={-45} />); // -45 not in regular set
-  expect(screen.getByRole('alert')).toHaveTextContent(/will not be sent/i);
+  expect(screen.getByRole('status')).toHaveTextContent(/will not be sent/i);
 });
 
 it('shows the preview heading when the offset is covered', () => {
