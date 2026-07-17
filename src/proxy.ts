@@ -493,9 +493,18 @@ export function proxy(request: NextRequest): NextResponse {
  */
 export const config = {
   matcher: [
+    // `/api/*` — ALWAYS run the proxy. The CSRF Origin allow-list, the
+    // READ_ONLY_MODE write-freeze, and the feature kill-switches are enforced
+    // ONLY here (route handlers do not all re-check them). Next.js router
+    // prefetch NEVER targets `/api`, so keeping `/api` out of the prefetch-skip
+    // below costs nothing for the CSP fix — and it stops a client-forged
+    // `next-router-prefetch` / `purpose: prefetch` header on a MUTATING `/api`
+    // request from skipping the proxy and bypassing those proxy-only controls
+    // (security review 2026-07-18; CWE-807 / CWE-693).
+    '/api/:path*',
     {
       source:
-        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
       // Skip the proxy for Next.js router PREFETCH requests. A per-request CSP
       // nonce (`generateNonce()`) is incompatible with prefetch: Next stamps
       // the PREFETCH response's nonce onto the route's chunk `<link
