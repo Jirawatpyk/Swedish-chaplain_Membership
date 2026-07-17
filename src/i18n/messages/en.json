@@ -3247,16 +3247,18 @@
               "beforeRenewal": "{days} days before renewal",
               "afterRenewal": "{days} days after renewal",
               "onRenewal": "On renewal date",
-              "custom": "(custom)"
+              "custom": "(custom)",
+              "customOption": "Custom…",
+              "customDaysLabel": "Number of days",
+              "direction": {
+                "label": "Before or after renewal",
+                "before": "Before",
+                "after": "After"
+              }
             },
             "preview": {
               "heading": "Email that will be sent",
               "noCopyWarning": "No message exists for this timing — this email will not be sent. Pick a standard timing."
-            },
-            "advanced": {
-              "toggle": "Advanced (raw identifiers)",
-              "stepIdLabel": "Step ID",
-              "templateIdLabel": "Template ID"
             },
             "taskType": {
               "label": "Task type",

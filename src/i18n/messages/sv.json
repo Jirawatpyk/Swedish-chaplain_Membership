@@ -3247,16 +3247,18 @@
               "beforeRenewal": "{days} dagar före förnyelse",
               "afterRenewal": "{days} dagar efter förnyelse",
               "onRenewal": "På förnyelsedagen",
-              "custom": "(anpassad)"
+              "custom": "(anpassad)",
+              "customOption": "Anpassad…",
+              "customDaysLabel": "Antal dagar",
+              "direction": {
+                "label": "Före eller efter förnyelse",
+                "before": "Före",
+                "after": "Efter"
+              }
             },
             "preview": {
               "heading": "E-post som kommer att skickas",
               "noCopyWarning": "Inget meddelande finns för denna tidpunkt — detta e-postmeddelande skickas inte. Välj en standardtidpunkt."
-            },
-            "advanced": {
-              "toggle": "Avancerat (råa identifierare)",
-              "stepIdLabel": "Steg-ID",
-              "templateIdLabel": "Mall-ID"
             },
             "taskType": {
               "label": "Uppgiftstyp",

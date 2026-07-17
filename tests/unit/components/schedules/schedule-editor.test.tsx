@@ -16,8 +16,8 @@
  *     `<ScheduleEditor>` produce two steps with distinct `step_id`s —
  *     the end-to-end guard for the same Issue 3 regression.
  */
-import { describe, expect, it } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 // F8 Phase 8 path-alignment fix — schedule-editor.tsx moved to
@@ -28,10 +28,30 @@ import messages from '@/i18n/messages/en.json';
 import {
   isOfflineFetchError,
   emptyStep,
+  toWireSteps,
   ScheduleEditor,
+  type EditorStep,
   type ScheduleStepWire,
 } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
 import { offsetKeyFromDays } from '@/modules/renewals/client';
+
+// Base UI Radio uses PointerEvent internally; jsdom lacks it. Same
+// polyfill as tests/unit/components/schedules/step-card.test.tsx /
+// tests/unit/members/presentation/members-table-selection.test.tsx.
+// Needed by the v3 "`_uiKey` React-key stability" describe block below,
+// which drives the real (unmocked) channel RadioGroup.
+beforeAll(() => {
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 describe('isOfflineFetchError() — schedule-editor offline detection', () => {
   describe('returns true for browser-emitted offline TypeErrors', () => {
@@ -155,6 +175,118 @@ describe('emptyStep() — Issue 3(a): offset-advance default avoids the t-30.ema
     const second = emptyStep('regular', [first]);
     expect(second.step_id).not.toBe(first.step_id);
     expect(second.offset_days).not.toBe(first.offset_days);
+  });
+
+  // v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 3)
+  // — the "Add step" half of the stable-`_uiKey` guarantee. `_uiKey` is
+  // what `<StepCard>` is now keyed by (schedule-editor.tsx), so two
+  // freshly-added rows must never share one.
+  it('two sequential calls produce distinct `_uiKey`s', () => {
+    const first = emptyStep('regular', []);
+    const second = emptyStep('regular', [first]);
+    expect(first._uiKey).not.toBe(second._uiKey);
+    expect(typeof first._uiKey).toBe('string');
+    expect(first._uiKey.length).toBeGreaterThan(0);
+  });
+});
+
+// v3 rework Change 3 — `toWireSteps` is the other half of the guarantee:
+// `_uiKey` must never reach the server.
+describe('toWireSteps() — strips `_uiKey` before the PUT body is built', () => {
+  it('produces a byte-identical ScheduleStepWire[] with no `_uiKey` key', () => {
+    const editorSteps: EditorStep[] = [
+      {
+        _uiKey: 'regular-0',
+        step_id: 't-30.email',
+        offset_days: -30,
+        channel: 'email',
+        template_id: 'renewal.t-30.regular',
+      },
+      {
+        _uiKey: 'regular-1',
+        step_id: 't+7.task.phone_call',
+        offset_days: 7,
+        channel: 'task',
+        task_type: 'phone_call',
+        assignee_role: 'admin',
+      },
+    ];
+    const wire = toWireSteps(editorSteps);
+    const expected: ScheduleStepWire[] = [
+      { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+      { step_id: 't+7.task.phone_call', offset_days: 7, channel: 'task', task_type: 'phone_call', assignee_role: 'admin' },
+    ];
+    expect(wire).toEqual(expected);
+    // Assert the KEY itself is absent (not merely `undefined`) — matches
+    // what `JSON.stringify` actually sends over the wire.
+    wire.forEach((s) => expect(Object.prototype.hasOwnProperty.call(s, '_uiKey')).toBe(false));
+    expect(JSON.stringify({ steps: wire })).not.toContain('_uiKey');
+  });
+});
+
+// v3 rework Change 3 — the actual remount-bug regression guard: keying
+// `<StepCard>` by `_uiKey` (not the recomposed `step_id`) means an edit
+// that changes `step_id` must NOT tear down and recreate the card's DOM.
+describe('<ScheduleEditor> — `_uiKey` React-key stability (Change 3 remount-bug fix)', () => {
+  // tests/setup.ts installs FAKE timers globally
+  // (`shouldAdvanceTime: false`) for deterministic TTL tests elsewhere in
+  // the suite. `@testing-library/react`'s `waitFor` polls via
+  // `setTimeout`, which never fires under those fake timers — the test
+  // below hangs to the full 30s suite timeout without this. Same
+  // real-timers-for-this-block convention as
+  // tests/unit/components/invoices/invoice-create-switcher.test.tsx.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('does not remount the StepCard DOM node when an edit recomposes step_id', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <ScheduleEditor initialPolicies={[]} readOnly={false} />
+      </NextIntlClientProvider>,
+    );
+    // Seed one step in the active tab (email channel, standard offset —
+    // see the emptyStep() describe block above).
+    fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+
+    // Capture a DOM node scoped to the mounted StepCard. If the card
+    // remounted, React would tear down this exact node and create a
+    // brand-new one in its place — even though it would look identical
+    // — so a captured *reference* is the correct way to detect a
+    // remount (unlike a textContent/attribute comparison, which a
+    // remount would still satisfy).
+    const removeButtonBefore = screen.getByRole('button', { name: /remove step/i });
+
+    // Switching channel (Email → Task) recomposes `step_id`
+    // (`step-card.tsx`'s `handleChannelChange`) — the same class of edit
+    // as the new custom-day input, which recomposes `step_id` on every
+    // keystroke. Driven via the segment's <label> text — Base UI Radio
+    // toggles through its associated <label>, not a direct click on
+    // role=radio (same proven pattern as
+    // tests/unit/components/invoices/invoice-create-switcher.test.tsx).
+    //
+    // The literal custom-day-input recompose path is covered directly,
+    // at the callback/data level, by step-card.test.tsx's "preserves
+    // the stable _uiKey" test — driving Base UI's real popup-based
+    // <Select> through a full, unmocked <ScheduleEditor> mount isn't
+    // practical in jsdom. The remount mechanism under test here (keying
+    // by `_uiKey` survives a step_id-changing edit) is identical
+    // regardless of which control triggers the recompose.
+    //
+    // `{ selector: 'label' }` disambiguates from `ReminderTimeline`'s
+    // "Task" legend entry (a <span>, always rendered) — only the
+    // channel segment's <label> should receive the click.
+    fireEvent.click(screen.getByText('Task', { selector: 'label' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: /task/i })).toBeChecked();
+    });
+
+    const removeButtonAfter = screen.getByRole('button', { name: /remove step/i });
+    expect(removeButtonAfter).toBe(removeButtonBefore);
   });
 });
 

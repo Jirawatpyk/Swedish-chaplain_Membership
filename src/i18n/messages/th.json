@@ -3247,16 +3247,18 @@
               "beforeRenewal": "{days} วันก่อนต่ออายุ",
               "afterRenewal": "{days} วันหลังต่ออายุ",
               "onRenewal": "วันครบกำหนด",
-              "custom": "(กำหนดเอง)"
+              "custom": "(กำหนดเอง)",
+              "customOption": "กำหนดเอง…",
+              "customDaysLabel": "จำนวนวัน",
+              "direction": {
+                "label": "ก่อนหรือหลังวันต่ออายุ",
+                "before": "ก่อน",
+                "after": "หลัง"
+              }
             },
             "preview": {
               "heading": "อีเมลที่จะส่ง",
               "noCopyWarning": "ไม่มีข้อความสำหรับเวลานี้ — อีเมลนี้จะไม่ถูกส่ง เลือกเวลามาตรฐาน"
-            },
-            "advanced": {
-              "toggle": "ขั้นสูง (รหัสอ้างอิงดิบ)",
-              "stepIdLabel": "รหัสขั้นตอน",
-              "templateIdLabel": "รหัสเทมเพลต"
             },
             "taskType": {
               "label": "ประเภทงาน",

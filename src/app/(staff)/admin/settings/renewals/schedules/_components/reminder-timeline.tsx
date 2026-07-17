@@ -37,7 +37,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { Mail, ListTodo } from 'lucide-react';
-import type { ScheduleStepWire } from './schedule-editor';
+import type { EditorStep } from './schedule-editor';
 import type { TierBucket } from '@/modules/renewals/client';
 import { timingSentence } from './format-offset';
 
@@ -51,7 +51,12 @@ function pct(day: number): number {
 
 export interface ReminderTimelineProps {
   readonly tierBucket: TierBucket;
-  readonly steps: ReadonlyArray<ScheduleStepWire>;
+  // v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 3)
+  // — keyed by the editor's stable `_uiKey`, NOT `step_id` (which is
+  // recomposed on every timing/channel edit — keying by it caused a
+  // remount/focus-loss bug in the sibling `<StepCard>` list; the same
+  // instability would apply here).
+  readonly steps: ReadonlyArray<EditorStep>;
 }
 
 export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
@@ -77,7 +82,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
         />
         {sorted.map((s) => (
           <span
-            key={s.step_id}
+            key={s._uiKey}
             className={`absolute top-[-5px] h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${
               s.channel === 'email' ? 'bg-chart-1' : 'bg-chart-5'
             }`}
@@ -97,7 +102,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
           via the ICU plural, matching the visible empty-due copy). */}
       <ol className="sr-only">
         {sorted.map((s) => (
-          <li key={s.step_id}>
+          <li key={s._uiKey}>
             {timingSentence(s.offset_days, t)} {'·'} {t(`stepCard.channel.${s.channel}`)}
           </li>
         ))}

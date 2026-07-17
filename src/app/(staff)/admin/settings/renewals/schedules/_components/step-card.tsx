@@ -23,6 +23,32 @@
  *      `composeUniqueStepId` (never a bare `composeStepId`), closing
  *      the duplicate-`step_id` class of bug at its source.
  *
+ * v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, live QA
+ * final decisions) — three more fixes:
+ *   1. The "Send timing" `<Select>` gains a "Custom…" option. Selecting
+ *      it (or loading a step whose offset isn't one of the tier's
+ *      standard points) reveals a numeric day input + a before/after
+ *      segmented toggle so the admin can set ANY offset — recomposed
+ *      through the same `composeUniqueStepId`/`composeTemplateId` path
+ *      as every standard option (see `applyTiming`/`applyCustomDays`).
+ *   2. The "Advanced (raw identifiers)" `Collapsible` — the raw
+ *      `step_id`/`template_id` inputs plus the v2-added raw-offset
+ *      input — is REMOVED entirely. The admin never needs to hand-edit
+ *      derived identifiers; doing so was a footgun (a typo makes the
+ *      email undeliverable) and, worse, the raw-offset input was the
+ *      one place a keystroke could recompose `step_id` on every change
+ *      — see Change 3 below.
+ *   3. `step_id` is a DERIVED value recomposed on every timing/channel
+ *      edit — including on every keystroke of the new custom-day input.
+ *      `schedule-editor.tsx` used to key `<StepCard>` by `step_id`
+ *      itself, so a recompose changed the React key and remounted the
+ *      whole card, dropping focus mid-typing. The editor now keys by a
+ *      stable `_uiKey` (`schedule-editor.tsx`'s `EditorStep`) that never
+ *      changes across edits — every `{...step, ...}` spread in this
+ *      file carries it forward automatically, and the two places that
+ *      build a fresh object instead of spreading (`handleChannelChange`)
+ *      thread it through explicitly.
+ *
  * Key idea (unchanged): `step_id` and `template_id` are DERIVED values,
  * not free text. The wire grammar (`./step-id-composer`) requires the
  * offset token first in `step_id` (gateway's `deriveOffsetFromStepId`
@@ -30,13 +56,9 @@
  * (gateway's `deriveTierFromTemplateId` matches on `endsWith('.'+tier)`).
  * Every friendly-control change (timing, channel, task type) recomposes
  * both identifiers so an admin editing plain-language controls can
- * never produce a malformed wire shape. The Advanced disclosure is an
- * escape hatch for the rare bespoke identifier (and, per v2, a raw
- * numeric offset for a non-standard timing) — editing there sets the
- * value directly and stays put until the next friendly-control change
- * recomposes over it (last control touched wins; same "controlled by
- * parent `step` prop" model the rest of the editor uses).
+ * never produce a malformed wire shape.
  */
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Mail, ListTodo, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -51,11 +73,6 @@ import {
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import {
   TIER_REMINDER_OFFSETS,
@@ -63,14 +80,14 @@ import {
   daysFromOffsetKey,
 } from '@/modules/renewals/client';
 import type { TierBucket } from '@/modules/renewals/client';
-import type { ScheduleStepWire } from './schedule-editor';
+import type { EditorStep } from './schedule-editor';
 import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
 import { EmailPreview } from './email-preview';
 import { timingSentence } from './format-offset';
 
 export interface StepCardProps {
   readonly tierBucket: TierBucket;
-  readonly step: ScheduleStepWire;
+  readonly step: EditorStep;
   readonly index: number;
   readonly total: number;
   readonly readOnly: boolean;
@@ -84,22 +101,27 @@ export interface StepCardProps {
    *     (scoped to the whole bucket — `step_id` uniqueness is bucket-
    *     wide, not per-channel).
    */
-  readonly siblingSteps: ReadonlyArray<ScheduleStepWire>;
-  readonly onChange: (next: ScheduleStepWire) => void;
+  readonly siblingSteps: ReadonlyArray<EditorStep>;
+  readonly onChange: (next: EditorStep) => void;
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
 }
 
-// Advanced-panel raw offset bound — mirrors the previous StepRow/
-// stepper offset_days bound (-365..365).
-const OFFSET_MIN = -365;
+// Custom-day input bound — mirrors the previous Advanced-panel raw-offset
+// bound's magnitude half (the sign is now a separate before/after toggle,
+// so this is a 0..365 MAGNITUDE bound, not the old -365..365 signed one).
 const OFFSET_MAX = 365;
 
-function clampOffset(n: number): number {
+function clampMagnitude(n: number): number {
   const truncated = Number.isFinite(n) ? Math.trunc(n) : 0;
-  return Math.min(OFFSET_MAX, Math.max(OFFSET_MIN, truncated));
+  return Math.min(OFFSET_MAX, Math.max(0, truncated));
 }
+
+// Sentinel `<Select>` value for the "Custom…" option. Safe from collision
+// with any real offset key — `offsetKeyFromDays` always produces `t-N`/
+// `t+N` (see `reminder-offsets.ts`), never a bare word.
+const CUSTOM_SENTINEL = 'custom';
 
 const KNOWN_TASK_TYPES = ['phone_call', 'admin_notify'] as const;
 type KnownTaskType = (typeof KNOWN_TASK_TYPES)[number];
@@ -163,6 +185,14 @@ export function StepCard({
   // 5 concurrently-mounted panels (WCAG 4.1.1).
   const idPrefix = `${tierBucket}-${index}`;
 
+  // v3 Change 1 — has the admin explicitly opened the "Custom…" branch
+  // this session? Needed because selecting "Custom…" does NOT itself
+  // change `step.offset_days` (there's no day value yet), so without
+  // this the Select's `value` (derived from `step.offset_days`) would
+  // immediately snap back to the standard option on the next render.
+  // Reset to `false` whenever a standard option is picked directly.
+  const [customMode, setCustomMode] = useState(false);
+
   // Issue 3(b) — every OTHER step_id in this bucket (uniqueness per
   // `parseSchedulePolicySteps` is bucket-wide, not per-channel).
   const siblingStepIds = new Set(siblingSteps.map((s) => s.step_id));
@@ -179,6 +209,15 @@ export function StepCard({
   const currentOffsetKey = offsetKeyFromDays(step.offset_days);
   const isCurrentStandard = (standardOffsetKeys as readonly string[]).includes(currentOffsetKey);
 
+  // v3 Change 1 (load reflection) — a non-standard `step.offset_days`
+  // (legacy data, or a value the admin previously set via Custom…) must
+  // show "Custom…" selected + the day input pre-filled WITHOUT the
+  // admin having to touch the Select — never silently snapped to the
+  // nearest standard value.
+  const showCustomTiming = customMode || !isCurrentStandard;
+  const customDaysMagnitude = Math.abs(step.offset_days);
+  const customBefore = step.offset_days < 0;
+
   function applyTiming(nextDays: number) {
     // `exactOptionalPropertyTypes` forbids passing `taskType: undefined`
     // explicitly — branch instead of ternary-into-undefined.
@@ -189,7 +228,7 @@ export function StepCard({
             siblingStepIds,
           )
         : composeUniqueStepId({ offsetDays: nextDays, channel: 'email' }, siblingStepIds);
-    const base: ScheduleStepWire = { ...step, offset_days: nextDays, step_id: stepId };
+    const base: EditorStep = { ...step, offset_days: nextDays, step_id: stepId };
     onChange(
       step.channel === 'email'
         ? { ...base, template_id: composeTemplateId(nextDays, tierBucket) }
@@ -197,14 +236,27 @@ export function StepCard({
     );
   }
 
-  function handleTimingSelect(offsetKey: string) {
-    applyTiming(daysFromOffsetKey(offsetKey));
+  function handleTimingSelect(v: string) {
+    if (v === CUSTOM_SENTINEL) {
+      setCustomMode(true);
+      return;
+    }
+    setCustomMode(false);
+    applyTiming(daysFromOffsetKey(v));
   }
 
-  function handleChannelChange(nextChannel: ScheduleStepWire['channel']) {
+  // v3 Change 1 — the custom-day input + before/after toggle both funnel
+  // through here, exactly like a standard `<Select>` option does via
+  // `applyTiming` (same recompose path, same collision-safe composer).
+  function applyCustomDays(magnitude: number, before: boolean) {
+    applyTiming(before ? -magnitude : magnitude);
+  }
+
+  function handleChannelChange(nextChannel: EditorStep['channel']) {
     if (nextChannel === step.channel) return;
     if (nextChannel === 'email') {
       onChange({
+        _uiKey: step._uiKey,
         step_id: composeUniqueStepId(
           { offsetDays: step.offset_days, channel: 'email' },
           siblingStepIds,
@@ -216,6 +268,7 @@ export function StepCard({
     } else {
       const taskType = step.task_type ?? 'phone_call';
       onChange({
+        _uiKey: step._uiKey,
         step_id: composeUniqueStepId(
           { offsetDays: step.offset_days, channel: 'task', taskType },
           siblingStepIds,
@@ -295,7 +348,7 @@ export function StepCard({
             value={step.channel}
             disabled={readOnly}
             onValueChange={(v) =>
-              handleChannelChange(v as ScheduleStepWire['channel'])
+              handleChannelChange(v as EditorStep['channel'])
             }
             className="grid-cols-2 gap-2"
           >
@@ -320,11 +373,13 @@ export function StepCard({
 
         {/* Timing — v2 rework Issue 2: ONE plain-language "Send timing"
             dropdown of the tier's standard reminder points, replacing
-            the day-stepper + separate Before/After toggle. */}
+            the day-stepper + separate Before/After toggle. v3 rework
+            Change 1: a "Custom…" option at the end reveals a numeric
+            day input + before/after toggle for an arbitrary offset. */}
         <div>
           <Label htmlFor={`timing-${idPrefix}`}>{t('stepCard.timing.label')}</Label>
           <Select
-            value={currentOffsetKey}
+            value={showCustomTiming ? CUSTOM_SENTINEL : currentOffsetKey}
             disabled={readOnly}
             onValueChange={(v) => handleTimingSelect(v as string)}
           >
@@ -333,11 +388,8 @@ export function StepCard({
                 placeholder={t('stepCard.timing.label')}
                 translate={(v) => {
                   if (!v) return null;
-                  const days = daysFromOffsetKey(v);
-                  const sentence = timingSentence(days, t);
-                  return (standardOffsetKeys as readonly string[]).includes(v)
-                    ? sentence
-                    : `${sentence} ${t('stepCard.timing.custom')}`;
+                  if (v === CUSTOM_SENTINEL) return t('stepCard.timing.customOption');
+                  return timingSentence(daysFromOffsetKey(v), t);
                 }}
               />
             </SelectTrigger>
@@ -355,17 +407,66 @@ export function StepCard({
                   </SelectItem>
                 );
               })}
-              {/* The step's offset may be a non-standard value (Advanced
-                  panel or legacy data) — surface it as an extra selected
-                  option rather than silently snapping it to a standard
-                  value on load. */}
-              {isCurrentStandard ? null : (
-                <SelectItem value={currentOffsetKey}>
-                  {timingSentence(step.offset_days, t)} {t('stepCard.timing.custom')}
-                </SelectItem>
-              )}
+              {/* v3 Change 1 — ONE more option at the end. Never
+                  disabled: an arbitrary custom offset can't collide the
+                  way a standard one can (collisions among custom values
+                  are resolved by `composeUniqueStepId` once the admin
+                  picks a day). */}
+              <SelectItem value={CUSTOM_SENTINEL}>
+                {t('stepCard.timing.customOption')}
+              </SelectItem>
             </SelectContent>
           </Select>
+
+          {showCustomTiming ? (
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <Label htmlFor={`custom-days-${idPrefix}`}>
+                  {t('stepCard.timing.customDaysLabel')}
+                </Label>
+                <Input
+                  id={`custom-days-${idPrefix}`}
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={OFFSET_MAX}
+                  step={1}
+                  value={customDaysMagnitude}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    applyCustomDays(clampMagnitude(Number(e.target.value)), customBefore)
+                  }
+                />
+              </div>
+              <div>
+                <Label id={`direction-group-label-${idPrefix}`}>
+                  {t('stepCard.timing.direction.label')}
+                </Label>
+                <RadioGroup
+                  aria-labelledby={`direction-group-label-${idPrefix}`}
+                  value={customBefore ? 'before' : 'after'}
+                  disabled={readOnly}
+                  onValueChange={(v) => applyCustomDays(customDaysMagnitude, v === 'before')}
+                  className="grid-cols-2 gap-2"
+                >
+                  {(['before', 'after'] as const).map((dir) => {
+                    const selected = customBefore === (dir === 'before');
+                    const segId = `direction-${idPrefix}-${dir}`;
+                    return (
+                      <label
+                        key={dir}
+                        htmlFor={segId}
+                        className={segmentClass(selected, readOnly)}
+                      >
+                        <RadioGroupItem id={segId} value={dir} className={HIDDEN_RADIO_CLASS} />
+                        {t(`stepCard.timing.direction.${dir}`)}
+                      </label>
+                    );
+                  })}
+                </RadioGroup>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Channel-specific fields. */}
@@ -386,8 +487,8 @@ export function StepCard({
                   {/* Fallback-to-raw-value pattern (Round 5 SUG-6, mirrored
                       from StepRow's channel/assignee selects): the friendly
                       list only offers the 2 known types, but `task_type`
-                      may hold a bespoke value set via the Advanced panel —
-                      show it verbatim rather than throwing MISSING_MESSAGE. */}
+                      may hold a bespoke value (e.g. legacy data) — show it
+                      verbatim rather than throwing MISSING_MESSAGE. */}
                   <TranslatedSelectValue
                     placeholder={t('stepCard.taskType.label')}
                     translate={(v) => {
@@ -418,7 +519,7 @@ export function StepCard({
                   onChange({
                     ...step,
                     assignee_role: v as Exclude<
-                      ScheduleStepWire['assignee_role'],
+                      EditorStep['assignee_role'],
                       undefined
                     >,
                   })
@@ -454,76 +555,6 @@ export function StepCard({
             </div>
           </div>
         )}
-
-        {/* Advanced — raw step_id/template_id escape hatch, plus a raw
-            numeric offset input (v2 rework) so a power user can still
-            set a non-standard timing now that the friendly dropdown
-            only offers the tier's standard reminder points. Editing
-            here sets the value directly; the next friendly-control
-            change (timing/channel/task type) recomposes over it. */}
-        <Collapsible>
-          <CollapsibleTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-fit text-muted-foreground"
-              />
-            }
-          >
-            {t('stepCard.advanced.toggle')}
-          </CollapsibleTrigger>
-          <CollapsibleContent
-            keepMounted
-            className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2"
-          >
-            <div>
-              <Label htmlFor={`adv-offset-${idPrefix}`}>
-                {t('stepCard.offsetDaysLabel')}
-              </Label>
-              <Input
-                id={`adv-offset-${idPrefix}`}
-                type="number"
-                inputMode="numeric"
-                min={OFFSET_MIN}
-                max={OFFSET_MAX}
-                step={1}
-                value={step.offset_days}
-                disabled={readOnly}
-                onChange={(e) => applyTiming(clampOffset(Number(e.target.value)))}
-              />
-            </div>
-            <div>
-              <Label htmlFor={`adv-step-id-${idPrefix}`}>
-                {t('stepCard.advanced.stepIdLabel')}
-              </Label>
-              <Input
-                id={`adv-step-id-${idPrefix}`}
-                value={step.step_id}
-                disabled={readOnly}
-                maxLength={100}
-                onChange={(e) => onChange({ ...step, step_id: e.target.value })}
-              />
-            </div>
-            {step.channel === 'email' ? (
-              <div>
-                <Label htmlFor={`adv-template-id-${idPrefix}`}>
-                  {t('stepCard.advanced.templateIdLabel')}
-                </Label>
-                <Input
-                  id={`adv-template-id-${idPrefix}`}
-                  value={step.template_id ?? ''}
-                  disabled={readOnly}
-                  maxLength={200}
-                  onChange={(e) =>
-                    onChange({ ...step, template_id: e.target.value })
-                  }
-                />
-              </div>
-            ) : null}
-          </CollapsibleContent>
-        </Collapsible>
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ import { createContext, useContext, type ReactNode } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
-import type { ScheduleStepWire } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
+import type { EditorStep } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
 
 interface SelectCtxValue {
   value: string;
@@ -97,11 +97,12 @@ beforeAll(() => {
 });
 
 function renderCard(opts?: {
-  step?: Partial<ScheduleStepWire>;
-  siblingSteps?: ReadonlyArray<ScheduleStepWire>;
+  step?: Partial<EditorStep>;
+  siblingSteps?: ReadonlyArray<EditorStep>;
 }) {
   const onChange = vi.fn();
-  const step: ScheduleStepWire = {
+  const step: EditorStep = {
+    _uiKey: 'regular-0',
     step_id: 't-30.email',
     offset_days: -30,
     channel: 'email',
@@ -141,6 +142,7 @@ it('disables a timing option already used by a sibling step of the SAME channel'
   renderCard({
     siblingSteps: [
       {
+        _uiKey: 'regular-sib-1',
         step_id: 't-14.email',
         offset_days: -14,
         channel: 'email',
@@ -157,6 +159,7 @@ it('does NOT disable an offset used by a sibling of a DIFFERENT channel', () => 
   renderCard({
     siblingSteps: [
       {
+        _uiKey: 'regular-sib-2',
         step_id: 't-14.task.phone_call',
         offset_days: -14,
         channel: 'task',
@@ -178,6 +181,7 @@ it("never disables the current step's own offset, even when a pre-existing sibli
         // Pre-existing collision (e.g. legacy data) — same offset+channel
         // as the step under test. The `days !== step.offset_days` guard
         // must still exempt the CURRENT step's own selected value.
+        _uiKey: 'regular-sib-3',
         step_id: 't-14.email.2',
         offset_days: -14,
         channel: 'email',
@@ -190,13 +194,57 @@ it("never disables the current step's own offset, even when a pre-existing sibli
   ).not.toHaveAttribute('aria-disabled');
 });
 
-it('shows a non-standard offset as an extra "(custom)" option instead of silently snapping it', () => {
-  // -45 is not in the 'regular' tier's standard offset set.
+// v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 1)
+// — "Custom…" option + numeric day input, replacing the v2 "extra
+// selected option showing the raw sentence" approach.
+describe('v3 — "Custom…" timing option', () => {
+  it('loads a non-standard offset with "Custom…" selected and the day input pre-filled (load reflection)', () => {
+    // -45 is not in the 'regular' tier's standard offset set — must NOT
+    // be silently snapped to the nearest standard value.
+    renderCard({
+      step: { offset_days: -45, step_id: 't-45.email', template_id: 'renewal.t-45.regular' },
+    });
+    expect(screen.getByRole('option', { name: /^custom/i })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByLabelText(/number of days/i)).toHaveValue(45);
+  });
+
+  it('never disables the "Custom…" option', () => {
+    renderCard();
+    expect(screen.getByRole('option', { name: /^custom/i })).not.toHaveAttribute(
+      'aria-disabled',
+    );
+  });
+
+  it('selecting "Custom…" reveals the day input; typing recomposes an offset-first step_id and preserves the stable _uiKey', () => {
+    // Default step: _uiKey 'regular-0', offset -30 (standard, "before").
+    const { onChange } = renderCard();
+    fireEvent.click(screen.getByRole('option', { name: /^custom/i }));
+    const dayInput = screen.getByLabelText(/number of days/i);
+    fireEvent.change(dayInput, { target: { value: '10' } });
+    const arg = onChange.mock.calls.at(-1)![0];
+    // The custom-day input recomposes through the SAME `applyTiming`
+    // path a standard option uses — offset-first step_id, tier-last
+    // template_id, exactly like the very first test in this file.
+    expect(arg.offset_days).toBe(-10);
+    expect(arg.step_id).toBe('t-10.email');
+    expect(arg.template_id).toBe('renewal.t-10.regular');
+    // v3 Change 3 — the whole point: `_uiKey` survives this recompose
+    // (used as the editor's React key so the card never remounts).
+    expect(arg._uiKey).toBe('regular-0');
+  });
+});
+
+// v3 rework Change 2 — the Advanced (raw identifiers) Collapsible is
+// deleted entirely: no raw step_id/template_id inputs anywhere in the
+// card, regardless of standard or custom timing.
+it('renders no Advanced (raw identifiers) panel', () => {
   renderCard({ step: { offset_days: -45, step_id: 't-45.email', template_id: 'renewal.t-45.regular' } });
-  expect(screen.getByRole('option', { name: /45 days before renewal.*custom/i })).toBeInTheDocument();
-  // The step's own value must still be exactly what was loaded — not
-  // snapped to the nearest standard offset.
-  expect(screen.queryByRole('option', { name: /^45 days before renewal$/i })).not.toBeInTheDocument();
+  expect(screen.queryByText(/advanced \(raw identifiers\)/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^step id$/i)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^template id$/i)).not.toBeInTheDocument();
 });
 
 it('renders channel as a radiogroup', () => {

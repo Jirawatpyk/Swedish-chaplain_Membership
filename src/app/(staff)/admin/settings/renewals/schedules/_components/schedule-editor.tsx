@@ -63,6 +63,56 @@ export interface SchedulePolicyWire {
   updated_at: string;
 }
 
+/**
+ * v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 3) —
+ * editor-local step shape. `step_id` is recomposed on every timing/
+ * channel edit (including on every keystroke in the new custom-day
+ * input — see `step-card.tsx`), so keying `<StepCard>` by `step_id`
+ * remounted the whole card mid-edit and dropped focus. `_uiKey` is a
+ * STABLE, edit-independent identity generated once per step (see
+ * `nextUiKey` below) that never itself gets recomputed on edit — every
+ * `{...step, ...}` spread inside `step-card.tsx`'s onChange handlers
+ * carries it forward automatically (TypeScript's structural typing
+ * doesn't strip extra runtime properties from a spread), and the two
+ * handlers that build a fresh literal instead of spreading
+ * (`handleChannelChange`'s two branches) thread it through explicitly.
+ *
+ * NEVER sent over the wire — `toWireSteps` strips it before every PUT
+ * (see `handleSave`) so the request body stays byte-identical to
+ * `{ steps: ScheduleStepWire[] }`.
+ */
+export interface EditorStep extends ScheduleStepWire {
+  readonly _uiKey: string;
+}
+
+export interface EditorSchedulePolicy {
+  tier_bucket: TierBucket;
+  steps: EditorStep[];
+  updated_at: string;
+}
+
+// Deterministic, monotonically-incrementing `_uiKey` source. `Math.random()`
+// / `Date.now()` / an argless `new Date()` are BANNED for this purpose (v3
+// brief) — a random or clock-based key would defeat the whole point of a
+// STABLE key. Module-level so every step ever created by this editor
+// (across every tier bucket) gets a globally distinct key.
+let uiKeySeq = 0;
+
+function nextUiKey(tierBucket: TierBucket): string {
+  return `${tierBucket}-${uiKeySeq++}`;
+}
+
+/**
+ * Strip `_uiKey` before the PUT body is built. Exported for direct unit
+ * testing (same "extract for testability" convention as
+ * `isOfflineFetchError` / `emptyStep` below) — proves the wire payload
+ * stays byte-identical to `ScheduleStepWire[]` without needing to mock
+ * `fetch` end to end.
+ */
+export function toWireSteps(steps: ReadonlyArray<EditorStep>): ScheduleStepWire[] {
+  return steps.map(({ _uiKey, ...wire }) => wire);
+}
+
 export interface ScheduleEditorProps {
   readonly initialPolicies: ReadonlyArray<SchedulePolicyWire>;
   readonly readOnly: boolean;
@@ -126,7 +176,7 @@ export function isOfflineFetchError(e: unknown): boolean {
 export function emptyStep(
   tier: TierBucket,
   existingSteps: ReadonlyArray<ScheduleStepWire>,
-): ScheduleStepWire {
+): EditorStep {
   const usedEmailOffsets = new Set(
     existingSteps.filter((s) => s.channel === 'email').map((s) => s.offset_days),
   );
@@ -135,6 +185,9 @@ export function emptyStep(
     standardOffsetDays.find((d) => !usedEmailOffsets.has(d)) ?? standardOffsetDays[0] ?? -30;
   const existingIds = new Set(existingSteps.map((s) => s.step_id));
   return {
+    // v3 — the other half of Change 3 ("Add step" gets a fresh stable
+    // key; `policiesByBucket` below covers the "loaded from server" half).
+    _uiKey: nextUiKey(tier),
     step_id: composeUniqueStepId({ offsetDays, channel: 'email' }, existingIds),
     offset_days: offsetDays,
     channel: 'email',
@@ -144,12 +197,16 @@ export function emptyStep(
 
 function policiesByBucket(
   policies: ReadonlyArray<SchedulePolicyWire>,
-): Record<TierBucket, SchedulePolicyWire | undefined> {
-  const out: Partial<Record<TierBucket, SchedulePolicyWire>> = {};
+): Record<TierBucket, EditorSchedulePolicy | undefined> {
+  const out: Partial<Record<TierBucket, EditorSchedulePolicy>> = {};
   for (const p of policies) {
-    out[p.tier_bucket] = p;
+    out[p.tier_bucket] = {
+      tier_bucket: p.tier_bucket,
+      steps: p.steps.map((s) => ({ ...s, _uiKey: nextUiKey(p.tier_bucket) })),
+      updated_at: p.updated_at,
+    };
   }
-  return out as Record<TierBucket, SchedulePolicyWire | undefined>;
+  return out as Record<TierBucket, EditorSchedulePolicy | undefined>;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +230,7 @@ export function ScheduleEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const stepsFor = useCallback(
-    (b: TierBucket): ScheduleStepWire[] => {
+    (b: TierBucket): EditorStep[] => {
       const policy = byBucket[b];
       return policy ? [...policy.steps] : [];
     },
@@ -181,10 +238,10 @@ export function ScheduleEditor({
   );
 
   const replaceSteps = useCallback(
-    (b: TierBucket, next: ScheduleStepWire[]) => {
+    (b: TierBucket, next: EditorStep[]) => {
       setByBucket((prev) => {
         const existing = prev[b];
-        const updated: SchedulePolicyWire = {
+        const updated: EditorSchedulePolicy = {
           tier_bucket: b,
           steps: next,
           updated_at: existing?.updated_at ?? '',
@@ -206,7 +263,10 @@ export function ScheduleEditor({
             {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ steps: stepsNow }),
+              // v3 Change 3 — `stepsNow` carries the editor-local `_uiKey`;
+              // strip it so the wire body stays byte-identical to
+              // `{ steps: ScheduleStepWire[] }`.
+              body: JSON.stringify({ steps: toWireSteps(stepsNow) }),
             },
           );
           if (!res.ok) {
@@ -373,14 +433,16 @@ export function ScheduleEditor({
                   // React reconciliation diff by position, so when admin
                   // clicks Move-up/Move-down the input field values
                   // appeared to swap (state stayed bound to the index
-                  // that no longer pointed at the same step). Loaded
-                  // steps keep their stored (server-validated, distinct)
-                  // step_id; a freshly-added step composes a deterministic
-                  // one via `emptyStep()`/`StepCard`'s own timing/channel
-                  // controls, which the admin adjusts before Save (the
-                  // server's distinct-step_ids zod check is the
-                  // authoritative guard against duplicates either way).
-                  key={`${b}-${step.step_id}`}
+                  // that no longer pointed at the same step).
+                  //
+                  // v3 rework (Change 3): `${b}-${step.step_id}` (the K5
+                  // fix) was itself a bug — `step_id` is recomposed on
+                  // every timing/channel edit (including every keystroke
+                  // in the new custom-day input), so the key changed
+                  // mid-edit and remounted the card, dropping focus.
+                  // `_uiKey` is generated once per step and never
+                  // recomputed on edit — see its doc comment above.
+                  key={step._uiKey}
                   tierBucket={b}
                   step={step}
                   index={idx}

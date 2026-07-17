@@ -17,9 +17,14 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { ReminderTimeline } from '@/app/(staff)/admin/settings/renewals/schedules/_components/reminder-timeline';
-import type { ScheduleStepWire } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
+import type { EditorStep } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
 
-function renderTL(steps: ScheduleStepWire[]) {
+// v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 3) —
+// `ReminderTimeline` now keys its pins/`<ol>` items by the editor's
+// stable `_uiKey`, not `step_id`. Fixtures below carry a fixed `_uiKey`
+// per step (values don't matter for these assertions — only that the
+// type shape matches what the editor actually threads through).
+function renderTL(steps: EditorStep[]) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
       <ReminderTimeline tierBucket="regular" steps={steps} />
@@ -29,8 +34,8 @@ function renderTL(steps: ScheduleStepWire[]) {
 
 it('renders a text-alternative list item per step', () => {
   renderTL([
-    { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
-    { step_id: 't+7.task.phone_call', offset_days: 7, channel: 'task', task_type: 'phone_call', assignee_role: 'admin' },
+    { _uiKey: 'regular-0', step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+    { _uiKey: 'regular-1', step_id: 't+7.task.phone_call', offset_days: 7, channel: 'task', task_type: 'phone_call', assignee_role: 'admin' },
   ]);
   const items = screen.getAllByRole('listitem');
   expect(items).toHaveLength(2);
@@ -47,14 +52,14 @@ it('shows the empty-due copy and the due-date marker when there are no steps', (
 
 it('shows the due-date legend label alongside the marker (WCAG 1.1.1/1.4.1 — not color alone)', () => {
   renderTL([
-    { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+    { _uiKey: 'regular-0', step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
   ]);
   expect(screen.getByText('Due date')).toBeInTheDocument();
 });
 
 it('prefixes ids with the tier bucket', () => {
   const { container } = renderTL([
-    { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+    { _uiKey: 'regular-0', step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
   ]);
   // every element with an id starts with "regular-"
   const idEls = container.querySelectorAll('[id]');
