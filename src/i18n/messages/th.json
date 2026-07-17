@@ -3247,7 +3247,6 @@
               "beforeRenewal": "{days} วันก่อนต่ออายุ",
               "afterRenewal": "{days} วันหลังต่ออายุ",
               "onRenewal": "วันครบกำหนด",
-              "custom": "(กำหนดเอง)",
               "customOption": "กำหนดเอง…",
               "customDaysLabel": "จำนวนวัน",
               "direction": {
@@ -3284,7 +3283,7 @@
             "stepRemoved": "ลบขั้นตอนแล้ว"
           },
           "saved": {
-            "toast": "บันทึกตาราง {tier} แล้ว (+{added} -{removed} ={unchanged})"
+            "toast": "{total, plural, =0 {บันทึกตาราง{tier}แล้ว} other {บันทึกตาราง{tier}แล้ว · เพิ่ม {added} · ลบ {removed}}}"
           },
           "empty": {
             "noPoliciesTitle": "ยังไม่มีขั้นตอนการแจ้งเตือน",

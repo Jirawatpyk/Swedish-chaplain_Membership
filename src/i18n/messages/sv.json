@@ -3247,7 +3247,6 @@
               "beforeRenewal": "{days} dagar före förnyelse",
               "afterRenewal": "{days} dagar efter förnyelse",
               "onRenewal": "På förnyelsedagen",
-              "custom": "(anpassad)",
               "customOption": "Anpassad…",
               "customDaysLabel": "Antal dagar",
               "direction": {
@@ -3284,7 +3283,7 @@
             "stepRemoved": "Steg borttaget"
           },
           "saved": {
-            "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
+            "toast": "{total, plural, =0 {Schemat för {tier} sparat} other {Schemat för {tier} sparat · {added} {added, plural, one {tillagd} other {tillagda}}, {removed} {removed, plural, one {borttagen} other {borttagna}}}}"
           },
           "empty": {
             "noPoliciesTitle": "Inga påminnelsesteg ännu",

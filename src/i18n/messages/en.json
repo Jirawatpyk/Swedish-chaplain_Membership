@@ -3247,7 +3247,6 @@
               "beforeRenewal": "{days} days before renewal",
               "afterRenewal": "{days} days after renewal",
               "onRenewal": "On renewal date",
-              "custom": "(custom)",
               "customOption": "Custom…",
               "customDaysLabel": "Number of days",
               "direction": {
@@ -3284,7 +3283,7 @@
             "stepRemoved": "Step removed"
           },
           "saved": {
-            "toast": "Schedule for {tier} saved (+{added} -{removed} ={unchanged})"
+            "toast": "{total, plural, =0 {{tier} schedule saved} other {{tier} schedule saved · {added} added, {removed} removed}}"
           },
           "empty": {
             "noPoliciesTitle": "No reminder steps yet",

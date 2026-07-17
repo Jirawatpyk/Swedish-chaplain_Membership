@@ -329,12 +329,20 @@ export function ScheduleEditor({
               updated_at: body.updated_at,
             },
           }));
+          // Plain-language save toast (follow-up UX fix): the raw
+          // change-diff counts `(+added -removed =unchanged)` read as
+          // noise to admins. `unchanged` is dropped entirely; `added`/
+          // `removed` only appear when non-zero — the ICU message keys
+          // off `total` (=0 → plain confirmation, otherwise the counted
+          // sentence) so the branch lives in the translation, not here.
+          const added = body.change_diff.added?.length ?? 0;
+          const removed = body.change_diff.removed?.length ?? 0;
           toast.success(
             t('saved.toast', {
               tier: t(`tabs.${b}`),
-              added: body.change_diff.added?.length ?? 0,
-              removed: body.change_diff.removed?.length ?? 0,
-              unchanged: body.change_diff.unchanged?.length ?? 0,
+              total: added + removed,
+              added,
+              removed,
             }),
           );
         } catch (e) {

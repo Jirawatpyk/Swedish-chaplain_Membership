@@ -18,8 +18,10 @@
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { NextIntlClientProvider } from 'next-intl';
+import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
+import thMessages from '@/i18n/messages/th.json';
+import svMessages from '@/i18n/messages/sv.json';
 // F8 Phase 8 path-alignment fix — schedule-editor.tsx moved to
 // `(staff)/admin/settings/renewals/schedules/...` post-Wave K16. The
 // test's import path lagged behind the source move; corrected here so
@@ -51,6 +53,87 @@ beforeAll(() => {
       }
     };
   }
+});
+
+// Follow-up UX fix (`.superpowers/sdd/followup-toast-report.md`) — the
+// save toast used to render the raw change-diff counts verbatim, e.g.
+// "Schedule for Thai alumni saved (+0 -0 =4)", which reads as noise to
+// admins. `saved.toast` is now an ICU message keyed off a `total`
+// (added + removed, computed in `handleSave`) so the "nothing changed"
+// case collapses to a plain confirmation with NO numbers, and the
+// "changed" case drops the `unchanged` count entirely. Resolved against
+// the REAL locale files (not a hand-written fixture) so this fails the
+// moment the shipped ICU string drifts from what's asserted here —
+// same convention as `contact-block-invite-badges.test.tsx`.
+describe('saved.toast — plain-language copy (follow-up UX fix)', () => {
+  const NAMESPACE = 'admin.renewals.settings.schedules';
+
+  function translatorFor(locale: 'en' | 'th' | 'sv') {
+    const messagesByLocale = { en: messages, th: thMessages, sv: svMessages };
+    return createTranslator({
+      locale,
+      messages: messagesByLocale[locale],
+      namespace: NAMESPACE,
+    } as unknown as Parameters<typeof createTranslator>[0]);
+  }
+
+  describe('nothing changed (added === 0 && removed === 0) — no numbers at all', () => {
+    it('EN', () => {
+      const t = translatorFor('en');
+      expect(
+        t('saved.toast', { tier: 'Thai alumni', total: 0, added: 0, removed: 0 }),
+      ).toBe('Thai alumni schedule saved');
+    });
+
+    it('TH', () => {
+      const t = translatorFor('th');
+      expect(
+        t('saved.toast', { tier: 'ศิษย์เก่าไทย', total: 0, added: 0, removed: 0 }),
+      ).toBe('บันทึกตารางศิษย์เก่าไทยแล้ว');
+    });
+
+    it('SV', () => {
+      const t = translatorFor('sv');
+      expect(
+        t('saved.toast', { tier: 'Thai-alumner', total: 0, added: 0, removed: 0 }),
+      ).toBe('Schemat för Thai-alumner sparat');
+    });
+  });
+
+  describe('something changed — plain sentence with counts, unchanged dropped', () => {
+    it('EN', () => {
+      const t = translatorFor('en');
+      const rendered = t('saved.toast', {
+        tier: 'Thai alumni',
+        total: 3,
+        added: 2,
+        removed: 1,
+      });
+      expect(rendered).toBe('Thai alumni schedule saved · 2 added, 1 removed');
+      expect(rendered.toLowerCase()).not.toContain('unchanged');
+    });
+
+    it('TH', () => {
+      const t = translatorFor('th');
+      const rendered = t('saved.toast', {
+        tier: 'ศิษย์เก่าไทย',
+        total: 3,
+        added: 2,
+        removed: 1,
+      });
+      expect(rendered).toBe('บันทึกตารางศิษย์เก่าไทยแล้ว · เพิ่ม 2 · ลบ 1');
+    });
+
+    it('SV — pluralizes the added/removed adjective agreement (tillagd/tillagda, borttagen/borttagna)', () => {
+      const t = translatorFor('sv');
+      expect(
+        t('saved.toast', { tier: 'Thai-alumner', total: 3, added: 1, removed: 2 }),
+      ).toBe('Schemat för Thai-alumner sparat · 1 tillagd, 2 borttagna');
+      expect(
+        t('saved.toast', { tier: 'Thai-alumner', total: 3, added: 2, removed: 1 }),
+      ).toBe('Schemat för Thai-alumner sparat · 2 tillagda, 1 borttagen');
+    });
+  });
 });
 
 describe('isOfflineFetchError() — schedule-editor offline detection', () => {
