@@ -10,6 +10,8 @@
  *     `Tabs.Panel` keeps all 5 tier panels mounted via `hidden` (WCAG
  *     4.1.1 — duplicate ids across simultaneously-mounted panels).
  *   - Zero steps → only the due marker + `timeline.emptyDue` copy.
+ *   - The due-date marker also carries a `timeline.dueLabel` text legend
+ *     entry (WCAG 1.1.1 / 1.4.1 — color is never the sole differentiator).
  */
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -34,9 +36,20 @@ it('renders a text-alternative list item per step', () => {
   expect(items).toHaveLength(2);
 });
 
-it('shows the empty-due copy when there are no steps', () => {
-  renderTL([]);
+it('shows the empty-due copy and the due-date marker when there are no steps', () => {
+  const { container } = renderTL([]);
   expect(screen.getByText(/only the due date is shown/i)).toBeInTheDocument();
+  // Axis + due marker must still render (design doc §5.1: zero steps →
+  // due marker only, no pins) — not replaced entirely by the text copy.
+  const marker = container.querySelector('.h-4.bg-destructive');
+  expect(marker).not.toBeNull();
+});
+
+it('shows the due-date legend label alongside the marker (WCAG 1.1.1/1.4.1 — not color alone)', () => {
+  renderTL([
+    { step_id: 't-30.email', offset_days: -30, channel: 'email', template_id: 'renewal.t-30.regular' },
+  ]);
+  expect(screen.getByText('Due date')).toBeInTheDocument();
 });
 
 it('prefixes ids with the tier bucket', () => {

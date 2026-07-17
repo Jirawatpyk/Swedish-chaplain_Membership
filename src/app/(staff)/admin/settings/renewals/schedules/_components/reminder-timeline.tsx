@@ -10,6 +10,9 @@
  * screen readers / no-JS (WCAG 1.1.1 / 1.3.1 — same "canvas is
  * `aria-hidden`, a real DOM list carries the data" pattern the 067
  * dashboard charts use, see `components/dashboard/membership-tier-chart.tsx`).
+ * The axis + due-date marker render unconditionally, including with zero
+ * steps (design doc §5.1: "a tier with zero steps renders the due-date
+ * marker only (no pins)") — only the per-step pins are conditional.
  *
  * Colour token note: the design contract calls for "email = blue,
  * task = amber". `globals.css` defines `--chart-1` as the navy/blue token
@@ -19,9 +22,11 @@
  * suggested) would render two visually-indistinguishable blue pins.
  * Confirmed against `src/app/globals.css` lines ~204-208 (light) and
  * ~340-344 (dark) before choosing `--chart-5`. Colour is never the SOLE
- * differentiator regardless — the `Mail`/`ListTodo` icons in the legend
- * and the "Email"/"Task" words in the SR list carry the same distinction
- * (WCAG 1.4.1).
+ * differentiator regardless — the `Mail`/`ListTodo` icons plus a third
+ * `bg-destructive` swatch in the legend, and the "Email"/"Task" words in
+ * the SR list, carry the same distinctions (WCAG 1.1.1 / 1.4.1) — the red
+ * due marker in particular previously had no text equivalent at all,
+ * fixed by adding the `timeline.dueLabel` legend entry.
  *
  * ID prefixing: Base UI `Tabs.Panel` (see `../schedule-editor.tsx`) keeps
  * all 5 tier panels mounted simultaneously (toggling `hidden`, not
@@ -66,26 +71,30 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
         {t('timeline.textAlt', { count: steps.length })}
       </p>
 
-      {sorted.length === 0 ? (
-        <p className="text-center text-caption text-muted-foreground">{t('timeline.emptyDue')}</p>
-      ) : (
-        <div className="relative mt-6 h-0.5 bg-border" aria-hidden="true">
-          {/* Due-date marker, always at day 0 regardless of axis clamping. */}
+      {/* Axis + due-date marker — ALWAYS rendered, even with zero steps
+          (design contract §5.1: "a tier with zero steps renders the
+          due-date marker only (no pins)"). Only the per-step pins are
+          conditional on `sorted.length`. */}
+      <div className="relative mt-6 h-0.5 bg-border" aria-hidden="true">
+        {/* Due-date marker, always at day 0 regardless of axis clamping. */}
+        <span
+          className="absolute top-[-7px] h-4 w-0.5 -translate-x-1/2 bg-destructive"
+          style={{ left: `${pct(0)}%` }}
+        />
+        {sorted.map((s) => (
           <span
-            className="absolute top-[-7px] h-4 w-0.5 -translate-x-1/2 bg-destructive"
-            style={{ left: `${pct(0)}%` }}
+            key={s.step_id}
+            className={`absolute top-[-5px] h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${
+              s.channel === 'email' ? 'bg-chart-1' : 'bg-chart-5'
+            }`}
+            style={{ left: `${pct(s.offset_days)}%` }}
           />
-          {sorted.map((s) => (
-            <span
-              key={s.step_id}
-              className={`absolute top-[-5px] h-3 w-3 -translate-x-1/2 rounded-full border-2 border-background ${
-                s.channel === 'email' ? 'bg-chart-1' : 'bg-chart-5'
-              }`}
-              style={{ left: `${pct(s.offset_days)}%` }}
-            />
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
+
+      {sorted.length === 0 ? (
+        <p className="mt-2 text-center text-caption text-muted-foreground">{t('timeline.emptyDue')}</p>
+      ) : null}
 
       {/* Text alternative — ALWAYS rendered (not conditionally hidden by
           the pin-strip branch above) so assistive tech gets the same
@@ -108,6 +117,10 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
         <span className="flex items-center gap-1">
           <ListTodo aria-hidden="true" className="h-3 w-3 text-chart-5" />
           {t('timeline.legendTask')}
+        </span>
+        <span className="flex items-center gap-1">
+          <span aria-hidden="true" className="h-3 w-3 rounded-sm bg-destructive" />
+          {t('timeline.dueLabel')}
         </span>
       </div>
     </div>
