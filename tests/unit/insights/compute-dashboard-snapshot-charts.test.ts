@@ -104,6 +104,44 @@ describe('computeDashboardSnapshot — 067 chart aggregates', () => {
     ]);
   });
 
+  it('resolves the NEWEST plan-year label when one planId spans multiple years (deterministic, not first-to-resolve)', async () => {
+    // Clone+rename scenario: the SAME plan slug is held under two active
+    // years with different stored names. `groupActiveMembersByTier` collapses
+    // plan year (groups by planId), so the label shown for the collapsed
+    // `corp` bar must deterministically be the newest year's name — never
+    // whichever `getPlanLabel` promise happened to settle first.
+    const members: MemberPlanRef[] = [
+      m('m1', { planId: 'corp', planYear: 2025 }), // older — listed first
+      m('m2', { planId: 'corp', planYear: 2026 }), // newer
+    ];
+    const labelByYear: Record<number, string> = {
+      2025: 'Corporate 2025',
+      2026: 'Corporate 2026',
+    };
+    const deps = makeDeps();
+    const overridden: ComputeDashboardSnapshotDeps = {
+      ...deps,
+      memberEnumeration: { listActiveWithPlan: async () => members },
+      memberSource: {
+        ...deps.memberSource,
+        countByStatus: async () => ({ active: members.length, inactive: 0, archived: 0 }),
+      },
+      planSource: {
+        getEntitlements: async () => null,
+        getPlanLabel: async (_c: unknown, _planId: string, planYear: number) =>
+          labelByYear[planYear] ?? null,
+      },
+    } as unknown as ComputeDashboardSnapshotDeps;
+
+    const r = await computeDashboardSnapshot(ctx, overridden);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    expect(r.value.tierDistribution).toEqual([
+      { tierKey: 'corp', label: 'Corporate 2026', count: 2 },
+    ]);
+  });
+
   it('maps invoiceStatus straight from InvoiceSource, satang bigint -> decimal string', async () => {
     const r = await computeDashboardSnapshot(ctx, makeDeps());
     expect(r.ok).toBe(true);

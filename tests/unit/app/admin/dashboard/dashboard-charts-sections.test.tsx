@@ -138,6 +138,22 @@ vi.mock('@/modules/insights', () => ({
 }));
 
 import StaffHomePage from '@/app/(staff)/admin/(home)/page';
+import { listDashboard } from '@/modules/insights';
+
+/** A fresh-tenant / no-activity snapshot — empty tierDistribution + all-zero
+ * invoiceStatus so BOTH new Breakdown charts must render their empty branch. */
+const EMPTY_SNAPSHOT: DashboardSnapshot = {
+  counts: { total: 0, active: 0, atRisk: 0, overdue: 0 },
+  ytdPaidRevenueSatang: '0',
+  underDeliveredBenefitCount: 0,
+  needsAttention: { broadcastsAwaitingApproval: 0, overdueInvoices: 0, atRiskMembers: 0 },
+  revenueTrend: [],
+  memberGrowth: [],
+  topInsights: [],
+  tierDistribution: [],
+  invoiceStatus: { buckets: [], draftCount: 0 },
+  computedAt: '2026-07-16T00:00:00.000Z',
+};
 
 async function renderPage(): Promise<string> {
   const tree = await StaffHomePage();
@@ -183,5 +199,22 @@ describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => 
     const html = await renderPage();
     expect(html).not.toContain('MISSING_KEY:');
     expect(html).not.toContain('MISSING_NS:');
+  });
+
+  it('renders both new charts empty-state (no crash) when the snapshot has no tier/invoice data', async () => {
+    // Override only this render — `mockResolvedValueOnce` falls back to the
+    // persistent non-empty SNAPSHOT for every other test.
+    vi.mocked(listDashboard).mockResolvedValueOnce({
+      ok: true,
+      value: { metrics: EMPTY_SNAPSHOT, computedAt: EMPTY_SNAPSHOT.computedAt },
+    } as Awaited<ReturnType<typeof listDashboard>>);
+
+    const html = await renderPage();
+    expect(html).toContain(en.admin.dashboard.membershipTier.empty);
+    expect(html).toContain(en.admin.dashboard.invoiceStatus.empty);
+    // Still server-renders cleanly: no dangling i18n, no recharts in SSR.
+    expect(html).not.toContain('MISSING_KEY:');
+    expect(html).not.toContain('MISSING_NS:');
+    expect(html).not.toMatch(/recharts-/);
   });
 });

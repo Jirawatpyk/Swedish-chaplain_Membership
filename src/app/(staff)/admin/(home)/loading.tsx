@@ -91,7 +91,19 @@ export default async function Loading() {
                 <SkeletonBlock className="h-5 w-40" />
               </CardHeader>
               <CardContent>
-                <SkeletonBlock className="h-32 w-full" />
+                {/* Headline row (text-3xl active total + right-aligned caption)
+                    — mirrors MembershipTierChart's summary row so the
+                    skeleton→real swap doesn't insert a new line and push the
+                    bars (and the activity feed below) down (CLS). */}
+                <div className="flex items-baseline justify-between gap-2">
+                  <SkeletonBlock className="h-8 w-16" />
+                  <SkeletonBlock className="h-3 w-24" />
+                </div>
+                {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
+                    (120px). The real canvas grows 36px per tier above 3 tiers,
+                    so many-tier tenants expand DOWNWARD from here — a skeleton
+                    cannot know the tier count before the snapshot resolves. */}
+                <SkeletonBlock className="mt-3 h-[120px] w-full" />
               </CardContent>
             </Card>
             <Card>

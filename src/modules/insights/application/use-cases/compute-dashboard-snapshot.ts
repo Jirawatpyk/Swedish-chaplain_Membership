@@ -164,7 +164,13 @@ export async function computeDashboardSnapshot(
       if (!distinctPlans.has(key)) distinctPlans.set(key, m);
     }
     const entitlementByPlanKey = new Map<string, QuotaEntitlement>();
-    const labelByPlanId = new Map<string, string>();
+    // 067 — resolved plan label per `planId`, tagged with the plan YEAR it came
+    // from. When one plan slug (planId) is held under multiple active plan-years
+    // with DIFFERENT stored names (a clone+rename mid-migration), the NEWEST
+    // year's label wins — deterministically, whichever `getPlanLabel` promise
+    // happens to settle first. A first-to-resolve guard (`!has()`) would pick a
+    // Promise-scheduling-dependent winner that can flip between cron runs.
+    const labelByPlanId = new Map<string, { planYear: number; label: string }>();
     await Promise.all(
       [...distinctPlans].map(async ([key, ref]) => {
         const [ent, label] = await Promise.all([
@@ -177,8 +183,14 @@ export async function computeDashboardSnapshot(
             culturalTicketsPerYear: ent.culturalTicketsPerYear,
           });
         }
-        if (label !== null && !labelByPlanId.has(ref.planId)) {
-          labelByPlanId.set(ref.planId, label);
+        if (label !== null) {
+          // No `await` between this get and set — a callback body runs
+          // atomically on the event loop, so concurrent callbacks (all resolved
+          // by the same `Promise.all`) can never interleave the read/write.
+          const existing = labelByPlanId.get(ref.planId);
+          if (existing === undefined || ref.planYear > existing.planYear) {
+            labelByPlanId.set(ref.planId, { planYear: ref.planYear, label });
+          }
         }
       }),
     );
@@ -193,7 +205,7 @@ export async function computeDashboardSnapshot(
     // whose plan/year label didn't resolve; sorted, sums to `statusCounts.active`).
     const tierDistribution = groupActiveMembersByTier(
       activeMembers,
-      (planId) => labelByPlanId.get(planId) ?? null,
+      (planId) => labelByPlanId.get(planId)?.label ?? null,
     );
 
     // 067 — invoice-status distribution chart. `satang` is a bigint on the
