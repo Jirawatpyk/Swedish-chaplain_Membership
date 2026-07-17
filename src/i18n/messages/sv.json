@@ -616,7 +616,9 @@
         "enabled": "{email} återaktiverad.",
         "resent": "Inbjudan skickad på nytt till {email}.",
         "resendRateLimited": "För många omsändningar. Vänta en stund och försök igen.",
-        "revoked": "Inbjudan återkallad för {email}."
+        "resendError": "Kunde inte skicka inbjudan igen. Försök igen.",
+        "revoked": "Inbjudan återkallad för {email}.",
+        "revokeError": "Kunde inte återkalla inbjudan. Försök igen."
       },
       "invite": {
         "title": "Bjud in en ny användare",

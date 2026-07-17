@@ -119,6 +119,17 @@ describe('resendStaffInvitation', () => {
     if (!result.ok) expect(result.error.code).toBe('reissue-failed');
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
+
+  it('reissueInvitation throws (rejects) rather than returning an err-Result — the rejection propagates and audit is NOT called', async () => {
+    const boom = new Error('neon connection reset mid-reissue');
+    const deps: ResendStaffInvitationDeps = {
+      reissue: vi.fn().mockRejectedValue(boom),
+      audit: { append: vi.fn().mockResolvedValue(undefined) },
+    } as unknown as ResendStaffInvitationDeps;
+
+    await expect(resendStaffInvitation(input, deps)).rejects.toThrow(boom);
+    expect(deps.audit.append).not.toHaveBeenCalled();
+  });
 });
 
 /**

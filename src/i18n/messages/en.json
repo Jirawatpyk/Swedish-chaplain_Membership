@@ -616,7 +616,9 @@
         "enabled": "{email} re-enabled.",
         "resent": "Invitation re-sent to {email}.",
         "resendRateLimited": "Too many resend attempts. Please wait and try again.",
-        "revoked": "Invitation revoked for {email}."
+        "resendError": "Couldn't resend the invitation. Please try again.",
+        "revoked": "Invitation revoked for {email}.",
+        "revokeError": "Couldn't revoke the invitation. Please try again."
       },
       "invite": {
         "title": "Invite a new user",

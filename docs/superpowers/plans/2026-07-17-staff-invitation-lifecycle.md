@@ -149,7 +149,7 @@ export function pruneExpiredInvitations(input, deps?): Promise<Result<{ prunedCo
 
 - [ ] **Step 1: Failing contract test** — no/invalid bearer → 401 (mock `gateCronBearerOrRespond` returns a 401 response); valid → 200 `{prunedCount:N}` (mock `pruneExpiredInvitations`). Mirror `tests/contract` for an existing cron.
 - [ ] **Step 2: Run, verify FAIL.**
-- [ ] **Step 3: Implement** — copy `src/app/api/cron/renewals/prune-consumed-tokens/route.ts` shape: `export const runtime='nodejs'`, `GET`, `const gate = await gateCronBearerOrRespond(request); if (gate) return gate;` then `await pruneExpiredInvitations({now:new Date(), graceDays:30, requestId})` → `NextResponse.json({prunedCount})`. Add to `vercel.json` crons: `{ "path": "/api/cron/auth/prune-expired-invitations", "schedule": "30 4 * * *" }` (daily, off-peak, UTC — no conflict with existing entries).
+- [ ] **Step 3: Implement** — copy `src/app/api/cron/renewals/prune-consumed-tokens/route.ts` shape: `export const runtime='nodejs'`, `GET`, `const gate = await gateCronBearerOrRespond(request); if (gate) return gate;` then `await pruneExpiredInvitations({now:new Date(), graceDays:30, requestId})` → `NextResponse.json({prunedCount})`. Add to `vercel.json` crons: `{ "path": "/api/cron/auth/prune-expired-invitations", "schedule": "40 4 * * *" }` (daily, off-peak, UTC — `30 4 * * *` collides with F7.1 broadcasts' `prune-expired-drafts` daily cron, so this one is offset to `40 4 * * *`; no conflict with existing entries).
 - [ ] **Step 4: Run, verify PASS.**
 - [ ] **Step 5: `pnpm typecheck`; commit** — `feat(auth): prune-expired-invitations cron`.
 

@@ -103,6 +103,14 @@ export function UserListTable({
     url: string,
     method: 'POST' | 'PATCH',
     body?: object,
+    /**
+     * Final-review nit fix: an i18n message key to show on failure INSTEAD
+     * of the raw backend error code (e.g. `"not-pending"`), which is not
+     * localized and not meant for end users. Only `handleRevoke` passes
+     * this — disable/enable keep the pre-existing `err.error ?? generic`
+     * fallback unchanged.
+     */
+    errorToastKey?: string,
   ): Promise<boolean> {
     const init: RequestInit = { method };
     if (body) {
@@ -111,8 +119,12 @@ export function UserListTable({
     }
     const response = await fetch(url, init);
     if (!response.ok) {
-      const err = (await response.json().catch(() => ({}))) as { error?: string };
-      toast.error(err.error ?? tErrors('generic'));
+      if (errorToastKey) {
+        toast.error(t(errorToastKey));
+      } else {
+        const err = (await response.json().catch(() => ({}))) as { error?: string };
+        toast.error(err.error ?? tErrors('generic'));
+      }
       return false;
     }
     return true;
@@ -140,7 +152,12 @@ export function UserListTable({
 
   async function handleRevoke(user: UserRow) {
     setBusyId(user.id);
-    const ok = await runAction(`/api/auth/users/${user.id}/revoke-invite`, 'POST');
+    const ok = await runAction(
+      `/api/auth/users/${user.id}/revoke-invite`,
+      'POST',
+      undefined,
+      'toast.revokeError',
+    );
     setBusyId(null);
     if (ok) {
       toast.success(t('toast.revoked', { email: user.email }));
@@ -168,10 +185,11 @@ export function UserListTable({
         toast.error(t('toast.resendRateLimited'));
         return;
       }
-      const err = (await response.json().catch(() => ({}))) as { error?: string };
-      toast.error(err.error ?? tErrors('generic'));
+      // Final-review nit fix: a localized generic message instead of the
+      // raw backend error code (e.g. "not-pending").
+      toast.error(t('toast.resendError'));
     } catch {
-      toast.error(tErrors('generic'));
+      toast.error(t('toast.resendError'));
     } finally {
       setBusyId(null);
     }

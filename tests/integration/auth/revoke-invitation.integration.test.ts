@@ -13,6 +13,10 @@
  *      same email SURVIVES (RA-2 notification-type scoping) and (f) an
  *      already-`sent` `member_invitation` row on the same email SURVIVES
  *      (RA-2 status scoping — only undispatched rows are cleaned).
+ *      (g) a seeded `invitations` row for the pending user is gone after
+ *      revoke too — proves the `invitations.user_id` FK's
+ *      `ON DELETE CASCADE` DIRECTLY (not just transitively via (a), which
+ *      only proves the `users` row itself is gone).
  *
  *   2. RA-3 CROSS-TENANT ISOLATION: the SAME email has a pending
  *      `member_invitation` outbox row in tenant A AND tenant B (plausible —
@@ -35,6 +39,7 @@ import {
   notificationsOutbox,
   users,
   auditLog,
+  invitations,
 } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -159,10 +164,23 @@ describe('revokeInvitation — integration (Staff Invitation Lifecycle Task 3, l
     const email = `revoke-${sfx}@swecham.test`;
     const requestId = `it-revoke-${sfx}`;
     let pendingUserId: string | undefined;
+    let invitationId: string | undefined;
 
     try {
       await seedPlan(tenant.ctx.slug, admin.userId);
       pendingUserId = await seedPendingUser(email);
+
+      // (g) target: a live invitation row for the pending user — must be
+      // gone (via ON DELETE CASCADE on invitations.user_id) once the
+      // users row is deleted by revokeInvitation.
+      invitationId = randomUUID();
+      await db.insert(invitations).values({
+        id: invitationId,
+        userId: pendingUserId,
+        invitedByUserId: admin.userId,
+        intendedRole: 'member',
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
 
       const memberId = randomUUID();
       const contactId = randomUUID();
@@ -231,6 +249,15 @@ describe('revokeInvitation — integration (Staff Invitation Lifecycle Task 3, l
       const userRows = await db.select({ id: users.id }).from(users).where(eq(users.id, pendingUserId));
       expect(userRows).toHaveLength(0);
 
+      // (g) the seeded invitations row is gone too — proves
+      // invitations.user_id ON DELETE CASCADE directly, not just
+      // transitively through (a).
+      const invitationRows = await db
+        .select({ id: invitations.id })
+        .from(invitations)
+        .where(eq(invitations.id, invitationId));
+      expect(invitationRows).toHaveLength(0);
+
       // (b) the contact stays — unlinked, not deleted (F3-safe SET NULL).
       const contactRows = await db
         .select({ linkedUserId: contacts.linkedUserId, removedAt: contacts.removedAt })
@@ -281,6 +308,12 @@ describe('revokeInvitation — integration (Staff Invitation Lifecycle Task 3, l
     } finally {
       await db.delete(notificationsOutbox).where(eq(notificationsOutbox.toEmail, email.toLowerCase())).catch(() => {});
       await db.delete(auditLog).where(eq(auditLog.requestId, requestId)).catch(() => {});
+      if (invitationId) {
+        // Normally already gone via ON DELETE CASCADE once the users row is
+        // deleted — this is a defence-in-depth no-op on the happy path,
+        // only doing real work if revoke failed before reaching that point.
+        await db.delete(invitations).where(eq(invitations.id, invitationId)).catch(() => {});
+      }
       if (pendingUserId) {
         await db.delete(users).where(eq(users.id, pendingUserId)).catch(() => {});
       }

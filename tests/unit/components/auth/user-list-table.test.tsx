@@ -10,6 +10,10 @@
 //  (e) Resend fires directly (no confirm dialog): success / 429 / other-error
 //      branches
 //  (f) confirming Revoke posts to revoke-invite and toasts success
+//  (g) final-review nit: non-429 resend/revoke failures toast a localized
+//      generic message, never the raw backend error code
+//  (h) final-review nit: pending-row "Expires in N days" / "Invitation
+//      expired" label renders from the real en.json ICU plural
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
@@ -174,5 +178,60 @@ describe('UserListTable — resend + revoke invitation actions', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('toasts a localized generic message (not the raw error code) on a non-429 resend failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'not-pending' }),
+    } as unknown as Response);
+    renderTable([PENDING_USER]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend invitation' }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.resendError),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith('not-pending');
+  });
+
+  it('toasts a localized generic message (not the raw error code) on a revoke failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'not-pending' }),
+    } as unknown as Response);
+    renderTable([PENDING_USER]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith('not-pending');
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('UserListTable — pending-row invitation expiry label', () => {
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+  it('shows "Expires in 3 days" for a pending row whose invitation expires ~3 days out', () => {
+    // 3 days minus a small buffer so the component's internally-captured
+    // `now` (read a few ms after this fixture is built) still rounds UP to
+    // exactly 3, never 4 — see `daysUntil`'s Math.ceil in the component.
+    const invitationExpiresAt = new Date(Date.now() + 3 * MS_PER_DAY - 60_000);
+    renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
+
+    expect(screen.getByText('Expires in 3 days')).toBeInTheDocument();
+  });
+
+  it('shows "Invitation expired" for a pending row whose invitation is already past its expiry', () => {
+    const invitationExpiresAt = new Date(Date.now() - MS_PER_DAY);
+    renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
+
+    expect(screen.getByText('Invitation expired')).toBeInTheDocument();
   });
 });

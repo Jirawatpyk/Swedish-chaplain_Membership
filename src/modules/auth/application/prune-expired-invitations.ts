@@ -90,6 +90,12 @@ export async function pruneExpiredInvitations(
   const graceDays = input.graceDays ?? DEFAULT_GRACE_DAYS;
   const cutoff = new Date(input.now.getTime() - graceDays * MS_PER_DAY);
 
+  // YAGNI note (final review nit): the whole prune batch — delete +
+  // per-row outbox cleanup + per-row audit emit — runs inside this ONE
+  // `db.transaction`, unchunked. Acceptable at current scale (cron-driven,
+  // low volume of long-dead pending invites). Revisit with batching /
+  // paging if the expired-pending backlog ever grows large enough to make
+  // a single tx a lock-duration or memory concern.
   const prunedCount = await db.transaction(async (tx) => {
     const pruned = await deps.users.deletePendingInvitesExpiredBeforeInTx(tx, cutoff);
 
