@@ -43,15 +43,17 @@ import { buildResetPasswordEmail } from '@/modules/auth/infrastructure/email/res
 import { checkPasswordPolicy } from '@/modules/auth/application/password-policy';
 // `reissueInvitation` is imported as a VALUE (not type-only) so
 // `defaultResendStaffInvitationDeps` below can inject the real
-// implementation as `resendStaffInvitation`'s `reissue` dep. This closes
-// a value-level cycle with reissue-invitation.ts (which imports
-// `defaultReissueInvitationDeps` from this file) — safe because
-// `reissueInvitation` is a hoisted `function` declaration (its binding
-// is live before either module's top-level body runs) and
-// `defaultReissueInvitationDeps` is only read lazily inside a default
-// parameter, never at either module's top level. Same shape as the
-// `checkPasswordPolicy`/`buildResetPasswordEmail` exception documented
-// above, one level removed.
+// implementation as `resendStaffInvitation`'s `reissue` dep. UNLIKE the
+// `checkPasswordPolicy`/`buildResetPasswordEmail` precedents above
+// (which are one-directional), this introduction creates a REAL bidirectional
+// value import cycle: auth-deps.ts value-imports `reissueInvitation`
+// (here), and reissue-invitation.ts value-imports `defaultReissueInvitationDeps`
+// (for its default parameter). Kept safe by two invariants:
+//   (1) `reissueInvitation` must stay a hoisted `function` declaration
+//       (not a `const` arrow) — its binding is live before either module's
+//       top-level body runs.
+//   (2) `defaultReissueInvitationDeps` must be read only inside a
+//       default-parameter expression, never at top level of either module.
 import { reissueInvitation } from '@/modules/auth/application/reissue-invitation';
 // Outbox enqueue for invitation emails (T049 close-out). Bypasses
 // runInTenant because F1 invitation flow is cross-tenant (admin staff

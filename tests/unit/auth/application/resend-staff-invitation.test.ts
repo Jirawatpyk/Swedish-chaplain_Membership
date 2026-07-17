@@ -120,3 +120,33 @@ describe('resendStaffInvitation', () => {
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Regression guard: verify the bidirectional import cycle between auth-deps
+ * and reissue-invitation is correctly wired. This must import the REAL
+ * (unmocked) modules to detect breakage that typecheck cannot see.
+ *
+ * If this test fails, it indicates either:
+ * - The `reissueInvitation` function was converted to a `const` arrow
+ *   (TDZ error at runtime)
+ * - The `defaultReissueInvitationDeps` is being read at module top level
+ *   somewhere (creates a circular dependency error)
+ * - The wiring of `defaultResendStaffInvitationDeps.reissue` is broken
+ */
+describe('resendStaffInvitation — bidirectional cycle guard', () => {
+  it('defaultResendStaffInvitationDeps.reissue equals the real reissueInvitation', async () => {
+    // Import the REAL modules (not mocked). vi.importActual bypasses any
+    // mocks at the test level, returning the actual production code.
+    const realAuthDeps = await vi.importActual<
+      typeof import('@/lib/auth-deps')
+    >('@/lib/auth-deps');
+    const realReissueInvitation = await vi.importActual<
+      typeof import('@/modules/auth/application/reissue-invitation')
+    >('@/modules/auth/application/reissue-invitation');
+
+    // Verify the cycle is wired: the `reissue` dep is the real function.
+    expect(realAuthDeps.defaultResendStaffInvitationDeps.reissue).toBe(
+      realReissueInvitation.reissueInvitation,
+    );
+  });
+});
