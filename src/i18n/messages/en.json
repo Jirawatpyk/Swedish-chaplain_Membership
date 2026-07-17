@@ -3246,7 +3246,9 @@
               "beforeAfterLabel": "Send timing",
               "before": "before",
               "after": "after",
-              "daysLabel": "Days"
+              "daysLabel": "Days",
+              "decreaseDays": "Decrease days",
+              "increaseDays": "Increase days"
             },
             "preview": {
               "heading": "Email that will be sent",

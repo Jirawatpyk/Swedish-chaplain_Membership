@@ -3246,7 +3246,9 @@
               "beforeAfterLabel": "Sändningstid",
               "before": "före",
               "after": "efter",
-              "daysLabel": "Dagar"
+              "daysLabel": "Dagar",
+              "decreaseDays": "Minska antal dagar",
+              "increaseDays": "Öka antal dagar"
             },
             "preview": {
               "heading": "E-post som kommer att skickas",

@@ -3246,7 +3246,9 @@
               "beforeAfterLabel": "เวลาส่ง",
               "before": "ก่อน",
               "after": "หลัง",
-              "daysLabel": "จำนวนวัน"
+              "daysLabel": "จำนวนวัน",
+              "decreaseDays": "ลดจำนวนวัน",
+              "increaseDays": "เพิ่มจำนวนวัน"
             },
             "preview": {
               "heading": "อีเมลที่จะส่ง",

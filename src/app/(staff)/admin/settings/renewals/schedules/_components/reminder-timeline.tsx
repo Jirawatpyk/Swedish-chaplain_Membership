@@ -39,6 +39,7 @@ import { useTranslations } from 'next-intl';
 import { Mail, ListTodo } from 'lucide-react';
 import type { ScheduleStepWire } from './schedule-editor';
 import type { TierBucket } from '@/modules/renewals/client';
+import { formatOffset } from './format-offset';
 
 const AXIS_MIN = -120;
 const AXIS_MAX = 30;
@@ -57,13 +58,6 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
   const t = useTranslations('admin.renewals.settings.schedules');
   const id = (suffix: string) => `${tierBucket}-tl-${suffix}`;
   const sorted = [...steps].sort((a, b) => a.offset_days - b.offset_days);
-
-  const offsetLabel = (offsetDays: number) =>
-    offsetDays === 0
-      ? t('stepCard.offsetDay.exact')
-      : offsetDays < 0
-        ? t('stepCard.offsetDay.before', { days: Math.abs(offsetDays) })
-        : t('stepCard.offsetDay.after', { days: offsetDays });
 
   return (
     <div className="rounded-md border bg-muted/30 p-4" role="group" aria-labelledby={id('cap')}>
@@ -104,7 +98,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
       <ol className="sr-only">
         {sorted.map((s) => (
           <li key={s.step_id}>
-            {offsetLabel(s.offset_days)} {'·'} {t(`stepCard.channel.${s.channel}`)}
+            {formatOffset(s.offset_days, t)} {'·'} {t(`stepCard.channel.${s.channel}`)}
           </li>
         ))}
       </ol>
