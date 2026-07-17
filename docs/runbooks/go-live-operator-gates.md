@@ -108,7 +108,7 @@ echo -n "<paste-generated-value>" | vercel env add AUTH_COOKIE_SIGNING_SECRET pr
 | `CRON_SECRET` | ≥16 chars | shared Bearer for **all** cron endpoints |
 | `RESEND_API_KEY` | starts `re_` | transactional email |
 | `RESEND_WEBHOOK_SIGNING_SECRET` | ≥10 chars | transactional webhook |
-| `BLOB_READ_WRITE_TOKEN` | ≥10 chars | **public** Blob store (F4 PDFs + F9 logos) |
+| `BLOB_READ_WRITE_TOKEN` | ≥10 chars | **public** Blob store (F4 PDFs + F9 logos + F7.1a broadcast images) — **region `sin1`, see §6b** |
 | **Upstash pair** | both ≥20 chars | `KV_REST_API_URL`+`KV_REST_API_TOKEN` **OR** `UPSTASH_REDIS_REST_URL`+`UPSTASH_REDIS_REST_TOKEN` (boot throws if neither pair present) |
 | `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` | ≥32 chars | **required even with F8 dark** |
 | `STRIPE_SECRET_KEY` | `sk_test_`\|`sk_live_` | **required even with F5 dark** — use `sk_test_` until §11 |
@@ -266,7 +266,19 @@ scan-wrapper** in front of `clamd`. See `infra/clamav/README.md` +
 F9 exports use `put({ access:'private' })`; a Blob store is public XOR private. The existing
 `BLOB_READ_WRITE_TOKEN` store is **public** (F4 PDFs + F9 logos) — private puts on it are rejected.
 
-1. Vercel dashboard → Storage → **Create** Blob store, access **Private** (or `vercel blob create-store <name> --access private`).
+> ⚠️ **Region — pick Singapore (`sin1`) at creation for EVERY Blob store (public + private).**
+> The region is chosen at store-creation and is **immutable**; the Vercel default is **US
+> (`iad1`)**. A store left on the default keeps production Blob data (invoice/receipt PDFs =
+> PII + Thai tax docs) in the US, contradicting `docs/compliance/processing-records.md` (which
+> records Blob as `sin1` Singapore). `sin1` requires the **Pro** plan. You cannot move a
+> store's region afterwards — you must create a new `sin1` store, copy the DB-referenced blobs
+> (`scripts/blob-migration/`), swap the token, and redeploy.
+> **2026-07 incident:** the public store was created on the US default; migrating it by bulk-
+> reading the *whole* store from a laptop triggered a Vercel Blob **store suspension** → a prod
+> outage (invoice downloads 403). Copy only the **~161 DB-referenced keys** (see
+> `scripts/blob-migration/audit-all-prod-blobs.mjs`), never the whole store.
+
+1. Vercel dashboard → Storage → **Create** Blob store, **region Singapore (`sin1`)**, access **Private** (or `vercel blob create-store <name> --access private`).
 2. Put its token in `BLOB_PRIVATE_READ_WRITE_TOKEN` (Production + Preview). Leave `BLOB_READ_WRITE_TOKEN` on the public store.
 3. Confirm `EXPORT_DOWNLOAD_TOKEN_SECRET` set (§2.2.B).
 4. Smoke after the F9 flip: generate a directory JSON on `/admin/directory` → wait a `process-export-jobs` tick → download via the link.
