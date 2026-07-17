@@ -3243,12 +3243,11 @@
               "executive_director": "Verkställande direktör"
             },
             "timing": {
-              "beforeAfterLabel": "Sändningstid",
-              "before": "före",
-              "after": "efter",
-              "daysLabel": "Dagar",
-              "decreaseDays": "Minska antal dagar",
-              "increaseDays": "Öka antal dagar"
+              "label": "Sändningstid",
+              "beforeRenewal": "{days} dagar före förnyelse",
+              "afterRenewal": "{days} dagar efter förnyelse",
+              "onRenewal": "På förnyelsedagen",
+              "custom": "(anpassad)"
             },
             "preview": {
               "heading": "E-post som kommer att skickas",

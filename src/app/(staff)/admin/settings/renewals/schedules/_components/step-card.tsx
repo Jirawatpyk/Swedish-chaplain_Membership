@@ -6,21 +6,39 @@
  * §6.2). Same callback contract as `StepRow` — a drop-in the editor swaps
  * to in Task 9.
  *
- * Key idea: `step_id` and `template_id` are DERIVED values, not free
- * text. The wire grammar (`./step-id-composer`) requires the offset
- * token first in `step_id` (gateway's `deriveOffsetFromStepId` slices the
- * first dot-segment) and the tier last in `template_id` (gateway's
- * `deriveTierFromTemplateId` matches on `endsWith('.'+tier)`). Every
- * friendly-control change (timing, channel, task type) recomposes both
- * identifiers so an admin editing plain-language controls can never
- * produce a malformed wire shape. The Advanced disclosure is an escape
- * hatch for the rare bespoke identifier — editing there sets the raw
+ * v2 rework (`.superpowers/sdd/rework-stepcard-v2-brief.md`, live QA +
+ * code review) — three fixes shipped together:
+ *   1. The channel segmented control's hidden `RadioGroupItem` was an
+ *      in-flow 16px box (twMerge doesn't remove it — `sr-only` and
+ *      `relative`/`size-4` are DIFFERENT class groups, so both survive,
+ *      and Tailwind's generated stylesheet happens to order `.relative`
+ *      AFTER `.sr-only` so `position: relative` wins the cascade). Now
+ *      an absolutely-positioned, zero-layout, fully transparent overlay
+ *      instead — see `HIDDEN_RADIO_CLASS`.
+ *   2. The day-stepper + separate Before/After toggle is replaced by
+ *      ONE plain-language "Send timing" `<Select>` of the tier's
+ *      standard reminder points (`TIER_REMINDER_OFFSETS`), with
+ *      already-used (offset, channel) combinations disabled.
+ *   3. Every step_id recompose path funnels through the collision-safe
+ *      `composeUniqueStepId` (never a bare `composeStepId`), closing
+ *      the duplicate-`step_id` class of bug at its source.
+ *
+ * Key idea (unchanged): `step_id` and `template_id` are DERIVED values,
+ * not free text. The wire grammar (`./step-id-composer`) requires the
+ * offset token first in `step_id` (gateway's `deriveOffsetFromStepId`
+ * slices the first dot-segment) and the tier last in `template_id`
+ * (gateway's `deriveTierFromTemplateId` matches on `endsWith('.'+tier)`).
+ * Every friendly-control change (timing, channel, task type) recomposes
+ * both identifiers so an admin editing plain-language controls can
+ * never produce a malformed wire shape. The Advanced disclosure is an
+ * escape hatch for the rare bespoke identifier (and, per v2, a raw
+ * numeric offset for a non-standard timing) — editing there sets the
  * value directly and stays put until the next friendly-control change
  * recomposes over it (last control touched wins; same "controlled by
  * parent `step` prop" model the rest of the editor uses).
  */
 import { useTranslations } from 'next-intl';
-import { Mail, ListTodo, Minus, Plus, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
+import { Mail, ListTodo, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,11 +57,16 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import {
+  TIER_REMINDER_OFFSETS,
+  offsetKeyFromDays,
+  daysFromOffsetKey,
+} from '@/modules/renewals/client';
 import type { TierBucket } from '@/modules/renewals/client';
 import type { ScheduleStepWire } from './schedule-editor';
-import { composeStepId, composeTemplateId } from './step-id-composer';
+import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
 import { EmailPreview } from './email-preview';
-import { formatOffset } from './format-offset';
+import { timingSentence } from './format-offset';
 
 export interface StepCardProps {
   readonly tierBucket: TierBucket;
@@ -51,16 +74,32 @@ export interface StepCardProps {
   readonly index: number;
   readonly total: number;
   readonly readOnly: boolean;
+  /**
+   * Every OTHER step currently in this tier bucket (i.e. the full step
+   * list minus this card's own step). Drives two v2 rework features:
+   *   - the "Send timing" dropdown's disabled (already-used) options
+   *     (offsets scoped to THIS step's channel — see
+   *     `usedOffsetsForChannel` below);
+   *   - collision-safe `step_id` recompose via `composeUniqueStepId`
+   *     (scoped to the whole bucket — `step_id` uniqueness is bucket-
+   *     wide, not per-channel).
+   */
+  readonly siblingSteps: ReadonlyArray<ScheduleStepWire>;
   readonly onChange: (next: ScheduleStepWire) => void;
   readonly onRemove: () => void;
   readonly onMoveUp: () => void;
   readonly onMoveDown: () => void;
 }
 
-// Mirrors the previous StepRow offset_days bound (-365..365); the
-// stepper now edits the UNSIGNED magnitude, so the floor is 0.
-const MAGNITUDE_MIN = 0;
-const MAGNITUDE_MAX = 365;
+// Advanced-panel raw offset bound — mirrors the previous StepRow/
+// stepper offset_days bound (-365..365).
+const OFFSET_MIN = -365;
+const OFFSET_MAX = 365;
+
+function clampOffset(n: number): number {
+  const truncated = Number.isFinite(n) ? Math.trunc(n) : 0;
+  return Math.min(OFFSET_MAX, Math.max(OFFSET_MIN, truncated));
+}
 
 const KNOWN_TASK_TYPES = ['phone_call', 'admin_notify'] as const;
 type KnownTaskType = (typeof KNOWN_TASK_TYPES)[number];
@@ -69,35 +108,10 @@ function isKnownTaskType(v: string | undefined): v is KnownTaskType {
   return (KNOWN_TASK_TYPES as readonly string[]).includes(v ?? '');
 }
 
-function clampMagnitude(n: number): number {
-  const truncated = Number.isFinite(n) ? Math.trunc(n) : 0;
-  return Math.min(MAGNITUDE_MAX, Math.max(MAGNITUDE_MIN, truncated));
-}
-
-// Segmented-control segment shared styling. Base UI's `Radio.Root` (the
-// actual `role="radio"` node) is visually hidden (`sr-only`) inside each
-// label — the label itself is the visible "button". Its default
-// focus-visible ring lives on the hidden node and would never be seen,
-// so the ring instead goes on the wrapping label via `focus-within`.
-// MUST stay full-opacity `ring-ring`/`border-ring` (never the `/50`
-// utility `RadioGroupItem`'s own default style uses) — a half-opacity
-// ring on a SELECTED (already-tinted `bg-primary`) segment drops well
-// below the WCAG 2.1 SC 1.4.11 (non-text contrast) / 2.4.7 (focus
-// visible) threshold.
-// The actual `RadioGroupItem` (Base UI `Radio.Root`) is visually hidden
-// inside each segment label (see `segmentClass` above). Its own default
-// styling (`src/components/ui/radio-group.tsx`) includes a half-opacity
-// `focus-visible:ring-ring/50` — invisible in practice once clipped by
-// `sr-only`, but overridden here anyway (twMerge drops the `/50` variant
-// in favour of the full-opacity one) so no `ring-ring/50` string
-// survives in this file's rendered output at all, belt-and-suspenders
-// with the label-level `focus-within` ring above.
-const HIDDEN_RADIO_CLASS =
-  'sr-only focus-visible:ring-ring focus-visible:border-ring';
-
+// Segmented-control segment shared styling.
 function segmentClass(selected: boolean, disabled: boolean): string {
   return cn(
-    'flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
+    'relative flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-md border px-3 text-sm font-medium transition-colors',
     'focus-within:border-ring focus-within:ring-2 focus-within:ring-ring',
     selected
       ? 'border-primary bg-primary text-primary-foreground'
@@ -106,12 +120,37 @@ function segmentClass(selected: boolean, disabled: boolean): string {
   );
 }
 
+// v2 rework Issue 1 (confirmed alignment bug) — the previous
+// `'sr-only focus-visible:ring-ring focus-visible:border-ring'` did NOT
+// collapse the hidden `RadioGroupItem` out of flow. `sr-only` and the
+// base `RadioGroupItem` classes (`relative flex size-4 shrink-0
+// rounded-full border ...`) belong to DIFFERENT twMerge class groups
+// (`sr-only` is its own group — not the `position`/`size` groups), so
+// twMerge keeps BOTH class sets. Tailwind's generated stylesheet then
+// happens to order `.relative { position: relative }` AFTER
+// `.sr-only`'s `position: absolute`, so `position: relative` wins the
+// cascade and the "hidden" radio stayed a 16px in-flow box — shoving
+// the centred icon+label ~10-13px right inside each segment.
+//
+// Fix: make the radio a full-bleed, absolutely-positioned, fully
+// transparent OVERLAY instead. It covers the whole segment `<label>`
+// (which needs its own `relative` — see `segmentClass` above) so it
+// stays clickable/keyboard-focusable everywhere in the segment,
+// contributes ZERO layout box of its own, and the segment's flex
+// content (icon+label) is genuinely centred. The focus ring lives on
+// the wrapping `<label>` via `focus-within:ring-2 focus-within:ring-ring
+// focus-within:border-ring` (full-opacity — WCAG 2.1 SC 1.4.11 non-text
+// contrast / SC 2.4.7 focus visible; never the half-opacity
+// `ring-ring/50` the base `RadioGroupItem` style uses).
+const HIDDEN_RADIO_CLASS = 'absolute inset-0 size-full cursor-pointer opacity-0';
+
 export function StepCard({
   tierBucket,
   step,
   index,
   total,
   readOnly,
+  siblingSteps,
   onChange,
   onRemove,
   onMoveUp,
@@ -124,25 +163,32 @@ export function StepCard({
   // 5 concurrently-mounted panels (WCAG 4.1.1).
   const idPrefix = `${tierBucket}-${index}`;
 
-  const magnitude = Math.abs(step.offset_days);
-  const before = step.offset_days <= 0;
+  // Issue 3(b) — every OTHER step_id in this bucket (uniqueness per
+  // `parseSchedulePolicySteps` is bucket-wide, not per-channel).
+  const siblingStepIds = new Set(siblingSteps.map((s) => s.step_id));
 
-  function applyTiming(nextBefore: boolean, nextMagnitude: number) {
-    const clamped = clampMagnitude(nextMagnitude);
-    const nextDays = nextBefore ? -clamped : clamped;
+  // Issue 2 — offsets already used by ANOTHER step of the SAME channel.
+  // The natural collision key is (offset, channel) — see
+  // `composeStepId`'s own doc comment ("two steps may share an offset
+  // across channels").
+  const usedOffsetsForChannel = new Set(
+    siblingSteps.filter((s) => s.channel === step.channel).map((s) => s.offset_days),
+  );
+
+  const standardOffsetKeys = TIER_REMINDER_OFFSETS[tierBucket];
+  const currentOffsetKey = offsetKeyFromDays(step.offset_days);
+  const isCurrentStandard = (standardOffsetKeys as readonly string[]).includes(currentOffsetKey);
+
+  function applyTiming(nextDays: number) {
     // `exactOptionalPropertyTypes` forbids passing `taskType: undefined`
-    // explicitly (the composer's param type is `taskType?: string`, not
-    // `string | undefined`) — branch instead of ternary-into-undefined.
-    // `composeStepId` itself defaults a missing task taskType to
-    // 'phone_call', so defaulting here first is behaviourally identical.
+    // explicitly — branch instead of ternary-into-undefined.
     const stepId =
       step.channel === 'task'
-        ? composeStepId({
-            offsetDays: nextDays,
-            channel: 'task',
-            taskType: step.task_type ?? 'phone_call',
-          })
-        : composeStepId({ offsetDays: nextDays, channel: 'email' });
+        ? composeUniqueStepId(
+            { offsetDays: nextDays, channel: 'task', taskType: step.task_type ?? 'phone_call' },
+            siblingStepIds,
+          )
+        : composeUniqueStepId({ offsetDays: nextDays, channel: 'email' }, siblingStepIds);
     const base: ScheduleStepWire = { ...step, offset_days: nextDays, step_id: stepId };
     onChange(
       step.channel === 'email'
@@ -151,11 +197,18 @@ export function StepCard({
     );
   }
 
+  function handleTimingSelect(offsetKey: string) {
+    applyTiming(daysFromOffsetKey(offsetKey));
+  }
+
   function handleChannelChange(nextChannel: ScheduleStepWire['channel']) {
     if (nextChannel === step.channel) return;
     if (nextChannel === 'email') {
       onChange({
-        step_id: composeStepId({ offsetDays: step.offset_days, channel: 'email' }),
+        step_id: composeUniqueStepId(
+          { offsetDays: step.offset_days, channel: 'email' },
+          siblingStepIds,
+        ),
         offset_days: step.offset_days,
         channel: 'email',
         template_id: composeTemplateId(step.offset_days, tierBucket),
@@ -163,11 +216,10 @@ export function StepCard({
     } else {
       const taskType = step.task_type ?? 'phone_call';
       onChange({
-        step_id: composeStepId({
-          offsetDays: step.offset_days,
-          channel: 'task',
-          taskType,
-        }),
+        step_id: composeUniqueStepId(
+          { offsetDays: step.offset_days, channel: 'task', taskType },
+          siblingStepIds,
+        ),
         offset_days: step.offset_days,
         channel: 'task',
         task_type: taskType,
@@ -180,22 +232,20 @@ export function StepCard({
     onChange({
       ...step,
       task_type: taskType,
-      step_id: composeStepId({
-        offsetDays: step.offset_days,
-        channel: 'task',
-        taskType,
-      }),
+      step_id: composeUniqueStepId(
+        { offsetDays: step.offset_days, channel: 'task', taskType },
+        siblingStepIds,
+      ),
     });
   }
 
   return (
     <div className="rounded-md border bg-card p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {/* Header sentence — reuses the shared offset-sentence formatter
-            (existing `stepCard.offsetDay.before/after/exact` ICU keys)
-            rather than concatenating separate translated fragments. */}
-        <Badge variant="outline" className="font-mono">
-          {formatOffset(step.offset_days, t)}
+        {/* Header sentence — v2 rework Issue 4: plain language, not the
+            cryptic "T-30" form. */}
+        <Badge variant="outline" className="font-normal">
+          {timingSentence(step.offset_days, t)}
         </Badge>
         {/* Reorder/remove block — verbatim from schedule-editor.tsx's
             StepRow (lines ~184-215): same aria-labels, same disabled
@@ -268,76 +318,54 @@ export function StepCard({
           </RadioGroup>
         </div>
 
-        {/* Timing — N-day stepper + separately-labelled before/after. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <Label htmlFor={`timing-days-${idPrefix}`}>
-              {t('stepCard.timing.daysLabel')}
-            </Label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11 shrink-0"
-                disabled={readOnly || magnitude <= MAGNITUDE_MIN}
-                onClick={() => applyTiming(before, magnitude - 1)}
-                aria-label={t('stepCard.timing.decreaseDays')}
-              >
-                <Minus aria-hidden="true" className="h-4 w-4" />
-              </Button>
-              <Input
-                id={`timing-days-${idPrefix}`}
-                type="number"
-                inputMode="numeric"
-                min={MAGNITUDE_MIN}
-                max={MAGNITUDE_MAX}
-                step={1}
-                value={magnitude}
-                disabled={readOnly}
-                className="text-center"
-                onChange={(e) => applyTiming(before, Number(e.target.value))}
+        {/* Timing — v2 rework Issue 2: ONE plain-language "Send timing"
+            dropdown of the tier's standard reminder points, replacing
+            the day-stepper + separate Before/After toggle. */}
+        <div>
+          <Label htmlFor={`timing-${idPrefix}`}>{t('stepCard.timing.label')}</Label>
+          <Select
+            value={currentOffsetKey}
+            disabled={readOnly}
+            onValueChange={(v) => handleTimingSelect(v as string)}
+          >
+            <SelectTrigger id={`timing-${idPrefix}`} className="w-full">
+              <TranslatedSelectValue
+                placeholder={t('stepCard.timing.label')}
+                translate={(v) => {
+                  if (!v) return null;
+                  const days = daysFromOffsetKey(v);
+                  const sentence = timingSentence(days, t);
+                  return (standardOffsetKeys as readonly string[]).includes(v)
+                    ? sentence
+                    : `${sentence} ${t('stepCard.timing.custom')}`;
+                }}
               />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="size-11 shrink-0"
-                disabled={readOnly || magnitude >= MAGNITUDE_MAX}
-                onClick={() => applyTiming(before, magnitude + 1)}
-                aria-label={t('stepCard.timing.increaseDays')}
-              >
-                <Plus aria-hidden="true" className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <div>
-            <Label id={`timing-baf-label-${idPrefix}`}>
-              {t('stepCard.timing.beforeAfterLabel')}
-            </Label>
-            <RadioGroup
-              aria-labelledby={`timing-baf-label-${idPrefix}`}
-              value={before ? 'before' : 'after'}
-              disabled={readOnly}
-              onValueChange={(v) => applyTiming(v === 'before', magnitude)}
-              className="grid-cols-2 gap-2"
-            >
-              {(['before', 'after'] as const).map((dir) => {
-                const selected = (dir === 'before') === before;
-                const segId = `timing-dir-${idPrefix}-${dir}`;
+            </SelectTrigger>
+            <SelectContent>
+              {standardOffsetKeys.map((key) => {
+                const days = daysFromOffsetKey(key);
+                // The current step's own offset is NEVER disabled, even
+                // if a pre-existing sibling duplicate happens to share
+                // it (a legacy/collision edge case) — only an OTHER
+                // step's use of this offset blocks selection.
+                const disabled = days !== step.offset_days && usedOffsetsForChannel.has(days);
                 return (
-                  <label
-                    key={dir}
-                    htmlFor={segId}
-                    className={cn(segmentClass(selected, readOnly), 'capitalize')}
-                  >
-                    <RadioGroupItem id={segId} value={dir} className={HIDDEN_RADIO_CLASS} />
-                    {t(`stepCard.timing.${dir}`)}
-                  </label>
+                  <SelectItem key={key} value={key} disabled={disabled}>
+                    {timingSentence(days, t)}
+                  </SelectItem>
                 );
               })}
-            </RadioGroup>
-          </div>
+              {/* The step's offset may be a non-standard value (Advanced
+                  panel or legacy data) — surface it as an extra selected
+                  option rather than silently snapping it to a standard
+                  value on load. */}
+              {isCurrentStandard ? null : (
+                <SelectItem value={currentOffsetKey}>
+                  {timingSentence(step.offset_days, t)} {t('stepCard.timing.custom')}
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Channel-specific fields. */}
@@ -427,9 +455,12 @@ export function StepCard({
           </div>
         )}
 
-        {/* Advanced — raw step_id/template_id escape hatch. Editing here
-            sets the value directly; the next friendly-control change
-            (timing/channel/task type) recomposes over it. */}
+        {/* Advanced — raw step_id/template_id escape hatch, plus a raw
+            numeric offset input (v2 rework) so a power user can still
+            set a non-standard timing now that the friendly dropdown
+            only offers the tier's standard reminder points. Editing
+            here sets the value directly; the next friendly-control
+            change (timing/channel/task type) recomposes over it. */}
         <Collapsible>
           <CollapsibleTrigger
             render={
@@ -447,6 +478,22 @@ export function StepCard({
             keepMounted
             className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
+            <div>
+              <Label htmlFor={`adv-offset-${idPrefix}`}>
+                {t('stepCard.offsetDaysLabel')}
+              </Label>
+              <Input
+                id={`adv-offset-${idPrefix}`}
+                type="number"
+                inputMode="numeric"
+                min={OFFSET_MIN}
+                max={OFFSET_MAX}
+                step={1}
+                value={step.offset_days}
+                disabled={readOnly}
+                onChange={(e) => applyTiming(clampOffset(Number(e.target.value)))}
+              />
+            </div>
             <div>
               <Label htmlFor={`adv-step-id-${idPrefix}`}>
                 {t('stepCard.advanced.stepIdLabel')}

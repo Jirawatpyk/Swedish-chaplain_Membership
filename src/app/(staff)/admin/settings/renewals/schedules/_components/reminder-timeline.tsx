@@ -39,7 +39,7 @@ import { useTranslations } from 'next-intl';
 import { Mail, ListTodo } from 'lucide-react';
 import type { ScheduleStepWire } from './schedule-editor';
 import type { TierBucket } from '@/modules/renewals/client';
-import { formatOffset } from './format-offset';
+import { timingSentence } from './format-offset';
 
 const AXIS_MIN = -120;
 const AXIS_MAX = 30;
@@ -98,7 +98,7 @@ export function ReminderTimeline({ tierBucket, steps }: ReminderTimelineProps) {
       <ol className="sr-only">
         {sorted.map((s) => (
           <li key={s.step_id}>
-            {formatOffset(s.offset_days, t)} {'·'} {t(`stepCard.channel.${s.channel}`)}
+            {timingSentence(s.offset_days, t)} {'·'} {t(`stepCard.channel.${s.channel}`)}
           </li>
         ))}
       </ol>

@@ -9,11 +9,13 @@
  *   - If `offsetDays` is NOT one of the tier's `TIER_REMINDER_OFFSETS` →
  *     render a destructive `role="status"` (polite live region) "will not
  *     be sent" warning (`stepCard.preview.noCopyWarning`). Polite, not
- *     assertive: this warning remounts on every ± stepper click / typed
- *     day change in the parent `StepCard`, and an assertive `role="alert"`
- *     would interrupt screen-reader users on each keystroke.
+ *     assertive: this warning remounts on every timing change in the
+ *     parent `StepCard`, and an assertive `role="alert"` would interrupt
+ *     screen-reader users on each change.
  *   - If it IS covered → render the `stepCard.preview.heading` label plus
- *     a localized one-line summary built from `stepCard.offsetDay.*`.
+ *     a localized one-line plain-language summary built by
+ *     `timingSentence` (v2 rework Issue 4 — `stepCard.timing.*` keys,
+ *     not the cryptic `stepCard.offsetDay.*` "T-30" form).
  */
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -31,4 +33,12 @@ it('warns when the offset has no copy for the tier', () => {
 it('shows the preview heading when the offset is covered', () => {
   wrap(<EmailPreview tierBucket="regular" offsetDays={-30} />); // t-30 is in regular set
   expect(screen.getByText(/email that will be sent/i)).toBeInTheDocument();
+});
+
+// v2 rework Issue 4 — the summary sentence must read plain language
+// ("30 days before renewal"), not the cryptic "T-30" form.
+it('shows the plain-language timing sentence, not the cryptic "T-30" form', () => {
+  wrap(<EmailPreview tierBucket="regular" offsetDays={-30} />);
+  expect(screen.getByText(/30 days before renewal/i)).toBeInTheDocument();
+  expect(screen.queryByText(/T-30/)).not.toBeInTheDocument();
 });

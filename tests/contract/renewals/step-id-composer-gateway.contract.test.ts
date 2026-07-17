@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { composeStepId, composeTemplateId } from '@/app/(staff)/admin/settings/renewals/schedules/_components/step-id-composer';
+import {
+  composeStepId,
+  composeTemplateId,
+  composeUniqueStepId,
+} from '@/app/(staff)/admin/settings/renewals/schedules/_components/step-id-composer';
 import { daysFromOffsetKey, TIER_REMINDER_OFFSETS } from '@/modules/renewals/domain/value-objects/reminder-offsets';
 import { TIER_BUCKETS } from '@/modules/renewals/client';
 import {
@@ -19,5 +23,18 @@ describe('composer output resolves through the dispatch gateway parsers', () => 
         expect(deriveTierFromTemplateId(templateId)).toBe(tier);
       }
     }
+  });
+
+  // v2 rework Issue 3(b) — pins the safety claim that lets
+  // `composeUniqueStepId` append a disambiguator to step_id: the
+  // gateway's `deriveOffsetFromStepId` only reads the FIRST dot-segment,
+  // so a trailing ".2" suffix must never break offset resolution.
+  it('a disambiguated (collision-suffixed) step_id still resolves to the correct offset', () => {
+    const stepId = composeUniqueStepId(
+      { offsetDays: -30, channel: 'email' },
+      new Set(['t-30.email']),
+    );
+    expect(stepId).toBe('t-30.email.2');
+    expect(deriveOffsetFromStepId(stepId)).toBe('t-30');
   });
 });

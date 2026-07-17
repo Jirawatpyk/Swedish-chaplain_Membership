@@ -16,8 +16,29 @@ export type ScheduleTranslator = ReturnType<
   typeof useTranslations<'admin.renewals.settings.schedules'>
 >;
 
+/**
+ * "T±N" compact formatter. v2 rework (`.superpowers/sdd/rework-
+ * stepcard-v2-brief.md`, Issue 4) moved every primary user-facing
+ * surface — the timing dropdown, the StepCard header badge, the
+ * EmailPreview summary, and the timeline's screen-reader list — to
+ * `timingSentence` below (live QA: "T-30" reads as cryptic). Kept here
+ * as a small, still-tested utility in case a future raw/Advanced-
+ * context display wants the compact form.
+ */
 export function formatOffset(days: number, t: ScheduleTranslator): string {
   if (days === 0) return t('stepCard.offsetDay.exact');
   if (days < 0) return t('stepCard.offsetDay.before', { days: Math.abs(days) });
   return t('stepCard.offsetDay.after', { days });
+}
+
+/**
+ * Plain-language timing sentence ("30 days before renewal" / "On
+ * renewal date" / "7 days after renewal") — v2 rework Issue 4. Replaces
+ * the cryptic "T-30" badge/summary text across the StepCard timing
+ * dropdown, header badge, EmailPreview, and reminder-timeline SR list.
+ */
+export function timingSentence(days: number, t: ScheduleTranslator): string {
+  if (days === 0) return t('stepCard.timing.onRenewal');
+  if (days < 0) return t('stepCard.timing.beforeRenewal', { days: Math.abs(days) });
+  return t('stepCard.timing.afterRenewal', { days });
 }

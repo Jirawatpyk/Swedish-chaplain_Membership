@@ -34,10 +34,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
-import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals/client';
+import {
+  TIER_BUCKETS,
+  TIER_REMINDER_OFFSETS,
+  daysFromOffsetKey,
+  type TierBucket,
+} from '@/modules/renewals/client';
 import { StepCard } from './step-card';
 import { ReminderTimeline } from './reminder-timeline';
-import { composeStepId, composeTemplateId } from './step-id-composer';
+import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
 
 // ---------------------------------------------------------------------------
 // Wire-shape types — match the route-handler JSON contract.
@@ -101,15 +106,36 @@ export function isOfflineFetchError(e: unknown): boolean {
  * placeholder `new-<uuid>` / `renewal.t-30` shape the old `StepRow`-era
  * default used (no tier suffix on `template_id` — the gateway's
  * `deriveTierFromTemplateId` can never resolve it, so the step could
- * never actually send). `step_id`'s offset-first token still guarantees
- * distinct-step_ids per bucket for the default -30/email combination;
- * `StepCard`'s friendly controls (timing stepper, channel toggle) keep
- * both identifiers in sync from here on via the same composer.
+ * never actually send).
+ *
+ * v2 rework (`.superpowers/sdd/rework-stepcard-v2-brief.md`, Issue 3a):
+ * previously this ALWAYS defaulted to -30/email, so clicking "Add step"
+ * twice produced two `t-30.email` steps — a duplicate React list key
+ * AND a 422 from the Domain's bucket-wide `parseSchedulePolicySteps`
+ * uniqueness check. `existingSteps` (the bucket's current step list) now
+ * lets the default ADVANCE to the tier's first standard offset not
+ * already used by an existing EMAIL step (the natural collision key is
+ * offset+channel, matching `composeStepId`'s own contract). If every
+ * standard offset is already taken, fall back to the first standard
+ * offset and let `composeUniqueStepId` (step-id-composer.ts)
+ * deterministically disambiguate the step_id.
+ *
+ * Exported for direct unit testing —
+ * tests/unit/components/schedules/schedule-editor.test.tsx.
  */
-function emptyStep(tier: TierBucket): ScheduleStepWire {
-  const offsetDays = -30;
+export function emptyStep(
+  tier: TierBucket,
+  existingSteps: ReadonlyArray<ScheduleStepWire>,
+): ScheduleStepWire {
+  const usedEmailOffsets = new Set(
+    existingSteps.filter((s) => s.channel === 'email').map((s) => s.offset_days),
+  );
+  const standardOffsetDays = TIER_REMINDER_OFFSETS[tier].map(daysFromOffsetKey);
+  const offsetDays =
+    standardOffsetDays.find((d) => !usedEmailOffsets.has(d)) ?? standardOffsetDays[0] ?? -30;
+  const existingIds = new Set(existingSteps.map((s) => s.step_id));
   return {
-    step_id: composeStepId({ offsetDays, channel: 'email' }),
+    step_id: composeUniqueStepId({ offsetDays, channel: 'email' }, existingIds),
     offset_days: offsetDays,
     channel: 'email',
     template_id: composeTemplateId(offsetDays, tier),
@@ -333,7 +359,7 @@ export function ScheduleEditor({
                       type="button"
                       variant="outline"
                       disabled={readOnly}
-                      onClick={() => replaceSteps(b, [emptyStep(b)])}
+                      onClick={() => replaceSteps(b, [emptyStep(b, steps)])}
                     >
                       <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
                       {t('actions.addStep')}
@@ -360,6 +386,7 @@ export function ScheduleEditor({
                   index={idx}
                   total={steps.length}
                   readOnly={readOnly}
+                  siblingSteps={steps.filter((_, i) => i !== idx)}
                   onChange={(next) => {
                     const arr = [...steps];
                     arr[idx] = next;
@@ -430,7 +457,7 @@ export function ScheduleEditor({
                     type="button"
                     variant="outline"
                     disabled={readOnly || pending}
-                    onClick={() => replaceSteps(b, [...steps, emptyStep(b)])}
+                    onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
                   >
                     <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
                     {t('actions.addStep')}

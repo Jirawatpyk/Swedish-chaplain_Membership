@@ -3243,12 +3243,11 @@
               "executive_director": "Executive Director"
             },
             "timing": {
-              "beforeAfterLabel": "Send timing",
-              "before": "before",
-              "after": "after",
-              "daysLabel": "Days",
-              "decreaseDays": "Decrease days",
-              "increaseDays": "Increase days"
+              "label": "Send timing",
+              "beforeRenewal": "{days} days before renewal",
+              "afterRenewal": "{days} days after renewal",
+              "onRenewal": "On renewal date",
+              "custom": "(custom)"
             },
             "preview": {
               "heading": "Email that will be sent",

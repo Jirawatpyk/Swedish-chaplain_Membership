@@ -3243,12 +3243,11 @@
               "executive_director": "ผู้อำนวยการบริหาร"
             },
             "timing": {
-              "beforeAfterLabel": "เวลาส่ง",
-              "before": "ก่อน",
-              "after": "หลัง",
-              "daysLabel": "จำนวนวัน",
-              "decreaseDays": "ลดจำนวนวัน",
-              "increaseDays": "เพิ่มจำนวนวัน"
+              "label": "เวลาส่ง",
+              "beforeRenewal": "{days} วันก่อนต่ออายุ",
+              "afterRenewal": "{days} วันหลังต่ออายุ",
+              "onRenewal": "วันครบกำหนด",
+              "custom": "(กำหนดเอง)"
             },
             "preview": {
               "heading": "อีเมลที่จะส่ง",
