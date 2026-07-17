@@ -74,8 +74,11 @@ describe('integration: audit completeness — all 33 event types writable', () =
     //                  route-level forensic event for refund rate-limit hits).
     // COMP-1 US2a: 32 → 33 (migration 0222 — user_erased, GDPR Art. 17 / PDPA
     //                  member-erasure audit event).
-    expect(AUDIT_EVENT_TYPES.length).toBe(33);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(33);
+    // staff invite lifecycle: 33 → 36 (migration 0258 — invitation_reissued,
+    //                  invitation_revoked, invitation_expired for the
+    //                  /admin/users resend / revoke / cron-prune actions).
+    expect(AUDIT_EVENT_TYPES.length).toBe(36);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(36);
   });
 });
 
