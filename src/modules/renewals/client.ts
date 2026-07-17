@@ -51,3 +51,14 @@ export type {
   RenewalMonthSummary,
   RenewalMonthAggregation,
 } from './domain/renewal-month-bucket';
+
+// Reminder-offset grammar — schedule editor constants and type guards.
+// Pure domain, client-bundle-safe; consumed by tier-aware reminder UI.
+export {
+  RENEWAL_SCHEDULE_OFFSETS,
+  TIER_REMINDER_OFFSETS,
+  offsetKeyFromDays,
+  daysFromOffsetKey,
+  isScheduleOffset,
+  type RenewalReminderOffset,
+} from './domain/value-objects/reminder-offsets';
