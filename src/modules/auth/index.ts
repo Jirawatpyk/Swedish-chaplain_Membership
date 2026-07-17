@@ -118,6 +118,19 @@ export {
   type DisableUserDeps,
 } from './application/disable-user';
 
+// Staff Invitation Lifecycle Task 1 — re-sends a fresh invitation for an
+// existing pending STAFF user (admin/manager). Thin wrapper around F1's
+// shared `reissueInvitation` primitive that adds the `invitation_reissued`
+// audit event (see resend-staff-invitation.ts header for why the audit
+// lives here and not inside `reissueInvitation`).
+export {
+  resendStaffInvitation,
+  type ResendStaffInvitationInput,
+  type ResendStaffInvitationSuccess,
+  type ResendStaffInvitationError,
+  type ResendStaffInvitationDeps,
+} from './application/resend-staff-invitation';
+
 export {
   enableUser,
   type EnableUserInput,

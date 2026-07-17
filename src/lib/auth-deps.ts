@@ -41,6 +41,18 @@ import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildResetPasswordEmail } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { checkPasswordPolicy } from '@/modules/auth/application/password-policy';
+// `reissueInvitation` is imported as a VALUE (not type-only) so
+// `defaultResendStaffInvitationDeps` below can inject the real
+// implementation as `resendStaffInvitation`'s `reissue` dep. This closes
+// a value-level cycle with reissue-invitation.ts (which imports
+// `defaultReissueInvitationDeps` from this file) — safe because
+// `reissueInvitation` is a hoisted `function` declaration (its binding
+// is live before either module's top-level body runs) and
+// `defaultReissueInvitationDeps` is only read lazily inside a default
+// parameter, never at either module's top level. Same shape as the
+// `checkPasswordPolicy`/`buildResetPasswordEmail` exception documented
+// above, one level removed.
+import { reissueInvitation } from '@/modules/auth/application/reissue-invitation';
 // Outbox enqueue for invitation emails (T049 close-out). Bypasses
 // runInTenant because F1 invitation flow is cross-tenant (admin staff
 // created without a tenant context); the outbox table has no RLS
@@ -78,6 +90,7 @@ import type { CreateUserDeps } from '@/modules/auth/application/create-user';
 import type { DeleteInvitedUserDeps } from '@/modules/auth/application/delete-invited-user';
 import type { EraseUserDeps } from '@/modules/auth/application/erase-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
+import type { ResendStaffInvitationDeps } from '@/modules/auth/application/resend-staff-invitation';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
@@ -255,6 +268,17 @@ export const defaultReissueInvitationDeps: ReissueInvitationDeps = {
   tokens: tokenRepo,
   enqueueInvitationInTx,
   now: wallClock,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 1 — `resendStaffInvitation` deps. Wraps
+ * the shared `reissueInvitation` primitive above and adds the staff-facing
+ * `invitation_reissued` audit event (which `reissueInvitation` itself
+ * deliberately does not emit — see resend-staff-invitation.ts header).
+ */
+export const defaultResendStaffInvitationDeps: ResendStaffInvitationDeps = {
+  reissue: reissueInvitation,
+  audit: auditRepo,
 };
 
 export const defaultRedeemInviteDeps: RedeemInviteDeps = {
