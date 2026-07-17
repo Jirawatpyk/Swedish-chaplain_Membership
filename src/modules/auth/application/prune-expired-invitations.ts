@@ -30,18 +30,14 @@
  * still-`pending` `member_invitation` row for the email regardless of
  * `tenant_id`.
  *
- * Ordering inside the tx is deliberately TWO-PHASE, not a single
- * interleaved loop (outbox-delete, audit, outbox-delete, audit, ...):
- * `audit.appendInTx` never throws across its own boundary, but per
- * `audit-repo.ts`'s documented contract, an internal DB failure inside it
- * still poisons the surrounding transaction — every statement AFTER that
- * point (including a REAL, non-swallowed statement like the next user's
- * outbox delete) would then fail for real and abort the whole batch. All
- * outbox deletes therefore run FIRST (phase 1, real mutations only), and
- * all audit emits run LAST (phase 2, back-to-back at the tail) — this
- * generalises the accepted "two back-to-back appendInTx calls at the
- * tail" precedent in reset-password.ts from N=2 to N=however many rows
- * were pruned in this run.
+ * Ordering inside the tx is TWO-PHASE (all outbox deletes first, all audit
+ * emits last) for structural clarity — NOT for atomicity: the whole batch
+ * runs in one `db.transaction`, so any failed statement rolls the entire
+ * batch back regardless of ordering (interleaved and two-phase produce an
+ * identical all-or-nothing outcome). Keeping the real mutations grouped
+ * ahead of the audit tail just mirrors the accepted "back-to-back
+ * appendInTx at the tail" precedent in reset-password.ts, generalised from
+ * N=2 to however many rows were pruned in this run.
  *
  * No error variant: this is a best-effort maintenance sweep, not a
  * user-triggered action with failure modes to report — hence

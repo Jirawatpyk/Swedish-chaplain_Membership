@@ -51,8 +51,10 @@ export async function POST(
       actorUserId: ctx.current.user.id,
       sourceIp: ctx.sourceIp,
       requestId: ctx.requestId,
-      // RA-6 — no resolveLocaleFromRequest helper exists; the use case
-      // falls back to the recipient's stored locale when undefined.
+      // RA-6 — no resolveLocaleFromRequest helper exists, and F1 users have no
+      // stored locale column; enqueueInvitationInTx defaults to English when
+      // locale is undefined. Reissued invites therefore always render in
+      // English (accepted tradeoff per RA-6).
       locale: undefined,
       tenantId: tenant.slug,
     });
