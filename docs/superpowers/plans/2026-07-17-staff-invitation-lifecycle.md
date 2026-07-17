@@ -181,3 +181,42 @@ export function pruneExpiredInvitations(input, deps?): Promise<Result<{ prunedCo
 **Placeholder scan:** One deferred detail — the exact `notifications_outbox`→user linkage column in T3 Step 3 (delete-by-userId vs delete-by-email). Flagged as a build-time confirm, not a silent TODO; the test asserts the outcome either way.
 
 **Type consistency:** `UserId`/`TenantSlug`/`EmailLocale` used consistently; `resendStaffInvitation`→`{email}`, `revokeInvitation`→`{deleted:true}`, `pruneExpiredInvitations`→`{prunedCount}`; audit event literals match the Task 0 enum exactly (`invitation_reissued`/`invitation_revoked`/`invitation_expired`).
+
+---
+
+## Review Amendments (2026-07-17 — architecture + security review)
+
+These OVERRIDE the tasks above where they conflict. Scope decision: **Revoke/Prune cover ALL roles including member-linked pending users (Path B)**; a small F3 read-side fix (Task 10) prevents a stale bounce badge; the member-timeline gap (auth-level revoke/prune of a member-linked user does not emit a member-scoped timeline event) is an **accepted, documented limitation** — the acting principal + target are still audited.
+
+**RA-1 (Task 2, security HIGH) — resend rate-limit.** Before calling `resendStaffInvitation`, throttle in the route: `const rl = await rateLimiter.limit(\`reissue-invite:${tenantId}:${id}\`); if (!rl.success) return 429 with Retry-After`. Key is per-`(tenant, TARGET userId)` NOT per-admin (DV-11: else N admins collectively mail-bomb). Budget **3 / hour**. Mirror `src/app/api/members/[memberId]/contacts/[contactId]/resend-verification/route.ts:55-73`. Add a contract test: 4th call within the window → 429.
+
+**RA-2 (Task 3 + Task 6) — outbox cleanup by EMAIL, tenant-scoped, read-before-delete.** `notifications_outbox` has **no `user_id`** (schema.ts:910). Repo method becomes `deleteInvitedPendingInTx(tx, userId): Promise<{ deleted: number; email: string | null }>` (add `.returning({ id, email })`), and a separate dep `deleteInviteOutboxByEmailInTx(tx, email, tenantId): Promise<void>` running `DELETE FROM notifications_outbox WHERE lower(to_email)=lower($email) AND notification_type='member_invitation' AND status='pending' AND tenant_id=$tenantId`. `revokeInvitation` captures the email from the delete's RETURNING and passes it + `tenantId` onward. Add `tenantId: TenantSlug` to `RevokeInvitationInput` (route supplies `resolveTenantFromRequest(request).slug`). **Prune** returns `{userId, email}[]` and loops the same outbox delete per user.
+
+**RA-3 (Task 3 + Task 6, Principle I blocker) — cross-tenant integration test.** revoke/prune run on the owner-role tx (BYPASSRLS) touching FORCE-RLS `notifications_outbox`. Add an integration test: seed the SAME email as a pending `member_invitation` outbox row in tenant A AND tenant B; revoke the tenant-A user; assert tenant B's outbox row survives. Also assert outbox scoping: a non-`member_invitation` outbox row on the same email survives.
+
+**RA-4 (Task 6) — prune must not delete a just-resent user (two-token).** Resend mints a NEW invitation without deleting the old, so a pending user can have both an expired and a fresh token. Prune deletes a pending user only when `NOT EXISTS (SELECT 1 FROM invitations i WHERE i.user_id = users.id AND i.expires_at >= $cutoff AND i.consumed_at IS NULL)`. Test: seed a user with an old-expired invite + a fresh invite → assert NOT pruned.
+
+**RA-5 (Task 7) — cron convention.** Use `export const runtime='nodejs'` + `export const dynamic='force-dynamic'`; implement in `POST` and `export const GET = POST`. Gate: `const gate = await gateCronBearerOrRespond(request, { route: '/api/cron/auth/prune-expired-invitations' }); if (gate) return gate;`. **READ_ONLY_MODE short-circuit** (GET is not caught by the proxy write-freeze): `if (env.flags.readOnlyMode) return NextResponse.json({ skipped: true, reason: 'read_only_mode' }, { status: 200 });`. Mirror `prune-consumed-tokens/route.ts:45-94`. Add a test for the READ_ONLY_MODE skip.
+
+**RA-6 (Task 2) — locale.** `resolveLocaleFromRequest` does not exist. Pass `locale: undefined` to `resendStaffInvitation` (default English; `ReissueInvitationInput.locale` is optional). Do NOT invent a helper.
+
+**RA-7 (Task 5) — projection type.** `listWithFilter` returns `UserListRow = UserAccount & { invitationExpiresAt: Date | null }` — do NOT add the field to the `UserAccount` domain type.
+
+**RA-8 (Task 1) — audit non-atomicity accepted.** `reissueInvitation` owns its own tx, so `resendStaffInvitation` calls `audit.append` (non-tx) AFTER it commits — matches F3's `member_portal_invite_queued` pattern. Document as an accepted edge (a post-commit audit-append failure leaves a reissued invite without its `invitation_reissued` row). revoke/prune stay atomic via `appendInTx`.
+
+### Task 10: F3 stale-bounce read-side fix
+
+**Files:** Modify the contact-directory read that computes the "invite bounced" badge (`src/modules/members/infrastructure/db/drizzle-contact-repo.ts` / `drizzle-member-repo.ts` — grep `invite_bounced_at`). Test: extend the relevant F3 integration test.
+
+- [ ] **Step 1: Failing test** — seed a contact with `invite_bounced_at` set AND `linked_user_id IS NULL` (the post-revoke state). Assert the directory row's `inviteBounced` (or equivalent) is `false`.
+- [ ] **Step 2: Run, verify FAIL.**
+- [ ] **Step 3: Implement** — in the badge projection, treat `invite_bounced_at` as meaningful only when `linked_user_id IS NOT NULL` (`inviteBounced = invite_bounced_at IS NOT NULL AND linked_user_id IS NOT NULL`). Self-heals after a staff revoke/prune SET-NULLs the link.
+- [ ] **Step 4: Run, verify PASS.**
+- [ ] **Step 5: `pnpm typecheck`; commit** — `fix(members): bounce badge is meaningful only while a user is linked`.
+
+### Test gaps to add (fold into the owning tasks)
+- Cross-tenant outbox isolation (RA-3) — Task 3.
+- Resend rate-limit 429 + per-target keying (RA-1) — Task 2.
+- READ_ONLY_MODE prune skip (RA-5) — Task 7.
+- Throw-path atomicity (outbox delete throws mid-tx → user-delete + audit roll back) — Task 3, live-Neon.
+- Prune two-token protection (RA-4) — Task 6.
