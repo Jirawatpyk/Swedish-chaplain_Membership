@@ -101,6 +101,12 @@ export const voidInvoiceSchema = z.object({
   invoiceId: z.string().uuid(),
   /** Free-text reason, required, 1-500 chars. Persisted + audited (hashed). */
   voidReason: z.string().trim().min(1).max(500),
+  /** void-on-reissue: refuse anything not still `issued` (never VOID a paid/legacy §86/4). */
+  requireStatus: z.literal('issued').optional(),
+  /** void-on-reissue: suppress the FR-036 cancellation email on an automated supersede. */
+  suppressCancellationEmail: z.boolean().optional(),
+  /** void-on-reissue: the new bill that supersedes this one (structured audit payload). */
+  supersededByInvoiceId: z.string().uuid().optional(),
 });
 
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
@@ -214,6 +220,11 @@ export async function voidInvoice(
       // note); it must still stamp VOID on both the bill + tax-receipt blobs.
       // void / credited / partially_credited / draft stay refused.
       if (lockedStatus !== 'issued' && lockedStatus !== 'paid') {
+        return err({ code: 'invalid_status', status: lockedStatus });
+      }
+      // void-on-reissue: the automated path forbids voiding a paid §86/4 even
+      // if it raced issued→paid between the caller's list and this row lock.
+      if (input.requireStatus === 'issued' && lockedStatus !== 'issued') {
         return err({ code: 'invalid_status', status: lockedStatus });
       }
 
@@ -490,6 +501,12 @@ export async function voidInvoice(
               new_receipt_pdf_sha256: targetB.rendered.sha256,
             }
           : {}),
+        // void-on-reissue: structured link to the bill that superseded this
+        // one, so the audit trail doesn't rely on parsing the free-text
+        // voidReason to find the replacement invoice.
+        ...(input.supersededByInvoiceId
+          ? { superseded_by_invoice_id: input.supersededByInvoiceId }
+          : {}),
       };
       if (memberId !== null) {
         await deps.audit.emit(tx, {
@@ -532,7 +549,8 @@ export async function voidInvoice(
       // (the ใบแจ้งหนี้ bill for a paid membership; the §86/4 / §105 document
       // otherwise) with Target A's freshly-rendered sha as the integrity anchor.
       const shouldAutoEmail =
-        loaded.autoEmailOnIssue ?? settings.autoEmailEnabled;
+        !input.suppressCancellationEmail &&
+        (loaded.autoEmailOnIssue ?? settings.autoEmailEnabled);
       if (shouldAutoEmail) {
         // Email-locale audit 2026-07-16 — cancellation email in the member's
         // language (live read; non-member event buyer → undefined → 'en').
