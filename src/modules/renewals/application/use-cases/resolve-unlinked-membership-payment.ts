@@ -44,10 +44,9 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { randomUUID } from 'node:crypto';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
-import { asMemberId, type MemberId } from '@/modules/members';
-import { asTaskId } from '../../domain/renewal-escalation-task';
+import { type MemberId } from '@/modules/members';
+import { emitPaymentOnTerminatedNet } from './_lib/emit-payment-on-terminated-net';
 import type { RenewalEscalationTaskRepo } from '../ports/renewal-escalation-task-repo';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
@@ -296,41 +295,14 @@ export async function resolveUnlinkedMembershipPaymentInTx(
         renewalsMetrics.unlinkedPaymentResolved('skipped');
         return { kind: 'skipped', reason: classification.reason };
       }
-      await deps.auditEmitter.emitInTx(
-        tx,
-        {
-          type: 'payment_on_terminated_member' as const,
-          payload: {
-            invoice_id: evt.invoiceId,
-            member_id: asMemberId(evt.memberId),
-            cycle_id: null,
-            amount_satang: evt.amountSatang.toString(),
-            payment_method: evt.paymentMethod,
-            triggered_by: evt.triggeredBy,
-            paid_at: evt.paidAt,
-            heal_site: 'terminal_only' as const,
-          },
-        },
-        { tenantId: evt.tenantId, ...AUDIT_ACTOR, correlationId: correlationId(evt) },
-      );
-      // Admin work-item. The primary redelivery idempotency is
-      // recordPayment's paid-invoice REPLAY guard (an already-paid invoice
-      // never re-fires the on-paid chain). The (tenant, member, cycle,
-      // task_type) WHERE status='open' index is a secondary dedup — note it
-      // does NOT dedupe here because cycle_id is NULL (Postgres NULLS
-      // DISTINCT); that is acceptable given the primary guard. In-tx and
-      // NEVER swallowed: an infra throw rolls the payment tx back and the
-      // webhook retry heals (this hook's contract).
-      await deps.escalationTaskRepo.insertIfAbsent(tx, {
-        tenantId: evt.tenantId,
-        taskId: asTaskId(randomUUID()),
+      // 066 §4.4(2) — shared net (audit + admin task + metric), atomic in F4's
+      // payment tx. Identical shape to the linked_terminal_skip site.
+      await emitPaymentOnTerminatedNet(deps, tx, {
+        event: evt,
         memberId: evt.memberId,
         cycleId: null,
-        taskType: 'post_termination_payment_review',
-        assignedToRole: 'admin',
-        dueAt: new Date(Date.parse(evt.paidAt) + 7 * 86_400_000).toISOString(),
+        healSite: 'terminal_only',
       });
-      renewalsMetrics.paymentOnTerminatedMember('terminal_only');
       renewalsMetrics.unlinkedPaymentResolved('skipped');
       return { kind: 'skipped', reason: classification.reason };
     }

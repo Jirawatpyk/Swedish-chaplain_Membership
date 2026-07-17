@@ -341,7 +341,13 @@ export async function recordPayment(
   //     (mark-paid-offline). Gating here would be a wasted round-trip while
   //     the caller holds the outer tx + per-cycle advisory lock.
   const eventTrigger = input.triggeredBy ?? 'admin_manual';
-  if (eventTrigger !== 'webhook' && eventTrigger !== 'admin_offline_mark') {
+  // The F4 admin-dialog rail (neither webhook nor offline-mark). BOTH the
+  // terminated gate (below) and the §87 payment-date guard (deeper) fire only
+  // on this rail — compute the exempt-rail set ONCE so the two guards can never
+  // diverge if a third exempt rail is ever added.
+  const isAdminDialogRail =
+    eventTrigger !== 'webhook' && eventTrigger !== 'admin_offline_mark';
+  if (isAdminDialogRail) {
     const preInvoice = await deps.invoiceRepo.findById(invoiceId, input.tenantId);
     if (
       preInvoice &&
@@ -461,14 +467,12 @@ export async function recordPayment(
     // `bangkokLocalDate` (the SAME helper that stamps `issue_date`); a
     // UTC bound would reject same-Bangkok-day payments for ~7h/day — the
     // exact client-side bug this mirrors. Runs BEFORE any write so a
-    // rejection burns no §87 receipt number. Exempt:
+    // rejection burns no §87 receipt number. Exempt (same set as the
+    // terminated gate above — see `isAdminDialogRail`):
     //   • `webhook`            — F5 processor-authoritative settlement date.
     //   • `admin_offline_mark` — F8 renewal offline-mark owns its own
     //                            date handling; not the F4 dialog surface.
-    if (
-      input.triggeredBy !== 'webhook' &&
-      input.triggeredBy !== 'admin_offline_mark'
-    ) {
+    if (isAdminDialogRail) {
       const bangkokToday = bangkokLocalDate(deps.clock.nowIso());
       if (
         (loaded.issueDate !== null && input.paymentDate < loaded.issueDate) ||

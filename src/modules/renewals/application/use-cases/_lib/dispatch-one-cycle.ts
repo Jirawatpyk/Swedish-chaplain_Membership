@@ -219,6 +219,77 @@ export type DispatchOneCycleOutcome =
       readonly reason: string;
     };
 
+/**
+ * Per-candidate dispatcher-crash isolation (K1-C8). When a
+ * `dispatchOneCycle` / `dispatchDueTrackCycle` call THROWS (a fault that
+ * escaped the inner runInTenant boundary), isolate it: log the failure,
+ * fire-and-forget a `renewal_reminder_send_failed` (`dispatcher_crash`) audit
+ * so the cron tally and audit_log agree (Principle VIII state↔audit atomicity),
+ * and return the synthetic `failed_transient` outcome. Shared by BOTH
+ * dispatchRenewalCycle passes (the main ladder + the 066 due-track) so the
+ * crash-audit payload, the 200-char truncation, and the synthetic-outcome
+ * shape live in ONE place and cannot drift between the two passes. A
+ * probe-audit emit failure is logged but NEVER re-thrown (would break the
+ * chunk's peer-isolation invariant). `pass` only labels the log messages for
+ * triage; the audit + return shape are identical.
+ */
+export async function handleDispatcherCrash(
+  deps: Pick<RenewalsDeps, 'auditEmitter'>,
+  ctx: { readonly tenantId: string; readonly correlationId: string },
+  candidate: DispatchCandidate,
+  e: unknown,
+  pass: 'main' | 'due-track',
+): Promise<DispatchOneCycleOutcome> {
+  const errMsg = e instanceof Error ? e.message : String(e);
+  const passLabel = pass === 'due-track' ? 'due-track ' : '';
+  logger.error(
+    {
+      err: e instanceof Error ? e : new Error(String(e)),
+      cycleId: candidate.cycle.cycleId,
+      memberId: candidate.member.memberId,
+      tenantId: ctx.tenantId,
+      correlationId: ctx.correlationId,
+    },
+    `dispatchRenewalCycle: ${passLabel}per-cycle dispatch failed (isolated)`,
+  );
+  try {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_reminder_send_failed',
+        payload: {
+          cycle_id: candidate.cycle.cycleId,
+          member_id: candidate.member.memberId,
+          failure_kind: 'dispatcher_crash',
+          failure_message: errMsg.slice(0, 200),
+          via_retry_pass: false,
+        },
+      },
+      {
+        tenantId: ctx.tenantId,
+        actorUserId: null,
+        actorRole: 'cron',
+        correlationId: ctx.correlationId,
+        requestId: null,
+      },
+    );
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr : new Error(String(auditErr)),
+        cycleId: candidate.cycle.cycleId,
+        tenantId: ctx.tenantId,
+        correlationId: ctx.correlationId,
+      },
+      `dispatchRenewalCycle: ${passLabel}dispatcher_crash audit emit failed`,
+    );
+  }
+  return {
+    kind: 'failed_transient' as const,
+    reminderEventId: '',
+    reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

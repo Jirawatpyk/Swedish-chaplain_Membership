@@ -32,6 +32,7 @@ import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
   dispatchOneCycle,
+  handleDispatcherCrash,
   type DispatchContext,
   type SkipReason,
   SKIP_REASONS,
@@ -278,62 +279,19 @@ export async function dispatchRenewalCycle(
             try {
               return await dispatchDueTrackCycle(deps, candidate, dueTrackCtx);
             } catch (e) {
-              // Same per-member fault isolation as the main loop.
-              const errMsg = e instanceof Error ? e.message : String(e);
-              logger.error(
+              // Same per-member fault isolation as the main loop — shared
+              // K1-C8 crash handler (log + dispatcher_crash audit + synthetic
+              // failed_transient), so the two passes cannot drift.
+              return await handleDispatcherCrash(
+                deps,
                 {
-                  err: e instanceof Error ? e : new Error(String(e)),
-                  cycleId: candidate.cycle.cycleId,
-                  memberId: candidate.member.memberId,
                   tenantId: input.tenantId,
                   correlationId: input.correlationId,
                 },
-                'dispatchRenewalCycle: due-track per-cycle dispatch failed (isolated)',
+                candidate,
+                e,
+                'due-track',
               );
-              // K1-C8 parity (T4-review M3) — the cron tally and the
-              // audit_log forensic record must agree; a counted failure
-              // with no audit row is Principle VIII drift. Fire-and-forget
-              // emit (no tx open here); a probe-audit failure must not
-              // break peer isolation.
-              try {
-                await deps.auditEmitter.emit(
-                  {
-                    type: 'renewal_reminder_send_failed',
-                    payload: {
-                      cycle_id: candidate.cycle.cycleId,
-                      member_id: candidate.member.memberId,
-                      failure_kind: 'dispatcher_crash',
-                      failure_message: errMsg.slice(0, 200),
-                      via_retry_pass: false,
-                    },
-                  },
-                  {
-                    tenantId: input.tenantId,
-                    actorUserId: null,
-                    actorRole: 'cron',
-                    correlationId: input.correlationId,
-                    requestId: null,
-                  },
-                );
-              } catch (auditErr) {
-                logger.error(
-                  {
-                    err:
-                      auditErr instanceof Error
-                        ? auditErr
-                        : new Error(String(auditErr)),
-                    cycleId: candidate.cycle.cycleId,
-                    tenantId: input.tenantId,
-                    correlationId: input.correlationId,
-                  },
-                  'dispatchRenewalCycle: due-track dispatcher_crash audit emit failed',
-                );
-              }
-              return {
-                kind: 'failed_transient' as const,
-                reminderEventId: '',
-                reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
-              };
             }
           }),
         );
@@ -419,80 +377,23 @@ export async function dispatchRenewalCycle(
               nowIso,
             });
           } catch (e) {
-            const errMsg = e instanceof Error ? e.message : String(e);
-            logger.error(
+            // K1-C8 per-cycle crash isolation — shared handler (log +
+            // dispatcher_crash audit + synthetic failed_transient), atomic
+            // tally↔audit parity in ONE place across both passes. This outer
+            // catch typically fires only for throws BEFORE Gate 13's
+            // insertIfAbsent (no reminder_event row yet → empty id is correct);
+            // dispatchOneCycleInner's own defensive cleanup (J2-B2) handles
+            // throws inside the inner helpers.
+            return await handleDispatcherCrash(
+              deps,
               {
-                err: e instanceof Error ? e : new Error(String(e)),
-                cycleId: candidate.cycle.cycleId,
-                memberId: candidate.member.memberId,
                 tenantId: input.tenantId,
                 correlationId: input.correlationId,
               },
-              'dispatchRenewalCycle: per-cycle dispatch failed (isolated)',
+              candidate,
+              e,
+              'main',
             );
-            // K1-C8: emit a per-cycle `renewal_reminder_send_failed`
-            // audit BEFORE returning the synthetic outcome so the cron
-            // summary count and the audit_log forensic record agree.
-            // Without this emit the cron tally said "1 failure" but no
-            // row existed in audit_log — operators querying
-            // `audit_log WHERE type LIKE 'renewal_reminder_send_failed%'`
-            // and the cron summary would mismatch. Principle VIII
-            // state↔audit atomicity drift.
-            //
-            // Standalone (non-tx) emit because no tx is open here —
-            // dispatchOneCycle's failure escaped its own runInTenant
-            // boundary (typically Gate 12's insertIfAbsent never ran,
-            // so no reminder_event row exists). The fire-and-forget
-            // emit semantics are appropriate: a probe-audit emit
-            // failure must NOT block the next cycle's processing.
-            try {
-              await deps.auditEmitter.emit(
-                {
-                  type: 'renewal_reminder_send_failed',
-                  payload: {
-                    cycle_id: candidate.cycle.cycleId,
-                    member_id: candidate.member.memberId,
-                    failure_kind: 'dispatcher_crash',
-                    failure_message: errMsg.slice(0, 200),
-                    via_retry_pass: false,
-                  },
-                },
-                {
-                  tenantId: input.tenantId,
-                  actorUserId: null,
-                  actorRole: 'cron',
-                  correlationId: input.correlationId,
-                  requestId: null,
-                },
-              );
-            } catch (auditErr) {
-              // Audit-emit failure on the failure path is itself a
-              // failure — log loudly but do NOT throw (would break the
-              // peer-isolation invariant of the chunk).
-              logger.error(
-                {
-                  err:
-                    auditErr instanceof Error
-                      ? auditErr
-                      : new Error(String(auditErr)),
-                  cycleId: candidate.cycle.cycleId,
-                  tenantId: input.tenantId,
-                  correlationId: input.correlationId,
-                },
-                'dispatchRenewalCycle: dispatcher_crash audit emit failed',
-              );
-            }
-            // J2-H8: conform to DispatchOneCycleOutcome.failed_transient
-            // shape. Note: dispatchOneCycleInner's defensive cleanup
-            // (J2-B2) also catches throws inside the inner dispatch
-            // helpers, so this outer catch typically only fires for
-            // throws BEFORE Gate 13's insertIfAbsent (no reminder_event
-            // row exists yet → empty reminderEventId is correct).
-            return {
-              kind: 'failed_transient' as const,
-              reminderEventId: '',
-              reason: `dispatcher_crash: ${errMsg.slice(0, 200)}`,
-            };
           }
         }),
       );

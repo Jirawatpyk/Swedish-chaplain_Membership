@@ -60,14 +60,12 @@ import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
-import { randomUUID } from 'node:crypto';
 import {
   asCycleId,
   isMembershipLapsed,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
-import { asTaskId } from '../../domain/renewal-escalation-task';
-import { asMemberId } from '@/modules/members';
+import { emitPaymentOnTerminatedNet } from './_lib/emit-payment-on-terminated-net';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -410,38 +408,14 @@ export async function markCycleCompleteInTx(
     // net — audit event + metric + idempotent admin work-item — atomically
     // in F4's payment tx, so the residual race is never a silent leak.
     if (isMembershipLapsed(cycle, new Date(event.paidAt))) {
-      await deps.auditEmitter.emitInTx(
-        tx,
-        {
-          type: 'payment_on_terminated_member' as const,
-          payload: {
-            invoice_id: event.invoiceId,
-            member_id: asMemberId(cycle.memberId),
-            cycle_id: cycle.cycleId,
-            amount_satang: event.amountSatang.toString(),
-            payment_method: event.paymentMethod,
-            triggered_by: event.triggeredBy,
-            paid_at: event.paidAt,
-            heal_site: 'linked_terminal_skip' as const,
-          },
-        },
-        {
-          tenantId: event.tenantId,
-          actorUserId: null,
-          actorRole: 'system',
-          correlationId: `f4-paid:${event.invoiceId}`,
-        },
-      );
-      await deps.escalationTaskRepo.insertIfAbsent(tx, {
-        tenantId: event.tenantId,
-        taskId: asTaskId(randomUUID()),
+      // 066 §4.4(2) — shared net (audit + admin task + metric), atomic in F4's
+      // payment tx. Identical shape to the terminal_only site.
+      await emitPaymentOnTerminatedNet(deps, tx, {
+        event,
         memberId: cycle.memberId,
         cycleId: cycle.cycleId,
-        taskType: 'post_termination_payment_review',
-        assignedToRole: 'admin',
-        dueAt: new Date(Date.parse(event.paidAt) + 7 * 86_400_000).toISOString(),
+        healSite: 'linked_terminal_skip',
       });
-      renewalsMetrics.paymentOnTerminatedMember('linked_terminal_skip');
     }
     logger.warn(
       {
