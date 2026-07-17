@@ -143,6 +143,19 @@ export {
   type RevokeInvitationDeps,
 } from './application/revoke-invitation';
 
+// Staff Invitation Lifecycle Task 6 — cron-driven bulk prune of long-dead
+// `pending` invited users. RA-4-safe: NEVER deletes a user that still has
+// a live (unexpired, non-consumed) invitation token, even if an OLDER
+// token on the same user has expired (the Resend two-token case). Emits
+// `invitation_expired` per pruned row. Task 7 (separate) wires the actual
+// cron route.
+export {
+  pruneExpiredInvitations,
+  type PruneExpiredInvitationsInput,
+  type PruneExpiredInvitationsSuccess,
+  type PruneExpiredInvitationsDeps,
+} from './application/prune-expired-invitations';
+
 export {
   enableUser,
   type EnableUserInput,

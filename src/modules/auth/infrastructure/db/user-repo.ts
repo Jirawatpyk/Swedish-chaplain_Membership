@@ -5,7 +5,21 @@
  * code (sign-in, change-password, account lifecycle) only depends on
  * the interface declared here, never on Drizzle directly.
  */
-import { and, desc, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  gte,
+  ilike,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
 import { users, notificationsOutbox, invitations, type UserRow } from './schema';
 import {
@@ -167,6 +181,59 @@ export interface UserRepo {
     email: string,
     tenantId: string,
   ): Promise<void>;
+  /**
+   * Staff Invitation Lifecycle Task 6 — bulk-deletes `pending` users whose
+   * invitation history has gone fully cold: NO invitation row is "live"
+   * relative to `cutoff`.
+   *
+   * RA-4 (design review, 2026-07-18) — Resend (`reissueInvitation` /
+   * Task 1) mints a NEW `invitations` row WITHOUT deleting the old one,
+   * so a single pending user can carry BOTH a long-expired original token
+   * AND a fresh one. Pruning on "the OLDEST/some invitation is past
+   * cutoff" would delete a just-resent user and permanently break their
+   * activation link. The two-part guard below defines "live" as "not
+   * consumed AND not yet expired past the grace cutoff", checked across
+   * ALL of a user's invitations (not just the latest by created_at):
+   *
+   *   NOT EXISTS (a live invitation: expires_at >= cutoff AND
+   *               consumed_at IS NULL) — refuses to delete if ANY token
+   *               could still be redeemed (covers the RA-4 two-token case)
+   *   AND EXISTS (an invitation with expires_at < cutoff) — requires at
+   *               least one invitation to have actually gone stale beyond
+   *               the grace window, so a pending user with zero
+   *               invitations (should not occur in practice — every
+   *               `createPending` call is paired with an invitation
+   *               insert in the same tx) is never swept up incidentally.
+   *
+   * Built via the query-builder (not a raw `sql` WHERE fragment) for the
+   * correlation — see `listWithFilter`'s `latestInvitationExpiresAt`
+   * subquery below for why a raw-interpolated `${users.id}` inside a
+   * hand-written `sql` fragment loses its table qualifier and silently
+   * self-correlates to `invitations.id` instead (a Task 5 bug avoided
+   * here by construction).
+   *
+   * RETURNING `id` + `email` (read-before-delete, no re-query) so the
+   * caller can drive the by-email outbox cleanup + audit emit without a
+   * second lookup against rows that no longer exist.
+   */
+  deletePendingInvitesExpiredBeforeInTx(
+    tx: DbTx,
+    cutoff: Date,
+  ): Promise<Array<{ userId: string; email: string }>>;
+  /**
+   * Staff Invitation Lifecycle Task 6 — cross-tenant sibling of
+   * `deleteInviteOutboxByEmailInTx`. A pruned user is gone system-wide
+   * (the account no longer exists), so unlike a single-tenant admin
+   * `revokeInvitation` action there is no ONE tenant to scope the
+   * cleanup to — the same email could have a queued `member_invitation`
+   * outbox row in MULTIPLE tenants (one person invited to several
+   * chambers), and all of them are now for a user that can never
+   * activate. Deletes every still-`pending` `member_invitation` outbox
+   * row for this email regardless of `tenant_id`. Runs on the owner-role
+   * tx (same BYPASSRLS-on-FORCE-RLS posture as
+   * `deleteInviteOutboxByEmailInTx`).
+   */
+  deleteInviteOutboxByEmailAllTenantsInTx(tx: DbTx, email: string): Promise<void>;
   /**
    * COMP-1 US2a — anonymise an F1 login account so a GDPR-Art.17 /
    * PDPA-§33-erased member can no longer authenticate. Email → a
@@ -417,6 +484,46 @@ export const userRepo: UserRepo = {
           eq(notificationsOutbox.notificationType, 'member_invitation'),
           eq(notificationsOutbox.status, 'pending'),
           eq(notificationsOutbox.tenantId, tenantId),
+        ),
+      );
+  },
+
+  async deletePendingInvitesExpiredBeforeInTx(tx, cutoff) {
+    const liveInvitation = tx
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.userId, users.id),
+          gte(invitations.expiresAt, cutoff),
+          isNull(invitations.consumedAt),
+        ),
+      );
+    const staleInvitation = tx
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(and(eq(invitations.userId, users.id), lt(invitations.expiresAt, cutoff)));
+    const rows = await tx
+      .delete(users)
+      .where(
+        and(
+          eq(users.status, 'pending'),
+          notExists(liveInvitation),
+          exists(staleInvitation),
+        ),
+      )
+      .returning({ id: users.id, email: users.email });
+    return rows.map((row) => ({ userId: row.id, email: row.email }));
+  },
+
+  async deleteInviteOutboxByEmailAllTenantsInTx(tx, email) {
+    await tx
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          sql`lower(${notificationsOutbox.toEmail}) = lower(${email})`,
+          eq(notificationsOutbox.notificationType, 'member_invitation'),
+          eq(notificationsOutbox.status, 'pending'),
         ),
       );
   },

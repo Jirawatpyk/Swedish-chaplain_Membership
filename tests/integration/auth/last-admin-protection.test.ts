@@ -66,6 +66,10 @@ function oneAdminRepo(): UserRepo {
     deleteInvitedPendingInTx: (tx, id) => userRepo.deleteInvitedPendingInTx(tx, id),
     deleteInviteOutboxByEmailInTx: (tx, email, tenantId) =>
       userRepo.deleteInviteOutboxByEmailInTx(tx, email, tenantId),
+    deletePendingInvitesExpiredBeforeInTx: (tx, cutoff) =>
+      userRepo.deletePendingInvitesExpiredBeforeInTx(tx, cutoff),
+    deleteInviteOutboxByEmailAllTenantsInTx: (tx, email) =>
+      userRepo.deleteInviteOutboxByEmailAllTenantsInTx(tx, email),
     anonymiseErasedInTx: (tx, userId) => userRepo.anonymiseErasedInTx(tx, userId),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),

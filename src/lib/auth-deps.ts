@@ -94,6 +94,7 @@ import type { EraseUserDeps } from '@/modules/auth/application/erase-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
 import type { ResendStaffInvitationDeps } from '@/modules/auth/application/resend-staff-invitation';
 import type { RevokeInvitationDeps } from '@/modules/auth/application/revoke-invitation';
+import type { PruneExpiredInvitationsDeps } from '@/modules/auth/application/prune-expired-invitations';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
@@ -293,6 +294,17 @@ export const defaultResendStaffInvitationDeps: ResendStaffInvitationDeps = {
  * `deleteInviteOutboxByEmailInTx`).
  */
 export const defaultRevokeInvitationDeps: RevokeInvitationDeps = {
+  users: userRepo,
+  audit: auditRepo,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 6 — `pruneExpiredInvitations` deps.
+ * Same owner-role tx pattern as `revokeInvitation`; `userRepo` implements
+ * both new Task 6 methods (`deletePendingInvitesExpiredBeforeInTx`
+ * RETURNING id+email, `deleteInviteOutboxByEmailAllTenantsInTx`).
+ */
+export const defaultPruneExpiredInvitationsDeps: PruneExpiredInvitationsDeps = {
   users: userRepo,
   audit: auditRepo,
 };
