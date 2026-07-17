@@ -32,11 +32,16 @@ Causes — diagnose in order:
    Phase B threw AND its failure-finalise tx threw. Rare. Last-resort
    recovery is manual operator flip via maintainer-only DB session.
 
-## Cron-job.org configuration
+## Scheduling — native Vercel Cron (since 2026-07-17, Pro plan)
 
-This route is triggered by **cron-job.org**, NOT Vercel Cron. Vercel Hobby
-plan caps native crons at once-per-day, which is incompatible with the
-5-min cadence this gauge needs.
+This route is triggered by **native Vercel Cron** (`vercel.json`,
+`*/5 * * * *`); Vercel auto-injects `Authorization: Bearer ${CRON_SECRET}`.
+Before the 2026-07-17 Pro migration it ran on cron-job.org (Hobby caps
+native crons at 1×/day, incompatible with the 5-min cadence this gauge
+needs); cron-job.org is now a **paused standby**. The authoritative
+schedule + full catalogue live in [cron-jobs.md](./cron-jobs.md); the
+cron-job.org setup below is retained only as the standby-reactivation
+reference.
 
 ### Setup steps (one-time, reproducible)
 

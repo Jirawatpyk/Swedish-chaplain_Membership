@@ -1,24 +1,19 @@
 /**
  * T166-11 — Receipt-PDF reconciliation cron.
  *
- * Scheduling (dual-trigger, idempotent — same pattern as
- * `/api/cron/sweep-stale-pending-refunds`):
+ * Scheduling — native Vercel Cron (since the 2026-07-17 Pro migration):
  *
- *   1. **cron-job.org → primary 5-minute cadence**
- *      URL: https://{deployment}/api/internal/cron/receipt-pdf-reconcile
- *      Header: `Authorization: Bearer ${CRON_SECRET}`
- *      Schedule: minute slash 5 (every 5 minutes)
- *      Rationale: Vercel Hobby caps Vercel Cron at daily cadence.
- *      The 5-minute cadence is needed so a failed-render row recovers
- *      within ≤5 min of the worker bumping `attempts` (T166-11
- *      acceptance criterion).
+ *   **Primary 5-minute cadence** — `vercel.json`, every 5 minutes.
+ *   Vercel triggers this route via GET (it exports `GET = POST`) and
+ *   auto-injects `Authorization: Bearer ${CRON_SECRET}`. The 5-minute
+ *   cadence is load-bearing: a failed-render row must recover within
+ *   ≤5 min of the worker bumping `attempts` (T166-11 acceptance
+ *   criterion).
  *
- *   2. **Vercel Cron → daily fallback**
- *      `vercel.json` schedule "30 3 * * *" (03:30 UTC daily, offset
- *      30 min from sweep-stale-pending-refunds at 03:00 UTC to avoid
- *      simultaneous DB load). Acts as a recovery net if cron-job.org
- *      is degraded or the deployment URL changes faster than
- *      cron-job.org's job is updated.
+ *   Before the Pro migration this ran on cron-job.org every 5 minutes
+ *   (primary) with a daily Vercel fallback; on Pro the native entry
+ *   owns the 5-minute cadence directly (see PR #218) and cron-job.org is
+ *   a paused standby. Full mapping: docs/runbooks/cron-jobs.md.
  *
  * Both triggers hit the same handler. The cron is fully idempotent:
  *   - Re-enqueue branch: pushing a fresh `receipt_pdf_render` outbox

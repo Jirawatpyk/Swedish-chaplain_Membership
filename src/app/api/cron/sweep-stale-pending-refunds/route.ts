@@ -1,13 +1,13 @@
 /**
  * T130a — Stale-pending-refund sweep cron.
  *
- * Scheduled via Vercel Cron Hobby (daily) — `vercel.json` entry:
+ * Scheduled via native Vercel Cron (`vercel.json`) — daily:
  *   { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "0 3 * * *" }
  *
- * Also scheduled redundantly on cron-job.org at `0 15 * * *` UTC
- * (12h offset). Sweep is idempotent — dual-firing safe (verified by
- * the integration test's "idempotent" case). See runbook
- * § "Redundant scheduling".
+ * Pre-2026-07-17 (Hobby) this also had a redundant cron-job.org trigger at
+ * `0 15 * * *` UTC (12h offset); cron-job.org is now a paused standby.
+ * The sweep is idempotent — dual-firing is safe (verified by the
+ * integration test's "idempotent" case).
  *
  * Recovery sweep for the Postgres double-fault scenario in
  * `issueRefund` (Phase 6 review fix C2 covers the common case;
