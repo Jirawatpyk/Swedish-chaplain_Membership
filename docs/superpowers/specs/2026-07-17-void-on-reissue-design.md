@@ -29,8 +29,7 @@ One sentence: *reissue supersedes — the old unpaid bill dies when the new one 
 
 ### In scope
 - A new **renewal-scoped F4 composition** `issueMembershipBill` = `issueInvoice` (unchanged) → list the member's other outstanding new-flow bills → `voidInvoice[]` (each own-tx, post-commit), serialized per member.
-- Route **every renewal membership-issue path** through it: the bridge `issueInvoiceForRenewal`, and Sub-project #2's `issueExistingDraftForRenewal`.
-- Make **`issue/route.ts` refuse** a membership draft that belongs to a renewal cycle / `origin='auto_renewal'` (typed error → the renewals queue) — enforcement, not UI-hiding.
+- Route the renewal membership-issue path (the bridge `issueInvoiceForRenewal`) through it; #2's `issueExistingDraftForRenewal` joins when it lands. (The `issue/route.ts` refusal of `origin='auto_renewal'` drafts is **#2's** — it owns the `origin` column; see §4.1.)
 - A `voidInvoice` options object: `requireStatus?: 'issued'` (tax-safety guard) + `suppressCancellationEmail?: boolean` (default `false`).
 - An F4 read: "list the member's outstanding **new-flow** `issued` membership bills."
 - Failed-auto-void **observability** (metric + audit).
@@ -56,18 +55,21 @@ The supersede is a **new F4 Application use-case** `issueMembershipBill(deps, in
 
 **Callers routed through it (enumerate + enforce):**
 - the bridge `issueInvoiceForRenewal` (reactivate + member-confirm) — swap its bare `issueInvoice` call for `issueMembershipBill`;
-- Sub-project #2's `issueExistingDraftForRenewal` (auto-draft issue);
-- **`issue/route.ts`**: a membership draft linked to a renewal cycle / `origin='auto_renewal'` is **refused** (typed error → queue). A truly manual, non-renewal membership issue may still use raw `issueInvoice` (no supersede — correct; there is no prior renewal bill to supersede, and this keeps backfill/import safe).
+- Sub-project #2's `issueExistingDraftForRenewal` (auto-draft issue) — routes here when #2 lands.
+- **Manual/import/event issuance keeps using raw `issueInvoice`** (no supersede — correct: no prior renewal bill to supersede, and this is what keeps backfill/import safe).
 
-**Enforcement test (Principle-III-style boundary):** a guard test asserts no renewal path calls bare `issueInvoice` for `invoice_subject='membership'`, and that `issue/route.ts` refuses a renewal-cycle membership draft.
+**Enforcement test (Principle-III-style boundary):** a guard test asserts the **renewal bridge** calls `issueMembershipBill`, not bare `issueInvoice`, for a membership subject.
+
+**Deferred to #2 (rev-3, review N1):** refusing an `origin='auto_renewal'` / renewal-cycle-linked membership draft at `issue/route.ts` belongs to **#2** — the `origin` column is introduced by #2 (§7), and in #1's world no cycle-linked membership draft is ever left dangling for a human to click Issue (the bridge creates+issues atomically). #1 therefore does **not** touch `issue/route.ts`.
 
 Right module (F4 owns invoice integrity — **no new cross-module import**: `invoice_subject` + `member_id` + `voidInvoice` are all F4-internal) and right altitude (an invoice-integrity invariant), now placed at the concrete, feasible sub-location.
 
-### 4.2 Which bills get voided (matching rule — bound to the new-flow bill shape)
-List the member's other outstanding **new-flow** bills and void each:
+### 4.2 Which bills get voided (matching rule — new-flow bill shape + **asymmetric ordering**)
+List the member's **strictly-older** outstanding **new-flow** bills and void each:
 
-> `WHERE tenant_id = <tenant> AND member_id = <memberId> AND invoice_subject = 'membership' AND status = 'issued' AND bill_document_number_raw IS NOT NULL AND document_number IS NULL AND id <> <newlyIssuedInvoiceId>`
+> `WHERE tenant_id = <tenant> AND member_id = <memberId> AND invoice_subject = 'membership' AND status = 'issued' AND bill_document_number_raw IS NOT NULL AND document_number IS NULL AND (created_at, id) < (<newBill.created_at>, <newBill.id>)`
 
+- **`(created_at, id) < (newBill…)` — asymmetric ordering (rev-3, closes mutual-void without a spanning lock).** Each issue voids only bills created *before* itself, so the **latest-created bill is never voided by anyone** → concurrent same-member issues converge to exactly **one deterministic survivor** (the newest). This replaces the rev-2 `pg_advisory_xact_lock` (which was transaction-scoped and could not span the post-commit void steps — a `pg_advisory_xact_lock` releases at each tx boundary, so it never actually serialized the composition; review-refuted). It also removes the per-member×per-cycle lock-ordering (ABBA) risk entirely, since no per-member lock is taken. Tiebreak by `id` for equal `created_at`.
 - `status='issued'` = the only outstanding-unpaid, pre-receipt state.
 - **`bill_document_number_raw IS NOT NULL AND document_number IS NULL`** binds the match to a **088 new-flow bill**, structurally **excluding a legacy issued §86/4** (which has a non-NULL `document_number` and already triggered the tax point). A legacy §86/4 matched by member+subject+status must **not** be auto-voided — surface it as a warning (§4.4). This also makes the auto-void **immune to a flag regression** (if 088 were off, new issuance would mint a §86/4 and `requireStatus` alone would be insufficient).
 - Excluding the just-issued id guards the fresh bill.
@@ -75,7 +77,7 @@ List the member's other outstanding **new-flow** bills and void each:
 
 ### 4.3 Void mechanic (ordering, per-member serialization, guards)
 1. **Issue-first, then void.** The new bill is issued (PDF rendered) *before* any void. Void failure ⇒ member still has a valid payable bill (worst case = today's dangling-bill state).
-2. **Per-member serialization (closes mutual-void).** `issueMembershipBill` takes a **per-member advisory lock** (`pg_advisory_xact_lock` keyed on `tenant+memberId`, namespace disjoint from F4 `invoicing:` §87 locks) around the issue+void sequence. Without it, two near-simultaneous issues for the same member each void the *other's* new bill → the member ends with **0 open bills** (review-confirmed race). The lock serializes them: the second issue sees the first's bill and supersedes it correctly, one survivor.
+2. **Mutual-void closed by asymmetric ordering, NOT a lock (rev-3).** Two near-simultaneous issues for the same member must not each void the *other's* new bill (→ **0 open bills**, an under-billing defect). The rev-2 `pg_advisory_xact_lock` cannot achieve this — it is transaction-scoped and releases at each tx boundary, so it never spans the committed issue tx + the post-commit void txs (holding it across would require an outer idle-in-transaction across the multi-second PDF render/upload — pool pressure + the §4.3.4 nesting-deadlock class). Instead the §4.2 **asymmetric `(created_at, id) <` match** makes the newest bill un-voidable → a deterministic single survivor with **no spanning lock and no ABBA** (no per-member lock is taken at all). No per-member serialization primitive is needed.
 3. For each matched prior bill, call `voidInvoice` with:
    - `requireStatus: 'issued'` — under `voidInvoice`'s row lock, re-assert `status==='issued'` and return `invalid_status` (→ skipped) otherwise. `voidInvoice` accepts `issued`+`paid` (`:216`); this guard is what keeps the automated path from ever VOID-stamping a `paid` §86/4 if a bill raced `issued→paid`. **The bill-shape filter (§4.2) is defence-in-depth; this lock-time guard is the barrier.**
    - `suppressCancellationEmail: true` — no cancellation email on an automated supersede. Semantics: `shouldAutoEmail = !suppressCancellationEmail && (loaded.autoEmailOnIssue ?? settings.autoEmailEnabled)` (force-suppress regardless of the invoice's stored flag; `void-invoice.ts:534`).
@@ -88,7 +90,9 @@ List the member's other outstanding **new-flow** bills and void each:
   - *find-query error* → skip, warn, **emit `invoice_voided` failure metric + a lightweight audit** (see below), log.
   - *`voidInvoice` → `invalid_status`* (already `void`, or raced to `paid`, or a legacy §86/4 that slipped the filter) → **no-op** (paid/legacy preserved).
   - *`voidInvoice` → `concurrent_state_change` / any error* → warn + metric + audit; the dangling bill is admin-voidable.
-- **Observability (review gap I3/M1):** a failed auto-void leaves a *dangling duplicate bill* — a tax-hygiene event — so it must be **discoverable, not just logged.** Emit a metric `void_on_reissue.failed{reason}` **and** an audit row (reuse `invoice_voided` with an outcome/`failed` marker in the payload, or the nearest existing event) so the compliance trail reflects the residual duplicate-bill risk regardless of which surface (admin route or member self-confirm) saw the response. On the member-self-confirm path `supersedeWarnings` ride the *member's* response and are not actionable — the metric/audit is the only signal.
+- **Observability (review gap I3/M1, hardened rev-3 for N2/N3):** a failed auto-void leaves a *dangling duplicate bill* — so it must be **discoverable, not just logged**, and the signal must survive the failed void's rollback and not corrupt void-count semantics:
+  - **Primary = a metric + alert** `void_on_reissue.failed{reason}`, emitted by the **`issueMembershipBill` composition** (process-level, so it survives even when `voidInvoice`'s own tx rolls back). This is the actionable signal — on the member-self-confirm path `supersedeWarnings` ride the *member's* response and are not actionable.
+  - **Do NOT reuse `invoice_voided`** for a *failure* (N3): that event means a bill *was* voided — reusing it would overcount real voids and tell a compliance reader the bill is gone when a dangling duplicate remains. If a durable audit row is wanted, use a **distinct** signal (a new F4 anomaly event — 4-place, 10-year retention as a tax-hygiene record — or an existing anomaly event), **emitted from a separate/`null` tx** so it survives the rollback (the `issue-invoice.ts:332` cross-tenant-probe pattern). Exact event choice at plan time; the constraint is: distinct-from-`invoice_voided` + rollback-surviving.
 
 ### 4.5 Audit + idempotency
 - **Success:** reuse `invoice_voided` (10y retention, `audit-port.ts:201`) + a `supersededByInvoiceId` payload field (no new enum).
@@ -109,7 +113,10 @@ List the member's other outstanding **new-flow** bills and void each:
 ## 6. Data / schema impact + rollout gate
 
 - **Schema: none.** No migration/column/enum. `requireStatus`/`suppressCancellationEmail` are application inputs; `supersededByInvoiceId` rides the `invoice_voided` JSON payload.
-- **Kill-switch (review gap I9):** add an env flag `FEATURE_VOID_ON_REISSUE` (zod, **default off**). When off, `issueMembershipBill` = plain issue (no supersede) → degrades to today's behaviour; reversible without a deploy. Given it touches the hot `issueInvoice` path + tax documents, flip on **after** the §4.2 legacy-§86/4 prod pre-check passes. (Alternative considered: ship unflagged with the import path confirmed safe — rejected in favour of the cheap kill-switch.)
+- **Kill-switch (review gap I9):** add an env flag `FEATURE_VOID_ON_REISSUE` (zod, **default off**). When off, `issueMembershipBill` = plain issue (no supersede) → degrades to today's behaviour; reversible without a deploy. Given it touches the hot `issueInvoice` path + tax documents, flip on **after** the two ship-gates below.
+- **Ship-gates before flipping the flag:**
+  1. **Legacy-§86/4 prod pre-check** (§4.2): confirm no `invoice_subject='membership' AND status='issued' AND document_number IS NOT NULL` rows, or hand them to the treasurer first.
+  2. **Stale-PaymentIntent block (rev-3, review NEW-3 — elevated from "confirm at plan time" to a ship-gate).** `record-payment.ts:343-350` exempts the `webhook` rail from the `membership_terminated` gate, so a Stripe PaymentIntent created *before* termination could settle a terminated member's old bill. #1 has **no** content-based guard (that is #2's). Auto-void is net-neutral-to-positive here (if it wins the race it voids the old bill before settlement; if it loses, `requireStatus:'issued'` still prevents VOID-stamping the now-paid §86/4 — residual is a *spurious open bill*, not a duplicate §86/4). But #1 does not *close* the window, so **prove** that the 059 portal chokepoint + F5 prevent a stale PI from settling on a terminated member's old bill **before** enabling — do not rely on the assumption.
 
 ---
 
@@ -129,11 +136,11 @@ List the member's other outstanding **new-flow** bills and void each:
 4. **`issued → paid` race (lock-time guard, live-Neon)** — bill races to `paid` before the void lock → `requireStatus:'issued'` → `invalid_status`, no VOID over the §86/4.
 5. **Legacy §86/4 is never auto-voided** — an `issued` membership row with non-NULL `document_number` is excluded by the §4.2 shape filter and surfaced as a warning; assert no `voidInvoice` targets it.
 6. **Multi-bill partial-failure loop** — member with 2 stale bills; `voidInvoice` on the 2nd throws → 1st is `void`, warning + failure-metric/audit emitted, renewal still succeeds.
-7. **Mutual-void serialization** — two concurrent `issueMembershipBill` for the same member → exactly one survivor open bill (not zero); the per-member advisory lock serializes them (live-Neon concurrency test).
+7. **Mutual-void via asymmetric ordering (live-Neon concurrency)** — two concurrent `issueMembershipBill` for the same member → exactly **one survivor** open bill (the newest by `(created_at, id)`), never zero; assert no per-member advisory lock is taken (the deterministic-ordering property, not a lock, is what holds).
 8. **Failed auto-void observability** — stub `voidInvoice` to error → `supersedeWarnings` non-empty **and** the failure metric + audit row are emitted (both admin and member-self-confirm surfaces).
 9. **Subject filter + exclude-self** — issuing a membership bill does NOT void the member's `issued` **event** invoice; issuing a non-membership invoice triggers no supersede; the freshly-issued bill is never self-voided.
 10. **No email on auto-void** — cancellation-email outbox row **not** enqueued when `suppressCancellationEmail:true` (fixture sets tenant `auto_email_enabled=true` so the guard proves something); **is** enqueued on a normal manual UI void (regression).
-11. **Entry-point boundary** — `issue/route.ts` refuses a renewal-cycle / `origin='auto_renewal'` membership draft (typed error → queue); a guard test proves no renewal path calls bare `issueInvoice` for a membership subject.
+11. **Entry-point boundary** — a guard test proves the **renewal bridge** calls `issueMembershipBill`, not bare `issueInvoice`, for a membership subject. (The `issue/route.ts` `origin='auto_renewal'` refusal test lives in #2, which owns the column.)
 12. **Cross-tenant** — the list-outstanding read is tenant-scoped (RLS + explicit filter); a peer tenant's bills are never matched.
 
 Coverage: the new F4 read + `issueMembershipBill` composition hit Application thresholds; the money-adjacent void path keeps its existing branch coverage (budget for the two new `voidInvoice` branches).
@@ -145,13 +152,14 @@ Coverage: the new F4 read + `issueMembershipBill` composition hit Application th
 - **One open membership bill per member** (SweCham annual model) — so §4.2 normally matches 0 or 1. The rule is **member-scoped, not cycle/period-scoped** (intentional, catches orphan bills). If a tenant ever bills multiple concurrent memberships, it would over-void → add period scoping then. **Keep this loud in `plan.md` § Complexity Tracking.**
 - **Backfill/import safety (review C2):** because the supersede is a renewal-scoped composition and import (`scripts/import-invoices.ts`) + manual issuance call **raw `issueInvoice`**, multi-bill-per-member backfill is **unaffected** (no auto-void). Confirmed the import path does not route through `issueMembershipBill`.
 - **A partial unique index** on `(tenant, member, subject='membership', status='issued')` was **considered and rejected** — it would make a failed best-effort void *block* the next issue, contradicting the non-fatal degradation model. Documented, not adopted.
-- **Webhook-rail edge (review M2):** the "terminated member cannot concurrently pay" claim (which is why #1's reactivation scope has no paid-race) is not airtight against a *stale Stripe PaymentIntent* created before termination, since `record-payment.ts:334-349` exempts the `webhook` rail from the `membership_terminated` gate. Probability is low and `requireStatus:'issued'` still prevents VOID-stamping a paid bill; confirm at plan time that the 059 chokepoint + F5 also prevent settling a stale PaymentIntent on a terminated member's old bill.
+- **Webhook-rail edge (review M2, elevated to a ship-gate in rev-3):** the "terminated member cannot concurrently pay" claim is not airtight against a *stale Stripe PaymentIntent* created before termination (`record-payment.ts:343-350` exempts the `webhook` rail from the `membership_terminated` gate). `requireStatus:'issued'` still prevents VOID-stamping a paid §86/4 (residual = a spurious open bill, not a duplicate tax doc). This is now **§6 ship-gate 2** — prove the 059 chokepoint + F5 block stale-PI settlement before enabling, do not merely assume it.
 
 ---
 
 ## 10. Dependency for Sub-project #2 (auto-invoice, A3 auto-draft + admin review)
 
-#2 (designed 2026-07-17, stance A3) issues a cron-created **draft** through **`issueExistingDraftForRenewal`** — a renewal issue path that now routes through **`issueMembershipBill`**, so it inherits void-on-reissue. Two follow-ons belong to **#2**:
+#2 (designed 2026-07-17, stance A3) issues a cron-created **draft** through **`issueExistingDraftForRenewal`** — a renewal issue path that now routes through **`issueMembershipBill`**, so it inherits void-on-reissue. Three follow-ons belong to **#2** (rev-3 moved the third here):
+0. **`issue/route.ts` refusal of `origin='auto_renewal'` / renewal-cycle-linked membership drafts** — #2 owns the `origin` column and is the first phase where a cycle-linked membership draft can dangle for a human to click Issue, so the enforcement lives there (review N1).
 1. **Draft-discard extension** — #2 also discards stale `status='draft'` membership invoices for the same member when a bill is issued (void-on-reissue only touches `issued` bills). Because both are F4 invoices this *is* atomic-achievable, but #2 must run it **post-issue in its own tx with a `requireStatus:'draft'` guard** (never inside the issue tx — two concurrent same-member issues each locking+deleting the other's draft deadlocks).
 2. **Paid-race guard (renewals-side, content-based)** — #2's pre-issue guard must re-run the **content check** `NOT EXISTS live membership invoice for (member, plan_year)` under the cycle lock, **not** a `renewal_cycles.linked_invoice_id` re-read (which misses orphan/unlinked bills → duplicate §86/4). **#1 does not need this** — #1's only new caller is reactivation (terminated member, cannot concurrently pay, modulo the §9 webhook edge).
 
