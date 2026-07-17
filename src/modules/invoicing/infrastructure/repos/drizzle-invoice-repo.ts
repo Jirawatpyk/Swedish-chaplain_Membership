@@ -708,7 +708,7 @@ export function makeDrizzleInvoiceRepo(
               // serialize a raw JS Date inside a composite row-value tuple
               // (same fix as drizzle-member-repo.ts's cursor comparison).
               sql`(${invoices.createdAt}, ${invoices.invoiceId}) < (${bound.createdAt.toISOString()}::timestamptz, ${bound.invoiceId})`,
-              sql`${invoices.invoiceId} <> ${bound.excludeInvoiceId}`,
+              ne(invoices.invoiceId, bound.excludeInvoiceId),
             ),
           )
           .orderBy(invoices.createdAt, invoices.invoiceId);

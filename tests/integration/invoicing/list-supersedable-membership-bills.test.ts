@@ -121,9 +121,13 @@ async function seedBill(
       | { kind: 'new_flow'; billNumber: string }
       | { kind: 'legacy'; sequenceNumber: number; documentNumber: string };
     createdAt: Date;
+    /** Explicit primary key — used by the tie-break test to control
+     *  `invoice_id` ordering deterministically instead of relying on
+     *  `randomUUID()` to land on the right side of a hand-picked bound. */
+    invoiceId?: string;
   },
 ): Promise<{ invoiceId: string; createdAt: Date }> {
-  const invoiceId = randomUUID();
+  const invoiceId = opts.invoiceId ?? randomUUID();
   const isPaid = opts.status === 'paid';
   await runInTenant(tenant.ctx, async (tx) => {
     await tx.insert(invoices).values({
@@ -350,6 +354,81 @@ describe('InvoiceRepo.listSupersedableMembershipBills — integration (Task 2, 1
       expect(ids).not.toContain(bPaid.invoiceId); // paid excluded by status
       expect(ids).not.toContain(bLegacy.invoiceId); // legacy §86/4 excluded by shape
       expect(ids).not.toContain(bEvent.invoiceId); // event excluded by subject
+    }, 60_000);
+
+    // Fix 1 (Task 3 hardening, 106-void-on-reissue): in the test above,
+    // `excludeInvoiceId === bound.invoiceId`, so the redundant
+    // `invoice_id <> excludeInvoiceId` filter masks the tuple `<` — a
+    // regression weakening `<` to `<=` would still pass. This test decouples
+    // the two filters (`excludeInvoiceId` is a DIFFERENT, unrelated id) to
+    // prove the tuple `<` self-excludes the bound row on its own.
+    it('self-excludes the bound row via the tuple `<`, independent of the exclude-id filter', async () => {
+      const memberId = await seedMember(tenant, planId);
+
+      const bOld = await seedBill(tenant, user, planId, memberId, {
+        status: 'issued',
+        numbering: { kind: 'new_flow', billNumber: 'SC-2026-000110' },
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      const bBound = await seedBill(tenant, user, planId, memberId, {
+        status: 'issued',
+        numbering: { kind: 'new_flow', billNumber: 'SC-2026-000111' },
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+      });
+
+      const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+      const rows = await repo.listSupersedableMembershipBills(tenant.ctx.slug, memberId, {
+        excludeInvoiceId: randomUUID(), // deliberately NOT bBound.invoiceId
+        createdAt: bBound.createdAt,
+        invoiceId: bBound.invoiceId,
+      });
+      const ids = rows.map((r) => r.invoiceId);
+
+      expect(ids).toContain(bOld.invoiceId); // strictly-older row still returned
+      expect(ids).not.toContain(bBound.invoiceId); // tuple `<` self-excludes the bound row
+    }, 60_000);
+
+    // Fix 2 (Task 3 hardening, 106-void-on-reissue): proves the tie-break
+    // direction the docstring rests on — when two bills share the exact
+    // same `created_at`, only the sibling whose `invoice_id` is strictly
+    // less than the bound's `invoice_id` is returned (deterministic single
+    // survivor under concurrent same-`created_at` issue).
+    it('tie-breaks by invoice_id when created_at is identical to the bound', async () => {
+      const memberId = await seedMember(tenant, planId);
+      const sharedCreatedAt = new Date('2026-01-05T00:00:00Z');
+
+      // Hand-authored UUIDs so `siblingLowId < boundId < siblingHighId`
+      // ordering is deterministic. Postgres `uuid` comparison is byte-wise,
+      // which for same-length hex groups agrees with lexicographic string
+      // order — more reliable here than hoping `randomUUID()` lands on the
+      // right side of a bound picked after the fact.
+      const siblingLowId = '00000000-0000-4000-8000-000000000001';
+      const boundId = '00000000-0000-4000-8000-000000000002';
+      const siblingHighId = '00000000-0000-4000-8000-000000000003';
+
+      const siblingLow = await seedBill(tenant, user, planId, memberId, {
+        status: 'issued',
+        numbering: { kind: 'new_flow', billNumber: 'SC-2026-000120' },
+        createdAt: sharedCreatedAt,
+        invoiceId: siblingLowId,
+      });
+      const siblingHigh = await seedBill(tenant, user, planId, memberId, {
+        status: 'issued',
+        numbering: { kind: 'new_flow', billNumber: 'SC-2026-000121' },
+        createdAt: sharedCreatedAt,
+        invoiceId: siblingHighId,
+      });
+
+      const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);
+      const rows = await repo.listSupersedableMembershipBills(tenant.ctx.slug, memberId, {
+        excludeInvoiceId: randomUUID(),
+        createdAt: sharedCreatedAt,
+        invoiceId: boundId,
+      });
+      const ids = rows.map((r) => r.invoiceId);
+
+      expect(ids).toContain(siblingLow.invoiceId); // (createdAt, low) < (createdAt, bound)
+      expect(ids).not.toContain(siblingHigh.invoiceId); // (createdAt, high) NOT < (createdAt, bound)
     }, 60_000);
   });
 
