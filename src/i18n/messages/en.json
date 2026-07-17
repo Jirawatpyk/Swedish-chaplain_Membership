@@ -3241,7 +3241,34 @@
               "admin": "Administrator",
               "manager": "Manager",
               "executive_director": "Executive Director"
+            },
+            "timing": {
+              "beforeAfterLabel": "Send timing",
+              "before": "before",
+              "after": "after",
+              "daysLabel": "Days"
+            },
+            "preview": {
+              "heading": "Email that will be sent",
+              "noCopyWarning": "No message exists for this timing — this email will not be sent. Pick a standard timing."
+            },
+            "advanced": {
+              "toggle": "Advanced (raw identifiers)",
+              "stepIdLabel": "Step ID",
+              "templateIdLabel": "Template ID"
+            },
+            "taskType": {
+              "label": "Task type",
+              "phone_call": "Phone call",
+              "admin_notify": "Notify admin"
             }
+          },
+          "timeline": {
+            "dueLabel": "Due date",
+            "legendEmail": "Email",
+            "legendTask": "Task",
+            "textAlt": "{count, plural, one {# reminder} other {# reminders}} on this timeline",
+            "emptyDue": "No reminders yet — only the due date is shown."
           },
           "actions": {
             "save": "Save schedule",

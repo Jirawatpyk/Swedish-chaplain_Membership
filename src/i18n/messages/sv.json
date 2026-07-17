@@ -3241,7 +3241,34 @@
               "admin": "Administratör",
               "manager": "Chef",
               "executive_director": "Verkställande direktör"
+            },
+            "timing": {
+              "beforeAfterLabel": "Sändningstid",
+              "before": "före",
+              "after": "efter",
+              "daysLabel": "Dagar"
+            },
+            "preview": {
+              "heading": "E-post som kommer att skickas",
+              "noCopyWarning": "Inget meddelande finns för denna tidpunkt — detta e-postmeddelande skickas inte. Välj en standardtidpunkt."
+            },
+            "advanced": {
+              "toggle": "Avancerat (råa identifierare)",
+              "stepIdLabel": "Steg-ID",
+              "templateIdLabel": "Mall-ID"
+            },
+            "taskType": {
+              "label": "Uppgiftstyp",
+              "phone_call": "Telefonsamtal",
+              "admin_notify": "Meddela administratör"
             }
+          },
+          "timeline": {
+            "dueLabel": "Förfallodatum",
+            "legendEmail": "E-post",
+            "legendTask": "Uppgift",
+            "textAlt": "{count, plural, one {# påminnelse} other {# påminnelser}} på denna tidslinje",
+            "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas."
           },
           "actions": {
             "save": "Spara schema",

@@ -3241,7 +3241,34 @@
               "admin": "ผู้ดูแลระบบ",
               "manager": "ผู้จัดการ",
               "executive_director": "ผู้อำนวยการบริหาร"
+            },
+            "timing": {
+              "beforeAfterLabel": "เวลาส่ง",
+              "before": "ก่อน",
+              "after": "หลัง",
+              "daysLabel": "จำนวนวัน"
+            },
+            "preview": {
+              "heading": "อีเมลที่จะส่ง",
+              "noCopyWarning": "ไม่มีข้อความสำหรับเวลานี้ — อีเมลนี้จะไม่ถูกส่ง เลือกเวลามาตรฐาน"
+            },
+            "advanced": {
+              "toggle": "ขั้นสูง (รหัสอ้างอิงดิบ)",
+              "stepIdLabel": "รหัสขั้นตอน",
+              "templateIdLabel": "รหัสเทมเพลต"
+            },
+            "taskType": {
+              "label": "ประเภทงาน",
+              "phone_call": "โทรศัพท์",
+              "admin_notify": "แจ้งเตือนผู้ดูแลระบบ"
             }
+          },
+          "timeline": {
+            "dueLabel": "วันครบกำหนด",
+            "legendEmail": "อีเมล",
+            "legendTask": "งานติดตาม",
+            "textAlt": "{count, plural, other {# การแจ้งเตือน}} บนไทม์ไลน์นี้",
+            "emptyDue": "ยังไม่มีการแจ้งเตือน — แสดงเฉพาะวันครบกำหนดเท่านั้น"
           },
           "actions": {
             "save": "บันทึกตาราง",
