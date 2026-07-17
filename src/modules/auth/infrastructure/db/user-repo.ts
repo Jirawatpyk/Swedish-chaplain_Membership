@@ -5,9 +5,9 @@
  * code (sign-in, change-password, account lifecycle) only depends on
  * the interface declared here, never on Drizzle directly.
  */
-import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
-import { users, notificationsOutbox, type UserRow } from './schema';
+import { users, notificationsOutbox, invitations, type UserRow } from './schema';
 import {
   asEmailAddress,
   asPasswordHash,
@@ -25,6 +25,20 @@ export interface UserListFilter {
   readonly role?: Role;
   readonly status?: UserStatus;
 }
+
+/**
+ * Projection returned by `listWithFilter` — `UserAccount` plus the
+ * LATEST non-consumed invitation's `expiresAt` (Staff Invitation
+ * Lifecycle, Task 5). RA-7 (amendment): deliberately kept OUT of the
+ * pure `UserAccount` Domain type — invitation lifecycle is a
+ * cross-aggregate concern (`users` ⋈ `invitations`), not an identity
+ * attribute of the user itself. `null` when the user has no
+ * non-consumed invitation row at all (e.g. `active`/`disabled` users,
+ * or a `pending` user whose only invitation was already redeemed).
+ */
+export type UserListRow = UserAccount & {
+  readonly invitationExpiresAt: Date | null;
+};
 
 function buildFilterConditions(filter: UserListFilter): SQL | undefined {
   const conds: SQL[] = [];
@@ -212,12 +226,16 @@ export interface UserRepo {
   /**
    * Filtered + paginated list. Search `q` matches email OR display_name
    * (case-insensitive substring); `role` + `status` are exact matches.
+   *
+   * Each row is correlated (via a `LEFT JOIN LATERAL`-equivalent
+   * scalar subquery) to its latest non-consumed `invitations.expires_at`
+   * — see `UserListRow` (Staff Invitation Lifecycle Task 5).
    */
   listWithFilter(
     filter: UserListFilter,
     limit: number,
     offset: number,
-  ): Promise<readonly UserAccount[]>;
+  ): Promise<readonly UserListRow[]>;
   /** Total count matching the same filter — powers pagination UI. */
   countWithFilter(filter: UserListFilter): Promise<number>;
 }
@@ -523,12 +541,51 @@ export const userRepo: UserRepo = {
 
   async listWithFilter(filter, limit, offset) {
     const where = buildFilterConditions(filter);
-    const baseQuery = db.select().from(users);
+    // Correlated scalar subquery — the "latest non-consumed invitation"
+    // per user, ordered by created_at DESC. Equivalent to a
+    // `LEFT JOIN LATERAL (... ORDER BY created_at DESC LIMIT 1) ON true`
+    // but expressible directly as a select field, so the existing
+    // `db.select().from(users)` shape (spread via getTableColumns) only
+    // grows one column instead of restructuring the query into a join.
+    //
+    // Built via the query-builder (not a raw `sql` WHERE clause) so
+    // Drizzle table-qualifies `users.id` as `"users"."id"` inside the
+    // subquery — a raw-interpolated `${users.id}` renders as the bare
+    // `"id"`, which Postgres then resolves to `invitations.id` (its
+    // OWN `id` column, same name) instead of correlating to the outer
+    // `users` row. Wrapping the whole builder in `sql`(${...})`` embeds
+    // it as a scalar subquery.
+    const latestInvitationExpiresAt = db
+      .select({ expiresAt: invitations.expiresAt })
+      .from(invitations)
+      .where(and(eq(invitations.userId, users.id), isNull(invitations.consumedAt)))
+      .orderBy(desc(invitations.createdAt))
+      .limit(1);
+    const baseQuery = db
+      .select({
+        ...getTableColumns(users),
+        // `.mapWith(invitations.expiresAt)` reuses that column's OWN
+        // driver-value decoder. Without it, drizzle-orm/postgres-js
+        // returns raw `sql` fields as the untouched wire-format string
+        // (e.g. "2026-07-24 17:40:19.334+00") — it only runs its
+        // Date-decoding step for values selected through a declared
+        // `PgColumn`, which a hand-written `sql` fragment is not. Cast
+        // needed because `mapWith(column)` infers the column's own
+        // (non-null) result type; this subquery yields `null` when the
+        // user has no non-consumed invitation.
+        invitationExpiresAt: sql`(${latestInvitationExpiresAt})`.mapWith(
+          invitations.expiresAt,
+        ) as SQL<Date | null>,
+      })
+      .from(users);
     const rows = await (where ? baseQuery.where(where) : baseQuery)
       .orderBy(sql`${users.createdAt} DESC`)
       .limit(limit)
       .offset(offset);
-    return rows.map(toDomain);
+    return rows.map((row) => ({
+      ...toDomain(row),
+      invitationExpiresAt: row.invitationExpiresAt,
+    }));
   },
 
   async countWithFilter(filter) {

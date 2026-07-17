@@ -34,6 +34,14 @@ interface UserRow {
   readonly role: Role;
   readonly status: Status;
   readonly displayName: string | null;
+  /**
+   * Staff Invitation Lifecycle Task 5 — the LATEST non-consumed
+   * invitation's `expires_at` (`UserListRow` projection, user-repo.ts).
+   * `null` when there is none — the common case for `active` /
+   * `disabled` rows, and the rare edge case of a `pending` row whose
+   * invitation was already redeemed/revoked without a re-send.
+   */
+  readonly invitationExpiresAt: Date | null;
 }
 
 export interface UserListTableProps {
@@ -58,6 +66,18 @@ const roleVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
   manager: 'secondary',
   member: 'outline',
 };
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Staff Invitation Lifecycle Task 5 — days remaining until an
+ * invitation's `expires_at`, rounded UP so a fraction of a day still
+ * reads as "expires in 1 day" rather than "0 days" (TTL is 7 days —
+ * see INVITATION_TTL_MS). `0` or negative means already expired.
+ */
+function daysUntil(expiresAt: Date, now: Date): number {
+  return Math.ceil((expiresAt.getTime() - now.getTime()) / MS_PER_DAY);
+}
 
 export function UserListTable({
   users,
@@ -142,6 +162,14 @@ export function UserListTable({
               const canDisable = isAdmin && !isSelf && user.status === 'active';
               const canEnable = isAdmin && user.status === 'disabled';
               const busy = busyId === user.id;
+              const invitationExpiryLabel =
+                user.status === 'pending' && user.invitationExpiresAt
+                  ? daysUntil(user.invitationExpiresAt, new Date()) > 0
+                    ? t('invite.expiresIn', {
+                        days: daysUntil(user.invitationExpiresAt, new Date()),
+                      })
+                    : t('invite.expired')
+                  : null;
               return (
                 <TableRow
                   key={user.id}
@@ -163,9 +191,16 @@ export function UserListTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={statusVariant[user.status]}>
-                    {t(`filters.status.${user.status}`)}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={statusVariant[user.status]}>
+                      {t(`filters.status.${user.status}`)}
+                    </Badge>
+                    {invitationExpiryLabel ? (
+                      <span className="text-xs text-muted-foreground">
+                        {invitationExpiryLabel}
+                      </span>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">

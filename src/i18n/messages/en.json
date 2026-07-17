@@ -647,7 +647,9 @@
           "disabledHint": "Select role Member to link",
           "lockedFallback": "Selected member",
           "lockedHelpText": "This invite is pre-linked to the current member company."
-        }
+        },
+        "expiresIn": "{days, plural, one {Expires in # day} other {Expires in # days}}",
+        "expired": "Invitation expired"
       }
     },
     "plans": {

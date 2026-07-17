@@ -147,6 +147,7 @@ async function UsersDataSection({
           role: u.role,
           status: u.status,
           displayName: u.displayName,
+          invitationExpiresAt: u.invitationExpiresAt,
         }))}
         currentUserId={currentUserId}
         currentUserRole={currentUserRole}
