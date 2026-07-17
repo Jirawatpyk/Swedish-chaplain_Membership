@@ -215,6 +215,7 @@ export function isTenantTx(value: unknown): value is TenantTx {
  * cross-tenant leakage:
  *
  *   BEGIN;
+ *     SET LOCAL row_security = on;
  *     SET LOCAL ROLE chamber_app;
  *     SET LOCAL app.current_tenant = '<ctx.slug>';
  *     -- fn(tx) runs here
@@ -241,15 +242,28 @@ export async function runInTenant<T>(
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   return db.transaction(async (tx) => {
-    // Order matters: switch role first so the subsequent GUC write is
-    // logged against the chamber_app role. Both statements are parameter-
-    // safe — ctx.slug is already validated by asTenantContext against
+    // ctx.slug is already validated by asTenantContext against
     // `[a-z0-9-]{1,63}` so there is no injection surface even though GUC
-    // names don't accept bind parameters. The runtime assertion below is
-    // a belt-and-suspenders guard against future type-system bypasses.
+    // names don't accept bind parameters. The runtime check below is a
+    // belt-and-suspenders guard against future type-system bypasses.
     if (!/^[a-z0-9-]{1,63}$/.test(ctx.slug)) {
       throw new Error(`runInTenant: slug invariant violated: ${ctx.slug}`);
     }
+    // RLS hardening (incident 2026-07-17): force `row_security = on` for
+    // this transaction FIRST. A pooled Neon connection can inherit a stale
+    // session-level `row_security = off` (e.g. an owner-level `SET
+    // row_security = off` left on the shared transaction-mode pooler by an
+    // ops script). Because the connection role is BYPASSRLS, the `SET LOCAL
+    // ROLE chamber_app` below drops to a NOBYPASSRLS role — and with
+    // row_security=off every FORCE-RLS tenant read then raises SQLSTATE
+    // 42501 ("query would be affected by row-level security policy"): an
+    // intermittent, hard-to-trace failure. `SET LOCAL` scopes it to this tx
+    // (auto-reset at COMMIT), so runInTenant self-heals a contaminated
+    // connection and RLS is always ENFORCED — never errored, never bypassed.
+    // Role is switched next, BEFORE the app.current_tenant GUC write, so the
+    // GUC is logged against chamber_app. See
+    // docs/runbooks/rls-row-security-incident.md.
+    await tx.execute(sql`SET LOCAL row_security = on`);
     await tx.execute(sql`SET LOCAL ROLE chamber_app`);
     await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${ctx.slug}'`));
 
@@ -333,8 +347,8 @@ export async function assertTenantContextSet(
   if (!DEBUG_RLS_STATE) return;
 
   const rows = (await tx.execute(
-    sql`SELECT current_user AS u, current_setting('app.current_tenant', TRUE) AS t`,
-  )) as unknown as Array<{ u: string; t: string | null }>;
+    sql`SELECT current_user AS u, current_setting('app.current_tenant', TRUE) AS t, current_setting('row_security') AS rs`,
+  )) as unknown as Array<{ u: string; t: string | null; rs: string }>;
 
   const row = rows[0];
   if (!row) {
@@ -357,6 +371,16 @@ export async function assertTenantContextSet(
       '[DEBUG_RLS_STATE] Query ran without `app.current_tenant` set. ' +
         'Wrap the query in `runInTenant(ctx, ...)` from `@/lib/db`. ' +
         'See specs/002-membership-plans/research.md § 2.5.',
+    );
+  }
+
+  if (row.rs !== 'on') {
+    throw new TenantContextAssertionError(
+      `[DEBUG_RLS_STATE] row_security is "${row.rs}", expected "on". ` +
+        'The connection inherited a stale `row_security = off`, under which a ' +
+        'FORCE-RLS read raises SQLSTATE 42501 (or, on a BYPASSRLS role, silently ' +
+        'bypasses RLS). runInTenant forces it on via `SET LOCAL row_security = on` — ' +
+        'see docs/runbooks/rls-row-security-incident.md.',
     );
   }
 
