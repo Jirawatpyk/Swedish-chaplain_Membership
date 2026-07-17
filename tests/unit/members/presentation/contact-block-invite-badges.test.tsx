@@ -176,6 +176,25 @@ describe('ContactBlock — invitation badges (Cluster 3)', () => {
     expect(markup).toContain('resend-invite-btn');
   });
 
+  it('Task 10 (staff-invitation-lifecycle) — post-revoke state (bounced set, no linked user) → NO "Invite bounced" badge, no re-send', () => {
+    // A staff Revoke/Prune hard-deletes the pending user, which
+    // `ON DELETE SET NULL`s contacts.linked_user_id. If a bounce was
+    // recorded BEFORE the revoke, invite_bounced_at is now a stale marker
+    // with no user to resend to — resendBouncedInvite requires
+    // linkedUserId, so the badge could never self-clear via the normal
+    // recovery flow. The badge (and its paired re-send button) must be
+    // suppressed once linkedUserId is null, regardless of inviteBouncedAt.
+    const markup = renderBlock({
+      contact: makeContact({
+        inviteBouncedAt: new Date('2026-03-01T00:00:00Z'),
+        linkedUserId: null,
+      }),
+      pendingInvitation: undefined,
+    });
+    expect(markup).not.toContain('Invite bounced');
+    expect(markup).not.toContain('resend-invite-btn');
+  });
+
   it('Cluster 3 review — consumed/active contact whose stale expired invite was suppressed → "Portal linked", NOT expired', () => {
     // The repo active-user anti-join excludes an ACTIVE user's lingering
     // unconsumed+expired row, so the page passes NO pendingInvitation for this

@@ -211,6 +211,82 @@ describe('MembersDirectoryBody — row-mapping (FIX-D)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Task 10 (staff-invitation-lifecycle) — the directory's "invite bounced"
+// badge must self-heal once a staff Revoke/Prune hard-deletes the pending
+// user, which `ON DELETE SET NULL`s contacts.linked_user_id. Before this
+// fix, `invite_bounced` was derived from `inviteBouncedAt !== null` alone,
+// so a contact that bounced BEFORE being revoked would show the badge
+// forever (resendBouncedInvite requires linkedUserId, so it could never be
+// cleared). invite_bounced_at is only meaningful while a user is linked.
+// ---------------------------------------------------------------------------
+describe('MembersDirectoryBody — invite-bounced badge (Task 10)', () => {
+  function seedRowWithPrimaryContact(primaryContact: {
+    inviteBouncedAt: Date | null;
+    linkedUserId: string | null;
+  }): void {
+    resolveMemberNumberPrefixMock.mockResolvedValue('SCCM');
+    directorySearchWithCount.mockResolvedValue({
+      ok: true,
+      value: {
+        total: 1,
+        items: [
+          {
+            member: {
+              memberId: 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa',
+              memberNumber: 42,
+              companyName: 'Alpha Corp',
+              legalEntityType: 'limited',
+              country: 'TH',
+              planId: 'corporate',
+              planYear: 2026,
+              status: 'active',
+              lastActivityAt: null,
+              notes: null,
+              tenantId: 'test-tenant',
+            },
+            planDisplayName: 'Corporate',
+            primaryContact: {
+              contactId: 'cccccccc-1111-4111-8111-cccccccccccc',
+              firstName: 'Jane',
+              lastName: 'Smith',
+              email: 'jane@example.com',
+              inviteBouncedAt: primaryContact.inviteBouncedAt,
+              linkedUserId: primaryContact.linkedUserId,
+            },
+            riskScore: null,
+            riskScoreBand: null,
+          },
+        ],
+      },
+    });
+  }
+
+  it('post-revoke state (bounced set, no linked user) → invite_bounced is false', async () => {
+    seedRowWithPrimaryContact({
+      inviteBouncedAt: new Date('2026-06-01T00:00:00Z'),
+      linkedUserId: null,
+    });
+
+    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+
+    const treeJson = JSON.stringify(result);
+    expect(treeJson).toContain('"invite_bounced":false');
+    expect(treeJson).not.toContain('"invite_bounced":true');
+  });
+
+  it('normal bounced state (bounced set, user still linked) → invite_bounced is true', async () => {
+    seedRowWithPrimaryContact({
+      inviteBouncedAt: new Date('2026-06-01T00:00:00Z'),
+      linkedUserId: 'dddddddd-1111-4111-8111-dddddddddddd',
+    });
+
+    const result = await MembersDirectoryBody({ query: {}, isAdmin: true });
+
+    expect(JSON.stringify(result)).toContain('"invite_bounced":true');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // S3 (067 speckit-review) — the page-side best-effort catch around
 // `loadMembersMembershipStatusSafe` degrades gracefully: when the lapsed-status
 // read THROWS (or returns !ok), the directory STILL renders its rows; only the
