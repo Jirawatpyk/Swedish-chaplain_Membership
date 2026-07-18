@@ -118,6 +118,44 @@ export {
   type DisableUserDeps,
 } from './application/disable-user';
 
+// Staff Invitation Lifecycle Task 1 — re-sends a fresh invitation for an
+// existing pending STAFF user (admin/manager). Thin wrapper around F1's
+// shared `reissueInvitation` primitive that adds the `invitation_reissued`
+// audit event (see resend-staff-invitation.ts header for why the audit
+// lives here and not inside `reissueInvitation`).
+export {
+  resendStaffInvitation,
+  type ResendStaffInvitationInput,
+  type ResendStaffInvitationSuccess,
+  type ResendStaffInvitationError,
+  type ResendStaffInvitationDeps,
+} from './application/resend-staff-invitation';
+
+// Staff Invitation Lifecycle Task 3 — permanently deletes a `pending`
+// invited user (admin "Revoke" action). `contacts.linked_user_id` FK is
+// `ON DELETE SET NULL`, so a member-linked pending user is safely unlinked,
+// never destroying member data. Emits `invitation_revoked`.
+export {
+  revokeInvitation,
+  type RevokeInvitationInput,
+  type RevokeInvitationSuccess,
+  type RevokeInvitationError,
+  type RevokeInvitationDeps,
+} from './application/revoke-invitation';
+
+// Staff Invitation Lifecycle Task 6 — cron-driven bulk prune of long-dead
+// `pending` invited users. RA-4-safe: NEVER deletes a user that still has
+// a live (unexpired, non-consumed) invitation token, even if an OLDER
+// token on the same user has expired (the Resend two-token case). Emits
+// `invitation_expired` per pruned row. Task 7 (separate) wires the actual
+// cron route.
+export {
+  pruneExpiredInvitations,
+  type PruneExpiredInvitationsInput,
+  type PruneExpiredInvitationsSuccess,
+  type PruneExpiredInvitationsDeps,
+} from './application/prune-expired-invitations';
+
 export {
   enableUser,
   type EnableUserInput,

@@ -356,7 +356,16 @@ export async function MembersDirectoryBody({
           first_name: row.primaryContact.firstName,
           last_name: row.primaryContact.lastName,
           email: row.primaryContact.email,
-          invite_bounced: row.primaryContact.inviteBouncedAt !== null,
+          // Task 10 (staff-invitation-lifecycle) — invite_bounced_at is only
+          // meaningful while a user is still linked. A staff Revoke/Prune
+          // hard-deletes the pending user, which `ON DELETE SET NULL`s
+          // contacts.linked_user_id; without the linkedUserId check a bounce
+          // recorded before the revoke would leave this badge stuck forever
+          // (resendBouncedInvite requires linkedUserId, so it can never
+          // clear the flag). Self-heals the read the moment the FK nulls out.
+          invite_bounced:
+            row.primaryContact.inviteBouncedAt !== null &&
+            row.primaryContact.linkedUserId !== null,
         }
       : null,
     };

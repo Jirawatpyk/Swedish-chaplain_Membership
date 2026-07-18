@@ -402,8 +402,18 @@ export function ContactBlock({
                 above already signals the dead-end and the shared "Re-send
                 invitation" button below is the single recovery, so showing
                 a second near-identical red "Invite bounced" badge for the
-                same root cause is redundant (a11y double-badge finding). */}
+                same root cause is redundant (a11y double-badge finding).
+
+                Task 10 (staff-invitation-lifecycle) — invite_bounced_at is
+                only meaningful while a user is still linked. A staff
+                Revoke/Prune hard-deletes the pending user, which
+                `ON DELETE SET NULL`s contacts.linked_user_id; without this
+                check a bounce recorded before the revoke would leave this
+                badge stuck forever (resendBouncedInvite requires
+                linkedUserId, so it can never clear the flag). Self-heals
+                the read the moment the FK nulls out. */}
             {contact.inviteBouncedAt &&
+              contact.linkedUserId &&
               !(pendingInvitation && pendingInvitation.expired) && (
               <Badge
                 variant="outline"

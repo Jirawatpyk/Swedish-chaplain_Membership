@@ -41,6 +41,20 @@ import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildResetPasswordEmail } from '@/modules/auth/infrastructure/email/reset-password-email';
 import { checkPasswordPolicy } from '@/modules/auth/application/password-policy';
+// `reissueInvitation` is imported as a VALUE (not type-only) so
+// `defaultResendStaffInvitationDeps` below can inject the real
+// implementation as `resendStaffInvitation`'s `reissue` dep. UNLIKE the
+// `checkPasswordPolicy`/`buildResetPasswordEmail` precedents above
+// (which are one-directional), this introduction creates a REAL bidirectional
+// value import cycle: auth-deps.ts value-imports `reissueInvitation`
+// (here), and reissue-invitation.ts value-imports `defaultReissueInvitationDeps`
+// (for its default parameter). Kept safe by two invariants:
+//   (1) `reissueInvitation` must stay a hoisted `function` declaration
+//       (not a `const` arrow) — its binding is live before either module's
+//       top-level body runs.
+//   (2) `defaultReissueInvitationDeps` must be read only inside a
+//       default-parameter expression, never at top level of either module.
+import { reissueInvitation } from '@/modules/auth/application/reissue-invitation';
 // Outbox enqueue for invitation emails (T049 close-out). Bypasses
 // runInTenant because F1 invitation flow is cross-tenant (admin staff
 // created without a tenant context); the outbox table has no RLS
@@ -78,6 +92,9 @@ import type { CreateUserDeps } from '@/modules/auth/application/create-user';
 import type { DeleteInvitedUserDeps } from '@/modules/auth/application/delete-invited-user';
 import type { EraseUserDeps } from '@/modules/auth/application/erase-user';
 import type { ReissueInvitationDeps } from '@/modules/auth/application/reissue-invitation';
+import type { ResendStaffInvitationDeps } from '@/modules/auth/application/resend-staff-invitation';
+import type { RevokeInvitationDeps } from '@/modules/auth/application/revoke-invitation';
+import type { PruneExpiredInvitationsDeps } from '@/modules/auth/application/prune-expired-invitations';
 import type { RedeemInviteDeps } from '@/modules/auth/application/redeem-invite';
 import type { DisableUserDeps } from '@/modules/auth/application/disable-user';
 import type { EnableUserDeps } from '@/modules/auth/application/enable-user';
@@ -255,6 +272,41 @@ export const defaultReissueInvitationDeps: ReissueInvitationDeps = {
   tokens: tokenRepo,
   enqueueInvitationInTx,
   now: wallClock,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 1 — `resendStaffInvitation` deps. Wraps
+ * the shared `reissueInvitation` primitive above and adds the staff-facing
+ * `invitation_reissued` audit event (which `reissueInvitation` itself
+ * deliberately does not emit — see resend-staff-invitation.ts header).
+ */
+export const defaultResendStaffInvitationDeps: ResendStaffInvitationDeps = {
+  reissue: reissueInvitation,
+  audit: auditRepo,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 3 — `revokeInvitation` deps. Owner-role
+ * (`db.transaction`, imported inside the use case itself) deletion of a
+ * pending user + its queued by-email invite outbox row(s) + the
+ * `invitation_revoked` audit, all atomic. `userRepo` implements both new
+ * RA-2 methods (`deleteInvitedPendingInTx` RETURNING email,
+ * `deleteInviteOutboxByEmailInTx`).
+ */
+export const defaultRevokeInvitationDeps: RevokeInvitationDeps = {
+  users: userRepo,
+  audit: auditRepo,
+};
+
+/**
+ * Staff Invitation Lifecycle Task 6 — `pruneExpiredInvitations` deps.
+ * Same owner-role tx pattern as `revokeInvitation`; `userRepo` implements
+ * both new Task 6 methods (`deletePendingInvitesExpiredBeforeInTx`
+ * RETURNING id+email, `deleteInviteOutboxByEmailAllTenantsInTx`).
+ */
+export const defaultPruneExpiredInvitationsDeps: PruneExpiredInvitationsDeps = {
+  users: userRepo,
+  audit: auditRepo,
 };
 
 export const defaultRedeemInviteDeps: RedeemInviteDeps = {

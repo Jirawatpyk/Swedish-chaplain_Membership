@@ -45,6 +45,13 @@ export const AUDIT_EVENT_TYPES = [
   // go-live #12-13 — invitePortal SAGA compensation: a just-created pending user
   // was deleted because the downstream contact-link step failed (no orphan).
   'account_creation_compensated',
+  // Staff invitation lifecycle (/admin/users) — resend / revoke a pending invite
+  // + cron prune of long-expired pending users. Emitted at the ROUTE level (NOT
+  // inside the shared `reissueInvitation`, which F3's member-resend also calls)
+  // so a member-linked resend is never double-audited.
+  'invitation_reissued',
+  'invitation_revoked',
+  'invitation_expired',
   'account_disabled',
   'account_reenabled',
   'role_changed',

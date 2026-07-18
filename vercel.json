@@ -18,6 +18,7 @@
     { "path": "/api/cron/insights/process-export-jobs", "schedule": "*/5 * * * *" },
 
     { "path": "/api/cron/members/reconcile-erasures", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/auth/prune-expired-invitations", "schedule": "40 4 * * *" },
 
     { "path": "/api/internal/observability/recompute-match-rate", "schedule": "0 * * * *" },
 

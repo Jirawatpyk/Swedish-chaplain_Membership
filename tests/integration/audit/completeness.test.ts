@@ -1,7 +1,7 @@
 /**
  * T156 — Audit completeness integration test.
  *
- * Proves that every one of the 16 `AUDIT_EVENT_TYPES` can be
+ * Proves that every one of the 36 `AUDIT_EVENT_TYPES` can be
  * appended to the `audit_log` table without tripping the
  * append-only trigger or a schema constraint. This is the
  * structural safety net for spec SC-004 / FR-012 — the full
@@ -10,7 +10,7 @@
  * (`sign-in.test.ts`, `password-reset.test.ts`,
  * `account-lifecycle.test.ts`, `change-password.test.ts`).
  *
- * Strategy: for each of the 16 types we append a sentinel row
+ * Strategy: for each of the 36 types we append a sentinel row
  * with a unique `requestId`, then SELECT it back and assert the
  * round-trip. Cleanup is limited to the rows we just inserted
  * (the append-only trigger blocks DELETE, so the rows will
@@ -23,7 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth/domain/audit-event';
 
-describe('integration: audit completeness — all 33 event types writable', () => {
+describe('integration: audit completeness — all 36 event types writable', () => {
   it.each(AUDIT_EVENT_TYPES)(
     'can append and read back a %s audit row',
     async (eventType) => {
@@ -55,7 +55,7 @@ describe('integration: audit completeness — all 33 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 33 entries', () => {
+  it('the full event-type list has exactly 36 entries', () => {
     // Regression guard against accidental removal or duplication.
     // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
     //         `invitation_redemption_failed` (migration 0002).
@@ -74,8 +74,11 @@ describe('integration: audit completeness — all 33 event types writable', () =
     //                  route-level forensic event for refund rate-limit hits).
     // COMP-1 US2a: 32 → 33 (migration 0222 — user_erased, GDPR Art. 17 / PDPA
     //                  member-erasure audit event).
-    expect(AUDIT_EVENT_TYPES.length).toBe(33);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(33);
+    // staff invite lifecycle: 33 → 36 (migration 0258 — invitation_reissued,
+    //                  invitation_revoked, invitation_expired for the
+    //                  /admin/users resend / revoke / cron-prune actions).
+    expect(AUDIT_EVENT_TYPES.length).toBe(36);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(36);
   });
 });
 

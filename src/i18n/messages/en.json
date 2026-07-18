@@ -591,6 +591,8 @@
         "invite": "Invite user",
         "disable": "Disable",
         "enable": "Enable",
+        "resend": "Resend invitation",
+        "revoke": "Revoke",
         "self": "That's you"
       },
       "confirm": {
@@ -602,11 +604,22 @@
         "enable": {
           "title": "Re-enable this account?",
           "description": "{email} will regain access and can sign in again."
+        },
+        "revoke": {
+          "title": "Revoke this invitation?",
+          "description": "{email} will no longer be able to accept this invitation. Their pending account is deleted and the email is freed for a new invite. If this invite was linked to a member contact, that contact is unlinked — their member data is preserved and they can be re-invited.",
+          "confirm": "Revoke invitation"
         }
       },
       "toast": {
         "disabled": "{email} disabled.",
-        "enabled": "{email} re-enabled."
+        "enabled": "{email} re-enabled.",
+        "resent": "Invitation re-sent to {email}.",
+        "resendRateLimited": "Too many resend attempts. Please wait and try again.",
+        "resendRateLimitedWait": "Too many resends — try again in about {minutes, plural, one {# minute} other {# minutes}}.",
+        "resendError": "Couldn't resend the invitation. Please try again.",
+        "revoked": "Invitation revoked for {email}.",
+        "revokeError": "Couldn't revoke the invitation. Please try again."
       },
       "invite": {
         "title": "Invite a new user",
@@ -647,7 +660,9 @@
           "disabledHint": "Select role Member to link",
           "lockedFallback": "Selected member",
           "lockedHelpText": "This invite is pre-linked to the current member company."
-        }
+        },
+        "expiresIn": "{days, plural, one {Expires in # day} other {Expires in # days}}",
+        "expired": "Invitation expired"
       }
     },
     "plans": {

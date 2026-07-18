@@ -5,9 +5,23 @@
  * code (sign-in, change-password, account lifecycle) only depends on
  * the interface declared here, never on Drizzle directly.
  */
-import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  gte,
+  ilike,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
-import { users, type UserRow } from './schema';
+import { users, notificationsOutbox, invitations, type UserRow } from './schema';
 import {
   asEmailAddress,
   asPasswordHash,
@@ -25,6 +39,20 @@ export interface UserListFilter {
   readonly role?: Role;
   readonly status?: UserStatus;
 }
+
+/**
+ * Projection returned by `listWithFilter` — `UserAccount` plus the
+ * LATEST non-consumed invitation's `expiresAt` (Staff Invitation
+ * Lifecycle, Task 5). RA-7 (amendment): deliberately kept OUT of the
+ * pure `UserAccount` Domain type — invitation lifecycle is a
+ * cross-aggregate concern (`users` ⋈ `invitations`), not an identity
+ * attribute of the user itself. `null` when the user has no
+ * non-consumed invitation row at all (e.g. `active`/`disabled` users,
+ * or a `pending` user whose only invitation was already redeemed).
+ */
+export type UserListRow = UserAccount & {
+  readonly invitationExpiresAt: Date | null;
+};
 
 function buildFilterConditions(filter: UserListFilter): SQL | undefined {
   const conds: SQL[] = [];
@@ -120,10 +148,92 @@ export interface UserRepo {
    * F3 `invitePortal` SAGA compensation (go-live #12-13) which must atomically
    * delete the just-created pending user + its queued outbox row + append a
    * compensation audit in ONE owner-role tx. Same `status='pending'` guard:
-   * returns `{ deleted: 0 }` (a no-op) if the user was already redeemed/active —
-   * a redeemed account is NEVER destroyed.
+   * returns `{ deleted: 0, email: null }` (a no-op) if the user was already
+   * redeemed/active — a redeemed account is NEVER destroyed.
+   *
+   * RA-2 (Staff Invitation Lifecycle, Task 3) — also RETURNs the deleted
+   * row's `email` so callers can read-before-delete the address for a
+   * downstream by-email cleanup (e.g. `deleteInviteOutboxByEmailInTx`)
+   * without a second query against a now-gone user row. `email` is `null`
+   * only when `deleted === 0` (no row matched); the `users.email` column is
+   * itself `NOT NULL`, so a successful delete (`deleted > 0`) always yields
+   * a non-null email. Purely additive — existing callers that destructure
+   * only `{ deleted }` are unaffected.
    */
-  deleteInvitedPendingInTx(tx: DbTx, id: UserId): Promise<{ deleted: number }>;
+  deleteInvitedPendingInTx(
+    tx: DbTx,
+    id: UserId,
+  ): Promise<{ deleted: number; email: string | null }>;
+  /**
+   * RA-2 (Staff Invitation Lifecycle, Task 3) — deletes this email's
+   * still-undispatched `member_invitation` outbox row(s), scoped to a single
+   * tenant. `notifications_outbox` has no `user_id` column (schema.ts —
+   * see the table header), so the linkage is by `to_email` (case-insensitive)
+   * rather than by user id. Scoped to `notification_type='member_invitation'`
+   * AND `status='pending'` so it never touches a different notification kind
+   * or a row that already dispatched; scoped to `tenant_id` so a revoke in
+   * one tenant can never delete another tenant's queued invite for the same
+   * email address (Principle I — the table is FORCE-RLS but this runs on the
+   * owner-role BYPASSRLS tx, so the tenant filter here is the only guard).
+   */
+  deleteInviteOutboxByEmailInTx(
+    tx: DbTx,
+    email: string,
+    tenantId: string,
+  ): Promise<void>;
+  /**
+   * Staff Invitation Lifecycle Task 6 — bulk-deletes `pending` users whose
+   * invitation history has gone fully cold: NO invitation row is "live"
+   * relative to `cutoff`.
+   *
+   * RA-4 (design review, 2026-07-18) — Resend (`reissueInvitation` /
+   * Task 1) mints a NEW `invitations` row WITHOUT deleting the old one,
+   * so a single pending user can carry BOTH a long-expired original token
+   * AND a fresh one. Pruning on "the OLDEST/some invitation is past
+   * cutoff" would delete a just-resent user and permanently break their
+   * activation link. The two-part guard below defines "live" as "not
+   * consumed AND not yet expired past the grace cutoff", checked across
+   * ALL of a user's invitations (not just the latest by created_at):
+   *
+   *   NOT EXISTS (a live invitation: expires_at >= cutoff AND
+   *               consumed_at IS NULL) — refuses to delete if ANY token
+   *               could still be redeemed (covers the RA-4 two-token case)
+   *   AND EXISTS (an invitation with expires_at < cutoff) — requires at
+   *               least one invitation to have actually gone stale beyond
+   *               the grace window, so a pending user with zero
+   *               invitations (should not occur in practice — every
+   *               `createPending` call is paired with an invitation
+   *               insert in the same tx) is never swept up incidentally.
+   *
+   * Built via the query-builder (not a raw `sql` WHERE fragment) for the
+   * correlation — see `listWithFilter`'s `latestInvitationExpiresAt`
+   * subquery below for why a raw-interpolated `${users.id}` inside a
+   * hand-written `sql` fragment loses its table qualifier and silently
+   * self-correlates to `invitations.id` instead (a Task 5 bug avoided
+   * here by construction).
+   *
+   * RETURNING `id` + `email` (read-before-delete, no re-query) so the
+   * caller can drive the by-email outbox cleanup + audit emit without a
+   * second lookup against rows that no longer exist.
+   */
+  deletePendingInvitesExpiredBeforeInTx(
+    tx: DbTx,
+    cutoff: Date,
+  ): Promise<Array<{ userId: string; email: string }>>;
+  /**
+   * Staff Invitation Lifecycle Task 6 — cross-tenant sibling of
+   * `deleteInviteOutboxByEmailInTx`. A pruned user is gone system-wide
+   * (the account no longer exists), so unlike a single-tenant admin
+   * `revokeInvitation` action there is no ONE tenant to scope the
+   * cleanup to — the same email could have a queued `member_invitation`
+   * outbox row in MULTIPLE tenants (one person invited to several
+   * chambers), and all of them are now for a user that can never
+   * activate. Deletes every still-`pending` `member_invitation` outbox
+   * row for this email regardless of `tenant_id`. Runs on the owner-role
+   * tx (same BYPASSRLS-on-FORCE-RLS posture as
+   * `deleteInviteOutboxByEmailInTx`).
+   */
+  deleteInviteOutboxByEmailAllTenantsInTx(tx: DbTx, email: string): Promise<void>;
   /**
    * COMP-1 US2a — anonymise an F1 login account so a GDPR-Art.17 /
    * PDPA-§33-erased member can no longer authenticate. Email → a
@@ -183,12 +293,16 @@ export interface UserRepo {
   /**
    * Filtered + paginated list. Search `q` matches email OR display_name
    * (case-insensitive substring); `role` + `status` are exact matches.
+   *
+   * Each row is correlated (via a `LEFT JOIN LATERAL`-equivalent
+   * scalar subquery) to its latest non-consumed `invitations.expires_at`
+   * — see `UserListRow` (Staff Invitation Lifecycle Task 5).
    */
   listWithFilter(
     filter: UserListFilter,
     limit: number,
     offset: number,
-  ): Promise<readonly UserAccount[]>;
+  ): Promise<readonly UserListRow[]>;
   /** Total count matching the same filter — powers pagination UI. */
   countWithFilter(filter: UserListFilter): Promise<number>;
 }
@@ -351,11 +465,67 @@ export const userRepo: UserRepo = {
     // Same `status='pending'` guard as deletePending — a redeemed/active
     // account is never destroyed. RETURNING lets the SAGA distinguish a real
     // rollback (deleted:1) from a race no-op (deleted:0, user already active).
+    // RA-2: also RETURNs `email` (read-before-delete) so callers can clean up
+    // the by-email `notifications_outbox` rows without a second query against
+    // a now-gone user row.
     const rows = await tx
       .delete(users)
       .where(and(eq(users.id, id), eq(users.status, 'pending')))
-      .returning({ id: users.id });
-    return { deleted: rows.length };
+      .returning({ id: users.id, email: users.email });
+    return { deleted: rows.length, email: rows[0]?.email ?? null };
+  },
+
+  async deleteInviteOutboxByEmailInTx(tx, email, tenantId) {
+    await tx
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          sql`lower(${notificationsOutbox.toEmail}) = lower(${email})`,
+          eq(notificationsOutbox.notificationType, 'member_invitation'),
+          eq(notificationsOutbox.status, 'pending'),
+          eq(notificationsOutbox.tenantId, tenantId),
+        ),
+      );
+  },
+
+  async deletePendingInvitesExpiredBeforeInTx(tx, cutoff) {
+    const liveInvitation = tx
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.userId, users.id),
+          gte(invitations.expiresAt, cutoff),
+          isNull(invitations.consumedAt),
+        ),
+      );
+    const staleInvitation = tx
+      .select({ id: invitations.id })
+      .from(invitations)
+      .where(and(eq(invitations.userId, users.id), lt(invitations.expiresAt, cutoff)));
+    const rows = await tx
+      .delete(users)
+      .where(
+        and(
+          eq(users.status, 'pending'),
+          notExists(liveInvitation),
+          exists(staleInvitation),
+        ),
+      )
+      .returning({ id: users.id, email: users.email });
+    return rows.map((row) => ({ userId: row.id, email: row.email }));
+  },
+
+  async deleteInviteOutboxByEmailAllTenantsInTx(tx, email) {
+    await tx
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          sql`lower(${notificationsOutbox.toEmail}) = lower(${email})`,
+          eq(notificationsOutbox.notificationType, 'member_invitation'),
+          eq(notificationsOutbox.status, 'pending'),
+        ),
+      );
   },
 
   async anonymiseErasedInTx(tx, userId) {
@@ -478,12 +648,51 @@ export const userRepo: UserRepo = {
 
   async listWithFilter(filter, limit, offset) {
     const where = buildFilterConditions(filter);
-    const baseQuery = db.select().from(users);
+    // Correlated scalar subquery — the "latest non-consumed invitation"
+    // per user, ordered by created_at DESC. Equivalent to a
+    // `LEFT JOIN LATERAL (... ORDER BY created_at DESC LIMIT 1) ON true`
+    // but expressible directly as a select field, so the existing
+    // `db.select().from(users)` shape (spread via getTableColumns) only
+    // grows one column instead of restructuring the query into a join.
+    //
+    // Built via the query-builder (not a raw `sql` WHERE clause) so
+    // Drizzle table-qualifies `users.id` as `"users"."id"` inside the
+    // subquery — a raw-interpolated `${users.id}` renders as the bare
+    // `"id"`, which Postgres then resolves to `invitations.id` (its
+    // OWN `id` column, same name) instead of correlating to the outer
+    // `users` row. Wrapping the whole builder in `sql`(${...})`` embeds
+    // it as a scalar subquery.
+    const latestInvitationExpiresAt = db
+      .select({ expiresAt: invitations.expiresAt })
+      .from(invitations)
+      .where(and(eq(invitations.userId, users.id), isNull(invitations.consumedAt)))
+      .orderBy(desc(invitations.createdAt))
+      .limit(1);
+    const baseQuery = db
+      .select({
+        ...getTableColumns(users),
+        // `.mapWith(invitations.expiresAt)` reuses that column's OWN
+        // driver-value decoder. Without it, drizzle-orm/postgres-js
+        // returns raw `sql` fields as the untouched wire-format string
+        // (e.g. "2026-07-24 17:40:19.334+00") — it only runs its
+        // Date-decoding step for values selected through a declared
+        // `PgColumn`, which a hand-written `sql` fragment is not. Cast
+        // needed because `mapWith(column)` infers the column's own
+        // (non-null) result type; this subquery yields `null` when the
+        // user has no non-consumed invitation.
+        invitationExpiresAt: sql`(${latestInvitationExpiresAt})`.mapWith(
+          invitations.expiresAt,
+        ) as SQL<Date | null>,
+      })
+      .from(users);
     const rows = await (where ? baseQuery.where(where) : baseQuery)
       .orderBy(sql`${users.createdAt} DESC`)
       .limit(limit)
       .offset(offset);
-    return rows.map(toDomain);
+    return rows.map((row) => ({
+      ...toDomain(row),
+      invitationExpiresAt: row.invitationExpiresAt,
+    }));
   },
 
   async countWithFilter(filter) {
