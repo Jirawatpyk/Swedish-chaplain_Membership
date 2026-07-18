@@ -25,10 +25,12 @@ import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
   InvoiceLinkConflictError,
+  type AutoDraftEligiblePage,
   type ListMembersWithoutCycleOpts,
   type ListRenewalCyclesOpts,
   type MembersWithoutCyclePage,
@@ -1029,6 +1031,81 @@ export function makeDrizzleRenewalCycleRepo(
 
         return {
           items: rows.map(rowToDomain),
+          nextCursor: null,
+        };
+      });
+    },
+
+    async listCyclesEligibleForAutoDraft(
+      _tenantId: string,
+      args: {
+        readonly nowIso: string;
+        readonly leadDaysRolling: number;
+        readonly leadDaysCalendar: number;
+        readonly pageSize: number;
+      },
+    ): Promise<AutoDraftEligiblePage> {
+      return runInTenant(tenant, async (tx) => {
+        // 107-auto-invoice Task 6 — see the port doc comment for the full
+        // eligibility predicate + the rationale for each clause. Two
+        // correlated subqueries (rather than an actual SQL JOIN) keep the
+        // row shape flat `renewal_cycles.*` so `rowToDomain` — which
+        // expects a bare `RenewalCycleRow` — stays reusable unchanged; a
+        // real JOIN against `.select()` would nest columns under
+        // per-table keys and break that mapper.
+        //
+        // Member-side gate: enrolled + not archived + within the
+        // member's own lead window (`leadDaysCalendar` for a
+        // `billing_cycle = 'calendar'` member, else `leadDaysRolling`).
+        // The `expires_at` upper bound is correlated to the OUTER
+        // `renewal_cycles` row since the lead-day figure depends on
+        // `members.billing_cycle`.
+        const eligibleMemberSql = sql`EXISTS (
+          SELECT 1 FROM ${members} m
+          WHERE m.tenant_id = ${renewalCycles.tenantId}
+            AND m.member_id = ${renewalCycles.memberId}
+            AND m.auto_invoice_enrolled_at IS NOT NULL
+            AND m.archived_at IS NULL
+            AND m.status <> 'archived'
+            AND ${renewalCycles.expiresAt} <= ${args.nowIso}::timestamptz + (
+              CASE WHEN m.billing_cycle = 'calendar'
+                THEN ${args.leadDaysCalendar}::int
+                ELSE ${args.leadDaysRolling}::int
+              END
+            ) * INTERVAL '1 day'
+        )`;
+
+        // Dedup gate — coarse, MEMBER-scoped (not plan_year-scoped: a
+        // cycle's plan_year is derived, not a column — see port doc).
+        // draft/issued ONLY: `paid`/`credited`/`partially_credited` are
+        // deliberately EXCLUDED from this NOT EXISTS — every eligible
+        // member has a paid prior-cycle membership invoice by
+        // construction (that payment is WHY this cycle is `upcoming`),
+        // so including `paid` here would zero out every candidate.
+        const noLiveMembershipInvoiceSql = sql`NOT EXISTS (
+          SELECT 1 FROM ${invoices} inv
+          WHERE inv.tenant_id = ${renewalCycles.tenantId}
+            AND inv.member_id = ${renewalCycles.memberId}
+            AND inv.invoice_subject = 'membership'
+            AND inv.status IN ('draft', 'issued')
+        )`;
+
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              sql`${renewalCycles.status} IN ('upcoming','reminded')`,
+              sql`${renewalCycles.expiresAt} > ${args.nowIso}`,
+              eligibleMemberSql,
+              noLiveMembershipInvoiceSql,
+            ),
+          )
+          .orderBy(sql`${renewalCycles.expiresAt} ASC`)
+          .limit(args.pageSize);
+
+        return {
+          cycles: rows.map(rowToDomain),
           nextCursor: null,
         };
       });

@@ -89,6 +89,20 @@ export interface RenewalCyclePage {
   readonly totalCount?: number;
 }
 
+/**
+ * 107-auto-invoice Task 6 — return shape for
+ * `listCyclesEligibleForAutoDraft`. Deliberately a SEPARATE shape from
+ * `RenewalCyclePage` (`cycles` not `items`) — the auto-draft cron
+ * consumer (Task 7) is a fresh call site with no existing `items`-shaped
+ * expectations, and single-page-only (`nextCursor` is always `null`,
+ * never a real cursor) makes that explicit at the type level rather than
+ * reusing a shape that implies cursor pagination is supported.
+ */
+export interface AutoDraftEligiblePage {
+  readonly cycles: ReadonlyArray<RenewalCycle>;
+  readonly nextCursor: null;
+}
+
 // ---------------------------------------------------------------------------
 // DV-18 — "Members without renewal cycle" admin tray
 // ---------------------------------------------------------------------------
@@ -436,6 +450,60 @@ export interface RenewalCycleRepo {
       readonly pageSize: number;
     },
   ): Promise<RenewalCyclePage>;
+
+  /**
+   * 107-auto-invoice Task 6 — eligibility cursor for the daily auto-draft
+   * cron (Task 7). Returns cycles the cron should pre-fill a DRAFT
+   * membership invoice for, ahead of the member's due date. A cycle is
+   * eligible when ALL of:
+   *
+   *   1. `status IN ('upcoming', 'reminded')`.
+   *   2. `expires_at > nowIso` AND `expires_at <= nowIso + leadDays` where
+   *      `leadDays` is `leadDaysCalendar` for a `members.billing_cycle =
+   *      'calendar'` member, else `leadDaysRolling` — the per-member lead
+   *      window (design §5.1).
+   *   3. `members.auto_invoice_enrolled_at IS NOT NULL` (opt-in only —
+   *      Task 1).
+   *   4. `members.archived_at IS NULL AND members.status <> 'archived'`.
+   *   5. Dedup — NO existing membership invoice for the member with
+   *      `status IN ('draft', 'issued')`. Deliberately narrower than the
+   *      full "live invoice" set (`paid`/`credited`/`partially_credited`
+   *      are NOT excluded): an `upcoming` cycle exists precisely BECAUSE
+   *      the member's prior cycle was paid, so EVERY eligible member has
+   *      at least one `paid` membership invoice on file — including
+   *      `paid` here would exclude everyone and the cron would never
+   *      fire. This dedup is intentionally MEMBER-scoped, not
+   *      `plan_year`-scoped: `plan_year` on a cycle is derived
+   *      (`deriveFiscalYear` from `period_from`), not a column, so it
+   *      cannot be filtered in this set query. The precise per-cycle,
+   *      plan_year-scoped duplicate-§86/4 guard (which DOES include
+   *      `paid`) runs later, under the cycle lock, in Task 9 at DRAFT-
+   *      creation time — this coarse query only decides "worth looking
+   *      at", not "safe to draft".
+   *
+   * Deliberately does NOT gate on membership access
+   * (terminated/suspended) — that predicate lives in
+   * `lapsed-portal-scope`, not on the `members` row, and the Task 7
+   * use-case re-asserts it per-member before drafting.
+   *
+   * Single capped page (`nextCursor` hardwired `null`, same scaling
+   * caveat as `listCyclesEligibleForLapse` — fine at TSCC's member
+   * count). Ordered `expires_at ASC` (soonest-expiring first). Runs
+   * inside `runInTenant` (RLS+FORCE on both `renewal_cycles` and the
+   * joined `members`/`invoices` tables); `tenantId` is threaded
+   * explicitly per the port's compile-enforcement convention (file
+   * header) even though the adapter also closes over the tenant via the
+   * repo factory.
+   */
+  listCyclesEligibleForAutoDraft(
+    tenantId: string,
+    args: {
+      readonly nowIso: string;
+      readonly leadDaysRolling: number;
+      readonly leadDaysCalendar: number;
+      readonly pageSize: number;
+    },
+  ): Promise<AutoDraftEligiblePage>;
 
   /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).
