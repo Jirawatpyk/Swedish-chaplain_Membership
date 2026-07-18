@@ -1960,6 +1960,40 @@
         "title": "Auto-renewal review queue",
         "description": "Cron-drafted renewal bills awaiting review before they're issued."
       },
+      "autoRenewalQueue": {
+        "actions": {
+          "menuAria": "Actions for {member}'s renewal draft",
+          "issueAndSend": "Issue and email",
+          "issueSilently": "Issue silently",
+          "discard": "Discard draft",
+          "cancel": "Cancel",
+          "sendDialog": {
+            "title": "Issue and email this bill?",
+            "description": "A membership bill will be issued for {member} and emailed to their primary contact."
+          },
+          "silentDialog": {
+            "title": "Issue this bill without emailing?",
+            "description": "A membership bill will be issued for {member}. No email will be sent — you'll need to deliver it another way."
+          },
+          "discardDialog": {
+            "title": "Discard this draft?",
+            "description": "This draft bill for {member} will be permanently deleted. The next auto-renewal run may create a new draft before the cycle is due."
+          },
+          "toast": {
+            "issuedAndSent": "Bill {number} issued and emailed.",
+            "issuedSilently": "Bill {number} issued.",
+            "discarded": "Draft discarded."
+          },
+          "errors": {
+            "draftNotFound": "This draft could not be found — it may have already been issued or discarded. Refresh the page.",
+            "invalidDraft": "This draft is no longer valid. Refresh the page and try again.",
+            "discardNotDraft": "This draft was already issued and can no longer be discarded. Refresh the page.",
+            "issueFailed": "The bill could not be issued. Please try again.",
+            "discardFailed": "The draft could not be discarded. Please try again.",
+            "network": "A network error occurred. Please try again."
+          }
+        }
+      },
       "list": {
         "title": "Invoices",
         "description": "Thai-tax-compliant membership invoices.",

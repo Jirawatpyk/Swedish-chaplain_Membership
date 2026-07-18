@@ -643,7 +643,7 @@ export function makeDrizzleRenewalCycleRepo(
     },
 
     async findLatestCyclesForMembers(
-      _tenantId: string,
+      tenantId: string,
       memberIds: readonly string[],
     ): Promise<ReadonlyArray<RenewalCycle>> {
       if (memberIds.length === 0) return [];
@@ -651,7 +651,12 @@ export function makeDrizzleRenewalCycleRepo(
         const rows = await tx
           .selectDistinctOn([renewalCycles.memberId])
           .from(renewalCycles)
-          .where(inArray(renewalCycles.memberId, [...memberIds]))
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              inArray(renewalCycles.memberId, [...memberIds]),
+            ),
+          )
           // DISTINCT ON requires the leading ORDER BY key to match the distinct
           // column; created_at DESC + cycle_id DESC picks the latest, deterministic
           // tiebreak. The single-read path (loadMemberRenewalStatus → list()

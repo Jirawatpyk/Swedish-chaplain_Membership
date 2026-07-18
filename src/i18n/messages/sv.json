@@ -1960,6 +1960,40 @@
         "title": "Kö för granskning av automatisk förnyelse",
         "description": "Förnyelsefakturor som skapats automatiskt av systemet, väntar på granskning innan de utfärdas."
       },
+      "autoRenewalQueue": {
+        "actions": {
+          "menuAria": "Åtgärder för {member}s förnyelseutkast",
+          "issueAndSend": "Skapa och skicka",
+          "issueSilently": "Skapa utan att skicka",
+          "discard": "Ta bort utkast",
+          "cancel": "Avbryt",
+          "sendDialog": {
+            "title": "Skapa och skicka den här fakturan?",
+            "description": "En medlemsfaktura skapas för {member} och skickas till huvudkontaktens e-post."
+          },
+          "silentDialog": {
+            "title": "Skapa fakturan utan att skicka den?",
+            "description": "En medlemsfaktura skapas för {member}. Inget e-postmeddelande skickas — du behöver leverera den på annat sätt."
+          },
+          "discardDialog": {
+            "title": "Ta bort det här utkastet?",
+            "description": "Fakturautkastet för {member} tas bort permanent. Nästa automatiska förnyelsekörning kan skapa ett nytt utkast innan cykeln förfaller."
+          },
+          "toast": {
+            "issuedAndSent": "Faktura {number} skapad och skickad.",
+            "issuedSilently": "Faktura {number} skapad.",
+            "discarded": "Utkastet togs bort."
+          },
+          "errors": {
+            "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha skapats eller tagits bort. Uppdatera sidan.",
+            "invalidDraft": "Utkastet är inte längre giltigt. Uppdatera sidan och försök igen.",
+            "discardNotDraft": "Utkastet har redan skapats som faktura och kan inte längre tas bort. Uppdatera sidan.",
+            "issueFailed": "Fakturan kunde inte skapas. Försök igen.",
+            "discardFailed": "Utkastet kunde inte tas bort. Försök igen.",
+            "network": "Ett nätverksfel uppstod. Försök igen."
+          }
+        }
+      },
       "list": {
         "title": "Fakturor",
         "description": "Thailändska momsgilla medlemsfakturor.",

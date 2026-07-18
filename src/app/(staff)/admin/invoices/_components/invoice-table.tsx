@@ -56,6 +56,7 @@ import {
   AutoRenewalQueueBadges,
   type AutoRenewalQueueMeta,
 } from './auto-renewal-queue-badges';
+import { AutoRenewalQueueActions } from './auto-renewal-queue-actions';
 import type { InvoiceStatus } from '@/modules/invoicing';
 
 /**
@@ -267,6 +268,7 @@ export function InvoicesTable({
   showMethodColumn = false,
   showQueueMetaColumn = false,
   canRecordPayment = false,
+  canManageQueueActions = false,
   todayIso,
 }: {
   rows: readonly InvoicesTableRow[];
@@ -289,6 +291,14 @@ export function InvoicesTable({
    * `isAdmin`. Requires `todayIso` (below) to be threaded too.
    */
   canRecordPayment?: boolean;
+  /**
+   * 107-auto-invoice Task 14 — enable the per-row Issue+Send / Issue
+   * silently / Discard queue actions on `status='draft'` auto-renewal rows.
+   * Admin-only (money mutation, same rationale as `canRecordPayment`); the
+   * routes themselves are independently admin-gated server-side — this prop
+   * only controls whether a manager sees the controls at all.
+   */
+  canManageQueueActions?: boolean;
   /**
    * Tenant-timezone (Asia/Bangkok) "today" as YYYY-MM-DD, computed server-side
    * (`bangkokLocalDate`). Threaded to the per-row `RecordPaymentDialog` as the
@@ -695,6 +705,21 @@ export function InvoicesTable({
                     canRecordPayment &&
                     todayIso !== undefined &&
                     (r.status === 'issued' || r.status === 'overdue');
+                  // 107-auto-invoice Task 14 — per-row queue actions. Only on
+                  // `status='draft'` auto-renewal rows (mutually exclusive
+                  // with every OTHER control in this cell — a draft has no
+                  // PDF, no receipt, and isn't issued/overdue, so `AutoRenewalQueueActions`
+                  // is the ONLY thing this cell ever renders for such a row).
+                  // `showQueueMetaColumn` gates on the queue VIEW being active
+                  // (not merely `queueMeta` being non-null — Task 13's queue
+                  // view can also list already-issued `origin='auto_renewal'`
+                  // rows when the admin clears the status filter, and those
+                  // must fall through to the ordinary download/record-payment
+                  // controls above, never these).
+                  const showQueueActions =
+                    canManageQueueActions &&
+                    showQueueMetaColumn &&
+                    r.status === 'draft';
                   // 088 A-refined — the MAIN download serves the issue-time PDF =
                   // the SC bill on a paid 088 bill. `documentNumber` already IS the
                   // SC number (the row identity), so the control names it directly;
@@ -709,12 +734,20 @@ export function InvoicesTable({
                     !r.hasReceiptPdf &&
                     !receiptGenerating &&
                     !receiptRenderFailed &&
-                    !showRecordPayment
+                    !showRecordPayment &&
+                    !showQueueActions
                   ) {
                     return <span className="text-sm text-muted-foreground">—</span>;
                   }
                   return (
                     <div className="flex items-center justify-end gap-1">
+                      {showQueueActions && (
+                        <AutoRenewalQueueActions
+                          invoiceId={r.invoiceId}
+                          memberName={r.memberName}
+                          status={r.status}
+                        />
+                      )}
                       {showRecordPayment && todayIso !== undefined && (
                         <RecordPaymentDialog
                           invoiceId={r.invoiceId}

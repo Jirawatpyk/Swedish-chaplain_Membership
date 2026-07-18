@@ -688,6 +688,16 @@ export {
   type InvalidDraftReason,
 } from './application/use-cases/issue-auto-drafted-renewal';
 
+// --- 107-auto-invoice Task 14 — discardAutoDraftedRenewal (queue Discard action) ---
+export {
+  discardAutoDraftedRenewal,
+  discardAutoDraftedRenewalInputSchema,
+  type DiscardAutoDraftedRenewalInput,
+  type DiscardAutoDraftedRenewalOutput,
+  type DiscardAutoDraftedRenewalDeps,
+  type DiscardAutoDraftedRenewalError,
+} from './application/use-cases/discard-auto-drafted-renewal';
+
 // --- 107-auto-invoice Task 11 — pruneAutoDrafts (daily housekeeping cron) ---
 // Discards `origin='auto_renewal' status='draft'` invoices whose cycle
 // left the `upcoming|reminded` eligibility window (self-renewed / lapsed).
@@ -933,6 +943,10 @@ export {
   // 107-auto-invoice Task 13 — lean factory for the admin invoices list
   // page's review-queue context read (`loadAutoRenewalQueueContext`).
   makeAutoRenewalQueueContextDeps,
+  // 107-auto-invoice Task 14 — lean factories for the queue row actions
+  // (Issue / Discard routes).
+  makeIssueAutoDraftedRenewalDeps,
+  makeDiscardAutoDraftedRenewalDeps,
   f8OnPaidCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

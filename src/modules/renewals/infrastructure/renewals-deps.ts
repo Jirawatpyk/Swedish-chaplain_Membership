@@ -518,6 +518,49 @@ export function makeAutoRenewalQueueContextDeps(
   };
 }
 
+/**
+ * 107-auto-invoice Task 14 — lean composition for the admin review-queue's
+ * "Issue" row action (`issueAutoDraftedRenewal`). Mirrors
+ * `makeAutoRenewalQueueContextDeps` above: builds exactly the 5 deps
+ * `IssueAutoDraftedRenewalDeps` picks, not the ~20-adapter `makeRenewalsDeps`
+ * bag — this factory is called once per POST, not on a hot read path, but
+ * the use-case's `Pick<...>` type already tells us the minimal surface, so
+ * there's no reason to eagerly build adapters the request never touches.
+ */
+export function makeIssueAutoDraftedRenewalDeps(
+  tenantId: string,
+): Pick<
+  RenewalsDeps,
+  'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'f4InvoicingBridge'
+> {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
+    clock: wallClock,
+    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+  };
+}
+
+/**
+ * 107-auto-invoice Task 14 — lean composition for the admin review-queue's
+ * "Discard" row action (`discardAutoDraftedRenewal`). Same rationale as
+ * {@link makeIssueAutoDraftedRenewalDeps}; no `clock` needed (the use-case
+ * performs no time-based decision).
+ */
+export function makeDiscardAutoDraftedRenewalDeps(
+  tenantId: string,
+): Pick<RenewalsDeps, 'tenant' | 'cyclesRepo' | 'auditEmitter' | 'f4InvoicingBridge'> {
+  const tenant = asTenantContext(tenantId);
+  return {
+    tenant,
+    cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
+    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+  };
+}
+
 // Re-export the stub so test composition + early-Phase emit sites can
 // fall back to the in-memory pino logger when the real adapter is
 // undesirable (e.g. unit tests that don't want to write to audit_log).

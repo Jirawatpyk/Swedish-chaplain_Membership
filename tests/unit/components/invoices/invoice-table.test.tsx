@@ -10,9 +10,17 @@
  *   - membership rows keep the `/admin/members/{id}` link;
  *   - the Event chip appears ONLY on `invoiceSubject === 'event'` rows.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+
+// 107-auto-invoice Task 14 — `<AutoRenewalQueueActions>` (rendered inside
+// the Actions cell for a draft queue row) calls `useRouter()` from
+// `next/navigation`, which throws outside an App Router context. No
+// existing test in this file exercises `canManageQueueActions`/
+// `canRecordPayment`, so this mock is additive and does not affect any
+// pre-existing assertion.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import {
   InvoicesTable,
@@ -94,6 +102,40 @@ const messages = {
             'Receipt PDF render failed for invoice {number} — open to review',
         },
       },
+      autoRenewalQueue: {
+        actions: {
+          menuAria: "Actions for {member}'s renewal draft",
+          issueAndSend: 'Issue and email',
+          issueSilently: 'Issue silently',
+          discard: 'Discard draft',
+          cancel: 'Cancel',
+          sendDialog: {
+            title: 'Issue and email this bill?',
+            description: 'A membership bill will be issued for {member}.',
+          },
+          silentDialog: {
+            title: 'Issue this bill without emailing?',
+            description: 'A membership bill will be issued for {member}.',
+          },
+          discardDialog: {
+            title: 'Discard this draft?',
+            description: 'This draft bill for {member} will be permanently deleted.',
+          },
+          toast: {
+            issuedAndSent: 'Bill {number} issued and emailed.',
+            issuedSilently: 'Bill {number} issued.',
+            discarded: 'Draft discarded.',
+          },
+          errors: {
+            draftNotFound: 'Draft not found.',
+            invalidDraft: 'Invalid draft.',
+            discardNotDraft: 'Already issued.',
+            issueFailed: 'Could not issue.',
+            discardFailed: 'Could not discard.',
+            network: 'Network error.',
+          },
+        },
+      },
       detail: {
         toast: {
           downloadInProgress: 'Downloading…',
@@ -165,10 +207,18 @@ function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
   );
 }
 
-function renderQueueTable(rows: InvoicesTableRow[], showQueueMetaColumn: boolean) {
+function renderQueueTable(
+  rows: InvoicesTableRow[],
+  showQueueMetaColumn: boolean,
+  canManageQueueActions = false,
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <InvoicesTable rows={rows} showQueueMetaColumn={showQueueMetaColumn} />
+      <InvoicesTable
+        rows={rows}
+        showQueueMetaColumn={showQueueMetaColumn}
+        canManageQueueActions={canManageQueueActions}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -795,5 +845,50 @@ describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice
     expect(screen.getByTestId('queue-staleness')).toHaveTextContent(
       'Drafted 7 days ago',
     );
+  });
+});
+
+describe('<InvoicesTable> — queue row actions (107-auto-invoice Task 14)', () => {
+  const draftRow = baseRow({
+    invoiceId: 'inv-queue-draft-1',
+    documentNumber: '—',
+    status: 'draft',
+    hasPdf: false,
+    queueMeta: {
+      unresolved: false,
+      stalenessDays: 1,
+      frozenPriceDisplay: '50,000.00 THB',
+      currentCataloguePriceDisplay: '50,000.00 THB',
+      priceChanged: false,
+      priceUnverifiable: false,
+      planYear: 2026,
+      currentFiscalYear: 2026,
+      billYearStale: false,
+      refusalReason: null,
+    },
+  });
+
+  it('canManageQueueActions=true + showQueueMetaColumn=true + status=draft → renders the row actions trigger (not the em-dash)', () => {
+    renderQueueTable([draftRow], true, true);
+    expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
+  });
+
+  it('canManageQueueActions=false (manager) → NO trigger', () => {
+    renderQueueTable([draftRow], true, false);
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
+  });
+
+  it('outside the queue view (showQueueMetaColumn=false) → never renders the trigger, even for a draft row + admin', () => {
+    renderQueueTable([draftRow], false, true);
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
+  });
+
+  it('an already-issued auto-renewal row in the queue view (status cleared filter) → NO row-action trigger (draft-only surface)', () => {
+    renderQueueTable(
+      [{ ...draftRow, status: 'issued', documentNumber: 'SC2026-00001', hasPdf: true }],
+      true,
+      true,
+    );
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
   });
 });

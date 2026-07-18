@@ -768,6 +768,10 @@ export default async function AdminInvoicesPage({
                 // the SAME value the detail page threads to the dialog so the
                 // payment-date clamp never off-by-ones for ~7h/day.
                 canRecordPayment={isAdmin}
+                // 107-auto-invoice Task 14 — per-row Issue+Send / Issue
+                // silently / Discard queue actions. Admin-only, same
+                // rationale as `canRecordPayment`.
+                canManageQueueActions={isAdmin}
                 todayIso={bangkokLocalDate(nowUtcIso)}
               />
               <TablePagination
