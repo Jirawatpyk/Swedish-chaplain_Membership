@@ -1,17 +1,18 @@
 /**
  * Task 6 — "Document notes" settings section (WHT footer note,
- * statutory termination notice, auto-email-on-issue).
+ * statutory termination notice).
  *
  * Mechanical extraction from `invoice-settings-form.tsx`'s
- * Withholding-tax-note + Termination-notice fieldsets (unchanged),
- * plus the `auto_email_enabled` control that used to live inside the
- * old "Defaults" fieldset (see `numbering-section.tsx`'s header
- * comment) — moved here per the brief's section grouping. That
- * control was never its own `<fieldset>` in the source (it was one of
- * four sibling field-divs under the "Defaults" `<legend>`), so it is
- * lifted here as the same bordered `<div>` it always was, not wrapped
- * in a fabricated new fieldset/legend. Field JSX moved verbatim; only
- * the `useState` reads/writes became props.
+ * Withholding-tax-note + Termination-notice fieldsets (unchanged).
+ * Field JSX moved verbatim; only the `useState` reads/writes became
+ * props.
+ *
+ * I2 (wave B, settings-ux-invoice-reminders) — the `auto_email_enabled`
+ * switch that used to live here (a standalone bordered `<div>` after
+ * these two fieldsets) has been RELOCATED to `numbering-section.tsx`'s
+ * "Defaults" fieldset area — it's a send-behaviour default, not a note.
+ * Same id/aria-label/binding at its new home; nothing about the control
+ * itself changed, only which section renders it.
  *
  * Section id is `"notes"` (not `"document-notes"`) — see task-6-brief.
  *
@@ -23,7 +24,6 @@
 import { useTranslations } from 'next-intl';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 
 const WHT_MAX = 500;
 // 065 §5.4 — statutory termination notice length cap (mirrors the route zod).
@@ -38,8 +38,6 @@ export interface DocumentNotesSectionProps {
   readonly onTerminationNoticeThChange: (value: string) => void;
   readonly terminationNoticeEn: string;
   readonly onTerminationNoticeEnChange: (value: string) => void;
-  readonly autoEmail: boolean;
-  readonly onAutoEmailChange: (value: boolean) => void;
   readonly disabled: boolean;
 }
 
@@ -52,8 +50,6 @@ export function DocumentNotesSection({
   onTerminationNoticeThChange,
   terminationNoticeEn,
   onTerminationNoticeEnChange,
-  autoEmail,
-  onAutoEmailChange,
   disabled,
 }: DocumentNotesSectionProps) {
   const t = useTranslations('admin.invoiceSettings');
@@ -153,33 +149,6 @@ export function DocumentNotesSection({
           </div>
         </div>
       </fieldset>
-
-      {/* auto_email_enabled — relocated verbatim from the old "Defaults"
-          fieldset (see numbering-section.tsx); it was a standalone bordered
-          div there too, not its own fieldset, so no legend is fabricated. */}
-      <div className="flex items-center justify-between rounded-md border p-3">
-        <div>
-          <Label htmlFor="auto_email" className="cursor-pointer">
-            {t('labels.autoEmail')}
-          </Label>
-          <p className="text-xs text-muted-foreground">{t('hints.autoEmail')}</p>
-        </div>
-        {/* Base UI Switch.Root renders a <span role="switch"> and wires its
-            own aria-labelledby on hydration, so the <Label htmlFor> above
-            names it only once the client bundle runs. axe scanning the
-            pre-hydration DOM sees no accessible name (aria-toggle-field-name,
-            WCAG 4.1.2). The explicit aria-label ships in the SSR HTML and
-            covers that window; aria-labelledby still wins afterwards, and
-            resolves to the same string. Same fix as directory-visibility-form
-            and renewal-reminders-toggle. */}
-        <Switch
-          id="auto_email"
-          aria-label={t('labels.autoEmail')}
-          checked={autoEmail}
-          onCheckedChange={onAutoEmailChange}
-          disabled={disabled}
-        />
-      </div>
     </section>
   );
 }

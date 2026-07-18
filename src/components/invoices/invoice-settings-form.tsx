@@ -677,6 +677,7 @@ export function InvoiceSettingsForm({
           onVatPercentChange={setVatPercent}
           regFee={regFee}
           onRegFeeChange={setRegFee}
+          currencyCode={currencyCode}
           disabled={disabled}
         />
 
@@ -693,6 +694,10 @@ export function InvoiceSettingsForm({
           onDefaultNetDaysChange={setDefaultNetDays}
           proRate={proRate}
           onProRateChange={setProRate}
+          // I2 — relocated here from DocumentNotesSection (see
+          // numbering-section.tsx's header comment); same state/setter.
+          autoEmail={autoEmail}
+          onAutoEmailChange={setAutoEmail}
           disabled={disabled}
         />
 
@@ -705,8 +710,6 @@ export function InvoiceSettingsForm({
           onTerminationNoticeThChange={setTerminationNoticeTh}
           terminationNoticeEn={terminationNoticeEn}
           onTerminationNoticeEnChange={setTerminationNoticeEn}
-          autoEmail={autoEmail}
-          onAutoEmailChange={setAutoEmail}
           disabled={disabled}
         />
 

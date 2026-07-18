@@ -1720,7 +1720,7 @@
         "addressTh": "ที่อยู่จดทะเบียน (ไทย)",
         "addressEn": "ที่อยู่จดทะเบียน (อังกฤษ)",
         "vatPercent": "อัตรา VAT (%)",
-        "registrationFee": "ค่าลงทะเบียน (บาท)",
+        "registrationFee": "ค่าธรรมเนียมแรกเข้า ({currency})",
         "invoicePrefix": "Prefix เลขใบแจ้งหนี้",
         "creditNotePrefix": "Prefix เลขใบลดหนี้",
         "receiptMode": "รูปแบบเลขใบเสร็จ",

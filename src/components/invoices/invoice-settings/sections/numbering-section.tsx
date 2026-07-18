@@ -1,17 +1,27 @@
 /**
  * Task 6 — "Numbering" settings section (document-number prefixes,
- * receipt mode, fiscal year start, default net days, pro-rate policy).
+ * receipt mode, fiscal year start, default net days, pro-rate policy,
+ * auto-email-on-issue).
  *
  * Mechanical extraction from `invoice-settings-form.tsx`'s Numbering
- * fieldset (unchanged) plus the fiscal-year/net-days/pro-rate third of
- * its former "Defaults" fieldset — `auto_email_enabled` (the fourth
- * field of that fieldset) moved to `document-notes-section.tsx`
- * instead, per the brief's section grouping. Field JSX moved verbatim;
- * only the `useState` reads/writes became props.
+ * fieldset (unchanged) plus the full former "Defaults" fieldset
+ * (fiscal-year / net-days / pro-rate / `auto_email_enabled`). Field JSX
+ * moved verbatim; only the `useState` reads/writes became props.
+ *
+ * I2 (wave B, settings-ux-invoice-reminders) — `auto_email_enabled`
+ * relocated here FROM `document-notes-section.tsx`: it's a send-behaviour
+ * default, not a note, and this is where the rest of the "Defaults"
+ * fieldset already lived. Same id/aria-label/binding as its old home —
+ * relocation only, no attribute change.
  *
  * `receipt_numbering_mode` is NOT a prop — combined numbering is
  * retired (088 US5 / F.5), so the mode is a fixed, translated,
  * read-only display string, same as the orchestrator.
+ *
+ * I1 (wave B) — the "Numbering" fieldset's `<legend>` used to repeat the
+ * section h2 text verbatim (visible clutter + SR double-announce);
+ * it's now `sr-only` (accessible name preserved, visual dupe gone). The
+ * "Defaults" fieldset's legend is a distinct key and is unaffected.
  *
  * Controlled + presentational only: no local field state, no PATCH,
  * no validation logic.
@@ -21,6 +31,7 @@
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -42,6 +53,12 @@ export interface NumberingSectionProps {
   readonly onDefaultNetDaysChange: (value: string) => void;
   readonly proRate: 'none' | 'monthly' | 'daily';
   readonly onProRateChange: (value: 'none' | 'monthly' | 'daily') => void;
+  // I2 (wave B) — auto_email_enabled relocated here from
+  // document-notes-section.tsx (it's a send-behaviour default, not a
+  // note); same id/aria-label/binding, just a new home next to the rest
+  // of the "Defaults" fieldset.
+  readonly autoEmail: boolean;
+  readonly onAutoEmailChange: (value: boolean) => void;
   readonly disabled: boolean;
 }
 
@@ -58,6 +75,8 @@ export function NumberingSection({
   onDefaultNetDaysChange,
   proRate,
   onProRateChange,
+  autoEmail,
+  onAutoEmailChange,
   disabled,
 }: NumberingSectionProps) {
   const t = useTranslations('admin.invoiceSettings');
@@ -77,9 +96,12 @@ export function NumberingSection({
         {t('sections.numbering')}
       </h2>
 
-      {/* Numbering */}
+      {/* Numbering — the h2 above already names this section; a visible
+          legend repeating the same text was a duplicate SR announcement
+          (I1). `sr-only` keeps the fieldset's accessible name without the
+          visual clutter. */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
+        <legend className="sr-only">
           {t('sections.numbering')}
         </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -199,6 +221,36 @@ export function NumberingSection({
           </div>
         </div>
       </fieldset>
+
+      {/* auto_email_enabled — relocated here from document-notes-section.tsx
+          (I2, wave B): it's a send-behaviour default, not a note, so it now
+          sits next to the rest of the "Defaults" fieldset. It was never its
+          own <fieldset> at its old home either (a standalone bordered
+          <div>), so it stays that way here — id/aria-label/binding
+          unchanged. */}
+      <div className="flex items-center justify-between rounded-md border p-3">
+        <div>
+          <Label htmlFor="auto_email" className="cursor-pointer">
+            {t('labels.autoEmail')}
+          </Label>
+          <p className="text-xs text-muted-foreground">{t('hints.autoEmail')}</p>
+        </div>
+        {/* Base UI Switch.Root renders a <span role="switch"> and wires its
+            own aria-labelledby on hydration, so the <Label htmlFor> above
+            names it only once the client bundle runs. axe scanning the
+            pre-hydration DOM sees no accessible name (aria-toggle-field-name,
+            WCAG 4.1.2). The explicit aria-label ships in the SSR HTML and
+            covers that window; aria-labelledby still wins afterwards, and
+            resolves to the same string. Same fix as directory-visibility-form
+            and renewal-reminders-toggle. */}
+        <Switch
+          id="auto_email"
+          aria-label={t('labels.autoEmail')}
+          checked={autoEmail}
+          onCheckedChange={onAutoEmailChange}
+          disabled={disabled}
+        />
+      </div>
     </section>
   );
 }

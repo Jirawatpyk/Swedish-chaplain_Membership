@@ -15,8 +15,6 @@ const BASE_PROPS: DocumentNotesSectionProps = {
   onTerminationNoticeThChange: vi.fn(),
   terminationNoticeEn: '',
   onTerminationNoticeEnChange: vi.fn(),
-  autoEmail: true,
-  onAutoEmailChange: vi.fn(),
   disabled: false,
 };
 
@@ -49,7 +47,10 @@ it('renders the termination notice fields', () => {
   expect(screen.getByLabelText(/termination notice \(english\)/i)).toBeInTheDocument();
 });
 
-it('renders the relocated auto-email switch', () => {
+// I2 (wave B) — auto_email_enabled relocated OUT of this section into
+// numbering-section.tsx's "Defaults" area (it's a send-behaviour default,
+// not a note). See sections/numbering-section.test.tsx for its coverage.
+it('no longer renders the auto-email switch (relocated to NumberingSection)', () => {
   wrap(<DocumentNotesSection {...BASE_PROPS} />);
-  expect(screen.getByRole('switch', { name: /auto-email on issue\/payment/i })).toBeChecked();
+  expect(screen.queryByRole('switch', { name: /auto-email on issue\/payment/i })).not.toBeInTheDocument();
 });

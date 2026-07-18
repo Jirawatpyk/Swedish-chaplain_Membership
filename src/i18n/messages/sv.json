@@ -1720,7 +1720,7 @@
         "addressTh": "Registrerad adress (thai)",
         "addressEn": "Registrerad adress (engelska)",
         "vatPercent": "Momssats (%)",
-        "registrationFee": "Registreringsavgift (THB)",
+        "registrationFee": "Registreringsavgift ({currency})",
         "invoicePrefix": "Fakturanummerprefix",
         "creditNotePrefix": "Kreditnotaprefix",
         "receiptMode": "Kvittonumreringsläge",

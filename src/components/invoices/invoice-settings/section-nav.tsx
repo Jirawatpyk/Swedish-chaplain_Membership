@@ -35,7 +35,12 @@ function goToSection(id: string): void {
     behavior: prefersReducedMotion() ? 'auto' : 'smooth',
     block: 'start',
   });
-  section?.querySelector<HTMLElement>('[data-section-heading]')?.focus();
+  // I4 (wave B) — `{ preventScroll: true }` stops the browser's own
+  // scroll-into-view-on-focus from snap-cancelling the smooth
+  // `scrollIntoView` animation above in Safari/Firefox. Focus still
+  // lands on the heading; only the browser's redundant auto-scroll is
+  // suppressed.
+  section?.querySelector<HTMLElement>('[data-section-heading]')?.focus({ preventScroll: true });
 }
 
 export function SectionNav({ sections }: { readonly sections: ReadonlyArray<SectionNavItem> }) {
@@ -84,7 +89,10 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
           id={MOBILE_SELECT_ID}
           value={selectedId}
           onChange={(event) => goToSection(event.target.value)}
-          className="min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          // I3 (wave B) — this native <select> had no focus-visible ring,
+          // unlike every shadcn Input/Button on the page. Matches
+          // `ui/input.tsx`'s focus classes exactly.
+          className="min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {sections.map((section) => (
             <option key={section.id} value={section.id}>

@@ -11,6 +11,7 @@ const BASE_PROPS: TaxVatSectionProps = {
   onVatPercentChange: vi.fn(),
   regFee: '0',
   onRegFeeChange: vi.fn(),
+  currencyCode: 'THB',
   disabled: false,
 };
 
@@ -39,4 +40,12 @@ it('renders the VAT percent field', () => {
 it('renders the registration fee field', () => {
   wrap(<TaxVatSection {...BASE_PROPS} />);
   expect(screen.getByLabelText(/registration fee/i)).toHaveValue(0);
+});
+
+// Minor (wave B) — the label used to hardcode "(THB)" even though
+// currency_code is editable; it now interpolates the tenant's current
+// currency.
+it('interpolates the current currency code into the registration fee label', () => {
+  wrap(<TaxVatSection {...BASE_PROPS} currencyCode="USD" />);
+  expect(screen.getByLabelText(/registration fee \(usd\)/i)).toBeInTheDocument();
 });

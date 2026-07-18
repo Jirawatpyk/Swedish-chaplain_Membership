@@ -1720,7 +1720,7 @@
         "addressTh": "Registered address (Thai)",
         "addressEn": "Registered address (English)",
         "vatPercent": "VAT rate (%)",
-        "registrationFee": "Registration fee (THB)",
+        "registrationFee": "Registration fee ({currency})",
         "invoicePrefix": "Invoice number prefix",
         "creditNotePrefix": "Credit-note number prefix",
         "receiptMode": "Receipt numbering mode",

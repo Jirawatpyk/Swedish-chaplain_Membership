@@ -19,6 +19,10 @@ const BASE_PROPS: NumberingSectionProps = {
   onDefaultNetDaysChange: vi.fn(),
   proRate: 'monthly',
   onProRateChange: vi.fn(),
+  // I2 (wave B) — auto_email_enabled relocated here from
+  // document-notes-section.tsx.
+  autoEmail: true,
+  onAutoEmailChange: vi.fn(),
   disabled: false,
 };
 
@@ -52,9 +56,15 @@ it('renders the receipt numbering mode as read-only', () => {
   expect(receiptMode).toBeDisabled();
 });
 
-it('renders fiscal-year/net-days/pro-rate fields (former "Defaults" fieldset minus auto-email)', () => {
+it('renders the fiscal-year/net-days/pro-rate fields ("Defaults" fieldset)', () => {
   wrap(<NumberingSection {...BASE_PROPS} />);
   expect(screen.getByLabelText(/fiscal year start month/i)).toHaveValue(1);
   expect(screen.getByLabelText(/default net days/i)).toHaveValue(30);
-  expect(screen.queryByLabelText(/auto-email/i)).not.toBeInTheDocument();
+});
+
+// I2 (wave B) — auto_email_enabled relocated here from
+// document-notes-section.tsx; same id/aria-label/binding at its new home.
+it('renders the relocated auto-email switch', () => {
+  wrap(<NumberingSection {...BASE_PROPS} />);
+  expect(screen.getByRole('switch', { name: /auto-email on issue\/payment/i })).toBeChecked();
 });

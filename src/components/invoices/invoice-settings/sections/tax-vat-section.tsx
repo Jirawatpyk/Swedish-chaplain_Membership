@@ -19,6 +19,9 @@ export interface TaxVatSectionProps {
   readonly onVatPercentChange: (value: string) => void;
   readonly regFee: string;
   readonly onRegFeeChange: (value: string) => void;
+  // Minor (wave B) — registration_fee's label interpolates the tenant's
+  // current (editable) currency_code instead of a hardcoded "THB".
+  readonly currencyCode: string;
   readonly disabled: boolean;
 }
 
@@ -27,6 +30,7 @@ export function TaxVatSection({
   onVatPercentChange,
   regFee,
   onRegFeeChange,
+  currencyCode,
   disabled,
 }: TaxVatSectionProps) {
   const t = useTranslations('admin.invoiceSettings');
@@ -46,9 +50,12 @@ export function TaxVatSection({
         {t('sections.tax')}
       </h2>
 
-      {/* Tax */}
+      {/* Tax — the h2 above already names this section; a visible legend
+          repeating the same text was a duplicate SR announcement (I1).
+          `sr-only` keeps the fieldset's accessible name without the
+          visual clutter. */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
+        <legend className="sr-only">
           {t('sections.tax')}
         </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -68,7 +75,9 @@ export function TaxVatSection({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="reg_fee">{t('labels.registrationFee')}</Label>
+            <Label htmlFor="reg_fee">
+              {t('labels.registrationFee', { currency: currencyCode })}
+            </Label>
             <Input
               id="reg_fee"
               type="number"
