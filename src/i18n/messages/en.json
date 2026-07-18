@@ -1083,7 +1083,7 @@
         "renewLapsed": {
           "trigger": "Renew member",
           "title": "Renew this member?",
-          "description": "This starts a new membership year for this member and creates a renewal invoice for them to pay. The price is frozen at the member's current plan. The member becomes active again once the invoice is paid.",
+          "description": "This starts a new membership year and creates a renewal invoice at the member's current plan price (frozen for this year). The invoice is emailed to the member automatically, and their membership becomes active again once it's paid.",
           "cancel": "Cancel",
           "confirm": "Create renewal invoice",
           "submitting": "Creating…",

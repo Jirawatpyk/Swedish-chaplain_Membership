@@ -1083,7 +1083,7 @@
         "renewLapsed": {
           "trigger": "Förnya medlem",
           "title": "Förnya denna medlem?",
-          "description": "Detta startar ett nytt medlemsår för medlemmen och skapar en förnyelsefaktura som medlemmen ska betala. Priset låses till medlemmens nuvarande plan. Medlemmen blir aktiv igen när fakturan har betalats.",
+          "description": "Detta startar ett nytt medlemsår och skapar en förnyelsefaktura till medlemmens nuvarande planpris (låst för detta år). Fakturan skickas automatiskt till medlemmen via e-post, och medlemskapet blir aktivt igen när den har betalats.",
           "cancel": "Avbryt",
           "confirm": "Skapa förnyelsefaktura",
           "submitting": "Skapar…",
