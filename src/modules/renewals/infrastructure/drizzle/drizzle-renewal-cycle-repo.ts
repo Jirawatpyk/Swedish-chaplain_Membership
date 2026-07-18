@@ -1181,6 +1181,30 @@ export function makeDrizzleRenewalCycleRepo(
       };
     },
 
+    async clearStaleLinkedInvoiceInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      expectedInvoiceId: string,
+    ): Promise<boolean> {
+      const txDb = tx as typeof db;
+      const cleared = await txDb
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: null })
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenantId),
+            eq(renewalCycles.cycleId, cycleId),
+            // CAS on the exact id the caller observed — a concurrent writer
+            // that re-linked the cycle since then matches 0 rows and is left
+            // alone rather than silently unlinked.
+            eq(renewalCycles.linkedInvoiceId, expectedInvoiceId),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return cleared.length > 0;
+    },
+
     async findByAutoDraftInvoiceIdInTx(
       tx: unknown,
       tenantId: string,

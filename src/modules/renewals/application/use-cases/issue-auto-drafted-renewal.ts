@@ -87,7 +87,7 @@
  * It refuses when ANY other membership invoice for the same (member, planYear)
  * — excluding the draft being issued — is in a live state:
  *
- *   {@link BLOCKING_LIVE_BILL_STATUSES}
+ *   {@link LIVE_MEMBERSHIP_BILL_STATUSES}
  *     = draft | issued | paid | partially_credited | credited
  *
  * `draft` is in the set because a draft is an outstanding claim on a number
@@ -138,11 +138,11 @@ import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { asMemberId } from '@/modules/members';
 import { parseInput } from './_lib/parse-input';
+import { findLiveMembershipBill } from './_lib/live-membership-bill';
 import { deriveMembershipAccess } from '../../domain/renewal-cycle';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { RenewalInvoiceErrorCode } from '../ports/f4-invoicing-bridge';
-import type { MembershipInvoiceRef } from '../ports/renewal-cycle-repo';
 import { InvoiceLinkConflictError } from '../ports/renewal-cycle-repo';
 
 export const issueAutoDraftedRenewalInputSchema = z.object({
@@ -212,37 +212,6 @@ export type IssueAutoDraftedRenewalDeps = Pick<
   RenewalsDeps,
   'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'f4InvoicingBridge'
 >;
-
-/**
- * Statuses that mean "a real, numbered bill already exists for this
- * (member, planYear)". Exported so a reviewer can see the tax-critical set in
- * one place — and so the deviation documented in the module header is a
- * one-line change if it is ever overruled.
- *
- * `void` is intentionally absent: a voided document is the one that no longer
- * counts, and blocking on it would wedge any member whose bill was voided for
- * correction. `draft` IS present — it is a claim on a number about to be
- * minted outside the lock (review Critical 1; see the module header).
- */
-export const BLOCKING_LIVE_BILL_STATUSES: ReadonlySet<string> = new Set([
-  'draft',
-  'issued',
-  'paid',
-  'partially_credited',
-  'credited',
-]);
-
-/** The content guard — returns the conflicting row, or null when clear. */
-function findBlockingBill(
-  siblings: ReadonlyArray<MembershipInvoiceRef>,
-  issuingInvoiceId: string,
-): MembershipInvoiceRef | null {
-  for (const row of siblings) {
-    if (row.invoiceId === issuingInvoiceId) continue;
-    if (BLOCKING_LIVE_BILL_STATUSES.has(row.status)) return row;
-  }
-  return null;
-}
 
 export async function issueAutoDraftedRenewal(
   deps: IssueAutoDraftedRenewalDeps,
@@ -367,7 +336,7 @@ export async function issueAutoDraftedRenewal(
         cycle.memberId,
         planYear,
       );
-    const blocking = findBlockingBill(siblings, input.invoiceId);
+    const blocking = findLiveMembershipBill(siblings, input.invoiceId);
     if (blocking) {
       logger.warn(
         {
@@ -407,13 +376,37 @@ export async function issueAutoDraftedRenewal(
     requestId,
   });
   if (issued.status !== 'issued') {
+    // review New-2 — `invoice_not_found` here has a specific, diagnosable
+    // cause worth its own greppable id: the SYMMETRIC MUTUAL ABORT. Two
+    // issues for the same (member, planYear) whose drafts sit on DIFFERENT
+    // cycles take DIFFERENT advisory locks, so each tx1 can sweep the other's
+    // draft before either mints. Both then fail here, and — because both
+    // sweeps committed — BOTH queue rows have vanished, so the operator has
+    // nothing to retry from the UI.
+    //
+    // Money-safe (zero numbers minted, which is the invariant that matters)
+    // and self-healing: Task 7's cron re-drafts the member on its next run —
+    // its eligibility query (`listCyclesEligibleForAutoDraft`) excludes only
+    // members holding a live draft/issued membership invoice, and both drafts
+    // are now gone, so a still-`upcoming|reminded` cycle in the lead window
+    // becomes eligible again. It does NOT consult `auto_draft_invoice_id`, so
+    // the stale stamp left pointing at the deleted draft does not block it.
+    const mutualAbort = issued.errorCode === 'invoice_not_found';
     logger.warn(
       {
+        errorId: mutualAbort
+          ? 'F8.AUTO_ISSUE.DRAFT_VANISHED_BEFORE_MINT'
+          : 'F8.AUTO_ISSUE.ISSUE_FAILED',
         tenantId: input.tenantId,
         cycleId,
         invoiceId: input.invoiceId,
         errorCode: issued.errorCode,
         detail: issued.detail,
+        ...(mutualAbort
+          ? {
+              hint: 'draft deleted by a concurrent issue for the same (member, plan_year) before this one could mint; no number was burned — the auto-draft cron re-drafts on its next run',
+            }
+          : {}),
       },
       '[issue-auto-drafted-renewal] F4 issue failed — no number minted',
     );

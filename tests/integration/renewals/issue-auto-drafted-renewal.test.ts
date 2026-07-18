@@ -754,6 +754,107 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     expect(after.length).toBe(before.length);
   }, 120_000);
 
+  it('(j) review New-1 — a VOIDED bill must not wedge the member out of renewing', async () => {
+    // The wedge an earlier revision of the confirmRenewal guard created: it
+    // also blocked on `cycle.linkedInvoiceId !== null`, but voiding does NOT
+    // clear that column (only `reanchorPeriodInTx` does) and there is no
+    // void→renewals callback. A bill voided FOR CORRECTION therefore left the
+    // member permanently unable to renew, and the route handed back the
+    // VOIDED invoice's id — sending them to "pay" a cancelled document.
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    const issue = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(issue.ok, issue.ok ? 'ok' : JSON.stringify(issue)).toBe(true);
+
+    // Treasurer voids it for correction. `linked_invoice_id` deliberately
+    // stays pointing at the voided row — that is the real-world state.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(invoices)
+        .set({
+          status: 'void',
+          voidedAt: new Date('2026-07-16T00:00:00Z'),
+          voidReason: 'issued in error — correction',
+          voidedByUserId: user.userId,
+        })
+        .where(
+          and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)),
+        ),
+    );
+    const linked = await cycleRow(tenant, cycleId);
+    expect(linked?.linkedInvoiceId).toBe(invoiceId); // the stale link persists
+
+    // The member must now be able to renew again.
+    const confirm = await confirmRenewal(depsFor(tenant) as never, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      requestId: null,
+      correlationId: randomUUID(),
+    });
+    expect(
+      confirm.ok,
+      confirm.ok ? 'ok' : `wedged: ${JSON.stringify(confirm)}`,
+    ).toBe(true);
+  }, 120_000);
+
+  it('(k) review New-3 — a refused confirm must not flip the cycle or emit entered_awaiting', async () => {
+    // Returning `err(...)` from inside `runInTenant` does NOT throw, so tx1
+    // COMMITS. A guard placed below the lazy `upcoming → awaiting_payment`
+    // flip would therefore leave a refused confirm having still flipped the
+    // cycle and emitted `renewal_entered_awaiting_payment { source:'confirm' }`
+    // for a confirm that never happened.
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    // Park a live bill so confirm is refused, WITHOUT issuing (which would
+    // itself flip the cycle) — the cycle stays `upcoming`.
+    const rival = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+    expect(rival).not.toBe(invoiceId);
+
+    const before = await cycleRow(tenant, cycleId);
+    expect(before?.status).toBe('upcoming');
+
+    const confirm = await confirmRenewal(depsFor(tenant) as never, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      requestId: null,
+      correlationId: randomUUID(),
+    });
+    expect(confirm.ok).toBe(false);
+    if (!confirm.ok) expect(confirm.error.kind).toBe('invoice_already_exists');
+
+    // The cycle must be untouched.
+    const after = await cycleRow(tenant, cycleId);
+    expect(after?.status).toBe('upcoming');
+    expect(after?.linkedInvoiceId).toBeNull();
+
+    // …and no untrue audit row for a confirm that never happened.
+    const entered = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'renewal_entered_awaiting_payment' as never),
+          ),
+        ),
+    );
+    const forThisCycle = entered.filter(
+      (r) => (r.payload as Record<string, unknown>).cycle_id === cycleId,
+    );
+    expect(forThisCycle.length).toBe(0);
+  }, 120_000);
+
   it('(g) orphan recovery — link forced to fail once → idempotent retry re-links', async () => {
     const { cycleId, invoiceId } = await seedQueueRow({ t: tenant });
 

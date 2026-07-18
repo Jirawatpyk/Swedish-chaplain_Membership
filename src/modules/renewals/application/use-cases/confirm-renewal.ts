@@ -80,6 +80,10 @@ import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal'
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
 import {
+  LIVE_MEMBERSHIP_BILL_STATUSES,
+  findLiveMembershipBill,
+} from './_lib/live-membership-bill';
+import {
   parseCycleId,
   type CycleId,
   type RenewalCycle,
@@ -89,20 +93,6 @@ import {
   CycleTransitionConflictError,
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
-
-/**
- * 107-auto-invoice Task 9 (review Important 2) — statuses that mean "a real
- * membership bill already exists for this (member, plan_year)". Mirrors the
- * renewals queue's own `BLOCKING_LIVE_BILL_STATUSES`; `void` is excluded so a
- * voided-for-correction bill does not permanently wedge the member.
- */
-const LIVE_MEMBERSHIP_BILL_STATUSES: ReadonlySet<string> = new Set([
-  'draft',
-  'issued',
-  'paid',
-  'partially_credited',
-  'credited',
-]);
 
 export const confirmRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -254,6 +244,139 @@ export async function confirmRenewal(
         attemptedMemberId: cycle.memberId,
       });
     }
+    // --- status gate (NO side effects) ------------------------------------
+    // 107-auto-invoice Task 9 (review New-3) — hoisted ABOVE the lazy flip so
+    // the duplicate-bill guard below can refuse WITHOUT the cycle having
+    // already been mutated. Terminal / pending_admin_reactivation cycles keep
+    // their `cycle_not_payable` answer and keep it in PRECEDENCE over the
+    // duplicate-bill refusal (a terminal cycle's real problem is its status).
+    if (
+      cycle.status !== 'upcoming' &&
+      cycle.status !== 'reminded' &&
+      cycle.status !== 'awaiting_payment'
+    ) {
+      // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
+      // — not self-renewable here. A `pending_admin_reactivation` cycle is
+      // resolved only by the admin reactivate/reject routes (070 #18),
+      // never by member confirm — so this stays a server-side reject by
+      // design.
+      return err({
+        kind: 'cycle_not_payable' as const,
+        currentStatus: cycle.status,
+      });
+    }
+
+    // --- duplicate-bill guard (NO side effects) ---------------------------
+    // 107-auto-invoice Task 9 (review Important 2) — refuse to mint a SECOND
+    // §86/4 when a live membership bill already exists for this
+    // (member, plan_year).
+    //
+    // Task 9 makes "cycle is awaiting_payment AND already linked to an issued
+    // bill" a ROUTINE admin-created state (a treasurer issues from the review
+    // queue), while the member's portal "Confirm & Pay" button stays live. So
+    // the sequence admin-issues → member-confirms is now normal, not rare, and
+    // without this guard it falls straight through to the issue: a second
+    // number is burned, `linkInvoice` then throws InvoiceLinkConflictError,
+    // and the orphan must be voided — producing a phantom cancelled document
+    // in the ภ.พ.30 filing.
+    //
+    // Deliberately a WRITE-PATH guard, not a hidden portal button: the portal
+    // page is cached/soft-navigated and the member may already be mid-flow
+    // when the admin issues.
+    //
+    // review New-3 — this MUST sit above the lazy flip below. Returning
+    // `err(...)` from inside `runInTenant` does NOT throw, so tx1 COMMITS:
+    // guarding after the flip would leave a refused confirm having still
+    // flipped the cycle and emitted `renewal_entered_awaiting_payment
+    // { source:'confirm' }` for a confirm that never happened — a
+    // side-effecting write on a refused path plus an untrue audit row.
+    const existingBillYear = deriveFiscalYear(cycle.periodFrom);
+    const liveBills =
+      await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+        tx,
+        input.tenantId,
+        cycle.memberId,
+        existingBillYear,
+      );
+    const liveBill = findLiveMembershipBill(liveBills);
+    // review New-1 — block on `liveBill` ONLY. An earlier revision also
+    // blocked on `cycle.linkedInvoiceId !== null`, which silently
+    // reintroduced exactly the wedge the shared predicate's
+    // `void` exclusion exists to prevent: voiding an invoice does NOT clear
+    // `linked_invoice_id` (the only writer that clears it is
+    // `reanchorPeriodInTx`) and there is no void→renewals callback, so a bill
+    // voided FOR CORRECTION left the member permanently unable to renew —
+    // and the route handed back the VOIDED invoice's id, sending them to
+    // "pay" a cancelled document. `linkedInvoiceId` is now used only to
+    // PREFER which id to report, never to decide the refusal.
+    if (liveBill) {
+      // Prefer the cycle's own link when it actually points at the live bill;
+      // otherwise report the live bill we found (the link may be stale, e.g.
+      // pointing at a voided document or a different plan year).
+      const reportInvoiceId =
+        cycle.linkedInvoiceId === liveBill.invoiceId
+          ? cycle.linkedInvoiceId
+          : liveBill.invoiceId;
+      logger.warn(
+        {
+          cycleId: cycle.cycleId,
+          memberId: cycle.memberId,
+          linkedInvoiceId: cycle.linkedInvoiceId,
+          conflictingInvoiceId: liveBill.invoiceId,
+          conflictingStatus: liveBill.status,
+          planYear: existingBillYear,
+        },
+        '[confirm-renewal] refused — a live membership bill already exists for this (member, plan_year)',
+      );
+      return err({
+        kind: 'invoice_already_exists' as const,
+        invoiceId: reportInvoiceId,
+      });
+    }
+
+    // --- stale-link cleanup (review New-1 follow-through) -----------------
+    // No live bill exists, but the cycle may still carry a `linked_invoice_id`
+    // pointing at one that was VOIDED for correction — nothing clears that
+    // column on void. Left in place it wedges the member one layer deeper than
+    // the guard above: the renewal proceeds, burns a fresh §87 number, and
+    // THEN `linkInvoice`'s `IS NULL OR = $1` guard rejects the link, orphaning
+    // the new bill and returning `server_error`. Clear it here, before
+    // anything is minted.
+    //
+    // Only ever clears a link whose target is verifiably NOT live (voided, or
+    // no longer a membership invoice we can see); the CAS in the repo makes it
+    // a no-op if a concurrent writer re-linked the cycle meanwhile.
+    if (cycle.linkedInvoiceId !== null) {
+      const linkedInvoice = await deps.cyclesRepo.findMembershipInvoiceInTx(
+        tx,
+        input.tenantId,
+        cycle.linkedInvoiceId,
+      );
+      const linkedIsLive =
+        linkedInvoice !== null &&
+        LIVE_MEMBERSHIP_BILL_STATUSES.has(linkedInvoice.status);
+      if (!linkedIsLive) {
+        const staleId = cycle.linkedInvoiceId;
+        const cleared = await deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
+          tx,
+          input.tenantId,
+          cycle.cycleId,
+          staleId,
+        );
+        logger.info(
+          {
+            cycleId: cycle.cycleId,
+            memberId: cycle.memberId,
+            staleInvoiceId: staleId,
+            staleInvoiceStatus: linkedInvoice?.status ?? 'not_found',
+            cleared,
+          },
+          '[confirm-renewal] cleared a stale linked_invoice_id (target is not a live bill) so the renewal can link',
+        );
+        if (cleared) cycle = { ...cycle, linkedInvoiceId: null };
+      }
+    }
+
     // B-lazy (F8-completion slice 2.5) — let a member renew EARLY by
     // self-transitioning their cycle `upcoming|reminded → awaiting_payment`
     // here in Step-1 (under the advisory lock acquired above), then
@@ -326,63 +449,10 @@ export async function confirmRenewal(
           throw e;
         }
       }
-    } else if (cycle.status !== 'awaiting_payment') {
-      // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
-      // — not self-renewable here. A `pending_admin_reactivation` cycle is
-      // resolved only by the admin reactivate/reject routes (070 #18),
-      // never by member confirm — so this stays a server-side reject by
-      // design.
-      return err({
-        kind: 'cycle_not_payable' as const,
-        currentStatus: cycle.status,
-      });
     }
     // (cycle.status === 'awaiting_payment' falls through unchanged —
-    // already payable, proceed.)
-
-    // 107-auto-invoice Task 9 (review Important 2) — refuse to mint a SECOND
-    // §86/4 for a cycle that already has a live membership bill.
-    //
-    // Task 9 makes "cycle is awaiting_payment AND already linked to an issued
-    // bill" a ROUTINE admin-created state (a treasurer issues from the review
-    // queue), while the member's portal "Confirm & Pay" button stays live. So
-    // the sequence admin-issues → member-confirms is now normal, not rare, and
-    // without this guard it falls straight through the `already payable,
-    // proceed` path above: a second number is burned, `linkInvoice` then
-    // throws InvoiceLinkConflictError, and the orphan must be voided —
-    // producing a phantom cancelled document in the ภ.พ.30 filing.
-    //
-    // This is deliberately a WRITE-PATH guard, not a hidden portal button:
-    // the portal page is cached/soft-navigated and the member may already be
-    // mid-flow when the admin issues.
-    const existingBillYear = deriveFiscalYear(cycle.periodFrom);
-    const liveBills =
-      await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
-        tx,
-        input.tenantId,
-        cycle.memberId,
-        existingBillYear,
-      );
-    const liveBill = liveBills.find((row) =>
-      LIVE_MEMBERSHIP_BILL_STATUSES.has(row.status),
-    );
-    if (cycle.linkedInvoiceId !== null || liveBill) {
-      logger.warn(
-        {
-          cycleId: cycle.cycleId,
-          memberId: cycle.memberId,
-          linkedInvoiceId: cycle.linkedInvoiceId,
-          conflictingInvoiceId: liveBill?.invoiceId ?? null,
-          conflictingStatus: liveBill?.status ?? null,
-          planYear: existingBillYear,
-        },
-        '[confirm-renewal] refused — a live membership bill already exists for this cycle/(member, plan_year)',
-      );
-      return err({
-        kind: 'invoice_already_exists' as const,
-        invoiceId: cycle.linkedInvoiceId ?? liveBill?.invoiceId ?? null,
-      });
-    }
+    // already payable, proceed. Non-payable statuses were rejected by the
+    // side-effect-free status gate above.)
 
     // Plan-change branch (FR-021b atomic)
     let planChanged = false;

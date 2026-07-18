@@ -576,6 +576,36 @@ export interface RenewalCycleRepo {
   ): Promise<MembershipInvoiceRef | null>;
 
   /**
+   * 107-auto-invoice Task 9 (review New-1 follow-through) — clear a STALE
+   * `linked_invoice_id`, i.e. one pointing at an invoice that is no longer a
+   * live bill (voided for correction).
+   *
+   * Voiding an invoice does not touch the cycle: nothing clears
+   * `linked_invoice_id` on void (the only other writer that clears it is
+   * `reanchorPeriodInTx`) and there is no void→renewals callback. Without this,
+   * a bill voided for correction wedges the member out of renewing —
+   * `linkInvoice`'s `WHERE (linked_invoice_id IS NULL OR = $1)` guard rejects
+   * the replacement bill's link, and by then a NEW §87 number has already been
+   * burned and is orphaned. Relaxing `linkInvoice` itself was rejected: its
+   * guard is what stops two concurrent renewals from silently overwriting each
+   * other's claim, and it cannot distinguish "stale because voided" from
+   * "another writer legitimately won".
+   *
+   * CAS on the exact id the caller observed (`WHERE cycle_id = ? AND
+   * linked_invoice_id = ?`) so a concurrent writer that re-linked the cycle in
+   * the meantime is never clobbered; returns `false` when 0 rows matched.
+   * Callers MUST verify the target invoice is genuinely non-live first — this
+   * method deliberately does not re-check, so it can never be the thing that
+   * unlinks a live bill.
+   */
+  clearStaleLinkedInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedInvoiceId: string,
+  ): Promise<boolean>;
+
+  /**
    * 107-auto-invoice Task 9 — resolve the cycle that Task 7 stamped with this
    * draft invoice id (`renewal_cycles.auto_draft_invoice_id`).
    *
