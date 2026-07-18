@@ -220,7 +220,7 @@ test.describe('064 event-fee as-paid form modes @f4', () => {
       'mode-bill-first-needs-tin',
     );
     await expect(page.getByTestId('mode-bill-first-needs-tin')).toHaveText(
-      'This buyer has no tax ID — the fee must be recorded as already paid; an invoice cannot be issued before payment.',
+      "Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment. Tick VAT-registered on the member record first if applicable.",
     );
 
     // paid status → already_paid is the (checked) default.
