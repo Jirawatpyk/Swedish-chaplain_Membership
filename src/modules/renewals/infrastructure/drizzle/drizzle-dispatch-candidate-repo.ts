@@ -431,6 +431,45 @@ export function makeDrizzleDispatchCandidateRepo(
                  - ${MAX_INVOICE_ISSUANCE_LEAD_DAYS}::int
              )
         )`;
+        // 107-auto-invoice Task 12 (§5.8a reminder-stream handoff) —
+        // ISOLATED additional signal, layered on TOP of the floor-based
+        // arm above via COALESCE, never modifying it. A cycle's OWN
+        // `linked_invoice_id` (stamped atomically with the
+        // `awaiting_payment` flip — Task 9's tx2 CAS, and the ordinary
+        // confirm-renewal / admin-renew paths) is an explicit, cycle-scoped
+        // "this member has a live bill" signal, independent of the
+        // member-scoped `oldestBillDueDate` floor above.
+        //
+        // Why the floor alone is not sufficient: `oldestBillDueDate` floors
+        // at `period_from − MAX_INVOICE_ISSUANCE_LEAD_DAYS(60)`, but a bill's
+        // `due_date = issueDate + tenant.default_net_days` (issue-invoice.ts)
+        // is computed independently of that floor. `auto_invoice_lead_days_
+        // rolling/_calendar` is admin-configurable 1..120
+        // (`tenant_invoice_settings_auto_lead_days_ck`) and `default_net_days`
+        // 0..365 (update-tenant-invoice-settings.ts) — a tenant configured
+        // lead=120 (e.g. "give members 4 months' notice") with the default
+        // net=30, issuing the SAME day the cron drafted, yields
+        // due_date = period_from − 120d + 30d = period_from − 90d, BELOW the
+        // −60d floor. `oldestBillDueDate` then resolves NULL even though the
+        // cycle unambiguously carries a live issued bill — the ladder would
+        // keep firing t+N EMAILs instead of handing off to due-track dunning.
+        //
+        // Scoped to THIS cycle's own linked invoice only (no floor, no
+        // member-wide scan) — it can only ADD cycles the arm above misses;
+        // it never removes or re-prioritises anything the floor already
+        // qualifies (COALESCE prefers `oldestBillDueDate` when both are
+        // non-null). A cycle with neither an anchorable member-wide bill NOR
+        // its own linked live bill stays excluded — the quiet window
+        // `[expiry, due+7)` is unchanged for the never-invoiced cohort.
+        const cycleLinkedBillDueDate = sql<string | null>`(
+          SELECT inv2.due_date
+            FROM invoices inv2
+           WHERE inv2.tenant_id = ${renewalCycles.tenantId}
+             AND inv2.invoice_id = ${renewalCycles.linkedInvoiceId}
+             AND inv2.invoice_subject = 'membership'
+             AND inv2.status = 'issued'
+        )`;
+        const anchorBillDueDate = sql<string | null>`COALESCE(${oldestBillDueDate}, ${cycleLinkedBillDueDate})`;
         // NO expires_at pre-filter — a §5.3 born-awaiting cycle's
         // expires_at is ~12 months out and must not be hidden (review C1;
         // mirrors listCyclesEligibleForLapse's no-pre-filter precedent).
@@ -440,7 +479,7 @@ export function makeDrizzleDispatchCandidateRepo(
           sql`${members.erasedAt} IS NULL`,
           // Only cycles WITH an anchorable bill ride this arm; the
           // never-invoiced cohort keeps the expires_at t+N ladder.
-          sql`${oldestBillDueDate} IS NOT NULL`,
+          sql`${anchorBillDueDate} IS NOT NULL`,
         ];
         if (args.cursor) {
           filters.push(sql`${renewalCycles.cycleId} > ${args.cursor}`);
@@ -448,7 +487,7 @@ export function makeDrizzleDispatchCandidateRepo(
         const rows = await tx
           .select({
             ...dispatchCandidateProjection,
-            billDueDate: oldestBillDueDate.as('bill_due_date'),
+            billDueDate: anchorBillDueDate.as('bill_due_date'),
           })
           .from(renewalCycles)
           .innerJoin(
