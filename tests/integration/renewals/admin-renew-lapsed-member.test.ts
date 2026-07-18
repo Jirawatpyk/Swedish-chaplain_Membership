@@ -167,6 +167,15 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
             : asSatang(0n),
       };
     },
+    // 107-auto-invoice (Task 5) — this suite drives `adminRenewLapsedMember`
+    // only, which never calls either new method; stubbed only to satisfy
+    // the port interface's shape.
+    async draftInvoiceForRenewal() {
+      throw new Error('draftInvoiceForRenewal not used by this test double');
+    },
+    async issueExistingDraftForRenewal() {
+      throw new Error('issueExistingDraftForRenewal not used by this test double');
+    },
   };
 }
 

@@ -30,7 +30,10 @@ import {
 } from '@/modules/invoicing';
 import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
+  DraftInvoiceForRenewalInput,
+  DraftInvoiceForRenewalResult,
   F4InvoicingForRenewalBridge,
+  IssueExistingDraftForRenewalInput,
   IssueInvoiceForRenewalInput,
   IssueInvoiceForRenewalResult,
 } from '../../application/ports/f4-invoicing-bridge';
@@ -130,6 +133,106 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     // The prior `String(documentNumber)` returned `''` for an 088 bill (blank
     // number on the renewal email/success screen) and `'[object Object]'`
     // on legacy. Not flag-gated — the returned row's shape decides.
+    const invoiceNumber = billFirstDocumentNumber(issued) ?? '';
+    return {
+      status: 'issued',
+      invoiceId: issued.invoiceId,
+      invoiceNumber,
+      totalSatang,
+      supersedeWarnings: issued.supersedeWarnings,
+    };
+  },
+
+  /**
+   * 107-auto-invoice (Task 5) — cron create-half. The `createInvoiceDraft`
+   * twin of `issueInvoiceForRenewal` above, MINUS the issue step: the
+   * auto-invoice cron (Task 7) only needs a draft row to exist ahead of the
+   * due date. Two deliberate differences from `issueInvoiceForRenewal`'s own
+   * create call:
+   *   - `origin: 'auto_renewal'` — stamps the row as cron-drafted (NEVER set
+   *     by `issueInvoiceForRenewal`, whose callers are the online-renewal /
+   *     admin-renew paths, both `origin='manual'` by DB default).
+   *   - `autoEmailOnIssue: false` — the cron cannot know the eventual
+   *     send-vs-silent choice; the review-queue "Issue" action
+   *     (`issueExistingDraftForRenewal` below) resolves it later via
+   *     `autoEmailOverride`, which outranks this stored value regardless.
+   */
+  async draftInvoiceForRenewal(
+    input: DraftInvoiceForRenewalInput,
+  ): Promise<DraftInvoiceForRenewalResult> {
+    const frozenUnitPriceSatang = parseThbDecimalToSatang(input.frozenPlanPriceThb);
+    const createResult = await createInvoiceDraft(
+      makeCreateInvoiceDraftDeps(input.tenantId),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        memberId: input.memberId,
+        planId: input.planId,
+        planYear: input.planYear,
+        autoEmailOnIssue: false,
+        origin: 'auto_renewal',
+        renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+        ...(input.membershipCoverage !== undefined
+          ? { membershipCoverage: input.membershipCoverage }
+          : {}),
+      },
+    );
+    if (!createResult.ok) {
+      return {
+        status: 'draft_failed',
+        errorCode: createResult.error.code,
+        detail:
+          'reason' in createResult.error
+            ? String(createResult.error.reason)
+            : createResult.error.code,
+      };
+    }
+    return { status: 'drafted', invoiceId: createResult.value.invoiceId };
+  },
+
+  /**
+   * 107-auto-invoice (Task 5) — review-queue issue-half. Promotes an
+   * already-drafted `origin='auto_renewal'` invoice (created by
+   * `draftInvoiceForRenewal` above) to `issued`, via the SAME
+   * `issueMembershipBill` composition `issueInvoiceForRenewal` uses (void-
+   * on-reissue supersede included).
+   *
+   * `autoEmailOverride: input.autoEmailOnIssue` — the T4 gotcha: this is
+   * ALWAYS a definite send-vs-silent intent here, never a "no opinion"
+   * placeholder. The draft was always created with `autoEmailOnIssue:
+   * false` (see `draftInvoiceForRenewal`), so `issueMembershipBill`'s own
+   * `draft.autoEmailOnIssue ?? settings.autoEmailEnabled` fallback chain
+   * would otherwise resolve to silent regardless of what the operator
+   * actually chose on the review-queue screen — the override is required
+   * to carry that choice through.
+   */
+  async issueExistingDraftForRenewal(
+    input: IssueExistingDraftForRenewalInput,
+  ): Promise<IssueInvoiceForRenewalResult> {
+    const issueResult = await issueMembershipBill(
+      makeIssueMembershipBillDeps(input.tenantId),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        invoiceId: input.invoiceId,
+        autoEmailOverride: input.autoEmailOnIssue,
+      },
+    );
+    if (!issueResult.ok) {
+      return {
+        status: 'issue_failed',
+        errorCode: issueResult.error.code,
+        detail:
+          'reason' in issueResult.error
+            ? String(issueResult.error.reason)
+            : issueResult.error.code,
+      };
+    }
+    const issued = issueResult.value;
+    const totalSatang =
+      issued.total !== null ? asSatang(BigInt(issued.total.satang)) : asSatang(0n);
     const invoiceNumber = billFirstDocumentNumber(issued) ?? '';
     return {
       status: 'issued',

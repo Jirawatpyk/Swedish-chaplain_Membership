@@ -221,7 +221,17 @@ function makeDeps(opts?: {
       loadPlanFrozenFields: loadPlanFrozenMock,
     },
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlanMock },
-    f4InvoicingBridge: { issueInvoiceForRenewal: bridgeMock },
+    f4InvoicingBridge: {
+      issueInvoiceForRenewal: bridgeMock,
+      // 107-auto-invoice (Task 5) — adminRenewLapsedMember only calls
+      // `issueInvoiceForRenewal`; stubbed only to satisfy the port shape.
+      draftInvoiceForRenewal: vi.fn(async () => {
+        throw new Error('draftInvoiceForRenewal not used by adminRenewLapsedMember');
+      }),
+      issueExistingDraftForRenewal: vi.fn(async () => {
+        throw new Error('issueExistingDraftForRenewal not used by adminRenewLapsedMember');
+      }),
+    },
     cycleIdFactory: { cycleId: () => asCycleId(CYCLE_UUID) },
   };
 

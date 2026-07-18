@@ -122,8 +122,73 @@ export type IssueInvoiceForRenewalResult =
       readonly detail: string;
     };
 
+/**
+ * 107-auto-invoice (Task 5) — the auto-invoice cron's DRAFT-only half.
+ * Mirrors {@link IssueInvoiceForRenewalInput} minus the issue-specific
+ * fields (`autoEmailOnIssue`, `correlationId`) — the cron only drafts; the
+ * review-queue "Issue" action (Task 9, `issueExistingDraftForRenewal`)
+ * resolves the auto-email decision later, at issue time.
+ */
+export interface DraftInvoiceForRenewalInput {
+  readonly tenantId: string;
+  readonly memberId: string;
+  /** F2 plan id — frozen on the cycle row at draft time. */
+  readonly planId: string;
+  /** Calendar year (e.g. 2026) of the membership the invoice covers. */
+  readonly planYear: number;
+  /** See {@link IssueInvoiceForRenewalInput.frozenPlanPriceThb} — same
+   * server-sourced, VAT-EXCLUSIVE, price-tampering-guarded contract. */
+  readonly frozenPlanPriceThb: ThbDecimal;
+  /** See {@link IssueInvoiceForRenewalInput.membershipCoverage}. */
+  readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  readonly actorUserId: string;
+  readonly requestId: string | null;
+}
+
+export type DraftInvoiceForRenewalResult =
+  | { readonly status: 'drafted'; readonly invoiceId: string }
+  | {
+      readonly status: 'draft_failed';
+      readonly errorCode: RenewalInvoiceErrorCode;
+      readonly detail: string;
+    };
+
+/**
+ * 107-auto-invoice (Task 5) — the review-queue "Issue" action's ISSUE-only
+ * half, promoting an already-drafted `origin='auto_renewal'` invoice
+ * (created by {@link DraftInvoiceForRenewalInput}) to `issued`.
+ */
+export interface IssueExistingDraftForRenewalInput {
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  readonly actorUserId: string;
+  /**
+   * The review-queue action's definite send-vs-silent choice at issue time
+   * — always a real decision (never "no opinion"), since the auto-drafted
+   * invoice itself was always created with `autoEmailOnIssue: false`
+   * (deferred — the cron cannot know the eventual choice). Forwarded
+   * verbatim as `issueMembershipBill`'s `autoEmailOverride`.
+   */
+  readonly autoEmailOnIssue: boolean;
+  readonly requestId: string | null;
+}
+
 export interface F4InvoicingForRenewalBridge {
   issueInvoiceForRenewal(
     input: IssueInvoiceForRenewalInput,
+  ): Promise<IssueInvoiceForRenewalResult>;
+  /** 107-auto-invoice (Task 5) — cron create-half. See {@link draftInvoiceForRenewal}'s
+   * sibling {@link issueExistingDraftForRenewal} for the review-queue issue-half. */
+  draftInvoiceForRenewal(
+    input: DraftInvoiceForRenewalInput,
+  ): Promise<DraftInvoiceForRenewalResult>;
+  /**
+   * 107-auto-invoice (Task 5) — review-queue issue-half. Reuses
+   * {@link IssueInvoiceForRenewalResult} (the existing `'issued' |
+   * 'issue_failed'` arms) — this method never produces the `'create_failed'`
+   * arm since there is no create step here.
+   */
+  issueExistingDraftForRenewal(
+    input: IssueExistingDraftForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult>;
 }

@@ -55,6 +55,14 @@ export interface InvoiceRepo {
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
       readonly memberIdentitySnapshot?: MemberIdentitySnapshot | null;
+      /**
+       * 107-auto-invoice (Task 5) — `'manual'` (default, every existing
+       * caller) vs `'auto_renewal'` (the cron-drafted renewal path, Task 7).
+       * Optional — omitted entirely (never an explicit `undefined`) lets the
+       * DB-level `invoices.origin` DEFAULT 'manual' fire, mirroring the
+       * `membershipCoverage` omit-guard idiom elsewhere in this port.
+       */
+      readonly origin?: 'manual' | 'auto_renewal';
       readonly lines: readonly InvoiceLine[];
     },
   ): Promise<Invoice>;

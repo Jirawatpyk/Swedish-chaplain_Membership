@@ -451,6 +451,10 @@ export function makeDrizzleInvoiceRepo(
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,
+          // 107-auto-invoice (Task 5) — omit the key when unset so the DB
+          // DEFAULT 'manual' fires (exactOptionalPropertyTypes omit-guard,
+          // same idiom as `memberIdentitySnapshot` below).
+          ...(input.origin !== undefined ? { origin: input.origin } : {}),
           // 054-event-fee-invoices (Task 6b) — pin the BUYER snapshot at draft
           // for NON-MEMBER event attendees (no member row to re-read at issue).
           // `undefined` (membership + matched-member callers) → DB null; the

@@ -50,6 +50,17 @@ export const createInvoiceDraftSchema = z.object({
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
   /**
+   * 107-auto-invoice (Task 5) — `'manual'` (default, every existing caller —
+   * staff drafting from the admin UI, event-fee drafts, F8's online-renewal
+   * `issueInvoiceForRenewal`) vs `'auto_renewal'` (the auto-invoice cron's
+   * `draftInvoiceForRenewal`, Task 7). `.optional()` mirrors `autoEmailOnIssue`
+   * — omitted entirely (never an explicit `undefined`, per the
+   * `exactOptionalPropertyTypes` omit-guard) so `insertDraft` leaves the
+   * column out of the INSERT and the DB-level `invoices.origin` DEFAULT
+   * `'manual'` fires (pinned by `auto-invoice-schema.test.ts`).
+   */
+  origin: z.enum(['manual', 'auto_renewal']).optional(),
+  /**
    * F8-completion Slice 1 (FR-022) — RENEWAL signal. When present, the
    * draft is a §86/4 renewal invoice and the membership line is billed
    * at the cycle's FROZEN price instead of the live F2 catalogue price
@@ -448,6 +459,10 @@ export async function createInvoiceDraft(
       vatInclusive: false,
       draftByUserId: input.actorUserId,
       autoEmailOnIssue: input.autoEmailOnIssue ?? null,
+      // 107-auto-invoice (Task 5) — omit the key entirely when unset
+      // (exactOptionalPropertyTypes) so the DB DEFAULT 'manual' fires,
+      // rather than assigning an explicit `undefined`.
+      ...(input.origin !== undefined ? { origin: input.origin } : {}),
       lines,
     });
 
