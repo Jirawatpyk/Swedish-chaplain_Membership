@@ -118,7 +118,7 @@ function makeDeps(
       list: vi.fn(),
         listPaged: vi.fn(),
       applyIssue: vi.fn(),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       findByIdInTxForUpdate: vi.fn(),

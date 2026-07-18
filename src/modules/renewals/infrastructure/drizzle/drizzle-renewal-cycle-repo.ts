@@ -1324,6 +1324,21 @@ export function makeDrizzleRenewalCycleRepo(
         setClause.linkedCreditNoteId = args.linkedCreditNoteId;
       }
 
+      // 107-auto-invoice Task 9 (review Minor 4) — when this call ALSO writes
+      // `linked_invoice_id`, carry `linkInvoice`'s own CAS predicate
+      // (`IS NULL OR = $1`). Both methods write that column, and without this
+      // `transitionStatus` would overwrite an existing, DIFFERENT link blind
+      // (it CASes on status only) while `linkInvoice` refuses — two writers of
+      // one column with contradictory concurrency contracts. A mismatch here
+      // surfaces as a CycleTransitionConflictError rather than a silent
+      // clobber of another invoice's claim on the cycle.
+      const linkGuard =
+        args.linkedInvoiceId !== undefined
+          ? or(
+              isNull(renewalCycles.linkedInvoiceId),
+              eq(renewalCycles.linkedInvoiceId, args.linkedInvoiceId),
+            )
+          : undefined;
       const updated = await txDb
         .update(renewalCycles)
         .set(setClause)
@@ -1331,6 +1346,7 @@ export function makeDrizzleRenewalCycleRepo(
           and(
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, args.from),
+            ...(linkGuard ? [linkGuard] : []),
           ),
         )
         .returning();

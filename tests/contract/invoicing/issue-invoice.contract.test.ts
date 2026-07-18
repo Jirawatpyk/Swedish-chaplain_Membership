@@ -197,7 +197,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, cap: Captured): IssueInvoiceDe
           pdfDocKind: input.pdfDocKind as never,
         } as Invoice;
       }),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       findByIdInTxForUpdate: vi.fn(),

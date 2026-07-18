@@ -179,7 +179,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): Re
       listPaged: vi.fn(),
       listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(async (_tx, input: Record<string, unknown>) => {
         cap.applyPaymentInputs.push(input);
         return { ...loaded, status: 'paid' as InvoiceStatus, paidAt: '2026-05-20T03:00:00Z' } as Invoice;

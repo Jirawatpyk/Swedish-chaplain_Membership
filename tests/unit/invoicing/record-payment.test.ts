@@ -167,7 +167,7 @@ function makeDeps(
         listPaged: vi.fn(),
       listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       // applyPayment echoes the input back as the updated invoice —
       // record-payment now uses the RETURNING value directly instead
       // of re-reading.
