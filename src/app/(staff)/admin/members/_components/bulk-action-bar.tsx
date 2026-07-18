@@ -11,27 +11,43 @@
  * disabled with a message instructing the admin to split the operation.
  *
  * Focus-on-close (107-auto-invoice Task 15 review, UX-1). EVERY successful
- * bulk action unmounts this entire bar: `executeBulk` calls `onClear()` →
- * the parent clears `selectedIds` → `count === 0` → this component returns
- * `null`. So all three trigger buttons vanish, and Base UI's default
- * focus-return (the original trigger) drops focus to `<body>` — a keyboard
- * or screen-reader user must re-Tab from the top of the page after every
- * bulk action. Fixed with ONE shared `finalFocus` for all three dialogs,
+ * bulk action removes this bar from the DOM: `executeBulk` calls
+ * `onClear()` → the parent clears `selectedIds` → `count === 0` → this
+ * component renders `null`. All three trigger buttons vanish, and Base UI's
+ * default focus-return (the original trigger) drops focus to `<body>` — a
+ * keyboard or screen-reader user must re-Tab from the top of the page after
+ * every bulk action. Fixed with ONE shared `finalFocus` for all three dialogs,
  * built from `useDialogFinalFocus` (REUSED verbatim from
  * `@/components/broadcast/reason-confirmation-dialog`, same as
- * `auto-renewal-queue-actions.tsx` — not reimplemented). `lastTriggerRef`
- * records whichever button opened the dialog (only one can be open at a
- * time); `closedViaSuccessRef` is raised inside `executeBulk` BEFORE
- * `onClear()`, so on a successful close the resolver skips the
- * about-to-unmount trigger and lands on the `#main-content` landmark. On
- * Cancel / ESC / a failed action the bar survives, the flag stays false,
- * and focus returns to the trigger as normal. WCAG 2.1 AA SC 2.4.3.
+ * `auto-renewal-queue-actions.tsx` — not reimplemented).
+ *
+ * `lastTriggerRef` records whichever button opened the dialog (only one can
+ * be open at a time). `closedViaSuccessRef` answers "how did THIS dialog
+ * close": it is reset to `false` in each trigger's onClick, and raised in
+ * `executeBulk` just before `onClear()`. On a successful close the resolver
+ * skips the about-to-vanish trigger and lands on the `#main-content`
+ * landmark; on Cancel / ESC / a failed action it stays `false` and focus
+ * returns to the trigger. WCAG 2.1 AA SC 2.4.3.
+ *
+ * The reset MUST live in the onClick, not at the top of `executeBulk`
+ * (re-review N1). This component returns `null` when nothing is selected,
+ * but the PARENT renders it as `{isAdmin && <BulkActionBar/>}` with a
+ * constant `isAdmin` — so returning `null` does NOT unmount the fiber and
+ * every ref survives. Resetting only in `executeBulk` left the flag stuck
+ * `true` after the first successful action (Cancel/ESC never call
+ * `executeBulk`), and the next ESC threw focus to the landmark instead of
+ * the still-alive trigger. Resetting on open covers open→cancel,
+ * open→fail and open→succeed in one place.
+ *
+ * The trigger DOM node is still removed on success (the bar renders `null`),
+ * which is why the success path needs the landmark fallback at all — fiber
+ * alive, DOM node gone.
  *
  * This was pre-existing on Archive and Send-invite; Task 15 added the third
  * case and fixes all three together.
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, FileTextIcon, MailIcon, XIcon } from 'lucide-react';
@@ -85,7 +101,10 @@ export function BulkActionBar({
 
   // Focus-on-close (see module header). One ref pair serves all three
   // dialogs — only one can be open at a time, and every successful action
-  // unmounts all three triggers together.
+  // removes all three triggers from the DOM together. These refs SURVIVE
+  // that: rendering `null` does not unmount the fiber (the parent's
+  // `{isAdmin && …}` guard is constant), which is exactly why
+  // `closedViaSuccessRef` has to be reset on dialog OPEN.
   const lastTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closedViaSuccessRef = useRef<boolean>(false);
   const finalFocus = useDialogFinalFocus(
@@ -94,13 +113,40 @@ export function BulkActionBar({
     closedViaSuccessRef,
   );
 
+  // Sticky-bar spacer (re-review N2). The spacer used to be a hardcoded
+  // `h-16` (64px), which matched the bar only while the buttons were 36px
+  // (36 + py-3 * 2 = 60). At 44px targets a single row is already 68px, and
+  // below ~400px the `flex-wrap` breaks the bar onto 3-4 rows (~180px+) —
+  // leaving the last table row AND the pagination control covered, which is
+  // exactly what this flow needs reachable ("select rows, then act").
+  // Measured rather than guessed: the height depends on wrap behaviour,
+  // locale label lengths, and whether the over-cap warning is showing, none
+  // of which a static class can track.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barHeight, setBarHeight] = useState(64);
+
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    // Guard for jsdom/older browsers: without ResizeObserver the spacer
+    // keeps its last measured value rather than collapsing to 0.
+    if (typeof ResizeObserver === 'undefined') {
+      setBarHeight(el.offsetHeight);
+      return;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
+      // Round up — a fractional height would leave a sub-pixel sliver of the
+      // last row under the bar.
+      setBarHeight(Math.ceil(h));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const executeBulk = useCallback(
     async (action: BulkAction, params?: Record<string, unknown>) => {
       if (overCap) return;
-      // Reset per attempt: a failed action leaves the bar (and its
-      // triggers) mounted, so focus must return to the trigger, not the
-      // landmark. Only the success path below raises this.
-      closedViaSuccessRef.current = false;
       setExecuting(true);
       setProgress({ action, total: count });
 
@@ -218,7 +264,10 @@ export function BulkActionBar({
   return (
     <>
       <div
-        className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur-sm shadow-lg"
+        ref={barRef}
+        // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
+        // iOS home indicator on a notched device.
+        className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
         style={{ scrollMarginBottom: '80px' }}
         role="toolbar"
         aria-label={t('toolbarLabel')}
@@ -267,6 +316,10 @@ export function BulkActionBar({
               disabled={executing || overCap}
               onClick={(e) => {
                 lastTriggerRef.current = e.currentTarget;
+                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
+                // after an earlier SUCCESS still returns focus to the
+                // trigger. The fiber (and this ref) survives `return null`.
+                closedViaSuccessRef.current = false;
                 setArchiveDialogOpen(true);
               }}
               className="min-h-11"
@@ -280,6 +333,10 @@ export function BulkActionBar({
               disabled={executing || overCap}
               onClick={(e) => {
                 lastTriggerRef.current = e.currentTarget;
+                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
+                // after an earlier SUCCESS still returns focus to the
+                // trigger. The fiber (and this ref) survives `return null`.
+                closedViaSuccessRef.current = false;
                 setInviteDialogOpen(true);
               }}
               className="min-h-11"
@@ -297,6 +354,10 @@ export function BulkActionBar({
               disabled={executing || overCap}
               onClick={(e) => {
                 lastTriggerRef.current = e.currentTarget;
+                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
+                // after an earlier SUCCESS still returns focus to the
+                // trigger. The fiber (and this ref) survives `return null`.
+                closedViaSuccessRef.current = false;
                 setEnrolDialogOpen(true);
               }}
               className="min-h-11"
@@ -324,8 +385,10 @@ export function BulkActionBar({
         </div>
       </div>
 
-      {/* Spacer to prevent content from being hidden behind sticky bar */}
-      <div className="h-16" aria-hidden="true" />
+      {/* Spacer — tracks the bar's MEASURED height (see barHeight above), so a
+          wrapped multi-row bar can never cover the last table row or the
+          pagination control. */}
+      <div style={{ height: barHeight }} aria-hidden="true" />
 
       <ArchiveConfirmDialog
         open={archiveDialogOpen}

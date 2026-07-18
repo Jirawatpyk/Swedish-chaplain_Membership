@@ -52,27 +52,49 @@ vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () =>
 function makeDialogStub(testId: string) {
   return function DialogStub({
     open,
+    onOpenChange,
     onConfirm,
     finalFocus,
   }: {
     open: boolean;
+    onOpenChange: (next: boolean) => void;
     onConfirm: () => void | Promise<void>;
     finalFocus?: () => HTMLElement | null;
   }) {
     if (!open) return null;
+    const applyFinalFocus = () => {
+      // Base UI computes finalFocus at close and focuses the result.
+      const target = finalFocus?.() ?? null;
+      target?.focus();
+    };
     return (
-      <button
-        type="button"
-        data-testid={testId}
-        onClick={async () => {
-          await onConfirm();
-          // Base UI computes finalFocus at close and focuses it.
-          const target = finalFocus?.() ?? null;
-          target?.focus();
-        }}
-      >
-        confirm
-      </button>
+      <>
+        <button
+          type="button"
+          data-testid={testId}
+          onClick={async () => {
+            await onConfirm();
+            applyFinalFocus();
+          }}
+        >
+          confirm
+        </button>
+        {/* Cancel / ESC path. Re-review N1: without this the harness had NO
+            dismissal path at all, so it structurally could not catch a
+            `closedViaSuccessRef` that never resets. Base UI runs the same
+            finalFocus computation on a dismissal as on a confirm — the only
+            difference is that `onConfirm` never fires. */}
+        <button
+          type="button"
+          data-testid={`${testId}-cancel`}
+          onClick={() => {
+            onOpenChange(false);
+            applyFinalFocus();
+          }}
+        >
+          cancel
+        </button>
+      </>
     );
   };
 }
@@ -93,6 +115,16 @@ function Harness() {
   const [selectedIds, setSelectedIds] = useState<string[]>([MEMBER_UUID]);
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
+      {/* Stands in for the members table: lets a test select rows AGAIN after
+          a successful action cleared them. Required to reproduce the N1
+          sequence (succeed -> re-select -> open -> ESC). */}
+      <button
+        type="button"
+        data-testid="reselect"
+        onClick={() => setSelectedIds([MEMBER_UUID])}
+      >
+        reselect
+      </button>
       <BulkActionBar
         selectedIds={selectedIds}
         selectedCompanyNames={['Acme Co']}
@@ -174,6 +206,56 @@ describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () =>
       expect(document.activeElement).toBe(mainContent);
     });
   }
+
+  it('N1: Cancel AFTER an earlier success still returns focus to the trigger', async () => {
+    // The regression the first fix introduced. `closedViaSuccessRef` was only
+    // reset at the top of `executeBulk`, which Cancel/ESC never reach — and
+    // the bar's fiber SURVIVES `return null` (the parent's `{isAdmin && …}`
+    // guard is constant), so the flag stayed `true` forever after the first
+    // successful action. Every later dismissal then skipped the still-alive
+    // trigger and threw focus to the landmark: SC 2.4.3, milder than the
+    // <body> case but still wrong.
+    render(<Harness />);
+
+    // 1. Succeed once.
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Enrol in auto-invoicing$/ }),
+    );
+    fireEvent.click(screen.getByTestId('confirm-dialog'));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: /^Enrol in auto-invoicing$/ }),
+      ).toBeNull();
+    });
+    expect(document.activeElement).toBe(mainContent);
+
+    // 2. Select rows again — the bar (same fiber, same refs) comes back.
+    fireEvent.click(screen.getByTestId('reselect'));
+    const trigger = await screen.findByRole('button', {
+      name: /^Enrol in auto-invoicing$/,
+    });
+
+    // 3. Open, then DISMISS. The trigger is alive, so focus must return to it.
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId('confirm-dialog-cancel'));
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+    expect(trigger.isConnected).toBe(true);
+    expect(document.activeElement).not.toBe(mainContent);
+  });
+
+  it('N1: a plain Cancel with no prior action returns focus to the trigger', async () => {
+    render(<Harness />);
+    const trigger = screen.getByRole('button', { name: /^Archive$/ });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId('confirm-dialog-cancel'));
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
 
   it('returns focus to the trigger when the action FAILS (bar survives)', async () => {
     // A failed action does not call onClear(), so the trigger is still
