@@ -3404,7 +3404,7 @@
         "pendingNoticeTitle": "Awaiting your decision",
         "terminatedCallout": {
           "title": "This membership is terminated",
-          "body": "To accept a payment (including a bank transfer already received): use Renew Lapsed Member to reactivate and re-invoice, then record the payment against the new invoice."
+          "body": "To accept a payment (including a bank transfer already received): use Renew Lapsed Member to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open bill is still there, void it."
         },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",

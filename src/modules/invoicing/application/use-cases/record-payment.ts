@@ -180,13 +180,18 @@ export type RecordPaymentError =
    * cycle lapsed / expired-cancelled). Admin-manual payments against a
    * MEMBERSHIP bill are refused so no charge and no §86/4 receipt reaches
    * a non-member; comeback = Renew Lapsed Member → pay the NEW invoice.
-   * This (old) bill no longer needs a manual void: 106-void-on-reissue
-   * auto-voids the member's prior outstanding new-flow membership bill(s)
-   * as part of `issueMembershipBill`'s supersede pass when the reactivation
-   * bridge issues the new bill (see `issue-membership-bill.ts`). NEVER
-   * returned on the webhook path: the money is already captured at Stripe,
-   * so rejecting would wedge the retrying webhook — that rail's control is
-   * the §4.4(2) heal-site net.
+   * 106-void-on-reissue auto-voids the member's prior outstanding new-flow
+   * membership bill(s) as part of `issueMembershipBill`'s supersede pass
+   * when the reactivation bridge issues the new bill (see
+   * `issue-membership-bill.ts`) — but this is NOT a hard guarantee: the
+   * auto-void is gated by `FEATURE_VOID_ON_REISSUE` (default OFF, so it
+   * does nothing until the flag ships on) and, even when the flag is on,
+   * it is best-effort (a supersede-void attempt can fail and surface via
+   * `supersedeWarnings` — see `f4-invoicing-bridge.ts`). A manual void of
+   * this (old) bill may still be needed when the flag is off or a
+   * supersede attempt failed. NEVER returned on the webhook path: the
+   * money is already captured at Stripe, so rejecting would wedge the
+   * retrying webhook — that rail's control is the §4.4(2) heal-site net.
    */
   | { code: 'membership_terminated' }
   | { code: 'settings_missing' }

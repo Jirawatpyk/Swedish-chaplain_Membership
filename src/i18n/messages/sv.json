@@ -3404,7 +3404,7 @@
         "pendingNoticeTitle": "Väntar på ditt beslut",
         "terminatedCallout": {
           "title": "Detta medlemskap är avslutat",
-          "body": "För att ta emot en betalning (inklusive en redan mottagen banköverföring): använd Renew Lapsed Member för att återaktivera och fakturera på nytt, och registrera sedan betalningen mot den nya fakturan."
+          "body": "För att ta emot en betalning (inklusive en redan mottagen banköverföring): använd Renew Lapsed Member för att återaktivera och fakturera på nytt, och registrera sedan betalningen mot den nya fakturan. Om medlemmens tidigare öppna faktura fortfarande finns kvar, makulera den."
         },
         "pendingNoticeBody": "Den här medlemmen betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Godkänn för att slutföra förnyelsen, eller avslå för att avbryta den och återbetala betalningen.",
         "refundSettlingBadge": "Återbetalning behandlas",
