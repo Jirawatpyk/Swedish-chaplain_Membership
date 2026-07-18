@@ -1045,5 +1045,20 @@ describe('F4 US5 — void-invoice (T098)', () => {
 
     // Cancellation outbox enqueued to the walk-in buyer.
     expect(deps.outboxCalls).toHaveLength(1);
+
+    // 088 duplicate-CTA — once voided, this invoice must stop being offered as
+    // the "an invoice already exists" link target. The lookup's
+    // `status <> 'void'` predicate mirrors the partial unique index
+    // `invoices_event_registration_uniq`, so the two must agree: the index now
+    // permits a NEW event invoice for this registration, and the CTA must not
+    // point the admin at the dead document. Asserted here rather than in a
+    // dedicated suite because voiding requires a genuinely issued row — this
+    // fixture is the only place one exists.
+    expect(
+      await makeDrizzleInvoiceRepo(tenant.ctx.slug).findEventInvoiceIdByRegistration(
+        regId,
+        tenant.ctx.slug,
+      ),
+    ).toBeNull();
   }, 60_000);
 });
