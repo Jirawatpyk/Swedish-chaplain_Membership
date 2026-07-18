@@ -6,6 +6,7 @@
  * codes to HTTP status.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { z } from 'zod';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -13,12 +14,29 @@ import {
   voidInvoice,
   voidInvoiceSchema,
   makeVoidInvoiceDeps,
+  parseInvoiceId,
   type VoidInvoiceError,
 } from '@/modules/invoicing';
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
+
+/**
+ * HTTP-boundary schema — deliberately NARROWER than `voidInvoiceSchema`.
+ *
+ * The use-case schema also carries `requireStatus`, `suppressCancellationEmail`
+ * and `supersededByInvoiceId`, which exist for the internal void-on-reissue
+ * caller (`issueMembershipBill`) and are not part of this endpoint's contract.
+ * Parsing the raw body against the use-case schema let a caller set them
+ * directly: suppressing the FR-036 cancellation email the UI never offers to
+ * skip, and writing a "superseded by" audit payload for a plain manual void.
+ * Everything else in the use-case input is server-derived, so this schema
+ * covers the entire client-supplied surface.
+ */
+const voidInvoiceBodySchema = z.object({
+  voidReason: voidInvoiceSchema.shape.voidReason,
+});
 
 const ERROR_STATUS: Record<VoidInvoiceError['code'], number> = {
   invoice_not_found: 404,
@@ -41,6 +59,27 @@ export async function POST(
   }
 
   const { invoiceId } = await params;
+  // Validate the path param up front. The wide `voidInvoiceSchema` used to do
+  // this as a side effect (its `invoiceId` is `z.string().uuid()`); narrowing
+  // the body schema to close CWE-915 dropped that guard, so a malformed id
+  // would otherwise reach `asInvoiceId` (an unchecked cast) → Postgres 22P02
+  // → an opaque 500 instead of a clean 400 on this money-path route.
+  const parsedInvoiceId = parseInvoiceId(invoiceId);
+  if (!parsedInvoiceId.ok) {
+    // Mirror zod's `.flatten()` shape used by the body-validation 400 below, so
+    // a client always reads a field error the same way (`details.fieldErrors`)
+    // regardless of which input failed.
+    return NextResponse.json(
+      {
+        error: {
+          code: 'invalid_body',
+          details: { formErrors: [], fieldErrors: { invoiceId: ['invalid_invoice_id'] } },
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
@@ -64,13 +103,7 @@ export async function POST(
     return NextResponse.json({ error: { code: 'invalid_json' } }, { status: 400 });
   }
 
-  const parsed = voidInvoiceSchema.safeParse({
-    tenantId: tenantCtx.slug,
-    actorUserId: ctx.current.user.id,
-    requestId,
-    invoiceId,
-    ...((body as Record<string, unknown>) ?? {}),
-  });
+  const parsed = voidInvoiceBodySchema.safeParse(body ?? {});
   if (!parsed.success) {
     return NextResponse.json(
       { error: { code: 'invalid_body', details: parsed.error.flatten() } },
@@ -78,7 +111,17 @@ export async function POST(
     );
   }
 
-  const result = await voidInvoice(makeVoidInvoiceDeps(tenantCtx.slug), parsed.data);
+  // Server-derived identity is assembled here rather than spread over the
+  // parsed body, so no client value can reach these fields (CWE-915) — most
+  // importantly `actorUserId`, which lands in the audit event for a void,
+  // and a void retires a §87 sequential number irreversibly.
+  const result = await voidInvoice(makeVoidInvoiceDeps(tenantCtx.slug), {
+    tenantId: tenantCtx.slug,
+    actorUserId: ctx.current.user.id,
+    requestId,
+    invoiceId: parsedInvoiceId.value,
+    voidReason: parsed.data.voidReason,
+  });
   if (!result.ok) {
     logger.warn(
       {

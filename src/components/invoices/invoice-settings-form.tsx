@@ -1,7 +1,23 @@
 /**
  * R7-B2 — InvoiceSettingsForm (F4 US4 / FR-009 / FR-034).
  *
- * Client component. Flat form with sections:
+ * Task 7 (settings-ux-invoice-reminders) — this is now a thin
+ * orchestrator over the two-column sticky-nav shell: `SectionNav` (left
+ * rail) + the six presentational `<*Section>` components (Task 6) for
+ * the field JSX, plus `StickySaveBar` (Task 3) for a persistently
+ * reachable Save once the form is dirty. ALL field state, `handleSubmit`
+ * (validation + the PATCH body-building object), `doPatch`, and the
+ * prefix-change `AlertDialog` are unchanged from the pre-refactor flat
+ * form — only the JSX that RENDERS the fields moved into the section
+ * components (mechanical extraction, Task 6). The sticky bar's Save
+ * button never calls `fetch` itself: it drives `formRef.current
+ * ?.requestSubmit()`, which re-enters this same `handleSubmit`, so every
+ * validation guard below (prefix-change confirm, reserved 'RE' receipt
+ * prefix, seller branch pairing, VAT range, SWIFT/account format,
+ * ISO-4217 currency) fires identically regardless of which Save was
+ * clicked.
+ *
+ * Original section map (F4 US4 / FR-009 / FR-034):
  *   1. Tenant legal identity — legal_name_th, legal_name_en, tax_id,
  *      registered_address_th, registered_address_en
  *   2. Tax — vat_rate (percent input), registration_fee (major-units)
@@ -21,23 +37,14 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +55,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { isDirty } from '@/components/invoices/invoice-settings/form-dirty';
+import { useUnsavedGuard } from '@/components/invoices/invoice-settings/use-unsaved-guard';
+import {
+  SectionNav,
+  type SectionNavItem,
+} from '@/components/invoices/invoice-settings/section-nav';
+import { StickySaveBar } from '@/components/invoices/invoice-settings/sticky-save-bar';
+import { OrganizationSection } from '@/components/invoices/invoice-settings/sections/organization-section';
+import { TaxVatSection } from '@/components/invoices/invoice-settings/sections/tax-vat-section';
+import { NumberingSection } from '@/components/invoices/invoice-settings/sections/numbering-section';
+import { DocumentNotesSection } from '@/components/invoices/invoice-settings/sections/document-notes-section';
+import { PaymentSection } from '@/components/invoices/invoice-settings/sections/payment-section';
+import { BrandingSection } from '@/components/invoices/invoice-settings/sections/branding-section';
 
 export interface InvoiceSettingsFormInitialValues {
   readonly currency_code: string; // ISO 4217 (e.g. "THB")
@@ -94,11 +114,67 @@ const SWIFT_RE = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 const ACCOUNT_NO_RE = /^[0-9][0-9\s-]{3,}$/;
 const BRANCH_CODE_RE = /^\d{5}$/;
 
-const WHT_MAX = 500;
-// 065 §5.4 — statutory termination notice length cap (mirrors the route zod).
-const TERMINATION_NOTICE_MAX = 500;
-const INSTRUCTIONS_MAX = 500;
-const BANK_ADDRESS_MAX = 500;
+// settings-ux-invoice-reminders (wave A / C1-b) — PATCH-body / route-schema
+// field names that do NOT match their input's DOM `id=` attribute. Verified
+// against every *-section.tsx (Task 6 extraction). Both the server's
+// `error.details.fieldErrors` (zod `.flatten()`, keyed by schema field name)
+// and this form's own required-text guard need to resolve a schema field
+// name to the DOM id to mark/focus — see `fieldIdFor` below. Fields not
+// listed here have a DOM id identical to their schema key (e.g.
+// `legal_name_th`, `tax_id`, `bank_swift`).
+const FIELD_ID_MAP: Record<string, string> = {
+  registered_address_th: 'addr_th',
+  registered_address_en: 'addr_en',
+  vat_rate: 'vat_percent',
+  registration_fee_satang: 'reg_fee',
+  invoice_number_prefix: 'inv_prefix',
+  credit_note_number_prefix: 'cn_prefix',
+  receipt_number_prefix: 'rc_prefix',
+  receipt_numbering_mode: 'receipt_mode',
+  fiscal_year_start_month: 'fy_month',
+  default_net_days: 'net_days',
+  pro_rate_policy: 'pro_rate',
+  auto_email_enabled: 'auto_email',
+  logo_blob_key: 'logo_file',
+  seller_is_head_office: 'seller_ho',
+  seller_branch_code: 'seller_branch',
+  wht_note_th: 'wht_th',
+  wht_note_en: 'wht_en',
+  bank_payee_name: 'bank_payee',
+  payment_instructions_th: 'pay_instr_th',
+  payment_instructions_en: 'pay_instr_en',
+};
+function fieldIdFor(schemaFieldName: string): string {
+  return FIELD_ID_MAP[schemaFieldName] ?? schemaFieldName;
+}
+
+// code-review follow-up (finding 1) — the PATCH body (see `body` in
+// `handleSubmit` below) normalizes these fields with trim / trim+uppercase
+// before sending. Applying the SAME normalization to BOTH `initialRecord`
+// and `currentValues` in the dirty-comparison keeps `isDirty`'s per-key
+// compare from flagging the form dirty purely over whitespace/case the
+// server would have normalized away anyway (e.g. saving a lower-case
+// currency code, or a trailing-space bank field, must not leave the form
+// permanently dirty after a successful save + `router.refresh()`).
+function trimStr(v: string): string {
+  return v.trim();
+}
+function trimUpper(v: string): string {
+  return v.trim().toUpperCase();
+}
+
+// Task 7 — two-column sticky-nav section map (spec §4.3). Module-scope so
+// the array reference is stable across renders: `SectionNav` memoises its
+// derived `sectionIds` on this reference, and a fresh array every render
+// would tear down + rebuild its IntersectionObserver on every keystroke.
+const SECTIONS: ReadonlyArray<SectionNavItem> = [
+  { id: 'organization', labelKey: 'sections.organization' },
+  { id: 'tax', labelKey: 'sections.tax' },
+  { id: 'numbering', labelKey: 'sections.numbering' },
+  { id: 'notes', labelKey: 'sections.documentNotes' },
+  { id: 'payment', labelKey: 'sections.payment' },
+  { id: 'branding', labelKey: 'sections.branding' },
+];
 
 export interface InvoiceSettingsFormProps {
   readonly initialValues: InvoiceSettingsFormInitialValues;
@@ -114,6 +190,7 @@ export function InvoiceSettingsForm({
   const t = useTranslations('admin.invoiceSettings');
   const router = useRouter();
   const isAdmin = currentUserRole === 'admin';
+  const formRef = useRef<HTMLFormElement>(null);
 
   const [currencyCode, setCurrencyCode] = useState(initialValues.currency_code);
   const [legalNameTh, setLegalNameTh] = useState(initialValues.legal_name_th);
@@ -192,6 +269,114 @@ export function InvoiceSettingsForm({
 
   const disabled = !isAdmin || submitting;
 
+  // Task 7 (spec §4.4) — dirty-state comparison feeding the sticky Save
+  // bar + the beforeunload guard. Same flat key set on both sides so
+  // `isDirty` does a straight per-key `Object.is` diff.
+  const initialRecord: Record<string, unknown> = {
+    currency_code: trimUpper(initialValues.currency_code),
+    legal_name_th: initialValues.legal_name_th,
+    legal_name_en: initialValues.legal_name_en,
+    brand_name: trimStr(initialValues.brand_name),
+    tax_id: initialValues.tax_id,
+    registered_address_th: initialValues.registered_address_th,
+    registered_address_en: initialValues.registered_address_en,
+    vat_percent: initialValues.vat_percent,
+    registration_fee_baht: initialValues.registration_fee_baht,
+    invoice_number_prefix: initialValues.invoice_number_prefix,
+    credit_note_number_prefix: initialValues.credit_note_number_prefix,
+    receipt_number_prefix: initialValues.receipt_number_prefix ?? '',
+    fiscal_year_start_month: String(initialValues.fiscal_year_start_month),
+    default_net_days: String(initialValues.default_net_days),
+    pro_rate_policy: initialValues.pro_rate_policy,
+    auto_email_enabled: initialValues.auto_email_enabled,
+    logo_blob_key: initialValues.logo_blob_key,
+    seller_is_head_office: initialValues.seller_is_head_office,
+    seller_branch_code: trimStr(initialValues.seller_branch_code ?? ''),
+    wht_note_th: trimStr(initialValues.wht_note_th ?? ''),
+    wht_note_en: trimStr(initialValues.wht_note_en ?? ''),
+    termination_notice_th: trimStr(initialValues.termination_notice_th ?? ''),
+    termination_notice_en: trimStr(initialValues.termination_notice_en ?? ''),
+    bank_payee_name: trimStr(initialValues.bank_payee_name ?? ''),
+    bank_account_no: trimStr(initialValues.bank_account_no ?? ''),
+    bank_account_type: trimStr(initialValues.bank_account_type ?? ''),
+    bank_name: trimStr(initialValues.bank_name ?? ''),
+    bank_branch: trimStr(initialValues.bank_branch ?? ''),
+    bank_address: trimStr(initialValues.bank_address ?? ''),
+    bank_swift: trimUpper(initialValues.bank_swift ?? ''),
+    payment_instructions_th: trimStr(initialValues.payment_instructions_th ?? ''),
+    payment_instructions_en: trimStr(initialValues.payment_instructions_en ?? ''),
+  };
+  const currentValues: Record<string, unknown> = {
+    currency_code: trimUpper(currencyCode),
+    legal_name_th: legalNameTh,
+    legal_name_en: legalNameEn,
+    brand_name: trimStr(brandName),
+    tax_id: taxId,
+    registered_address_th: addrTh,
+    registered_address_en: addrEn,
+    vat_percent: vatPercent,
+    registration_fee_baht: regFee,
+    invoice_number_prefix: invoicePrefix,
+    credit_note_number_prefix: creditPrefix,
+    receipt_number_prefix: receiptPrefix,
+    fiscal_year_start_month: fiscalStartMonth,
+    default_net_days: defaultNetDays,
+    pro_rate_policy: proRate,
+    auto_email_enabled: autoEmail,
+    logo_blob_key: logoBlobKey,
+    seller_is_head_office: sellerIsHeadOffice,
+    seller_branch_code: trimStr(sellerBranchCode),
+    wht_note_th: trimStr(whtNoteTh),
+    wht_note_en: trimStr(whtNoteEn),
+    termination_notice_th: trimStr(terminationNoticeTh),
+    termination_notice_en: trimStr(terminationNoticeEn),
+    bank_payee_name: trimStr(bankPayeeName),
+    bank_account_no: trimStr(bankAccountNo),
+    bank_account_type: trimStr(bankAccountType),
+    bank_name: trimStr(bankName),
+    bank_branch: trimStr(bankBranch),
+    bank_address: trimStr(bankAddress),
+    bank_swift: trimUpper(bankSwift),
+    payment_instructions_th: trimStr(paymentInstructionsTh),
+    payment_instructions_en: trimStr(paymentInstructionsEn),
+  };
+  const dirty = isAdmin && isDirty(initialRecord, currentValues);
+  useUnsavedGuard(dirty);
+
+  // Task 7 (spec §6.3) / wave-A C1(a) — a blocked (validation-failed) submit
+  // focuses the field the guard that ACTUALLY fired is about, not merely
+  // the first `:invalid` element in DOM order (Task-7 MEDIUM: a later-in-
+  // sequence guard firing while an earlier, unrelated field is also
+  // natively invalid used to steal focus). Every guard below now marks +
+  // focuses its OWN field via `failGuard`; the global `:invalid` scan is
+  // kept only as a last-resort fallback for a field id that isn't found.
+  function markInvalid(fieldId: string) {
+    formRef.current?.querySelector<HTMLElement>(`#${fieldId}`)?.setAttribute('aria-invalid', 'true');
+  }
+  function focusFirstInvalidField() {
+    const target = formRef.current?.querySelector<HTMLElement>(':invalid, [aria-invalid="true"]');
+    target?.focus();
+    target?.scrollIntoView?.({ block: 'center' });
+  }
+  function focusField(fieldId: string) {
+    const target = formRef.current?.querySelector<HTMLElement>(`#${fieldId}`);
+    if (target) {
+      target.focus();
+      target.scrollIntoView?.({ block: 'center' });
+      return;
+    }
+    // Field id not found on this render (shouldn't happen — ids are
+    // verified against every *-section.tsx) — fall back to the global scan
+    // rather than silently leaving focus untouched.
+    focusFirstInvalidField();
+  }
+  function failGuard(fieldId: string, message: string) {
+    markInvalid(fieldId);
+    setError(message);
+    setSubmitting(false);
+    focusField(fieldId);
+  }
+
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -227,13 +412,40 @@ export function InvoiceSettingsForm({
     if (!isAdmin) return;
     setSubmitting(true);
     setError(null);
+    // Clear markers left by a previous blocked submit (see markInvalid
+    // above) so a fixed field doesn't stay flagged forever.
+    formRef.current
+      ?.querySelectorAll<HTMLElement>('[aria-invalid="true"]')
+      .forEach((el) => el.removeAttribute('aria-invalid'));
+
+    // wave-A C1(c) — required text fields (route schema `.min(1)` / non-blank
+    // regex) had NO client-side check before this fix: an empty value fell
+    // through every guard below and only ever got caught by the server's
+    // 400 `invalid_body` (see doPatch's fieldErrors handling), with no
+    // client-side focus at all. Block early — before any of the numeric/
+    // format guards — so a blank required field never round-trips, and so
+    // the field surfaced first is the first one top-to-bottom in the form.
+    const requiredTextFields: ReadonlyArray<readonly [schemaFieldName: string, value: string]> = [
+      ['legal_name_th', legalNameTh],
+      ['legal_name_en', legalNameEn],
+      ['tax_id', taxId],
+      ['registered_address_th', addrTh],
+      ['registered_address_en', addrEn],
+      ['invoice_number_prefix', invoicePrefix],
+      ['credit_note_number_prefix', creditPrefix],
+    ];
+    for (const [schemaFieldName, value] of requiredTextFields) {
+      if (value.trim() === '') {
+        failGuard(fieldIdFor(schemaFieldName), t('errors.requiredFields'));
+        return;
+      }
+    }
 
     // Percent → 4-dp decimal string. Guard against Number.parseFloat
     // returning NaN on empty input.
     const vatNum = Number.parseFloat(vatPercent);
     if (Number.isNaN(vatNum) || vatNum < 0 || vatNum > 30) {
-      setError(t('errors.vatRange'));
-      setSubmitting(false);
+      failGuard('vat_percent', t('errors.vatRange'));
       return;
     }
     const vatDecimalString = (vatNum / 100).toFixed(4);
@@ -241,8 +453,7 @@ export function InvoiceSettingsForm({
     // Major units → satang (bigint serialised as string).
     const regFeeMajor = Number.parseFloat(regFee);
     if (Number.isNaN(regFeeMajor) || regFeeMajor < 0) {
-      setError(t('errors.regFeeRange'));
-      setSubmitting(false);
+      failGuard('reg_fee', t('errors.regFeeRange'));
       return;
     }
     const regFeeSatang = String(Math.round(regFeeMajor * 100));
@@ -250,13 +461,11 @@ export function InvoiceSettingsForm({
     const fiscalMonth = Number.parseInt(fiscalStartMonth, 10);
     const netDays = Number.parseInt(defaultNetDays, 10);
     if (Number.isNaN(fiscalMonth) || fiscalMonth < 1 || fiscalMonth > 12) {
-      setError(t('errors.fiscalMonth'));
-      setSubmitting(false);
+      failGuard('fy_month', t('errors.fiscalMonth'));
       return;
     }
     if (Number.isNaN(netDays) || netDays < 0 || netDays > 365) {
-      setError(t('errors.netDays'));
-      setSubmitting(false);
+      failGuard('net_days', t('errors.netDays'));
       return;
     }
 
@@ -264,8 +473,7 @@ export function InvoiceSettingsForm({
     // regex are the real guards; this just catches obvious typos fast.
     const normalisedCurrency = currencyCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalisedCurrency)) {
-      setError(t('errors.currencyCode'));
-      setSubmitting(false);
+      failGuard('currency_code', t('errors.currencyCode'));
       return;
     }
 
@@ -273,20 +481,19 @@ export function InvoiceSettingsForm({
     // Mirror the route zod / DB CHECK so the admin gets fast inline feedback.
     const branchTrimmed = sellerBranchCode.trim();
     if (!sellerIsHeadOffice && !BRANCH_CODE_RE.test(branchTrimmed)) {
-      setError(t('errors.sellerBranch'));
-      setSubmitting(false);
+      failGuard('seller_branch', t('errors.sellerBranch'));
       return;
     }
     const swiftTrimmed = bankSwift.trim().toUpperCase();
     if (swiftTrimmed !== '' && !SWIFT_RE.test(swiftTrimmed)) {
-      setError(t('errors.bankSwift'));
-      setSubmitting(false);
+      failGuard('bank_swift', t('errors.bankSwift'));
       return;
     }
     const accountTrimmed = bankAccountNo.trim();
     if (accountTrimmed !== '' && !ACCOUNT_NO_RE.test(accountTrimmed)) {
-      setError(t('errors.bankAccountNo'));
-      setSubmitting(false);
+      // bank_account_no has no native `pattern` constraint (free-format,
+      // optional field) — failGuard marks it explicitly.
+      failGuard('bank_account_no', t('errors.bankAccountNo'));
       return;
     }
 
@@ -300,8 +507,9 @@ export function InvoiceSettingsForm({
     // localized message (the route zod is the real boundary; this mirrors it for
     // fast inline feedback). Case-insensitive — document prefixes are uppercase.
     if (receiptPrefixValue !== null && receiptPrefixValue.trim().toUpperCase() === 'RE') {
-      setError(t('errors.receiptPrefixReserved'));
-      setSubmitting(false);
+      // No native constraint expresses "not equal to a reserved value" —
+      // failGuard marks it explicitly.
+      failGuard('rc_prefix', t('errors.receiptPrefixReserved'));
       return;
     }
 
@@ -378,14 +586,59 @@ export function InvoiceSettingsForm({
         setSubmitting(false);
         return;
       }
+      // wave-A Minor + C1(b) — read the error body ONCE (a Response body can
+      // only be consumed once) and branch on it below.
       const errBody = (await res.json().catch(() => ({}))) as {
-        error?: { code?: string };
+        error?:
+          | string
+          | {
+              code?: string;
+              details?: { fieldErrors?: Record<string, string[]> };
+            };
       };
-      const code = errBody.error?.code ?? 'generic';
-      if (code === 'vat_rate_out_of_range') setError(t('errors.vatRange'));
-      else if (res.status === 400) setError(t('errors.validation'));
-      else if (res.status === 403) setError(t('errors.forbidden'));
-      else {
+      // read-only-mode 503: flat string (proxy-level gate, `src/proxy.ts`)
+      // OR nested `{ code }` (a route-level guard) — same dual-shape check
+      // as `plans-table.tsx`. This route only ever hits the proxy-level
+      // gate today; the shape check costs nothing and stays consistent.
+      const errObj = errBody.error;
+      const code = (typeof errObj === 'string' ? errObj : errObj?.code) ?? 'generic';
+      if (code === 'read-only-mode' || code === 'read_only_mode') {
+        // Retrying immediately won't help — say so instead of the generic
+        // "save failed, try again".
+        setError(t('errors.readOnly'));
+        toast.error(t('errors.readOnly'));
+        return;
+      }
+      const fieldErrors = typeof errObj === 'object' ? errObj?.details?.fieldErrors : undefined;
+      if (code === 'vat_rate_out_of_range') {
+        setError(t('errors.vatRange'));
+      } else if (code === 'invalid_body' && fieldErrors && Object.keys(fieldErrors).length > 0) {
+        // C1(b) — the route's zod `.flatten()` keys fieldErrors by schema
+        // field name; map each to its DOM id (FIELD_ID_MAP for the ids that
+        // differ) and mark + focus the first one.
+        const fieldNames = Object.keys(fieldErrors);
+        fieldNames.forEach((name) => markInvalid(fieldIdFor(name)));
+        setError(t('errors.requiredFields'));
+        // flushSync — this branch runs after `await fetch`, well after
+        // React committed the EARLIER `setSubmitting(true)` (top of this
+        // function), so every input is still rendered `disabled` right
+        // now. A disabled element cannot receive focus, so the update
+        // that re-enables the field must be flushed to the DOM before
+        // focus can move onto it (the `finally` block's
+        // `setSubmitting(false)` below would otherwise land too late).
+        flushSync(() => setSubmitting(false));
+        // code-review follow-up (finding 2) — `fieldNames[0]` is
+        // `Object.keys(fieldErrors)` (zod schema declaration order), which
+        // does not necessarily match the field's visual/DOM position. Every
+        // named field was just `markInvalid`'d above (aria-invalid="true"),
+        // so `focusFirstInvalidField`'s DOM-order `querySelector` lands on
+        // the TOPMOST invalid field regardless of schema key order.
+        focusFirstInvalidField();
+      } else if (res.status === 400) {
+        setError(t('errors.validation'));
+      } else if (res.status === 403) {
+        setError(t('errors.forbidden'));
+      } else {
         setError(t('errors.generic'));
         toast.error(t('errors.generic'));
       }
@@ -399,631 +652,165 @@ export function InvoiceSettingsForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
+      // code-review follow-up (finding 3) — `markInvalid` sets aria-invalid
+      // imperatively via `setAttribute`; without this, it was only ever
+      // cleared at the START of the next submit (see the querySelectorAll
+      // sweep above), so a field the admin had already corrected kept its
+      // red/invalid ring until they re-submitted. Single delegated handler
+      // clears the attribute the moment the edited field's value changes.
+      onInput={(e) => {
+        const el = e.target as HTMLElement;
+        if (el.getAttribute?.('aria-invalid') === 'true') el.removeAttribute('aria-invalid');
+      }}
       // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
       method="post"
-      className="flex flex-col gap-[var(--page-section-gap)]"
+      className="flex flex-col gap-[var(--page-section-gap)] md:flex-row md:items-start md:gap-8"
       noValidate
     >
-      {/* Currency — R7 consolidation: tenant-wide ISO-4217 code. F2
-          plan module reads this via TenantTaxPolicyPort; this form
-          is the ONLY editor after fee-config UI was removed. */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.currency')}
-        </legend>
-        <div className="space-y-2 sm:max-w-xs">
-          <Label htmlFor="currency_code">{t('labels.currencyCode')}</Label>
-          <Input
-            id="currency_code"
-            value={currencyCode}
-            onChange={(e) => setCurrencyCode(e.target.value.toUpperCase())}
-            disabled={disabled}
-            required
-            maxLength={3}
-            pattern="[A-Z]{3}"
-            inputMode="text"
-            aria-describedby="currency_code_hint"
-            className="font-mono uppercase"
-          />
-          <p id="currency_code_hint" className="text-xs text-muted-foreground">
-            {t('hints.currencyCode')}
+      <SectionNav sections={SECTIONS} />
+
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]',
+          // C3 — the fixed-bottom StickySaveBar (≥68px + safe-area inset)
+          // covers the in-form Save button + error text once scrolled to
+          // the end. Only pad when it's actually visible (`dirty`), so the
+          // page isn't left with dead space the rest of the time.
+          dirty && 'pb-[calc(env(safe-area-inset-bottom)+5rem)]',
+        )}
+      >
+        <OrganizationSection
+          currencyCode={currencyCode}
+          onCurrencyCodeChange={setCurrencyCode}
+          legalNameTh={legalNameTh}
+          onLegalNameThChange={setLegalNameTh}
+          legalNameEn={legalNameEn}
+          onLegalNameEnChange={setLegalNameEn}
+          brandName={brandName}
+          onBrandNameChange={setBrandName}
+          taxId={taxId}
+          onTaxIdChange={setTaxId}
+          addrTh={addrTh}
+          onAddrThChange={setAddrTh}
+          addrEn={addrEn}
+          onAddrEnChange={setAddrEn}
+          sellerIsHeadOffice={sellerIsHeadOffice}
+          onSellerIsHeadOfficeChange={setSellerIsHeadOffice}
+          sellerBranchCode={sellerBranchCode}
+          onSellerBranchCodeChange={setSellerBranchCode}
+          disabled={disabled}
+        />
+
+        <TaxVatSection
+          vatPercent={vatPercent}
+          onVatPercentChange={setVatPercent}
+          regFee={regFee}
+          onRegFeeChange={setRegFee}
+          currencyCode={currencyCode}
+          disabled={disabled}
+        />
+
+        <NumberingSection
+          invoicePrefix={invoicePrefix}
+          onInvoicePrefixChange={setInvoicePrefix}
+          creditPrefix={creditPrefix}
+          onCreditPrefixChange={setCreditPrefix}
+          receiptPrefix={receiptPrefix}
+          onReceiptPrefixChange={setReceiptPrefix}
+          fiscalStartMonth={fiscalStartMonth}
+          onFiscalStartMonthChange={setFiscalStartMonth}
+          defaultNetDays={defaultNetDays}
+          onDefaultNetDaysChange={setDefaultNetDays}
+          proRate={proRate}
+          onProRateChange={setProRate}
+          // I2 — relocated here from DocumentNotesSection (see
+          // numbering-section.tsx's header comment); same state/setter.
+          autoEmail={autoEmail}
+          onAutoEmailChange={setAutoEmail}
+          disabled={disabled}
+        />
+
+        <DocumentNotesSection
+          whtNoteTh={whtNoteTh}
+          onWhtNoteThChange={setWhtNoteTh}
+          whtNoteEn={whtNoteEn}
+          onWhtNoteEnChange={setWhtNoteEn}
+          terminationNoticeTh={terminationNoticeTh}
+          onTerminationNoticeThChange={setTerminationNoticeTh}
+          terminationNoticeEn={terminationNoticeEn}
+          onTerminationNoticeEnChange={setTerminationNoticeEn}
+          disabled={disabled}
+        />
+
+        <PaymentSection
+          bankPayeeName={bankPayeeName}
+          onBankPayeeNameChange={setBankPayeeName}
+          bankName={bankName}
+          onBankNameChange={setBankName}
+          bankAccountNo={bankAccountNo}
+          onBankAccountNoChange={setBankAccountNo}
+          bankAccountType={bankAccountType}
+          onBankAccountTypeChange={setBankAccountType}
+          bankBranch={bankBranch}
+          onBankBranchChange={setBankBranch}
+          bankSwift={bankSwift}
+          onBankSwiftChange={setBankSwift}
+          bankAddress={bankAddress}
+          onBankAddressChange={setBankAddress}
+          paymentInstructionsTh={paymentInstructionsTh}
+          onPaymentInstructionsThChange={setPaymentInstructionsTh}
+          paymentInstructionsEn={paymentInstructionsEn}
+          onPaymentInstructionsEnChange={setPaymentInstructionsEn}
+          disabled={disabled}
+        />
+
+        <BrandingSection
+          logoBlobKey={logoBlobKey}
+          uploadingLogo={uploadingLogo}
+          logoError={logoError}
+          onLogoChange={handleLogoChange}
+          disabled={disabled}
+        />
+
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
           </p>
-        </div>
-      </fieldset>
-
-      {/* Identity */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.identity')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="legal_name_th">{t('labels.legalNameTh')}</Label>
-            <Input
-              id="legal_name_th"
-              value={legalNameTh}
-              onChange={(e) => setLegalNameTh(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={300}
-              lang="th"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="legal_name_en">{t('labels.legalNameEn')}</Label>
-            <Input
-              id="legal_name_en"
-              value={legalNameEn}
-              onChange={(e) => setLegalNameEn(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={300}
-            />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="brand_name">{t('labels.brandName')}</Label>
-            <Input
-              id="brand_name"
-              value={brandName}
-              onChange={(e) => setBrandName(e.target.value)}
-              disabled={disabled}
-              maxLength={100}
-              placeholder={t('labels.brandNamePlaceholder')}
-            />
-            <p className="text-xs text-muted-foreground">{t('labels.brandNameHint')}</p>
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="tax_id">{t('labels.taxId')}</Label>
-            <Input
-              id="tax_id"
-              value={taxId}
-              onChange={(e) => setTaxId(e.target.value)}
-              disabled={disabled}
-              required
-              pattern="\d{13}"
-              maxLength={13}
-              inputMode="numeric"
-              aria-describedby="tax_id_hint"
-            />
-            <p id="tax_id_hint" className="text-xs text-muted-foreground">
-              {t('hints.taxId')}
-            </p>
-          </div>
-          {/* Multi-line so the admin controls exactly where the §86/4 address
-              wraps on the invoice/receipt PDF — each newline becomes a line break
-              in the document header (a single-line <Input> stripped them, forcing
-              the PDF to auto-wrap at bad points, e.g. splitting "ถนน" from
-              "พญาไท"). */}
-          <div className="space-y-2">
-            <Label htmlFor="addr_th">{t('labels.addressTh')}</Label>
-            <Textarea
-              id="addr_th"
-              value={addrTh}
-              onChange={(e) => setAddrTh(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={1000}
-              rows={3}
-              lang="th"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="addr_en">{t('labels.addressEn')}</Label>
-            <Textarea
-              id="addr_en"
-              value={addrEn}
-              onChange={(e) => setAddrEn(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={1000}
-              rows={3}
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      {/* Tax */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.tax')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="vat_percent">{t('labels.vatPercent')}</Label>
-            <Input
-              id="vat_percent"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              max="30"
-              step="0.01"
-              value={vatPercent}
-              onChange={(e) => setVatPercent(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="reg_fee">{t('labels.registrationFee')}</Label>
-            <Input
-              id="reg_fee"
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              value={regFee}
-              onChange={(e) => setRegFee(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      {/* Numbering */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.numbering')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="inv_prefix">{t('labels.invoicePrefix')}</Label>
-            <Input
-              id="inv_prefix"
-              className="min-h-11"
-              value={invoicePrefix}
-              onChange={(e) => setInvoicePrefix(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={20}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="cn_prefix">{t('labels.creditNotePrefix')}</Label>
-            <Input
-              id="cn_prefix"
-              className="min-h-11"
-              value={creditPrefix}
-              onChange={(e) => setCreditPrefix(e.target.value)}
-              disabled={disabled}
-              required
-              maxLength={20}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="receipt_mode">{t('labels.receiptMode')}</Label>
-            {/* 088 US5 (T043 / F.5) — combined numbering is retired; the mode is
-                fixed to "separate". Rendered read-only (no longer a selectable). */}
-            <Input
-              id="receipt_mode"
-              className="min-h-11"
-              value={t('receiptMode.separate')}
-              readOnly
-              disabled
-              aria-describedby="receipt_mode_hint"
-            />
-            <p id="receipt_mode_hint" className="text-xs text-muted-foreground">
-              {t('hints.receiptMode')}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="rc_prefix">{t('labels.receiptPrefix')}</Label>
-            <Input
-              id="rc_prefix"
-              className="min-h-11"
-              value={receiptPrefix}
-              onChange={(e) => setReceiptPrefix(e.target.value)}
-              disabled={disabled}
-              maxLength={20}
-              aria-describedby="rc_prefix_hint"
-            />
-            <p id="rc_prefix_hint" className="text-xs text-muted-foreground">
-              {t('hints.receiptPrefix')}
-            </p>
-          </div>
-        </div>
-      </fieldset>
-
-      {/* Defaults */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.defaults')}
-        </legend>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="fy_month">{t('labels.fiscalYearStartMonth')}</Label>
-            <Input
-              id="fy_month"
-              type="number"
-              inputMode="numeric"
-              min="1"
-              max="12"
-              step="1"
-              value={fiscalStartMonth}
-              onChange={(e) => setFiscalStartMonth(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="net_days">{t('labels.defaultNetDays')}</Label>
-            <Input
-              id="net_days"
-              type="number"
-              inputMode="numeric"
-              min="0"
-              max="365"
-              step="1"
-              value={defaultNetDays}
-              onChange={(e) => setDefaultNetDays(e.target.value)}
-              disabled={disabled}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pro_rate">{t('labels.proRatePolicy')}</Label>
-            <Select
-              value={proRate}
-              onValueChange={(v) => setProRate(v as 'none' | 'monthly' | 'daily')}
-              disabled={disabled}
-            >
-              <SelectTrigger id="pro_rate" className="w-full">
-                <TranslatedSelectValue
-                  translate={(value) => t(`proRate.${value as 'none' | 'monthly' | 'daily'}`)}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t('proRate.none')}</SelectItem>
-                <SelectItem value="monthly">{t('proRate.monthly')}</SelectItem>
-                <SelectItem value="daily">{t('proRate.daily')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <Label htmlFor="auto_email" className="cursor-pointer">
-                {t('labels.autoEmail')}
-              </Label>
-              <p className="text-xs text-muted-foreground">{t('hints.autoEmail')}</p>
-            </div>
-            {/* Base UI Switch.Root renders a <span role="switch"> and wires its
-                own aria-labelledby on hydration, so the <Label htmlFor> above
-                names it only once the client bundle runs. axe scanning the
-                pre-hydration DOM sees no accessible name (aria-toggle-field-name,
-                WCAG 4.1.2). The explicit aria-label ships in the SSR HTML and
-                covers that window; aria-labelledby still wins afterwards, and
-                resolves to the same string. Same fix as directory-visibility-form
-                and renewal-reminders-toggle. */}
-            <Switch
-              id="auto_email"
-              aria-label={t('labels.autoEmail')}
-              checked={autoEmail}
-              onCheckedChange={setAutoEmail}
-              disabled={disabled}
-            />
-          </div>
-        </div>
-      </fieldset>
-
-      {/* 088 US5 — Seller §86/4 Head-Office / Branch */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">{t('sections.seller')}</legend>
-        {/* T072b (FR-036) — gap-3 + min-w-0 keep this new row from overflowing
-            at 320px if a long TH/SV label meets the fixed-width Switch. */}
-        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
-          <div className="min-w-0">
-            <Label htmlFor="seller_ho" className="cursor-pointer">
-              {t('labels.sellerIsHeadOffice')}
-            </Label>
-            <p className="text-xs text-muted-foreground">
-              {t('hints.sellerIsHeadOffice')}
-            </p>
-          </div>
-          <Switch
-            id="seller_ho"
-            aria-label={t('labels.sellerIsHeadOffice')}
-            checked={sellerIsHeadOffice}
-            onCheckedChange={setSellerIsHeadOffice}
-            disabled={disabled}
-          />
-        </div>
-        {!sellerIsHeadOffice ? (
-          <div className="space-y-2 sm:max-w-xs">
-            <Label htmlFor="seller_branch">{t('labels.sellerBranchCode')}</Label>
-            <Input
-              id="seller_branch"
-              value={sellerBranchCode}
-              onChange={(e) => setSellerBranchCode(e.target.value)}
-              disabled={disabled}
-              inputMode="numeric"
-              maxLength={5}
-              pattern="\d{5}"
-              aria-describedby="seller_branch_hint"
-              // T072b (FR-036) — ≥44px touch target (new US5 input).
-              className="min-h-11 font-mono"
-            />
-            <p id="seller_branch_hint" className="text-xs text-muted-foreground">
-              {t('hints.sellerBranchCode')}
-            </p>
-          </div>
         ) : null}
-      </fieldset>
 
-      {/* 088 US5 — Withholding-tax footer note (membership documents only) */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">{t('sections.whtNote')}</legend>
-        <p className="text-xs text-muted-foreground">{t('hints.whtNote')}</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="wht_th">{t('labels.whtNoteTh')}</Label>
-            <Textarea
-              id="wht_th"
-              value={whtNoteTh}
-              onChange={(e) => setWhtNoteTh(e.target.value)}
-              disabled={disabled}
-              maxLength={WHT_MAX}
-              rows={3}
-              lang="th"
-              // 088 US5 — RD-validated suggested wording (membership dues are
-              // WHT-exempt, §65 bis (13) / ruling กค 0811/8542). Placeholder, not
-              // a forced value: the admin still opts in per tenant.
-              placeholder={t('hints.whtNoteThExample')}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: whtNoteTh.length, max: WHT_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="wht_en">{t('labels.whtNoteEn')}</Label>
-            <Textarea
-              id="wht_en"
-              value={whtNoteEn}
-              onChange={(e) => setWhtNoteEn(e.target.value)}
-              disabled={disabled}
-              maxLength={WHT_MAX}
-              rows={3}
-              placeholder={t('hints.whtNoteEnExample')}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: whtNoteEn.length, max: WHT_MAX })}
-            </p>
-          </div>
-        </div>
-      </fieldset>
+        {isAdmin ? (
+          <Button
+            type="submit"
+            size="lg"
+            // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
+            // tall + full-width so it stays a reachable tap target at 320px.
+            className="min-h-11 w-full"
+            // Minor — nothing to save once settings already exist and the
+            // form matches its last-saved snapshot. `exists` gates this so
+            // first-time creation stays enabled even though a fresh form
+            // equals DEFAULTS (and is therefore technically not "dirty").
+            disabled={submitting || (exists && !dirty)}
+            aria-busy={submitting}
+          >
+            {submitting && (
+              <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
+            )}
+            {submitting
+              ? t('saving')
+              : exists
+                ? t('actions.save')
+                : t('actions.create')}
+          </Button>
+        ) : null}
+      </div>
 
-      {/* 065 §5.4 — Statutory termination notice (ใบแจ้งหนี้ / bill only) */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">{t('sections.terminationNotice')}</legend>
-        <p className="text-xs text-muted-foreground">{t('hints.terminationNotice')}</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="termination_notice_th">{t('labels.terminationNoticeTh')}</Label>
-            <Textarea
-              id="termination_notice_th"
-              value={terminationNoticeTh}
-              onChange={(e) => setTerminationNoticeTh(e.target.value)}
-              disabled={disabled}
-              maxLength={TERMINATION_NOTICE_MAX}
-              rows={3}
-              lang="th"
-              placeholder={t('hints.terminationNoticeThExample')}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: terminationNoticeTh.length, max: TERMINATION_NOTICE_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="termination_notice_en">{t('labels.terminationNoticeEn')}</Label>
-            <Textarea
-              id="termination_notice_en"
-              value={terminationNoticeEn}
-              onChange={(e) => setTerminationNoticeEn(e.target.value)}
-              disabled={disabled}
-              maxLength={TERMINATION_NOTICE_MAX}
-              rows={3}
-              placeholder={t('hints.terminationNoticeEnExample')}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: terminationNoticeEn.length, max: TERMINATION_NOTICE_MAX })}
-            </p>
-          </div>
-        </div>
-      </fieldset>
-
-      {/* 088 US5 — Offline-payment bank block (ใบแจ้งหนี้ / bill only) */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">{t('sections.bank')}</legend>
-        <p className="text-xs text-muted-foreground">{t('hints.bank')}</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="bank_payee">{t('labels.bankPayeeName')}</Label>
-            <Input
-              id="bank_payee"
-              value={bankPayeeName}
-              onChange={(e) => setBankPayeeName(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              // T072b (FR-036) — ≥44px touch target (new US5 bank-block input).
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_name">{t('labels.bankName')}</Label>
-            <Input
-              id="bank_name"
-              value={bankName}
-              onChange={(e) => setBankName(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_account_no">{t('labels.bankAccountNo')}</Label>
-            <Input
-              id="bank_account_no"
-              value={bankAccountNo}
-              onChange={(e) => setBankAccountNo(e.target.value)}
-              disabled={disabled}
-              inputMode="numeric"
-              maxLength={50}
-              aria-describedby="bank_account_no_hint"
-              className="min-h-11 font-mono"
-            />
-            <p id="bank_account_no_hint" className="text-xs text-muted-foreground">
-              {t('hints.bankAccountNo')}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_account_type">{t('labels.bankAccountType')}</Label>
-            <Input
-              id="bank_account_type"
-              value={bankAccountType}
-              onChange={(e) => setBankAccountType(e.target.value)}
-              disabled={disabled}
-              maxLength={50}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_branch">{t('labels.bankBranch')}</Label>
-            <Input
-              id="bank_branch"
-              value={bankBranch}
-              onChange={(e) => setBankBranch(e.target.value)}
-              disabled={disabled}
-              maxLength={200}
-              className="min-h-11"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="bank_swift">{t('labels.bankSwift')}</Label>
-            <Input
-              id="bank_swift"
-              value={bankSwift}
-              onChange={(e) => setBankSwift(e.target.value.toUpperCase())}
-              disabled={disabled}
-              maxLength={11}
-              // 088 T061g — SWIFT/BIC character hint (belt + braces with the
-              // SWIFT_RE guard on submit); 8 or 11 alphanumerics, uppercase.
-              inputMode="text"
-              pattern="[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?"
-              aria-describedby="bank_swift_hint"
-              className="min-h-11 font-mono uppercase"
-            />
-            <p id="bank_swift_hint" className="text-xs text-muted-foreground">
-              {t('hints.bankSwift')}
-            </p>
-          </div>
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="bank_address">{t('labels.bankAddress')}</Label>
-            <Textarea
-              id="bank_address"
-              value={bankAddress}
-              onChange={(e) => setBankAddress(e.target.value)}
-              disabled={disabled}
-              maxLength={BANK_ADDRESS_MAX}
-              rows={2}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: bankAddress.length, max: BANK_ADDRESS_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pay_instr_th">{t('labels.paymentInstructionsTh')}</Label>
-            <Textarea
-              id="pay_instr_th"
-              value={paymentInstructionsTh}
-              onChange={(e) => setPaymentInstructionsTh(e.target.value)}
-              disabled={disabled}
-              maxLength={INSTRUCTIONS_MAX}
-              rows={2}
-              lang="th"
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: paymentInstructionsTh.length, max: INSTRUCTIONS_MAX })}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="pay_instr_en">{t('labels.paymentInstructionsEn')}</Label>
-            <Textarea
-              id="pay_instr_en"
-              value={paymentInstructionsEn}
-              onChange={(e) => setPaymentInstructionsEn(e.target.value)}
-              disabled={disabled}
-              maxLength={INSTRUCTIONS_MAX}
-              rows={2}
-            />
-            <p className="text-right text-xs text-muted-foreground">
-              {t('charCount', { count: paymentInstructionsEn.length, max: INSTRUCTIONS_MAX })}
-            </p>
-          </div>
-        </div>
-      </fieldset>
-
-      {/* Logo */}
-      <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
-          {t('sections.logo')}
-        </legend>
-        <div className="space-y-2">
-          <Label htmlFor="logo_file">{t('labels.logo')}</Label>
-          <Input
-            id="logo_file"
-            type="file"
-            accept="image/png,image/jpeg"
-            onChange={handleLogoChange}
-            disabled={disabled || uploadingLogo}
-            aria-describedby="logo_hint logo_status"
-            className="cursor-pointer file:cursor-pointer hover:bg-accent/40"
-          />
-          <p id="logo_hint" className="text-xs text-muted-foreground">
-            {t('hints.logo')}
-          </p>
-          <p id="logo_status" className="text-xs" aria-live="polite">
-            {uploadingLogo ? (
-              <span className="text-muted-foreground">{t('logo.uploading')}</span>
-            ) : logoBlobKey ? (
-              <span className="text-muted-foreground">
-                {t('logo.currentKey')}: <span className="font-mono">{logoBlobKey}</span>
-              </span>
-            ) : null}
-          </p>
-          {logoError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {logoError}
-            </p>
-          ) : null}
-        </div>
-      </fieldset>
-
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {isAdmin ? (
-        <Button
-          type="submit"
-          size="lg"
-          // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
-          // tall + full-width so it stays a reachable tap target at 320px.
-          className="min-h-11 w-full"
-          disabled={submitting}
-          aria-busy={submitting}
-        >
-          {submitting && (
-            <Loader2Icon className="mr-2 h-4 w-4 motion-safe:animate-spin" aria-hidden />
-          )}
-          {submitting
-            ? t('saving')
-            : exists
-              ? t('actions.save')
-              : t('actions.create')}
-        </Button>
-      ) : null}
+      <StickySaveBar
+        visible={dirty}
+        submitting={submitting}
+        onSave={() => formRef.current?.requestSubmit()}
+      />
 
       {/* 088 US5 (T043a / FR-026) — confirm a document-number prefix flip before
           it starts a new §87 numbering stream. */}

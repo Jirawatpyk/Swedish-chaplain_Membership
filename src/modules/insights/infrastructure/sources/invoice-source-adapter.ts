@@ -139,9 +139,8 @@ export const invoiceSourceAdapter: InvoiceSource = {
     return total;
   },
 
-  async countOverdue(ctx: TenantContext): Promise<number> {
+  async countOverdue(ctx: TenantContext, nowIso: string): Promise<number> {
     const deps = makeListInvoicesDeps(ctx.slug);
-    const nowIso = new Date().toISOString();
     let cursor: string | null = null;
     let count = 0;
     do {

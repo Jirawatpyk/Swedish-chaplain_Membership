@@ -294,7 +294,9 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
   {
     id: 'nav.broadcastImageSettings',
     label: 'palette.navigate.broadcastImageSettings',
-    url: '/admin/broadcasts/settings',
+    // Relocated from /admin/broadcasts/settings (404 — no page.tsx at the
+    // old path); fixed as part of the nav-orphans follow-up sweep.
+    url: '/admin/settings/broadcasts',
     requires: 'admin',
     feature: 'f7Broadcasts',
   },

@@ -60,7 +60,7 @@ import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
 } from './_components/members-without-cycle-tray';
-import { RenewalsViewTabs } from './_components/renewals-view-tabs';
+import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
 import {
   PendingReviewList,
   type PendingReviewRow,
@@ -189,7 +189,7 @@ export default async function RenewalsPipelinePage({
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <RenewalsViewTabs current="pending-review" />
+            <RenewalsSectionTabs showPipelineHelp />
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
@@ -342,12 +342,13 @@ export default async function RenewalsPipelinePage({
       </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {/* 070 F8 item #18 — view toggle reachable from the pipeline so
-              admins can navigate to the pending-review discovery list.
-              The count badge is loaded only on the pending-review view
-              (pipeline hot path takes no extra query), so it renders
-              without a badge here. */}
-          <RenewalsViewTabs current="pipeline" />
+          {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
+              nav reachable from the pipeline so admins can navigate to
+              the pending-review discovery list, plus Tasks and Tier
+              upgrades. The count badge is loaded only on the
+              pending-review view (pipeline hot path takes no extra
+              query), so it renders without a badge here. */}
+          <RenewalsSectionTabs showPipelineHelp />
           {showEmptyState ? (
             <RenewalsEmptyState />
           ) : (
