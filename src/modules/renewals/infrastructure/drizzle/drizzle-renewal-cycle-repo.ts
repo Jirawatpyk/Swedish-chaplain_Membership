@@ -33,6 +33,7 @@ import {
   type AutoDraftEligiblePage,
   type ListMembersWithoutCycleOpts,
   type ListRenewalCyclesOpts,
+  type MembershipInvoiceRef,
   type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
   type PipelineQueryOpts,
@@ -1136,6 +1137,111 @@ export function makeDrizzleRenewalCycleRepo(
         )
         .limit(1);
       return rows.length > 0;
+    },
+
+    async findMembershipInvoiceInTx(
+      tx: unknown,
+      tenantId: string,
+      invoiceId: string,
+    ): Promise<MembershipInvoiceRef | null> {
+      const txDb = tx as typeof db;
+      const [row] = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          memberId: invoices.memberId,
+          planYear: invoices.planYear,
+          status: invoices.status,
+          origin: invoices.origin,
+        })
+        .from(invoices)
+        .where(
+          and(
+            // Explicit app-layer tenant filter alongside RLS+FORCE — same
+            // two-layer isolation as the sibling reads in this file.
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.invoiceId, invoiceId),
+            // An event-fee invoice is never an auto-renewal membership draft;
+            // filtering here means the use-case cannot be handed one.
+            eq(invoices.invoiceSubject, 'membership'),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      // `member_id`/`plan_year` are NOT NULL for `invoice_subject='membership'`
+      // (invoices_subject_fields_ck), but Drizzle types them nullable because
+      // the columns are nullable for the event subject. Treat a violation as
+      // "not a usable membership invoice" rather than coercing past it.
+      if (row.memberId === null || row.planYear === null) return null;
+      return {
+        invoiceId: row.invoiceId,
+        memberId: row.memberId,
+        planYear: row.planYear,
+        status: row.status,
+        origin: row.origin,
+      };
+    },
+
+    async findByAutoDraftInvoiceIdInTx(
+      tx: unknown,
+      tenantId: string,
+      invoiceId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const [row] = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenantId),
+            eq(renewalCycles.autoDraftInvoiceId, invoiceId),
+          ),
+        )
+        .limit(1);
+      return row ? rowToDomain(row) : null;
+    },
+
+    async listMembershipInvoicesForPlanYearInTx(
+      tx: unknown,
+      tenantId: string,
+      memberId: string,
+      planYear: number,
+    ): Promise<ReadonlyArray<MembershipInvoiceRef>> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          memberId: invoices.memberId,
+          planYear: invoices.planYear,
+          status: invoices.status,
+          origin: invoices.origin,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+            eq(invoices.planYear, planYear),
+          ),
+        );
+      // No status filter in SQL — the caller applies TWO different status
+      // predicates to this one result set (the paid-inclusive content guard
+      // and the auto-renewal-draft discard scan). Keeping the classification
+      // in the use-case keeps both tax-critical predicates readable side by
+      // side instead of split across a query and a filter.
+      return rows.flatMap((row) =>
+        row.memberId === null || row.planYear === null
+          ? []
+          : [
+              {
+                invoiceId: row.invoiceId,
+                memberId: row.memberId,
+                planYear: row.planYear,
+                status: row.status,
+                origin: row.origin,
+              },
+            ],
+      );
     },
 
     async stampAutoDraftInvoiceIdInTx(

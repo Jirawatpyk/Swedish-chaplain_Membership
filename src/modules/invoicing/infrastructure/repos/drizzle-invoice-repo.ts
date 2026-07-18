@@ -954,12 +954,37 @@ export function makeDrizzleInvoiceRepo(
       return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
     },
 
-    async deleteDraft(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<void> {
+    async deleteDraft(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
-      // invoice_lines cascade-deletes via FK
-      await tx
+      // 107-auto-invoice Task 9 — `status = 'draft'` is part of the DELETE
+      // statement itself, NOT merely a caller-side pre-check.
+      //
+      // The caller (`deleteInvoiceDraft`) reads the row, asserts
+      // `status === 'draft'`, then deletes. Under READ COMMITTED that is a
+      // TOCTOU window: a concurrent issue (`issueInvoice`/`issueMembershipBill`)
+      // can promote the row to `issued` between the read and the delete, and
+      // the unguarded DELETE would then destroy an ISSUED tax document —
+      // together with its burned §87 sequence number, leaving a permanent gap
+      // in the numbering stream (Thai RD §87 requires no gaps). The
+      // `invoices_enforce_immutability_trg` trigger does NOT backstop this:
+      // it is `BEFORE UPDATE` only, so it never fires on a DELETE.
+      //
+      // Task 9's `tx3` draft-discard sweeps sibling auto-renewal drafts
+      // concurrently with other queue Issue actions, which widens that window
+      // from "rare" to "routine" — hence the guard moves into the statement.
+      //
+      // invoice_lines cascade-deletes via FK.
+      const deleted = await tx
         .delete(invoices)
-        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)));
+        .where(
+          and(
+            eq(invoices.tenantId, tenantIdArg),
+            eq(invoices.invoiceId, invoiceId),
+            eq(invoices.status, 'draft'),
+          ),
+        )
+        .returning({ invoiceId: invoices.invoiceId });
+      return deleted.length > 0;
     },
 
     async lockForUpdate(txUnknown, invoiceId: InvoiceId, tenantIdArg: string) {

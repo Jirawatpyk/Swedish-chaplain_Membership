@@ -230,8 +230,16 @@ export interface InvoiceRepo {
     },
   ): Promise<Invoice>;
 
-  /** Delete draft only — enforced at use-case layer + DB check. */
-  deleteDraft(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<void>;
+  /**
+   * Delete a DRAFT invoice. `status = 'draft'` is enforced INSIDE the DELETE
+   * statement (not only by the caller's pre-check) — a concurrent issue can
+   * promote the row between a caller's read and this call, and deleting an
+   * `issued` row would destroy a tax document plus its burned §87 sequence
+   * number. Returns `true` when a row was deleted, `false` when the guard
+   * matched nothing (already promoted, already gone, or another tenant).
+   * Callers MUST branch on the result rather than assume success.
+   */
+  deleteDraft(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<boolean>;
 
   /**
    * Atomic issued→paid transition + payment fields + receipt PDF metadata.

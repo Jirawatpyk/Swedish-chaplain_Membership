@@ -173,6 +173,38 @@ export interface IssueExistingDraftForRenewalInput {
   readonly requestId: string | null;
 }
 
+/**
+ * 107-auto-invoice (Task 9) — discard half. Deletes an auto-drafted invoice
+ * that will never be issued.
+ *
+ * Lives on the bridge rather than on `RenewalCycleRepo` because it WRITES to
+ * F4's `invoices` table: the renewals module may read that table for its own
+ * guards (see `hasLiveMembershipInvoiceForPlanYearInTx`), but mutating another
+ * bounded context's storage directly would breach Constitution Principle III.
+ * Composes F4's own `deleteInvoiceDraft` use-case, so the F4 audit
+ * (`invoice_draft_deleted`) and the status guard both still apply.
+ *
+ * Task 14's manual "Discard" queue action consumes this too — the only
+ * difference between the two callers is the renewals-side
+ * `renewal_auto_draft_discarded.reason` they emit alongside it.
+ */
+export interface DiscardAutoDraftForRenewalInput {
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  readonly actorUserId: string;
+  readonly requestId: string | null;
+}
+
+/**
+ * `not_draft` is a first-class, EXPECTED outcome, not an error: a concurrent
+ * issue may have promoted the row since the caller decided to discard it. The
+ * caller must treat it as "leave it alone", never retry-as-delete.
+ */
+export type DiscardAutoDraftForRenewalResult =
+  | { readonly status: 'discarded' }
+  | { readonly status: 'not_draft' }
+  | { readonly status: 'not_found' };
+
 export interface F4InvoicingForRenewalBridge {
   issueInvoiceForRenewal(
     input: IssueInvoiceForRenewalInput,
@@ -191,4 +223,8 @@ export interface F4InvoicingForRenewalBridge {
   issueExistingDraftForRenewal(
     input: IssueExistingDraftForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult>;
+  /** 107-auto-invoice (Task 9) — see {@link DiscardAutoDraftForRenewalInput}. */
+  discardAutoDraftForRenewal(
+    input: DiscardAutoDraftForRenewalInput,
+  ): Promise<DiscardAutoDraftForRenewalResult>;
 }

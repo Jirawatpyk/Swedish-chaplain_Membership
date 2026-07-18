@@ -161,6 +161,9 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
     async issueExistingDraftForRenewal() {
       throw new Error('issueExistingDraftForRenewal not used by this test double');
     },
+    async discardAutoDraftForRenewal() {
+      throw new Error('discardAutoDraftForRenewal not used by this test double');
+    },
   };
 }
 

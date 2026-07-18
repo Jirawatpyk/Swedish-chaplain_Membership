@@ -123,6 +123,27 @@ export interface MembersWithoutCyclePage {
   readonly totalCount: number;
 }
 
+/**
+ * 107-auto-invoice Task 9 — the minimal `invoices` projection the issue-time
+ * guards need. Deliberately NOT the F4 `Invoice` aggregate: renewals must not
+ * depend on F4's domain shape (Principle III), and these five fields are the
+ * whole of what the HARD REQ #1 shape check + the content guard read.
+ */
+export interface MembershipInvoiceRef {
+  readonly invoiceId: string;
+  readonly memberId: string;
+  /** F4 `invoices.plan_year` — the fiscal year the document will PRINT. */
+  readonly planYear: number;
+  readonly status:
+    | 'draft'
+    | 'issued'
+    | 'paid'
+    | 'void'
+    | 'partially_credited'
+    | 'credited';
+  readonly origin: 'manual' | 'auto_renewal';
+}
+
 export interface RenewalCycleRepo {
   /** Insert a new cycle (typically called from F4 invoice-paid hook in Phase 5+). */
   insert(
@@ -531,6 +552,67 @@ export interface RenewalCycleRepo {
     memberId: string,
     planYear: number,
   ): Promise<boolean>;
+
+  /**
+   * 107-auto-invoice Task 9 — point-read of ONE membership invoice, backing
+   * `issueAutoDraftedRenewal`'s HARD REQ #1 shape check.
+   *
+   * The F4 bridge's `issueExistingDraftForRenewal` will issue ANY invoice id
+   * handed to it — it has no origin/status/ownership check of its own. So the
+   * queue-issue use-case must verify, under the per-cycle lock and BEFORE
+   * issuing, that the target really is the `origin='auto_renewal'`,
+   * `status='draft'` row belonging to the member/cycle it claims. A wrong or
+   * stale invoice id must produce a typed error, never silently issue an
+   * unrelated manual draft.
+   *
+   * Returns `null` for a non-existent id, another tenant's row (RLS + the
+   * app-layer filter), or a non-`membership` invoice (an event-fee invoice is
+   * never an auto-renewal draft and must not resolve here).
+   */
+  findMembershipInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<MembershipInvoiceRef | null>;
+
+  /**
+   * 107-auto-invoice Task 9 — resolve the cycle that Task 7 stamped with this
+   * draft invoice id (`renewal_cycles.auto_draft_invoice_id`).
+   *
+   * Distinct from `findByInvoiceIdInTx`, which matches `linked_invoice_id` —
+   * the ISSUED-and-linked back-reference. An auto-draft is not linked until
+   * `issueAutoDraftedRenewal`'s tx2 stamps it, so the queue-issue path must
+   * traverse the draft-stage column instead.
+   */
+  findByAutoDraftInvoiceIdInTx(
+    tx: TenantTx,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * 107-auto-invoice Task 9 — every membership invoice for one
+   * (member, plan_year), any status, any origin.
+   *
+   * A SIBLING of `hasLiveMembershipInvoiceForPlanYearInTx` rather than an
+   * extension of it: that method's narrow `{draft, issued}` predicate is
+   * load-bearing for Task 7's DRAFT-time dedup and must not change, and a
+   * status-set parameter with a default would let a future caller silently
+   * inherit the wrong (narrower) tax guard. Returning the ROWS instead of a
+   * boolean lets ONE query serve both of Task 9's needs — the paid-inclusive
+   * content guard and the tx3 sibling-draft discard scan — and lets the
+   * refusal name the conflicting invoice for forensics.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`
+   * (Constitution Principle I two-layer isolation), not merely the inherited
+   * RLS GUC.
+   */
+  listMembershipInvoicesForPlanYearInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    planYear: number,
+  ): Promise<ReadonlyArray<MembershipInvoiceRef>>;
 
   /**
    * 107-auto-invoice Task 7 — stamp `renewal_cycles.auto_draft_invoice_id`

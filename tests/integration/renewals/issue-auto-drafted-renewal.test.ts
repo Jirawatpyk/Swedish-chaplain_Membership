@@ -375,7 +375,15 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     await runInTenant(tenant.ctx, (tx) =>
       tx
         .update(invoices)
-        .set({ status: 'paid' })
+        // Satisfies the paid-row CHECKs: `invoices_paid_has_payment`
+        // (paid_at + payment_method) and `invoices_paid_has_receipt_status`
+        // (receipt_pdf_status NOT NULL).
+        .set({
+          status: 'paid',
+          paidAt: new Date('2026-07-01T00:00:00Z'),
+          paymentMethod: 'bank_transfer',
+          receiptPdfStatus: 'pending',
+        })
         .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, b1))),
     );
 
@@ -476,8 +484,10 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     await runInTenant(tenant.ctx, (tx) =>
       tx
         .update(renewalCycles)
-        // periodFrom now derives fiscal year 2027, but the draft carries 2025.
-        .set({ periodFrom: new Date('2027-03-01T00:00:00Z') })
+        // periodFrom now derives fiscal year 2023, but the draft carries 2025.
+        // Moved BACKWARD, not forward: `renewal_cycles_period_order_check`
+        // requires period_from < period_to (which stays 2026-08-01).
+        .set({ periodFrom: new Date('2023-03-01T00:00:00Z') })
         .where(eq(renewalCycles.cycleId, drift.cycleId)),
     );
 

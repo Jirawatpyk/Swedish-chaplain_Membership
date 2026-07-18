@@ -179,14 +179,17 @@ function fakeDeps(args: {
   };
   const invoiceBridge: F4InvoicingForRenewalBridge = {
     issueInvoiceForRenewal: invoiceBridgeMock as never,
-    // 107-auto-invoice (Task 5) — confirmRenewal only calls
-    // `issueInvoiceForRenewal`; these two are unused by this use-case,
+    // 107-auto-invoice (Tasks 5 + 9) — confirmRenewal only calls
+    // `issueInvoiceForRenewal`; these three are unused by this use-case,
     // stubbed only to satisfy the port interface's shape.
     draftInvoiceForRenewal: vi.fn(async () => {
       throw new Error('draftInvoiceForRenewal not used by confirmRenewal');
     }) as never,
     issueExistingDraftForRenewal: vi.fn(async () => {
       throw new Error('issueExistingDraftForRenewal not used by confirmRenewal');
+    }) as never,
+    discardAutoDraftForRenewal: vi.fn(async () => {
+      throw new Error('discardAutoDraftForRenewal not used by confirmRenewal');
     }) as never,
   };
   const deps: ConfirmRenewalDeps = {

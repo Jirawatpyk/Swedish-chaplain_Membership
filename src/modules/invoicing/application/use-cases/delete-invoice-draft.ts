@@ -50,7 +50,13 @@ export async function deleteInvoiceDraft(
       return err({ code: 'invoice_not_found' });
     }
     if (row.status !== 'draft') return err({ code: 'not_draft' });
-    await deps.invoiceRepo.deleteDraft(tx, invoiceId, input.tenantId);
+    // The repo's DELETE re-asserts `status = 'draft'` in the statement, so a
+    // concurrent issue that promoted the row between the read above and this
+    // call deletes NOTHING and reports `false` — surface that as `not_draft`
+    // (the same answer the pre-check would have given had it seen the newer
+    // snapshot) instead of reporting a delete that never happened.
+    const deleted = await deps.invoiceRepo.deleteDraft(tx, invoiceId, input.tenantId);
+    if (!deleted) return err({ code: 'not_draft' });
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
       requestId: input.requestId ?? null,

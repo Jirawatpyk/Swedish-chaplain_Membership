@@ -677,6 +677,18 @@ export {
   type AutoDraftDueRenewalsError,
 } from './application/use-cases/auto-draft-due-renewals';
 
+// --- 107-auto-invoice Task 9 — issueAutoDraftedRenewal (queue Issue action) ---
+export {
+  issueAutoDraftedRenewal,
+  issueAutoDraftedRenewalInputSchema,
+  BLOCKING_LIVE_BILL_STATUSES,
+  type IssueAutoDraftedRenewalInput,
+  type IssueAutoDraftedRenewalOutput,
+  type IssueAutoDraftedRenewalDeps,
+  type IssueAutoDraftError,
+  type InvalidDraftReason,
+} from './application/use-cases/issue-auto-drafted-renewal';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,

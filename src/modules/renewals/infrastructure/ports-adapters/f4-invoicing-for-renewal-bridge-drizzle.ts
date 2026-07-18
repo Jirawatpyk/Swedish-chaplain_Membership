@@ -24,12 +24,16 @@
 import {
   billFirstDocumentNumber,
   createInvoiceDraft,
+  deleteInvoiceDraft,
   issueMembershipBill,
   makeCreateInvoiceDraftDeps,
+  makeDeleteInvoiceDraftDeps,
   makeIssueMembershipBillDeps,
 } from '@/modules/invoicing';
 import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
+  DiscardAutoDraftForRenewalInput,
+  DiscardAutoDraftForRenewalResult,
   DraftInvoiceForRenewalInput,
   DraftInvoiceForRenewalResult,
   F4InvoicingForRenewalBridge,
@@ -241,5 +245,32 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
       totalSatang,
       supersedeWarnings: issued.supersedeWarnings,
     };
+  },
+
+  /**
+   * 107-auto-invoice (Task 9) — discard half. Delegates to F4's own
+   * `deleteInvoiceDraft`, which owns its tx, re-asserts `status='draft'`
+   * inside the DELETE statement, and emits `invoice_draft_deleted`.
+   *
+   * F4's `not_draft` error is mapped to a NON-error result arm here: for the
+   * renewals callers a promoted sibling is an expected concurrent outcome to
+   * leave alone, not a failure to escalate.
+   */
+  async discardAutoDraftForRenewal(
+    input: DiscardAutoDraftForRenewalInput,
+  ): Promise<DiscardAutoDraftForRenewalResult> {
+    const result = await deleteInvoiceDraft(
+      makeDeleteInvoiceDraftDeps(input.tenantId),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        invoiceId: input.invoiceId,
+      },
+    );
+    if (result.ok) return { status: 'discarded' };
+    return result.error.code === 'not_draft'
+      ? { status: 'not_draft' }
+      : { status: 'not_found' };
   },
 };

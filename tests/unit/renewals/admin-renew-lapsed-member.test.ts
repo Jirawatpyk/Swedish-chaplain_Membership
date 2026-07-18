@@ -231,6 +231,9 @@ function makeDeps(opts?: {
       issueExistingDraftForRenewal: vi.fn(async () => {
         throw new Error('issueExistingDraftForRenewal not used by adminRenewLapsedMember');
       }),
+      discardAutoDraftForRenewal: vi.fn(async () => {
+        throw new Error('discardAutoDraftForRenewal not used by adminRenewLapsedMember');
+      }),
     },
     cycleIdFactory: { cycleId: () => asCycleId(CYCLE_UUID) },
   };
