@@ -260,12 +260,18 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     input: DiscardAutoDraftForRenewalInput,
   ): Promise<DiscardAutoDraftForRenewalResult> {
     const result = await deleteInvoiceDraft(
-      makeDeleteInvoiceDraftDeps(input.tenantId),
+      // `input.tx` threads the caller's transaction so the delete runs INLINE
+      // under whatever lock the caller holds (Task 9 runs this inside tx1,
+      // under the per-cycle advisory lock — see the use-case header).
+      makeDeleteInvoiceDraftDeps(input.tenantId, input.tx),
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
         requestId: input.requestId,
         invoiceId: input.invoiceId,
+        ...(input.expectMayHaveVanished !== undefined
+          ? { expectMayHaveVanished: input.expectMayHaveVanished }
+          : {}),
       },
     );
     if (result.ok) return { status: 'discarded' };

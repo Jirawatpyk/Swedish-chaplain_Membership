@@ -39,7 +39,11 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
-import { issueAutoDraftedRenewal, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  confirmRenewal,
+  issueAutoDraftedRenewal,
+  makeRenewalsDeps,
+} from '@/modules/renewals';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
@@ -547,6 +551,27 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       reason: 'superseded_on_issue',
     });
 
+    // --- review Important 3: the sweep must NOT write a false intrusion ---
+    // `invoice_cross_tenant_probe` is a cross-tenant INTRUSION signal wired to
+    // alerting. The sweep enumerates ids from its own tenant-scoped read, so a
+    // vanished row is benign and must never surface as a probe.
+    const probeAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_cross_tenant_probe' as never),
+          ),
+        ),
+    );
+    const probesForSweptRows = probeAudits.filter((r) => {
+      const p = r.payload as Record<string, unknown>;
+      return p.attempted_invoice_id === sibling || p.attempted_invoice_id === invoiceId;
+    });
+    expect(probesForSweptRows.length).toBe(0);
+
     // --- the status-guarded delete must NOT clobber a promoted draft ----
     // (the concurrent-promotion case: by the time the discard runs, the
     // row is already `issued` and carries a burned document number).
@@ -559,6 +584,174 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     });
     expect(discardIssued.status).toBe('not_draft');
     expect((await invoiceRow(tenant, invoiceId))?.status).toBe('issued');
+  }, 120_000);
+
+  it('(h) ⛔ review Critical 1 — interleaved sibling issues mint at most ONE number', async () => {
+    // The regression that the earlier (post-issue discard + draft excluded
+    // from the blocking set) design allowed:
+    //
+    //   t0  Issue(D1) tx1: sees D2 as draft → not blocked → COMMIT
+    //   t1  Issue(D2) tx1: sees D1 still draft → not blocked → COMMIT
+    //   t2  Issue(D1) mints SC-0001   t3  Issue(D2) mints SC-0002  ← TWO §86/4
+    //
+    // Both tx1s are forced to complete BEFORE either is allowed to mint, via a
+    // barrier on the issue call — so this fails loudly under that design and
+    // passes only when the guard actually serialises the two.
+    const { memberId, cycleId, invoiceId: d1 } = await seedQueueRow({ t: tenant });
+    const d2 = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+    // D2 needs its OWN cycle, otherwise it resolves `cycle_not_found` and the
+    // race cannot be attempted at all (`auto_draft_invoice_id` is a single
+    // column, so one cycle can carry only one draft).
+    //
+    // That second cycle must be `cancelled`: `renewal_cycles_active_member_uniq`
+    // is UNIQUE (tenant_id, member_id) WHERE status NOT IN (lapsed, cancelled,
+    // completed), so a member cannot hold two non-terminal cycles. This is the
+    // genuine worst case — two issuable drafts for one (member, planYear)
+    // sitting on DIFFERENT cycles, hence different advisory locks, so the lock
+    // alone cannot serialise them and only the guard can.
+    //
+    // `expiresAt` stays in the future so `deriveMembershipAccess` on the
+    // cancelled cycle resolves `full`, not `terminated` — otherwise the
+    // membership gate would refuse first and the race would never be reached.
+    const cycle2 = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: cycle2,
+        memberId,
+        status: 'cancelled',
+        periodFrom: new Date(PERIOD_FROM),
+        periodTo: new Date('2026-08-01T00:00:00Z'),
+        expiresAt: new Date('2026-08-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: new Date(PERIOD_FROM),
+        autoDraftInvoiceId: d2,
+        createdAt: new Date('2020-01-01T00:00:00Z'), // older, so it is not "latest"
+        closedAt: new Date('2026-06-01T00:00:00Z'),
+        closedReason: 'cancelled',
+      }),
+    );
+
+    const real = makeRenewalsDeps(tenant.ctx.slug);
+    let arrived = 0;
+    let releaseBarrier: () => void = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+    const barrieredBridge: typeof real.f4InvoicingBridge = {
+      ...real.f4InvoicingBridge,
+      issueExistingDraftForRenewal: async (args) => {
+        // Hold the FIRST arrival until the second reaches the same point (or
+        // the second is refused and never arrives — hence the timeout).
+        arrived += 1;
+        if (arrived >= 2) releaseBarrier();
+        await Promise.race([
+          barrier,
+          new Promise<void>((r) => setTimeout(r, 3000)),
+        ]);
+        return real.f4InvoicingBridge.issueExistingDraftForRenewal(args);
+      },
+    };
+    const deps = {
+      ...real,
+      f4InvoicingBridge: barrieredBridge,
+      clock: { now: () => NOW },
+    };
+
+    const [r1, r2] = await Promise.all([
+      issueAutoDraftedRenewal(deps, {
+        tenantId: tenant.ctx.slug,
+        invoiceId: d1,
+        actorUserId: user.userId,
+        sendEmail: false,
+        requestId: null,
+      }),
+      issueAutoDraftedRenewal(deps, {
+        tenantId: tenant.ctx.slug,
+        invoiceId: d2,
+        actorUserId: user.userId,
+        sendEmail: false,
+        requestId: null,
+      }),
+    ]);
+
+    // THE invariant: across both attempts, at most one numbered §86/4 exists
+    // for this (member, planYear). Which one wins is not specified.
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          documentNumber: invoices.documentNumber,
+          billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+        })
+        .from(invoices)
+        .where(
+          and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.memberId, memberId)),
+        ),
+    );
+    const numbered = rows.filter(
+      (r) => r.documentNumber !== null || r.billDocumentNumberRaw !== null,
+    );
+    expect(
+      numbered.length,
+      `expected ≤1 numbered bill, got ${numbered.length}: ${JSON.stringify(numbered)}`,
+    ).toBeLessThanOrEqual(1);
+    // And at most one call may report success.
+    expect([r1.ok, r2.ok].filter(Boolean).length).toBeLessThanOrEqual(1);
+
+    void cycleId;
+  }, 180_000);
+
+  it('(i) review Important 2 — confirmRenewal refuses once the queue issued a bill', async () => {
+    // Task 9 makes "admin issues from the queue, THEN the member clicks
+    // Confirm & Pay" a routine sequence. Without a write-path guard in
+    // confirmRenewal, that mints a SECOND number, then fails to link, leaving
+    // an orphan that must be voided — a phantom cancelled doc in ภ.พ.30.
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    const issue = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(issue.ok, issue.ok ? 'ok' : JSON.stringify(issue)).toBe(true);
+
+    const before = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.memberId, memberId))),
+    );
+
+    const confirm = await confirmRenewal(depsFor(tenant) as never, {
+      tenantId: tenant.ctx.slug,
+      cycleId,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'member',
+      requestId: null,
+      correlationId: randomUUID(),
+    });
+
+    expect(confirm.ok).toBe(false);
+    if (!confirm.ok) {
+      expect(confirm.error.kind).toBe('invoice_already_exists');
+    }
+    // No second document was created.
+    const after = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.memberId, memberId))),
+    );
+    expect(after.length).toBe(before.length);
   }, 120_000);
 
   it('(g) orphan recovery — link forced to fail once → idempotent retry re-links', async () => {

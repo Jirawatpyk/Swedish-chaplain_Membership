@@ -13,16 +13,45 @@
  * held across it — same constraint `confirm-renewal.ts:179-550` and
  * `auto-draft-due-renewals.ts:330-566` were built around.
  *
- *   tx1  lock → re-read → ALL guards → close (lock released)
+ *   tx1  lock → re-read → shape checks → DISCARD sibling auto-drafts
+ *                       → content guard → close (lock released)
  *   issue  `issueExistingDraftForRenewal`, standalone, no F8 tx/lock held
  *   tx2  fresh lock → flip cycle to `awaiting_payment` + stamp the link
- *   tx3  own tx → discard superseded sibling auto-drafts
  *
- * tx3 is deliberately NOT folded into tx2: two concurrent issues for
- * DIFFERENT members can each hold their own cycle lock while deleting the
- * other's sibling draft rows, which deadlocks if both run inside a
- * lock-holding transaction. Running the discard in its own transaction, after
- * the lock is released, removes the cycle from the wait graph entirely.
+ * ### Why the discard runs INSIDE tx1, before the issue (review Critical 1)
+ *
+ * An earlier revision ran the discard AFTER the issue, in its own transaction,
+ * and narrowed the content guard so a sibling `auto_renewal` draft did not
+ * block. That reopened a duplicate-numbered-bill window, and it needed no
+ * concurrent `confirmRenewal` at all — two queue rows were enough:
+ *
+ *   D1, D2 = sibling auto-drafts, same (member, planYear)
+ *   t0  Issue(D1) tx1: sees D2 as draft → not blocking → COMMIT, lock released
+ *   t1  Issue(D2) tx1: sees D1 still draft (not yet issued) → COMMIT
+ *   t2  Issue(D1) mints SC-0001    t3  Issue(D2) mints SC-0002   ← TWO §86/4
+ *
+ * The number is minted OUTSIDE the lock, so a sibling draft is not merely an
+ * inert row — it is the outstanding CLAIM on a number about to be minted, and
+ * it is the only such claim tx1 can observe. It must therefore stay in the
+ * blocking set, and the draft must be REMOVED before the guard rather than
+ * after the issue. Task 14 ships bulk-issue-over-selected, so this is a
+ * routine path, not an exotic race.
+ *
+ * With the discard inside tx1 under the lock, the second issuer's tx1 finds
+ * its own draft already deleted and returns `draft_not_found` — the correct
+ * answer. In the pathological interleaving where two drafts sit on DIFFERENT
+ * cycles (so different locks) and each transaction deletes the other's draft,
+ * both issues fail with no number minted — still no duplicate.
+ *
+ * The discard MUST therefore share tx1's transaction handle (`tx`), never open
+ * its own `runInTenant`: doing that while holding a transaction-scoped
+ * advisory lock would pin a second pooled connection for tx1's whole lifetime.
+ * The bridge's `discardAutoDraftForRenewal` accepts `tx` for exactly this.
+ *
+ * (The earlier revision justified keeping the discard outside the lock as
+ * deadlock avoidance. That rationale was wrong: concurrent issues for
+ * DIFFERENT members touch disjoint rows, and the SAME member means the same
+ * cycle and therefore the same lock — already serialised.)
  *
  * ## Guard 1 (HARD REQ #1) — shape check before issuing
  *
@@ -55,38 +84,21 @@
  * designed barrier for that window, and it is the last check before a number
  * is burned.
  *
- * It refuses when another membership invoice for the same (member, planYear)
- * — excluding the draft being issued — has reached a NUMBERED state, or is a
- * competing MANUAL draft:
+ * It refuses when ANY other membership invoice for the same (member, planYear)
+ * — excluding the draft being issued — is in a live state:
  *
- *   {@link BLOCKING_LIVE_BILL_STATUSES} = issued | paid | partially_credited
- *                                         | credited
- *   plus: status='draft' AND origin='manual'
+ *   {@link BLOCKING_LIVE_BILL_STATUSES}
+ *     = draft | issued | paid | partially_credited | credited
+ *
+ * `draft` is in the set because a draft is an outstanding claim on a number
+ * about to be minted outside the lock (see the topology note above). By the
+ * time this guard runs, the sibling auto-draft sweep has already deleted the
+ * drafts this issue supersedes, so a remaining `draft` is genuinely competing
+ * — in practice a treasurer's own manual bill for the same year.
  *
  * `void` is excluded by design — a voided document is precisely the one that
  * no longer counts, and blocking on it would permanently wedge a member whose
  * first bill was voided for correction.
- *
- * ### Deviation from the task brief — FLAGGED FOR REVIEW
- *
- * The brief and plan both specify the blocking set as
- * `{draft, issued, paid, partially_credited, credited}` — i.e. ANY sibling
- * draft blocks. That cannot be right, because it makes tx3 unreachable: a
- * sibling `origin='auto_renewal'` draft would refuse the issue outright, so
- * the discard step the same brief mandates could never run, and the
- * `renewal_auto_draft_discarded { reason:'superseded_on_issue' }` audit event
- * (Task 2, already shipped) would be dead.
- *
- * Resolved in favour of the narrower set because a DRAFT is not a tax
- * document: it carries no §87 number and no §86/4 identity, so two drafts
- * cannot be a duplicate bill (design §5.4 calls double-drafting "harmless").
- * The duplicate-document risk is entirely in the numbered states, and those
- * all still block. A competing MANUAL draft blocks anyway — a treasurer
- * mid-way through their own bill for that year is a human-intent signal not
- * to auto-issue underneath them.
- *
- * Net effect: at most one numbered bill can exist per (member, planYear), and
- * the leftover auto-drafts get discarded by tx3 instead of wedging the queue.
  *
  * ## Membership-access gate — `terminated` ONLY, not `suspended`
  *
@@ -209,9 +221,11 @@ export type IssueAutoDraftedRenewalDeps = Pick<
  *
  * `void` is intentionally absent: a voided document is the one that no longer
  * counts, and blocking on it would wedge any member whose bill was voided for
- * correction. `draft` is intentionally absent (see module header).
+ * correction. `draft` IS present — it is a claim on a number about to be
+ * minted outside the lock (review Critical 1; see the module header).
  */
 export const BLOCKING_LIVE_BILL_STATUSES: ReadonlySet<string> = new Set([
+  'draft',
   'issued',
   'paid',
   'partially_credited',
@@ -226,10 +240,6 @@ function findBlockingBill(
   for (const row of siblings) {
     if (row.invoiceId === issuingInvoiceId) continue;
     if (BLOCKING_LIVE_BILL_STATUSES.has(row.status)) return row;
-    // A treasurer's own in-progress membership draft for the same year — not
-    // a duplicate DOCUMENT, but a human-intent signal not to auto-issue under
-    // them. An `auto_renewal` sibling draft is NOT blocking; tx3 discards it.
-    if (row.status === 'draft' && row.origin === 'manual') return row;
   }
   return null;
 }
@@ -333,6 +343,22 @@ export async function issueAutoDraftedRenewal(
       });
     }
 
+    // --- sweep superseded sibling auto-drafts, THEN guard -----------------
+    // Order is load-bearing (review Critical 1): the sweep removes the drafts
+    // this issue supersedes so they cannot linger as competing claims on a
+    // number, and the guard below then treats ANY surviving draft as blocking.
+    // Both run under the lock, in THIS transaction, so a concurrent issuer
+    // observes either both or neither.
+    const discardedInvoiceIds = await discardSupersededDrafts(deps, tx, {
+      tenantId: input.tenantId,
+      cycleId: cycle.cycleId,
+      memberId: cycle.memberId,
+      planYear,
+      issuedInvoiceId: input.invoiceId,
+      actorUserId: input.actorUserId,
+      requestId,
+    });
+
     // --- HARD REQ #2: the duplicate-§86/4 barrier -------------------------
     const siblings =
       await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
@@ -366,10 +392,11 @@ export async function issueAutoDraftedRenewal(
       memberId: cycle.memberId,
       cycleStatus: cycle.status,
       planYear,
+      discardedInvoiceIds,
     });
   });
   if (!guardResult.ok) return err(guardResult.error);
-  const { cycleId, memberId, planYear } = guardResult.value;
+  const { cycleId, discardedInvoiceIds } = guardResult.value;
 
   // ---- issue: STANDALONE, no F8 tx or lock held --------------------------
   const issued = await deps.f4InvoicingBridge.issueExistingDraftForRenewal({
@@ -402,17 +429,6 @@ export async function issueAutoDraftedRenewal(
     tenantId: input.tenantId,
     cycleId,
     invoiceId: input.invoiceId,
-  });
-
-  // ---- tx3: discard superseded sibling auto-drafts (own tx) --------------
-  const discardedInvoiceIds = await discardSupersededDrafts(deps, {
-    tenantId: input.tenantId,
-    cycleId,
-    memberId,
-    planYear,
-    issuedInvoiceId: input.invoiceId,
-    actorUserId: input.actorUserId,
-    requestId,
   });
 
   return ok({
@@ -544,21 +560,27 @@ async function linkWithRetry(
 }
 
 /**
- * tx3 — discard sibling `origin='auto_renewal' status='draft'` invoices for
- * the same (member, planYear), excluding the one just issued.
+ * Discard sibling `origin='auto_renewal' status='draft'` invoices for the same
+ * (member, planYear), excluding the one about to be issued.
  *
- * Runs in its own transaction with NO cycle lock held (see the module
- * header's deadlock note). The delete itself is status-guarded inside the SQL
- * statement (`deleteDraft`), so a sibling that a concurrent writer promoted
- * to `issued` in the meantime is left untouched rather than clobbered — the
- * bridge reports `not_draft` and we skip the audit for it.
+ * Runs INSIDE tx1, under the per-cycle advisory lock, BEFORE the content guard
+ * and before the issue — see the module header's Critical-1 note. Both the
+ * delete and the audit share the caller's `tx`, so they commit atomically with
+ * the guard decision: a concurrent issuer sees either both or neither.
  *
- * Best-effort by construction: a leftover draft is harmless (design §5.4) and
- * Task 11's prune cron sweeps it, so a failure here must never fail an
- * already-issued bill.
+ * The delete is status-guarded inside the SQL statement (`deleteDraft`), so a
+ * sibling a concurrent writer promoted to `issued` is left untouched rather
+ * than clobbered — the bridge reports `not_draft` and we skip the audit.
+ *
+ * NOTE: unlike the previous post-issue revision, failures here are NOT
+ * swallowed. This now runs before anything irreversible, so a failed sweep
+ * must abort the issue (a leftover competing draft is exactly what Critical 1
+ * showed can become a duplicate bill). The thrown error propagates out of tx1,
+ * rolling it back; nothing has been minted at that point.
  */
 async function discardSupersededDrafts(
   deps: IssueAutoDraftedRenewalDeps,
+  tx: unknown,
   args: {
     readonly tenantId: string;
     readonly cycleId: CycleId;
@@ -570,85 +592,60 @@ async function discardSupersededDrafts(
   },
 ): Promise<readonly string[]> {
   const discarded: string[] = [];
-  try {
-    const siblings = await runInTenant(deps.tenant, (tx) =>
-      deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
-        tx,
-        args.tenantId,
-        args.memberId,
-        args.planYear,
-      ),
-    );
-    const stale = siblings.filter(
-      (row) =>
-        row.invoiceId !== args.issuedInvoiceId &&
-        row.origin === 'auto_renewal' &&
-        row.status === 'draft',
-    );
+  const siblings = await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+    tx as never,
+    args.tenantId,
+    args.memberId,
+    args.planYear,
+  );
+  const stale = siblings.filter(
+    (row) =>
+      row.invoiceId !== args.issuedInvoiceId &&
+      row.origin === 'auto_renewal' &&
+      row.status === 'draft',
+  );
 
-    for (const row of stale) {
-      // Per-row isolation — one failed discard must not abandon the rest.
-      try {
-        const result = await deps.f4InvoicingBridge.discardAutoDraftForRenewal({
+  for (const row of stale) {
+    const result = await deps.f4InvoicingBridge.discardAutoDraftForRenewal({
+      tenantId: args.tenantId,
+      invoiceId: row.invoiceId,
+      actorUserId: args.actorUserId,
+      requestId: args.requestId,
+      tx,
+      // The id came from the tenant-scoped read above, so a vanished row is a
+      // benign race (prune cron / manual discard), NOT a cross-tenant probe.
+      expectMayHaveVanished: true,
+    });
+    if (result.status !== 'discarded') {
+      logger.info(
+        {
           tenantId: args.tenantId,
           invoiceId: row.invoiceId,
-          actorUserId: args.actorUserId,
-          requestId: args.requestId,
-        });
-        if (result.status !== 'discarded') {
-          logger.info(
-            {
-              tenantId: args.tenantId,
-              invoiceId: row.invoiceId,
-              outcome: result.status,
-            },
-            '[issue-auto-drafted-renewal] sibling auto-draft not discarded (concurrently promoted or already gone) — left intact',
-          );
-          continue;
-        }
-        discarded.push(row.invoiceId);
-        await runInTenant(deps.tenant, (tx) =>
-          deps.auditEmitter.emitInTx(
-            tx,
-            {
-              type: 'renewal_auto_draft_discarded' as const,
-              payload: {
-                cycle_id: args.cycleId,
-                member_id: asMemberId(args.memberId),
-                invoice_id: row.invoiceId,
-                reason: 'superseded_on_issue' as const,
-              },
-            },
-            {
-              tenantId: args.tenantId,
-              actorUserId: args.actorUserId,
-              actorRole: 'admin',
-              correlationId: args.issuedInvoiceId,
-              requestId: args.requestId,
-            },
-          ),
-        );
-      } catch (e) {
-        logger.error(
-          {
-            errorId: 'F8.AUTO_ISSUE.DISCARD_FAILED',
-            tenantId: args.tenantId,
-            invoiceId: row.invoiceId,
-            err: e instanceof Error ? e : new Error(String(e)),
-          },
-          '[issue-auto-drafted-renewal] sibling auto-draft discard failed — prune cron will sweep it',
-        );
-      }
+          outcome: result.status,
+        },
+        '[issue-auto-drafted-renewal] sibling auto-draft not discarded (concurrently promoted or already gone) — left intact',
+      );
+      continue;
     }
-  } catch (e) {
-    logger.error(
+    discarded.push(row.invoiceId);
+    await deps.auditEmitter.emitInTx(
+      tx as never,
       {
-        errorId: 'F8.AUTO_ISSUE.DISCARD_SCAN_FAILED',
-        tenantId: args.tenantId,
-        cycleId: args.cycleId,
-        err: e instanceof Error ? e : new Error(String(e)),
+        type: 'renewal_auto_draft_discarded' as const,
+        payload: {
+          cycle_id: args.cycleId,
+          member_id: asMemberId(args.memberId),
+          invoice_id: row.invoiceId,
+          reason: 'superseded_on_issue' as const,
+        },
       },
-      '[issue-auto-drafted-renewal] could not scan for superseded drafts — prune cron will sweep them',
+      {
+        tenantId: args.tenantId,
+        actorUserId: args.actorUserId,
+        actorRole: 'admin',
+        correlationId: args.issuedInvoiceId,
+        requestId: args.requestId,
+      },
     );
   }
   return discarded;

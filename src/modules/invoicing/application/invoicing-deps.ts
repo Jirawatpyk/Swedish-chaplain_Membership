@@ -314,9 +314,26 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
   };
 }
 
-export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraftDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param externalTx - optional caller-owned Drizzle tx handle. When supplied,
+ *   the delete runs INLINE against that tx instead of opening its own
+ *   `runInTenant` (same tx-sharing contract as `makeDrizzleInvoiceRepo`'s
+ *   other callers — see the F5 → F4 bridge below). 107-auto-invoice Task 9
+ *   needs this so the auto-draft sweep can run under the renewals per-cycle
+ *   advisory lock: calling a self-opening `runInTenant` while holding a
+ *   transaction-scoped lock would pin a second pooled connection for the
+ *   duration of the outer transaction.
+ *
+ *   Callers that supply `externalTx` MUST already be inside a `runInTenant`
+ *   (so `app.current_tenant` is set on that connection).
+ */
+export function makeDeleteInvoiceDraftDeps(
+  tenantId: string,
+  externalTx?: unknown,
+): DeleteInvoiceDraftDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     audit: f4AuditAdapter,
   };
 }

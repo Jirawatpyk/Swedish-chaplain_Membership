@@ -13,6 +13,23 @@ export interface DeleteInvoiceDraftInput {
   readonly actorUserId: string;
   readonly requestId?: string | null;
   readonly invoiceId: string;
+  /**
+   * 107-auto-invoice Task 9 — suppress the not-found `invoice_cross_tenant_probe`
+   * audit emit for callers that legitimately race with the row's disappearance.
+   *
+   * That event is a cross-tenant INTRUSION signal wired to alerting: it means
+   * "someone referenced an invoice id they have no rights to". A sweep that
+   * enumerated ids from the tenant's OWN data and then deletes them one by one
+   * routinely loses that race (a concurrent issue, Task 11's prune cron, or a
+   * manual discard removes a row between the scan and the delete) — emitting
+   * the probe event there would flood the signal with self-inflicted noise and
+   * destroy its value as an alert.
+   *
+   * Set ONLY when the id provably came from a tenant-scoped read in the same
+   * logical operation. Never set it for an id sourced from a request body —
+   * that is exactly the case the probe event exists to catch.
+   */
+  readonly expectMayHaveVanished?: boolean;
 }
 
 export type DeleteInvoiceDraftError =
@@ -35,6 +52,14 @@ export async function deleteInvoiceDraft(
       // R7-W1 — probe on not-found (RLS-hidden vs. truly-missing is
       // indistinguishable from the app side; audit either way per
       // Constitution Principle I clause 4).
+      //
+      // …EXCEPT for a caller that enumerated this id from its own
+      // tenant-scoped read and is racing the row's disappearance — see
+      // `expectMayHaveVanished`. Emitting there would pollute an intrusion
+      // signal with self-inflicted noise.
+      if (input.expectMayHaveVanished === true) {
+        return err({ code: 'invoice_not_found' });
+      }
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
         requestId: input.requestId ?? null,

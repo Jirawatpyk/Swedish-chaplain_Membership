@@ -193,6 +193,20 @@ export interface DiscardAutoDraftForRenewalInput {
   readonly invoiceId: string;
   readonly actorUserId: string;
   readonly requestId: string | null;
+  /**
+   * Caller-owned Drizzle tx. REQUIRED for the Task 9 issue path: the sweep runs
+   * under the renewals per-cycle advisory lock, and a self-opening `runInTenant`
+   * there would pin a second pooled connection for the whole outer transaction.
+   * Optional so Task 14's standalone Discard route can omit it.
+   */
+  readonly tx?: unknown;
+  /**
+   * Suppress F4's not-found `invoice_cross_tenant_probe` emit. Set when the id
+   * came from the caller's OWN tenant-scoped read and the row may legitimately
+   * have vanished since (concurrent issue / prune / manual discard). See
+   * `DeleteInvoiceDraftInput.expectMayHaveVanished`.
+   */
+  readonly expectMayHaveVanished?: boolean;
 }
 
 /**
