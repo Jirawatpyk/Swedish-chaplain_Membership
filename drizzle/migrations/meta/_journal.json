@@ -1807,6 +1807,13 @@
       "when": 1798538600000,
       "tag": "0258_staff_invitation_lifecycle_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 261,
+      "version": "7",
+      "when": 1798538700000,
+      "tag": "0259_auto_invoice_columns_and_audit",
+      "breakpoints": true
     }
   ]
 }

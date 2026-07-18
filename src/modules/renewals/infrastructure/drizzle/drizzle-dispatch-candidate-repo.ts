@@ -203,6 +203,14 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     status: r.cycleStatus,
     enteredPendingAt: r.cycleEnteredPendingAt,
     linkedInvoiceId: r.cycleLinkedInvoiceId,
+    // 107-auto-invoice (Task 1, migration 0259) — `autoDraftInvoiceId` is a
+    // new column on `RenewalCycleRow`, but this projection query does not
+    // SELECT it and the `RenewalCycle` domain type has no field for it yet
+    // (foundation-only this round — no use-case reads or writes it). `null`
+    // is structural filler to satisfy `RenewalCycleRow`'s shape; `rowToDomain`
+    // never reads this key. Revisit once a later task in this plan adds the
+    // domain field and this repo needs to actually surface it.
+    autoDraftInvoiceId: null,
     anchoredAt: r.cycleAnchoredAt,
     anchorInvoiceId: r.cycleAnchorInvoiceId,
     linkedCreditNoteId: r.cycleLinkedCreditNoteId,

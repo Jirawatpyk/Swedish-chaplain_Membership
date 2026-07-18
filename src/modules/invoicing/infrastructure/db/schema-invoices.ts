@@ -45,6 +45,13 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
 // its required identity columns. See migration 0201 § invoice_subject.
 export const invoiceSubjectEnum = pgEnum('invoice_subject', ['membership', 'event']);
 
+// 107-auto-invoice (Task 1, migration 0259) — discriminates a manually
+// drafted invoice from one the auto-invoice cron pre-filled ahead of the
+// due date. Defaults 'manual' so every pre-existing row backfills cleanly;
+// foundation-only this round — the cron + review-queue use-cases that WRITE
+// 'auto_renewal' land in later tasks of this plan.
+export const invoiceOriginEnum = pgEnum('invoice_origin', ['manual', 'auto_renewal']);
+
 // T166 — async receipt PDF state machine. Migration 0056.
 export const receiptPdfStatusEnum = pgEnum('receipt_pdf_status_t', [
   'pending',
@@ -95,6 +102,10 @@ export const invoices = pgTable(
 
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
+    // 107-auto-invoice (Task 1, migration 0259) — 'manual' (default) for
+    // every existing/staff-drafted row; 'auto_renewal' for a row the cron
+    // pre-filled. Foundation-only — no writer sets 'auto_renewal' yet.
+    origin: invoiceOriginEnum('origin').notNull().default('manual'),
 
     // 088 L1 — this is the BILL / issue-time fiscal year by design (derived
     // from the ISSUE date in `issueInvoice`). It is NOT the §87 fiscal year of
