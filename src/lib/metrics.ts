@@ -2334,7 +2334,8 @@ export const renewalsMetrics = {
       | 'reconcile'
       | 'tier_upgrade_evaluate'
       | 'tier_upgrade_reconcile'
-      | 'prune_consumed_tokens',
+      | 'prune_consumed_tokens'
+      | 'auto_draft',
   ): void {
     safeMetric(() => {
       counter(
@@ -3202,7 +3203,7 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'enter_awaiting' | 'reconcile' | 'prune_consumed_tokens',
+    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'enter_awaiting' | 'reconcile' | 'prune_consumed_tokens' | 'auto_draft',
   ): void {
     safeMetric(() => {
       counter(

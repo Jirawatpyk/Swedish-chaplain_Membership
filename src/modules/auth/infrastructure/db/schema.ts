@@ -428,6 +428,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
   //     enum↔retention parity test enforces it. ---
   'invoice_buyer_identity_invalid',
+  // --- 107-auto-invoice Task 2 (migration 0260) — proactive renewal-
+  //     invoice drafting cron's create/discard forensic events. Keep in
+  //     lockstep with F8_AUDIT_EVENT_TYPES (renewals audit port) — the
+  //     F8 audit-count parity tests enforce it. ---
+  'renewal_auto_drafted',
+  'renewal_auto_draft_discarded',
 ]);
 
 /**

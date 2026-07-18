@@ -1814,6 +1814,13 @@
       "when": 1798538700000,
       "tag": "0259_auto_invoice_columns_and_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1798538800000,
+      "tag": "0260_auto_invoice_audit_events",
+      "breakpoints": true
     }
   ]
 }

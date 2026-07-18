@@ -248,6 +248,11 @@ const F8_ENUM_SHIPPED_TUPLE = [
   //     sites (resolve-unlinked terminal_only + mark-cycle-complete
   //     linked-terminal skip) land in the SAME branch (Task 9). ---
   'payment_on_terminated_member',
+  // --- 107-auto-invoice Task 2 — SHIPPED from day one: the emit sites
+  //     (auto-invoice draft cron + discard paths) land in this same
+  //     feature. Migration 0260 adds the 2 pgEnum values. ---
+  'renewal_auto_drafted',
+  'renewal_auto_draft_discarded',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
