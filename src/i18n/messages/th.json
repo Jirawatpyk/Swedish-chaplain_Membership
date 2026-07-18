@@ -5665,6 +5665,7 @@
       "event_attendance_by_suspended_member": "บันทึกการเข้าร่วมงาน — สิทธิประโยชน์สมาชิกถูกระงับหรือยกเลิก",
       "renewal_auto_drafted": "สร้างร่างใบแจ้งหนี้ต่ออายุอัตโนมัติ",
       "renewal_auto_draft_discarded": "ยกเลิกร่างใบแจ้งหนี้ต่ออายุอัตโนมัติ",
+      "renewal_orphan_invoice_relinked": "เชื่อมโยงใบแจ้งหนี้ต่ออายุกับรอบสมาชิกภาพอีกครั้ง",
       "invoice_draft_created": "สร้างใบแจ้งหนี้แบบร่าง",
       "invoice_draft_updated": "อัปเดตใบแจ้งหนี้แบบร่าง",
       "invoice_draft_deleted": "ลบใบแจ้งหนี้แบบร่าง",

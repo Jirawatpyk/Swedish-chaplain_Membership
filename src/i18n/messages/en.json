@@ -5665,6 +5665,7 @@
       "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
       "renewal_auto_drafted": "Renewal draft auto-created",
       "renewal_auto_draft_discarded": "Renewal auto-draft discarded",
+      "renewal_orphan_invoice_relinked": "Renewal invoice re-linked to cycle",
       "invoice_draft_created": "Invoice draft created",
       "invoice_draft_updated": "Invoice draft updated",
       "invoice_draft_deleted": "Invoice draft deleted",

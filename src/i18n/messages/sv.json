@@ -5665,6 +5665,7 @@
       "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "renewal_auto_drafted": "Förnyelseutkast skapat automatiskt",
       "renewal_auto_draft_discarded": "Automatiskt förnyelseutkast kasserat",
+      "renewal_orphan_invoice_relinked": "Förnyelsefaktura återlänkad till cykeln",
       "invoice_draft_created": "Fakturautkast skapat",
       "invoice_draft_updated": "Fakturautkast uppdaterat",
       "invoice_draft_deleted": "Fakturautkast borttaget",

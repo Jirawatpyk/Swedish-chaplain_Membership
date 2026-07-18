@@ -88,6 +88,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'event_attendance_by_suspended_member' (0248)
  *                        += 'renewal_auto_drafted',
  *                           'renewal_auto_draft_discarded' (0260)
+ *                        += 'renewal_orphan_invoice_relinked' (0262)
  */
 export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
   document_type: ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'],
@@ -103,6 +104,7 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'payment_on_terminated_member',
     'renewal_auto_drafted',
     'renewal_auto_draft_discarded',
+    'renewal_orphan_invoice_relinked',
   ],
 };
 

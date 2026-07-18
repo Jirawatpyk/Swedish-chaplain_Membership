@@ -45,7 +45,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
-import { makeRenewalsDeps } from '@/modules/renewals';
+import { makeRenewalsDeps, CycleTransitionConflictError } from '@/modules/renewals';
 import { pruneAutoDrafts } from '@/modules/renewals/application/use-cases/prune-auto-drafts';
 import { reconcileIssuedOrphans } from '@/modules/renewals/application/use-cases/reconcile-issued-orphans';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
@@ -60,20 +60,26 @@ const NOW = new Date('2026-07-20T00:00:00.000Z');
 const PERIOD_FROM = '2025-08-01T00:00:00Z';
 const PLAN_YEAR = deriveFiscalYear(PERIOD_FROM);
 
-// Two SEPARATE tenants — one per describe block. `pruneAutoDrafts`'s
-// throw-path/vanished-target scenarios deliberately leave behind
-// `status='draft'`/`status='issued', linked_invoice_id=NULL` rows that
-// would otherwise be picked up as genuine (unrelated) candidates by the
-// OTHER use-case's query if both suites shared one tenant — the two
-// crons' candidate predicates are close enough (both key off
-// `origin='auto_renewal'`) that cross-suite pollution silently breaks
-// absolute `candidatesFound` assertions. Isolating by tenant removes the
-// dependency on run order / cleanup discipline entirely.
+// THREE separate tenants. `pruneAutoDrafts`'s throw-path/vanished-target
+// scenarios deliberately leave behind `status='draft'`/`status='issued',
+// linked_invoice_id=NULL` rows that would otherwise be picked up as
+// genuine (unrelated) candidates by the OTHER use-case's query if both
+// suites shared one tenant — the two crons' candidate predicates are
+// close enough (both key off `origin='auto_renewal'`) that cross-suite
+// pollution silently breaks absolute `candidatesFound` assertions.
+// `tenant3` isolates (b5)/(b6) from (b4): a terminal-skipped orphan is a
+// PERMANENT, by-design leftover in `listIssuedAutoInvoiceOrphans` (it can
+// never self-heal — the cycle is closed), so any test running after (b4)
+// in a shared tenant would see it as an extra, unrelated candidate.
+// Isolating by tenant removes the dependency on run order / cleanup
+// discipline entirely.
 let tenant: TestTenant;
 let tenant2: TestTenant;
+let tenant3: TestTenant;
 let user: TestUser;
 let planId: string;
 let planId2: string;
+let planId3: string;
 
 function depsFor(t: TestTenant) {
   const real = makeRenewalsDeps(t.ctx.slug);
@@ -249,15 +255,37 @@ async function discardAuditCount(
   }).length;
 }
 
+async function relinkAuditCount(
+  t: TestTenant,
+  invoiceId: string,
+): Promise<number> {
+  const rows = await runInTenant(t.ctx, (tx) =>
+    tx
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, t.ctx.slug),
+          eq(auditLog.eventType, 'renewal_orphan_invoice_relinked' as never),
+        ),
+      ),
+  );
+  return rows.filter(
+    (r) => (r.payload as Record<string, unknown>).invoice_id === invoiceId,
+  ).length;
+}
+
 describe('107-auto-invoice Task 11 — prune-auto-drafts + reconcile-issued-orphans (live Neon)', () => {
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
-    [tenant, tenant2] = await Promise.all([
+    [tenant, tenant2, tenant3] = await Promise.all([
+      createTestTenant('test'),
       createTestTenant('test'),
       createTestTenant('test'),
     ]);
     planId = `f8-t11-plan-${randomUUID().slice(0, 8)}`;
     planId2 = `f8-t11-plan2-${randomUUID().slice(0, 8)}`;
+    planId3 = `f8-t11-plan3-${randomUUID().slice(0, 8)}`;
     await Promise.all([
       runInTenant(tenant.ctx, (tx) =>
         seedF8MembershipPlan(tx, {
@@ -279,6 +307,16 @@ describe('107-auto-invoice Task 11 — prune-auto-drafts + reconcile-issued-orph
           createdBy: user.userId,
         }),
       ),
+      runInTenant(tenant3.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: tenant3.ctx.slug,
+          planId: planId3,
+          planYear: PLAN_YEAR,
+          planName: { en: 'Task 11 Plan 3' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      ),
     ]);
     await Promise.all([
       seedTenantFiscal({
@@ -291,12 +329,18 @@ describe('107-auto-invoice Task 11 — prune-auto-drafts + reconcile-issued-orph
         invoiceNumberPrefix: 'SC',
         receiptNumberPrefix: 'RC',
       }),
+      seedTenantFiscal({
+        tenant: tenant3,
+        invoiceNumberPrefix: 'SC',
+        receiptNumberPrefix: 'RC',
+      }),
     ]);
   }, 180_000);
 
   afterAll(async () => {
     await Promise.all([
       tenant.cleanup().catch(() => {}),
+      tenant3.cleanup().catch(() => {}),
       tenant2.cleanup().catch(() => {}),
     ]);
   }, 60_000);
@@ -518,6 +562,9 @@ describe('107-auto-invoice Task 11 — prune-auto-drafts + reconcile-issued-orph
       const after = await cycleRow(tenant2, cycleId);
       expect(after?.status).toBe('awaiting_payment');
       expect(after?.linkedInvoiceId).toBe(invoiceId);
+      // Review Important-2 fix — the repair emits its own dedicated audit
+      // row (distinct from F4's `invoice_issued`, which fired earlier).
+      expect(await relinkAuditCount(tenant2, invoiceId)).toBe(1);
     }, 90_000);
 
     it('(b2) idempotent — re-running finds 0 candidates', async () => {
@@ -635,6 +682,119 @@ describe('107-auto-invoice Task 11 — prune-auto-drafts + reconcile-issued-orph
       const after = await cycleRow(tenant2, cycleId);
       expect(after?.status).toBe('lapsed');
       expect(after?.linkedInvoiceId).toBeNull();
+    }, 90_000);
+
+    it('(b5) review Important-1 — an invoice voided between the scan and the write is never linked (skippedInvoiceNotIssued)', async () => {
+      // Own tenant (`tenant3`): (b4)'s terminal-skipped orphan is a
+      // PERMANENT leftover in `tenant2`'s candidate pool (it can never
+      // self-heal — the cycle is closed) and would otherwise inflate this
+      // test's `candidatesFound`.
+      const { cycleId, memberId, invoiceId } = await seedQueueRow(tenant3, planId3);
+      const real = makeRenewalsDeps(tenant3.ctx.slug);
+      const issueResult = await real.f4InvoicingBridge.issueExistingDraftForRenewal({
+        tenantId: tenant3.ctx.slug,
+        invoiceId,
+        actorUserId: user.userId,
+        autoEmailOnIssue: false,
+        requestId: null,
+      });
+      expect(issueResult.status).toBe('issued');
+
+      // The candidate LIST is forced (deterministic TOCTOU simulation,
+      // mirrors `pruneAutoDrafts`'s (a5) test) — voiding for real BEFORE
+      // calling reconcile would make the real `listIssuedAutoInvoiceOrphans`
+      // query exclude the row outright (`status <> 'issued'`), which tests
+      // "already voided at scan time", NOT "voided in the window BETWEEN
+      // the scan and the write". Forcing the candidate list lets this test
+      // exercise the real in-tx re-check against a genuinely voided DB row.
+      const forcedCandidateRepo: typeof real.cyclesRepo = {
+        ...real.cyclesRepo,
+        listIssuedAutoInvoiceOrphans: async () => [
+          { invoiceId, cycleId: cycleId as never, memberId },
+        ],
+      };
+      const deps = { ...real, cyclesRepo: forcedCandidateRepo };
+
+      // Simulate an admin voiding the orphan invoice in the window between
+      // the (forced) candidate scan and the reconcile write — direct DB
+      // write since no F4 void use-case is exercised in this suite.
+      await runInTenant(tenant3.ctx, (tx) =>
+        tx
+          .update(invoices)
+          .set({
+            status: 'void',
+            voidedAt: NOW,
+            voidReason: 'integration-test-b5-simulated-void',
+            voidedByUserId: user.userId,
+          })
+          .where(eq(invoices.invoiceId, invoiceId)),
+      );
+
+      const result = await reconcileIssuedOrphans(deps, {
+        tenantId: tenant3.ctx.slug,
+        correlationId: 'integration-test-reconcile-b5',
+      });
+
+      expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.candidatesFound).toBe(1);
+      expect(result.value.relinked).toBe(0);
+      expect(result.value.skippedInvoiceNotIssued).toBe(1);
+      expect(result.value.errors).toBe(0);
+
+      // Never linked — the cycle stays exactly as it was before reconcile.
+      const after = await cycleRow(tenant3, cycleId);
+      expect(after?.status).toBe('upcoming');
+      expect(after?.linkedInvoiceId).toBeNull();
+      expect(await relinkAuditCount(tenant3, invoiceId)).toBe(0);
+    }, 90_000);
+
+    it('(b6) review Minor — a CycleTransitionConflictError on the upcoming/reminded branch is bucketed as skippedConflict, not errors', async () => {
+      // Own tenant (`tenant3`): keeps this test independent of (b5)'s
+      // fixture and (b4)'s permanent leftover in `tenant2`.
+      const { cycleId, invoiceId } = await seedQueueRow(tenant3, planId3);
+      const real = makeRenewalsDeps(tenant3.ctx.slug);
+      const issueResult = await real.f4InvoicingBridge.issueExistingDraftForRenewal({
+        tenantId: tenant3.ctx.slug,
+        invoiceId,
+        actorUserId: user.userId,
+        autoEmailOnIssue: false,
+        requestId: null,
+      });
+      expect(issueResult.status).toBe('issued');
+
+      const flakyCyclesRepo: typeof real.cyclesRepo = {
+        ...real.cyclesRepo,
+        transitionStatus: async (tx, tid, cid, args) => {
+          if (cid === cycleId) {
+            throw new CycleTransitionConflictError(
+              cycleId,
+              'upcoming',
+              'awaiting_payment',
+            );
+          }
+          return real.cyclesRepo.transitionStatus(tx, tid, cid, args);
+        },
+      };
+      const deps = { ...real, cyclesRepo: flakyCyclesRepo };
+
+      const result = await reconcileIssuedOrphans(deps, {
+        tenantId: tenant3.ctx.slug,
+        correlationId: 'integration-test-reconcile-b6',
+      });
+
+      expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.candidatesFound).toBe(1);
+      expect(result.value.relinked).toBe(0);
+      expect(result.value.skippedConflict).toBe(1);
+      expect(result.value.errors).toBe(0);
+
+      // Never linked — the simulated conflict rolled back the whole tx
+      // (transitionStatus threw before the audit emit could run).
+      const after = await cycleRow(tenant3, cycleId);
+      expect(after?.linkedInvoiceId).toBeNull();
+      expect(await relinkAuditCount(tenant3, invoiceId)).toBe(0);
     }, 90_000);
   });
 });

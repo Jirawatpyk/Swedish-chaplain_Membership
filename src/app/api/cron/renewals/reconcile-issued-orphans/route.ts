@@ -96,6 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       skipped_terminal: result.value.skippedTerminal,
       skipped_conflict: result.value.skippedConflict,
       skipped_gone: result.value.skippedGone,
+      skipped_invoice_not_issued: result.value.skippedInvoiceNotIssued,
       errors: result.value.errors,
       duration_ms: Date.now() - startedAt,
     };

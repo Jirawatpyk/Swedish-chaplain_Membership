@@ -241,6 +241,22 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     emit sites land in this same feature. ---
   'renewal_auto_drafted',
   'renewal_auto_draft_discarded',
+  // --- 107-auto-invoice Task 11 (review Important-2 fix) — the
+  //     reconcile-issued-orphans housekeeping cron's repair event. Unlike
+  //     `issueAutoDraftedRenewal`'s own tx2 link (which is NOT separately
+  //     audited — it happens in the SAME operation/second as F4's
+  //     `invoice_issued`, so that row's timestamp already dates it),
+  //     reconcile is a DIFFERENT operation that can run days later to
+  //     repair a link `issueAutoDraftedRenewal` failed to make
+  //     (F8.AUTO_ISSUE.LINK_FAILED). `transitionStatus`/`linkInvoice`
+  //     carry no `actor_user_id`, so without a dedicated event there is
+  //     no append-only record of WHEN the repair happened — a compliance
+  //     gap for a money-linkage mutation. Mirrors the shape of
+  //     `tier_upgrade_pending_orphan_detected` (an orphan-repair event
+  //     with the SAME "detected + fixed in one cron pass" semantics).
+  //     Migration 0262 adds the pgEnum value; SHIPPED (not deferred) in
+  //     `F8_ENUM_SHIPPED_TUPLE` — the emit site lands in this same task. ---
+  'renewal_orphan_invoice_relinked',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -249,9 +265,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 72
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 73
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 72';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 73';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1326,6 +1342,22 @@ export interface F8AuditPayloadShapes {
     readonly member_id: MemberId;
     readonly invoice_id: string;
     readonly reason: 'manual' | 'superseded_on_issue' | 'pruned_left_window';
+  };
+  /**
+   * 107-auto-invoice Task 11 (review Important-2 fix) — emitted by the
+   * `reconcile-issued-orphans` daily cron when it repairs an `issued`
+   * auto-drafted invoice's cycle link (`linked_invoice_id`) that
+   * `issueAutoDraftedRenewal`'s own tx2 failed to stamp
+   * (`F8.AUTO_ISSUE.LINK_FAILED`). `previous_cycle_status` records what
+   * the cycle's status was BEFORE the repair (`upcoming` | `reminded` |
+   * `awaiting_payment`) — a terminal/conflict/gone candidate is never
+   * force-linked and does not reach this emit site.
+   */
+  readonly renewal_orphan_invoice_relinked: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_id: string;
+    readonly previous_cycle_status: 'upcoming' | 'reminded' | 'awaiting_payment';
   };
 }
 

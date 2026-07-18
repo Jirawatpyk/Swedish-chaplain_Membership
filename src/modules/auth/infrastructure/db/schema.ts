@@ -434,6 +434,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F8 audit-count parity tests enforce it. ---
   'renewal_auto_drafted',
   'renewal_auto_draft_discarded',
+  // --- 107-auto-invoice Task 11 (review Important-2 fix, migration 0262)
+  //     — reconcile-issued-orphans cron's link-repair forensic event.
+  //     Keep in lockstep with F8_AUDIT_EVENT_TYPES. ---
+  'renewal_orphan_invoice_relinked',
 ]);
 
 /**

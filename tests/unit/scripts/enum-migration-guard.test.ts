@@ -121,6 +121,13 @@ describe('findMissingEnumValues', () => {
           'renewal_lapse_deferred_invoice_not_due',
           // 0247 (059-membership-suspension Task 17):
           'event_attendance_by_suspended_member',
+          // 0257 (059-membership-suspension Task 5):
+          'payment_on_terminated_member',
+          // 0260 (107-auto-invoice Task 2):
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          // 0262 (107-auto-invoice Task 11, review Important-2 fix):
+          'renewal_orphan_invoice_relinked',
         ]),
       ],
     ]);
@@ -146,6 +153,10 @@ describe('findMissingEnumValues', () => {
           'broadcast_membership_suspended_blocked',
           'renewal_lapse_deferred_invoice_not_due',
           'event_attendance_by_suspended_member',
+          'payment_on_terminated_member',
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          'renewal_orphan_invoice_relinked',
         ]),
       ],
     ]);
@@ -174,6 +185,13 @@ describe('findMissingEnumValues', () => {
           'renewal_lapse_deferred_invoice_not_due',
           // 0247 (059-membership-suspension Task 17):
           'event_attendance_by_suspended_member',
+          // 0257 (059-membership-suspension Task 5):
+          'payment_on_terminated_member',
+          // 0260 (107-auto-invoice Task 2):
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          // 0262 (107-auto-invoice Task 11, review Important-2 fix):
+          'renewal_orphan_invoice_relinked',
         ],
       },
     ]);
