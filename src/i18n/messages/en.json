@@ -1970,7 +1970,7 @@
           "receiptGenerating": "Receipt generating…",
           "receiptRenderFailed": "Receipt render failed",
           "receiptRenderFailedAria": "Receipt PDF render failed for invoice {number} — open to review",
-          "recordPayment": "Record payment",
+          "recordPayment": "Record payment…",
           "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
@@ -2045,7 +2045,7 @@
         "tableCaption": "List of invoices for the selected filters."
       },
       "csvExport": {
-        "trigger": "Export CSV",
+        "trigger": "Export CSV…",
         "dialog": {
           "title": "Export paid invoices to CSV",
           "description": "For Thai VAT monthly filing (ภ.พ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
@@ -2300,7 +2300,7 @@
           "preview": "Preview",
           "issue": "Issue…",
           "download": "Download invoice PDF",
-          "pay": "Record payment",
+          "pay": "Record payment…",
           "void": "Void…",
           "issueCreditNote": "Issue credit note",
           "resendInvoice": "Resend invoice email",
@@ -2422,7 +2422,6 @@
       },
       "issue": {
         "title": "Issue invoice",
-        "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
         "review": {
           "heading": "Review before issuing",
           "immutableSnapshotAck": "Issuing pins an IMMUTABLE tax snapshot — buyer identity, Head Office / Branch, VAT treatment and notes. It can only be changed by voiding this document.",
@@ -2491,7 +2490,6 @@
         },
         "confirmPhrase": "ISSUE",
         "confirmCopy": "Type \"{phrase}\" to confirm",
-        "typeToConfirm": "Confirmation phrase",
         "issueButton": "Issue",
         "issuing": "Issuing…",
         "success": "Invoice issued",
@@ -2549,7 +2547,7 @@
         }
       },
       "deleteDraft": {
-        "trigger": "Delete draft",
+        "trigger": "Delete draft…",
         "title": "Delete this draft?",
         "description": "The draft invoice and its line items will be permanently removed. No sequential tax-document number has been allocated yet, so nothing will be retired. This action is audited.",
         "cancel": "Cancel",
@@ -2572,7 +2570,6 @@
         "successDetail": "Invoice {number} is now paid.",
         "successReceipt": "Tax receipt {number} issued",
         "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
-        "cancel": "Back to invoice",
         "cancelDialog": "Cancel",
         "errors": {
           "failed": "Could not record payment",
@@ -3810,7 +3807,7 @@
     "refund": {
       "title": "Issue refund",
       "button": {
-        "label": "Issue refund",
+        "label": "Issue refund…",
         "ariaLabel": "Issue a refund for this invoice",
         "settlingLabel": "Refund settling…",
         "settlingHint": "A refund is settling — no action needed until it completes."

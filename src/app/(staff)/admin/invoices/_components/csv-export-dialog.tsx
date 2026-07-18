@@ -136,7 +136,7 @@ export function CsvExportDialog(): React.JSX.Element {
           {error !== null ? (
             <p
               id="csv-export-error-msg"
-              className="text-sm text-destructive"
+              className="text-xs text-destructive"
               role="alert"
               data-testid="csv-export-error"
             >
@@ -146,7 +146,7 @@ export function CsvExportDialog(): React.JSX.Element {
           <DialogFooter>
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               onClick={() => setOpen(false)}
             >
               {t('actions.cancel')}

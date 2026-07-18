@@ -1970,7 +1970,7 @@
           "receiptGenerating": "Kvitto genereras…",
           "receiptRenderFailed": "Kvittot kunde inte genereras",
           "receiptRenderFailedAria": "Kvitto-PDF kunde inte genereras för faktura {number} — öppna för att granska",
-          "recordPayment": "Registrera betalning",
+          "recordPayment": "Registrera betalning…",
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
@@ -2045,7 +2045,7 @@
         "tableCaption": "Lista över fakturor för de valda filtren."
       },
       "csvExport": {
-        "trigger": "Exportera CSV",
+        "trigger": "Exportera CSV…",
         "dialog": {
           "title": "Exportera betalda fakturor till CSV",
           "description": "För månatlig thailändsk momsdeklaration (ภ.พ.30). CSV-filen innehåller alla betalda fakturor vars betalningsdatum ligger inom intervallet nedan."
@@ -2300,7 +2300,7 @@
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
           "download": "Ladda ner faktura-PDF",
-          "pay": "Registrera betalning",
+          "pay": "Registrera betalning…",
           "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota",
           "resendInvoice": "Skicka faktura-mejl igen",
@@ -2422,7 +2422,6 @@
       },
       "issue": {
         "title": "Utfärda faktura",
-        "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
         "review": {
           "heading": "Granska innan utfärdande",
           "immutableSnapshotAck": "Utfärdande låser en OFÖRÄNDERLIG skatteögonblicksbild (köparidentitet, huvudkontor/filial, momsbehandling och noteringar). Den kan endast ändras genom att annullera detta dokument.",
@@ -2491,7 +2490,6 @@
         },
         "confirmPhrase": "UTFÄRDA",
         "confirmCopy": "Skriv \"{phrase}\" för att bekräfta",
-        "typeToConfirm": "Bekräftelsefras",
         "issueButton": "Utfärda",
         "issuing": "Utfärdar…",
         "success": "Fakturan utfärdad",
@@ -2549,7 +2547,7 @@
         }
       },
       "deleteDraft": {
-        "trigger": "Ta bort utkast",
+        "trigger": "Ta bort utkast…",
         "title": "Ta bort detta utkast?",
         "description": "Utkastfakturan och dess rader tas bort permanent. Inget sekventiellt skattedokumentnummer har tilldelats än, så inget nummer återkallas. Åtgärden loggas i audit.",
         "cancel": "Avbryt",
@@ -2572,7 +2570,6 @@
         "successDetail": "Faktura {number} är nu betald.",
         "successReceipt": "Skattekvitto {number} utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
         "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
-        "cancel": "Tillbaka",
         "cancelDialog": "Avbryt",
         "errors": {
           "failed": "Kunde inte registrera betalning",
@@ -3810,7 +3807,7 @@
     "refund": {
       "title": "Utfärda återbetalning",
       "button": {
-        "label": "Utfärda återbetalning",
+        "label": "Utfärda återbetalning…",
         "ariaLabel": "Utfärda en återbetalning för denna faktura",
         "settlingLabel": "Återbetalning behandlas…",
         "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar."

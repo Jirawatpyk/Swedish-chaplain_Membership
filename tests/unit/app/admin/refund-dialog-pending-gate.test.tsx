@@ -60,7 +60,7 @@ describe('RefundDialog — pending-refund gate (Gap E)', () => {
     renderDialog(false);
     const trigger = screen.getByTestId('refund-dialog-trigger');
     expect(trigger).not.toBeDisabled();
-    expect(screen.getByText('Issue refund')).toBeInTheDocument();
+    expect(screen.getByText('Issue refund…')).toBeInTheDocument();
     expect(screen.queryByText('Refund settling…')).toBeNull();
   });
 });
