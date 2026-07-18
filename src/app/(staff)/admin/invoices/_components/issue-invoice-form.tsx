@@ -45,7 +45,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -608,16 +607,16 @@ export function IssueInvoiceForm({
       {/* FR-032 — inline, focused failure surface for the irreversible issue
           mutation (never a transient toast). */}
       {formError && (
-        <Alert
+        <InlineAlert
           ref={errorRef}
           tabIndex={-1}
-          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="issue-invoice-error"
         >
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
           {formError.kind === 'concurrent' ? (
-            <AlertDescription className="flex flex-col items-start gap-2">
+            <InlineAlertDescription className="flex flex-col items-start gap-2">
               <span>{t('errors.concurrent')}</span>
               <Button
                 type="button"
@@ -628,11 +627,11 @@ export function IssueInvoiceForm({
               >
                 {t('errors.refreshAction')}
               </Button>
-            </AlertDescription>
+            </InlineAlertDescription>
           ) : (
-            <AlertDescription>{formError.message}</AlertDescription>
+            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
           )}
-        </Alert>
+        </InlineAlert>
       )}
 
       <div className="grid gap-2">

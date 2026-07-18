@@ -1,3 +1,4 @@
+import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
@@ -53,6 +54,17 @@ describe('<InlineAlert>', () => {
       </InlineAlert>,
     );
     expect(screen.getByTestId('alert').className).toMatch(/bg-success-surface/);
+  });
+
+  it('forwards a ref to the underlying div (C4 — focused-error primitive)', () => {
+    const ref = createRef<HTMLDivElement>();
+    render(
+      <InlineAlert ref={ref} tone="destructive">
+        <InlineAlertDescription>Issue failed</InlineAlertDescription>
+      </InlineAlert>,
+    );
+    expect(ref.current).not.toBeNull();
+    expect(ref.current?.getAttribute('data-slot')).toBe('inline-alert');
   });
 
   it('renders title and description subcomponents with their data-slots', () => {

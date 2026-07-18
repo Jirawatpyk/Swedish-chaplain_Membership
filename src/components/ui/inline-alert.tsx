@@ -49,22 +49,20 @@ export interface InlineAlertProps
   extends React.ComponentProps<"div">,
     VariantProps<typeof inlineAlertVariants> {}
 
-function InlineAlert({
-  className,
-  tone,
-  role = "alert",
-  ...props
-}: InlineAlertProps) {
-  return (
-    <div
-      data-slot="inline-alert"
-      data-tone={tone ?? "neutral"}
-      role={role}
-      className={cn(inlineAlertVariants({ tone }), className)}
-      {...props}
-    />
-  )
-}
+const InlineAlert = React.forwardRef<HTMLDivElement, InlineAlertProps>(
+  function InlineAlert({ className, tone, role = "alert", ...props }, ref) {
+    return (
+      <div
+        ref={ref}
+        data-slot="inline-alert"
+        data-tone={tone ?? "neutral"}
+        role={role}
+        className={cn(inlineAlertVariants({ tone }), className)}
+        {...props}
+      />
+    )
+  },
+)
 
 function InlineAlertTitle({
   className,

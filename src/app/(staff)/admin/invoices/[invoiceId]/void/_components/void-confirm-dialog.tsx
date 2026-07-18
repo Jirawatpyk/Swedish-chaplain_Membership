@@ -29,7 +29,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   InlineAlert,
   InlineAlertDescription,
@@ -149,16 +148,16 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           move focus here so the admin cannot miss it. A concurrent 409 shows a
           "refresh" prompt; other failures show a destructive alert. */}
       {formError && (
-        <Alert
+        <InlineAlert
           ref={errorRef}
           tabIndex={-1}
-          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="void-invoice-error"
         >
           <AlertTriangleIcon className="size-4" aria-hidden="true" />
           {formError.kind === 'concurrent' ? (
-            <AlertDescription className="flex flex-col items-start gap-2">
+            <InlineAlertDescription className="flex flex-col items-start gap-2">
               <span>{t('errors.concurrent')}</span>
               <Button
                 type="button"
@@ -169,11 +168,11 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
               >
                 {t('errors.refreshAction')}
               </Button>
-            </AlertDescription>
+            </InlineAlertDescription>
           ) : (
-            <AlertDescription>{formError.message}</AlertDescription>
+            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
           )}
-        </Alert>
+        </InlineAlert>
       )}
 
       <div className="grid gap-2">
