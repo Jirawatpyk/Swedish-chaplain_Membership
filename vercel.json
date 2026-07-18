@@ -22,6 +22,7 @@
 
     { "path": "/api/internal/observability/recompute-match-rate", "schedule": "0 * * * *" },
 
+    { "path": "/api/cron/renewals/auto-draft-coordinator", "schedule": "0 22 * * *" },
     { "path": "/api/cron/renewals/dispatch-coordinator", "schedule": "0 23 * * *" },
     { "path": "/api/cron/renewals/enter-awaiting-payment-coordinator", "schedule": "15 23 * * *" },
     { "path": "/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator", "schedule": "30 23 * * *" },
