@@ -22,8 +22,13 @@
  *   (d) batch isolation — stub the bridge to reject for ONE member
  *       mid-batch → that member counts in `errors`, the other member still
  *       drafts successfully, and the invariant `drafted + skippedExisting +
- *       skippedOptOut + skippedTerminated + errors === cyclesProcessed`
+ *       skippedRaceLost + skippedTerminated + errors === cyclesProcessed`
  *       holds.
+ *   (e) Review M1 — a cycle whose status DRIFTED between the eligibility-
+ *       list query and the per-cycle lock acquisition (stubbed
+ *       `cyclesRepo.findByIdInTx`, simulating a concurrent
+ *       `confirmRenewal` self-transition or admin cancel) → `skippedRaceLost`,
+ *       `drafted: 0`, no invoice created.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -230,7 +235,7 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
     expect(result.value.cyclesProcessed).toBe(1);
     expect(result.value.drafted).toBe(1);
     expect(result.value.skippedExisting).toBe(0);
-    expect(result.value.skippedOptOut).toBe(0);
+    expect(result.value.skippedRaceLost).toBe(0);
     expect(result.value.skippedTerminated).toBe(0);
     expect(result.value.errors).toBe(0);
 
@@ -457,7 +462,7 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
       expect(
         result.value.drafted +
           result.value.skippedExisting +
-          result.value.skippedOptOut +
+          result.value.skippedRaceLost +
           result.value.skippedTerminated +
           result.value.errors,
       ).toBe(result.value.cyclesProcessed);
@@ -483,6 +488,93 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
       expect(badInv.length).toBe(0);
     } finally {
       await batchTenant.cleanup().catch(() => {});
+    }
+  }, 60_000);
+
+  it('(e) cycle status drifts between the list query and lock acquisition → skippedRaceLost, no draft (Review M1)', async () => {
+    // Dedicated, fresh tenant (mirrors test (d)'s isolation strategy) — the
+    // shared `tenant` above has accumulated an un-drafted eligible cycle
+    // from test (c) (memberC's cycle stays `upcoming`/eligible forever
+    // since it never drafts), which would otherwise inflate this test's
+    // exact `cyclesProcessed` count.
+    const raceTenant = await createTestTenant('test-chamber');
+    try {
+      const racePlanId = `f8-t7-race-${randomUUID().slice(0, 8)}`;
+      await runInTenant(raceTenant.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: raceTenant.ctx.slug,
+          planId: racePlanId,
+          planYear: 2025,
+          planName: { en: 'Auto-Draft T7 Race Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+      await enableAutoInvoice(raceTenant);
+
+      const memberE = await seedMember({ t: raceTenant, planId: racePlanId });
+      const { cycleId: cycleE } = await seedEligibleCycle({
+        t: raceTenant,
+        memberId: memberE,
+        planId: racePlanId,
+        periodFrom: '2025-08-01T00:00:00Z',
+      });
+
+      const realDeps = makeRenewalsDeps(raceTenant.ctx.slug);
+      // Simulates the exact real-world trigger for this branch: a
+      // concurrent `confirmRenewal` self-transition (or admin cancel)
+      // flips the cycle's status in the window between the eligibility-
+      // list query and this cycle's per-cycle lock acquisition.
+      // `findByIdInTx` is the tx-bound re-read `processOne` calls
+      // immediately after acquiring the lock — stubbing it to report a
+      // drifted status for THIS cycle id only deterministically exercises
+      // the race-lost branch without needing real concurrency.
+      const wrappedCyclesRepo: typeof realDeps.cyclesRepo = {
+        ...realDeps.cyclesRepo,
+        findByIdInTx: async (tx, tid, cid) => {
+          const real = await realDeps.cyclesRepo.findByIdInTx(tx, tid, cid);
+          if (real && cid === cycleE) {
+            return {
+              ...real,
+              status: 'cancelled' as const,
+              enteredPendingAt: null,
+              closedAt: new Date().toISOString(),
+              closedReason: 'cancelled' as const,
+            };
+          }
+          return real;
+        },
+      };
+      const deps = {
+        ...realDeps,
+        cyclesRepo: wrappedCyclesRepo,
+        clock: { now: () => NOW },
+      };
+
+      const result = await autoDraftDueRenewals(deps, {
+        tenantId: raceTenant.ctx.slug,
+        correlationId: randomUUID(),
+      });
+      expect(result.ok, result.ok ? 'ok' : `err: ${JSON.stringify(result)}`).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.cyclesProcessed).toBe(1);
+      expect(result.value.drafted).toBe(0);
+      expect(result.value.skippedRaceLost).toBe(1);
+      expect(result.value.skippedExisting).toBe(0);
+      expect(result.value.skippedTerminated).toBe(0);
+      expect(result.value.errors).toBe(0);
+
+      const invRows = await runInTenant(raceTenant.ctx, (tx) =>
+        tx
+          .select({ invoiceId: invoices.invoiceId })
+          .from(invoices)
+          .where(
+            and(eq(invoices.tenantId, raceTenant.ctx.slug), eq(invoices.memberId, memberE)),
+          ),
+      );
+      expect(invRows.length).toBe(0);
+    } finally {
+      await raceTenant.cleanup().catch(() => {});
     }
   }, 60_000);
 });

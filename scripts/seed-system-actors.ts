@@ -3,7 +3,8 @@
  *
  * These are the non-human `actor_user_id` rows that webhook + cron writes
  * point at. They live in the reserved `00000000-0000-0000-0000-0000000f50xx`
- * UUID namespace and are seeded by migrations 0041 (Stripe) + 0181 (Resend).
+ * UUID namespace and are seeded by migrations 0041 (Stripe) + 0181 (Resend)
+ * + 0261 (Auto-Invoice Cron).
  *
  * WHY THIS SCRIPT EXISTS — run it after ANY prod data wipe:
  *   `payments.actor_user_id`, `refunds.initiator_user_id`,
@@ -24,8 +25,9 @@
  */
 import postgres from 'postgres';
 
-// Mirror of migrations 0041 + 0181. Keep in sync with
-// `src/modules/payments/domain/system-actors.ts` (SYSTEM_ACTOR_STRIPE_WEBHOOK).
+// Mirror of migrations 0041 + 0181 + 0261. Keep in sync with
+// `src/modules/payments/domain/system-actors.ts` (SYSTEM_ACTOR_STRIPE_WEBHOOK)
+// and `auto-draft-due-renewals.ts` (SYSTEM_ACTOR_AUTO_INVOICE_CRON).
 const SYSTEM_ACTORS = [
   {
     id: '00000000-0000-0000-0000-0000000f5001',
@@ -36,6 +38,11 @@ const SYSTEM_ACTORS = [
     id: '00000000-0000-0000-0000-0000000f5002',
     email: 'system-resend-webhook@chamber-os.internal',
     displayName: 'System (Resend Webhook)',
+  },
+  {
+    id: '00000000-0000-0000-0000-0000000f5003',
+    email: 'system-auto-invoice-cron@chamber-os.internal',
+    displayName: 'System (Auto-Invoice Cron)',
   },
 ] as const;
 

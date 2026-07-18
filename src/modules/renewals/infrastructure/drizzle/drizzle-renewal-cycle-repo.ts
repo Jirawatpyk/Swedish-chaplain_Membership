@@ -1113,7 +1113,7 @@ export function makeDrizzleRenewalCycleRepo(
 
     async hasLiveMembershipInvoiceForPlanYearInTx(
       tx: unknown,
-      _tenantId: string,
+      tenantId: string,
       memberId: string,
       planYear: number,
     ): Promise<boolean> {
@@ -1123,6 +1123,11 @@ export function makeDrizzleRenewalCycleRepo(
         .from(invoices)
         .where(
           and(
+            // Review I1 fix — explicit app-layer tenant filter, matching
+            // this same file's `listCyclesEligibleForAutoDraft` sibling
+            // query (Task 6) — Constitution Principle I two-layer
+            // isolation (RLS FORCE + app-layer filter), not RLS alone.
+            eq(invoices.tenantId, tenantId),
             eq(invoices.memberId, memberId),
             eq(invoices.invoiceSubject, 'membership'),
             eq(invoices.planYear, planYear),

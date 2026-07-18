@@ -519,6 +519,11 @@ export interface RenewalCycleRepo {
    * paid-inclusive content guard (design §5.4) Task 9 uses at ISSUE
    * time as the primary duplicate-§86/4 barrier; this method only
    * protects against drafting a second DRAFT.
+   *
+   * `tenantId` is an explicit app-layer WHERE predicate on `invoices`
+   * (Constitution Principle I two-layer isolation), not merely relied
+   * on via the inherited RLS GUC — matches `listCyclesEligibleForAutoDraft`'s
+   * own belt-and-suspenders filter against the same cross-module table.
    */
   hasLiveMembershipInvoiceForPlanYearInTx(
     tx: TenantTx,

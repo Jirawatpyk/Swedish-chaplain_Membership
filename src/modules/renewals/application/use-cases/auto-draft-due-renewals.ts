@@ -9,11 +9,25 @@
  * treasurer later works the `origin='auto_renewal'` review queue and
  * decides Issue+Send / Issue silently / Discard (later tasks).
  *
- * This is a 1:1 clone of `enterAwaitingPaymentOnExpiry`'s batch-loop +
- * per-cycle `processOne` TOCTOU shape (advisory lock → tx-bound re-read
- * → re-validate → mutate → `emitInTx` audit in the SAME tx → outcome
- * counters with an exhaustive switch), with the mutation swapped from a
- * status transition to an F4 invoice-draft creation.
+ * `processOne`'s batch-loop + outcome-counter shape is a 1:1 clone of
+ * `enterAwaitingPaymentOnExpiry` (advisory lock → tx-bound re-read →
+ * re-validate → outcome counters with an exhaustive switch). The
+ * MUTATION shape, however, follows `confirm-renewal.ts`'s **split-tx**
+ * precedent, NOT a single held tx (Review I2 fix): F4's
+ * `draftInvoiceForRenewal` opens and commits its OWN separate
+ * transaction/connection, so the per-cycle advisory lock (transaction-
+ * scoped, `pg_advisory_xact_lock`) must never be held across that call —
+ * doing so would keep the lock (and an idle-in-transaction F8 connection)
+ * open for the full duration of a cross-module commit, exactly the
+ * pattern `confirm-renewal.ts:179-550` was built to avoid. The shape is:
+ *   - **tx1** — acquire lock, re-read, precise dedup + membership-access
+ *     + classification checks, close (lock released).
+ *   - **F4 call** — `draftInvoiceForRenewal`, standalone, no F8 tx/lock
+ *     held.
+ *   - **tx2** — fresh `runInTenant`, RE-acquires the lock, re-validates
+ *     the cycle, stamps `auto_draft_invoice_id` + emits the audit.
+ * See the KEY tax-consistency note below and the `ORPHANED_AFTER_COMMIT`
+ * note further down for the M2 fix this restructure also resolves.
  *
  * Three-key dark-ship (design §5.7, all default-off):
  *   1. `FEATURE_AUTO_INVOICE` env flag — checked by Task 8's cron route,
@@ -52,32 +66,55 @@
  * behaviour (`periodFrom`), not the design doc's un-updated prose —
  * see the task report for the full recon.
  *
- * Outcome taxonomy: `drafted | skipped_existing | skipped_opt_out |
+ * Outcome taxonomy: `drafted | skipped_existing | skipped_race_lost |
  * skipped_terminated | draft_failed` (an internal 5th variant folded
  * into the `errors` counter — an F4 `draft_failed` Result is NOT a
  * thrown exception, but it belongs in the same SRE-alert bucket as a
  * genuine throw). Invariant (pinned by the exhaustive switch): `drafted
- * + skippedExisting + skippedOptOut + skippedTerminated + errors ===
+ * + skippedExisting + skippedRaceLost + skippedTerminated + errors ===
  * cyclesProcessed`.
  *
- * `skippedOptOut` mapping note: the top-of-`processOne` re-validate
- * (cycle status no longer `upcoming|reminded` since the list query —
- * most commonly because the member already self-renewed via
- * `confirmRenewal`'s lazy self-transition, or an admin cancelled the
- * cycle) has no dedicated "race" bucket in this use-case's declared
- * output shape (unlike `enterAwaitingPaymentOnExpiry`'s `raceSkipped`).
- * It is folded into `skippedOptOut` ("no longer a candidate for
- * auto-draft this run") rather than `skippedExisting` (reserved for the
- * CONFIRMED per-plan_year dedup re-check, step 2 below) or
- * `skippedTerminated` (reserved for the membership-access re-assert,
- * step 3 below) — each of the three named skip buckets therefore has
- * exactly one, non-overlapping trigger condition.
+ * `skippedRaceLost` (Review M1 rename — was `skippedOptOut`, a name that
+ * falsely implied a real opt-out signal like `members.renewal_reminders_
+ * opted_out`; it checks no such flag): fires on the top-of-`processOne`
+ * re-validate when the cycle's status is no longer `upcoming|reminded`
+ * since the eligibility-list query — a benign TOCTOU race, most commonly
+ * because the member already self-renewed via `confirmRenewal`'s lazy
+ * self-transition, or an admin cancelled/changed the cycle. This use-case's
+ * declared output shape has no dedicated "race" bucket the way
+ * `enterAwaitingPaymentOnExpiry` has `raceSkipped`, so it's folded here
+ * rather than into `skippedExisting` (reserved for the CONFIRMED
+ * per-plan_year dedup re-check, step 2 below) or `skippedTerminated`
+ * (reserved for the membership-access re-assert, step 3 below) — each of
+ * the three named skip buckets therefore has exactly one, non-overlapping
+ * trigger condition. See `tests/integration/renewals/auto-draft-due-
+ * renewals.test.ts`'s dedicated race-lost scenario for direct coverage of
+ * this branch.
  *
  * RBAC: cron-only (`actorRole='cron'`, `actorUserId=null` on the
  * audit). The F4 draft's `draft_by_user_id` FK needs a REAL uuid (no
  * human actor exists for a cron draft) — `SYSTEM_ACTOR_AUTO_INVOICE_CRON`
  * below, seeded by migration 0261 (mirrors F5's `SYSTEM_ACTOR_STRIPE_
  * WEBHOOK` / migration 0041 pattern exactly).
+ *
+ * **Orphan window (Review M2, resolved by the I2 split-tx restructure
+ * but not eliminated)**: the F4 draft commits BEFORE tx2 stamps +
+ * audits it. If tx2 itself throws (a transient connection blip, a
+ * constraint violation), the draft invoice permanently exists —
+ * unstamped, unaudited — and the very next cron run's coarse Task-6
+ * dedup will silently, permanently skip that member (`skipped_existing`)
+ * without ever revisiting the orphan. This is NOT self-healing; it is
+ * made *observable* (not fixed) by wrapping tx2 in its own try/catch
+ * and logging a distinct, greppable `errorId:
+ * 'F8.AUTO_DRAFT.ORPHANED_AFTER_COMMIT'` (with the `invoiceId`) on
+ * failure — the outcome still counts as `drafted` (a real invoice DOES
+ * exist; miscounting it as `errors` would be less truthful and would
+ * double-count against the outer batch-loop catch, which this inner
+ * catch deliberately shields tx2 failures from). Flagged for whoever
+ * builds the Task 13 review-queue / reconciliation surface: confirm a
+ * query exists that lists `origin='auto_renewal'` invoices with no
+ * matching `renewal_cycles.auto_draft_invoice_id` back-reference before
+ * this ships to a tenant with `auto_invoice_enabled=true`.
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
@@ -106,7 +143,7 @@ export type AutoDraftDueRenewalsInput = z.infer<
 export interface AutoDraftDueRenewalsOutput {
   readonly drafted: number;
   readonly skippedExisting: number;
-  readonly skippedOptOut: number;
+  readonly skippedRaceLost: number;
   readonly skippedTerminated: number;
   readonly errors: number;
   readonly cyclesProcessed: number;
@@ -135,16 +172,20 @@ export type AutoDraftDueRenewalsDeps = Pick<
  * `'system:...'` string sentinel (the audit-only convention used
  * elsewhere, e.g. `render-receipt-pdf.ts`'s `SYSTEM_ACTOR_ID`) cannot
  * be written here. Seeded by migration 0261, mirroring F5's
- * `SYSTEM_ACTOR_STRIPE_WEBHOOK` (migration 0041) — next id in the same
- * reserved `...f500x` namespace.
+ * `SYSTEM_ACTOR_STRIPE_WEBHOOK` (migration 0041) — the next FREE id in
+ * the reserved `...f500x` namespace. **Review C1 fix**: `...f5002` was
+ * already claimed by migration 0181 (F7 Resend-webhook actor,
+ * `SYSTEM_ACTOR_RESEND_WEBHOOK` in `mark-invitation-bounced.ts`) — using
+ * `...f5003` instead, confirmed unused via a full-repo grep before this
+ * fix landed.
  */
 const SYSTEM_ACTOR_AUTO_INVOICE_CRON =
-  '00000000-0000-0000-0000-0000000f5002' as const;
+  '00000000-0000-0000-0000-0000000f5003' as const;
 
 const ZERO_OUTPUT: AutoDraftDueRenewalsOutput = {
   drafted: 0,
   skippedExisting: 0,
-  skippedOptOut: 0,
+  skippedRaceLost: 0,
   skippedTerminated: 0,
   errors: 0,
   cyclesProcessed: 0,
@@ -189,7 +230,7 @@ export async function autoDraftDueRenewals(
 
   let drafted = 0;
   let skippedExisting = 0;
-  let skippedOptOut = 0;
+  let skippedRaceLost = 0;
   let skippedTerminated = 0;
   let errors = 0;
 
@@ -205,7 +246,7 @@ export async function autoDraftDueRenewals(
       // pattern, same as `enterAwaitingPaymentOnExpiry`). A future 6th
       // ProcessOneOutcome variant MUST add a counter line here — the
       // pin breaks the build until it does, protecting the invariant
-      // `drafted + skippedExisting + skippedOptOut + skippedTerminated
+      // `drafted + skippedExisting + skippedRaceLost + skippedTerminated
       // + errors === cyclesProcessed`.
       switch (outcome) {
         case 'drafted':
@@ -214,8 +255,8 @@ export async function autoDraftDueRenewals(
         case 'skipped_existing':
           skippedExisting += 1;
           break;
-        case 'skipped_opt_out':
-          skippedOptOut += 1;
+        case 'skipped_race_lost':
+          skippedRaceLost += 1;
           break;
         case 'skipped_terminated':
           skippedTerminated += 1;
@@ -250,7 +291,7 @@ export async function autoDraftDueRenewals(
   return ok({
     drafted,
     skippedExisting,
-    skippedOptOut,
+    skippedRaceLost,
     skippedTerminated,
     errors,
     cyclesProcessed: page.cycles.length,
@@ -260,9 +301,23 @@ export async function autoDraftDueRenewals(
 type ProcessOneOutcome =
   | 'drafted'
   | 'skipped_existing'
-  | 'skipped_opt_out'
+  | 'skipped_race_lost'
   | 'skipped_terminated'
   | 'draft_failed';
+
+/** tx1's early-exit channel — the 3 skip outcomes decidable BEFORE the F4 call. */
+type Tx1SkipOutcome = 'skipped_existing' | 'skipped_race_lost' | 'skipped_terminated';
+
+/** Everything tx2 + the F4 call need, resolved inside tx1 (then tx1 closes). */
+interface ReadyToDraft {
+  readonly reread: RenewalCycle;
+  readonly planYear: number;
+  readonly coverageFromIso: string;
+  readonly coverageToIso: string;
+  readonly membershipCoverage:
+    | { readonly kind: 'window'; readonly fromIso: string; readonly toIso: string }
+    | undefined;
+}
 
 async function processOne(
   deps: AutoDraftDueRenewalsDeps,
@@ -272,21 +327,23 @@ async function processOne(
 ): Promise<ProcessOneOutcome> {
   const cycleId = cycle.cycleId;
 
-  // Single tx — advisory lock + tx-bound re-read + draft creation +
-  // audit emit (Constitution Principle VIII state↔audit atomicity).
-  return runInTenant(deps.tenant, async (tx) => {
+  // --- tx1: lock + re-read + all pre-F4 checks (Review I2 split-tx fix) ---
+  // Closes (releasing the advisory lock) BEFORE the F4 call below — never
+  // hold an F8 lock/open-tx spanning a cross-module commit. Mirrors
+  // confirm-renewal.ts:179-547's `stateResult` tx exactly.
+  const tx1Result = await runInTenant(deps.tenant, async (tx) => {
     await deps.cyclesRepo.acquireCycleLockInTx(tx, tenantId, cycleId);
     const reread = await deps.cyclesRepo.findByIdInTx(tx, tenantId, cycleId);
     // Race-loss: the cycle is no longer `upcoming|reminded` — most
     // commonly a concurrent member self-renew (`confirmRenewal`'s lazy
     // self-transition) or an admin cancel/plan-change since the list
-    // query snapshot. See module docstring for the `skippedOptOut`
+    // query snapshot. See module docstring for the `skippedRaceLost`
     // bucket-mapping rationale.
     if (
       !reread ||
       (reread.status !== 'upcoming' && reread.status !== 'reminded')
     ) {
-      return 'skipped_opt_out';
+      return err<Tx1SkipOutcome>('skipped_race_lost');
     }
 
     // Step 1 — derive planYear EXACTLY as confirm-renewal.ts does
@@ -302,7 +359,7 @@ async function processOne(
         planYear,
       );
     if (hasLiveInvoice) {
-      return 'skipped_existing';
+      return err<Tx1SkipOutcome>('skipped_existing');
     }
 
     // Step 3 — membership-access re-assert. Reuses the SAME predicate
@@ -316,7 +373,7 @@ async function processOne(
     );
     const access = deriveMembershipAccess(latestCycle, deps.clock.now());
     if (access.access !== 'full') {
-      return 'skipped_terminated';
+      return err<Tx1SkipOutcome>('skipped_terminated');
     }
 
     // Step 4 — coverage-omit gate, mirroring confirm-renewal.ts's
@@ -369,70 +426,133 @@ async function processOne(
       ? undefined
       : ({ kind: 'window' as const, fromIso: coverageFromIso, toIso: coverageToIso });
 
-    // Step 5 — draft the invoice (create-half only; no number, no PDF,
-    // no email — `draftInvoiceForRenewal` unconditionally stamps
-    // `origin='auto_renewal'` + `autoEmailOnIssue=false`).
-    const draftResult = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
-      tenantId,
-      memberId: reread.memberId,
-      planId: reread.planIdAtCycleStart,
+    return ok<ReadyToDraft>({
+      reread,
       planYear,
-      frozenPlanPriceThb: reread.frozenPlanPriceThb,
-      ...omitUndefined({ membershipCoverage }),
-      actorUserId: SYSTEM_ACTOR_AUTO_INVOICE_CRON,
-      requestId: null,
+      coverageFromIso,
+      coverageToIso,
+      membershipCoverage,
     });
+  });
 
-    if (draftResult.status !== 'drafted') {
-      logger.warn(
-        {
-          tenantId,
-          cycleId,
-          memberId: reread.memberId,
-          errorCode: draftResult.errorCode,
-          detail: draftResult.detail,
-        },
-        '[auto-draft-due-renewals] draftInvoiceForRenewal failed — counted in errors',
-      );
-      return 'draft_failed';
-    }
+  if (!tx1Result.ok) {
+    return tx1Result.error;
+  }
+  const { reread, planYear, coverageFromIso, coverageToIso, membershipCoverage } =
+    tx1Result.value;
 
-    const invoiceId = asInvoiceId(draftResult.invoiceId);
-    await deps.cyclesRepo.stampAutoDraftInvoiceIdInTx(
-      tx,
-      tenantId,
-      cycleId,
-      invoiceId,
-    );
+  // --- F4 call: STANDALONE, no F8 tx/lock open (Review I2 fix) ------------
+  // Create-half only — no number, no PDF, no email — `draftInvoiceForRenewal`
+  // unconditionally stamps `origin='auto_renewal'` + `autoEmailOnIssue=false`.
+  const draftResult = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
+    tenantId,
+    memberId: reread.memberId,
+    planId: reread.planIdAtCycleStart,
+    planYear,
+    frozenPlanPriceThb: reread.frozenPlanPriceThb,
+    ...omitUndefined({ membershipCoverage }),
+    actorUserId: SYSTEM_ACTOR_AUTO_INVOICE_CRON,
+    requestId: null,
+  });
 
-    // Audit emit inside the same tx — Principle VIII reverse-direction:
-    // an emit failure throws so the draft-stamp rolls back (the F4
-    // invoice row itself lives in F4's OWN committed tx from Step 5 —
-    // an audit-emit failure here does not un-draft the invoice, only
-    // rolls back this tx's `auto_draft_invoice_id` stamp; the invoice
-    // remains a valid, if unstamped, draft. Same trade-off as every
-    // other F8→F4 3-tx composition).
-    await deps.auditEmitter.emitInTx(
-      tx,
-      {
-        type: 'renewal_auto_drafted' as const,
-        payload: {
-          cycle_id: cycleId,
-          member_id: asMemberId(reread.memberId),
-          plan_year: planYear,
-          frozen_price_thb: reread.frozenPlanPriceThb,
-          coverage_from: coverageFromIso.slice(0, 10),
-          coverage_to: coverageToIso.slice(0, 10),
-        },
-      },
+  if (draftResult.status !== 'drafted') {
+    logger.warn(
       {
         tenantId,
-        actorUserId: null,
-        actorRole: 'cron',
-        correlationId,
+        cycleId,
+        memberId: reread.memberId,
+        errorCode: draftResult.errorCode,
+        detail: draftResult.detail,
       },
+      '[auto-draft-due-renewals] draftInvoiceForRenewal failed — counted in errors',
     );
+    return 'draft_failed';
+  }
 
-    return 'drafted';
-  });
+  const invoiceId = asInvoiceId(draftResult.invoiceId);
+
+  // --- tx2: FRESH tx, RE-acquires the lock, stamp + audit -----------------
+  // Mirrors confirm-renewal.ts:544-621's link+audit tx2. Wrapped in its own
+  // try/catch (Review M2 fix) — a failure here happens AFTER the F4 draft
+  // already committed, so it must NOT propagate to the outer batch-loop
+  // catch (which would miscount a real, existing invoice as `errors`). See
+  // the module docstring's "Orphan window" note for the full rationale.
+  try {
+    await runInTenant(deps.tenant, async (tx) => {
+      await deps.cyclesRepo.acquireCycleLockInTx(tx, tenantId, cycleId);
+      const reread2 = await deps.cyclesRepo.findByIdInTx(tx, tenantId, cycleId);
+      if (!reread2) {
+        // Extremely unlikely (cycles are never hard-deleted in the normal
+        // flow) — but the draft invoice already exists regardless. Throw
+        // so the catch below logs the orphan; do not silently no-op.
+        throw new Error(
+          `cycle ${cycleId} not found on tx2 re-validate — invoice ${invoiceId} already drafted by F4`,
+        );
+      }
+      // Re-validate — log (not skip) if the status drifted since tx1: the
+      // stamp + audit are still valid forensic linkage for an invoice that
+      // was already, validly, created against THIS cycle. Skipping the
+      // stamp here would only worsen the orphan problem, not prevent it.
+      if (reread2.status !== 'upcoming' && reread2.status !== 'reminded') {
+        logger.warn(
+          {
+            tenantId,
+            cycleId,
+            invoiceId,
+            statusAtStamp: reread2.status,
+          },
+          '[auto-draft-due-renewals] cycle status drifted between tx1 and tx2 — stamping/auditing the already-drafted invoice anyway',
+        );
+      }
+
+      await deps.cyclesRepo.stampAutoDraftInvoiceIdInTx(
+        tx,
+        tenantId,
+        cycleId,
+        invoiceId,
+      );
+
+      // Audit emit inside tx2 — Principle VIII reverse-direction: an emit
+      // failure throws so the stamp rolls back too (both-or-neither within
+      // tx2); the F4 invoice itself is unaffected either way (F4's own tx
+      // already committed) — see the orphan-window note above.
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'renewal_auto_drafted' as const,
+          payload: {
+            cycle_id: cycleId,
+            member_id: asMemberId(reread.memberId),
+            plan_year: planYear,
+            frozen_price_thb: reread.frozenPlanPriceThb,
+            coverage_from: coverageFromIso.slice(0, 10),
+            coverage_to: coverageToIso.slice(0, 10),
+          },
+        },
+        {
+          tenantId,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId,
+        },
+      );
+    });
+  } catch (e) {
+    // Review M2 fix — distinct, greppable, alertable log. Does NOT fix the
+    // orphan (see module docstring), only makes it observable. Deliberately
+    // swallowed here (not re-thrown) — the outer batch-loop catch must not
+    // also count this cycle as `errors`; a real invoice DOES exist.
+    logger.error(
+      {
+        errorId: 'F8.AUTO_DRAFT.ORPHANED_AFTER_COMMIT',
+        tenantId,
+        cycleId,
+        invoiceId,
+        err: e instanceof Error ? e : new Error(String(e)),
+      },
+      '[auto-draft-due-renewals] tx2 (stamp/audit) failed AFTER the F4 draft already committed — invoice exists but is unstamped/unaudited; needs manual reconciliation',
+    );
+  }
+
+  return 'drafted';
 }
