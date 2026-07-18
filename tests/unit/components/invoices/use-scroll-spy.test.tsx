@@ -1,13 +1,26 @@
 import { renderHook, act } from '@testing-library/react';
 import { useScrollSpy } from '@/components/invoices/invoice-settings/use-scroll-spy';
 
-let cb: (entries: any[]) => void;
+// Minimal shape covering only what the hook reads off each entry — jsdom
+// has no real IntersectionObserver, so this stand-in avoids `any` while
+// keeping the mock deliberately narrower than the full DOM interface.
+interface MockObserverEntry {
+  target: Element | null;
+  isIntersecting: boolean;
+  intersectionRatio: number;
+  boundingClientRect: { top: number };
+}
+type MockObserverCallback = (entries: MockObserverEntry[]) => void;
+
+let cb: MockObserverCallback;
 beforeEach(() => {
   cb = () => {};
-  (globalThis as any).IntersectionObserver = class {
-    constructor(fn: any) { cb = fn; }
+  class MockIntersectionObserver {
+    constructor(fn: MockObserverCallback) { cb = fn; }
     observe() {} disconnect() {} unobserve() {}
-  };
+  }
+  (globalThis as unknown as { IntersectionObserver: typeof MockIntersectionObserver }).IntersectionObserver =
+    MockIntersectionObserver;
   document.body.innerHTML = '<section id="s1"></section><section id="s2"></section>';
 });
 
