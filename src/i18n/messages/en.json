@@ -607,7 +607,7 @@
         },
         "revoke": {
           "title": "Revoke this invitation?",
-          "description": "{email} will no longer be able to accept this invitation. Their pending account is deleted and the email is freed for a new invite.",
+          "description": "{email} will no longer be able to accept this invitation. Their pending account is deleted and the email is freed for a new invite. If this invite was linked to a member contact, that contact is unlinked — their member data is preserved and they can be re-invited.",
           "confirm": "Revoke invitation"
         }
       },
@@ -616,6 +616,7 @@
         "enabled": "{email} re-enabled.",
         "resent": "Invitation re-sent to {email}.",
         "resendRateLimited": "Too many resend attempts. Please wait and try again.",
+        "resendRateLimitedWait": "Too many resends — try again in about {minutes, plural, one {# minute} other {# minutes}}.",
         "resendError": "Couldn't resend the invitation. Please try again.",
         "revoked": "Invitation revoked for {email}.",
         "revokeError": "Couldn't revoke the invitation. Please try again."

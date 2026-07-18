@@ -220,3 +220,37 @@ These OVERRIDE the tasks above where they conflict. Scope decision: **Revoke/Pru
 - READ_ONLY_MODE prune skip (RA-5) — Task 7.
 - Throw-path atomicity (outbox delete throws mid-tx → user-delete + audit roll back) — Task 3, live-Neon.
 - Prune two-token protection (RA-4) — Task 6.
+
+## Post-review fix batch (2026-07-18)
+
+**RA-1 reverted to atomic consume-BEFORE.** A delta review swapped the resend
+throttle to peek-then-consume (spend the token only after a confirmed send).
+That REMOVES the atomic mail-bomb guarantee: under N concurrent requests for
+the same target, every request can `peek` the bucket as not-yet-full before
+any of them `check`s it, so all N pass and all N send before any token is
+consumed — a DV-11 bypass. Reverted to a single consuming `check` call
+BEFORE `resendStaffInvitation` runs (the shape in Task 2/RA-1 above). The
+tradeoff a 404/409 also spends a token is accepted as fail-closed and
+harmless.
+
+**Revoke confirm dialog design decision.** Revoke stays a plain destructive
+`<ConfirmationDialog>` (ux-standards § 6.2) rather than the two heavier
+patterns considered:
+- **Typed-phrase confirmation** (ux-standards § 6.3, "type DELETE to
+  confirm") — rejected as disproportionate. § 6.3 reserves this for actions
+  that destroy accumulated data (e.g. a member record with history); a
+  revoked invitation is trivially re-issuable from the same row with one
+  click, so the blast radius of a mistaken revoke is small.
+- **Soft-revoke + Undo toast** (ux-standards § 5.3) — rejected because the
+  action is not silently reversible server-side within the undo window:
+  revoke deletes the pending user row and frees the email outright (see
+  Task 3 / RA-2), so an "Undo" would have to re-run the full invite flow
+  rather than reverse a flag — that's a re-invite, not an undo, and framing
+  it as one would be misleading.
+
+Instead, the primitive itself was hardened: `<ConfirmationDialog>` now
+tracks an internal `submitting` state that disables BOTH Confirm and Cancel
+for the duration of an in-flight `onConfirm` (a fast double-click used to be
+able to fire the mutation twice, producing contradictory success + error
+toasts) — see `src/components/shell/confirmation-dialog.tsx`. This benefits
+every consumer of the shared primitive, not just Revoke.

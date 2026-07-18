@@ -165,10 +165,11 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
-  it('toasts a rate-limit message on 429 from resend', async () => {
+  it('toasts a rate-limit message on 429 from resend without a Retry-After header', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 429,
+      headers: { get: () => null },
       json: async () => ({ error: 'rate-limited' }),
     } as unknown as Response);
     renderTable([PENDING_USER]);
@@ -181,7 +182,29 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(refreshSpy).not.toHaveBeenCalled();
   });
 
-  it('toasts a generic error on a non-429 resend failure', async () => {
+  it('toasts a wait-aware rate-limit message on 429 from resend WITH a Retry-After header (minor fix)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      // 125s rounds UP to 3 minutes (Math.ceil(125/60) = 3).
+      headers: { get: (name: string) => (name === 'Retry-After' ? '125' : null) },
+      json: async () => ({ error: 'rate-limited' }),
+    } as unknown as Response);
+    renderTable([PENDING_USER]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend invitation' }));
+
+    // `t(key, values)` returns the already-interpolated string — assert
+    // against the real ICU-plural output for minutes=3, not the raw key.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Too many resends — try again in about 3 minutes.',
+      ),
+    );
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('toasts a generic error on a non-429 resend failure, and self-heals the stale row via refresh (409)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
@@ -192,7 +215,10 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resend invitation' }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    expect(refreshSpy).not.toHaveBeenCalled();
+    // Post-review UX fix (2026-07-18): a 404/409 means another admin/tab
+    // already resolved this invitation — refresh so the dead row updates
+    // instead of staying clickable.
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it('toasts a localized generic message (not the raw error code) on a non-429 resend failure', async () => {
@@ -211,7 +237,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(toast.error).not.toHaveBeenCalledWith('not-pending');
   });
 
-  it('toasts a localized generic message (not the raw error code) on a revoke failure', async () => {
+  it('toasts a localized generic message (not the raw error code) on a revoke failure, and self-heals the stale row via refresh (409)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,
       status: 409,
@@ -226,6 +252,45 @@ describe('UserListTable — resend + revoke invitation actions', () => {
       expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError),
     );
     expect(toast.error).not.toHaveBeenCalledWith('not-pending');
+    // Post-review UX fix (2026-07-18): a 404/409 means another admin/tab
+    // already resolved this invitation — refresh so the dead row updates
+    // instead of staying clickable.
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it('does NOT self-heal via refresh on a non-404/409 revoke failure (e.g. 500)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'server-error' }),
+    } as unknown as Response);
+    renderTable([PENDING_USER]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError),
+    );
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('a fetch that throws (network error) does NOT strand the row disabled — toasts and re-enables (UX-1)', async () => {
+    // Revoke's confirm-dialog label ("Revoke invitation") is distinct from
+    // its row-trigger label ("Revoke"), so this exercises `runAction`'s
+    // try/catch without a same-text button collision once the dialog opens.
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    renderTable([PENDING_USER]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError));
+    // The row must not stay stuck busy: the Revoke trigger button is
+    // clickable again (no lingering `disabled` from a swallowed throw).
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Revoke' })).not.toBeDisabled(),
+    );
     expect(refreshSpy).not.toHaveBeenCalled();
   });
 });
@@ -247,5 +312,31 @@ describe('UserListTable — pending-row invitation expiry label', () => {
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     expect(screen.getByText('Invitation expired')).toBeInTheDocument();
+  });
+
+  it('minor fix: the EXPIRED label carries a destructive tone (not just muted text)', () => {
+    const invitationExpiresAt = new Date(FIXED_NOW.getTime() - MS_PER_DAY);
+    renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
+
+    const label = screen.getByText('Invitation expired');
+    expect(label).toHaveClass('text-destructive');
+    expect(label).not.toHaveClass('text-muted-foreground');
+  });
+
+  it('minor fix: a not-yet-expired "Expires in N days" label keeps the muted tone', () => {
+    const invitationExpiresAt = new Date(FIXED_NOW.getTime() + 3 * MS_PER_DAY - 60_000);
+    renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
+
+    const label = screen.getByText('Expires in 3 days');
+    expect(label).toHaveClass('text-muted-foreground');
+    expect(label).not.toHaveClass('text-destructive');
+  });
+});
+
+describe('UserListTable — table landmark aria-label (minor fix)', () => {
+  it('names the scroll-region landmark from the page title instead of the hardcoded "Data table" fallback', () => {
+    renderTable([PENDING_USER]);
+    expect(screen.getByRole('region', { name: en.admin.users.title })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Data table' })).not.toBeInTheDocument();
   });
 });

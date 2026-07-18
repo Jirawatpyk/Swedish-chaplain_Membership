@@ -607,7 +607,7 @@
         },
         "revoke": {
           "title": "Återkalla den här inbjudan?",
-          "description": "{email} kan inte längre acceptera den här inbjudan. Deras väntande konto tas bort och e-postadressen blir ledig för en ny inbjudan.",
+          "description": "{email} kan inte längre acceptera den här inbjudan. Deras väntande konto tas bort och e-postadressen blir ledig för en ny inbjudan. Om inbjudan var kopplad till en medlemskontakt kopplas den kontakten bort — medlemsdatan bevaras och personen kan bjudas in igen.",
           "confirm": "Återkalla inbjudan"
         }
       },
@@ -616,6 +616,7 @@
         "enabled": "{email} återaktiverad.",
         "resent": "Inbjudan skickad på nytt till {email}.",
         "resendRateLimited": "För många omsändningar. Vänta en stund och försök igen.",
+        "resendRateLimitedWait": "För många omsändningar — försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
         "resendError": "Kunde inte skicka inbjudan igen. Försök igen.",
         "revoked": "Inbjudan återkallad för {email}.",
         "revokeError": "Kunde inte återkalla inbjudan. Försök igen."

@@ -14,7 +14,8 @@
  * The title, description, and button labels are passed as props so
  * callers can localise them via `useTranslations` at the call site.
  */
-import { useRef, type ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Loader2Icon } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -73,6 +74,35 @@ export function ConfirmationDialog({
   closeOnConfirm = true,
 }: ConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
+  // UX-2 fix (double-fire guard): without this, a fast double-click on
+  // Confirm re-enters `onConfirm` before the first call settles — for an
+  // irreversible action (e.g. revoke) that fires the mutation twice and
+  // surfaces contradictory success + error toasts. `submitting` disables
+  // BOTH buttons for the duration of the in-flight `onConfirm` call.
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleConfirmClick(
+    event: MouseEvent<HTMLButtonElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    if (confirmDisabled || submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm();
+    } catch (err: unknown) {
+      // F6 Phase 8 silent-failure C-1 fix (2026-05-16), preserved: surface
+      // rejections to the console + global error boundary via
+      // `queueMicrotask(throw)` rather than dropping them silently — a
+      // shared-primitive bug every ConfirmationDialog consumer inherited.
+      console.error('[ConfirmationDialog] onConfirm rejected', err);
+      queueMicrotask(() => {
+        throw err;
+      });
+    } finally {
+      setSubmitting(false);
+      if (closeOnConfirm) onOpenChange(false);
+    }
+  }
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -85,33 +115,20 @@ export function ConfirmationDialog({
         </AlertDialogHeader>
         {children}
         <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel ref={cancelRef} disabled={submitting}>
+            {cancelLabel}
+          </AlertDialogCancel>
           <AlertDialogAction
-            disabled={confirmDisabled}
-            aria-disabled={confirmDisabled || undefined}
+            disabled={confirmDisabled || submitting}
+            aria-disabled={confirmDisabled || submitting || undefined}
             onClick={(event) => {
-              event.preventDefault();
-              if (confirmDisabled) return;
-              // F6 Phase 8 silent-failure C-1 fix (2026-05-16): always close
-              // (when `closeOnConfirm`) AND surface rejections to the console
-              // + global error boundary via `queueMicrotask(throw)`. The
-              // previous `void Promise.resolve(...).then(...)` chain dropped
-              // rejections silently — a shared-primitive bug that every
-              // ConfirmationDialog consumer inherited.
-              void Promise.resolve()
-                .then(() => onConfirm())
-                .catch((err: unknown) => {
-                  console.error('[ConfirmationDialog] onConfirm rejected', err);
-                  queueMicrotask(() => {
-                    throw err;
-                  });
-                })
-                .finally(() => {
-                  if (closeOnConfirm) onOpenChange(false);
-                });
+              void handleConfirmClick(event);
             }}
             className={destructive ? buttonVariants({ variant: 'destructive' }) : undefined}
           >
+            {submitting ? (
+              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+            ) : null}
             {confirmLabel}
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -7,10 +7,13 @@
  * userId) resend throttle — 3/hour, keyed on the target rather than the
  * acting admin so N admins can't collectively mail-bomb one inbox (the
  * DV-11 rule; mirrors the F3 resend-verification route's identical
- * per-document pattern) — gated with a non-consuming `peek` BEFORE the use
- * case runs, and consumed with `check` only after a confirmed send, so
- * 404/409 responses (no email sent) never spend a token. Mock style
- * follows tests/contract/plans/palette-search.test.ts.
+ * per-document pattern) — enforced with a single ATOMIC `check` call
+ * BEFORE the use case runs. A peek-then-consume variant was tried and
+ * reverted: it lets N concurrent requests all pass a non-consuming peek
+ * before any of them consumes a token, bypassing the budget entirely.
+ * The atomic-check-first shape accepts that a 404/409 (no email sent)
+ * still spends a token — fail-closed and harmless. Mock style follows
+ * tests/contract/plans/palette-search.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
@@ -18,7 +21,6 @@ import { ok, err } from '@/lib/result';
 
 const requireAdminContextMock = vi.fn();
 const resendStaffInvitationMock = vi.fn();
-const rateLimiterPeekMock = vi.fn();
 const rateLimiterCheckMock = vi.fn();
 
 vi.mock('@/lib/admin-context', () => ({
@@ -33,7 +35,6 @@ vi.mock('@/lib/tenant-context', () => ({
 }));
 vi.mock('@/lib/auth-deps', () => ({
   rateLimiter: {
-    peek: (...args: unknown[]) => rateLimiterPeekMock(...args),
     check: (...args: unknown[]) => rateLimiterCheckMock(...args),
   },
 }));
@@ -63,14 +64,8 @@ function makeParams(id: string): { params: Promise<{ id: string }> } {
 describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
   beforeEach(() => {
     vi.resetModules();
-    // Default: budget available on both peek + check. Individual tests
-    // override for the rate-limited case.
-    rateLimiterPeekMock.mockResolvedValue({
-      success: true,
-      remaining: 3,
-      reset: Date.now() + 3_600_000,
-      fellBack: false,
-    });
+    // Default: budget available. Individual tests override for the
+    // rate-limited case.
     rateLimiterCheckMock.mockResolvedValue({
       success: true,
       remaining: 2,
@@ -82,7 +77,7 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
     vi.resetAllMocks();
   });
 
-  it('200 — admin + ok, peeks + consumes the rate limiter with the per-(tenant,target) key, omits locale', async () => {
+  it('200 — admin + ok, checks the rate limiter with the per-(tenant,target) key BEFORE the use case, omits locale', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     resendStaffInvitationMock.mockResolvedValueOnce(ok({ email: 'pending@swecham.example' }));
 
@@ -93,14 +88,8 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
 
-    // RA-1: budget 3/hour, keyed on (tenant, TARGET userId) — NOT the actor.
-    // Gated with peek (non-consuming)...
-    expect(rateLimiterPeekMock).toHaveBeenCalledWith(
-      'reissue-invite:test-swecham:user-1',
-      3,
-      3600,
-    );
-    // ...and consumed with check ONLY because the send actually happened.
+    // RA-1: budget 3/hour, keyed on (tenant, TARGET userId) — NOT the
+    // actor. Atomic consume BEFORE the use case runs.
     expect(rateLimiterCheckMock).toHaveBeenCalledTimes(1);
     expect(rateLimiterCheckMock).toHaveBeenCalledWith(
       'reissue-invite:test-swecham:user-1',
@@ -121,24 +110,24 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
     );
   });
 
-  it('409 — not-pending, does NOT consume a rate-limit token', async () => {
+  it('409 — not-pending, rate-limit token was still consumed (accepted tradeoff — fail-closed)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     resendStaffInvitationMock.mockResolvedValueOnce(err({ code: 'not-pending' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/reissue-invite/route');
     const res = await POST(makeRequest('user-1'), makeParams('user-1'));
     expect(res.status).toBe(409);
-    expect(rateLimiterCheckMock).not.toHaveBeenCalled();
+    expect(rateLimiterCheckMock).toHaveBeenCalledTimes(1);
   });
 
-  it('404 — user-not-found, does NOT consume a rate-limit token', async () => {
+  it('404 — user-not-found, rate-limit token was still consumed (accepted tradeoff — fail-closed)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     resendStaffInvitationMock.mockResolvedValueOnce(err({ code: 'user-not-found' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/reissue-invite/route');
     const res = await POST(makeRequest('user-1'), makeParams('user-1'));
     expect(res.status).toBe(404);
-    expect(rateLimiterCheckMock).not.toHaveBeenCalled();
+    expect(rateLimiterCheckMock).toHaveBeenCalledTimes(1);
   });
 
   it('500 — reissue-failed (default branch)', async () => {
@@ -161,10 +150,10 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
     expect(resendStaffInvitationMock).not.toHaveBeenCalled();
   });
 
-  it('429 — peek reports the bucket full, with Retry-After header, use case + check never called', async () => {
+  it('429 — check reports the bucket full, with Retry-After header, use case never called', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     const reset = Date.now() + 120_000;
-    rateLimiterPeekMock.mockResolvedValueOnce({
+    rateLimiterCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,
       reset,
@@ -177,6 +166,5 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
     expect(res.status).toBe(429);
     expect(res.headers.get('Retry-After')).toBeTruthy();
     expect(resendStaffInvitationMock).not.toHaveBeenCalled();
-    expect(rateLimiterCheckMock).not.toHaveBeenCalled();
   });
 });

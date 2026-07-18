@@ -119,30 +119,43 @@ export function UserListTable({
      * fallback unchanged.
      */
     errorToastKey?: string,
-  ): Promise<boolean> {
-    const init: RequestInit = { method };
-    if (body) {
-      init.headers = { 'Content-Type': 'application/json' };
-      init.body = JSON.stringify(body);
-    }
-    const response = await fetch(url, init);
-    if (!response.ok) {
-      if (errorToastKey) {
-        toast.error(t(errorToastKey));
-      } else {
-        const err = (await response.json().catch(() => ({}))) as { error?: string };
-        toast.error(err.error ?? tErrors('generic'));
+  ): Promise<{ readonly ok: boolean; readonly status: number | null }> {
+    // UX-1 fix: a network-level `fetch` throw (offline, DNS failure, …)
+    // used to propagate out of `runAction` uncaught — the caller's
+    // `setBusyId(null)` never ran, so the row stayed permanently
+    // disabled with no toast. Wrapping the whole fetch + response
+    // handling in try/catch means this helper NEVER throws; every
+    // caller's `setBusyId(null)` after `await runAction(...)` is always
+    // reached. `status` (null on a network throw) lets callers self-heal
+    // a stale row on 404/409 — see handleRevoke below.
+    try {
+      const init: RequestInit = { method };
+      if (body) {
+        init.headers = { 'Content-Type': 'application/json' };
+        init.body = JSON.stringify(body);
       }
-      return false;
+      const response = await fetch(url, init);
+      if (!response.ok) {
+        if (errorToastKey) {
+          toast.error(t(errorToastKey));
+        } else {
+          const err = (await response.json().catch(() => ({}))) as { error?: string };
+          toast.error(err.error ?? tErrors('generic'));
+        }
+        return { ok: false, status: response.status };
+      }
+      return { ok: true, status: response.status };
+    } catch {
+      toast.error(errorToastKey ? t(errorToastKey) : tErrors('generic'));
+      return { ok: false, status: null };
     }
-    return true;
   }
 
   async function handleDisable(user: UserRow) {
     setBusyId(user.id);
-    const ok = await runAction(`/api/auth/users/${user.id}/disable`, 'POST');
+    const result = await runAction(`/api/auth/users/${user.id}/disable`, 'POST');
     setBusyId(null);
-    if (ok) {
+    if (result.ok) {
       toast.success(t('toast.disabled', { email: user.email }));
       router.refresh();
     }
@@ -150,9 +163,9 @@ export function UserListTable({
 
   async function handleEnable(user: UserRow) {
     setBusyId(user.id);
-    const ok = await runAction(`/api/auth/users/${user.id}/enable`, 'POST');
+    const result = await runAction(`/api/auth/users/${user.id}/enable`, 'POST');
     setBusyId(null);
-    if (ok) {
+    if (result.ok) {
       toast.success(t('toast.enabled', { email: user.email }));
       router.refresh();
     }
@@ -160,15 +173,20 @@ export function UserListTable({
 
   async function handleRevoke(user: UserRow) {
     setBusyId(user.id);
-    const ok = await runAction(
+    const result = await runAction(
       `/api/auth/users/${user.id}/revoke-invite`,
       'POST',
       undefined,
       'toast.revokeError',
     );
     setBusyId(null);
-    if (ok) {
+    if (result.ok) {
       toast.success(t('toast.revoked', { email: user.email }));
+      router.refresh();
+    } else if (result.status === 404 || result.status === 409) {
+      // Stale row — another admin/tab already resolved this invitation
+      // (revoked / expired / accepted elsewhere). Refresh so the dead
+      // buttons disappear instead of staying clickable.
       router.refresh();
     }
   }
@@ -190,8 +208,28 @@ export function UserListTable({
         return;
       }
       if (response.status === 429) {
-        toast.error(t('toast.resendRateLimited'));
+        // Minor fix: surface the actual wait when the server sends
+        // Retry-After (seconds), rounded UP to whole minutes so "45s"
+        // still reads as "about 1 minute" rather than "0 minutes".
+        // Falls back to the generic message when the header is absent.
+        const retryAfterHeader = response.headers.get('Retry-After');
+        const retryAfterSeconds =
+          retryAfterHeader && !Number.isNaN(Number(retryAfterHeader))
+            ? Number(retryAfterHeader)
+            : null;
+        if (retryAfterSeconds !== null) {
+          const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+          toast.error(t('toast.resendRateLimitedWait', { minutes }));
+        } else {
+          toast.error(t('toast.resendRateLimited'));
+        }
         return;
+      }
+      if (response.status === 404 || response.status === 409) {
+        // Stale row — another admin/tab already resolved this invitation.
+        // Refresh so the dead buttons disappear instead of staying
+        // clickable.
+        router.refresh();
       }
       // Final-review nit fix: a localized generic message instead of the
       // raw backend error code (e.g. "not-pending").
@@ -208,7 +246,10 @@ export function UserListTable({
       {/* Matches /admin/members table style — uppercase muted header
           + hover feedback. No outer border: the parent <Card> is the
           container. */}
-      <Table>
+      {/* Minor fix: name the scroll-region landmark from the page title
+          instead of the Table primitive's hardcoded English "Data table"
+          fallback (src/components/ui/table.tsx). */}
+      <Table aria-label={t('title')}>
           <TableHeader>
             <TableRow>
               <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -238,6 +279,13 @@ export function UserListTable({
               const daysRemaining = user.invitationExpiresAt
                 ? daysUntil(user.invitationExpiresAt, now)
                 : null;
+              // Minor fix: an EXPIRED invite gets a destructive tone (not
+              // just muted text) so it's scannable at a glance, closer to
+              // the member-detail page's stronger treatment. Wording
+              // ("Invitation expired") stays — this is tone-only, not
+              // color-only, so WCAG 1.4.1 is unaffected.
+              const isExpired =
+                user.status === 'pending' && daysRemaining !== null && daysRemaining <= 0;
               const invitationExpiryLabel =
                 user.status === 'pending' && daysRemaining !== null
                   ? daysRemaining > 0
@@ -270,7 +318,13 @@ export function UserListTable({
                       {t(`filters.status.${user.status}`)}
                     </Badge>
                     {invitationExpiryLabel ? (
-                      <span className="text-xs text-muted-foreground">
+                      <span
+                        className={
+                          isExpired
+                            ? 'text-xs font-medium text-destructive'
+                            : 'text-xs text-muted-foreground'
+                        }
+                      >
                         {invitationExpiryLabel}
                       </span>
                     ) : null}

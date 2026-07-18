@@ -5,23 +5,29 @@
  * fresh invitation token + re-enqueues the outbox email for a `pending`
  * staff user, and emits the `invitation_reissued` audit event.
  *
- * RA-1 (security) — peek-gated BEFORE the use case runs, consumed only on
- * an actual send, 3/hour, keyed on (tenant, TARGET userId) rather than the
- * acting admin. Keying on the target (not the admin) closes the DV-11 gap:
- * N different admins hitting this route for the SAME pending user would
- * otherwise get N independent buckets and could collectively mail-bomb
- * that one inbox well past the stated per-recipient budget. Mirrors the F3
- * resend-verification route's identical per-document throttle
+ * RA-1 (security) — atomic consume-BEFORE the use case runs, 3/hour, keyed
+ * on (tenant, TARGET userId) rather than the acting admin. Keying on the
+ * target (not the admin) closes the DV-11 gap: N different admins hitting
+ * this route for the SAME pending user would otherwise get N independent
+ * buckets and could collectively mail-bomb that one inbox well past the
+ * stated per-recipient budget. Mirrors the F3 resend-verification route's
+ * identical per-document throttle
  * (src/app/api/members/[memberId]/contacts/[contactId]/resend-verification/route.ts).
  *
- * Peek-then-consume (mirrors the B2 change-password pattern in
- * upstash-rate-limiter.ts): a non-consuming `peek` gates the request so a
- * full bucket still 429s before the use case runs, but 404 (user not
- * found) / 409 (not pending) responses — which send no email — do NOT
- * spend a token. Only a confirmed send (`result.ok`) calls `check` to
- * consume one. Mail-bomb protection stays intact because the budget is
- * still capped at 3 successful sends/hour; it just no longer double-counts
- * non-sends against that budget.
+ * A short-lived peek-then-consume variant was tried (spend the token only
+ * after a confirmed send) and REVERTED: it removes the atomic mail-bomb
+ * guarantee. Under N concurrent requests for the same target, every
+ * request can `peek` the bucket as not-yet-full before any of them
+ * `check`s it — all N pass the gate and all N send before any of them
+ * consumes a token, bypassing the 3/hour budget entirely (DV-11 bypass).
+ * A single consuming `check` called BEFORE the use case closes that
+ * window: the limiter itself serializes concurrent callers. The tradeoff
+ * — a 404 (user-not-found) / 409 (not-pending) response also spends one
+ * token even though no email was sent — is ACCEPTED: it is fail-closed
+ * and harmless (worst case, an admin's probe against a bad id costs part
+ * of the budget), and the alternative (peek-then-consume) is worse because
+ * it loses the atomic guarantee under concurrency. This supersedes the
+ * earlier /code-review nit that suggested not counting non-sends.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { resendStaffInvitation, asUserId } from '@/modules/auth';
@@ -42,19 +48,14 @@ export async function POST(
     const { id } = await params;
     const tenant = resolveTenantFromRequest(request);
 
-    // RA-1 — per-(tenant, target) resend throttle. Gate with a
-    // non-consuming `peek` BEFORE the use case runs so a tripped bucket
-    // never reaches `resendStaffInvitation`; the token itself is consumed
-    // below only after a confirmed send.
-    const rateLimitKey = `reissue-invite:${tenant.slug}:${id}`;
-    const gate = await rateLimiter.peek(rateLimitKey, 3, 3600);
-    if (!gate.success) {
+    // RA-1 — per-(tenant, target) resend throttle. Atomic consume BEFORE
+    // the use case runs: the ONLY way to keep the mail-bomb guarantee
+    // under concurrent requests (see the RA-1 doc comment above).
+    const rl = await rateLimiter.check(`reissue-invite:${tenant.slug}:${id}`, 3, 3600);
+    if (!rl.success) {
       return NextResponse.json(
         { error: 'rate-limited' },
-        {
-          status: 429,
-          headers: { 'Retry-After': String(retryAfterSecondsFromRl(gate)) },
-        },
+        { status: 429, headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) } },
       );
     }
 
@@ -72,9 +73,6 @@ export async function POST(
     });
 
     if (result.ok) {
-      // RA-1 — consume one token only now that a send actually happened.
-      // Already peeked above (budget was available); no need to re-inspect.
-      await rateLimiter.check(rateLimitKey, 3, 3600);
       return NextResponse.json({ ok: true, email: result.value.email }, { status: 200 });
     }
 
