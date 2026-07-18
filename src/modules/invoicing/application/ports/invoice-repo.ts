@@ -94,6 +94,18 @@ export interface InvoiceRepo {
   /** Generic loader used by detail / portal / signed-url paths. */
   findById(invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
 
+  /**
+   * 088 (duplicate-CTA) — id of the existing NON-VOID event invoice for a
+   * registration, or null. Called ONLY by createEventInvoiceDraft's duplicate
+   * catch to tell the client which invoice already exists. The partial unique
+   * index `invoices_event_registration_uniq` excludes void rows, so at most one
+   * non-void row matches. Tenant-scoped read (mirrors `findById`).
+   */
+  findEventInvoiceIdByRegistration(
+    eventRegistrationId: string,
+    tenantId: string,
+  ): Promise<InvoiceId | null>;
+
   /** List with cursor pagination. Drafts excluded by default. */
   list(
     tenantId: string,

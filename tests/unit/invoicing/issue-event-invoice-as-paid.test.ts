@@ -290,6 +290,7 @@ function makeDeps(
       list: vi.fn(),
       listPaged: vi.fn(),
       listSupersedableMembershipBills: vi.fn(),
+      findEventInvoiceIdByRegistration: vi.fn(async () => null),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),

@@ -407,9 +407,10 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
   // 409 — duplicate
   // -------------------------------------------------------------------------
 
-  it('409 duplicate — a non-void event invoice already exists for this registration', async () => {
+  it('409 duplicate — a non-void event invoice already exists for this registration (body carries existing_invoice_id — C1)', async () => {
+    const EXISTING_ID = 'inv_01EXISTINGEVENTDRAFT001';
     createEventInvoiceDraftMock.mockResolvedValueOnce(
-      err({ code: 'duplicate' }),
+      err({ code: 'duplicate', existingInvoiceId: EXISTING_ID }),
     );
 
     const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
@@ -417,8 +418,32 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
       makePostRequest({ eventRegistrationId: VALID_REG_ID }),
     );
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string } };
+    const body = (await res.json()) as {
+      error: { code: string };
+      existing_invoice_id: string | null;
+    };
     expect(body.error.code).toBe('duplicate');
+    // C1 (duplicate-CTA) — the id rides at the TOP LEVEL (snake_case), so the
+    // client can offer a "View invoice" link.
+    expect(body).toHaveProperty('existing_invoice_id', EXISTING_ID);
+  });
+
+  it('409 duplicate — existing_invoice_id is null when the existing row is unresolvable (concurrent void)', async () => {
+    createEventInvoiceDraftMock.mockResolvedValueOnce(
+      err({ code: 'duplicate', existingInvoiceId: null }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makePostRequest({ eventRegistrationId: VALID_REG_ID }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      error: { code: string };
+      existing_invoice_id: string | null;
+    };
+    expect(body.error.code).toBe('duplicate');
+    expect(body).toHaveProperty('existing_invoice_id', null);
   });
 
   // -------------------------------------------------------------------------

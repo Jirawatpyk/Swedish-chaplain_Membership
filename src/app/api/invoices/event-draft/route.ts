@@ -108,6 +108,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       : result.error.code === 'lookup_failed' ? 500
       : 500;
 
+    // duplicate-CTA — surface the existing invoice's id at the TOP LEVEL
+    // (snake_case, matching the API's other fields) so the client can offer a
+    // "View invoice" link.
+    if (result.error.code === 'duplicate') {
+      return NextResponse.json(
+        { error: { code: 'duplicate' }, existing_invoice_id: result.error.existingInvoiceId },
+        { status: 409 },
+      );
+    }
+
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
 
