@@ -2236,7 +2236,7 @@
             "hint": "Issue a tax invoice now and record the payment later. Requires the buyer's tax ID.",
             "hint088": "Issue an invoice (ใบแจ้งหนี้) now and record the payment later; the §86/4 tax receipt is issued at payment. Requires the buyer's tax ID."
           },
-          "billFirstNeedsTin": "This buyer is not recorded as VAT-registered — the fee must be recorded as already paid; an invoice cannot be issued before payment. If they are VAT-registered, tick that on the member record first.",
+          "billFirstNeedsTin": "Not recorded as VAT-registered — record the fee as already paid; a bill can't be issued before payment. Tick VAT-registered on the member record first if applicable.",
           "waitingExplainer": "This registration is not paid yet according to the event data — wait for the money, then record it as paid. If the funds have in fact been received, select \"Already paid\" to confirm.",
           "refundedBlockedTitle": "Registration refunded",
           "refundedBlocked": "This registration has been refunded — an invoice or receipt cannot be created for a refunded fee.",
@@ -2423,9 +2423,9 @@
         "title": "Issue invoice",
         "description": "This consumes the next sequential tax-document number and cannot be undone. A void can be recorded later.",
         "review": {
-          "heading": "Review — this pins an immutable §86/4 snapshot",
-          "immutableSnapshotAck": "Issuing pins an IMMUTABLE tax snapshot (buyer identity, Head Office / Branch, VAT treatment and notes). It can be changed only by voiding this document. Review the details below before you confirm.",
-          "billStreamNote": "A non-tax ใบแจ้งหนี้ (Invoice) number ({prefix}-…) is allocated now — NO §87 tax number is consumed at issue. The §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (with its RC number) is issued when payment is recorded.",
+          "heading": "Review before issuing",
+          "immutableSnapshotAck": "Issuing pins an IMMUTABLE tax snapshot — buyer identity, Head Office / Branch, VAT treatment and notes. It can only be changed by voiding this document.",
+          "billStreamNote": "A non-tax ใบแจ้งหนี้ number ({prefix}-…) is allocated now — no §87 tax number is used yet. The §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน is issued when payment is recorded.",
           "fields": {
             "branchLine": "Head Office / Branch",
             "vatTreatment": "VAT treatment",
@@ -2445,17 +2445,17 @@
             "none": "None configured"
           },
           "warnings": {
-            "noPaymentPath": "This ใบแจ้งหนี้ will have NO payment path — online payment is off and no bank-transfer details are configured, so the member cannot pay it. Configure a payment method before issuing, or proceed knowing the bill is currently unpayable.",
-            "notVatRegistrant": "No §86/4 Head Office / Branch line will print — this buyer is not recorded as a VAT registrant. If they are registered, tick \"This member is registered for VAT\" on the member record first."
+            "noPaymentPath": "No payment path configured — online payment is off and no bank-transfer details are set, so the member can't pay this bill. Add a payment method before issuing.",
+            "notVatRegistrant": "No Head Office / Branch line will print — this buyer isn't recorded as a VAT registrant. If they are, tick \"This member is registered for VAT\" on the member record first."
           }
         },
         "form": {
           "vatTreatment": {
             "label": "VAT treatment",
-            "help": "For embassy / international-organization sales only — attach the Ministry of Foreign Affairs (MFA) §80/1(5) certificate. Every other sale stays at the standard VAT 7%.",
+            "help": "Embassy / international-organization sales only — attach the MFA §80/1(5) certificate. All other sales stay at standard VAT 7%.",
             "standard": "Standard — VAT 7%",
             "zeroRated": "Zero-rated 0% — §80/1(5) (embassy / int'l org)",
-            "membershipCaption": "Membership is always VAT 7%; §80/1(5) applies to non-membership (event / service) sales only."
+            "membershipCaption": "Membership is always VAT 7% — §80/1(5) applies to event/service sales only."
           },
           "cert": {
             "legend": "MFA §80/1(5) certificate",
@@ -2466,7 +2466,7 @@
             "dateLabel": "Certificate date",
             "dateFormat": "Enter the certificate date as YYYY-MM-DD."
           },
-          "lowAmountWarning": "This zero-rated sale is below 5,000 THB. An MFA certificate is normally required for purchases of 5,000 THB or more — confirm the certificate applies before issuing.",
+          "lowAmountWarning": "This zero-rated sale is below 5,000 THB — an MFA certificate is normally required at 5,000 THB or more. Confirm it applies before issuing.",
           "certUpload": {
             "label": "MFA certificate scan (optional)",
             "pickerLabel": "Choose a certificate scan to upload",
@@ -2476,7 +2476,7 @@
             "uploadedToast": "Certificate scan attached.",
             "attached": "Attached: {filename}",
             "remove": "Remove",
-            "helpText": "Optional. PDF, PNG or JPG up to 5 MB. The scan is virus-scanned before it is stored. The certificate NUMBER above is what makes the zero rate valid — the scan is supporting evidence only.",
+            "helpText": "Optional. PDF, PNG or JPG up to 5 MB, virus-scanned before storage. The certificate NUMBER above validates the zero rate — the scan is supporting evidence only.",
             "errors": {
               "zero_rate_cert_too_large": "The certificate scan is larger than 5 MB.",
               "zero_rate_cert_invalid_mime": "Only PDF, PNG or JPG files are allowed.",
@@ -2497,9 +2497,9 @@
         "successWithNumber": "Invoice {number} issued",
         "successNoEmailWarning": "No email on file — the invoice was not sent. Deliver it to the buyer manually.",
         "cancel": "Cancel",
-        "irreversibleWarning": "This action will allocate a Thai RD §87 sequential document number and CANNOT be reversed — to cancel the invoice you must issue a credit note (ใบลดหนี้).",
-        "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues as a valid tax invoice with name and address, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
-        "noTaxIdHint088": "This buyer has no Tax ID. The invoice (ใบแจ้งหนี้) issues with name and address, and its §86/4 tax invoice/receipt at payment stays valid, but a VAT-registered buyer cannot claim its input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
+        "irreversibleWarning": "Allocates a Thai RD §87 sequential number and cannot be reversed — to cancel, issue a credit note (ใบลดหนี้).",
+        "noTaxIdHint": "This buyer has no Tax ID. The invoice still issues with name and address, but a VAT-registered buyer can't claim input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
+        "noTaxIdHint088": "This buyer has no Tax ID. The ใบแจ้งหนี้ still issues (and its §86/4 tax invoice/receipt at payment stays valid), but a VAT-registered buyer can't claim input VAT without their Tax ID on the document — add it before issuing if they need to claim.",
         "errors": {
           "failed": "Issue failed",
           "concurrent": "This invoice was already issued in another session. Refresh to see the latest status and its number.",
@@ -2563,7 +2563,7 @@
       },
       "pay": {
         "title": "Record payment",
-        "description": "Mark this invoice paid. A receipt PDF will be generated and emailed to the member.",
+        "description": "Record the payment received for this invoice. The §86/4 tax receipt is issued and, if an email is on file, sent to the member.",
         "payingForDocument": "Recording payment for {number}",
         "submit": "Record payment",
         "submitting": "Recording…",
@@ -2604,9 +2604,9 @@
       },
       "void": {
         "title": "Void invoice",
-        "description": "Void this issued-unpaid invoice. The sequential tax-document number is retired and cannot be reused; the PDF is re-stamped VOID; a cancellation notice is emailed to the member.",
+        "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and a cancellation notice is emailed to the member.",
         "voiding": "Voiding invoice",
-        "terminalNotice": "Void is terminal. Once voided, no further actions (pay, credit, edit) are allowed. To reverse a PAID invoice, use the credit-note workflow instead.",
+        "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. To reverse a PAID invoice, use the credit-note workflow instead.",
         "reasonLabel": "Reason",
         "reasonHelp": "Shown on the voided PDF and in the audit trail. Required, up to 500 characters.",
         "confirmCopy": "Type the invoice number {phrase} to confirm this irreversible action.",

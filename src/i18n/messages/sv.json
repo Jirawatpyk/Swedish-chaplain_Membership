@@ -2236,7 +2236,7 @@
             "hint": "Utfärda en skattefaktura nu och registrera betalningen senare. Kräver köparens skatte-ID.",
             "hint088": "Utfärda en ใบแจ้งหนี้ (faktura) nu och registrera betalningen senare; §86/4-skattekvittot utfärdas vid betalning. Kräver köparens skatte-ID."
           },
-          "billFirstNeedsTin": "Köparen är inte registrerad som momsregistrerad — avgiften måste registreras som redan betald; en faktura kan inte utfärdas före betalning. Om köparen är momsregistrerad, markera det på medlemsposten först.",
+          "billFirstNeedsTin": "Inte registrerad som momsregistrerad — registrera avgiften som redan betald; en faktura kan inte utfärdas före betalning. Markera momsregistrerad på medlemsposten först om tillämpligt.",
           "waitingExplainer": "Denna registrering är ännu inte betald enligt evenemangsdata — invänta betalningen och registrera den därefter som betald. Om medlen redan har mottagits, välj \"Redan betald\" för att bekräfta.",
           "refundedBlockedTitle": "Registreringen är återbetald",
           "refundedBlocked": "Denna registrering har återbetalats — en faktura eller ett kvitto kan inte skapas för en återbetald avgift.",
@@ -2423,9 +2423,9 @@
         "title": "Utfärda faktura",
         "description": "Konsumerar nästa löpnummer. Kan ej återställas (annullering sker separat).",
         "review": {
-          "heading": "Granska innan utfärdande — detta låser en oföränderlig §86/4-ögonblicksbild",
-          "immutableSnapshotAck": "Utfärdande låser en OFÖRÄNDERLIG skatteögonblicksbild (köparidentitet, huvudkontor/filial, momsbehandling och noteringar). Den kan endast ändras genom att annullera detta dokument. Granska detaljerna nedan innan du bekräftar.",
-          "billStreamNote": "Ett icke-skattemässigt ใบแจ้งหนี้ (faktura)-nummer ({prefix}-…) tilldelas nu — INGET §87-skattenummer förbrukas vid utfärdande. §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน (skattekvitto) med sitt RC-nummer utfärdas när betalning registreras.",
+          "heading": "Granska innan utfärdande",
+          "immutableSnapshotAck": "Utfärdande låser en OFÖRÄNDERLIG skatteögonblicksbild (köparidentitet, huvudkontor/filial, momsbehandling och noteringar). Den kan endast ändras genom att annullera detta dokument.",
+          "billStreamNote": "Ett icke-skattemässigt ใบแจ้งหนี้-nummer ({prefix}-…) tilldelas nu — inget §87-skattenummer förbrukas ännu. §86/4 ใบกำกับภาษี/ใบเสร็จรับเงิน utfärdas när betalning registreras.",
           "fields": {
             "branchLine": "Huvudkontor/filial (สำนักงานใหญ่/สาขา)",
             "vatTreatment": "Momsbehandling",
@@ -2445,17 +2445,17 @@
             "none": "Ingen konfigurerad"
           },
           "warnings": {
-            "noPaymentPath": "Denna ใบแจ้งหนี้ (faktura) får INGEN betalningsväg — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Konfigurera en betalningsmetod innan utfärdande, eller fortsätt med vetskapen att fakturan för närvarande inte kan betalas.",
-            "notVatRegistrant": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
+            "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Lägg till en betalningsmetod innan utfärdande.",
+            "notVatRegistrant": "Ingen rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
           }
         },
         "form": {
           "vatTreatment": {
             "label": "Momsbehandling",
-            "help": "Endast för försäljning till ambassader / internationella organisationer — bifoga intyget från utrikesministeriet (MFA) enligt §80/1(5). All annan försäljning har standardmoms 7%.",
+            "help": "Försäljning till ambassader / internationella organisationer — bifoga MFA-intyget enligt §80/1(5). All annan försäljning har standardmoms 7%.",
             "standard": "Standard — moms 7%",
             "zeroRated": "Nollskattesats 0% — §80/1(5) (ambassad / int. org.)",
-            "membershipCaption": "Medlemskap har alltid moms 7%; §80/1(5) gäller endast icke-medlemsförsäljning (evenemang / tjänst)."
+            "membershipCaption": "Medlemskap har alltid moms 7% — §80/1(5) gäller endast evenemang/tjänsteförsäljning."
           },
           "cert": {
             "legend": "MFA-intyg §80/1(5)",
@@ -2466,7 +2466,7 @@
             "dateLabel": "Intygsdatum",
             "dateFormat": "Ange intygsdatum som ÅÅÅÅ-MM-DD."
           },
-          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB. Ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer — bekräfta att intyget gäller innan du utfärdar.",
+          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB — ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer. Bekräfta innan du utfärdar.",
           "certUpload": {
             "label": "Skanning av MFA-intyg (valfritt)",
             "pickerLabel": "Välj en intygsskanning att ladda upp",
@@ -2476,7 +2476,7 @@
             "uploadedToast": "Intygsskanning bifogad.",
             "attached": "Bifogad: {filename}",
             "remove": "Ta bort",
-            "helpText": "Valfritt. PDF, PNG eller JPG upp till 5 MB. Skanningen virusgranskas innan den lagras. Det är intygsNUMRET ovan som gör nollskatten giltig — skanningen är endast stödjande bevis.",
+            "helpText": "Valfritt. PDF, PNG eller JPG upp till 5 MB, virusgranskas innan lagring. Det är intygsNUMRET ovan som gör nollskatten giltig — skanningen är endast stödjande bevis.",
             "errors": {
               "zero_rate_cert_too_large": "Intygsskanningen är större än 5 MB.",
               "zero_rate_cert_invalid_mime": "Endast PDF-, PNG- eller JPG-filer tillåts.",
@@ -2497,9 +2497,9 @@
         "successWithNumber": "Faktura {number} utfärdad",
         "successNoEmailWarning": "Ingen e-postadress finns registrerad — fakturan skickades inte. Leverera den till köparen manuellt.",
         "cancel": "Avbryt",
-        "irreversibleWarning": "Denna åtgärd tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
-        "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå som en giltig skattefaktura med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
-        "noTaxIdHint088": "Den här köparen saknar skattenummer. Fakturan (ใบแจ้งหนี้) utfärdas med namn och adress, och dess §86/4-skattefaktura/kvitto vid betalning förblir giltig, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
+        "irreversibleWarning": "Tilldelar ett löpnummer enligt thailändsk skattelag §87 och kan inte ångras — för att annullera måste en kreditnota utfärdas.",
+        "noTaxIdHint": "Den här köparen saknar skattenummer. Fakturan utfärdas ändå med namn och adress, men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
+        "noTaxIdHint088": "Den här köparen saknar skattenummer. ใบแจ้งหนี้ utfärdas ändå (och dess §86/4-skattefaktura/kvitto vid betalning förblir giltig), men en momsregistrerad köpare kan inte dra av ingående moms utan sitt skattenummer på dokumentet — lägg till det innan utfärdande om köparen behöver göra avdrag.",
         "errors": {
           "failed": "Kunde inte utfärda",
           "concurrent": "Denna faktura har redan utfärdats i en annan session. Uppdatera för att se den senaste statusen och dess nummer.",
@@ -2563,7 +2563,7 @@
       },
       "pay": {
         "title": "Registrera betalning",
-        "description": "Markera fakturan som betald. Ett kvitto-PDF genereras och skickas till medlemmen.",
+        "description": "Registrera betalningen för denna faktura. §86/4-skattekvittot utfärdas och skickas till medlemmen om en e-postadress finns registrerad.",
         "payingForDocument": "Registrerar betalning för {number}",
         "submit": "Registrera",
         "submitting": "Registrerar…",
@@ -2606,7 +2606,7 @@
         "title": "Annullera faktura",
         "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen.",
         "voiding": "Annullerar faktura",
-        "terminalNotice": "Annullering är slutgiltig. När fakturan är annullerad är inga fler åtgärder (betala, kreditera, redigera) tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
+        "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
         "reasonLabel": "Orsak",
         "reasonHelp": "Visas på den annullerade PDF:en och i granskningsloggen. Obligatorisk, upp till 500 tecken.",
         "confirmCopy": "Skriv fakturanumret {phrase} för att bekräfta denna oåterkalleliga åtgärd.",
