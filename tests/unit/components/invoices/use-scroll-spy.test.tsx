@@ -32,3 +32,22 @@ it('returns the id of the most-visible intersecting section', () => {
   ]));
   expect(result.current).toBe('s2');
 });
+
+// Documented "retain the last active section" behaviour: once nothing is
+// intersecting (e.g. the user is between two sections, or has scrolled past
+// the last one), the hook must not fall back to null — the nav's
+// aria-current would otherwise vanish mid-scroll.
+it('retains the last active section when a later batch has nothing intersecting', () => {
+  const { result } = renderHook(() => useScrollSpy(['s1', 's2']));
+  act(() => cb([
+    { target: document.getElementById('s2'), isIntersecting: true, intersectionRatio: 0.9, boundingClientRect: { top: 10 } },
+    { target: document.getElementById('s1'), isIntersecting: false, intersectionRatio: 0, boundingClientRect: { top: -200 } },
+  ]));
+  expect(result.current).toBe('s2');
+
+  act(() => cb([
+    { target: document.getElementById('s2'), isIntersecting: false, intersectionRatio: 0, boundingClientRect: { top: -300 } },
+    { target: document.getElementById('s1'), isIntersecting: false, intersectionRatio: 0, boundingClientRect: { top: -500 } },
+  ]));
+  expect(result.current).toBe('s2');
+});

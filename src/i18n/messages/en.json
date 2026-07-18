@@ -1699,7 +1699,15 @@
         "seller": "Seller branch (§86/4)",
         "whtNote": "Withholding-tax note",
         "terminationNotice": "Termination notice",
-        "bank": "Offline payment (bank transfer)"
+        "bank": "Offline payment (bank transfer)",
+        "organization": "Organization",
+        "documentNotes": "Document notes",
+        "payment": "Payment",
+        "branding": "Branding"
+      },
+      "nav": {
+        "label": "Settings sections",
+        "jumpTo": "Jump to section…"
       },
       "labels": {
         "currencyCode": "Currency code",

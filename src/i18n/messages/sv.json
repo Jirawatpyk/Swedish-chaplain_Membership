@@ -1699,7 +1699,15 @@
         "seller": "Säljarens filial (§86/4)",
         "whtNote": "Notering om källskatt",
         "terminationNotice": "Uppsägningsnotering",
-        "bank": "Offlinebetalning (banköverföring)"
+        "bank": "Offlinebetalning (banköverföring)",
+        "organization": "Organisation",
+        "documentNotes": "Dokumentanteckningar",
+        "payment": "Betalning",
+        "branding": "Varumärke"
+      },
+      "nav": {
+        "label": "Inställningssektioner",
+        "jumpTo": "Gå till sektion…"
       },
       "labels": {
         "currencyCode": "Valutakod",
