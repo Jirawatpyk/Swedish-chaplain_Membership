@@ -139,6 +139,15 @@ export const issueInvoiceSchema = z.object({
     .refine(isValidCalendarDate, { message: 'not a real calendar date' })
     .optional(),
   zeroRateCertBlobKey: z.string().max(1024).optional(),
+  // Task 4 (107-auto-invoice) — per-CALL override for the renewal queue's
+  // "Issue + Send" action. Deliberately a PARAMETER, not a persisted row
+  // patch: a failed issue attempt must leave no persisted
+  // `autoEmailOnIssue=true` behind for a later "Issue silently" retry of
+  // the SAME draft to inherit. `.optional()` (no `.default()`) keeps
+  // `undefined` the no-op value so every existing caller that has never
+  // heard of this field is unaffected — see the resolution order at the
+  // step-L outbox block below.
+  autoEmailOverride: z.boolean().optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -854,8 +863,12 @@ export async function issueInvoice(
     //   (B) Non-member event privacy footer — when the buyer is a non-member
     //       on an EVENT invoice, thread `privacyFooterKind = 'event_non_member'`
     //       so the auto-email carries the §87/3 PDPA transparency notice.
+    // Task 4 (107-auto-invoice) — `input.autoEmailOverride` outranks BOTH
+    // the persisted per-draft flag and the tenant default. It is a
+    // request-scoped param (see `issueInvoiceSchema` docstring above), so
+    // an override never survives past this single call.
     const shouldAutoEmail =
-      draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
+      input.autoEmailOverride ?? draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     // Cluster 5 (Finding 1) — observable dispatch outcome. `'disabled'` when
     // auto-email is intentionally off (tenant default or per-invoice override);
     // otherwise the helper reports 'sent' vs 'skipped_no_email'.
