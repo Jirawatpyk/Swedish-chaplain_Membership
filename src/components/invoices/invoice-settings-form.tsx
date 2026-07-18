@@ -38,10 +38,12 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -111,6 +113,40 @@ export interface InvoiceSettingsFormInitialValues {
 const SWIFT_RE = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/;
 const ACCOUNT_NO_RE = /^[0-9][0-9\s-]{3,}$/;
 const BRANCH_CODE_RE = /^\d{5}$/;
+
+// settings-ux-invoice-reminders (wave A / C1-b) — PATCH-body / route-schema
+// field names that do NOT match their input's DOM `id=` attribute. Verified
+// against every *-section.tsx (Task 6 extraction). Both the server's
+// `error.details.fieldErrors` (zod `.flatten()`, keyed by schema field name)
+// and this form's own required-text guard need to resolve a schema field
+// name to the DOM id to mark/focus — see `fieldIdFor` below. Fields not
+// listed here have a DOM id identical to their schema key (e.g.
+// `legal_name_th`, `tax_id`, `bank_swift`).
+const FIELD_ID_MAP: Record<string, string> = {
+  registered_address_th: 'addr_th',
+  registered_address_en: 'addr_en',
+  vat_rate: 'vat_percent',
+  registration_fee_satang: 'reg_fee',
+  invoice_number_prefix: 'inv_prefix',
+  credit_note_number_prefix: 'cn_prefix',
+  receipt_number_prefix: 'rc_prefix',
+  receipt_numbering_mode: 'receipt_mode',
+  fiscal_year_start_month: 'fy_month',
+  default_net_days: 'net_days',
+  pro_rate_policy: 'pro_rate',
+  auto_email_enabled: 'auto_email',
+  logo_blob_key: 'logo_file',
+  seller_is_head_office: 'seller_ho',
+  seller_branch_code: 'seller_branch',
+  wht_note_th: 'wht_th',
+  wht_note_en: 'wht_en',
+  bank_payee_name: 'bank_payee',
+  payment_instructions_th: 'pay_instr_th',
+  payment_instructions_en: 'pay_instr_en',
+};
+function fieldIdFor(schemaFieldName: string): string {
+  return FIELD_ID_MAP[schemaFieldName] ?? schemaFieldName;
+}
 
 // Task 7 — two-column sticky-nav section map (spec §4.3). Module-scope so
 // the array reference is stable across renders: `SectionNav` memoises its
@@ -292,16 +328,13 @@ export function InvoiceSettingsForm({
   const dirty = isAdmin && isDirty(initialRecord, currentValues);
   useUnsavedGuard(dirty);
 
-  // Task 7 (spec §6.3) — a blocked (validation-failed) submit focuses the
-  // first invalid field so keyboard/screen-reader users land where the
-  // error is, instead of only reading the top-of-form `role="alert"`.
-  // Most guards below already have a matching native HTML constraint
-  // (required/pattern/min/max) on their input, so the browser's own
-  // `:invalid` state finds them with no extra bookkeeping. The two guards
-  // with no native equivalent (bank account-number format, reserved 'RE'
-  // receipt prefix) are marked imperatively via `aria-invalid` — a direct
-  // DOM write (not React state) so the marker is visible to this
-  // synchronous query immediately, without waiting for a re-render.
+  // Task 7 (spec §6.3) / wave-A C1(a) — a blocked (validation-failed) submit
+  // focuses the field the guard that ACTUALLY fired is about, not merely
+  // the first `:invalid` element in DOM order (Task-7 MEDIUM: a later-in-
+  // sequence guard firing while an earlier, unrelated field is also
+  // natively invalid used to steal focus). Every guard below now marks +
+  // focuses its OWN field via `failGuard`; the global `:invalid` scan is
+  // kept only as a last-resort fallback for a field id that isn't found.
   function markInvalid(fieldId: string) {
     formRef.current?.querySelector<HTMLElement>(`#${fieldId}`)?.setAttribute('aria-invalid', 'true');
   }
@@ -309,6 +342,24 @@ export function InvoiceSettingsForm({
     const target = formRef.current?.querySelector<HTMLElement>(':invalid, [aria-invalid="true"]');
     target?.focus();
     target?.scrollIntoView?.({ block: 'center' });
+  }
+  function focusField(fieldId: string) {
+    const target = formRef.current?.querySelector<HTMLElement>(`#${fieldId}`);
+    if (target) {
+      target.focus();
+      target.scrollIntoView?.({ block: 'center' });
+      return;
+    }
+    // Field id not found on this render (shouldn't happen — ids are
+    // verified against every *-section.tsx) — fall back to the global scan
+    // rather than silently leaving focus untouched.
+    focusFirstInvalidField();
+  }
+  function failGuard(fieldId: string, message: string) {
+    markInvalid(fieldId);
+    setError(message);
+    setSubmitting(false);
+    focusField(fieldId);
   }
 
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -352,13 +403,34 @@ export function InvoiceSettingsForm({
       ?.querySelectorAll<HTMLElement>('[aria-invalid="true"]')
       .forEach((el) => el.removeAttribute('aria-invalid'));
 
+    // wave-A C1(c) — required text fields (route schema `.min(1)` / non-blank
+    // regex) had NO client-side check before this fix: an empty value fell
+    // through every guard below and only ever got caught by the server's
+    // 400 `invalid_body` (see doPatch's fieldErrors handling), with no
+    // client-side focus at all. Block early — before any of the numeric/
+    // format guards — so a blank required field never round-trips, and so
+    // the field surfaced first is the first one top-to-bottom in the form.
+    const requiredTextFields: ReadonlyArray<readonly [schemaFieldName: string, value: string]> = [
+      ['legal_name_th', legalNameTh],
+      ['legal_name_en', legalNameEn],
+      ['tax_id', taxId],
+      ['registered_address_th', addrTh],
+      ['registered_address_en', addrEn],
+      ['invoice_number_prefix', invoicePrefix],
+      ['credit_note_number_prefix', creditPrefix],
+    ];
+    for (const [schemaFieldName, value] of requiredTextFields) {
+      if (value.trim() === '') {
+        failGuard(fieldIdFor(schemaFieldName), t('errors.requiredFields'));
+        return;
+      }
+    }
+
     // Percent → 4-dp decimal string. Guard against Number.parseFloat
     // returning NaN on empty input.
     const vatNum = Number.parseFloat(vatPercent);
     if (Number.isNaN(vatNum) || vatNum < 0 || vatNum > 30) {
-      setError(t('errors.vatRange'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('vat_percent', t('errors.vatRange'));
       return;
     }
     const vatDecimalString = (vatNum / 100).toFixed(4);
@@ -366,9 +438,7 @@ export function InvoiceSettingsForm({
     // Major units → satang (bigint serialised as string).
     const regFeeMajor = Number.parseFloat(regFee);
     if (Number.isNaN(regFeeMajor) || regFeeMajor < 0) {
-      setError(t('errors.regFeeRange'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('reg_fee', t('errors.regFeeRange'));
       return;
     }
     const regFeeSatang = String(Math.round(regFeeMajor * 100));
@@ -376,15 +446,11 @@ export function InvoiceSettingsForm({
     const fiscalMonth = Number.parseInt(fiscalStartMonth, 10);
     const netDays = Number.parseInt(defaultNetDays, 10);
     if (Number.isNaN(fiscalMonth) || fiscalMonth < 1 || fiscalMonth > 12) {
-      setError(t('errors.fiscalMonth'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('fy_month', t('errors.fiscalMonth'));
       return;
     }
     if (Number.isNaN(netDays) || netDays < 0 || netDays > 365) {
-      setError(t('errors.netDays'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('net_days', t('errors.netDays'));
       return;
     }
 
@@ -392,9 +458,7 @@ export function InvoiceSettingsForm({
     // regex are the real guards; this just catches obvious typos fast.
     const normalisedCurrency = currencyCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalisedCurrency)) {
-      setError(t('errors.currencyCode'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('currency_code', t('errors.currencyCode'));
       return;
     }
 
@@ -402,26 +466,19 @@ export function InvoiceSettingsForm({
     // Mirror the route zod / DB CHECK so the admin gets fast inline feedback.
     const branchTrimmed = sellerBranchCode.trim();
     if (!sellerIsHeadOffice && !BRANCH_CODE_RE.test(branchTrimmed)) {
-      setError(t('errors.sellerBranch'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('seller_branch', t('errors.sellerBranch'));
       return;
     }
     const swiftTrimmed = bankSwift.trim().toUpperCase();
     if (swiftTrimmed !== '' && !SWIFT_RE.test(swiftTrimmed)) {
-      setError(t('errors.bankSwift'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      failGuard('bank_swift', t('errors.bankSwift'));
       return;
     }
     const accountTrimmed = bankAccountNo.trim();
     if (accountTrimmed !== '' && !ACCOUNT_NO_RE.test(accountTrimmed)) {
       // bank_account_no has no native `pattern` constraint (free-format,
-      // optional field) — mark it explicitly so focusFirstInvalidField finds it.
-      markInvalid('bank_account_no');
-      setError(t('errors.bankAccountNo'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      // optional field) — failGuard marks it explicitly.
+      failGuard('bank_account_no', t('errors.bankAccountNo'));
       return;
     }
 
@@ -436,11 +493,8 @@ export function InvoiceSettingsForm({
     // fast inline feedback). Case-insensitive — document prefixes are uppercase.
     if (receiptPrefixValue !== null && receiptPrefixValue.trim().toUpperCase() === 'RE') {
       // No native constraint expresses "not equal to a reserved value" —
-      // mark it explicitly so focusFirstInvalidField finds it.
-      markInvalid('rc_prefix');
-      setError(t('errors.receiptPrefixReserved'));
-      setSubmitting(false);
-      focusFirstInvalidField();
+      // failGuard marks it explicitly.
+      failGuard('rc_prefix', t('errors.receiptPrefixReserved'));
       return;
     }
 
@@ -517,14 +571,53 @@ export function InvoiceSettingsForm({
         setSubmitting(false);
         return;
       }
+      // wave-A Minor + C1(b) — read the error body ONCE (a Response body can
+      // only be consumed once) and branch on it below.
       const errBody = (await res.json().catch(() => ({}))) as {
-        error?: { code?: string };
+        error?:
+          | string
+          | {
+              code?: string;
+              details?: { fieldErrors?: Record<string, string[]> };
+            };
       };
-      const code = errBody.error?.code ?? 'generic';
-      if (code === 'vat_rate_out_of_range') setError(t('errors.vatRange'));
-      else if (res.status === 400) setError(t('errors.validation'));
-      else if (res.status === 403) setError(t('errors.forbidden'));
-      else {
+      // read-only-mode 503: flat string (proxy-level gate, `src/proxy.ts`)
+      // OR nested `{ code }` (a route-level guard) — same dual-shape check
+      // as `plans-table.tsx`. This route only ever hits the proxy-level
+      // gate today; the shape check costs nothing and stays consistent.
+      const errObj = errBody.error;
+      const code = (typeof errObj === 'string' ? errObj : errObj?.code) ?? 'generic';
+      if (code === 'read-only-mode' || code === 'read_only_mode') {
+        // Retrying immediately won't help — say so instead of the generic
+        // "save failed, try again".
+        setError(t('errors.readOnly'));
+        toast.error(t('errors.readOnly'));
+        return;
+      }
+      const fieldErrors = typeof errObj === 'object' ? errObj?.details?.fieldErrors : undefined;
+      if (code === 'vat_rate_out_of_range') {
+        setError(t('errors.vatRange'));
+      } else if (code === 'invalid_body' && fieldErrors && Object.keys(fieldErrors).length > 0) {
+        // C1(b) — the route's zod `.flatten()` keys fieldErrors by schema
+        // field name; map each to its DOM id (FIELD_ID_MAP for the ids that
+        // differ) and mark + focus the first one.
+        const fieldNames = Object.keys(fieldErrors);
+        fieldNames.forEach((name) => markInvalid(fieldIdFor(name)));
+        setError(t('errors.requiredFields'));
+        // flushSync — this branch runs after `await fetch`, well after
+        // React committed the EARLIER `setSubmitting(true)` (top of this
+        // function), so every input is still rendered `disabled` right
+        // now. A disabled element cannot receive focus, so the update
+        // that re-enables the field must be flushed to the DOM before
+        // `focusField` can move focus onto it (the `finally` block's
+        // `setSubmitting(false)` below would otherwise land too late).
+        flushSync(() => setSubmitting(false));
+        focusField(fieldIdFor(fieldNames[0]!));
+      } else if (res.status === 400) {
+        setError(t('errors.validation'));
+      } else if (res.status === 403) {
+        setError(t('errors.forbidden'));
+      } else {
         setError(t('errors.generic'));
         toast.error(t('errors.generic'));
       }
@@ -547,7 +640,16 @@ export function InvoiceSettingsForm({
     >
       <SectionNav sections={SECTIONS} />
 
-      <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]',
+          // C3 — the fixed-bottom StickySaveBar (≥68px + safe-area inset)
+          // covers the in-form Save button + error text once scrolled to
+          // the end. Only pad when it's actually visible (`dirty`), so the
+          // page isn't left with dead space the rest of the time.
+          dirty && 'pb-[calc(env(safe-area-inset-bottom)+5rem)]',
+        )}
+      >
         <OrganizationSection
           currencyCode={currencyCode}
           onCurrencyCodeChange={setCurrencyCode}
@@ -651,7 +753,11 @@ export function InvoiceSettingsForm({
             // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
             // tall + full-width so it stays a reachable tap target at 320px.
             className="min-h-11 w-full"
-            disabled={submitting}
+            // Minor — nothing to save once settings already exist and the
+            // form matches its last-saved snapshot. `exists` gates this so
+            // first-time creation stays enabled even though a fresh form
+            // equals DEFAULTS (and is therefore technically not "dirty").
+            disabled={submitting || (exists && !dirty)}
             aria-busy={submitting}
           >
             {submitting && (

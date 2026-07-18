@@ -1800,7 +1800,9 @@
         "sellerBranch": "En filial kräver en femsiffrig filialkod; ett huvudkontor måste lämna den tom.",
         "bankSwift": "SWIFT/BIC måste vara 8 eller 11 tecken (bokstäver och siffror).",
         "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna).",
-        "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC."
+        "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC.",
+        "requiredFields": "Fyll i de markerade obligatoriska fälten.",
+        "readOnly": "Systemet är tillfälligt skrivskyddat för underhåll. Försök igen snart."
       },
       "saving": "Sparar…",
       "actions": {
