@@ -50,6 +50,7 @@ function stubDeps(): BulkActionDeps {
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
+    enrolAutoInvoiceInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

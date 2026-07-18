@@ -110,6 +110,15 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+        // `renewal_cycles_closed_at_iff_terminal_check` (migration 0087):
+        // closed_at is NOT NULL iff the status is terminal. `lapsed` is
+        // terminal, `awaiting_payment` is not.
+        ...(status === 'lapsed'
+          ? {
+              closedAt: new Date('2026-08-02T00:00:00Z'),
+              closedReason: 'lapsed',
+            }
+          : {}),
       }),
     );
 

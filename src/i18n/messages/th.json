@@ -1052,6 +1052,7 @@
         }
       },
       "detail": {
+        "autoInvoiceEnrolledBadge": "ใบแจ้งหนี้อัตโนมัติ",
         "title": "{companyName}",
         "subtitle": "{plan} · ปี {year}",
         "subtitleArchived": "{plan} · ปี {year} · เก็บถาวร",
@@ -1556,7 +1557,8 @@
         "actions": {
           "archive": "เก็บเข้าคลัง",
           "change_plan": "เปลี่ยนแพ็กเกจ",
-          "send_portal_invite": "ส่งคำเชิญ"
+          "send_portal_invite": "ส่งคำเชิญ",
+          "enrol_auto_invoice": "เปิดใช้ใบแจ้งหนี้อัตโนมัติ"
         },
         "clear": "ล้างการเลือก",
         "archiveTitle": "ย้าย {count} สมาชิก ไปถังเก็บ",
@@ -1570,10 +1572,16 @@
         "confirmInviteTitle": "ส่งคำเชิญ {count} รายการ",
         "confirmInviteDescription": "ระบบจะส่งอีเมลคำเชิญเข้าพอร์ทัลให้สมาชิกที่เลือก เพื่อให้เข้าใช้งานพอร์ทัลสมาชิกได้",
         "confirmInviteAction": "ส่งคำเชิญ",
+        "confirmEnrolTitle": "เปิดใช้ใบแจ้งหนี้อัตโนมัติกับสมาชิก {count} ราย",
+        "confirmEnrolDescription": "ระบบจะจัดเตรียมร่างใบแจ้งหนี้ต่ออายุให้สมาชิกเหล่านี้โดยอัตโนมัติก่อนถึงกำหนดชำระ เหรัญญิกยังคงต้องตรวจสอบและออกเอกสารทุกฉบับ — ไม่มีการส่งโดยไม่ได้รับการอนุมัติ สมาชิกที่สิ้นสุดสถานะแล้วจะถูกข้าม",
+        "confirmEnrolAction": "เปิดใช้งาน",
         "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
         "inviteQueued": "จัดคิวคำเชิญ {invited} รายการ",
         "inviteSkipped": "ข้าม {skipped} รายการ",
         "inviteFailed": "ล้มเหลว {failed} รายการ",
+        "enrolSucceeded": "เปิดใช้งานแล้ว {enrolled} ราย",
+        "enrolSkippedAlready": "เปิดใช้งานอยู่แล้ว {skipped} ราย",
+        "enrolSkippedTerminated": "ข้าม {skipped} ราย (สิ้นสุดสถานะสมาชิก)",
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
         "errors": {
           "state_error": "สมาชิกที่เลือกบางรายอยู่ในสถานะที่ไม่สามารถทำรายการนี้ได้ กรุณารีเฟรชแล้วลองใหม่อีกครั้ง",
@@ -5844,6 +5852,7 @@
       "member_erasure_requested": "ขอลบข้อมูลสมาชิก",
       "member_erased": "ลบข้อมูลสมาชิกแล้ว",
       "subprocessor_erasure_propagated": "ส่งต่อการลบข้อมูลไปยังผู้ประมวลผลช่วง",
+      "member_auto_invoice_enrolled": "ลงทะเบียนออกใบแจ้งหนี้ต่ออายุอัตโนมัติ",
       "user_erased": "ลบบัญชีผู้ใช้แล้ว",
       "broadcast_content_redacted": "ปกปิดเนื้อหาอีเมล E-Blast",
       "account_created": "สร้างบัญชี",

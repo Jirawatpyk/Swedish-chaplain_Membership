@@ -14,7 +14,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, MailIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, MailIcon, ReceiptTextIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -28,7 +28,7 @@ import { BULK_CAP } from '@/lib/members-bulk-constants';
 // dead code; if reintroduced, add both the button AND the union entry
 // in the same diff. The i18n string `admin.members.bulk.actions.change_plan`
 // is preserved for if/when the button lands.
-type BulkAction = 'archive' | 'send_portal_invite';
+type BulkAction = 'archive' | 'send_portal_invite' | 'enrol_auto_invoice';
 
 type Props = {
   readonly selectedIds: string[];
@@ -52,6 +52,7 @@ export function BulkActionBar({
   const router = useRouter();
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [enrolDialogOpen, setEnrolDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{
     action: string;
@@ -99,6 +100,26 @@ export function BulkActionBar({
             // tick on a no-op misleads the admin into thinking invites were sent.
             if (c.failed > 0) toast.error(message);
             else if (c.invited > 0) toast.success(message);
+            else toast.info(message);
+          } else if (action === 'enrol_auto_invoice') {
+            // Per-member skip buckets, same shape as the invite arm. There
+            // is no `failed` bucket here — the endpoint is all-or-nothing,
+            // so any real failure arrives as a non-2xx and never reaches
+            // this branch.
+            const parts = [t('enrolSucceeded', { enrolled: body.enrolled })];
+            if (body.skipped_already > 0) {
+              parts.push(t('enrolSkippedAlready', { skipped: body.skipped_already }));
+            }
+            if (body.skipped_terminated > 0) {
+              parts.push(
+                t('enrolSkippedTerminated', { skipped: body.skipped_terminated }),
+              );
+            }
+            const message = parts.join(' · ');
+            // A no-op (everyone already enrolled / terminated) gets a neutral
+            // info toast — a green tick on zero writes misleads the admin into
+            // thinking the roster changed.
+            if (body.enrolled > 0) toast.success(message);
             else toast.info(message);
           } else {
             toast.success(
@@ -198,6 +219,20 @@ export function BulkActionBar({
               <MailIcon className="mr-1.5 h-4 w-4" />
               {t('actions.send_portal_invite')}
             </Button>
+            {/* 107-auto-invoice Task 15 — non-destructive (it only turns ON a
+                billing preference and has no un-enrol counterpart yet), so
+                `variant="outline"` + the generic ConfirmationDialog, matching
+                the invite button rather than the destructive archive one. */}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={executing || overCap}
+              onClick={() => setEnrolDialogOpen(true)}
+              className="min-h-[36px]"
+            >
+              <ReceiptTextIcon className="mr-1.5 h-4 w-4" />
+              {t('actions.enrol_auto_invoice')}
+            </Button>
           </div>
 
           {/* Right: clear */}
@@ -234,6 +269,17 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('send_portal_invite')}
+      />
+
+      <ConfirmationDialog
+        open={enrolDialogOpen}
+        onOpenChange={setEnrolDialogOpen}
+        title={t('confirmEnrolTitle', { count })}
+        description={t('confirmEnrolDescription')}
+        confirmLabel={t('confirmEnrolAction')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={executing}
+        onConfirm={() => executeBulk('enrol_auto_invoice')}
       />
 
       {progress && (

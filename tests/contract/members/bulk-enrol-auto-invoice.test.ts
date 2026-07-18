@@ -25,7 +25,16 @@ import { ok, err } from '@/lib/result';
 const requireAdminContextMock = vi.fn();
 const bulkEnrolMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
-const classifyMock = vi.fn(async () => ({ kind: 'first' as const }));
+type Classification =
+  | { kind: 'first' }
+  | { kind: 'conflict' }
+  | {
+      kind: 'replay';
+      previousResponse: { status: number; body: unknown };
+    };
+const classifyMock = vi.fn(
+  async (): Promise<Classification> => ({ kind: 'first' }),
+);
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -120,7 +129,7 @@ const allowRateLimit = () =>
 describe('contract: POST /api/members/bulk — enrol_auto_invoice arm', () => {
   afterEach(() => {
     vi.clearAllMocks();
-    classifyMock.mockImplementation(async () => ({ kind: 'first' as const }));
+    classifyMock.mockImplementation(async () => ({ kind: 'first' }));
   });
 
   it('200 happy path — returns snake_case bucket counts', async () => {

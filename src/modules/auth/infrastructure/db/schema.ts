@@ -438,6 +438,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     — reconcile-issued-orphans cron's link-repair forensic event.
   //     Keep in lockstep with F8_AUDIT_EVENT_TYPES. ---
   'renewal_orphan_invoice_relinked',
+  // --- 107-auto-invoice Task 15 (migration 0263) — an F3 (members) event,
+  //     not F8: it records an admin stamping `members.auto_invoice_
+  //     enrolled_at`, the third and final auto-invoice gating key. Keep in
+  //     lockstep with F3AuditEventType in
+  //     `src/modules/members/application/ports/audit-port.ts`. ---
+  'member_auto_invoice_enrolled',
 ]);
 
 /**

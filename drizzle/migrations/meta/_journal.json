@@ -1835,6 +1835,13 @@
       "when": 1798539000000,
       "tag": "0262_reconcile_issued_orphans_audit_event",
       "breakpoints": true
+    },
+    {
+      "idx": 265,
+      "version": "7",
+      "when": 1798539100000,
+      "tag": "0263_member_auto_invoice_enrolled_audit",
+      "breakpoints": true
     }
   ]
 }

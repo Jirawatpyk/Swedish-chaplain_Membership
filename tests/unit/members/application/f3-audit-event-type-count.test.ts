@@ -54,6 +54,8 @@ const F3_AUDIT_EVENTS: readonly F3AuditEventType[] = [
   'member_erased',
   // COMP-1 US3-C (migration 0228) — best-effort sub-processor erasure propagation outcome.
   'subprocessor_erasure_propagated',
+  // 107-auto-invoice Task 15 (migration 0263) — auto-invoice enrolment.
+  'member_auto_invoice_enrolled',
 ] as const;
 
 // Compile-time proof that the tuple covers the full union.
@@ -70,9 +72,9 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 32 (31 prior + subprocessor_erasure_propagated)', () => {
+  it('F3 audit event type count is 33 (32 prior + member_auto_invoice_enrolled)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
-    expect(F3_AUDIT_EVENTS.length).toBe(32);
+    expect(F3_AUDIT_EVENTS.length).toBe(33);
   });
 });

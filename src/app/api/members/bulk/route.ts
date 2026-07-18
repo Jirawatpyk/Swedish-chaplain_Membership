@@ -24,7 +24,11 @@ import {
   hashRequestBody,
 } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
-import { bulkAction, bulkSendPortalInvite } from '@/modules/members';
+import {
+  bulkAction,
+  bulkEnrolAutoInvoice,
+  bulkSendPortalInvite,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { rateLimiter } from '@/modules/auth';
 import {
@@ -280,6 +284,129 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { err: e, requestId: ctx.requestId },
         'bulk-invite: rememberIdempotentResponse (error path) failed (non-fatal)',
       );
+    }
+    return NextResponse.json(errorResponse.body, { status: errorResponse.status });
+  }
+
+  // 6b. enrol_auto_invoice — 107-auto-invoice Task 15. A SEPARATE use case
+  //     (not a `bulkAction` arm): it needs the `membershipAccess` port that
+  //     bulkAction has no use for, and it reports per-member SKIP BUCKETS
+  //     rather than bulkAction's single `updatedCount`. Everything before
+  //     this point — RBAC, the ≤100 cap, Idempotency-Key, the per-actor
+  //     rate limit — is deliberately SHARED, not re-implemented.
+  //
+  //     Skips are not failures: a batch where every member was already
+  //     enrolled or is terminated is still a 200 with zeroed counters.
+  //     Only invalid input / a missing member / an infra fault errors.
+  if (
+    rawBody &&
+    typeof rawBody === 'object' &&
+    (rawBody as Record<string, unknown>).action === 'enrol_auto_invoice'
+  ) {
+    const enrolResult = await bulkEnrolAutoInvoice(
+      rawBody,
+      {
+        actorUserId: ctx.current.user.id,
+        requestId: ctx.requestId,
+      },
+      {
+        tenant: deps.tenant,
+        memberRepo: deps.memberRepo,
+        audit: deps.audit,
+        clock: deps.clock,
+        membershipAccess: deps.membershipAccess,
+      },
+    );
+
+    if (enrolResult.ok) {
+      const body = {
+        enrolled: enrolResult.value.enrolled,
+        skipped_already: enrolResult.value.skippedAlready,
+        skipped_terminated: enrolResult.value.skippedTerminated,
+      };
+      try {
+        await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+          status: 200,
+          body,
+        });
+      } catch (e) {
+        logger.warn(
+          { err: e, requestId: ctx.requestId },
+          'bulk-enrol-auto-invoice: rememberIdempotentResponse failed (non-fatal)',
+        );
+      }
+      return NextResponse.json(body, { status: 200 });
+    }
+
+    const enrolError = enrolResult.error;
+    const errorResponse =
+      enrolError.type === 'invalid_body'
+        ? {
+            status: 400 as const,
+            body: {
+              error: {
+                code: 'invalid_body' as const,
+                message: 'Body failed validation.',
+                details: { issues: enrolError.issues },
+              },
+            },
+          }
+        : enrolError.type === 'bulk_cap_exceeded'
+          ? {
+              status: 400 as const,
+              body: {
+                error: {
+                  code: 'bulk_cap_exceeded' as const,
+                  message: `Cannot exceed ${BULK_CAP} members per batch.`,
+                  details: { count: enrolError.count, max: BULK_CAP },
+                },
+              },
+            }
+          : enrolError.type === 'not_found'
+            ? {
+                status: 404 as const,
+                body: {
+                  error: {
+                    code: 'not_found' as const,
+                    message: 'Member not found.',
+                    details: { member_id: enrolError.memberId },
+                  },
+                },
+              }
+            : {
+                status: 500 as const,
+                body: {
+                  error: {
+                    code: 'server_error' as const,
+                    message: 'Internal server error.',
+                  },
+                },
+              };
+
+    if (errorResponse.status === 500) {
+      logger.error(
+        { requestId: ctx.requestId, err: enrolError },
+        'bulk-enrol-auto-invoice: unhandled',
+      );
+    } else {
+      // Same rationale as the invite arm (go-live /code-review #33): these
+      // deterministic client errors still hold the idempotency reservation
+      // made above, so cache them — otherwise a same-key + same-body retry
+      // gets a stuck `idempotency_reservation_failed`. 5xx is deliberately
+      // NOT cached: an infra fault must stay retryable with the same key.
+      try {
+        await rememberIdempotentResponse(
+          tenant,
+          keyCheck.key,
+          bodyHash,
+          errorResponse,
+        );
+      } catch (e) {
+        logger.warn(
+          { err: e, requestId: ctx.requestId },
+          'bulk-enrol-auto-invoice: rememberIdempotentResponse (error path) failed (non-fatal)',
+        );
+      }
     }
     return NextResponse.json(errorResponse.body, { status: errorResponse.status });
   }

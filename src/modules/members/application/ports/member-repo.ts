@@ -317,6 +317,36 @@ export interface MemberRepo {
   ): Promise<Result<Member, RepoError>>;
 
   /**
+   * 107-auto-invoice Task 15 — stamp `members.auto_invoice_enrolled_at`
+   * for a batch of members in ONE round-trip, and return the ids it
+   * actually wrote.
+   *
+   * Deliberately NOT expressed as N × `updateFieldsInTx`: enrolment is a
+   * bulk operation capped at 100 members, and the serial form would hold
+   * the transaction open for ~100 RTT (the same problem staff-review
+   * SB-1/SW-1 fixed for `findManyByIdsInTx`).
+   *
+   * Only rows whose `auto_invoice_enrolled_at IS NULL` are written, so an
+   * already-enrolled member is never RE-stamped (their original enrolment
+   * timestamp is the audit-relevant one) and a concurrent second enrol
+   * cannot double-write. The RETURNING set is therefore the authoritative
+   * "who did we actually enrol" list the caller must use to decide which
+   * audit events to emit — do NOT assume it equals `memberIds`.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to
+   * the ambient RLS `SET LOCAL app.current_tenant` — Constitution
+   * Principle I two-layer isolation. This method WRITES the key that
+   * causes automated billing, so a cross-tenant leak here would be the
+   * highest-severity class of Principle I violation.
+   */
+  enrolAutoInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+    enrolledAt: Date,
+  ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
+
+  /**
    * Resolve member by a linked contact's user_id. Used by portal
    * self-service (US5) to derive the member from the session user.
    * Returns the member whose contact has `linked_user_id = userId`

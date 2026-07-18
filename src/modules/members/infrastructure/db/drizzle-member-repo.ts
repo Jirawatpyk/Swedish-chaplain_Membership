@@ -109,6 +109,10 @@ function rowToMember(row: MemberRow): Member {
     // column (DB DEFAULT 'rolling'); the optional aggregate field is for
     // hand-built drafts/fixtures, not for a loaded row.
     billingCycle: row.billingCycle,
+    // 107-auto-invoice Task 15 — always populated from the nullable column
+    // so a loaded Member carries a real `Date | null`; the optional
+    // aggregate field is for hand-built drafts/fixtures only.
+    autoInvoiceEnrolledAt: row.autoInvoiceEnrolledAt,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -495,6 +499,32 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async enrolAutoInvoiceInTx(tx, tenantId, memberIds, enrolledAt) {
+    try {
+      if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
+      const rows = await tx
+        .update(members)
+        .set({ autoInvoiceEnrolledAt: enrolledAt })
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation. This UPDATE
+            // writes the key that turns on automated billing.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            // Never RE-stamp an already-enrolled member: their original
+            // enrolment timestamp is the audit-relevant one, and this
+            // also makes a concurrent duplicate enrol a no-op.
+            isNull(members.autoInvoiceEnrolledAt),
+          ),
+        )
+        .returning({ memberId: members.memberId });
+      return ok(rows.map((r) => r.memberId as MemberId));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findByLinkedUserId(ctx, userId) {
     try {
       // Join contacts → members to find the member whose contact has
@@ -801,6 +831,17 @@ export const drizzleMemberRepo: MemberRepo = {
           riskScoreFactors: null,
           riskScoreLastComputedAt: null,
           riskSnoozedUntil: null,
+          // 107-auto-invoice — an erased member MUST NOT stay enrolled in
+          // automated billing. This is an operational safety reset more than a
+          // PII scrub: `scrubPiiInTx` deliberately leaves `status`/`archived_at`
+          // alone ("erasure is orthogonal to archive"), so an erased-but-active
+          // member still satisfies the auto-draft cron's member-side gate
+          // (`archived_at IS NULL AND status <> 'archived'`). Left set, the cron
+          // would draft a renewal invoice addressed to `[erased]`.
+          // Pre-existing gap: the column shipped in migration 0259 (Task 1) but
+          // was never classified in scrub-pii-column-coverage.test.ts, which had
+          // been red on this branch since.
+          autoInvoiceEnrolledAt: null,
           // `erased_at` is STICKY — COALESCE preserves the ORIGINAL erasure
           // instant on a US2d reconciler re-drive (erase-member.ts always passes
           // a FRESH `{ erasedAt: now }`). The Art.12/§30 date-of-erasure must not

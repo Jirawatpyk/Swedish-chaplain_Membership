@@ -1,0 +1,24 @@
+-- 107-auto-invoice (Task 15) — new F3 audit event for the per-member
+-- auto-invoice enrolment write path: `member_auto_invoice_enrolled`.
+--
+-- Why this event needs to exist at all: `members.auto_invoice_enrolled_at`
+-- is the THIRD and final gating key for auto-invoicing (after the
+-- `FEATURE_AUTO_INVOICE` env flag and `tenant_invoice_settings.
+-- auto_invoice_enabled`). Setting it is what causes a member to be BILLED
+-- AUTOMATICALLY with no human in the loop, so "who enrolled this member,
+-- and when" must be answerable from the append-only audit trail.
+--
+-- Emitted once per ENROLLED member (never for a skipped one) inside the
+-- same transaction as the UPDATE, carrying `action` + `bulk_request_id`
+-- in the payload so a bulk run can be correlated — the same singular-
+-- per-member convention `bulkAction` already uses for `member_archived`
+-- and `member_plan_changed`.
+--
+-- A NEW migration rather than an append to 0259/0260/0262 — all three are
+-- already applied to the `dev` Neon branch, so editing one in place would
+-- change its content hash after being recorded as applied. See
+-- `scripts/lib/enum-migration-guard.ts` header for why `ALTER TYPE …
+-- ADD VALUE` migrations run in their own autocommit pre-pass and must
+-- stay self-contained.
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'member_auto_invoice_enrolled';

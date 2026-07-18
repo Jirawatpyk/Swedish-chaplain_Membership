@@ -1052,6 +1052,7 @@
         }
       },
       "detail": {
+        "autoInvoiceEnrolledBadge": "Autofakturering",
         "title": "{companyName}",
         "subtitle": "{plan} · År {year}",
         "subtitleArchived": "{plan} · År {year} · Arkiverad",
@@ -1556,7 +1557,8 @@
         "actions": {
           "archive": "Arkivera",
           "change_plan": "Byt plan",
-          "send_portal_invite": "Skicka inbjudan"
+          "send_portal_invite": "Skicka inbjudan",
+          "enrol_auto_invoice": "Anmäl till autofakturering"
         },
         "clear": "Rensa urval",
         "archiveTitle": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
@@ -1570,10 +1572,16 @@
         "confirmInviteTitle": "Skicka {count, plural, one {# inbjudan} other {# inbjudningar}}",
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
+        "confirmEnrolTitle": "Anmäl {count, plural, one {# medlem} other {# medlemmar}} till autofakturering",
+        "confirmEnrolDescription": "Förnyelsefakturor förbereds automatiskt som utkast för dessa medlemmar inför förfallodagen. En kassatjänsteman granskar och utfärdar fortfarande varje utkast — ingenting skickas utan godkännande. Medlemmar vars medlemskap har upphört hoppas över.",
+        "confirmEnrolAction": "Anmäl medlemmar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
+        "enrolSucceeded": "{enrolled, plural, one {# medlem anmäld} other {# medlemmar anmälda}}",
+        "enrolSkippedAlready": "{skipped} redan anmälda",
+        "enrolSkippedTerminated": "{skipped} hoppades över (medlemskap avslutat)",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "errors": {
           "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
@@ -5844,6 +5852,7 @@
       "member_erasure_requested": "Radering av medlem begärd",
       "member_erased": "Medlemsuppgifter raderade",
       "subprocessor_erasure_propagated": "Radering vidarebefordrad till underbiträde",
+      "member_auto_invoice_enrolled": "Registrerad för automatisk förnyelsefakturering",
       "user_erased": "Användarkonto raderat",
       "broadcast_content_redacted": "Utskicksinnehåll maskerat",
       "account_created": "Konto skapat",

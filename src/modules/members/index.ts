@@ -324,6 +324,18 @@ export {
   type BulkActionMeta,
 } from './application/use-cases/bulk-action';
 
+// 107-auto-invoice Task 15 — the sole write path for the per-member
+// auto-invoice enrolment key (`members.auto_invoice_enrolled_at`).
+export {
+  bulkEnrolAutoInvoice,
+  bulkEnrolAutoInvoiceSchema,
+  type BulkEnrolAutoInvoiceInput,
+  type BulkEnrolAutoInvoiceOutput,
+  type BulkEnrolAutoInvoiceError,
+  type BulkEnrolAutoInvoiceDeps,
+  type BulkEnrolAutoInvoiceMeta,
+} from './application/use-cases/bulk-enrol-auto-invoice';
+
 export {
   bulkSendPortalInvite,
   bulkSendPortalInviteSchema,

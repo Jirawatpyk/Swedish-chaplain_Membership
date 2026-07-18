@@ -196,6 +196,22 @@ export type Member = {
    * guard `?? 'rolling'` (the DB DEFAULT).
    */
   readonly billingCycle?: BillingCycle;
+  /**
+   * 107-auto-invoice (Task 1 column, Task 15 write path) — per-member
+   * opt-in timestamp for the proactive renewal-billing cron. `null` = not
+   * enrolled. This is the THIRD and final auto-invoice gating key, after
+   * the `FEATURE_AUTO_INVOICE` env flag and `tenant_invoice_settings.
+   * auto_invoice_enabled`; the cron's eligibility query filters
+   * `auto_invoice_enrolled_at IS NOT NULL`.
+   *
+   * OPTIONAL on the aggregate (same posture as `billingCycle` /
+   * `isHeadOffice`) so the many partial-`Member` fixtures and the create
+   * draft stay non-breaking. `rowToMember` ALWAYS populates it from the
+   * nullable column, so a Member loaded from the repo always carries a
+   * real `Date | null`; hand-built read sites should treat `undefined`
+   * as "not enrolled".
+   */
+  readonly autoInvoiceEnrolledAt?: Date | null;
   readonly website: string | null;
   readonly description: string | null;
   readonly foundedYear: number | null;

@@ -71,7 +71,18 @@ export type F3AuditEventType =
   // propagation. Payload: { member_id, reason, resend_outcome,
   // resend_contacts_removed_count, resend_contacts_failed_count,
   // stripe_outcome } — ids + outcomes ONLY, never erased PII. 5y retention.
-  | 'subprocessor_erasure_propagated';
+  | 'subprocessor_erasure_propagated'
+  // 107-auto-invoice Task 15 (migration 0263) — an admin stamped
+  // `members.auto_invoice_enrolled_at`, the third and final auto-invoice
+  // gating key (after the `FEATURE_AUTO_INVOICE` env flag and
+  // `tenant_invoice_settings.auto_invoice_enabled`). This flag is what
+  // causes a member to be BILLED AUTOMATICALLY with no human in the
+  // loop, so the enrolment itself must be attributable. Emitted once per
+  // ENROLLED member (never for a skipped one) inside the same tx as the
+  // UPDATE, with `action` + `bulk_request_id` in the payload so a bulk
+  // run is correlatable — same singular-per-member convention
+  // `bulkAction` uses for `member_archived` / `member_plan_changed`.
+  | 'member_auto_invoice_enrolled';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

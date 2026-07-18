@@ -45,4 +45,36 @@ export interface MembershipAccessPort {
     tenant: TenantContext,
     memberId: string,
   ): Promise<Result<MembershipAccessSummary, MembershipAccessLookupError>>;
+
+  /**
+   * 107-auto-invoice Task 15 — batched sibling of `getMembershipAccess`,
+   * resolving MANY members in ONE query.
+   *
+   * Added for `bulkEnrolAutoInvoice`, which must classify up to 100
+   * members per request: the serial form would open 100 separate
+   * `runInTenant` transactions (~100 RTT to Neon Singapore) for what the
+   * renewals repo can already answer in a single `DISTINCT ON` — see
+   * `findLatestCyclesForMembers`, which exists precisely to kill this
+   * N+1 for the member-directory badge.
+   *
+   * Returns a Map keyed by member id. A member with NO renewal cycle is
+   * still PRESENT in the map, resolved to the same value
+   * `deriveMembershipAccess(null, now)` gives (`full` /
+   * `in_good_standing`) — callers must not have to distinguish "absent
+   * because no cycle" from "absent because unknown id".
+   *
+   * Same fail-CLOSED contract as the singular method: any infra failure
+   * returns `err({ kind: 'membership_access.lookup_error' })` for the
+   * WHOLE batch rather than a partial map, so a caller can never
+   * mistake an unresolved member for a permitted one.
+   */
+  getMembershipAccessMany(
+    tenant: TenantContext,
+    memberIds: readonly string[],
+  ): Promise<
+    Result<
+      ReadonlyMap<string, MembershipAccessSummary>,
+      MembershipAccessLookupError
+    >
+  >;
 }

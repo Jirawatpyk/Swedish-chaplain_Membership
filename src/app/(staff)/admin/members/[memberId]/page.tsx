@@ -802,6 +802,17 @@ export default async function MemberDetailPage({
             <Badge variant="outline" className="font-mono">
               {memberNumberDisplay}
             </Badge>
+            {/* 107-auto-invoice Task 15 — read-only enrolment indicator. This
+                flag is what causes the member to be billed automatically with
+                no human in the loop, so it belongs above the fold rather than
+                buried in the Company grid. Enrolment is written from the
+                Members directory bulk bar; there is no un-enrol path yet, so
+                this is deliberately NOT an interactive control. */}
+            {member.autoInvoiceEnrolledAt != null && (
+              <Badge variant="secondary">
+                {t('autoInvoiceEnrolledBadge')}
+              </Badge>
+            )}
           </div>
         }
         /* C2 round-10 ui-design-specialist — previous subtitle was the
