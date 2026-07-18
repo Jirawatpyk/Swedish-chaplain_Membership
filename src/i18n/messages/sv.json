@@ -1325,7 +1325,7 @@
         },
         "actions": {
           "view": "Visa",
-          "recordPayment": "Bokför betalning",
+          "recordPayment": "Bokför betalning…",
           "issueCreditNote": "Utfärda kreditnota",
           "void": "Annullera",
           "voidAriaLabel": "Annullera faktura {number}",
@@ -2302,7 +2302,7 @@
           "download": "Ladda ner faktura-PDF",
           "pay": "Registrera betalning…",
           "void": "Annullera…",
-          "issueCreditNote": "Utfärda kreditnota",
+          "issueCreditNote": "Utfärda kreditnota…",
           "resendInvoice": "Skicka faktura-mejl igen",
           "resendReceipt": "Skicka kvitto-mejl igen",
           "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
@@ -2445,14 +2445,14 @@
             "none": "Ingen konfigurerad"
           },
           "warnings": {
-            "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Lägg till en betalningsmetod innan utfärdande.",
+            "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Lägg till en betalningsmetod innan utfärdande, eller fortsätt i vetskap om att fakturan inte kan betalas ännu.",
             "notVatRegistrant": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
           }
         },
         "form": {
           "vatTreatment": {
             "label": "Momsbehandling",
-            "help": "Försäljning till ambassader / internationella organisationer — bifoga MFA-intyget enligt §80/1(5). All annan försäljning har standardmoms 7%.",
+            "help": "Endast försäljning till ambassader / internationella organisationer — bifoga MFA-intyget enligt §80/1(5). All annan försäljning har standardmoms 7%.",
             "standard": "Standard — moms 7%",
             "zeroRated": "Nollskattesats 0% — §80/1(5) (ambassad / int. org.)",
             "membershipCaption": "Medlemskap har alltid moms 7% — §80/1(5) gäller endast evenemang/tjänsteförsäljning."
@@ -2602,7 +2602,7 @@
       },
       "void": {
         "title": "Annullera faktura",
-        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen.",
+        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om en e-postadress finns registrerad.",
         "voiding": "Annullerar faktura",
         "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
         "reasonLabel": "Orsak",

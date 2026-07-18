@@ -114,7 +114,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (result.error.code === 'duplicate') {
       return NextResponse.json(
         { error: { code: 'duplicate' }, existing_invoice_id: result.error.existingInvoiceId },
-        { status: 409 },
+        { status },
       );
     }
 
