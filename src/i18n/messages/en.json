@@ -1956,6 +1956,10 @@
       "meta": {
         "title": "Invoices"
       },
+      "queueView": {
+        "title": "Auto-renewal review queue",
+        "description": "Cron-drafted renewal bills awaiting review before they're issued."
+      },
       "list": {
         "title": "Invoices",
         "description": "Thai-tax-compliant membership invoices.",
@@ -2051,19 +2055,27 @@
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
         "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
         "tableCaption": "List of invoices for the selected filters.",
+        "queueTableCaption": "List of auto-renewal drafts awaiting review.",
         "queue": {
           "wouldBeRefused": "Would be refused",
-          "wouldBeRefusedAria": "Would be refused — a live bill for this member and plan year already exists",
+          "wouldBeRefusedAria": "Would be refused — the treasurer cannot issue this draft as-is",
+          "refusalReason": {
+            "planYearDrift": "The renewal period changed after this draft was created.",
+            "memberTerminated": "This member's coverage has lapsed.",
+            "duplicateLiveBill": "A bill for this member and plan year already exists."
+          },
           "viewConflictingInvoice": "View existing bill",
           "unresolved": "Unable to verify",
-          "unresolvedTooltip": "We couldn't confirm this draft's price or coverage against its renewal cycle. Review it manually before issuing.",
-          "drift": "Price changed",
-          "driftAria": "Price changed — frozen at {frozen} THB, current catalogue price is {current} THB",
-          "driftTooltip": "Frozen at {frozen} THB when drafted; the current plan catalogue price is {current} THB.",
-          "driftTooltipUnknown": "This price could not be confirmed against an active plan catalogue entry for this year.",
-          "billYearMismatch": "Bill year ≠ coverage year",
-          "billYearMismatchTooltip": "This bill is for fiscal year {coverageYear}. This is expected under the rolling-anchor billing model when a renewal period crosses a fiscal-year boundary.",
-          "billYearMismatchTooltipUnknown": "The coverage year for this bill could not be determined.",
+          "unresolvedAria": "Unable to verify this draft's price, coverage, or whether it would be refused",
+          "unresolvedTooltip": "We couldn't confirm this draft's price, coverage, or whether it would be refused. Review it manually before issuing.",
+          "priceUnverifiable": "Price could not be confirmed",
+          "priceUnverifiableAria": "Price could not be confirmed against an active plan catalogue entry",
+          "priceFrozenOnly": "Frozen at {frozen}",
+          "priceChanged": "Price changed",
+          "priceChangedAria": "Price changed — frozen at {frozen}, current catalogue price is {current}",
+          "billYearStale": "Fiscal year has changed since drafting",
+          "billYearStaleAria": "Fiscal year has changed since this draft was created; today's fiscal year is {currentFiscalYear}",
+          "billYearStaleTooltip": "This draft was created for fiscal year {planYear}; today's fiscal year is {currentFiscalYear}.",
           "staleness": "{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}"
         }
       },

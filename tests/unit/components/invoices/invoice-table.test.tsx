@@ -57,19 +57,28 @@ const messages = {
         receiptNumberCombinedTooltip: 'Combined mode',
         receiptNumberCombinedAria: 'Combined mode',
         tableCaption: 'List of invoices for the selected filters.',
+        queueTableCaption: 'List of auto-renewal drafts awaiting review.',
         queue: {
           wouldBeRefused: 'Would be refused',
-          wouldBeRefusedAria: 'Would be refused — a live bill already exists',
+          wouldBeRefusedAria: 'Would be refused',
+          refusalReason: {
+            planYearDrift: 'The renewal period changed after this draft was created.',
+            memberTerminated: "This member's coverage has lapsed.",
+            duplicateLiveBill: 'A bill for this member and plan year already exists.',
+          },
           viewConflictingInvoice: 'View existing bill',
           unresolved: 'Unable to verify',
+          unresolvedAria: 'Unable to verify this draft',
           unresolvedTooltip: 'Could not verify.',
-          drift: 'Price changed',
-          driftAria: 'Price changed',
-          driftTooltip: 'Frozen at {frozen} THB; current is {current} THB.',
-          driftTooltipUnknown: 'Could not confirm.',
-          billYearMismatch: 'Bill year ≠ coverage year',
-          billYearMismatchTooltip: 'This bill is for fiscal year {coverageYear}.',
-          billYearMismatchTooltipUnknown: 'Coverage year unknown.',
+          priceUnverifiable: 'Price could not be confirmed',
+          priceUnverifiableAria: 'Price could not be confirmed',
+          priceFrozenOnly: 'Frozen at {frozen}',
+          priceChanged: 'Price changed',
+          priceChangedAria: 'Price changed — frozen at {frozen}, current is {current}',
+          billYearStale: 'Fiscal year has changed since drafting',
+          billYearStaleAria: 'Fiscal year has changed; today is {currentFiscalYear}',
+          billYearStaleTooltip:
+            'Drafted for fiscal year {planYear}; today is fiscal year {currentFiscalYear}.',
           staleness:
             '{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}',
         },
@@ -718,25 +727,37 @@ describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice
         queueMeta: {
           unresolved: false,
           stalenessDays: 2,
-          driftFlagged: true,
-          frozenPriceThb: '50000.00',
-          currentCataloguePriceThb: '60000.00',
-          billYearCoverageYearMismatch: false,
-          coverageYear: 2026,
-          wouldBeRefused: false,
-          conflictingInvoiceId: null,
+          frozenPriceDisplay: '50,000.00 THB',
+          currentCataloguePriceDisplay: '60,000.00 THB',
+          priceChanged: true,
+          priceUnverifiable: false,
+          planYear: 2025,
+          currentFiscalYear: 2026,
+          billYearStale: false,
+          refusalReason: null,
         },
       }),
     ]);
     expect(screen.queryByTestId('column-header-queue')).toBeNull();
-    expect(screen.queryByTestId('queue-drift')).toBeNull();
+    expect(screen.queryByTestId('queue-price-changed')).toBeNull();
+    // A8 — the default view keeps the generic table caption, not the queue
+    // one. shadcn's `<Table>` puts the `aria-label` on the OUTER
+    // `role="region"` scroll wrapper, not the `<table>` element itself.
+    expect(
+      screen.getByRole('region', { name: 'List of invoices for the selected filters.' }),
+    ).toBeInTheDocument();
   });
 
-  it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash', () => {
+  it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash, and swaps the table caption (review A8)', () => {
     renderQueueTable([baseRow({ queueMeta: null })], true);
     expect(screen.getByTestId('column-header-queue')).toHaveTextContent('Queue');
     const cell = screen.getByTestId('queue-meta-cell');
     expect(cell).toHaveTextContent('—');
+    expect(
+      screen.getByRole('region', {
+        name: 'List of auto-renewal drafts awaiting review.',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('showQueueMetaColumn=true + queueMeta present → renders the badges inside the table (would-be-refused distinct state)', () => {
@@ -749,13 +770,17 @@ describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice
           queueMeta: {
             unresolved: false,
             stalenessDays: 7,
-            driftFlagged: false,
-            frozenPriceThb: '50000.00',
-            currentCataloguePriceThb: '50000.00',
-            billYearCoverageYearMismatch: false,
-            coverageYear: 2026,
-            wouldBeRefused: true,
-            conflictingInvoiceId: 'inv-conflict-9',
+            frozenPriceDisplay: '50,000.00 THB',
+            currentCataloguePriceDisplay: '50,000.00 THB',
+            priceChanged: false,
+            priceUnverifiable: false,
+            planYear: 2025,
+            currentFiscalYear: 2025,
+            billYearStale: false,
+            refusalReason: {
+              kind: 'duplicate_live_bill',
+              conflictingInvoiceId: 'inv-conflict-9',
+            },
           },
         }),
       ],

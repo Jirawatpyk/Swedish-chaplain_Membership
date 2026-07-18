@@ -1,23 +1,39 @@
 /**
  * 107-auto-invoice Task 13 — `loadAutoRenewalQueueContext` integration test
- * (live Neon). Verifies the three per-row decision signals the admin
- * review-queue view needs:
+ * (live Neon). Verifies the per-row decision signals the admin review-queue
+ * view needs, per the review round that found the first cut's bill-year
+ * predicate discriminated nothing and its would-be-refused prediction
+ * missed two of `issueAutoDraftedRenewal`'s three refusal reasons:
  *
- *   (a) drift    — a cycle whose `frozenPlanPriceThb` differs from the
- *                  CURRENT active plan-catalogue price for (planId,
- *                  planYear) → `driftFlagged: true` + the two prices surfaced.
- *   (a2) no drift — frozen price matches the catalogue exactly → `false`.
- *   (b) bill-year ≠ coverage-year — a cycle straddling a fiscal-year edge
- *                  (periodFrom FY2025, periodTo FY2026) → the note fires.
- *   (c) would-be-refused — a member with a pre-existing LIVE (`issued`)
- *                  membership bill for the same plan_year → `wouldBeRefused:
- *                  true` naming the conflicting invoice; a SIBLING
- *                  `auto_renewal` DRAFT for the same (member, planYear) must
- *                  NOT trip the same prediction (mirrors the real guard's
- *                  discard-before-check sequence).
- *   (d) orphan   — a draft with no stamped cycle (Task 7's "orphaned after
- *                  commit" window) → `driftFlagged: true`, `cycleId: null`,
- *                  never a throw.
+ *   (a) priceChanged   — a cycle whose `frozenPlanPriceThb` differs from the
+ *                        CURRENT active plan-catalogue price for (planId,
+ *                        planYear) → `priceChanged:true, priceUnverifiable:
+ *                        false` + both prices surfaced.
+ *   (a2) unchanged      — frozen price matches the catalogue exactly →
+ *                        `priceChanged:false, priceUnverifiable:false`.
+ *   (b1) billYearStale=false — the COMMON case: planYear matches the fiscal
+ *                        year that would print if issued "today" → proves
+ *                        the redefined predicate does NOT fire on every row
+ *                        (review A1's core complaint).
+ *   (b2) billYearStale=true  — "today" (clock override) has rolled into a
+ *                        later fiscal year than the stored planYear.
+ *   (c1) refusalReason=duplicate_live_bill — a pre-existing LIVE (`issued`)
+ *                        membership bill for the same plan_year; a SIBLING
+ *                        `auto_renewal` DRAFT for the same (member,
+ *                        planYear) must NOT trip it (mirrors the real
+ *                        guard's discard-before-check sequence).
+ *   (c2) refusalReason=plan_year_drift — the stamped cycle's `periodFrom`
+ *                        was re-anchored after the draft was created, so
+ *                        its derived fiscal year no longer matches the
+ *                        invoice's stored `plan_year` (review A2).
+ *   (c3) refusalReason=member_terminated — the member's CURRENT latest
+ *                        cycle is `lapsed`, independent of this draft's own
+ *                        (still-healthy) stamped cycle (review A2).
+ *   (d) orphan          — a draft with no stamped cycle (Task 7's "orphaned
+ *                        after commit" window) → `priceUnverifiable:true`,
+ *                        `cycleId:null`, `refusalReason:null` (membership +
+ *                        duplicate-bill checks still run — they don't need
+ *                        THIS draft's own cycle), never a throw.
  *
  * Lives in tests/integration/** → hits live Neon via runInTenant (RLS);
  * seeds with `tx` from runInTenant, never the global db singleton.
@@ -44,11 +60,20 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 /** `deriveFiscalYear` defaults to a Jan-start FY (matches this suite's tenant). */
 const PERIOD_FROM_FY2025 = '2025-08-01T00:00:00Z';
+const PERIOD_TO_FY2026 = '2026-08-01T00:00:00Z';
 const PLAN_YEAR = deriveFiscalYear(PERIOD_FROM_FY2025);
 
 let tenant: TestTenant;
 let user: TestUser;
 let planId: string;
+
+/** deps with a fixed "now" — overrides the default wallClock. */
+function depsWithClock(nowIso: string) {
+  return {
+    ...makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
+    clock: { now: () => new Date(nowIso) },
+  };
+}
 
 async function seedMember(): Promise<string> {
   const memberId = randomUUID();
@@ -77,26 +102,30 @@ async function seedMember(): Promise<string> {
 async function seedCycle(opts: {
   readonly memberId: string;
   readonly frozenPlanPriceThb: string;
-  readonly periodFrom: string;
-  readonly periodTo: string;
+  readonly periodFrom?: string;
+  readonly periodTo?: string;
+  readonly status?: 'upcoming' | 'lapsed';
 }): Promise<string> {
   const cycleId = randomUUID();
+  const periodFrom = opts.periodFrom ?? PERIOD_FROM_FY2025;
+  const periodTo = opts.periodTo ?? PERIOD_TO_FY2026;
   await runInTenant(tenant.ctx, (tx) =>
     tx.insert(renewalCycles).values({
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId: opts.memberId,
-      status: 'upcoming',
-      periodFrom: new Date(opts.periodFrom),
-      periodTo: new Date(opts.periodTo),
-      expiresAt: new Date(opts.periodTo),
+      status: opts.status ?? 'upcoming',
+      periodFrom: new Date(periodFrom),
+      periodTo: new Date(periodTo),
+      expiresAt: new Date(periodTo),
       cycleLengthMonths: 12,
       tierAtCycleStart: 'regular',
       planIdAtCycleStart: planId,
       frozenPlanPriceThb: opts.frozenPlanPriceThb,
       frozenPlanTermMonths: 12,
       frozenPlanCurrency: 'THB',
-      anchoredAt: new Date(opts.periodFrom),
+      anchoredAt: new Date(periodFrom),
+      ...(opts.status === 'lapsed' ? { closedAt: new Date(periodTo), closedReason: 'grace_expired' } : {}),
     }),
   );
   return cycleId;
@@ -148,8 +177,8 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
         planYear: PLAN_YEAR,
         planName: { en: 'Queue Ctx Plan' },
         // CURRENT catalogue price — 60,000.00 THB (6,000,000 satang). The
-        // drift scenario seeds a cycle frozen at 50,000.00 to diverge from
-        // this; the no-drift scenario seeds a cycle frozen at exactly this.
+        // priceChanged scenario seeds a cycle frozen at 50,000.00 to diverge
+        // from this; the unchanged scenario seeds a cycle frozen at exactly this.
         annualFeeMinorUnits: 6_000_000,
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         createdBy: user.userId,
@@ -166,16 +195,9 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     await tenant.cleanup().catch(() => {});
   }, 60_000);
 
-  it('(a) frozen price ≠ current catalogue price → driftFlagged:true, both prices surfaced', async () => {
+  it('(a) frozen price ≠ current catalogue price → priceChanged:true, priceUnverifiable:false, both prices surfaced', async () => {
     const memberId = await seedMember();
-    const periodFrom = PERIOD_FROM_FY2025;
-    const periodTo = '2026-08-01T00:00:00Z';
-    const cycleId = await seedCycle({
-      memberId,
-      frozenPlanPriceThb: '50000.00',
-      periodFrom,
-      periodTo,
-    });
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '50000.00' });
     const invoiceId = await seedAutoDraft({
       memberId,
       planYear: PLAN_YEAR,
@@ -196,21 +218,15 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     const meta = result.value.get(invoiceId);
     expect(meta).toBeDefined();
     expect(meta?.cycleId).toBe(cycleId);
-    expect(meta?.driftFlagged).toBe(true);
+    expect(meta?.priceChanged).toBe(true);
+    expect(meta?.priceUnverifiable).toBe(false);
     expect(meta?.frozenPriceThb).toBe('50000.00');
     expect(meta?.currentCataloguePriceThb).toBe('60000.00');
   }, 60_000);
 
-  it('(a2) frozen price === current catalogue price → driftFlagged:false', async () => {
+  it('(a2) frozen price === current catalogue price → priceChanged:false, priceUnverifiable:false', async () => {
     const memberId = await seedMember();
-    const periodFrom = PERIOD_FROM_FY2025;
-    const periodTo = '2026-08-01T00:00:00Z';
-    const cycleId = await seedCycle({
-      memberId,
-      frozenPlanPriceThb: '60000.00',
-      periodFrom,
-      periodTo,
-    });
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
     const invoiceId = await seedAutoDraft({
       memberId,
       planYear: PLAN_YEAR,
@@ -229,59 +245,60 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     if (!result.ok) return;
 
     const meta = result.value.get(invoiceId);
-    expect(meta?.driftFlagged).toBe(false);
+    expect(meta?.priceChanged).toBe(false);
+    expect(meta?.priceUnverifiable).toBe(false);
     expect(meta?.currentCataloguePriceThb).toBe('60000.00');
   }, 60_000);
 
-  it('(b) cycle straddling a fiscal-year edge → billYearCoverageYearMismatch:true', async () => {
+  it('(b1) planYear matches "today"\'s fiscal year (the common case) → billYearStale:false — proves the predicate does NOT fire on every row', async () => {
     const memberId = await seedMember();
-    // periodFrom → FY2025 (Jan-start default); periodTo (12mo later) → FY2026.
-    // Coverage starts AT periodTo, so `coverageYear` (2026) diverges from
-    // `planYear` (deriveFiscalYear(periodFrom) = 2025).
-    const periodFrom = '2025-08-01T00:00:00Z';
-    const periodTo = '2026-08-01T00:00:00Z';
-    const cycleId = await seedCycle({
-      memberId,
-      frozenPlanPriceThb: '60000.00',
-      periodFrom,
-      periodTo,
-    });
-    const planYear = deriveFiscalYear(periodFrom);
-    const coverageYear = deriveFiscalYear(periodTo);
-    expect(coverageYear).not.toBe(planYear); // sanity: the fixture actually straddles the edge
-
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
     const invoiceId = await seedAutoDraft({
       memberId,
-      planYear,
+      planYear: PLAN_YEAR,
       frozenPlanPriceThb: '60000.00',
       cycleId,
     });
 
-    const result = await loadAutoRenewalQueueContext(
-      makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
-      {
-        tenantId: tenant.ctx.slug,
-        rows: [{ invoiceId, memberId, planId, planYear }],
-      },
-    );
+    // "Today" is inside the SAME fiscal year the draft is for (PLAN_YEAR=2025).
+    const result = await loadAutoRenewalQueueContext(depsWithClock('2025-09-01T00:00:00Z'), {
+      tenantId: tenant.ctx.slug,
+      rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const meta = result.value.get(invoiceId);
-    expect(meta?.billYearCoverageYearMismatch).toBe(true);
-    expect(meta?.coverageYear).toBe(coverageYear);
+    expect(meta?.currentFiscalYear).toBe(PLAN_YEAR);
+    expect(meta?.billYearStale).toBe(false);
   }, 60_000);
 
-  it('(c) a pre-existing LIVE membership bill for the same plan_year → wouldBeRefused:true', async () => {
+  it('(b2) "today" has rolled into a LATER fiscal year than planYear → billYearStale:true', async () => {
     const memberId = await seedMember();
-    const periodFrom = PERIOD_FROM_FY2025;
-    const periodTo = '2026-08-01T00:00:00Z';
-    const cycleId = await seedCycle({
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
+    const invoiceId = await seedAutoDraft({
       memberId,
+      planYear: PLAN_YEAR,
       frozenPlanPriceThb: '60000.00',
-      periodFrom,
-      periodTo,
+      cycleId,
     });
+
+    // "Today" is a full fiscal year later than the draft's stored planYear.
+    const result = await loadAutoRenewalQueueContext(depsWithClock('2026-09-01T00:00:00Z'), {
+      tenantId: tenant.ctx.slug,
+      rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const meta = result.value.get(invoiceId);
+    expect(meta?.currentFiscalYear).toBe(PLAN_YEAR + 1);
+    expect(meta?.billYearStale).toBe(true);
+  }, 60_000);
+
+  it('(c1) a pre-existing LIVE membership bill for the same plan_year → refusalReason:duplicate_live_bill', async () => {
+    const memberId = await seedMember();
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
     const invoiceId = await seedAutoDraft({
       memberId,
       planYear: PLAN_YEAR,
@@ -347,20 +364,15 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     if (!result.ok) return;
 
     const meta = result.value.get(invoiceId);
-    expect(meta?.wouldBeRefused).toBe(true);
-    expect(meta?.conflictingInvoiceId).toBe(conflictingInvoiceId);
+    expect(meta?.refusalReason).toEqual({
+      kind: 'duplicate_live_bill',
+      conflictingInvoiceId,
+    });
   }, 60_000);
 
-  it('(c2) a SIBLING auto_renewal DRAFT for the same (member, planYear) does NOT trip wouldBeRefused', async () => {
+  it('(c1b) a SIBLING auto_renewal DRAFT for the same (member, planYear) does NOT trip refusalReason', async () => {
     const memberId = await seedMember();
-    const periodFrom = PERIOD_FROM_FY2025;
-    const periodTo = '2026-08-01T00:00:00Z';
-    const cycleId = await seedCycle({
-      memberId,
-      frozenPlanPriceThb: '60000.00',
-      periodFrom,
-      periodTo,
-    });
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
     const invoiceId = await seedAutoDraft({
       memberId,
       planYear: PLAN_YEAR,
@@ -390,11 +402,82 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.value.get(invoiceId)?.wouldBeRefused).toBe(false);
-    expect(result.value.get(siblingInvoiceId)?.wouldBeRefused).toBe(false);
+    expect(result.value.get(invoiceId)?.refusalReason).toBeNull();
+    expect(result.value.get(siblingInvoiceId)?.refusalReason).toBeNull();
   }, 60_000);
 
-  it('(d) orphan draft (no stamped cycle) → driftFlagged:true, cycleId:null, never throws', async () => {
+  it('(c2) the stamped cycle was re-anchored after drafting → refusalReason:plan_year_drift', async () => {
+    const memberId = await seedMember();
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
+    const invoiceId = await seedAutoDraft({
+      memberId,
+      planYear: PLAN_YEAR,
+      frozenPlanPriceThb: '60000.00',
+      cycleId,
+    });
+
+    // Simulate `reanchorPeriodInTx` shifting the cycle's periodFrom into a
+    // DIFFERENT fiscal year after the draft was created — the invoice's
+    // stored plan_year (PLAN_YEAR) no longer matches deriveFiscalYear of the
+    // cycle's (now re-anchored) periodFrom. Must stay < periodTo
+    // (PERIOD_TO_FY2026 = 2026-08-01) to satisfy the DB's period-order CHECK.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ periodFrom: new Date('2026-01-15T00:00:00Z') })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+
+    const result = await loadAutoRenewalQueueContext(
+      makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.get(invoiceId)?.refusalReason).toEqual({
+      kind: 'plan_year_drift',
+    });
+  }, 60_000);
+
+  it('(c3) the member\'s CURRENT latest cycle is lapsed (independent of this draft\'s own cycle) → refusalReason:member_terminated', async () => {
+    const memberId = await seedMember();
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
+    const invoiceId = await seedAutoDraft({
+      memberId,
+      planYear: PLAN_YEAR,
+      frozenPlanPriceThb: '60000.00',
+      cycleId,
+    });
+    // A NEWER `lapsed` cycle for the SAME member — mirrors the shape T9's
+    // own `member_terminated` fixture uses (findLatestCycleForMember
+    // resolves this one, not the draft's own still-`upcoming` cycle).
+    await seedCycle({
+      memberId,
+      frozenPlanPriceThb: '60000.00',
+      periodFrom: '2026-08-01T00:00:00Z',
+      periodTo: '2027-08-01T00:00:00Z',
+      status: 'lapsed',
+    });
+
+    const result = await loadAutoRenewalQueueContext(
+      makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const meta = result.value.get(invoiceId);
+    expect(meta?.refusalReason?.kind).toBe('member_terminated');
+  }, 60_000);
+
+  it('(d) orphan draft (no stamped cycle) → priceUnverifiable:true, priceChanged:false, cycleId:null, refusalReason:null, never throws', async () => {
     const memberId = await seedMember();
     const invoiceId = await seedAutoDraft({
       memberId,
@@ -415,10 +498,13 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
 
     const meta = result.value.get(invoiceId);
     expect(meta?.cycleId).toBeNull();
-    expect(meta?.driftFlagged).toBe(true);
+    expect(meta?.priceUnverifiable).toBe(true);
+    expect(meta?.priceChanged).toBe(false);
     expect(meta?.frozenPriceThb).toBeNull();
     expect(meta?.currentCataloguePriceThb).toBeNull();
-    expect(meta?.wouldBeRefused).toBe(false);
+    // member_terminated + duplicate_live_bill checks don't need THIS
+    // draft's own cycle — a clean member with no other bills stays null.
+    expect(meta?.refusalReason).toBeNull();
   }, 60_000);
 
   it('empty rows → empty map, no queries', async () => {

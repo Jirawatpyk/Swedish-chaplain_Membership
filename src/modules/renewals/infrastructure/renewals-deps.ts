@@ -503,15 +503,18 @@ export function makeMembersMembershipStatusDeps(
  * (`loadAutoRenewalQueueContext`). Mirrors `makeMembersMembershipStatusDeps`
  * above: the F4 page is a hot admin path rendered on every request, so it
  * must not eagerly construct the full ~20-adapter `makeRenewalsDeps` bag
- * just to read two deps.
+ * just to read three deps. `clock` (review A1/A2 fix) drives the
+ * "would this actually refuse right now" + "is the bill-year stale right
+ * now" predictions — `wallClock` in production; tests override it.
  */
 export function makeAutoRenewalQueueContextDeps(
   tenantId: string,
-): Pick<RenewalsDeps, 'cyclesRepo' | 'planLookupForRenewal'> {
+): Pick<RenewalsDeps, 'cyclesRepo' | 'planLookupForRenewal' | 'clock'> {
   const tenant = asTenantContext(tenantId);
   return {
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
+    clock: wallClock,
   };
 }
 

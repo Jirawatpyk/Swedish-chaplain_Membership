@@ -1956,6 +1956,10 @@
       "meta": {
         "title": "Fakturor"
       },
+      "queueView": {
+        "title": "Kö för granskning av automatisk förnyelse",
+        "description": "Förnyelsefakturor som skapats automatiskt av systemet, väntar på granskning innan de utfärdas."
+      },
       "list": {
         "title": "Fakturor",
         "description": "Thailändska momsgilla medlemsfakturor.",
@@ -2051,19 +2055,27 @@
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
         "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
         "tableCaption": "Lista över fakturor för de valda filtren.",
+        "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
         "queue": {
           "wouldBeRefused": "Skulle nekas",
-          "wouldBeRefusedAria": "Skulle nekas — en aktiv faktura för denna medlem och det här verksamhetsåret finns redan",
+          "wouldBeRefusedAria": "Skulle nekas — kan inte utfärdas i nuvarande skick",
+          "refusalReason": {
+            "planYearDrift": "Förnyelseperioden ändrades efter att det här utkastet skapades.",
+            "memberTerminated": "Den här medlemmens medlemskap har upphört.",
+            "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
+          },
           "viewConflictingInvoice": "Visa befintlig faktura",
           "unresolved": "Kan inte verifieras",
-          "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris eller täckningsperiod mot förnyelsecykeln. Granska manuellt innan du utfärdar.",
-          "drift": "Priset har ändrats",
-          "driftAria": "Priset har ändrats — låst till {frozen} THB, nuvarande katalogpris är {current} THB",
-          "driftTooltip": "Låst till {frozen} THB när utkastet skapades; nuvarande planpris i katalogen är {current} THB.",
-          "driftTooltipUnknown": "Det här priset kunde inte bekräftas mot en aktiv planpost i katalogen för det här året.",
-          "billYearMismatch": "Faktureringsår ≠ täckningsår",
-          "billYearMismatchTooltip": "Den här fakturan avser verksamhetsår {coverageYear}. Detta är förväntat i den rullande faktureringsmodellen när en förnyelseperiod korsar ett årsskifte för verksamhetsåret.",
-          "billYearMismatchTooltipUnknown": "Täckningsåret för den här fakturan kunde inte fastställas.",
+          "unresolvedAria": "Kan inte verifiera pris, täckning eller om utkastet skulle nekas",
+          "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris, täckning, eller om det skulle nekas. Granska manuellt innan du utfärdar.",
+          "priceUnverifiable": "Priset kunde inte bekräftas",
+          "priceUnverifiableAria": "Priset kunde inte bekräftas mot en aktiv planpost i katalogen",
+          "priceFrozenOnly": "Låst till {frozen}",
+          "priceChanged": "Priset har ändrats",
+          "priceChangedAria": "Priset har ändrats — låst till {frozen}, nuvarande katalogpris är {current}",
+          "billYearStale": "Verksamhetsåret har ändrats sedan utkastet skapades",
+          "billYearStaleAria": "Verksamhetsåret har ändrats sedan det här utkastet skapades; dagens verksamhetsår är {currentFiscalYear}",
+          "billYearStaleTooltip": "Det här utkastet skapades för verksamhetsår {planYear}; dagens verksamhetsår är {currentFiscalYear}.",
           "staleness": "{days, plural, =0 {Skapades idag} one {Skapades för # dag sedan} other {Skapades för # dagar sedan}}"
         }
       },

@@ -1,20 +1,23 @@
 /**
- * Component tests for `<AutoRenewalQueueBadges>` (107-auto-invoice Task 13).
+ * Component tests for `<AutoRenewalQueueBadges>` (107-auto-invoice Task 13,
+ * rewritten after the review round that found the signals didn't faithfully
+ * represent what would happen if the treasurer clicked Issue).
  *
- * This is the auto-renewal review queue's per-row decision-context surface:
- * drift / bill-year-vs-coverage-year / would-be-refused / staleness. The key
- * invariant under test is the RENDERING PRIORITY the task requires:
- *
- *   - "would be refused" is its OWN distinct, destructive-styled state with a
- *     clear reason — never folded into a generic badge set.
- *   - "unresolved" (the F8 context lookup degraded) SUPPRESSES the drift and
- *     bill-year notes (which would be unverifiable) rather than risking a
- *     false-clean signal alongside them.
- *   - drift + bill-year-mismatch can coexist when resolved.
- *   - staleness always renders, independent of every other state.
- *
- * Every state pairs an icon with text (WCAG 1.4.1 — colour is never the only
- * signal), asserted via `data-testid` + visible text together.
+ * Key invariants under test:
+ *   - A2: `refusalReason` renders ITS OWN distinct copy per reason
+ *     (plan_year_drift / member_terminated / duplicate_live_bill); only the
+ *     duplicate_live_bill reason gets the "View existing bill" link.
+ *   - A3: `priceChanged` (confirmed) and `priceUnverifiable` (couldn't
+ *     check) are mutually exclusive, DISTINCT badges/copy — never conflated.
+ *   - A4: severity ladder — refusalReason(critical/red) > unresolved /
+ *     priceUnverifiable(at-risk/orange) > priceChanged(warning/amber) >
+ *     billYearStale(healthy/emerald). Asserted via the TIER_CLASSES colour
+ *     token actually applied (not just presence).
+ *   - A5: price figures render as ALWAYS-VISIBLE text (queue-price-figures),
+ *     never tooltip-only.
+ *   - A7: the conflicting-invoice link carries the `min-h-11` 44px target
+ *     class.
+ *   - Every badge pairs an icon with text (WCAG 1.4.1 — colour never alone).
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -31,18 +34,26 @@ const messages = {
       list: {
         queue: {
           wouldBeRefused: 'Would be refused',
-          wouldBeRefusedAria:
-            'Would be refused — a live bill for this member and plan year already exists',
+          wouldBeRefusedAria: 'Would be refused',
+          refusalReason: {
+            planYearDrift: 'The renewal period changed after this draft was created.',
+            memberTerminated: "This member's coverage has lapsed.",
+            duplicateLiveBill: 'A bill for this member and plan year already exists.',
+          },
           viewConflictingInvoice: 'View existing bill',
           unresolved: 'Unable to verify',
-          unresolvedTooltip: 'Could not verify.',
-          drift: 'Price changed',
-          driftAria: 'Price changed — frozen at {frozen} THB, current catalogue price is {current} THB',
-          driftTooltip: 'Frozen at {frozen} THB; current catalogue price is {current} THB.',
-          driftTooltipUnknown: 'Could not confirm.',
-          billYearMismatch: 'Bill year ≠ coverage year',
-          billYearMismatchTooltip: 'This bill is for fiscal year {coverageYear}.',
-          billYearMismatchTooltipUnknown: 'Coverage year unknown.',
+          unresolvedAria: 'Unable to verify this draft',
+          unresolvedTooltip:
+            "We couldn't confirm this draft's price, coverage, or whether it would be refused.",
+          priceUnverifiable: 'Price could not be confirmed',
+          priceUnverifiableAria: 'Price could not be confirmed',
+          priceFrozenOnly: 'Frozen at {frozen}',
+          priceChanged: 'Price changed',
+          priceChangedAria: 'Price changed — frozen at {frozen}, current is {current}',
+          billYearStale: 'Fiscal year has changed since drafting',
+          billYearStaleAria: 'Fiscal year has changed; today is {currentFiscalYear}',
+          billYearStaleTooltip:
+            'Drafted for fiscal year {planYear}; today is fiscal year {currentFiscalYear}.',
           staleness:
             '{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}',
         },
@@ -55,13 +66,14 @@ function baseMeta(overrides: Partial<AutoRenewalQueueMeta>): AutoRenewalQueueMet
   return {
     unresolved: false,
     stalenessDays: 5,
-    driftFlagged: false,
-    frozenPriceThb: '50000.00',
-    currentCataloguePriceThb: '50000.00',
-    billYearCoverageYearMismatch: false,
-    coverageYear: 2026,
-    wouldBeRefused: false,
-    conflictingInvoiceId: null,
+    frozenPriceDisplay: '45,000.00 THB',
+    currentCataloguePriceDisplay: '45,000.00 THB',
+    priceChanged: false,
+    priceUnverifiable: false,
+    planYear: 2026,
+    currentFiscalYear: 2026,
+    billYearStale: false,
+    refusalReason: null,
     ...overrides,
   };
 }
@@ -74,108 +86,148 @@ function renderBadges(meta: AutoRenewalQueueMeta) {
   );
 }
 
-describe('<AutoRenewalQueueBadges> — would-be-refused (distinct state)', () => {
-  it('renders the would-be-refused badge with icon + text + a link to the conflicting invoice', () => {
-    renderBadges(
-      baseMeta({ wouldBeRefused: true, conflictingInvoiceId: 'inv-conflict-1' }),
-    );
-    const badge = screen.getByTestId('queue-would-be-refused');
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent('Would be refused');
-    // WCAG 1.4.1 — icon present, not colour alone.
-    expect(badge.querySelector('svg')).not.toBeNull();
-    expect(badge).toHaveAttribute(
-      'aria-label',
-      'Would be refused — a live bill for this member and plan year already exists',
-    );
-    const link = screen.getByRole('link', { name: 'View existing bill' });
-    expect(link).toHaveAttribute('href', '/admin/invoices/inv-conflict-1');
-  });
-
-  it('does NOT render the would-be-refused badge when false', () => {
-    renderBadges(baseMeta({ wouldBeRefused: false }));
-    expect(screen.queryByTestId('queue-would-be-refused')).toBeNull();
-    expect(screen.queryByRole('link', { name: 'View existing bill' })).toBeNull();
-  });
-
-  it('omits the conflicting-invoice link when conflictingInvoiceId is null (defensive)', () => {
-    renderBadges(baseMeta({ wouldBeRefused: true, conflictingInvoiceId: null }));
-    expect(screen.getByTestId('queue-would-be-refused')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'View existing bill' })).toBeNull();
-  });
-
-  it('would-be-refused CAN coexist with drift + bill-year-mismatch notes below it', () => {
+describe('<AutoRenewalQueueBadges> — would-be-refused (3 distinct reasons, review A2)', () => {
+  it('duplicate_live_bill renders its OWN copy + a 44px "View existing bill" link', () => {
     renderBadges(
       baseMeta({
-        wouldBeRefused: true,
-        conflictingInvoiceId: 'inv-conflict-2',
-        driftFlagged: true,
-        billYearCoverageYearMismatch: true,
+        refusalReason: { kind: 'duplicate_live_bill', conflictingInvoiceId: 'inv-conflict-1' },
       }),
     );
+    const badge = screen.getByTestId('queue-would-be-refused');
+    expect(badge).toHaveTextContent('Would be refused');
+    expect(badge.querySelector('svg')).not.toBeNull();
+    expect(
+      screen.getByText('A bill for this member and plan year already exists.'),
+    ).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'View existing bill' });
+    expect(link).toHaveAttribute('href', '/admin/invoices/inv-conflict-1');
+    // Review A7 — 44×44 minimum tappable target.
+    expect(link.className).toContain('min-h-11');
+  });
+
+  it('plan_year_drift renders its OWN copy and NO conflicting-invoice link', () => {
+    renderBadges(baseMeta({ refusalReason: { kind: 'plan_year_drift' } }));
     expect(screen.getByTestId('queue-would-be-refused')).toBeInTheDocument();
-    expect(screen.getByTestId('queue-drift')).toBeInTheDocument();
-    expect(screen.getByTestId('queue-bill-year-mismatch')).toBeInTheDocument();
+    expect(
+      screen.getByText('The renewal period changed after this draft was created.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View existing bill' })).toBeNull();
+  });
+
+  it('member_terminated renders its OWN copy and NO conflicting-invoice link', () => {
+    renderBadges(baseMeta({ refusalReason: { kind: 'member_terminated' } }));
+    expect(screen.getByTestId('queue-would-be-refused')).toBeInTheDocument();
+    expect(screen.getByText("This member's coverage has lapsed.")).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View existing bill' })).toBeNull();
+  });
+
+  it('refusalReason:null → no would-be-refused badge at all', () => {
+    renderBadges(baseMeta({ refusalReason: null }));
+    expect(screen.queryByTestId('queue-would-be-refused')).toBeNull();
   });
 });
 
-describe('<AutoRenewalQueueBadges> — unresolved suppresses drift/bill-year notes', () => {
-  it('unresolved=true renders the unresolved badge and SUPPRESSES drift/mismatch even if flagged', () => {
+describe('<AutoRenewalQueueBadges> — unresolved suppresses price/bill-year notes', () => {
+  it('unresolved=true renders the unresolved badge and SUPPRESSES price/bill-year badges', () => {
     renderBadges(
       baseMeta({
         unresolved: true,
-        driftFlagged: true,
-        billYearCoverageYearMismatch: true,
-        frozenPriceThb: null,
-        currentCataloguePriceThb: null,
-        coverageYear: null,
+        priceChanged: true,
+        priceUnverifiable: true,
+        billYearStale: true,
       }),
     );
-    const unresolved = screen.getByTestId('queue-unresolved');
-    expect(unresolved).toBeInTheDocument();
-    expect(unresolved).toHaveTextContent('Unable to verify');
-    expect(unresolved.querySelector('svg')).not.toBeNull();
-    // Never a false-clean OR a conflicting drift/mismatch signal alongside it.
-    expect(screen.queryByTestId('queue-drift')).toBeNull();
-    expect(screen.queryByTestId('queue-bill-year-mismatch')).toBeNull();
+    const badge = screen.getByTestId('queue-unresolved');
+    expect(badge).toHaveTextContent('Unable to verify');
+    expect(badge.querySelector('svg')).not.toBeNull();
+    expect(screen.queryByTestId('queue-price-changed')).toBeNull();
+    expect(screen.queryByTestId('queue-price-unverifiable')).toBeNull();
+    expect(screen.queryByTestId('queue-bill-year-stale')).toBeNull();
   });
 });
 
-describe('<AutoRenewalQueueBadges> — drift + bill-year-mismatch (resolved)', () => {
-  it('driftFlagged=true (resolved) renders the drift badge with icon + text', () => {
+describe('<AutoRenewalQueueBadges> — price: confirmed-changed vs could-not-confirm are DISTINCT (review A3)', () => {
+  it('priceChanged=true renders the CONFIRMED badge with ALWAYS-VISIBLE frozen → current figures (review A5)', () => {
     renderBadges(
-      baseMeta({ driftFlagged: true, frozenPriceThb: '50000.00', currentCataloguePriceThb: '60000.00' }),
+      baseMeta({
+        priceChanged: true,
+        priceUnverifiable: false,
+        frozenPriceDisplay: '45,000.00 THB',
+        currentCataloguePriceDisplay: '48,000.00 THB',
+      }),
     );
-    const badge = screen.getByTestId('queue-drift');
-    expect(badge).toBeInTheDocument();
+    const badge = screen.getByTestId('queue-price-changed');
     expect(badge).toHaveTextContent('Price changed');
     expect(badge.querySelector('svg')).not.toBeNull();
+    // The figures are VISIBLE text, not hidden behind a tooltip-only trigger.
+    const figures = screen.getByTestId('queue-price-figures');
+    expect(figures).toHaveTextContent('45,000.00 THB');
+    expect(figures).toHaveTextContent('48,000.00 THB');
+    expect(screen.queryByTestId('queue-price-unverifiable')).toBeNull();
   });
 
-  it('driftFlagged=false → no drift badge', () => {
-    renderBadges(baseMeta({ driftFlagged: false }));
-    expect(screen.queryByTestId('queue-drift')).toBeNull();
+  it('priceUnverifiable=true renders the COULD-NOT-CONFIRM badge — distinct testid + copy from priceChanged', () => {
+    renderBadges(
+      baseMeta({
+        priceChanged: false,
+        priceUnverifiable: true,
+        frozenPriceDisplay: '45,000.00 THB',
+        currentCataloguePriceDisplay: null,
+      }),
+    );
+    const badge = screen.getByTestId('queue-price-unverifiable');
+    expect(badge).toHaveTextContent('Price could not be confirmed');
+    expect(badge.querySelector('svg')).not.toBeNull();
+    expect(screen.queryByTestId('queue-price-changed')).toBeNull();
+    // Still shows the frozen price it DOES know, as visible text.
+    expect(screen.getByTestId('queue-price-figures')).toHaveTextContent(
+      '45,000.00 THB',
+    );
   });
 
-  it('billYearCoverageYearMismatch=true renders the bill-year note with icon + text', () => {
-    renderBadges(baseMeta({ billYearCoverageYearMismatch: true, coverageYear: 2027 }));
-    const badge = screen.getByTestId('queue-bill-year-mismatch');
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent('Bill year ≠ coverage year');
+  it('neither flagged → no price badge at all', () => {
+    renderBadges(baseMeta({ priceChanged: false, priceUnverifiable: false }));
+    expect(screen.queryByTestId('queue-price-changed')).toBeNull();
+    expect(screen.queryByTestId('queue-price-unverifiable')).toBeNull();
+  });
+});
+
+describe('<AutoRenewalQueueBadges> — bill-year staleness (review A1 redefinition)', () => {
+  it('billYearStale=true renders with icon + text', () => {
+    renderBadges(baseMeta({ billYearStale: true, currentFiscalYear: 2027 }));
+    const badge = screen.getByTestId('queue-bill-year-stale');
+    expect(badge).toHaveTextContent('Fiscal year has changed since drafting');
     expect(badge.querySelector('svg')).not.toBeNull();
   });
 
-  it('drift and bill-year-mismatch render TOGETHER when both flagged', () => {
-    renderBadges(baseMeta({ driftFlagged: true, billYearCoverageYearMismatch: true }));
-    expect(screen.getByTestId('queue-drift')).toBeInTheDocument();
-    expect(screen.getByTestId('queue-bill-year-mismatch')).toBeInTheDocument();
+  it('billYearStale=false (the common case) → no badge — proves this is not an always-on signal', () => {
+    renderBadges(baseMeta({ billYearStale: false }));
+    expect(screen.queryByTestId('queue-bill-year-stale')).toBeNull();
+  });
+});
+
+describe('<AutoRenewalQueueBadges> — severity ladder colour tokens (review A4)', () => {
+  it('refused=critical(red) > unresolved/priceUnverifiable=at-risk(orange) > priceChanged=warning(amber) > billYearStale=healthy(emerald)', () => {
+    renderBadges(
+      baseMeta({
+        refusalReason: { kind: 'plan_year_drift' },
+        priceChanged: true,
+        billYearStale: true,
+      }),
+    );
+    expect(screen.getByTestId('queue-would-be-refused').className).toContain('red');
+    expect(screen.getByTestId('queue-price-changed').className).toContain('amber');
+    expect(screen.getByTestId('queue-bill-year-stale').className).toContain('emerald');
   });
 
-  it('neither flagged → no drift/mismatch badges, resolved state renders no unresolved badge either', () => {
-    renderBadges(baseMeta({}));
-    expect(screen.queryByTestId('queue-drift')).toBeNull();
-    expect(screen.queryByTestId('queue-bill-year-mismatch')).toBeNull();
-    expect(screen.queryByTestId('queue-unresolved')).toBeNull();
+  it('unresolved uses the orange at-risk tier (NOT the faintest styling)', () => {
+    renderBadges(baseMeta({ unresolved: true }));
+    expect(screen.getByTestId('queue-unresolved').className).toContain('orange');
+  });
+
+  it('priceUnverifiable uses the SAME orange at-risk tier as unresolved (both are "uncertain" signals)', () => {
+    renderBadges(baseMeta({ priceUnverifiable: true }));
+    expect(screen.getByTestId('queue-price-unverifiable').className).toContain('orange');
   });
 });
 
@@ -195,9 +247,13 @@ describe('<AutoRenewalQueueBadges> — staleness always renders', () => {
     expect(screen.getByTestId('queue-staleness')).toHaveTextContent('Drafted 12 days ago');
   });
 
-  it('staleness renders even when wouldBeRefused + unresolved are both active', () => {
+  it('renders even when refused + unresolved are both active', () => {
     renderBadges(
-      baseMeta({ wouldBeRefused: true, unresolved: true, stalenessDays: 3 }),
+      baseMeta({
+        refusalReason: { kind: 'member_terminated' },
+        unresolved: true,
+        stalenessDays: 3,
+      }),
     );
     expect(screen.getByTestId('queue-staleness')).toHaveTextContent('Drafted 3 days ago');
   });

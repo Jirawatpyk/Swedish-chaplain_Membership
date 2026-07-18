@@ -42,6 +42,8 @@ import {
 } from '@/modules/renewals';
 import { runListEventNamesByIds } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
+import { formatSatangThb } from '@/lib/format-thb';
+import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -102,6 +104,26 @@ function buildBuyerSubtitle(
   // Membership row.
   if (row.planYear === null) return null;
   return t('list.buyerSubtitle.membership', { year: row.planYear });
+}
+
+/**
+ * 107-auto-invoice Task 13 (review A5/A6) — format a raw `ThbDecimal`
+ * string (e.g. `"45000.00"`) as `formatSatangThb` does everywhere else in
+ * this app (`"45,000.00 THB"`), so the queue's price figures match the
+ * Total column's grouping/style instead of showing a bare decimal string.
+ * Defensive: the value is already brand-validated at its source
+ * (`RenewalCycle.frozenPlanPriceThb` / `PlanFrozenFields.priceTHB`), so
+ * `parseThbDecimal` should never throw here — but this runs inside a
+ * synchronous row-map, so a malformed value degrades to `null` (renders as
+ * an em-dash downstream) rather than crashing the whole list page.
+ */
+function formatQueuePrice(raw: string | null): string | null {
+  if (raw === null) return null;
+  try {
+    return formatSatangThb(parseThbDecimalToSatang(parseThbDecimal(raw)));
+  } catch {
+    return null;
+  }
 }
 
 interface SearchParams {
@@ -592,7 +614,8 @@ export default async function AdminInvoicesPage({
         // Staleness is computed HERE (not in loadAutoRenewalQueueContext)
         // because it needs only this row's own `createdAt` — no cross-
         // module data — so it stays correct even when the F8 enrichment
-        // degrades.
+        // degrades. Prices are formatted HERE too (review A6) — the
+        // client component never does money math.
         queueMeta:
           originFilter === 'auto_renewal'
             ? (() => {
@@ -608,14 +631,16 @@ export default async function AdminInvoicesPage({
                   ? {
                       unresolved: false as const,
                       stalenessDays,
-                      driftFlagged: meta.driftFlagged,
-                      frozenPriceThb: meta.frozenPriceThb,
-                      currentCataloguePriceThb: meta.currentCataloguePriceThb,
-                      billYearCoverageYearMismatch:
-                        meta.billYearCoverageYearMismatch,
-                      coverageYear: meta.coverageYear,
-                      wouldBeRefused: meta.wouldBeRefused,
-                      conflictingInvoiceId: meta.conflictingInvoiceId,
+                      frozenPriceDisplay: formatQueuePrice(meta.frozenPriceThb),
+                      currentCataloguePriceDisplay: formatQueuePrice(
+                        meta.currentCataloguePriceThb,
+                      ),
+                      priceChanged: meta.priceChanged,
+                      priceUnverifiable: meta.priceUnverifiable,
+                      planYear: r.planYear ?? 0,
+                      currentFiscalYear: meta.currentFiscalYear,
+                      billYearStale: meta.billYearStale,
+                      refusalReason: meta.refusalReason,
                     }
                   : {
                       // Enrichment failed/degraded OR this row wasn't a
@@ -623,13 +648,14 @@ export default async function AdminInvoicesPage({
                       // rather than a false-clean signal.
                       unresolved: true as const,
                       stalenessDays,
-                      driftFlagged: false,
-                      frozenPriceThb: null,
-                      currentCataloguePriceThb: null,
-                      billYearCoverageYearMismatch: false,
-                      coverageYear: null,
-                      wouldBeRefused: false,
-                      conflictingInvoiceId: null,
+                      frozenPriceDisplay: null,
+                      currentCataloguePriceDisplay: null,
+                      priceChanged: false,
+                      priceUnverifiable: false,
+                      planYear: r.planYear ?? 0,
+                      currentFiscalYear: 0,
+                      billYearStale: false,
+                      refusalReason: null,
                     };
               })()
             : null,
@@ -639,11 +665,16 @@ export default async function AdminInvoicesPage({
 
   const total = invoicesResult.ok ? invoicesResult.value.total : 0;
 
+  // Review A8 — the queue view gets its own heading/description so
+  // screen-reader + sighted users alike get "this is the auto-renewal
+  // review queue" orientation, not the generic invoices-list framing.
+  const isQueueView = originFilter === 'auto_renewal';
+
   return (
     <TableContainer>
       <PageHeader
-        title={t('list.title')}
-        subtitle={t('list.description')}
+        title={isQueueView ? t('queueView.title') : t('list.title')}
+        subtitle={isQueueView ? t('queueView.description') : t('list.description')}
         actions={
           isAdmin ? (
             // flex-wrap: three actions (Registers + Export CSV + New Invoice)
@@ -730,7 +761,7 @@ export default async function AdminInvoicesPage({
                 showMethodColumn={paidOnlineOnly}
                 // 107-auto-invoice Task 13 — the queue-context column renders
                 // only in the auto-renewal review-queue view.
-                showQueueMetaColumn={originFilter === 'auto_renewal'}
+                showQueueMetaColumn={isQueueView}
                 // 088 T021c / FR-035 — per-row Record payment quick action.
                 // Admin-only (money mutation); managers are read-only on
                 // finance. `todayIso` is the tenant-timezone (Bangkok) today —

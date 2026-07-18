@@ -726,6 +726,7 @@ export {
   type LoadAutoRenewalQueueContextDeps,
   type LoadAutoRenewalQueueContextError,
   type AutoRenewalQueueRowMeta,
+  type AutoRenewalRefusalReason,
 } from './application/use-cases/load-auto-renewal-queue-context';
 
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----

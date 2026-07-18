@@ -383,7 +383,15 @@ export function InvoicesTable({
     // so the cue stays visible — the rgba(0,0,0,0.08) ink disappears
     // on `bg-card` dark surfaces alone.
     <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
-      <Table aria-label={t('tableCaption')}>
+      {/* Review A8 — the queue view gets its own table caption so screen-
+          reader users navigating straight to the table get the same
+          "this is the review queue, not the general list" context sighted
+          users get from the page heading. */}
+      <Table
+        aria-label={
+          showQueueMetaColumn ? t('queueTableCaption') : t('tableCaption')
+        }
+      >
         <TableHeader>
           <TableRow>
             <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
