@@ -209,6 +209,12 @@ function makeDeps(opts?: {
       countCyclesForMemberInTx: countCyclesForMemberMock,
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberMock,
       findMaxPaidThroughForMemberInTx: findMaxPaidThroughMock,
+      // 107-auto-invoice Task 9 (review: third minting path) — the
+      // duplicate-bill content guard's read. Default: no existing live bill,
+      // so these pre-existing cases exercise the unchanged happy path. The
+      // refusal branch is covered live-Neon by
+      // `tests/integration/renewals/admin-renew-lapsed-member.test.ts`.
+      listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
     } as unknown as AdminRenewLapsedMemberDeps['cyclesRepo'],
     auditEmitter: {
       emitInTx: emitInTxMock,

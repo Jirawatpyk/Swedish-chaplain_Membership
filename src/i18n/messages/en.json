@@ -1095,6 +1095,7 @@
               "member_archived": "This member is archived. Restore the member before renewing.",
               "member_has_active_cycle": "This member already has an active renewal cycle.",
               "plan_not_found": "The member's plan could not be resolved.",
+              "invoice_already_exists": "A membership invoice already exists for this year. Settle or void it before renewing again.",
               "invoice_issue_failed": "The renewal invoice could not be issued. The renewal was not completed — please try again.",
               "rate_limited": "Too many renewal attempts. Please wait a moment and try again.",
               "invalid_body": "The request could not be processed. Please refresh the page and try again.",

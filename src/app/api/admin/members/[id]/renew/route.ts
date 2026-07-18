@@ -169,6 +169,18 @@ export async function POST(
             code: 'plan_not_found',
             correlationId: ctx.correlationId,
           });
+        case 'invoice_already_exists':
+          // 107-auto-invoice Task 9 — a live membership bill already exists
+          // for this (member, plan_year), so renewing would duplicate the
+          // §86/4. 409 (conflict, not a server fault); `invoice_id` lets the
+          // admin UI link straight to the bill that must be settled or voided
+          // first. No cycle was created — the guard runs before the insert.
+          return renewLapsedError({
+            status: 409,
+            code: 'invoice_already_exists',
+            correlationId: ctx.correlationId,
+            details: { invoice_id: result.error.invoiceId },
+          });
         case 'invoice_issue_failed':
           return renewLapsedError({
             status: 502,

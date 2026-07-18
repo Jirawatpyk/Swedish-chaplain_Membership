@@ -18,7 +18,15 @@ describe('F4 barrel — F5 bridge export surface (T010–T014)', () => {
   // See tests/unit/payments/index-barrel.test.ts for the rationale —
   // same dynamic-import alias-resolution pattern, same parallel-load
   // flake profile. 30s ceiling under CPU contention; isolated run ~1.8s.
-  it('re-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang', { timeout: 30_000 }, async () => {
+  // Timeout raised 30s → 120s (107-auto-invoice Task 9). This test
+  // dynamically imports the ENTIRE F4 barrel, so its cost tracks the size of
+  // the module graph rather than anything it asserts; measured ~16s in
+  // isolation and ~26s as the graph grew, i.e. it was already flaking against
+  // the old 30s ceiling under parallel load. The headroom keeps a slow import
+  // from being reported as a behavioural failure — if this ever times out
+  // again, the graph has grown enough to warrant investigating (a cycle or an
+  // accidental server-only pull-in), not another bump.
+  it('re-exports the 3 F5 bridge use-cases + Money aliased as AmountSatang', { timeout: 120_000 }, async () => {
     const mod = await import('@/modules/invoicing');
 
     // F5 bridge use-cases (T012, T013, T014)

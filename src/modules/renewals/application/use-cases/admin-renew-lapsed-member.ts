@@ -85,6 +85,7 @@ import {
 import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
+import { findLiveMembershipBill } from './_lib/live-membership-bill';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import {
   CycleNotFoundError,
@@ -140,6 +141,17 @@ export type AdminRenewLapsedMemberError =
       // surfaces as a compile error rather than a runtime missing-toast.
       readonly errorCode: RenewalInvoiceErrorCode;
       readonly detail: string;
+    }
+  | {
+      /**
+       * 107-auto-invoice Task 9 (review: third minting path) — a live
+       * membership bill already exists for this (member, plan_year), so
+       * issuing another would duplicate the §86/4. The admin should settle or
+       * void the existing bill first. `invoiceId` points at the conflict so
+       * the UI can link straight to it.
+       */
+      readonly kind: 'invoice_already_exists';
+      readonly invoiceId: string;
     }
   | { readonly kind: 'server_error'; readonly message: string };
 
@@ -297,6 +309,71 @@ export async function adminRenewLapsedMember(
         member.planId,
         nowIso,
       );
+
+      // 107-auto-invoice Task 9 (review: third minting path) — duplicate-bill
+      // content guard. This is the THIRD path that can mint a membership
+      // §86/4 (alongside `confirmRenewal` and `issueAutoDraftedRenewal`) and
+      // it had no content guard and no linked-invoice check at all — the same
+      // mint-outside-the-lock shape, entirely unprotected.
+      //
+      // Exposure is narrower here (a lapsed comeback usually lands in a NEW
+      // plan year, so a collision is uncommon), but "uncommon" is not a
+      // guarantee: `resolveComebackPeriodFrom` can anchor GAPLESS to a settled
+      // predecessor, which puts `period_from` back into a year the member may
+      // already have been billed for — and re-running the admin action after a
+      // partial failure is exactly when that happens.
+      //
+      // Placed BEFORE `createCycleInTx`, not after: returning `err(...)` from
+      // inside `runInTenant` does NOT throw, so tx1 COMMITS — guarding after
+      // the create would leave an orphan `awaiting_payment` cycle behind on a
+      // refused call (and `member_has_active_cycle` would then permanently
+      // wedge every retry). `periodFrom` is already resolved above, so the
+      // guard needs nothing from the not-yet-created cycle: it derives the
+      // SAME fiscal year the §86/4 will carry (`deriveFiscalYear(periodFrom)`,
+      // identical to Step 2's derivation from `cycle.periodFrom`).
+      //
+      // Excludes `void` for the same reason `confirm-renewal.ts` does: a bill
+      // voided for correction must not permanently wedge the member.
+      // Precedence: `member_has_active_cycle` must still win when BOTH apply.
+      // A member with an active cycle AND a live bill is an "already renewed"
+      // situation, and that code is what the admin UI has copy for. Cheap
+      // read; `createCycleInTx` below remains the authority for the CONCURRENT
+      // case (its in-tx idempotency guard + the partial unique index), so the
+      // L1 double-submit contract is unchanged.
+      const activeCycle = await deps.cyclesRepo.findActiveForMemberInTx(
+        tx,
+        input.tenantId,
+        input.memberId,
+      );
+      if (activeCycle) {
+        return err({ kind: 'member_has_active_cycle' as const });
+      }
+
+      const guardYear = deriveFiscalYear(periodFrom);
+      const existingBills =
+        await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+          tx,
+          input.tenantId,
+          input.memberId,
+          guardYear,
+        );
+      const liveBill = findLiveMembershipBill(existingBills);
+      if (liveBill) {
+        logger.warn(
+          {
+            memberId: input.memberId,
+            conflictingInvoiceId: liveBill.invoiceId,
+            conflictingStatus: liveBill.status,
+            planYear: guardYear,
+            correlationId: input.correlationId,
+          },
+          '[admin-renew-lapsed-member] refused — a live membership bill already exists for this (member, plan_year)',
+        );
+        return err({
+          kind: 'invoice_already_exists' as const,
+          invoiceId: liveBill.invoiceId,
+        });
+      }
 
       // createCycleInTx no-ops if an active cycle exists (the member is
       // NOT lapsed) ⇒ member_has_active_cycle. It THROWS on an

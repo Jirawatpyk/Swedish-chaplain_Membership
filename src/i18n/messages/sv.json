@@ -1095,6 +1095,7 @@
               "member_archived": "Denna medlem är arkiverad. Återställ medlemmen innan du förnyar.",
               "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
               "plan_not_found": "Medlemmens plan kunde inte hittas.",
+              "invoice_already_exists": "En medlemsfaktura finns redan för detta år. Reglera eller makulera den innan du förnyar igen.",
               "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
               "rate_limited": "För många förnyelseförsök. Vänta en stund och försök igen.",
               "invalid_body": "Begäran kunde inte behandlas. Uppdatera sidan och försök igen.",

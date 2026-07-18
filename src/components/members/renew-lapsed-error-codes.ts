@@ -27,6 +27,9 @@ export const RENEW_LAPSED_ERROR_CODES = [
   'member_archived',
   'member_has_active_cycle',
   'plan_not_found',
+  // 107-auto-invoice Task 9 — a live membership bill already exists for this
+  // (member, plan_year); renewing would duplicate the §86/4.
+  'invoice_already_exists',
   'invoice_issue_failed',
   'server_error',
 ] as const;
@@ -46,8 +49,8 @@ export type RenewLapsedErrorCode = (typeof RENEW_LAPSED_ERROR_CODES)[number];
  * alongside the route's typed switch + the i18n-coverage unit test.
  */
 type _AssertRenewLapsedErrorCodeCount =
-  (typeof RENEW_LAPSED_ERROR_CODES)['length'] extends 10
+  (typeof RENEW_LAPSED_ERROR_CODES)['length'] extends 11
     ? true
-    : 'RENEW_LAPSED_ERROR_CODES count mismatch — expected 10';
+    : 'RENEW_LAPSED_ERROR_CODES count mismatch — expected 11';
 const _assertRenewLapsedErrorCodeCount: _AssertRenewLapsedErrorCodeCount = true;
 void _assertRenewLapsedErrorCodeCount;
