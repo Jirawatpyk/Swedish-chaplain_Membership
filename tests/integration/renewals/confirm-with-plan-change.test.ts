@@ -22,6 +22,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { addMonthsUtc } from '@/lib/dates';
+import { formatTaxDocMonthYear } from '@/lib/format-tax-doc-month-year';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -341,10 +343,10 @@ describe('F8 confirm-with-plan-change — bills NEW plan frozen price on §86/4 
     // wiring on the confirm-renewal path (only offline-frozen-price.test.ts
     // covered mark-paid-offline's use of the same signal).
     expect(membershipLine!.descriptionEn).toContain(
-      '(coverage 2027-06-01 to 2028-06-01)',
+      `(${formatTaxDocMonthYear('2027-06-01', 'en')} - ${formatTaxDocMonthYear(addMonthsUtc('2028-06-01', -1).slice(0, 10), 'en')})`,
     );
     expect(membershipLine!.descriptionTh).toContain(
-      '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+      `(${formatTaxDocMonthYear('2027-06-01', 'th')} - ${formatTaxDocMonthYear(addMonthsUtc('2028-06-01', -1).slice(0, 10), 'th')})`,
     );
   }, 120_000);
 

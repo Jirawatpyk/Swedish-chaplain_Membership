@@ -32,6 +32,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
+import { addMonthsUtc } from '@/lib/dates';
+import { formatTaxDocMonthYear } from '@/lib/format-tax-doc-month-year';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
@@ -408,14 +410,18 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     const toDate = freshCycle[0]!.periodTo.toISOString().slice(0, 10);
     expect(
       membershipLine.some((l) =>
-        l.descriptionEn.includes(`(coverage ${fromDate} to ${toDate})`),
+        l.descriptionEn.includes(
+          `(${formatTaxDocMonthYear(fromDate, 'en')} - ${formatTaxDocMonthYear(addMonthsUtc(toDate, -1).slice(0, 10), 'en')})`,
+        ),
       ),
     ).toBe(true);
     // Task 8 F3 review-fix — the Thai counterpart must carry the same
     // window (this test previously asserted EN only).
     expect(
       membershipLine.some((l) =>
-        l.descriptionTh.includes(`(ระยะเวลา ${fromDate} ถึง ${toDate})`),
+        l.descriptionTh.includes(
+          `(${formatTaxDocMonthYear(fromDate, 'th')} - ${formatTaxDocMonthYear(addMonthsUtc(toDate, -1).slice(0, 10), 'th')})`,
+        ),
       ),
     ).toBe(true);
 
@@ -552,7 +558,9 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
     const toDate = freshCycle[0]!.periodTo.toISOString().slice(0, 10);
     expect(
       membershipLine.some((l) =>
-        l.descriptionEn.includes(`(coverage ${fromDate} to ${toDate})`),
+        l.descriptionEn.includes(
+          `(${formatTaxDocMonthYear(fromDate, 'en')} - ${formatTaxDocMonthYear(addMonthsUtc(toDate, -1).slice(0, 10), 'en')})`,
+        ),
       ),
     ).toBe(true);
   }, 180_000);
