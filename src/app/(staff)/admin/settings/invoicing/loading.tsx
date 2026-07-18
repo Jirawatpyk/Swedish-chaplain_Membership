@@ -27,9 +27,11 @@ import {
  *
  * `SECTION_SKELETONS` below is a compact description of each section's
  * real fieldset layout (see the matching `*-section.tsx` for the actual
- * fields) — legend-less entries mirror the I1 fix (the "Tax" and
- * "Numbering" fieldsets' legends are `sr-only` there, deduping against
- * the section h2, so no visible legend placeholder renders here either).
+ * fields) — a legend-less entry mirrors the I1 fix (the "Tax" fieldset's
+ * legend is `sr-only` there, deduping against the section h2, so no
+ * visible legend placeholder renders here either). Numbering's first
+ * fieldset carries a distinct visible "Prefixes" legend after the I1
+ * follow-up, so it IS rendered here.
  * `numbering`'s `hasSwitchRow` mirrors the I2 relocation of
  * `auto_email_enabled` into its "Defaults" area.
  *
@@ -72,7 +74,10 @@ const SECTION_SKELETONS: readonly SectionSkeleton[] = [
   {
     id: 'numbering',
     labelKey: 'sections.numbering',
-    fieldsets: [{ fieldCount: 4 }, { legendKey: 'sections.defaults', fieldCount: 3 }],
+    fieldsets: [
+      { legendKey: 'sections.numberingPrefixes', fieldCount: 4 },
+      { legendKey: 'sections.defaults', fieldCount: 3 },
+    ],
     hasSwitchRow: true,
   },
   {
