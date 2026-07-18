@@ -48,6 +48,13 @@ export interface UserListTableProps {
   readonly users: readonly UserRow[];
   readonly currentUserId: string;
   readonly currentUserRole: Role;
+  /**
+   * "Now" used to compute the "expires in N days" hint — computed ONCE on
+   * the server (see AdminUsersPage's `UsersDataSection`) and threaded down
+   * as a prop, rather than read client-side. See the `daysUntil` call site
+   * below for why.
+   */
+  readonly now: Date;
 }
 
 type PendingAction =
@@ -84,18 +91,19 @@ export function UserListTable({
   users,
   currentUserId,
   currentUserRole,
+  now,
 }: UserListTableProps) {
   const t = useTranslations('admin.users');
   const tErrors = useTranslations('errors');
   const router = useRouter();
   const [pending, setPending] = useState<PendingAction>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  // Nit fix (found reviewing Task 5): compute `now` once at mount instead of
-  // fresh on every render — this is a Client Component that renders on the
-  // server AND hydrates on the client, so a `new Date()` read directly in
-  // the render body can straddle a day boundary between the two passes and
-  // produce a hydration text mismatch on the "expires in N days" hint.
-  const [now] = useState(() => new Date());
+  // `now` is computed once on the server (AdminUsersPage's
+  // `UsersDataSection`) and passed down, so SSR and client hydration use
+  // the identical value — no day-boundary hydration mismatch on the
+  // "expires in N days" hint. Accepted tradeoff: the label doesn't tick
+  // over while the page stays open (a fresh value only arrives on the next
+  // server render / router.refresh()).
 
   const isAdmin = currentUserRole === 'admin';
 

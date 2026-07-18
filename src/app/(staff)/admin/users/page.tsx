@@ -137,6 +137,10 @@ async function UsersDataSection({
     userRepo.listWithFilter(filter, USERS_PAGE_SIZE, offset),
     userRepo.countWithFilter(filter),
   ]);
+  // Computed once here (server) and threaded down as a prop so the
+  // "expires in N days" hint uses the identical value on SSR + client
+  // hydration — see UserListTableProps.now.
+  const now = new Date();
 
   return (
     <div className="flex flex-col gap-3">
@@ -151,6 +155,7 @@ async function UsersDataSection({
         }))}
         currentUserId={currentUserId}
         currentUserRole={currentUserRole}
+        now={now}
       />
       <TablePagination page={page} pageSize={USERS_PAGE_SIZE} total={total} />
     </div>

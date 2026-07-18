@@ -60,9 +60,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const startedAt = Date.now();
 
   try {
+    // The 30-day grace policy lives in `pruneExpiredInvitations`
+    // (DEFAULT_GRACE_DAYS) — single source of truth, so `graceDays` is
+    // intentionally omitted here rather than duplicated.
     const result = await pruneExpiredInvitations({
       now: new Date(),
-      graceDays: 30,
       requestId,
     });
     if (!result.ok) {

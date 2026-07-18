@@ -56,10 +56,25 @@ const DISABLED_USER = {
   invitationExpiresAt: null,
 } as const;
 
-function renderTable(users: Users, currentUserRole: 'admin' | 'manager' | 'member' = 'admin') {
+// Fixed "now" (Task 2's server-now-hydration fix): UserListTable no longer
+// reads `new Date()` internally — the value is computed once on the server
+// and threaded down as a prop. Tests pass a fixed instant so the
+// expiry-label assertions below are deterministic regardless of wall clock.
+const FIXED_NOW = new Date('2026-07-18T00:00:00Z');
+
+function renderTable(
+  users: Users,
+  currentUserRole: 'admin' | 'manager' | 'member' = 'admin',
+  now: Date = FIXED_NOW,
+) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <UserListTable users={users} currentUserId="current-viewer" currentUserRole={currentUserRole} />
+      <UserListTable
+        users={users}
+        currentUserId="current-viewer"
+        currentUserRole={currentUserRole}
+        now={now}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -219,17 +234,16 @@ describe('UserListTable — pending-row invitation expiry label', () => {
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
   it('shows "Expires in 3 days" for a pending row whose invitation expires ~3 days out', () => {
-    // 3 days minus a small buffer so the component's internally-captured
-    // `now` (read a few ms after this fixture is built) still rounds UP to
-    // exactly 3, never 4 — see `daysUntil`'s Math.ceil in the component.
-    const invitationExpiresAt = new Date(Date.now() + 3 * MS_PER_DAY - 60_000);
+    // 3 days minus a small buffer relative to the FIXED `now` prop so
+    // `daysUntil`'s Math.ceil rounds UP to exactly 3, never 4.
+    const invitationExpiresAt = new Date(FIXED_NOW.getTime() + 3 * MS_PER_DAY - 60_000);
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     expect(screen.getByText('Expires in 3 days')).toBeInTheDocument();
   });
 
   it('shows "Invitation expired" for a pending row whose invitation is already past its expiry', () => {
-    const invitationExpiresAt = new Date(Date.now() - MS_PER_DAY);
+    const invitationExpiresAt = new Date(FIXED_NOW.getTime() - MS_PER_DAY);
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     expect(screen.getByText('Invitation expired')).toBeInTheDocument();
