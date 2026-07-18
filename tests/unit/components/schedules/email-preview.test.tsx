@@ -30,15 +30,33 @@ it('warns when the offset has no copy for the tier', () => {
   expect(screen.getByRole('status')).toHaveTextContent(/will not be sent/i);
 });
 
-it('shows the preview heading when the offset is covered', () => {
+// I6 follow-up fix (`.superpowers/sdd/followup-reminder-uxwave-brief.md`)
+// — "Email that will be sent" implied a real body preview spec §9
+// explicitly defers; reworded to state only what's actually configured.
+it('shows the reworded preview heading when the offset is covered', () => {
   wrap(<EmailPreview tierBucket="regular" offsetDays={-30} />); // t-30 is in regular set
-  expect(screen.getByText(/email that will be sent/i)).toBeInTheDocument();
+  expect(
+    screen.getByText(/reminder email is configured for this timing/i),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/email that will be sent/i)).not.toBeInTheDocument();
 });
 
-// v2 rework Issue 4 — the summary sentence must read plain language
-// ("30 days before renewal"), not the cryptic "T-30" form.
-it('shows the plain-language timing sentence, not the cryptic "T-30" form', () => {
-  wrap(<EmailPreview tierBucket="regular" offsetDays={-30} />);
-  expect(screen.getByText(/30 days before renewal/i)).toBeInTheDocument();
-  expect(screen.queryByText(/T-30/)).not.toBeInTheDocument();
+// I4 follow-up fix — the not-covered branch used to be a `<p role=
+// "status">` and the covered branch a `<div>` with NO role; toggling
+// between them (every timing change) unmounted/remounted the live
+// region. ONE stable role="status" node must now persist across the
+// coverage boundary — proven here by capturing the DOM node reference
+// before and after a rerender that flips `covered`, not merely the text.
+it('keeps the SAME role="status" live-region node across a coverage-state change (does not remount)', () => {
+  const { rerender } = wrap(<EmailPreview tierBucket="regular" offsetDays={-45} />);
+  const notCoveredNode = screen.getByRole('status');
+
+  rerender(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <EmailPreview tierBucket="regular" offsetDays={-30} />
+    </NextIntlClientProvider>,
+  );
+  const coveredNode = screen.getByRole('status');
+  expect(coveredNode).toBe(notCoveredNode);
+  expect(coveredNode).toHaveAttribute('aria-live', 'polite');
 });

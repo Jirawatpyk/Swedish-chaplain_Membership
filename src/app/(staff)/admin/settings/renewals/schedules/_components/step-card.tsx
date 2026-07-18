@@ -323,11 +323,19 @@ export function StepCard({
         {/* Reorder/remove block — verbatim from schedule-editor.tsx's
             StepRow (lines ~184-215): same aria-labels, same disabled
             rules (readOnly OR at either end of the list). */}
-        <div className="flex items-center gap-1">
+        {/* M1 follow-up fix (`.superpowers/sdd/followup-reminder-uxwave-
+            brief.md`) — `size="icon"` alone is a 32px box; `min-h-11
+            min-w-11` (the established ≥44px pattern, cf.
+            portal-sign-out-button.tsx) floors it to the WCAG 2.5.5/
+            ux-standards § 9.1 touch-target minimum without changing the
+            visible icon size. `gap-2` (was `gap-1`) gives the now-larger
+            buttons breathing room in the header row. */}
+        <div className="flex items-center gap-2">
           <Button
             type="button"
             size="icon"
             variant="ghost"
+            className="min-h-11 min-w-11"
             disabled={readOnly || index === 0}
             onClick={onMoveUp}
             aria-label={t('actions.moveUp')}
@@ -338,6 +346,7 @@ export function StepCard({
             type="button"
             size="icon"
             variant="ghost"
+            className="min-h-11 min-w-11"
             disabled={readOnly || index === total - 1}
             onClick={onMoveDown}
             aria-label={t('actions.moveDown')}
@@ -348,6 +357,7 @@ export function StepCard({
             type="button"
             size="icon"
             variant="ghost"
+            className="min-h-11 min-w-11"
             disabled={readOnly}
             onClick={onRemove}
             aria-label={t('actions.removeStep')}
@@ -505,6 +515,7 @@ export function StepCard({
               <Combobox
                 id={`task-type-${idPrefix}`}
                 aria-labelledby={`task-type-label-${idPrefix}`}
+                aria-describedby={`task-type-hint-${idPrefix}`}
                 options={taskTypeOptions}
                 value={step.task_type ?? 'phone_call'}
                 onChange={handleTaskTypeChange}
@@ -521,6 +532,15 @@ export function StepCard({
                   t('stepCard.taskType.customValue', { value: typed })
                 }
               />
+              {/* I5 follow-up fix — the combobox gives no visible cue that
+                  a value not in the list can be typed. Caption pattern
+                  matches address-section.tsx's postalCodeUnknownHint. */}
+              <p
+                id={`task-type-hint-${idPrefix}`}
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {t('stepCard.taskType.hint')}
+              </p>
             </div>
             <div>
               <Label htmlFor={`assignee-${idPrefix}`}>

@@ -22,6 +22,7 @@ import { NextIntlClientProvider, createTranslator } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import thMessages from '@/i18n/messages/th.json';
 import svMessages from '@/i18n/messages/sv.json';
+import { buildFormats } from '@/i18n/formats';
 // F8 Phase 8 path-alignment fix — schedule-editor.tsx moved to
 // `(staff)/admin/settings/renewals/schedules/...` post-Wave K16. The
 // test's import path lagged behind the source move; corrected here so
@@ -327,7 +328,12 @@ describe('<ScheduleEditor> — `_uiKey` React-key stability (Change 3 remount-bu
 
   it('does not remount the StepCard DOM node when an edit recomposes step_id', async () => {
     render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider
+        locale="en"
+        messages={messages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
         <ScheduleEditor initialPolicies={[]} readOnly={false} />
       </NextIntlClientProvider>,
     );
@@ -376,7 +382,12 @@ describe('<ScheduleEditor> — `_uiKey` React-key stability (Change 3 remount-bu
 describe('<ScheduleEditor> — two consecutive "Add step" clicks (guards Issue 3 end to end)', () => {
   it('produce two steps with distinct step_ids, not a duplicate t-30.email pair', () => {
     render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider
+        locale="en"
+        messages={messages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
         <ScheduleEditor initialPolicies={[]} readOnly={false} />
       </NextIntlClientProvider>,
     );
@@ -405,5 +416,180 @@ describe('<ScheduleEditor> — two consecutive "Add step" clicks (guards Issue 3
       .filter((text) => !text.includes('Due date'));
     expect(stepLabels).toHaveLength(2);
     expect(stepLabels[0]).not.toBe(stepLabels[1]);
+  });
+});
+
+// C1 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — unsaved-
+// changes guard, hand-rolled to match member-form.tsx / issue-invoice-
+// form.tsx / broadcast compose-form.tsx. Same `addEventListener`/
+// `removeEventListener` spy convention as
+// tests/unit/members/presentation/member-form-unsaved-changes-guard.test.tsx.
+describe('<ScheduleEditor> — beforeunload unsaved-changes guard (C1)', () => {
+  // `waitFor` polls via setTimeout, which never fires under the fake
+  // timers tests/setup.ts installs globally — same real-timers-for-this-
+  // block convention as the `_uiKey` stability describe block above.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('does not register a beforeunload listener on a pristine editor', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      render(
+        <NextIntlClientProvider
+          locale="en"
+          messages={messages}
+          formats={buildFormats('en')}
+          timeZone="Asia/Bangkok"
+        >
+          <ScheduleEditor initialPolicies={[]} readOnly={false} />
+        </NextIntlClientProvider>,
+      );
+      expect(addSpy.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(false);
+    } finally {
+      addSpy.mockRestore();
+    }
+  });
+
+  it('registers a beforeunload listener once a step is added (bucket becomes dirty)', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      render(
+        <NextIntlClientProvider
+          locale="en"
+          messages={messages}
+          formats={buildFormats('en')}
+          timeZone="Asia/Bangkok"
+        >
+          <ScheduleEditor initialPolicies={[]} readOnly={false} />
+        </NextIntlClientProvider>,
+      );
+      fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+      expect(addSpy.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(true);
+    } finally {
+      addSpy.mockRestore();
+    }
+  });
+
+  it('removes the listener again once the edited bucket saves successfully', async () => {
+    // Same `vi.stubGlobal('fetch', ...)` convention as
+    // tests/unit/components/members/member-picker.test.tsx.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            change_diff: { added: ['t-60.email'], removed: [], unchanged: [] },
+            updated_at: '2026-07-18T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      ),
+    );
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    try {
+      render(
+        <NextIntlClientProvider
+          locale="en"
+          messages={messages}
+          formats={buildFormats('en')}
+          timeZone="Asia/Bangkok"
+        >
+          <ScheduleEditor initialPolicies={[]} readOnly={false} />
+        </NextIntlClientProvider>,
+      );
+      fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+      fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+      await waitFor(() => {
+        expect(removeSpy.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(true);
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      removeSpy.mockRestore();
+    }
+  });
+});
+
+// I2 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — the manager
+// read-only notice used to be raw amber (warning tone) on an informational
+// message. `data-tone` is InlineAlert's own deterministic marker
+// (inline-alert.tsx), the cleanest discriminator for "which semantic tone
+// actually rendered" without asserting on Tailwind class strings.
+describe('<ScheduleEditor> — manager read-only banner uses the info tone, not amber (I2)', () => {
+  it('renders the notice as an InlineAlert tone="info" role="status"', () => {
+    render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={messages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
+        <ScheduleEditor initialPolicies={[]} readOnly={true} />
+      </NextIntlClientProvider>,
+    );
+    const notice = screen.getByText(/read-only access to renewal schedules/i);
+    const alertRoot = notice.closest('[data-slot="inline-alert"]');
+    expect(alertRoot).not.toBeNull();
+    expect(alertRoot).toHaveAttribute('data-tone', 'info');
+    expect(alertRoot).toHaveAttribute('role', 'status');
+  });
+
+  it('does not render the banner at all when NOT read-only', () => {
+    render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={messages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
+        <ScheduleEditor initialPolicies={[]} readOnly={false} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByText(/read-only access to renewal schedules/i)).not.toBeInTheDocument();
+  });
+});
+
+// I3 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — move-up/
+// move-down used to be silent for keyboard/SR users. A polite live
+// region now announces the step's new 1-based position.
+describe('<ScheduleEditor> — reorder announces the new position to screen readers (I3)', () => {
+  function addTwoSteps() {
+    render(
+      <NextIntlClientProvider
+        locale="en"
+        messages={messages}
+        formats={buildFormats('en')}
+        timeZone="Asia/Bangkok"
+      >
+        <ScheduleEditor initialPolicies={[]} readOnly={false} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+    fireEvent.click(screen.getByRole('button', { name: /add step/i }));
+  }
+
+  it('announces "Step moved to position 2 of 2" after moving the first step later', () => {
+    addTwoSteps();
+    const moveDownButtons = screen.getAllByRole('button', { name: /move step later/i });
+    fireEvent.click(moveDownButtons[0]!);
+    expect(screen.getByText('Step moved to position 2 of 2')).toBeInTheDocument();
+  });
+
+  it('announces "Step moved to position 1 of 2" after moving the second step earlier', () => {
+    addTwoSteps();
+    const moveUpButtons = screen.getAllByRole('button', { name: /move step earlier/i });
+    fireEvent.click(moveUpButtons[1]!);
+    expect(screen.getByText('Step moved to position 1 of 2')).toBeInTheDocument();
+  });
+
+  it('the live region is a polite role="status" node', () => {
+    addTwoSteps();
+    fireEvent.click(screen.getAllByRole('button', { name: /move step later/i })[0]!);
+    const announcement = screen.getByText('Step moved to position 2 of 2');
+    expect(announcement).toHaveAttribute('aria-live', 'polite');
+    expect(announcement).toHaveAttribute('role', 'status');
   });
 });

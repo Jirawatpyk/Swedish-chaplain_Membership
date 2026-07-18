@@ -3265,11 +3265,12 @@
               }
             },
             "preview": {
-              "heading": "E-post som kommer att skickas",
+              "heading": "Påminnelsemail är konfigurerat för denna tidpunkt",
               "noCopyWarning": "Inget meddelande finns för denna tidpunkt — detta e-postmeddelande skickas inte. Välj en standardtidpunkt."
             },
             "taskType": {
               "label": "Uppgiftstyp",
+              "hint": "Hittar du inte uppgiftstypen? Skriv för att lägga till en egen.",
               "searchPlaceholder": "Sök uppgiftstyper…",
               "emptyMessage": "Ingen uppgiftstyp hittades.",
               "customValue": "Använd \"{value}\"",
@@ -3318,6 +3319,9 @@
           },
           "manager": {
             "readOnlyNotice": "Du har endast läsbehörighet till förnyelseschemat. Be en administratör att göra ändringar."
+          },
+          "reorder": {
+            "announce": "Steg flyttat till position {position} av {total}"
           },
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"

@@ -123,6 +123,17 @@ function Stepper({
     <ol
       data-slot="stepper"
       data-orientation={orientation}
+      // I1 follow-up fix (`.superpowers/sdd/followup-reminder-uxwave-brief.md`)
+      // — Tailwind v4's `@import 'tailwindcss'` preflight sets
+      // `list-style:none` on ol/ul, which drops the implicit `list` role in
+      // Safari/VoiceOver (jsdom's accessibility-tree computation ignores
+      // CSS entirely, so this was invisible to every RTL `getByRole('list')`
+      // assertion in this repo — see stepper.test.tsx / reminder-timeline.
+      // test.tsx, unaffected by this addition). Explicit `role="list"`
+      // restores it everywhere, matching the 7 other places in this project
+      // that add it for the same reason (e.g. month-bar-chart.tsx,
+      // portal-invoice-card-list.tsx, timeline-stream.tsx).
+      role="list"
       className={cn(
         "flex w-full",
         orientation === "horizontal"

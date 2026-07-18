@@ -99,6 +99,7 @@ vi.mock('@/components/ui/combobox', () => ({
   Combobox: ({
     id,
     'aria-labelledby': ariaLabelledBy,
+    'aria-describedby': ariaDescribedBy,
     options,
     value,
     onChange,
@@ -110,6 +111,7 @@ vi.mock('@/components/ui/combobox', () => ({
   }: {
     id: string;
     'aria-labelledby'?: string;
+    'aria-describedby'?: string;
     options: ComboboxOptionStub[];
     value: string;
     onChange: (next: string) => void;
@@ -135,6 +137,7 @@ vi.mock('@/components/ui/combobox', () => ({
           id={id}
           role="combobox"
           aria-labelledby={ariaLabelledBy}
+          aria-describedby={ariaDescribedBy}
           aria-expanded="true"
           aria-controls={listboxId}
           disabled={disabled}
@@ -420,15 +423,40 @@ describe('task-type combobox (known catalogue + custom entry)', () => {
     expect(arg.step_id.split('.')[0]).toBe('t-30');
   });
 
-  it('loading a bespoke/legacy task_type (absent from the known catalogue) displays it on the trigger — no data loss', () => {
+  it('loading a bespoke/legacy task_type (absent from the known catalogue) is genuinely injected into taskTypeOptions — no data loss', () => {
     // NOTE: the brief's own example ('quarterly_review_meeting') is now
     // PART of the known catalogue after Change 1, so it no longer
     // exercises this path — a genuinely bespoke value is required to
     // prove the load-reflection/no-data-loss mechanism.
+    //
+    // task_type MEDIUM tighten (`.superpowers/sdd/followup-reminder-
+    // uxwave-brief.md`) — the trigger-text assertion alone does NOT prove
+    // `taskTypeOptions` (step-card.tsx:304-313) contains the bespoke
+    // value: the Combobox primitive's own trigger-text fallback
+    // (combobox.tsx:268, mirrored by this file's mock) shows `value` on
+    // the trigger even when it is absent from `options`, for ANY
+    // `allowCustomValue` combobox — so this test stayed green even
+    // against a build where the `taskTypeOptions` injection was deleted
+    // entirely. Asserting the value is a listed `role="option"` with
+    // `aria-selected="true"` (the mock's eager-render list, mirroring the
+    // real primitive's option rendering) discriminates the two: only the
+    // injection makes it a real option.
     renderTaskCard({ step: { task_type: 'legacy_custom_task' } });
     const trigger = screen.getByRole('combobox');
     expect(trigger).toHaveTextContent('legacy_custom_task');
     expect(trigger).not.toHaveTextContent('Task type');
+    const option = screen.getByRole('option', { name: 'legacy_custom_task' });
+    expect(option).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('an unrelated edit (timing change) preserves a bespoke task_type (no-data-loss survives editing)', () => {
+    const { onChange } = renderTaskCard({ step: { task_type: 'legacy_bespoke_type' } });
+    // Timing dropdown (Select mock) — pick a different standard offset.
+    // 'regular' tier standard offsets: t-60, t-30, t-14, t-7, t+0, t+7.
+    fireEvent.click(screen.getByRole('option', { name: /14 days before renewal/i }));
+    const arg = onChange.mock.calls.at(-1)![0];
+    expect(arg.task_type).toBe('legacy_bespoke_type');
+    expect(arg.offset_days).toBe(-14);
   });
 
   it('committing a typed custom value sets task_type to the typed text and recomposes step_id', () => {
@@ -446,5 +474,34 @@ describe('task-type combobox (known catalogue + custom entry)', () => {
     renderTaskCard();
     const trigger = screen.getByRole('combobox');
     expect(trigger).toHaveAccessibleName('Task type');
+  });
+
+  // I5 follow-up fix — the combobox gave no visible cue that a value not
+  // in the list can be typed. A caption below the field is now wired to
+  // the combobox via aria-describedby (address-section.tsx's
+  // postalCodeUnknownHint pattern).
+  it('associates a "type to add your own" hint with the combobox via aria-describedby', () => {
+    renderTaskCard();
+    const trigger = screen.getByRole('combobox');
+    const describedBy = trigger.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const hint = document.getElementById(describedBy!);
+    expect(hint).not.toBeNull();
+    expect(hint).toHaveTextContent(/type to add your own/i);
+  });
+});
+
+// M1 follow-up fix (`.superpowers/sdd/followup-reminder-uxwave-brief.md`)
+// — reorder/remove icon buttons were a 32px `size="icon"` box; bumped to
+// the ≥44px WCAG 2.5.5 / ux-standards § 9.1 minimum via `min-h-11
+// min-w-11` (the established pattern, cf. portal-sign-out-button.tsx).
+describe('reorder/remove touch targets (M1)', () => {
+  it('move-up, move-down, and remove buttons each carry the ≥44px min-h-11 min-w-11 classes', () => {
+    renderCard();
+    for (const name of [/move step earlier/i, /move step later/i, /remove step/i]) {
+      const button = screen.getByRole('button', { name });
+      expect(button.className).toMatch(/\bmin-h-11\b/);
+      expect(button.className).toMatch(/\bmin-w-11\b/);
+    }
   });
 });

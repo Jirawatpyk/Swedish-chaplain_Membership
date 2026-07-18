@@ -19,19 +19,20 @@
  * + a banner-style notice. Server-side RBAC at the PUT route is the
  * canonical gate — this UI affordance is defence-in-depth.
  */
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useEffect, useState, useTransition } from 'react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Plus,
-  AlertCircle,
+  Eye,
   CalendarPlus,
   Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { LiveRegion } from '@/components/ui/live-region';
 
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import {
@@ -228,6 +229,22 @@ export function ScheduleEditor({
   );
   const [pending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
+  // C1 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — unsaved-
+  // changes guard. Every bucket edited since its last SUCCESSFUL save is
+  // tracked here (added in `replaceSteps`, deleted on save success below);
+  // `dirtyBuckets.size > 0` drives the `beforeunload` effect further down.
+  // Simpler than diffing wire-shape against a saved snapshot and matches
+  // "unsaved since last save" exactly — see the brief for the trade-off.
+  const [dirtyBuckets, setDirtyBuckets] = useState<Set<TierBucket>>(
+    () => new Set<TierBucket>(),
+  );
+  // I3 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — reorder
+  // (move-up/move-down) used to be silent for keyboard/SR users: the array
+  // reorders but the buttons don't move and focus stays put. Mounted
+  // unconditionally with empty content (LiveRegion's own contract — a
+  // conditionally-mounted live region is not announced by most screen
+  // readers), updated by `onMoveUp`/`onMoveDown` below.
+  const [reorderAnnouncement, setReorderAnnouncement] = useState('');
 
   const stepsFor = useCallback(
     (b: TierBucket): EditorStep[] => {
@@ -247,6 +264,16 @@ export function ScheduleEditor({
           updated_at: existing?.updated_at ?? '',
         };
         return { ...prev, [b]: updated };
+      });
+      // C1 — every edit path (add/remove/reorder/inline-field-change/undo)
+      // funnels through this one function, so marking the bucket dirty
+      // here covers all of them without threading a flag through each
+      // call site.
+      setDirtyBuckets((prev) => {
+        if (prev.has(b)) return prev;
+        const nextDirty = new Set(prev);
+        nextDirty.add(b);
+        return nextDirty;
       });
     },
     [],
@@ -329,6 +356,15 @@ export function ScheduleEditor({
               updated_at: body.updated_at,
             },
           }));
+          // C1 — this bucket's edits are now persisted; clear its dirty
+          // flag so the `beforeunload` guard stops firing once every
+          // bucket is saved.
+          setDirtyBuckets((prev) => {
+            if (!prev.has(b)) return prev;
+            const nextDirty = new Set(prev);
+            nextDirty.delete(b);
+            return nextDirty;
+          });
           // Plain-language save toast (follow-up UX fix): the raw
           // change-diff counts `(+added -removed =unchanged)` read as
           // noise to admins. `unchanged` is dropped entirely; the ICU
@@ -377,6 +413,26 @@ export function ScheduleEditor({
     [stepsFor, t],
   );
 
+  // C1 — hand-rolled to match the three sibling admin forms exactly
+  // (`member-form.tsx`, `issue-invoice-form.tsx`, broadcast
+  // `compose-form.tsx`) rather than the shared invoice-settings
+  // `useUnsavedGuard` — kept contained to this surface; a shared-hook
+  // extraction is a separate future cleanup. Covers tab close / hard nav /
+  // refresh only — App Router exposes no clean SPA route-change
+  // interception.
+  useEffect(() => {
+    const dirty = dirtyBuckets.size > 0;
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      // Modern browsers ignore the message string and show their own copy;
+      // preventDefault + returnValue is the cross-browser invocation pattern.
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirtyBuckets]);
+
   return (
     <Tabs
       value={activeBucket}
@@ -390,17 +446,20 @@ export function ScheduleEditor({
         ))}
       </TabsList>
 
+      {/* I3 — always mounted (empty content on first render); a
+          conditionally-mounted live region is not announced by most
+          screen readers. Updated by onMoveUp/onMoveDown below. */}
+      <LiveRegion politeness="polite">{reorderAnnouncement}</LiveRegion>
+
       {readOnly ? (
-        <Card className="mt-3 border-amber-300 bg-amber-50/50 dark:bg-amber-950/20">
-          <CardContent
-            role="status"
-            aria-live="polite"
-            className="flex items-center gap-2 py-3 text-sm"
-          >
-            <AlertCircle aria-hidden="true" className="h-4 w-4 text-amber-700 dark:text-amber-500" />
-            {t('manager.readOnlyNotice')}
-          </CardContent>
-        </Card>
+        // I2 follow-up fix — this notice is INFORMATIONAL ("you're in
+        // read-only mode"), not a warning; raw amber read as a warning
+        // tone. `InlineAlert tone="info"` matches the semantic-color
+        // token, `role="status"` preserved from the original CardContent.
+        <InlineAlert tone="info" role="status" className="mt-3">
+          <Eye aria-hidden="true" />
+          <InlineAlertDescription>{t('manager.readOnlyNotice')}</InlineAlertDescription>
+        </InlineAlert>
       ) : null}
 
       {TIER_BUCKETS.map((b) => {
@@ -498,6 +557,11 @@ export function ScheduleEditor({
                     arr[idx - 1] = cur;
                     arr[idx] = prev;
                     replaceSteps(b, arr);
+                    // I3 — new 1-based position of the step that just moved
+                    // (0-based idx-1, so 1-based is idx).
+                    setReorderAnnouncement(
+                      t('reorder.announce', { position: idx, total: steps.length }),
+                    );
                   }}
                   onMoveDown={() => {
                     if (idx === steps.length - 1) return;
@@ -507,6 +571,11 @@ export function ScheduleEditor({
                     arr[idx] = nxt;
                     arr[idx + 1] = cur;
                     replaceSteps(b, arr);
+                    // I3 — new 1-based position (0-based idx+1, so 1-based
+                    // is idx+2).
+                    setReorderAnnouncement(
+                      t('reorder.announce', { position: idx + 2, total: steps.length }),
+                    );
                   }}
                 />
               ))}

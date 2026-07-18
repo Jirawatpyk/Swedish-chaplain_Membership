@@ -3265,11 +3265,12 @@
               }
             },
             "preview": {
-              "heading": "Email that will be sent",
+              "heading": "Reminder email is configured for this timing",
               "noCopyWarning": "No message exists for this timing — this email will not be sent. Pick a standard timing."
             },
             "taskType": {
               "label": "Task type",
+              "hint": "Can't find the task type? Type to add your own.",
               "searchPlaceholder": "Search task types…",
               "emptyMessage": "No task type found.",
               "customValue": "Use \"{value}\"",
@@ -3318,6 +3319,9 @@
           },
           "manager": {
             "readOnlyNotice": "You have read-only access to renewal schedules. Ask an admin to make changes."
+          },
+          "reorder": {
+            "announce": "Step moved to position {position} of {total}"
           },
           "lastSaved": "Last saved {date}",
           "stepCount": "{count, plural, =0 {No steps} one {1 step} other {{count} steps}}"
