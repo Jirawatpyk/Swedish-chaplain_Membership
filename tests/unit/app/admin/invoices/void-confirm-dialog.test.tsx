@@ -24,6 +24,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import { toast } from 'sonner';
 import enMessages from '@/i18n/messages/en.json';
 import { VoidConfirmDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/void/_components/void-confirm-dialog';
 
@@ -43,11 +44,19 @@ beforeEach(() => {
 });
 
 const DOC_NUMBER = 'SC-2026-0042';
+const INVOICE_ID = 'inv-1';
+const DETAIL_ROUTE = `/admin/invoices/${INVOICE_ID}`;
+/**
+ * Deliberately whitespace-padded: the component sends `reason.trim()`, so a
+ * padded source value is what makes the body assertion in `expectVoidRequest`
+ * actually exercise the trim rather than pass by coincidence.
+ */
+const VOID_REASON = '  Issued against the wrong member.  ';
 
 function renderDialog() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <VoidConfirmDialog invoiceId="inv-1" documentNumber={DOC_NUMBER} />
+      <VoidConfirmDialog invoiceId={INVOICE_ID} documentNumber={DOC_NUMBER} />
     </NextIntlClientProvider>,
   );
 }
@@ -59,7 +68,7 @@ function renderDialog() {
  */
 function fillAndSubmit() {
   fireEvent.change(screen.getByLabelText('Reason'), {
-    target: { value: 'Issued against the wrong member.' },
+    target: { value: VOID_REASON },
   });
   fireEvent.change(screen.getByLabelText(/to confirm/i), {
     target: { value: DOC_NUMBER.toLowerCase() },
@@ -71,10 +80,30 @@ function fillAndSubmit() {
 
 /** Reject `res` shape the component reads: `res.json().error.code`. */
 function rejectingFetch(code: string | undefined) {
-  return vi.fn(async () => ({
+  return vi.fn(async (_url: string, _init: RequestInit) => ({
     ok: false,
     json: async () => (code ? { error: { code } } : {}),
   }));
+}
+
+/**
+ * Pin the WIRE SHAPE of the void POST, not just that "a" fetch happened.
+ * Void retires a §87 sequential tax-document number — a mutation that is
+ * terminal and irreversible-in-effect — and this file is its first-ever test,
+ * so the URL, verb, and body are contract surface: a wrong route or a dropped
+ * `voidReason` would leave the audit trail without the admin's justification
+ * while still retiring the number. `voidReason` is asserted TRIMMED because
+ * that is what lands in the audit record and on the re-stamped VOID PDF.
+ */
+function expectVoidRequest(calls: unknown[][]) {
+  expect(calls).toHaveLength(1);
+  const [url, init] = (calls[0] ?? []) as [url: string, init: RequestInit];
+  expect(url).toBe(`/api/invoices/${INVOICE_ID}/void`);
+  expect(init.method).toBe('POST');
+  expect(init.headers).toEqual({ 'Content-Type': 'application/json' });
+  expect(JSON.parse(String(init.body))).toEqual({
+    voidReason: VOID_REASON.trim(),
+  });
 }
 
 describe('VoidConfirmDialog — concurrent 409 inline recovery (FR-032)', () => {
@@ -89,7 +118,7 @@ describe('VoidConfirmDialog — concurrent 409 inline recovery (FR-032)', () => 
       fillAndSubmit();
 
       const alert = await screen.findByTestId('void-invoice-error');
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expectVoidRequest(fetchMock.mock.calls);
       // A stale-write 409 is NOT the admin's error → neutral, not destructive.
       expect(alert).toHaveAttribute('data-tone', 'neutral');
       expect(alert).toHaveAttribute('role', 'alert');
@@ -160,6 +189,83 @@ describe('VoidConfirmDialog — failure branch is focused + destructive (FR-032)
   });
 });
 
+describe('VoidConfirmDialog — success path (positive control)', () => {
+  // Every other assertion about navigation in this file is a NEGATIVE
+  // (`pushMock` not called on the 409 / failure branches). Those would all stay
+  // green if `router.push` were deleted outright, so the suite needs at least
+  // one test that proves navigation happens at all — and that it lands on the
+  // detail route rather than, say, the directory.
+  it('posts the trimmed reason, toasts the document number, and navigates to the detail route', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => ({
+      ok: true,
+      json: async () => ({}),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderDialog();
+      fillAndSubmit();
+
+      await waitFor(() =>
+        expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE),
+      );
+      expectVoidRequest(fetchMock.mock.calls);
+      // Success names the retired §87 number so the admin can reconcile the
+      // toast against the register — the generic `success` copy would not.
+      expect(toast.success).toHaveBeenCalledWith(
+        `Invoice ${DOC_NUMBER} voided.`,
+      );
+      // A success must never leave the FR-032 failure surface behind.
+      expect(screen.queryByTestId('void-invoice-error')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('VoidConfirmDialog — CR-6 Esc-to-cancel survives the effect split', () => {
+  // The Esc handler is the half of the split that KEPT its `pending` dep, and
+  // nothing pinned it: the whole point of re-subscribing on `pending` is the
+  // fresh closure behind the `!pending` guard. Without these two tests the
+  // guard could be dropped (navigating mid-POST, abandoning an in-flight
+  // irreversible mutation and losing its result) with the suite still green.
+  it('navigates back to the invoice detail on Escape while idle', () => {
+    renderDialog();
+    expect(pushMock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).toHaveBeenCalledWith(DETAIL_ROUTE);
+  });
+
+  it('does NOT navigate on Escape while the void POST is in flight', async () => {
+    // Never resolves → the transition stays pending for the whole test, which
+    // is exactly the window the `!pending` guard exists to cover.
+    const fetchMock = vi.fn(
+      (_url: string, _init: RequestInit) => new Promise<never>(() => {}),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderDialog();
+      fillAndSubmit();
+
+      // Wait for the transition to actually flip pending → the submit button
+      // relabels to "Voiding…" and goes aria-busy.
+      const submitting = await screen.findByRole('button', {
+        name: /Voiding/,
+      });
+      expect(submitting).toHaveAttribute('aria-busy', 'true');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+
+      expect(pushMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('VoidConfirmDialog — CR-6 mount focus survives the effect split', () => {
   // The mount-focus and Esc concerns live in SEPARATE effects precisely so the
   // Esc effect's `pending` dependency cannot re-fire `reasonRef.focus()` and
@@ -178,19 +284,29 @@ describe('VoidConfirmDialog — submit gating guards the error surface', () => {
     try {
       renderDialog();
       const submit = screen.getByRole('button', { name: /^Void invoice$/ });
+      // The click is the point: asserting `not.toHaveBeenCalled()` after only
+      // LOOKING at a disabled button is vacuous — it holds even if the gate is
+      // cosmetic. Press it at every gated stage and prove no POST escapes.
       expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(fetchMock).not.toHaveBeenCalled();
 
       // Reason alone is not enough.
       fireEvent.change(screen.getByLabelText('Reason'), {
         target: { value: 'Wrong member.' },
       });
       expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(fetchMock).not.toHaveBeenCalled();
 
-      // A near-miss document number is not enough either.
+      // A near-miss document number is not enough either — this is the arm
+      // that guards against voiding the WRONG invoice.
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: 'SC-2026-0043' },
       });
       expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(fetchMock).not.toHaveBeenCalled();
 
       fireEvent.change(screen.getByLabelText(/to confirm/i), {
         target: { value: DOC_NUMBER },
