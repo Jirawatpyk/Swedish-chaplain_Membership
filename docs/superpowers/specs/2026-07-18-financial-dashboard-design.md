@@ -190,15 +190,44 @@ Every panel links to the existing filtered list (`/admin/invoices?status=overdue
 - **No prior-year data** — the year-over-year overlay is hidden rather than drawn as a zero line.
 - **Zero-data tenant** — friendly empty state, consistent with the F9 dashboard's existing treatment.
 
+### Charting stack
+
+067 (`dashboard-interactive-charts`) has shipped, so the whole stack already
+exists and this feature adds **no new dependency**:
+
+- `recharts@^3` (major pinned) with the shadcn/ui wrapper at `src/components/ui/chart.tsx`
+- `src/components/dashboard/chart-data-table.tsx` — the shared visually-hidden `<table>`, generic over `caption` / `columns` / `rows`, pure server markup
+- `src/components/dashboard/chart-skeleton.tsx` — the loading state
+- Four shipped charts in `src/components/dashboard/` to follow for shape
+
 ### Accessibility
 
-Follows the 067 precedent exactly, which is the established contract in this
-codebase:
+**Two chart patterns, chosen by whether the chart is a control.** This is the
+critical distinction — getting it wrong makes the page's headline feature
+unusable for keyboard and screen-reader users.
 
-- Every chart is `aria-hidden` with `accessibilityLayer={false}`.
-- A **server-rendered visually-hidden `<table>`** is the sole screen-reader path for each chart.
-- Figures in those tables are unabbreviated integers (the hero may render `฿4.24M`; the table renders the exact satang-derived amount).
-- WCAG 2.1 AA, verified by `@axe-core/playwright`.
+**Read-only charts** (monthly cash-in with prior-year overlay, AR aging,
+channel mix, VAT) follow the 067 contract:
+
+- `aria-hidden` with `accessibilityLayer={false}` on the Recharts canvas.
+- `ChartDataTable` is the **sole** accessible and no-JS path — never `aria-hidden`, never gated behind a client mount.
+- Figures in those tables are unabbreviated (the hero may render `฿4.24M`; the table renders the exact amount).
+
+**Interactive cross-filter charts** (tier bars, channel slices — anything a
+click filters the page by) follow **`src/components/renewals/month-bar-chart.tsx`**
+instead. 067 deliberately excluded that component from the Recharts migration
+because it is a keyboard-operable control: its bars are real `<Link>` elements
+with `aria-current` inside a focusable scroll region, and it passes axe.
+
+An `aria-hidden` Recharts canvas cannot be a control. Rendering the
+cross-filter charts in Recharts would leave keyboard and screen-reader users
+with no way to apply a filter at all, which fails WCAG 2.1.1 (Keyboard) and
+guts the feature. Each interactive chart therefore renders as focusable
+`<Link>`/`<button>` elements carrying the same URL the click would produce,
+with `aria-pressed` or `aria-current` reflecting active filter state, plus a
+`ChartDataTable` for the underlying figures.
+
+WCAG 2.1 AA throughout, verified by `@axe-core/playwright`.
 
 ### Internationalisation
 
@@ -261,6 +290,7 @@ commit green.
 
 **E2E (Playwright)**
 - `@a11y` — axe-core scan; every chart's hidden table is reachable and carries exact figures.
+- `@a11y` — **every cross-filter is operable by keyboard alone**: tab to a tier bar, activate it, and the filter applies with the chip announced. This is the test that would have caught rendering an interactive chart as an `aria-hidden` canvas.
 - `@i18n` — EN/TH/SV coverage; THB formatting; Buddhist Era display on `th-TH`.
 - Filter state survives a reload from the URL alone.
 - Cross-filter by clicking a tier bar produces a visible, dismissible chip.
