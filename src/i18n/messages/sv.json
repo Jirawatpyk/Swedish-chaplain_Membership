@@ -1986,11 +1986,14 @@
           },
           "errors": {
             "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha skapats eller tagits bort. Uppdatera sidan.",
+            "cycleNotFound": "Vi kunde inte hitta förnyelseposten för det här utkastet. Själva utkastet är oförändrat — uppdatera sidan och försök igen.",
             "invalidDraft": "Utkastet är inte längre giltigt. Uppdatera sidan och försök igen.",
             "discardNotDraft": "Utkastet har redan skapats som faktura och kan inte längre tas bort. Uppdatera sidan.",
             "issueFailed": "Fakturan kunde inte skapas. Försök igen.",
             "discardFailed": "Utkastet kunde inte tas bort. Försök igen.",
-            "network": "Ett nätverksfel uppstod. Försök igen."
+            "network": "Ett nätverksfel uppstod. Försök igen.",
+            "rateLimited": "För många åtgärder på kort tid — vänta en stund och försök igen.",
+            "rateLimitedWithSeconds": "För många åtgärder på kort tid — vänta {seconds, plural, one {# sekund} other {# sekunder}} och försök igen."
           }
         }
       },

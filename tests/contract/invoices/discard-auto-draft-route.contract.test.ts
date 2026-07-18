@@ -183,4 +183,23 @@ describe('contract: POST /api/invoices/[invoiceId]/discard-auto-draft (Task 14)'
     expect(res.status).toBe(429);
     expect(discardAutoDraftedRenewalMock).not.toHaveBeenCalled();
   });
+
+  // Review round 1 MINOR — same 60/5min bucket + rationale as the sibling
+  // `/issue-auto-drafted` route (batch-clearing is routine on the discard
+  // side too).
+  it('rate-limit bucket is 60 per (tenant, actor) per 5 minutes', async () => {
+    const authDeps = await import('@/lib/auth-deps');
+    discardAutoDraftedRenewalMock.mockResolvedValueOnce(
+      ok({ invoiceId: DRAFT_ID, auditEmitted: true }),
+    );
+
+    const { POST } = await importRoute();
+    await POST(makePostRequest(), routeParams);
+
+    expect(authDeps.rateLimiter.check).toHaveBeenCalledWith(
+      `f4:discard-auto-draft:test-swecham:admin-user-1`,
+      60,
+      300,
+    );
+  });
 });

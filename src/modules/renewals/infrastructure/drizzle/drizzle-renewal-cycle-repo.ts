@@ -680,16 +680,31 @@ export function makeDrizzleRenewalCycleRepo(
      * `cancelled` row so it can gate access. Same ordering key
      * (`created_at DESC, cycle_id DESC`) as the batch method above so the
      * suspension gate and the admin badge never disagree on "latest".
+     *
+     * 107-auto-invoice Task 14 review (IMPORTANT) — two-layer tenant
+     * isolation (Constitution Principle I, NON-NEGOTIABLE). This is a
+     * system-wide membership-access GATE, not an isolated read: 8 call
+     * sites across `membership-access-bridge.ts` (F3/F4/F6/F7),
+     * `mark-paid-offline.ts`, `lapsed-portal-scope.ts`, and
+     * `load-latest-cycle.ts`. RLS+FORCE already made cross-tenant reads
+     * return nothing, but Principle I requires the explicit app-layer
+     * filter too — same fix already applied to the batched twin
+     * `findLatestCyclesForMembers` above.
      */
     async findLatestCycleForMember(
-      _tenantId: string,
+      tenantId: string,
       memberId: string,
     ): Promise<RenewalCycle | null> {
       return runInTenant(tenant, async (tx) => {
         const rows = await tx
           .select()
           .from(renewalCycles)
-          .where(eq(renewalCycles.memberId, memberId))
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              eq(renewalCycles.memberId, memberId),
+            ),
+          )
           .orderBy(desc(renewalCycles.createdAt), desc(renewalCycles.cycleId))
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;

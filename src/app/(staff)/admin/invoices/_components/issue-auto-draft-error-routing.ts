@@ -61,8 +61,18 @@ export function routeIssueAutoDraftError(
   if (code === 'invalid_draft' && body?.reason === 'plan_year_drift') {
     return { kind: 'refusal_reason', reasonKey: 'planYearDrift' };
   }
-  if (code === 'draft_not_found' || code === 'cycle_not_found') {
+  if (code === 'draft_not_found') {
     return { kind: 'generic', messageKey: 'draftNotFound' };
+  }
+  // Review round 1 MINOR — `cycle_not_found` is a DIFFERENT fact than
+  // `draft_not_found`: the invoice ITSELF still exists, untouched, as a
+  // draft (Task 7's "orphaned after commit" window — its renewal cycle
+  // never got stamped with it). `draftNotFound`'s "may have already been
+  // issued or discarded" copy would be actively WRONG here — nothing
+  // happened to this draft; its cycle link is what's missing. Own key,
+  // own accurate copy.
+  if (code === 'cycle_not_found') {
+    return { kind: 'generic', messageKey: 'cycleNotFound' };
   }
   if (code === 'invalid_draft') {
     return { kind: 'generic', messageKey: 'invalidDraft' };

@@ -11,8 +11,22 @@
  * Admin-only (money-mutation write on the `invoice` resource — manager is
  * read-only on finance per Constitution, enforced by `requireAdminContext`'s
  * `{resource:'invoice', action:'write'}` policy check, same as the sibling
- * `/issue` and `/void` routes). Rate-limited 20/5min per (tenant, actor),
- * mirroring every other F4 issuance-class route in this directory.
+ * `/issue` and `/void` routes).
+ *
+ * Rate limit: 60/5min per (tenant, actor) — review round 1 MINOR — HIGHER
+ * than the sibling `/issue` route's 20/5min. That bucket was sized for the
+ * manual single-invoice flow ("legitimate admins rarely issue >20 invoices
+ * in 5 minutes" — its own comment). THIS route's entire reason for existing
+ * is the opposite shape: a treasurer clearing dozens of cron-drafted rows in
+ * one sitting during the annual renewal batch is the PRIMARY flow, not an
+ * edge case, so the sibling's cap would routinely fire on legitimate use.
+ * 60/5min (~1 confirmed action per 5s) still bounds a scripted/runaway
+ * burst — Task 9's guards (duplicate-live-bill content check,
+ * status-guarded sibling sweep) are the actual defence against a double
+ * mint regardless of rate; this cap is defence-in-depth, not the primary
+ * guard. A 429 here maps to `errors.rateLimited`/`rateLimitedWithSeconds`
+ * client-side (NOT the generic failure copy) so it reads as "wait", not
+ * "broken".
  *
  * `sendEmail` is a REQUIRED body field, not an optional one defaulting to
  * `false` — Task 4's `??`-chain gotcha (a "no opinion" `false` silently
@@ -126,11 +140,12 @@ export async function POST(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  // Mirrors the /issue and /void buckets (20 per (tenant, actor) per 5 min)
-  // — this route mints the same class of §87-adjacent number.
+  // 60 per (tenant, actor) per 5 min — see the module header for why this
+  // is 3× the sibling `/issue` bucket (batch-clearing is this route's
+  // PRIMARY flow, not an edge case).
   const rl = await rateLimiter.check(
     `f4:issue-auto-drafted:${tenantCtx.slug}:${ctx.current.user.id}`,
-    20,
+    60,
     300,
   );
   if (!rl.success) {

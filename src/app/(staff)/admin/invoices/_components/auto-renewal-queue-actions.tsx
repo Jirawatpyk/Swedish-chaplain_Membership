@@ -44,12 +44,36 @@
  * `<AutoRenewalQueueBadges>` already uses for the SAME three reasons — see
  * `issue-auto-draft-error-routing.ts`. A row the queue showed as clean must
  * never surprise the admin with a different-sounding refusal here.
+ *
+ * Focus-on-close (review round 1, BLOCKING): a successful Discard is a hard
+ * DELETE and a successful Issue flips `status` away from `'draft'` — either
+ * way `router.refresh()` removes THIS component's own trigger button from
+ * the actionable set (this component itself re-renders `null` once the
+ * refreshed `status` prop is no longer `'draft'`). Base UI's DEFAULT
+ * focus-return targets the original trigger; if it has unmounted by the
+ * time focus-return runs, focus silently drops to `<body>` — a real problem
+ * in a row-by-row batch workflow (dozens of rows/sitting, the feature's
+ * whole reason for existing). Fixed by wiring `finalFocus` via
+ * `useDialogFinalFocus` — REUSED verbatim from
+ * `@/components/broadcast/reason-confirmation-dialog` (the identical
+ * unmount-after-close problem the broadcast Approve/Reject/Cancel dialogs
+ * already solved; see that hook's own docstring), not reimplemented. On
+ * Cancel/ESC the trigger survives and gets focus back (Base UI's own
+ * default, unaffected). On a SUCCESSFUL close, `closedViaSuccessRef` is
+ * raised BEFORE the close so the resolver skips the about-to-unmount
+ * trigger and lands on the `#main-content` landmark instead.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MoreHorizontalIcon, AlertTriangleIcon } from 'lucide-react';
+import {
+  MoreHorizontalIcon,
+  AlertTriangleIcon,
+  FileCheckIcon,
+  MailIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -60,14 +84,40 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import {
   routeDiscardAutoDraftError,
   routeIssueAutoDraftError,
 } from './issue-auto-draft-error-routing';
 
 type ActiveAction = 'send' | 'silent' | 'discard' | null;
+
+/**
+ * 107-auto-invoice Task 14 review (MINOR) — a 429 from either route must
+ * read as "wait a moment", not as a generic failure. The routes serialise
+ * `{error:{code:'rate_limited', retryAfterMs}}` (`rateLimitedJson`,
+ * `@/lib/rate-limit-helpers`) regardless of which one fired; `res.status
+ * === 429` is checked BEFORE the route-specific error router (which has no
+ * `rate_limited` branch — this is the ONE code shared verbatim by both
+ * routes' error envelopes) so both handlers reuse one message builder.
+ */
+async function rateLimitMessage(
+  t: ReturnType<typeof useTranslations>,
+  res: Response,
+): Promise<string> {
+  const body = (await res.json().catch(() => null)) as {
+    error?: { retryAfterMs?: number };
+  } | null;
+  const retryAfterMs = body?.error?.retryAfterMs;
+  const seconds =
+    typeof retryAfterMs === 'number' ? Math.max(1, Math.ceil(retryAfterMs / 1000)) : null;
+  return seconds === null
+    ? t('errors.rateLimited')
+    : t('errors.rateLimitedWithSeconds', { seconds });
+}
 
 export interface AutoRenewalQueueActionsProps {
   readonly invoiceId: string;
@@ -95,6 +145,13 @@ export function AutoRenewalQueueActions({
     readonly conflictingInvoiceId?: string;
   } | null>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+
+  // Focus-on-close (see module header) — the "⋯" trigger this component
+  // renders itself, and a flag raised right before every SUCCESSFUL close
+  // (the only closes that unmount the trigger via `router.refresh()`).
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
 
   // FR-032 / §6.4 pattern (mirrors `issue-invoice-form.tsx`'s `formError`
   // effect) — a plain synchronous `errorRef.current?.focus()` right after
@@ -153,6 +210,10 @@ export function AutoRenewalQueueActions({
       setError({ message: t('errors.network') });
       return;
     }
+    if (res.status === 429) {
+      setError({ message: await rateLimitMessage(t, res) });
+      return;
+    }
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
         error?: { code?: string; reason?: string; conflicting_invoice_id?: string };
@@ -181,6 +242,10 @@ export function AutoRenewalQueueActions({
         : t('toast.issuedSilently', { number: body.invoice_number ?? '' }),
       warnings.length > 0 ? { description: warnings.join(' ') } : undefined,
     );
+    // Success unmounts the trigger (status flips away from 'draft' on
+    // refresh) — see module header. Must be set BEFORE the close so
+    // `finalFocus` (read at close time) observes it.
+    closedViaSuccessRef.current = true;
     setActive(null);
     router.refresh();
   }
@@ -196,6 +261,10 @@ export function AutoRenewalQueueActions({
       setError({ message: t('errors.network') });
       return;
     }
+    if (res.status === 429) {
+      setError({ message: await rateLimitMessage(t, res) });
+      return;
+    }
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as {
         error?: { code?: string };
@@ -205,6 +274,8 @@ export function AutoRenewalQueueActions({
       return;
     }
     toast.success(t('toast.discarded'));
+    // See handleIssue's identical comment — success unmounts the trigger.
+    closedViaSuccessRef.current = true;
     setActive(null);
     router.refresh();
   }
@@ -222,9 +293,16 @@ export function AutoRenewalQueueActions({
       <AlertDescription className="flex flex-col items-start gap-2">
         <span>{error.message}</span>
         {error.conflictingInvoiceId && (
+          // Review round 1 SHOULD-FIX — 44×44 target, matching the IDENTICAL
+          // link in `auto-renewal-queue-badges.tsx` (Task 13 review A7):
+          // same key, same page, same meaning, so the same target-size
+          // standard applies.
           <Link
             href={`/admin/invoices/${error.conflictingInvoiceId}`}
-            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+            className={cn(
+              buttonVariants({ variant: 'outline', size: 'sm' }),
+              'min-h-11 gap-1 px-3',
+            )}
           >
             {tQueue('viewConflictingInvoice')}
           </Link>
@@ -240,6 +318,7 @@ export function AutoRenewalQueueActions({
           render={(props) => (
             <Button
               {...props}
+              ref={triggerRef}
               variant="ghost"
               size="icon"
               aria-label={t('menuAria', { member: memberName })}
@@ -249,18 +328,29 @@ export function AutoRenewalQueueActions({
             </Button>
           )}
         />
+        {/* Review round 1 SHOULD-FIX — visual weight now matches real risk,
+            not the reverse. "Issue and email" mints an irreversible §87
+            document AND emails a real member; it previously sat icon-less
+            at the top with no more visual weight than "Issue silently".
+            Reordered (silently first — the lower-external-impact choice)
+            and iconified every item (mirrors `invoice-more-menu.tsx`'s
+            icon-per-item convention on this same page) so the Mail icon on
+            "Issue and email" makes its externally-visible side effect
+            legible without reading the label. */}
         <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-          <DropdownMenuItem
-            onClick={() => openDialog('send')}
-            data-testid="queue-row-issue-send"
-          >
-            {t('issueAndSend')}
-          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => openDialog('silent')}
             data-testid="queue-row-issue-silent"
           >
+            <FileCheckIcon aria-hidden="true" />
             {t('issueSilently')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => openDialog('send')}
+            data-testid="queue-row-issue-send"
+          >
+            <MailIcon aria-hidden="true" />
+            {t('issueAndSend')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -268,6 +358,7 @@ export function AutoRenewalQueueActions({
             onClick={() => openDialog('discard')}
             data-testid="queue-row-discard"
           >
+            <Trash2Icon aria-hidden="true" />
             {t('discard')}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -286,6 +377,7 @@ export function AutoRenewalQueueActions({
         cancelLabel={t('cancel')}
         closeOnConfirm={false}
         onConfirm={() => handleIssue(active === 'send')}
+        finalFocus={finalFocus}
       >
         {errorAlert}
       </ConfirmationDialog>
@@ -300,6 +392,7 @@ export function AutoRenewalQueueActions({
         destructive
         closeOnConfirm={false}
         onConfirm={handleDiscard}
+        finalFocus={finalFocus}
       >
         {errorAlert}
       </ConfirmationDialog>

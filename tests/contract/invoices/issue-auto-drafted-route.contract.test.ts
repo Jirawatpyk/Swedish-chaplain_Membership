@@ -329,4 +329,23 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-auto-drafted (Task 14)'
     expect(res.status).toBe(429);
     expect(issueAutoDraftedRenewalMock).not.toHaveBeenCalled();
   });
+
+  // Review round 1 MINOR — 60/5min, 3× the sibling `/issue` route's
+  // 20/5min: this route's PRIMARY flow is a treasurer clearing dozens of
+  // rows in one sitting (the annual batch), not an edge case. Pinning the
+  // exact figures so a future edit that quietly shrinks the bucket back
+  // toward the manual-issue figure fails a test, not just a code review.
+  it('rate-limit bucket is 60 per (tenant, actor) per 5 minutes — 3× the manual /issue bucket for the batch-clearing flow', async () => {
+    const authDeps = await import('@/lib/auth-deps');
+    issueAutoDraftedRenewalMock.mockResolvedValueOnce(ok(SUCCESS_VALUE));
+
+    const { POST } = await importRoute();
+    await POST(makePostRequest({ sendEmail: false }), routeParams);
+
+    expect(authDeps.rateLimiter.check).toHaveBeenCalledWith(
+      `f4:issue-auto-drafted:test-swecham:admin-user-1`,
+      60,
+      300,
+    );
+  });
 });

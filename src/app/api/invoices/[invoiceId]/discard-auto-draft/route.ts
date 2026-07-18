@@ -5,10 +5,11 @@
  * `origin='auto_renewal' status='draft'` invoice the treasurer has decided
  * NOT to issue. Admin-only (money-adjacent write on the `invoice` resource,
  * same `requireAdminContext` policy as `/issue-auto-drafted` and `/void`).
- * Rate-limited 20/5min per (tenant, actor) — matches every sibling
- * issuance-class route in this directory even though this route deletes
- * rather than mints, since it shares the same abuse shape (a runaway script
- * hammering one endpoint).
+ *
+ * Rate limit: 60/5min per (tenant, actor) — same figure and rationale as
+ * the sibling `/issue-auto-drafted` route (see its module header): a
+ * treasurer clearing a batch of stale/superseded drafts in one sitting is a
+ * routine flow here too, not just on the issue side.
  *
  * No request body — nothing for the client to supply beyond the path id.
  */
@@ -48,7 +49,7 @@ export async function POST(
 
   const rl = await rateLimiter.check(
     `f4:discard-auto-draft:${tenantCtx.slug}:${ctx.current.user.id}`,
-    20,
+    60,
     300,
   );
   if (!rl.success) {

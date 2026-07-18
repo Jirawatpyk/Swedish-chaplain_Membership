@@ -1986,11 +1986,14 @@
           },
           "errors": {
             "draftNotFound": "This draft could not be found — it may have already been issued or discarded. Refresh the page.",
+            "cycleNotFound": "We couldn't find this draft's renewal record. The draft itself hasn't changed — refresh the page and try again.",
             "invalidDraft": "This draft is no longer valid. Refresh the page and try again.",
             "discardNotDraft": "This draft was already issued and can no longer be discarded. Refresh the page.",
             "issueFailed": "The bill could not be issued. Please try again.",
             "discardFailed": "The draft could not be discarded. Please try again.",
-            "network": "A network error occurred. Please try again."
+            "network": "A network error occurred. Please try again.",
+            "rateLimited": "Too many actions in a short time — wait a moment and try again.",
+            "rateLimitedWithSeconds": "Too many actions in a short time — wait {seconds, plural, =1 {1 second} other {# seconds}} and try again."
           }
         }
       },

@@ -59,14 +59,21 @@ describe('routeIssueAutoDraftError', () => {
     }
   });
 
-  it('draft_not_found / cycle_not_found → generic draftNotFound', () => {
+  it('draft_not_found → generic draftNotFound', () => {
     expect(routeIssueAutoDraftError({ code: 'draft_not_found' })).toEqual({
       kind: 'generic',
       messageKey: 'draftNotFound',
     });
+  });
+
+  // Review round 1 MINOR — cycle_not_found is NOT the same fact as
+  // draft_not_found: the invoice itself still exists as an untouched draft
+  // (Task 7's orphaned-after-commit window); draftNotFound's "may have
+  // already been issued or discarded" copy would be wrong here. Own key.
+  it('cycle_not_found → generic cycleNotFound (own copy — the draft was NEVER issued/discarded)', () => {
     expect(routeIssueAutoDraftError({ code: 'cycle_not_found' })).toEqual({
       kind: 'generic',
-      messageKey: 'draftNotFound',
+      messageKey: 'cycleNotFound',
     });
   });
 

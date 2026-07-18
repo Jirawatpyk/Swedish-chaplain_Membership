@@ -25,6 +25,7 @@
  * the real focus assertion below is a genuine jsdom proof, not a
  * DOM-order proxy.
  */
+import { useState } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -114,7 +115,10 @@ function openMenuAndClick(itemTestId: string) {
 
 beforeEach(() => {
   vi.useRealTimers();
-  refreshSpy.mockClear();
+  // `mockReset` (not `mockClear`) — several focus-on-close tests give
+  // `refreshSpy` a real implementation via `mockImplementation`; a later
+  // test relying on the default no-op must not inherit a stale one.
+  refreshSpy.mockReset();
   (toast.success as ReturnType<typeof vi.fn>).mockClear();
 });
 
@@ -135,14 +139,32 @@ describe('<AutoRenewalQueueActions> — visibility gate', () => {
     expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
   });
 
-  it('the menu lists all three actions', () => {
+  it('the menu lists all three actions, each with an icon (mirrors invoice-more-menu.tsx)', () => {
     renderActions();
     fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
-    expect(screen.getByTestId('queue-row-issue-send')).toHaveTextContent(t.issueAndSend);
-    expect(screen.getByTestId('queue-row-issue-silent')).toHaveTextContent(t.issueSilently);
+    const send = screen.getByTestId('queue-row-issue-send');
+    const silent = screen.getByTestId('queue-row-issue-silent');
     const discardItem = screen.getByTestId('queue-row-discard');
+    expect(send).toHaveTextContent(t.issueAndSend);
+    expect(silent).toHaveTextContent(t.issueSilently);
     expect(discardItem).toHaveTextContent(t.discard);
     expect(discardItem).toHaveAttribute('data-variant', 'destructive');
+    // Review round 1 SHOULD-FIX — every item carries an icon (previously
+    // icon-less, breaking this page's own `invoice-more-menu.tsx` convention).
+    expect(send.querySelector('svg')).toBeInTheDocument();
+    expect(silent.querySelector('svg')).toBeInTheDocument();
+    expect(discardItem.querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('reorders "Issue silently" BEFORE "Issue and email" (review round 1 SHOULD-FIX — visual weight now matches real risk: email is the higher-impact, externally-visible action)', () => {
+    renderActions();
+    fireEvent.click(screen.getByTestId('queue-row-actions-trigger'));
+    const items = screen.getAllByRole('menuitem');
+    const silentIndex = items.indexOf(screen.getByTestId('queue-row-issue-silent'));
+    const sendIndex = items.indexOf(screen.getByTestId('queue-row-issue-send'));
+    const discardIndex = items.indexOf(screen.getByTestId('queue-row-discard'));
+    expect(silentIndex).toBeLessThan(sendIndex);
+    expect(sendIndex).toBeLessThan(discardIndex);
   });
 });
 
@@ -312,6 +334,10 @@ describe('<AutoRenewalQueueActions> — refusal-reason parity with Task 13 queue
     expect(alert).toHaveTextContent(tQueue.refusalReason.duplicateLiveBill);
     const link = screen.getByRole('link', { name: tQueue.viewConflictingInvoice });
     expect(link).toHaveAttribute('href', '/admin/invoices/inv-conflict-9');
+    // Review round 1 SHOULD-FIX — 44×44 target, matching the IDENTICAL link
+    // in <AutoRenewalQueueBadges> (Task 13 review A7): same key, same page,
+    // same meaning.
+    expect(link.className).toContain('min-h-11');
   });
 
   it('member_terminated renders the SAME copy as the queue badge', async () => {
@@ -359,5 +385,156 @@ describe('<AutoRenewalQueueActions> — refusal-reason parity with Task 13 queue
     expect(alert).not.toHaveTextContent(tQueue.refusalReason.duplicateLiveBill);
     expect(alert).not.toHaveTextContent(tQueue.refusalReason.memberTerminated);
     expect(alert).not.toHaveTextContent(tQueue.refusalReason.planYearDrift);
+  });
+
+  // Review round 1 MINOR — cycle_not_found is a DIFFERENT fact than
+  // draft_not_found: the draft itself was never issued or discarded, only
+  // its cycle link is missing. Must NOT read "may have already been issued
+  // or discarded" (that would be actively wrong).
+  it('cycle_not_found gets its OWN copy, distinct from draft_not_found\'s "may have already been issued or discarded"', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: { code: 'cycle_not_found' } }),
+    } as unknown as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    const alert = await screen.findByTestId('queue-row-action-error');
+    expect(alert).toHaveTextContent(t.errors.cycleNotFound);
+    expect(alert).not.toHaveTextContent(t.errors.draftNotFound);
+  });
+});
+
+describe('<AutoRenewalQueueActions> — rate limit (review round 1 MINOR: wait, not failure)', () => {
+  it('429 on Issue reads as "wait a moment", not a generic failure', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: { code: 'rate_limited', retryAfterMs: 12_000 } }),
+    } as unknown as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    const alert = await screen.findByTestId('queue-row-action-error');
+    // Interpolated ICU plural — assert the resolved 12-second phrasing
+    // rather than the raw template.
+    expect(alert.textContent).toMatch(/12/);
+    expect(alert).not.toHaveTextContent(t.errors.issueFailed);
+  });
+
+  it('429 on Discard reads as "wait a moment" too', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ error: { code: 'rate_limited', retryAfterMs: 3_000 } }),
+    } as unknown as Response);
+    renderActions();
+    openMenuAndClick('queue-row-discard');
+    fireEvent.click(screen.getByRole('button', { name: t.discard }));
+
+    const alert = await screen.findByTestId('queue-row-action-error');
+    expect(alert.textContent).toMatch(/3/);
+    expect(alert).not.toHaveTextContent(t.errors.discardFailed);
+  });
+
+  it('429 with no retryAfterMs in the body falls back to the generic "wait a moment" copy', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({}),
+    } as unknown as Response);
+    renderActions();
+    openMenuAndClick('queue-row-issue-silent');
+    fireEvent.click(screen.getByRole('button', { name: t.issueSilently }));
+
+    const alert = await screen.findByTestId('queue-row-action-error');
+    expect(alert).toHaveTextContent(t.errors.rateLimited);
+  });
+});
+
+describe('<AutoRenewalQueueActions> — focus-on-close (review round 1 BLOCKING)', () => {
+  // The reviewer's own repro: router.refresh() is mocked as a no-op
+  // elsewhere in this file, so the row NEVER actually disappears in jsdom —
+  // which is exactly why the original bug was invisible to every earlier
+  // test. This harness makes `refresh()` genuinely flip the row's `status`
+  // away from 'draft' (the real-world effect of a successful Issue/Discard
+  // in the `?origin=auto_renewal` queue view), so `AutoRenewalQueueActions`
+  // itself re-renders `null` — the trigger GENUINELY unmounts, the same as
+  // in production.
+  function Harness() {
+    const [status, setStatus] = useState('draft');
+    refreshSpy.mockImplementation(() => setStatus('issued'));
+    return (
+      <>
+        {/* Stand-in for the admin/member layout's real `<main id="main-content">`
+            landmark (tabIndex={-1} makes it a valid, focusable, non-interactive
+            fallback target). */}
+        <main id="main-content" tabIndex={-1} data-testid="main-content-stub" />
+        <AutoRenewalQueueActions
+          invoiceId="inv-draft-1"
+          memberName="Acme Co Ltd"
+          status={status}
+        />
+      </>
+    );
+  }
+
+  function renderHarness() {
+    return render(
+      <NextIntlClientProvider locale="en" messages={en as unknown as Record<string, unknown>}>
+        <Harness />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('after a successful Discard the trigger unmounts (row genuinely gone) and focus does NOT drop to <body>', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ invoice_id: 'inv-draft-1', audit_emitted: true }),
+    } as Response);
+    renderHarness();
+    openMenuAndClick('queue-row-discard');
+    fireEvent.click(screen.getByRole('button', { name: t.discard }));
+
+    // The row is genuinely gone — the component's own status-gate returns
+    // null once `status` flips to 'issued'.
+    await waitFor(() =>
+      expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull(),
+    );
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toBe(screen.getByTestId('main-content-stub'));
+  });
+
+  it('after a successful Issue the trigger unmounts and focus lands on #main-content, not <body>', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        invoice_id: 'inv-draft-1',
+        invoice_number: 'SC2026-00050',
+        supersede_warnings: [],
+      }),
+    } as Response);
+    renderHarness();
+    openMenuAndClick('queue-row-issue-send');
+    fireEvent.click(screen.getByRole('button', { name: t.issueAndSend }));
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull(),
+    );
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toBe(screen.getByTestId('main-content-stub'));
+  });
+
+  it('on Cancel (no success) the trigger SURVIVES and gets focus back — the ordinary Base UI default, unaffected', async () => {
+    renderHarness();
+    openMenuAndClick('queue-row-discard');
+    fireEvent.click(screen.getByRole('button', { name: t.cancel }));
+
+    // Cancel never calls refresh — the row survives.
+    const trigger = await screen.findByTestId('queue-row-actions-trigger');
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
