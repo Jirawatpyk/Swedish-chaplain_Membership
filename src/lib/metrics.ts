@@ -2335,7 +2335,9 @@ export const renewalsMetrics = {
       | 'tier_upgrade_evaluate'
       | 'tier_upgrade_reconcile'
       | 'prune_consumed_tokens'
-      | 'auto_draft',
+      | 'auto_draft'
+      | 'prune_auto_drafts'
+      | 'reconcile_issued_orphans',
   ): void {
     safeMetric(() => {
       counter(
@@ -2404,6 +2406,71 @@ export const renewalsMetrics = {
       counter(
         'renewals_prune_consumed_tokens_rows_deleted_total',
         'F8 prune-consumed-tokens cron — rows actually deleted from consumed_link_tokens',
+      ).add(rowCount, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_prune_auto_drafts_runs_total{tenant_id, outcome}` — 107-
+   * auto-invoice Task 11. Run-count counter, one per cron pass, `outcome
+   * ∈ {success, failure}`. Pairs with `pruneAutoDraftsPruned` (row-count
+   * counter). Same split rationale as the `prune_consumed_tokens` pair —
+   * "did the cron run" vs "how many rows did it find to prune" are
+   * independent PromQL signals.
+   */
+  pruneAutoDraftsRunCompleted(tenantId: string, outcome: 'success' | 'failure'): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_auto_drafts_runs_total',
+        'F8 prune-auto-drafts cron pass result (1 per invocation)',
+      ).add(1, { tenant_id: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_prune_auto_drafts_pruned_total{tenant_id}` — 107-auto-
+   * invoice Task 11. Row-count counter: auto-drafted invoices actually
+   * discarded (a `not_draft`/`not_found` skip does NOT increment this).
+   * Success-only emission, same convention as `pruneConsumedTokensRowsPruned`.
+   */
+  pruneAutoDraftsPruned(tenantId: string, rowCount: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_auto_drafts_pruned_total',
+        'F8 prune-auto-drafts cron — stale auto-renewal drafts actually discarded',
+      ).add(rowCount, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_runs_total{tenant_id, outcome}` —
+   * 107-auto-invoice Task 11. Run-count counter, one per cron pass.
+   */
+  reconcileIssuedOrphansRunCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_issued_orphans_runs_total',
+        'F8 reconcile-issued-orphans cron pass result (1 per invocation)',
+      ).add(1, { tenant_id: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_relinked_total{tenant_id}` — 107-
+   * auto-invoice Task 11. Row-count counter: issued invoices whose
+   * `linked_invoice_id` was actually repaired
+   * (`F8.AUTO_ISSUE.LINK_FAILED` backstop). ANY non-zero rate is a signal
+   * worth watching — it means `issueAutoDraftedRenewal`'s own retry is
+   * failing in production, not just a hypothetical.
+   */
+  reconcileIssuedOrphansRelinked(tenantId: string, rowCount: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_issued_orphans_relinked_total',
+        'F8 reconcile-issued-orphans cron — issued auto-renewal invoices whose cycle link was repaired',
       ).add(rowCount, { tenant_id: tenantId });
     });
   },
@@ -3203,7 +3270,16 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'enter_awaiting' | 'reconcile' | 'prune_consumed_tokens' | 'auto_draft',
+    cron_kind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'enter_awaiting'
+      | 'reconcile'
+      | 'prune_consumed_tokens'
+      | 'auto_draft'
+      | 'prune_auto_drafts'
+      | 'reconcile_issued_orphans',
   ): void {
     safeMetric(() => {
       counter(

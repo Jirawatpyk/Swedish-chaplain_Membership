@@ -709,9 +709,9 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (32 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (36 jobs)
 
-Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
+Pro plan limit is 40 cron jobs/project — 36 used, 4 headroom.
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|
@@ -729,10 +729,13 @@ Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
 | `/api/cron/insights/process-export-jobs` | `*/5 * * * *` | every 5 min | GET+POST |
 | `/api/cron/members/reconcile-erasures` | `*/30 * * * *` | every 30 min | GET+POST |
 | `/api/internal/observability/recompute-match-rate` | `0 * * * *` | hourly | GET+POST |
+| `/api/cron/renewals/auto-draft-coordinator` | `0 22 * * *` | **05:00 ICT** (107-auto-invoice Task 8 — missing from this table until the Task 11 pass; added here, no schedule change) | GET+POST |
 | `/api/cron/renewals/dispatch-coordinator` | `0 23 * * *` | **06:00 ICT** | GET+POST |
 | `/api/cron/renewals/enter-awaiting-payment-coordinator` | `15 23 * * *` | **06:15 ICT** | GET+POST |
 | `/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator` | `30 23 * * *` | **06:30 ICT** | GET+POST |
 | `/api/cron/renewals/reconcile-pending-reactivations-coordinator` | `0 0 * * *` | **07:00 ICT** | GET+POST |
+| `/api/cron/renewals/prune-auto-drafts` | `15 0 * * *` | **07:15 ICT** (107-auto-invoice Task 11 — after the 07:00 ICT chain so a same-day self-renew/lapse has already flipped its cycle before the sweep runs) | GET+POST |
+| `/api/cron/renewals/reconcile-issued-orphans` | `30 0 * * *` | **07:30 ICT** (107-auto-invoice Task 11) | GET+POST |
 | `/api/cron/renewals/at-risk-recompute-coordinator` | `0 19 * * 6` | **Sun 02:00 ICT** (Sat 19:00 UTC) | GET+POST |
 | `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | `0 20 * * 6` | **Sun 03:00 ICT** (Sat 20:00 UTC) | GET+POST |
 | `/api/cron/renewals/prune-consumed-tokens` | `0 21 * * 5` | **Sat 04:00 ICT** (Fri 21:00 UTC) | GET+POST |

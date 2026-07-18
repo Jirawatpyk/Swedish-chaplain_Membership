@@ -688,6 +688,31 @@ export {
   type InvalidDraftReason,
 } from './application/use-cases/issue-auto-drafted-renewal';
 
+// --- 107-auto-invoice Task 11 — pruneAutoDrafts (daily housekeeping cron) ---
+// Discards `origin='auto_renewal' status='draft'` invoices whose cycle
+// left the `upcoming|reminded` eligibility window (self-renewed / lapsed).
+export {
+  pruneAutoDrafts,
+  pruneAutoDraftsInputSchema,
+  type PruneAutoDraftsInput,
+  type PruneAutoDraftsOutput,
+  type PruneAutoDraftsDeps,
+  type PruneAutoDraftsError,
+} from './application/use-cases/prune-auto-drafts';
+
+// --- 107-auto-invoice Task 11 — reconcileIssuedOrphans (daily housekeeping cron) ---
+// Backstop for `issueAutoDraftedRenewal`'s link-step failure
+// (F8.AUTO_ISSUE.LINK_FAILED) — re-links an `issued` auto-drafted invoice
+// to its cycle when `linked_invoice_id` never got stamped.
+export {
+  reconcileIssuedOrphans,
+  reconcileIssuedOrphansInputSchema,
+  type ReconcileIssuedOrphansInput,
+  type ReconcileIssuedOrphansOutput,
+  type ReconcileIssuedOrphansDeps,
+  type ReconcileIssuedOrphansError,
+} from './application/use-cases/reconcile-issued-orphans';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,

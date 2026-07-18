@@ -31,11 +31,13 @@ import {
   CycleTransitionConflictError,
   InvoiceLinkConflictError,
   type AutoDraftEligiblePage,
+  type IssuedAutoInvoiceOrphanRow,
   type ListMembersWithoutCycleOpts,
   type ListRenewalCyclesOpts,
   type MembershipInvoiceRef,
   type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
+  type StaleAutoDraftRow,
   type PipelineQueryOpts,
   type PipelineQueryResult,
   type PipelineRow,
@@ -1279,6 +1281,88 @@ export function makeDrizzleRenewalCycleRepo(
         .update(renewalCycles)
         .set({ autoDraftInvoiceId: invoiceId })
         .where(eq(renewalCycles.cycleId, cycleId));
+    },
+
+    async listStaleAutoDrafts(
+      tenantId: string,
+    ): Promise<ReadonlyArray<StaleAutoDraftRow>> {
+      return runInTenant(tenant, async (tx) => {
+        // INNER JOIN, not a correlated subquery (unlike
+        // `listCyclesEligibleForAutoDraft`'s sibling EXISTS clauses) — this
+        // query's FROM is `invoices` (an F4 table), so a plain join back to
+        // `renewal_cycles` via the Task 7 `auto_draft_invoice_id` stamp is
+        // the natural shape, and the result needs columns from BOTH sides
+        // (no `rowToDomain` re-mapping constraint applies here, unlike the
+        // pure-`renewal_cycles` queries).
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            cycleId: renewalCycles.cycleId,
+            memberId: renewalCycles.memberId,
+          })
+          .from(invoices)
+          .innerJoin(
+            renewalCycles,
+            and(
+              eq(renewalCycles.tenantId, invoices.tenantId),
+              eq(renewalCycles.autoDraftInvoiceId, invoices.invoiceId),
+            ),
+          )
+          .where(
+            and(
+              // Explicit app-layer tenant filter alongside RLS+FORCE on
+              // BOTH tables — Constitution Principle I two-layer isolation,
+              // matching the sibling Task 6/7/9 cross-module queries.
+              eq(invoices.tenantId, tenantId),
+              eq(renewalCycles.tenantId, tenantId),
+              eq(invoices.invoiceSubject, 'membership'),
+              eq(invoices.origin, 'auto_renewal'),
+              eq(invoices.status, 'draft'),
+              sql`${renewalCycles.status} NOT IN ('upcoming','reminded')`,
+            ),
+          );
+        return rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          cycleId: asCycleId(r.cycleId),
+          memberId: r.memberId,
+        }));
+      });
+    },
+
+    async listIssuedAutoInvoiceOrphans(
+      tenantId: string,
+    ): Promise<ReadonlyArray<IssuedAutoInvoiceOrphanRow>> {
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            cycleId: renewalCycles.cycleId,
+            memberId: renewalCycles.memberId,
+          })
+          .from(invoices)
+          .innerJoin(
+            renewalCycles,
+            and(
+              eq(renewalCycles.tenantId, invoices.tenantId),
+              eq(renewalCycles.autoDraftInvoiceId, invoices.invoiceId),
+            ),
+          )
+          .where(
+            and(
+              eq(invoices.tenantId, tenantId),
+              eq(renewalCycles.tenantId, tenantId),
+              eq(invoices.invoiceSubject, 'membership'),
+              eq(invoices.origin, 'auto_renewal'),
+              eq(invoices.status, 'issued'),
+              isNull(renewalCycles.linkedInvoiceId),
+            ),
+          );
+        return rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          cycleId: asCycleId(r.cycleId),
+          memberId: r.memberId,
+        }));
+      });
     },
 
     async transitionStatus(

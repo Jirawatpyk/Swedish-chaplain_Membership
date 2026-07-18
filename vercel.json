@@ -27,6 +27,8 @@
     { "path": "/api/cron/renewals/enter-awaiting-payment-coordinator", "schedule": "15 23 * * *" },
     { "path": "/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator", "schedule": "30 23 * * *" },
     { "path": "/api/cron/renewals/reconcile-pending-reactivations-coordinator", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/renewals/prune-auto-drafts", "schedule": "15 0 * * *" },
+    { "path": "/api/cron/renewals/reconcile-issued-orphans", "schedule": "30 0 * * *" },
     { "path": "/api/cron/renewals/at-risk-recompute-coordinator", "schedule": "0 19 * * 6" },
     { "path": "/api/cron/renewals/tier-upgrade-evaluate-coordinator", "schedule": "0 20 * * 6" },
     { "path": "/api/cron/renewals/prune-consumed-tokens", "schedule": "0 21 * * 5" },

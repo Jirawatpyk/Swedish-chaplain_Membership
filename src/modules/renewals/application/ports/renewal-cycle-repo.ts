@@ -144,6 +144,33 @@ export interface MembershipInvoiceRef {
   readonly origin: 'manual' | 'auto_renewal';
 }
 
+/**
+ * 107-auto-invoice Task 11 — row shape for `listStaleAutoDrafts`. Carries
+ * just enough to discard the F4 draft (`invoiceId`) and emit the F8
+ * `renewal_auto_draft_discarded` audit payload (`cycleId`, `memberId`) —
+ * deliberately NOT the full `MembershipInvoiceRef` or `RenewalCycle`
+ * shapes, mirroring the narrow-projection convention `MemberWithoutCycleRow`
+ * / `StaleAutoDraftRow`'s sibling queries already use.
+ */
+export interface StaleAutoDraftRow {
+  readonly invoiceId: string;
+  readonly cycleId: CycleId;
+  readonly memberId: string;
+}
+
+/**
+ * 107-auto-invoice Task 11 — row shape for `listIssuedAutoInvoiceOrphans`.
+ * Same narrow projection as {@link StaleAutoDraftRow}; the reconcile
+ * cron re-reads the full cycle row itself (under the per-cycle lock)
+ * before deciding how to repair the link, so this candidate row only
+ * needs to name WHICH (invoice, cycle) pair to re-read.
+ */
+export interface IssuedAutoInvoiceOrphanRow {
+  readonly invoiceId: string;
+  readonly cycleId: CycleId;
+  readonly memberId: string;
+}
+
 export interface RenewalCycleRepo {
   /** Insert a new cycle (typically called from F4 invoice-paid hook in Phase 5+). */
   insert(
@@ -659,6 +686,44 @@ export interface RenewalCycleRepo {
     cycleId: CycleId,
     invoiceId: string,
   ): Promise<void>;
+
+  /**
+   * 107-auto-invoice Task 11 — candidates for the daily `prune-auto-drafts`
+   * housekeeping cron: every `origin='auto_renewal' status='draft'`
+   * membership invoice whose stamped cycle (`renewal_cycles.auto_draft_
+   * invoice_id = invoices.invoice_id`) has LEFT the `upcoming|reminded`
+   * window — the member self-renewed (their cycle moved to
+   * `awaiting_payment` via a fresh `confirmRenewal`/issue) or the cycle
+   * lapsed after the T-30ish draft (grace-expiry cron wrote `lapsed`). A
+   * draft whose cycle is STILL `upcoming`/`reminded` is a live candidate
+   * for `issueAutoDraftedRenewal` and must never appear here.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`
+   * (Constitution Principle I two-layer isolation) — matches the sibling
+   * Task 6/7/9 queries against this same cross-module table.
+   */
+  listStaleAutoDrafts(
+    tenantId: string,
+  ): Promise<ReadonlyArray<StaleAutoDraftRow>>;
+
+  /**
+   * 107-auto-invoice Task 11 — candidates for the daily
+   * `reconcile-issued-orphans` housekeeping cron: every
+   * `origin='auto_renewal' status='issued'` membership invoice whose
+   * stamped cycle has `linked_invoice_id IS NULL` — the bill was minted
+   * but `issueAutoDraftedRenewal`'s tx2 (flip + link) never ran, or
+   * exhausted its idempotent retry (`F8.AUTO_ISSUE.LINK_FAILED`). The
+   * bill itself is real and payable; only the cycle's forensic linkage is
+   * missing. A `completed` cycle can never appear here — the DB CHECK
+   * `completed → linked_invoice_id NOT NULL` makes `IS NULL` and
+   * `status='completed'` mutually exclusive.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`,
+   * matching the sibling Task 6/7/9 cross-module queries.
+   */
+  listIssuedAutoInvoiceOrphans(
+    tenantId: string,
+  ): Promise<ReadonlyArray<IssuedAutoInvoiceOrphanRow>>;
 
   /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).

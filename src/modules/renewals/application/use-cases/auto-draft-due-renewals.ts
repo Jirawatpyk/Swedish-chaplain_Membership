@@ -178,8 +178,15 @@ export type AutoDraftDueRenewalsDeps = Pick<
  * `SYSTEM_ACTOR_RESEND_WEBHOOK` in `mark-invitation-bounced.ts`) — using
  * `...f5003` instead, confirmed unused via a full-repo grep before this
  * fix landed.
+ *
+ * **Task 11 reuse**: exported (was file-private) so `prune-auto-drafts.ts`
+ * can pass the SAME actor identity to `discardAutoDraftForRenewal` —
+ * both use-cases act as the one "auto-invoice cron" system identity over
+ * the draft's whole lifecycle (create here, discard there), so a reader
+ * of `invoices`/`audit_log` sees a single consistent actor rather than
+ * two near-identical UUIDs for what is conceptually one automated actor.
  */
-const SYSTEM_ACTOR_AUTO_INVOICE_CRON =
+export const SYSTEM_ACTOR_AUTO_INVOICE_CRON =
   '00000000-0000-0000-0000-0000000f5003' as const;
 
 const ZERO_OUTPUT: AutoDraftDueRenewalsOutput = {
