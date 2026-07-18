@@ -192,14 +192,49 @@ One-line fix: `try { … } catch { existingInvoiceId = null }`.
 
 ## Part 3 — Deferred: needs a decision or a schema change
 
-### H5 · HIGH · No recognised revenue, and the schema cannot express it
+### H5 · NOT A BUG · No recognised (deferred) revenue — deferred to the separate finance dashboard
 
-Annual dues are booked entirely in the month of payment. `invoices` has **no
-coverage-period column** (verified against `information_schema`); the only
-period data lives in `renewal_cycles.period_from/period_to`, which F9 never
-joins. A member paying a Jan–Dec subscription in January produces one spike
-and eleven empty months. For a membership chamber this is the primary shape of
-revenue, not an edge case.
+Annual dues are booked entirely in the month of payment. A member paying a
+Jan–Dec subscription in January produces one spike and eleven empty months.
+For a membership chamber that is the primary shape of revenue, not an edge
+case — a board reading the trend sees a collapse every February that is not
+real.
+
+**This is a missing feature, not a defect.** The current figure is correct for
+what it measures (cash collected per month); it was only ever mislabelled as
+"revenue", and that label is fixed above. Whether recognised revenue is needed
+at all depends on accountant question 1 (cash vs accrual basis).
+
+**Decision (2026-07-18): deferred to the planned standalone finance
+dashboard**, where it belongs — it is a finance-reporting surface, not an
+admin-overview KPI. Recorded here so that project does not have to re-derive
+the groundwork:
+
+**Feasibility — already investigated, no migration required:**
+
+- Coverage period is reachable for **100% of paid membership invoices on
+  production** (70/70) — but via `renewal_cycles.anchor_invoice_id`, **not**
+  `linked_invoice_id`, which is `0` in prod because no organic renewal has run
+  yet. Dev is the mirror image (3 via linked, 1 via anchor, out of 183 seeded
+  invoices). **Any implementation must match `linked_invoice_id ∪
+  anchor_invoice_id`** or it silently returns nothing on real data.
+- The existing repo method `findByInvoiceIdInTx` matches `linked_invoice_id`
+  **only** — it cannot be reused as-is for this.
+- `dashboard_metrics_cache.metrics` is `jsonb`, so a new metric needs **no
+  schema migration**.
+- `invoice_lines.description_th` is **not** a usable period source: all 90
+  production lines are the year-only shape (`ค่าสมาชิก ปี 2025`). Dev carries
+  three inconsistent shapes. Do not parse it. (See A2 — it also embeds
+  Buddhist Era with no inverse.)
+- Constitution Principle III means insights must read this through the
+  **renewals public barrel**, not by importing `renewal_cycles` directly.
+- Production has **0 credit notes**, so credit-note interaction can be
+  designed cleanly rather than retrofitted.
+
+**Design constraint if built**: invoices with no resolvable coverage period
+must land in an explicit `unattributed` bucket that is surfaced (count and
+amount), never folded silently into a month — otherwise the metric looks
+authoritative while being wrong for exactly the rows nobody checked.
 
 ### M1 · MEDIUM · Credit notes rewrite closed periods
 
