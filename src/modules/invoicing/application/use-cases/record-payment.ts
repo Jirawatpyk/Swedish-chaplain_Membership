@@ -179,10 +179,14 @@ export type RecordPaymentError =
    * 066 §4.4(1) — the member's membership is TERMINATED (latest renewal
    * cycle lapsed / expired-cancelled). Admin-manual payments against a
    * MEMBERSHIP bill are refused so no charge and no §86/4 receipt reaches
-   * a non-member; comeback = Renew Lapsed Member → pay the NEW invoice →
-   * void this bill (design §4.4(4)). NEVER returned on the webhook path:
-   * the money is already captured at Stripe, so rejecting would wedge the
-   * retrying webhook — that rail's control is the §4.4(2) heal-site net.
+   * a non-member; comeback = Renew Lapsed Member → pay the NEW invoice.
+   * This (old) bill no longer needs a manual void: 106-void-on-reissue
+   * auto-voids the member's prior outstanding new-flow membership bill(s)
+   * as part of `issueMembershipBill`'s supersede pass when the reactivation
+   * bridge issues the new bill (see `issue-membership-bill.ts`). NEVER
+   * returned on the webhook path: the money is already captured at Stripe,
+   * so rejecting would wedge the retrying webhook — that rail's control is
+   * the §4.4(2) heal-site net.
    */
   | { code: 'membership_terminated' }
   | { code: 'settings_missing' }
