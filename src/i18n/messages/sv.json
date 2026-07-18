@@ -1809,6 +1809,10 @@
         "description": "Att ändra ett prefix för faktura, kvitto eller kreditnota startar en NY nummerserie. Redan utfärdade dokument behåller sina nummer; §87-spårningen registrerar ändringen. Fortsätta?",
         "confirm": "Ändra prefix",
         "cancel": "Avbryt"
+      },
+      "stickyBar": {
+        "label": "Spara ändringar",
+        "unsaved": "Du har osparade ändringar"
       }
     },
     "creditNotes": {

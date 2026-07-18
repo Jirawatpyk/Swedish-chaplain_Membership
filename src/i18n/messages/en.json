@@ -1809,6 +1809,10 @@
         "description": "Changing an invoice, receipt, or credit-note prefix starts a NEW numbering stream. Already-issued documents keep their numbers; the §87 sequential trail records the change. Continue?",
         "confirm": "Change prefix",
         "cancel": "Cancel"
+      },
+      "stickyBar": {
+        "label": "Save changes",
+        "unsaved": "You have unsaved changes"
       }
     },
     "creditNotes": {
