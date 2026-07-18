@@ -117,6 +117,7 @@ function makeDeps(opts: {
   readonly issueError?: IssueInvoiceError;
   readonly olderBills?: readonly string[];
   readonly voidError?: VoidInvoiceError;
+  readonly listThrows?: boolean;
 }): IssueMembershipBillDeps {
   if (opts.issueError) {
     issueInvoiceMock.mockResolvedValue(err(opts.issueError));
@@ -131,9 +132,11 @@ function makeDeps(opts: {
   }
 
   const invoiceRepo = {
-    listSupersedableMembershipBills: vi
-      .fn()
-      .mockResolvedValue((opts.olderBills ?? []).map((invoiceId) => ({ invoiceId }))),
+    listSupersedableMembershipBills: opts.listThrows
+      ? vi.fn().mockRejectedValue(new Error('list failed'))
+      : vi
+          .fn()
+          .mockResolvedValue((opts.olderBills ?? []).map((invoiceId) => ({ invoiceId }))),
   } as unknown as InvoiceRepo;
 
   return {
@@ -243,6 +246,16 @@ describe('issueMembershipBill', () => {
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
     expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+  });
+
+  it('a THROWN list error is non-fatal: issue still returns ok + warning + metric (symmetric with the void-throw case)', async () => {
+    const deps = makeDeps({ enabled: true, issued: OK_ISSUED, listThrows: true });
+    const res = await issueMembershipBill(deps, ISSUE_INPUT);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.supersedeWarnings).toHaveLength(1);
+    expect(metricSpy.voidOnReissueFailed).toHaveBeenCalledWith('t1');
+    // list threw before any void was attempted
+    expect(voidInvoiceMock).not.toHaveBeenCalled();
   });
 
   it('memberId null → never lists/voids, empty warnings (defence-in-depth guard)', async () => {
