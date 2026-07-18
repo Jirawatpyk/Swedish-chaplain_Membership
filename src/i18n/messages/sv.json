@@ -433,9 +433,13 @@
       "kpi": {
         "sectionLabel": "Nyckeltal",
         "total": "Totalt antal medlemmar",
+        "totalCaption": "Alla statusar",
         "active": "Aktiva medlemmar",
+        "activeCaption": "För närvarande aktiva",
         "atRisk": "Medlemmar i riskzonen",
-        "revenue": "Betalda intäkter (räkenskapsår hittills, exkl. moms)"
+        "atRiskCaption": "Efter förnyelserisk",
+        "revenue": "Betalda intäkter",
+        "revenueCaption": "Räkenskapsår hittills · exkl. moms"
       },
       "needsAttention": {
         "title": "Kräver åtgärd",
