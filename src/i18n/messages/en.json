@@ -2222,7 +2222,7 @@
         },
         "duplicateDialog": {
           "title": "An invoice already exists",
-          "description": "An event-fee invoice already exists for this attendee. Open it instead of creating a duplicate.",
+          "description": "An event-fee invoice already exists for this attendee.",
           "viewInvoice": "View invoice",
           "cancel": "Close"
         },

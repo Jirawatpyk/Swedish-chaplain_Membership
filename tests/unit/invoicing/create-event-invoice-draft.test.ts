@@ -21,7 +21,7 @@ import {
   type CreateEventInvoiceDraftInput,
 } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
-import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
+import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import type { EventRegistrationView } from '@/modules/invoicing/application/ports/event-registration-lookup-port';
 import type { EventDetailsView } from '@/modules/invoicing/application/ports/event-details-lookup-port';
@@ -546,6 +546,69 @@ describe('createEventInvoiceDraft — Model B inclusive line + member/non-member
       });
       const r = await createEventInvoiceDraft(deps, baseInput);
       expect(r.ok).toBe(true);
+    });
+  });
+
+  describe('duplicate — 23505 on invoices_event_registration_uniq (post-rollback CTA lookup)', () => {
+    // A second non-void event invoice for the same registration raises a 23505
+    // on the partial unique index. It propagates OUT of `withTx` (clean
+    // rollback) and the OUTER catch translates it to `duplicate`, then runs a
+    // best-effort FRESH read to power the client "View invoice" CTA.
+    function makeUniqueViolation(): Error {
+      // Shape a Drizzle-wrapped 23505: `isUniqueViolation` walks the chain for a
+      // Postgres error (`code === '23505'`); `errorChainMessage` joins the
+      // message chain, which must include the index name so the catch narrows to
+      // THIS constraint. A single Error carrying both `code` and the index name
+      // in its message satisfies both predicates.
+      return Object.assign(
+        new Error(
+          'duplicate key value violates unique constraint "invoices_event_registration_uniq"',
+        ),
+        { code: '23505' },
+      );
+    }
+
+    function makeDuplicateDeps(
+      findImpl: () => Promise<InvoiceId | null>,
+    ): CreateEventInvoiceDraftDeps {
+      // `withTx` rejects with the 23505 → short-circuits before any inner port is
+      // touched, so only `withTx` + `findEventInvoiceIdByRegistration` need stubs.
+      return {
+        invoiceRepo: {
+          withTx: vi.fn(async () => {
+            throw makeUniqueViolation();
+          }),
+          findEventInvoiceIdByRegistration: vi.fn(findImpl),
+        },
+      } as unknown as CreateEventInvoiceDraftDeps;
+    }
+
+    it('resolves the existing invoice id for the client "View invoice" CTA', async () => {
+      const existing = asInvoiceId('00000000-0000-0000-0000-0000000dup01');
+      const deps = makeDuplicateDeps(async () => existing);
+      const r = await createEventInvoiceDraft(deps, { ...baseInput, buyer: nonMemberBuyer });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.code).toBe('duplicate');
+        if (r.error.code === 'duplicate') expect(r.error.existingInvoiceId).toBe(existing);
+      }
+    });
+
+    it('a THROWING best-effort id-lookup degrades to existingInvoiceId null — never a 500 (throw-path)', async () => {
+      // The fresh read runs AFTER the tx rolled back; a transient DB error /
+      // connection reset in that window must NOT escalate a benign duplicate
+      // (409) into an unhandled 500 (the route has no try/catch). The lookup is
+      // best-effort: a throw degrades to `null` (graceful CTA-less duplicate),
+      // and the use-case MUST NOT re-throw.
+      const deps = makeDuplicateDeps(async () => {
+        throw new Error('read failed (post-rollback connection reset)');
+      });
+      const r = await createEventInvoiceDraft(deps, { ...baseInput, buyer: nonMemberBuyer });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.code).toBe('duplicate');
+        if (r.error.code === 'duplicate') expect(r.error.existingInvoiceId).toBeNull();
+      }
     });
   });
 });

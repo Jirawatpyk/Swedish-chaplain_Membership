@@ -392,10 +392,20 @@ export async function createEventInvoiceDraft(
       // back: a fresh tenant-scoped read (RLS-scoped, same as `findById`), which
       // is correct. `null` if the row is not resolvable (e.g. it was voided in a
       // concurrent request between the 23505 and this read).
-      const existingInvoiceId = await deps.invoiceRepo.findEventInvoiceIdByRegistration(
-        input.eventRegistrationId,
-        input.tenantId,
-      );
+      // Best-effort id lookup: a failed read must NOT escalate a benign
+      // duplicate (409) into an unhandled 500 (the route has no try/catch). A
+      // transient DB error / connection reset in the post-rollback window
+      // degrades to `null` — the error type, route, and client already treat
+      // `existingInvoiceId: null` as graceful CTA-less degradation.
+      let existingInvoiceId: InvoiceId | null = null;
+      try {
+        existingInvoiceId = await deps.invoiceRepo.findEventInvoiceIdByRegistration(
+          input.eventRegistrationId,
+          input.tenantId,
+        );
+      } catch {
+        existingInvoiceId = null;
+      }
       return err({ code: 'duplicate', existingInvoiceId });
     }
     throw e;
