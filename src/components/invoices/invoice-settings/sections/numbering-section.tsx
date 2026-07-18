@@ -96,13 +96,15 @@ export function NumberingSection({
         {t('sections.numbering')}
       </h2>
 
-      {/* Numbering — the h2 above already names this section; a visible
-          legend repeating the same text was a duplicate SR announcement
-          (I1). `sr-only` keeps the fieldset's accessible name without the
-          visual clutter. */}
+      {/* The section h2 above names the whole section ("Document
+          numbering"); this fieldset holds the number-format prefixes and
+          carries a DISTINCT visible legend (not a repeat of the h2) so the
+          box reads as a titled group, consistent with the "Invoicing
+          defaults" fieldset below. (I1 first made this sr-only, which left
+          the box looking heading-less next to its labelled sibling.) */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="sr-only">
-          {t('sections.numbering')}
+        <legend className="px-2 text-sm font-semibold">
+          {t('sections.numberingPrefixes')}
         </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
@@ -163,8 +165,9 @@ export function NumberingSection({
         </div>
       </fieldset>
 
-      {/* Defaults (minus auto_email_enabled, which now lives in
-          document-notes-section.tsx). */}
+      {/* Invoicing defaults (fiscal year / net days / pro-rate). The
+          auto_email_enabled toggle was relocated here (I2) and renders
+          just after this fieldset. */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
         <legend className="px-2 text-sm font-semibold">
           {t('sections.defaults')}

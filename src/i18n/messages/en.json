@@ -1694,6 +1694,7 @@
         "identity": "Tenant legal identity",
         "tax": "Tax",
         "numbering": "Document numbering",
+        "numberingPrefixes": "Prefixes",
         "defaults": "Invoicing defaults",
         "logo": "Logo",
         "seller": "Seller branch (§86/4)",

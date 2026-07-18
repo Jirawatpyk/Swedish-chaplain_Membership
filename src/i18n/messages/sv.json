@@ -1694,6 +1694,7 @@
         "identity": "Juridisk identitet",
         "tax": "Skatt",
         "numbering": "Dokumentnumrering",
+        "numberingPrefixes": "Prefix",
         "defaults": "Faktureringsstandard",
         "logo": "Logotyp",
         "seller": "Säljarens filial (§86/4)",
