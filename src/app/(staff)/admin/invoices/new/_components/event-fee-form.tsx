@@ -1238,6 +1238,7 @@ export function EventFeeForm({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
+            <AlertDialogCancel>{t('duplicateDialog.cancel')}</AlertDialogCancel>
             {duplicateInvoiceId !== null && (
               <Link
                 href={`/admin/invoices/${duplicateInvoiceId}`}
@@ -1246,7 +1247,6 @@ export function EventFeeForm({
                 {t('duplicateDialog.viewInvoice')}
               </Link>
             )}
-            <AlertDialogCancel>{t('duplicateDialog.cancel')}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
