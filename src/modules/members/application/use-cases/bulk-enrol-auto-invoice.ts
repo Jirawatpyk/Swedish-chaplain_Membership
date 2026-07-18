@@ -178,6 +178,18 @@ export async function bulkEnrolAutoInvoice(
   //    a reversible-in-principle preference with no side effect; drafting
   //    mints a document. The asymmetry is deliberate — see the skip-semantics
   //    section of this file's header. Do not "align" them without reading it.
+  //
+  //    And Task 7's re-assert is NOT the only thing standing between an
+  //    enrolled suspended member and a draft — it is the THIRD gate. The
+  //    eligibility query itself already excludes both arms of `suspended`
+  //    before the use-case ever sees the cycle:
+  //      - `awaiting_payment` / `pending_admin_reactivation` fail the
+  //        `status IN ('upcoming','reminded')` filter; and
+  //      - the "non-terminal cycle whose period already ended" arm fails the
+  //        `expires_at > nowIso` lower bound.
+  //    (Both in `listCyclesEligibleForAutoDraft`.) So a suspended member is
+  //    excluded three times over. That margin is why enrolling them here is
+  //    safe, not merely tolerable.
   const accessResult = await deps.membershipAccess.getMembershipAccessMany(
     deps.tenant,
     data.member_ids,
