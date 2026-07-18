@@ -158,6 +158,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
       list: vi.fn(),
       listPaged: vi.fn(),
       listSupersedableMembershipBills: vi.fn(),
+      findEventInvoiceIdByRegistration: vi.fn(async () => null),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(async () => ({ ...draft, status: 'paid' } as Invoice)),

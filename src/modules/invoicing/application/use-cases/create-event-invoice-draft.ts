@@ -124,7 +124,7 @@ export type CreateEventInvoiceDraftError =
   | { code: 'invalid_tax_id_format' }
   | { code: 'invalid_buyer_snapshot' }
   | { code: 'event_not_found' }
-  | { code: 'duplicate' };
+  | { code: 'duplicate'; existingInvoiceId: InvoiceId | null };
 
 export interface CreateEventInvoiceDraftDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -387,7 +387,26 @@ export async function createEventInvoiceDraft(
     // we only swallow THIS index's 23505 — a future unique constraint on a
     // different column would still propagate as an unexpected 500.
     if (isUniqueViolation(e) && errorChainMessage(e).includes(EVENT_REGISTRATION_UNIQ_INDEX)) {
-      return err({ code: 'duplicate' });
+      // duplicate-CTA — surface the id of the invoice that already exists so the
+      // client can offer a "View invoice" link. This runs AFTER the tx rolled
+      // back: a fresh tenant-scoped read (RLS-scoped, same as `findById`), which
+      // is correct. `null` if the row is not resolvable (e.g. it was voided in a
+      // concurrent request between the 23505 and this read).
+      // Best-effort id lookup: a failed read must NOT escalate a benign
+      // duplicate (409) into an unhandled 500 (the route has no try/catch). A
+      // transient DB error / connection reset in the post-rollback window
+      // degrades to `null` — the error type, route, and client already treat
+      // `existingInvoiceId: null` as graceful CTA-less degradation.
+      let existingInvoiceId: InvoiceId | null = null;
+      try {
+        existingInvoiceId = await deps.invoiceRepo.findEventInvoiceIdByRegistration(
+          input.eventRegistrationId,
+          input.tenantId,
+        );
+      } catch {
+        existingInvoiceId = null;
+      }
+      return err({ code: 'duplicate', existingInvoiceId });
     }
     throw e;
   }

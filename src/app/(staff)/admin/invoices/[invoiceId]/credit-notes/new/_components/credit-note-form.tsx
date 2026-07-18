@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { routeCreditNoteError } from './credit-note-error-routing';
 
@@ -218,16 +218,16 @@ export function CreditNoteForm({
           effect move focus here so the admin cannot miss it. A concurrent 409
           shows a "refresh" prompt; other failures show a destructive alert. */}
       {formError && (
-        <Alert
+        <InlineAlert
           ref={errorRef}
           tabIndex={-1}
-          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="credit-note-error"
         >
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
           {formError.kind === 'concurrent' ? (
-            <AlertDescription className="flex flex-col items-start gap-2">
+            <InlineAlertDescription className="flex flex-col items-start gap-2">
               <span>{t('errors.concurrent')}</span>
               <Button
                 type="button"
@@ -238,11 +238,11 @@ export function CreditNoteForm({
               >
                 {t('errors.refreshAction')}
               </Button>
-            </AlertDescription>
+            </InlineAlertDescription>
           ) : (
-            <AlertDescription>{formError.message}</AlertDescription>
+            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
           )}
-        </Alert>
+        </InlineAlert>
       )}
       <div className="rounded-md border bg-muted/40 p-3 text-sm">
         <p className="text-muted-foreground">

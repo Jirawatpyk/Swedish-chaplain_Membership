@@ -59,12 +59,15 @@ describe('<UserMenu> member Account hub (057)', () => {
     ).toHaveAttribute('href', '/portal/account#data-privacy');
   });
 
-  it('renders theme controls and a sign-out item', async () => {
+  it('renders a sign-out item; theme controls live on the top bar, not in this menu', async () => {
     renderMenu();
     openMenu();
-    expect(await screen.findByRole('menuitem', { name: /light/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /dark/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
+    // Theme light/dark controls were intentionally moved to the portal top
+    // bar's persistent <ThemeToggle> and are NOT duplicated in this dropdown
+    // (see the user-menu.tsx "Theme controls intentionally NOT here" note).
+    expect(screen.queryByRole('menuitem', { name: /light/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /dark/i })).not.toBeInTheDocument();
   });
 });
 

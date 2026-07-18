@@ -550,6 +550,34 @@ export function makeDrizzleInvoiceRepo(
       });
     },
 
+    /**
+     * 088 (duplicate-CTA) — the id of the existing NON-VOID event invoice for a
+     * registration, or null. Mirrors `findById`'s tenant-scoping (`withTenantConn`
+     * → `runInTenant` → `SET LOCAL app.current_tenant`); never touches the global
+     * `db` singleton. The partial unique index `invoices_event_registration_uniq`
+     * excludes void rows, so at most one non-void row matches — `limit(1)` is exact.
+     */
+    async findEventInvoiceIdByRegistration(
+      eventRegistrationId: string,
+      tenantIdArg: string,
+    ): Promise<InvoiceId | null> {
+      return withTenantConn(async (txUnknown) => {
+        const tx = txUnknown as TenantTx;
+        const [row] = await tx
+          .select({ invoiceId: invoices.invoiceId })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              eq(invoices.eventRegistrationId, eventRegistrationId),
+              ne(invoices.status, 'void'),
+            ),
+          )
+          .limit(1);
+        return row ? asInvoiceId(row.invoiceId) : null;
+      });
+    },
+
     async list(tenantIdArg: string, opts) {
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];

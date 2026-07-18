@@ -53,17 +53,19 @@
  */
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -480,22 +482,18 @@ function AsPaidPaymentFields({
             {t('payment.dateHint')}
           </p>
         )}
-        {/* 064 H-1 — amber warning-callout (same palette as the
-            schedule-editor read-only notice): non-blocking, so
-            role="status" (polite live region), NOT role="alert". */}
+        {/* 064 H-1 — non-blocking warning callout (semantic tone="warning"),
+            so role="status" (polite live region), NOT role="alert". */}
         {showVatPeriodWarning && (
-          <p
+          <InlineAlert
             id="payment-date-vat-warning"
             role="status"
+            tone="warning"
             data-testid="payment-date-vat-warning"
-            className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
           >
-            <AlertTriangleIcon
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-500"
-            />
-            <span>{t('payment.vatPeriodWarning')}</span>
-          </p>
+            <AlertTriangleIcon className="size-4" aria-hidden="true" />
+            <InlineAlertDescription>{t('payment.vatPeriodWarning')}</InlineAlertDescription>
+          </InlineAlert>
         )}
       </div>
       <div className="flex flex-col gap-[var(--field-label-gap)]">
@@ -595,6 +593,7 @@ export function EventFeeForm({
   const [buyerErrors, setBuyerErrors] = useState<NonMemberBuyerErrors>({});
   const [amountError, setAmountError] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<string | null>(null);
 
   // Issuance mode — the admin's EXPLICIT pick. While null, the effective
   // mode falls back to `defaultModeFor` so the default stays reactive to the
@@ -955,6 +954,10 @@ export function EventFeeForm({
           return;
         }
         if (res.status === 409) {
+          const dupBody = await res.json().catch(() => ({}));
+          setDuplicateInvoiceId(
+            (dupBody as { existing_invoice_id?: string | null }).existing_invoice_id ?? null,
+          );
           setDuplicateOpen(true);
           return;
         }
@@ -1236,6 +1239,14 @@ export function EventFeeForm({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('duplicateDialog.cancel')}</AlertDialogCancel>
+            {duplicateInvoiceId !== null && (
+              <Link
+                href={`/admin/invoices/${duplicateInvoiceId}`}
+                className={buttonVariants({ variant: 'default' })}
+              >
+                {t('duplicateDialog.viewInvoice')}
+              </Link>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

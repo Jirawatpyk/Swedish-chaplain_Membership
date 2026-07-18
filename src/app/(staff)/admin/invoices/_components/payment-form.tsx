@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import {
   Select,
   SelectContent,
@@ -210,16 +210,16 @@ export function PaymentForm({
           complete. `outline-none` because focus is programmatic (the visible
           state IS the alert). */}
       {formError && (
-        <Alert
+        <InlineAlert
           ref={errorRef}
           tabIndex={-1}
-          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="record-payment-error"
         >
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
           {formError.kind === 'concurrent' ? (
-            <AlertDescription className="flex flex-col items-start gap-2">
+            <InlineAlertDescription className="flex flex-col items-start gap-2">
               <span>{t('errors.concurrent')}</span>
               <Button
                 type="button"
@@ -230,11 +230,11 @@ export function PaymentForm({
               >
                 {t('errors.refreshAction')}
               </Button>
-            </AlertDescription>
+            </InlineAlertDescription>
           ) : (
-            <AlertDescription>{formError.message}</AlertDescription>
+            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
           )}
-        </Alert>
+        </InlineAlert>
       )}
       <div>
         <Label htmlFor="method">{t('fields.method')}</Label>

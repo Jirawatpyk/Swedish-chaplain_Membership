@@ -27,7 +27,7 @@ import { useTranslations } from 'next-intl';
 import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { toast } from 'sonner';
 import { addMonthsUtc, bangkokDateOnly } from '@/lib/dates';
 import { Combobox } from '@/components/ui/combobox';
@@ -155,13 +155,9 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
         <span>{contextText}</span>
       </p>
       {showWarning && (
-        <Alert
-          role="status"
-          data-testid="renewal-duplicate-warning"
-          className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
-        >
+        <InlineAlert role="status" tone="warning" data-testid="renewal-duplicate-warning">
           <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <AlertDescription className="text-amber-900 dark:text-amber-200">
+          <InlineAlertDescription>
             {/* FIX-7 (PR #173 review, 2026-07-09) — `periodTo` is null
                 whenever the warning fires purely from `hasUnpaidMembershipInvoice`
                 (non-renewal classifications never carry a periodTo). The
@@ -173,8 +169,8 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
             {context.periodTo !== null
               ? t('duplicateWarning', { periodTo: formatPeriodDate(context.periodTo) })
               : t('duplicateWarningUnpaidOnly')}
-          </AlertDescription>
-        </Alert>
+          </InlineAlertDescription>
+        </InlineAlert>
       )}
     </div>
   );
