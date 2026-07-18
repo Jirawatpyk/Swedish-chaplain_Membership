@@ -2446,7 +2446,7 @@
           },
           "warnings": {
             "noPaymentPath": "No payment path configured — online payment is off and no bank-transfer details are set, so the member can't pay this bill. Add a payment method before issuing.",
-            "notVatRegistrant": "No Head Office / Branch line will print — this buyer isn't recorded as a VAT registrant. If they are, tick \"This member is registered for VAT\" on the member record first."
+            "notVatRegistrant": "No §86/4 Head Office / Branch line will print — this buyer isn't recorded as a VAT registrant. If they are, tick \"This member is registered for VAT\" on the member record first."
           }
         },
         "form": {

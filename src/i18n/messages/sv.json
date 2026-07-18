@@ -2446,7 +2446,7 @@
           },
           "warnings": {
             "noPaymentPath": "Ingen betalningsväg konfigurerad — onlinebetalning är av och inga bankuppgifter är konfigurerade, så medlemmen kan inte betala den. Lägg till en betalningsmetod innan utfärdande.",
-            "notVatRegistrant": "Ingen rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
+            "notVatRegistrant": "Ingen §86/4-rad för huvudkontor/filial skrivs ut — köparen är inte registrerad som momsregistrerad. Om de är det, kryssa först i \"Denna medlem är momsregistrerad\" i medlemsposten."
           }
         },
         "form": {
@@ -2466,7 +2466,7 @@
             "dateLabel": "Intygsdatum",
             "dateFormat": "Ange intygsdatum som ÅÅÅÅ-MM-DD."
           },
-          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB — ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer. Bekräfta innan du utfärdar.",
+          "lowAmountWarning": "Denna nollskatteförsäljning understiger 5 000 THB — ett MFA-intyg krävs normalt för köp på 5 000 THB eller mer. Bekräfta att intyget gäller innan du utfärdar.",
           "certUpload": {
             "label": "Skanning av MFA-intyg (valfritt)",
             "pickerLabel": "Välj en intygsskanning att ladda upp",
