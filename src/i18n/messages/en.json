@@ -2602,7 +2602,7 @@
       },
       "void": {
         "title": "Void invoice",
-        "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if an email is on file, a cancellation notice is emailed to the member.",
+        "description": "Void this issued-unpaid invoice: the sequential tax-document number is retired and cannot be reused, the PDF is re-stamped VOID, and, if automatic emails are enabled, a cancellation notice is sent to the member.",
         "voiding": "Voiding invoice",
         "terminalNotice": "Void is terminal — no pay, credit, or edit afterwards. To reverse a PAID invoice, use the credit-note workflow instead.",
         "reasonLabel": "Reason",

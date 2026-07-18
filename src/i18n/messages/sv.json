@@ -2602,7 +2602,7 @@
       },
       "void": {
         "title": "Annullera faktura",
-        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om en e-postadress finns registrerad.",
+        "description": "Annullera denna utfärdade obetalda faktura. Det sekventiella skattedokumentnumret pensioneras och kan inte återanvändas; PDF:en stämplas VOID; ett annulleringsmeddelande e-postas till medlemmen om automatisk e-post är aktiverad.",
         "voiding": "Annullerar faktura",
         "terminalNotice": "Annullering är slutgiltig — inga fler åtgärder (betala, kreditera, redigera) är tillåtna. För att återföra en BETALD faktura, använd kreditnota-flödet i stället.",
         "reasonLabel": "Orsak",
