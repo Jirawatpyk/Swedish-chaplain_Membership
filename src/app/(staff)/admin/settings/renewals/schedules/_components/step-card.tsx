@@ -58,7 +58,7 @@
  * both identifiers so an admin editing plain-language controls can
  * never produce a malformed wire shape.
  */
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Mail, ListTodo, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -72,12 +72,15 @@ import {
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import {
   TIER_REMINDER_OFFSETS,
   offsetKeyFromDays,
   daysFromOffsetKey,
+  RENEWAL_KNOWN_TASK_TYPES,
+  isKnownTaskType,
 } from '@/modules/renewals/client';
 import type { TierBucket } from '@/modules/renewals/client';
 import type { EditorStep } from './schedule-editor';
@@ -122,13 +125,6 @@ function clampMagnitude(n: number): number {
 // with any real offset key — `offsetKeyFromDays` always produces `t-N`/
 // `t+N` (see `reminder-offsets.ts`), never a bare word.
 const CUSTOM_SENTINEL = 'custom';
-
-const KNOWN_TASK_TYPES = ['phone_call', 'admin_notify'] as const;
-type KnownTaskType = (typeof KNOWN_TASK_TYPES)[number];
-
-function isKnownTaskType(v: string | undefined): v is KnownTaskType {
-  return (KNOWN_TASK_TYPES as readonly string[]).includes(v ?? '');
-}
 
 // Segmented-control segment shared styling.
 function segmentClass(selected: boolean, disabled: boolean): string {
@@ -285,12 +281,36 @@ export function StepCard({
     onChange({
       ...step,
       task_type: taskType,
+      // Offset-first — gateway's `deriveOffsetFromStepId` slices only the
+      // FIRST dot-segment of `step_id`, so a multi-underscore taskType
+      // (e.g. `quarterly_review_meeting`) never disturbs offset
+      // resolution; the offset token is composed before the task type
+      // regardless of its shape (see `composeStepId`).
       step_id: composeUniqueStepId(
         { offsetDays: step.offset_days, channel: 'task', taskType },
         siblingStepIds,
       ),
     });
   }
+
+  // Known catalogue + load-reflection (no-data-loss): a `task_type` NOT in
+  // `RENEWAL_KNOWN_TASK_TYPES` (bespoke/legacy data) is injected as its own
+  // option so the combobox trigger displays it instead of falling back to
+  // the placeholder — mirrors `address-section.tsx`'s `withCurrentValue`
+  // pattern. `RENEWAL_KNOWN_TASK_TYPES` is a SUGGESTED list, not
+  // authoritative (see `client.ts` doc comment) — `allowCustomValue` below
+  // is the real no-data-loss guarantee; this injection only makes an
+  // already-set bespoke value show as "selected" in the open list too.
+  const taskTypeOptions: ComboboxOption[] = useMemo(() => {
+    const known = RENEWAL_KNOWN_TASK_TYPES.map((v) => ({
+      value: v,
+      label: t(`stepCard.taskType.${v}`),
+    }));
+    const current = step.task_type;
+    return current && !isKnownTaskType(current)
+      ? [...known, { value: current, label: current }]
+      : known;
+  }, [t, step.task_type]);
 
   return (
     <div className="rounded-md border bg-card p-3">
@@ -475,38 +495,32 @@ export function StepCard({
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <Label htmlFor={`task-type-${idPrefix}`}>
+              {/* The Combobox trigger is a <button>, not an <input> —
+                  `htmlFor` alone does not NAME it (only associates
+                  click-to-focus), so `aria-labelledby` below does the
+                  actual naming. */}
+              <Label id={`task-type-label-${idPrefix}`} htmlFor={`task-type-${idPrefix}`}>
                 {t('stepCard.taskType.label')}
               </Label>
-              <Select
+              <Combobox
+                id={`task-type-${idPrefix}`}
+                aria-labelledby={`task-type-label-${idPrefix}`}
+                options={taskTypeOptions}
                 value={step.task_type ?? 'phone_call'}
+                onChange={handleTaskTypeChange}
+                placeholder={t('stepCard.taskType.label')}
+                searchPlaceholder={t('stepCard.taskType.searchPlaceholder')}
+                emptyMessage={t('stepCard.taskType.emptyMessage')}
                 disabled={readOnly}
-                onValueChange={(v) => handleTaskTypeChange(v as string)}
-              >
-                <SelectTrigger id={`task-type-${idPrefix}`} className="w-full">
-                  {/* Fallback-to-raw-value pattern (Round 5 SUG-6, mirrored
-                      from StepRow's channel/assignee selects): the friendly
-                      list only offers the 2 known types, but `task_type`
-                      may hold a bespoke value (e.g. legacy data) — show it
-                      verbatim rather than throwing MISSING_MESSAGE. */}
-                  <TranslatedSelectValue
-                    placeholder={t('stepCard.taskType.label')}
-                    translate={(v) => {
-                      if (!v) return null;
-                      if (isKnownTaskType(v)) return t(`stepCard.taskType.${v}`);
-                      return v;
-                    }}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="phone_call">
-                    {t('stepCard.taskType.phone_call')}
-                  </SelectItem>
-                  <SelectItem value="admin_notify">
-                    {t('stepCard.taskType.admin_notify')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                // Known catalogue is SUGGESTIONS only (see client.ts) — many
+                // more real task types exist than the list can enumerate,
+                // so free custom entry is required (never a closed
+                // enumerable set, unlike e.g. the ISO country field).
+                allowCustomValue
+                customValueLabel={(typed) =>
+                  t('stepCard.taskType.customValue', { value: typed })
+                }
+              />
             </div>
             <div>
               <Label htmlFor={`assignee-${idPrefix}`}>

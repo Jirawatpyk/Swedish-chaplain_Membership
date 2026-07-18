@@ -3262,8 +3262,19 @@
             },
             "taskType": {
               "label": "Uppgiftstyp",
+              "searchPlaceholder": "Sök uppgiftstyper…",
+              "emptyMessage": "Ingen uppgiftstyp hittades.",
+              "customValue": "Använd \"{value}\"",
               "phone_call": "Telefonsamtal",
-              "admin_notify": "Meddela administratör"
+              "admin_notify": "Meddela administratör",
+              "admin_notify_lapsed": "Meddela administratör (förfallet medlemskap)",
+              "director_call": "Direktörssamtal",
+              "quarterly_review_meeting": "Kvartalsvis avstämningsmöte",
+              "meeting_proposed": "Möte föreslaget",
+              "benefit_fulfillment_report": "Rapport om förmånsanvändning",
+              "contract_renewal": "Avtalsförnyelse",
+              "in_person_meeting": "Fysiskt möte",
+              "board_escalation": "Eskalering till styrelsen"
             }
           },
           "timeline": {
@@ -3720,6 +3731,11 @@
           "phone_call": "Telefonsamtal",
           "in_person_meeting": "Fysiskt möte",
           "board_escalation": "Eskalering till styrelsen",
+          "admin_notify": "Meddela administratör",
+          "admin_notify_lapsed": "Meddela administratör (förfallet medlemskap)",
+          "director_call": "Direktörssamtal",
+          "meeting_proposed": "Möte föreslaget",
+          "contract_renewal": "Avtalsförnyelse",
           "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
           "manual_outreach_required": "Manuell kontakt krävs",
           "termination_warning_blocked": "Avslut uppskjutet - ingen stadgeenlig varning äldre än 14 dagar",

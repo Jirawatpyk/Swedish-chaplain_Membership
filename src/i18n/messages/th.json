@@ -3262,8 +3262,19 @@
             },
             "taskType": {
               "label": "ประเภทงาน",
+              "searchPlaceholder": "ค้นหาประเภทงาน…",
+              "emptyMessage": "ไม่พบประเภทงาน",
+              "customValue": "ใช้ \"{value}\"",
               "phone_call": "โทรศัพท์",
-              "admin_notify": "แจ้งเตือนผู้ดูแลระบบ"
+              "admin_notify": "แจ้งเตือนผู้ดูแลระบบ",
+              "admin_notify_lapsed": "แจ้งเตือนผู้ดูแลระบบ (สมาชิกภาพหมดอายุ)",
+              "director_call": "โทรศัพท์จากผู้อำนวยการ",
+              "quarterly_review_meeting": "การประชุมทบทวนรายไตรมาส",
+              "meeting_proposed": "เสนอวันนัดประชุม",
+              "benefit_fulfillment_report": "รายงานการใช้สิทธิประโยชน์",
+              "contract_renewal": "การต่อสัญญา",
+              "in_person_meeting": "การพบปะแบบเจอตัว",
+              "board_escalation": "ส่งต่อให้คณะกรรมการ"
             }
           },
           "timeline": {
@@ -3720,6 +3731,11 @@
           "phone_call": "โทรศัพท์",
           "in_person_meeting": "การพบปะแบบเจอตัว",
           "board_escalation": "ส่งต่อให้คณะกรรมการ",
+          "admin_notify": "แจ้งเตือนผู้ดูแลระบบ",
+          "admin_notify_lapsed": "แจ้งเตือนผู้ดูแลระบบ (สมาชิกภาพหมดอายุ)",
+          "director_call": "โทรศัพท์จากผู้อำนวยการ",
+          "meeting_proposed": "เสนอวันนัดประชุม",
+          "contract_renewal": "การต่อสัญญา",
           "verify_pending_tier_upgrade": "ตรวจสอบการอัปเกรดที่รออยู่",
           "manual_outreach_required": "ต้องติดต่อด้วยตนเอง",
           "termination_warning_blocked": "เลื่อนการยุติสมาชิกภาพ - ยังไม่มีคำเตือนตามข้อบังคับที่ครบ 14 วัน",

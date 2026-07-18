@@ -24,8 +24,19 @@
  * context so a click on a `role="option"` genuinely fires the same
  * `onValueChange` callback the real component would receive, letting
  * this file test the actual recompose logic (not just the option list).
+ *
+ * F8 follow-up (`.superpowers/sdd/followup-tasktype-brief.md`) —
+ * `@/components/ui/combobox` (Base UI Popover + cmdk) is mocked the same
+ * way, for the same reason (jsdom can't drive its pointer-based popup —
+ * see the real-stack alternative + its jsdom workarounds at
+ * `tests/unit/components/ui/combobox-a11y.test.tsx`, not used here to
+ * keep this file's existing lightweight-stub convention). The stub
+ * reproduces the real primitive's own trigger-text fallback (`selected
+ * label ?? (allowCustomValue && value ? value : placeholder)` — see
+ * `combobox.tsx`) and its `allowCustomValue` "type then commit" flow via
+ * a plain search `<input>` + a synthesized "Use «text»" option.
  */
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
@@ -77,6 +88,93 @@ vi.mock('@/components/ui/select', () => ({
   },
   SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TranslatedSelectValue: () => null,
+}));
+
+interface ComboboxOptionStub {
+  value: string;
+  label: string;
+}
+
+vi.mock('@/components/ui/combobox', () => ({
+  Combobox: ({
+    id,
+    'aria-labelledby': ariaLabelledBy,
+    options,
+    value,
+    onChange,
+    placeholder,
+    searchPlaceholder,
+    disabled,
+    allowCustomValue,
+    customValueLabel,
+  }: {
+    id: string;
+    'aria-labelledby'?: string;
+    options: ComboboxOptionStub[];
+    value: string;
+    onChange: (next: string) => void;
+    placeholder: string;
+    searchPlaceholder: string;
+    disabled?: boolean;
+    allowCustomValue?: boolean;
+    customValueLabel?: (typed: string) => string;
+  }) => {
+    const [search, setSearch] = useState('');
+    const selected = options.find((o) => o.value === value);
+    // Mirrors combobox.tsx's own trigger-text fallback exactly (line
+    // ~268): `selected?.label ?? (allowCustomValue && value ? value : placeholder)`.
+    const triggerText = selected?.label ?? (allowCustomValue && value ? value : placeholder);
+    const trimmed = search.trim();
+    const showCustom =
+      Boolean(allowCustomValue) && trimmed !== '' && !options.some((o) => o.value === trimmed);
+    const listboxId = `${id}-listbox-stub`;
+    return (
+      <div>
+        <button
+          type="button"
+          id={id}
+          role="combobox"
+          aria-labelledby={ariaLabelledBy}
+          aria-expanded="true"
+          aria-controls={listboxId}
+          disabled={disabled}
+        >
+          {triggerText}
+        </button>
+        <input
+          aria-label={searchPlaceholder}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <ul id={listboxId}>
+          {options.map((o) => (
+            <li key={o.value}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={value === o.value}
+                onClick={() => onChange(o.value)}
+              >
+                {o.label}
+              </button>
+            </li>
+          ))}
+          {showCustom && customValueLabel && (
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                onClick={() => onChange(trimmed)}
+              >
+                {customValueLabel(trimmed)}
+              </button>
+            </li>
+          )}
+        </ul>
+      </div>
+    );
+  },
 }));
 
 import { StepCard } from '@/app/(staff)/admin/settings/renewals/schedules/_components/step-card';
@@ -250,4 +348,103 @@ it('renders no Advanced (raw identifiers) panel', () => {
 it('renders channel as a radiogroup', () => {
   renderCard();
   expect(screen.getByRole('radiogroup', { name: /channel/i })).toBeInTheDocument();
+});
+
+// F8 follow-up (`.superpowers/sdd/followup-tasktype-brief.md`) — the
+// Task-type control was a 2-option `<Select>` (`phone_call`,
+// `admin_notify`) that silently rewrote any other real value the moment
+// the admin touched it. Now a `<Combobox allowCustomValue>` seeded from
+// the shared `RENEWAL_KNOWN_TASK_TYPES` catalogue.
+describe('task-type combobox (known catalogue + custom entry)', () => {
+  function renderTaskCard(opts?: {
+    step?: Partial<EditorStep>;
+    siblingSteps?: ReadonlyArray<EditorStep>;
+  }) {
+    const onChange = vi.fn();
+    const step: EditorStep = {
+      _uiKey: 'regular-0',
+      step_id: 't-30.task.phone_call',
+      offset_days: -30,
+      channel: 'task',
+      task_type: 'phone_call',
+      assignee_role: 'admin',
+      ...opts?.step,
+    };
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <StepCard
+          tierBucket="regular"
+          step={step}
+          index={0}
+          total={1}
+          readOnly={false}
+          siblingSteps={opts?.siblingSteps ?? []}
+          onChange={onChange}
+          onRemove={vi.fn()}
+          onMoveUp={vi.fn()}
+          onMoveDown={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+    return { onChange };
+  }
+
+  it('offers the known task-type catalogue as combobox options', () => {
+    renderTaskCard();
+    for (const label of [
+      'Phone call',
+      'Notify admin',
+      'Notify admin (lapsed)',
+      'Director call',
+      'Quarterly review meeting',
+      'Meeting proposed',
+      'Benefit fulfillment report',
+      'Contract renewal',
+      'In-person meeting',
+      'Board escalation',
+    ]) {
+      expect(screen.getByRole('option', { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it('selecting a known task type sets task_type and recomposes an offset-first step_id (multi-underscore type)', () => {
+    const { onChange } = renderTaskCard();
+    fireEvent.click(screen.getByRole('option', { name: 'Quarterly review meeting' }));
+    const arg = onChange.mock.calls.at(-1)![0];
+    expect(arg.task_type).toBe('quarterly_review_meeting');
+    // Offset-first — gateway's `deriveOffsetFromStepId` slices only the
+    // FIRST dot-segment of `step_id`, so a multi-underscore task type
+    // must never disturb offset resolution (the silent-non-delivery
+    // footgun class this whole composer exists to prevent).
+    expect(arg.step_id).toBe('t-30.task.quarterly_review_meeting');
+    expect(arg.step_id.split('.')[0]).toBe('t-30');
+  });
+
+  it('loading a bespoke/legacy task_type (absent from the known catalogue) displays it on the trigger — no data loss', () => {
+    // NOTE: the brief's own example ('quarterly_review_meeting') is now
+    // PART of the known catalogue after Change 1, so it no longer
+    // exercises this path — a genuinely bespoke value is required to
+    // prove the load-reflection/no-data-loss mechanism.
+    renderTaskCard({ step: { task_type: 'legacy_custom_task' } });
+    const trigger = screen.getByRole('combobox');
+    expect(trigger).toHaveTextContent('legacy_custom_task');
+    expect(trigger).not.toHaveTextContent('Task type');
+  });
+
+  it('committing a typed custom value sets task_type to the typed text and recomposes step_id', () => {
+    const { onChange } = renderTaskCard();
+    fireEvent.change(screen.getByLabelText('Search task types…'), {
+      target: { value: 'brand_new_task' },
+    });
+    fireEvent.click(screen.getByRole('option', { name: 'Use "brand_new_task"' }));
+    const arg = onChange.mock.calls.at(-1)![0];
+    expect(arg.task_type).toBe('brand_new_task');
+    expect(arg.step_id).toBe('t-30.task.brand_new_task');
+  });
+
+  it('names the combobox via aria-labelledby pointing at the visible <Label> (trigger is a button, htmlFor alone does not name it)', () => {
+    renderTaskCard();
+    const trigger = screen.getByRole('combobox');
+    expect(trigger).toHaveAccessibleName('Task type');
+  });
 });

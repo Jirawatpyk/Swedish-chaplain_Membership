@@ -62,3 +62,32 @@ export {
   isScheduleOffset,
   type RenewalReminderOffset,
 } from './domain/value-objects/reminder-offsets';
+
+/**
+ * Task-type catalogue (F8 follow-up — `.superpowers/sdd/followup-
+ * tasktype-brief.md`). `task_type` is a free-form `string` on the task-
+ * channel `ReminderStep` (see `domain/value-objects/reminder-step.ts`) —
+ * this list is SUGGESTIONS only, sourced from the seed renewal policies
+ * (`tests/integration/helpers/seed-renewal-policies.ts`), not an
+ * exhaustive/authoritative production catalogue. The StepCard task-type
+ * `<Combobox>` allows custom entry for anything outside this list, and
+ * the escalation-task queue's filter falls back to the raw value for
+ * unknowns — so an incomplete catalogue never loses or blocks a bespoke
+ * value, it only affects whether that value gets a friendly label.
+ */
+export const RENEWAL_KNOWN_TASK_TYPES = [
+  'phone_call',
+  'admin_notify',
+  'admin_notify_lapsed',
+  'director_call',
+  'quarterly_review_meeting',
+  'meeting_proposed',
+  'benefit_fulfillment_report',
+  'contract_renewal',
+  'in_person_meeting',
+  'board_escalation',
+] as const;
+export type RenewalKnownTaskType = (typeof RENEWAL_KNOWN_TASK_TYPES)[number];
+export function isKnownTaskType(v: string | undefined): v is RenewalKnownTaskType {
+  return (RENEWAL_KNOWN_TASK_TYPES as readonly string[]).includes(v ?? '');
+}

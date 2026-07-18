@@ -3262,8 +3262,19 @@
             },
             "taskType": {
               "label": "Task type",
+              "searchPlaceholder": "Search task types…",
+              "emptyMessage": "No task type found.",
+              "customValue": "Use \"{value}\"",
               "phone_call": "Phone call",
-              "admin_notify": "Notify admin"
+              "admin_notify": "Notify admin",
+              "admin_notify_lapsed": "Notify admin (lapsed)",
+              "director_call": "Director call",
+              "quarterly_review_meeting": "Quarterly review meeting",
+              "meeting_proposed": "Meeting proposed",
+              "benefit_fulfillment_report": "Benefit fulfillment report",
+              "contract_renewal": "Contract renewal",
+              "in_person_meeting": "In-person meeting",
+              "board_escalation": "Board escalation"
             }
           },
           "timeline": {
@@ -3720,6 +3731,11 @@
           "phone_call": "Phone call",
           "in_person_meeting": "In-person meeting",
           "board_escalation": "Board escalation",
+          "admin_notify": "Notify admin",
+          "admin_notify_lapsed": "Notify admin (lapsed)",
+          "director_call": "Director call",
+          "meeting_proposed": "Meeting proposed",
+          "contract_renewal": "Contract renewal",
           "verify_pending_tier_upgrade": "Verify pending tier upgrade",
           "manual_outreach_required": "Manual outreach required",
           "termination_warning_blocked": "Termination deferred - no statutory warning ≥ 14 days old",
