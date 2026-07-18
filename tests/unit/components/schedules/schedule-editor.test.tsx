@@ -513,6 +513,109 @@ describe('<ScheduleEditor> — beforeunload unsaved-changes guard (C1)', () => {
   });
 });
 
+// Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a
+// pre-existing data-loss race: `handleSave` snapshots the bucket's steps
+// BEFORE the awaited PUT, then on success unconditionally overwrote
+// `byBucket[b].steps` with that STALE snapshot — even if the admin made a
+// NEWER edit to the same bucket while the save was in flight (StepCard's
+// fields + the move-up/down reorder buttons are gated only by `readOnly`,
+// never by the save's `pending` flag — only the Add-step/Save buttons
+// are). It then unconditionally cleared `dirtyBuckets`, so the C1
+// `beforeunload` guard (previous describe block) went quiet even though
+// the visible state had just silently reverted.
+describe('<ScheduleEditor> — mid-save edit is not clobbered by a stale snapshot (save-race follow-up)', () => {
+  // Same real-timers-for-this-block convention as the `_uiKey` stability
+  // and beforeunload-guard describe blocks above — `waitFor` polls via
+  // `setTimeout`, which never fires under the fake timers `tests/setup.ts`
+  // installs globally.
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('keeps a channel edit made WHILE a save is in flight, and keeps the bucket dirty', async () => {
+    // Deferred fetch — resolved manually mid-test so a second edit can
+    // land before the PUT "completes", reproducing the race window.
+    let resolveFetch!: (value: Response) => void;
+    const deferred = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn(() => deferred));
+
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+
+    try {
+      render(
+        <NextIntlClientProvider
+          locale="en"
+          messages={messages}
+          formats={buildFormats('en')}
+          timeZone="Asia/Bangkok"
+        >
+          <ScheduleEditor initialPolicies={[]} readOnly={false} />
+        </NextIntlClientProvider>,
+      );
+
+      // 1. First edit: add the bucket's only step. `emptyStep` always
+      // defaults to channel 'email'. The bucket becomes dirty.
+      fireEvent.click(screen.getAllByRole('button', { name: /add step/i })[0]!);
+      expect(addSpy.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(true);
+      expect(screen.getByRole('radio', { name: /^email$/i })).toBeChecked();
+
+      // 2. Begin the save — `handleSave` snapshots the CURRENT (email)
+      // steps before awaiting the deferred fetch below.
+      fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /saving/i })).toBeInTheDocument();
+      });
+
+      // 3. SECOND, different edit to the SAME bucket, made BEFORE the
+      // save resolves: flip the step's channel Email → Task. Driven via
+      // the segment's <label> text (Base UI Radio toggles through its
+      // associated <label>) — `{ selector: 'label' }` disambiguates from
+      // ReminderTimeline's static "Task" legend entry (a <span>, always
+      // rendered). Same pattern as the "`_uiKey` React-key stability"
+      // describe block above.
+      fireEvent.click(screen.getByText('Task', { selector: 'label' }));
+      await waitFor(() => {
+        expect(screen.getByRole('radio', { name: /^task$/i })).toBeChecked();
+      });
+
+      // 4. NOW resolve the in-flight save with a valid 200 body.
+      resolveFetch(
+        new Response(
+          JSON.stringify({
+            change_diff: { added: [], removed: [], unchanged: ['t-30.email'] },
+            updated_at: '2026-07-18T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Save schedule' })).toBeInTheDocument();
+      });
+
+      // (a) The mid-save edit survives — NOT clobbered by the stale
+      // pre-save (email) snapshot.
+      expect(screen.getByRole('radio', { name: /^task$/i })).toBeChecked();
+      expect(screen.getByRole('radio', { name: /^email$/i })).not.toBeChecked();
+
+      // (b) The bucket is STILL dirty — the mid-save edit was never sent
+      // to the server, so the `beforeunload` guard must remain
+      // registered. The old code unconditionally deleted the bucket from
+      // `dirtyBuckets` on save success, tearing the listener down here.
+      expect(removeSpy.mock.calls.some((c) => c[0] === 'beforeunload')).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      addSpy.mockRestore();
+      removeSpy.mockRestore();
+    }
+  });
+});
+
 // I2 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — the manager
 // read-only notice used to be raw amber (warning tone) on an informational
 // message. `data-tone` is InlineAlert's own deterministic marker

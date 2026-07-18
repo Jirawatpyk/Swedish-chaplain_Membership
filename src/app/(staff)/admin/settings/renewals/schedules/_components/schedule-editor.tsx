@@ -19,7 +19,7 @@
  * + a banner-style notice. Server-side RBAC at the PUT route is the
  * canonical gate — this UI affordance is defence-in-depth.
  */
-import { useCallback, useEffect, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
@@ -224,6 +224,17 @@ export function ScheduleEditor({
   // surfaces Buddhist Era for `th-TH` users.
   const fmt = useFormatter();
   const [byBucket, setByBucket] = useState(() => policiesByBucket(initialPolicies));
+  // Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a ref
+  // mirror of `byBucket` so `handleSave`'s success branch can read the
+  // CURRENT steps synchronously at the moment a save resolves, not the
+  // stale pre-save snapshot it captured before the awaited `fetch`. NOT
+  // a side-effect inside a `setState` updater — React StrictMode
+  // double-invokes updaters in dev, so mutating an outer variable there
+  // is unreliable; this effect-based mirror is the safe alternative.
+  const byBucketRef = useRef(byBucket);
+  useEffect(() => {
+    byBucketRef.current = byBucket;
+  }, [byBucket]);
   const [activeBucket, setActiveBucket] = useState<TierBucket>(
     TIER_BUCKETS[0],
   );
@@ -347,19 +358,39 @@ export function ScheduleEditor({
             toast.error(t('error.saveFailed'));
             return;
           }
-          // Refresh local cache with server-confirmed policy.
+          // Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a
+          // save can be in flight while the admin keeps editing THIS
+          // bucket: StepCard's fields and the move-up/down reorder
+          // buttons are gated only by `readOnly`, never by this save's
+          // `pending` flag (only the Add-step/Save buttons are). `stepsNow`
+          // above is a snapshot taken BEFORE the awaited `fetch`, so it
+          // goes stale the instant a mid-save edit lands. Read the CURRENT
+          // steps synchronously via `byBucketRef` and wire-shape-compare
+          // against the snapshot (`toWireSteps` strips the editor-only
+          // `_uiKey`, so a pure `_uiKey` remap — e.g. from a concurrent
+          // reload — never counts as an edit).
+          const currentSteps = byBucketRef.current[b]?.steps ?? [];
+          const editedDuringSave =
+            JSON.stringify(toWireSteps(currentSteps)) !==
+            JSON.stringify(toWireSteps(stepsNow));
+          // Refresh local cache with server-confirmed policy — but never
+          // clobber a newer mid-save edit with the stale pre-save
+          // snapshot; keep whatever is currently shown instead.
           setByBucket((prev) => ({
             ...prev,
             [b]: {
               tier_bucket: b,
-              steps: stepsNow,
+              steps: editedDuringSave ? (prev[b]?.steps ?? currentSteps) : stepsNow,
               updated_at: body.updated_at,
             },
           }));
           // C1 — this bucket's edits are now persisted; clear its dirty
           // flag so the `beforeunload` guard stops firing once every
-          // bucket is saved.
+          // bucket is saved. If the admin edited THIS bucket again while
+          // the save was in flight, that newer edit was never sent to the
+          // server — stay dirty so the guard keeps protecting it.
           setDirtyBuckets((prev) => {
+            if (editedDuringSave) return prev;
             if (!prev.has(b)) return prev;
             const nextDirty = new Set(prev);
             nextDirty.delete(b);
