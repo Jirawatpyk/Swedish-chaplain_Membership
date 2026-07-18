@@ -347,6 +347,11 @@ const schema = z.object({
   // dangling duplicate bill is the pre-existing behaviour, not a regression.
   FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
 
+  // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3). Default
+  // false — ships dark; independent of FEATURE_F8_RENEWALS (no cross-field
+  // guard, gates no secret). Flip TRUE in Vercel env at ship-day.
+  FEATURE_AUTO_INVOICE: booleanFromString.default(false),
+
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
   // F1+F4 transactional API. Hosted on the same Resend account; uses a
@@ -1002,6 +1007,8 @@ export const env = {
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
     // 106-void-on-reissue — auto-void superseded membership bills on reissue.
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
+    // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3).
+    autoInvoice: raw.FEATURE_AUTO_INVOICE,
   },
 
   // F4 Invoicing
