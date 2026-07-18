@@ -20,6 +20,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import en from '@/i18n/messages/en.json';
+import { env } from '@/lib/env';
 import type { RenewalCycle } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
 import type { DashboardOutstandingRead } from '@/app/(member)/portal/_components/dashboard-reads';
@@ -322,8 +323,12 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     const html = await renderMembership();
     noMissing(html);
     // A real mailto CTA (not the /portal/renewal dead-end) with the localized
-    // "Contact us to reactivate" label.
-    expect(html).toContain('href="mailto:info@swecham.se');
+    // "Contact us to reactivate" label. The address is deployment config
+    // (`SUPPORT_EMAIL`, default info@swecham.se) — assert against the SAME
+    // single-source-of-truth the component uses (`env.supportEmail`) rather
+    // than a hardcoded address, so a per-deploy override (e.g. secretary@)
+    // does not break this test.
+    expect(html).toContain(`href="mailto:${env.supportEmail}`);
     expect(html).toContain(en.portal.dashboard.membership.contactToRenew);
     // Cluster 4 a11y review-fix — the external mailto <a> CTA carries the
     // ≥44px (min-h-11) tap target on the same footing as the internal <Link>.
