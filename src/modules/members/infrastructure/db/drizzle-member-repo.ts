@@ -474,7 +474,7 @@ export const drizzleMemberRepo: MemberRepo = {
     }));
   },
 
-  async findManyByIdsInTx(tx, memberIds) {
+  async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
       if (memberIds.length === 0) {
         return ok(new Map() as ReadonlyMap<MemberId, Member>);
@@ -486,7 +486,14 @@ export const drizzleMemberRepo: MemberRepo = {
       const rows = await tx
         .select()
         .from(members)
-        .where(inArray(members.memberId, [...memberIds] as string[]))
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation (see port doc).
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+          ),
+        )
         .for('update');
       const result = new Map<MemberId, Member>();
       for (const row of rows) {

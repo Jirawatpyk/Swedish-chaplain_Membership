@@ -226,9 +226,20 @@ export interface MemberRepo {
    * Returns a `Map<MemberId, Member>` for O(1) per-item access in the caller.
    * Missing ids are absent from the Map; caller is responsible for
    * enumerating the expected vs found set and raising `not_found` as needed.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to the
+   * ambient RLS `SET LOCAL app.current_tenant` — Constitution Principle I
+   * two-layer isolation. Added at the 107-auto-invoice Task 15 review
+   * (Minor): the method previously relied on RLS+FORCE alone, which was
+   * defensible while callers only READ display names, but
+   * `bulkEnrolAutoInvoice` makes the returned Map load-bearing for a
+   * Principle I decision on a billing write path (which members exist →
+   * which get enrolled → who gets auto-billed). A cross-tenant test that
+   * passes on RLS alone proves only one of the two required layers.
    */
   findManyByIdsInTx(
     tx: TenantTx,
+    tenantId: string,
     memberIds: readonly MemberId[],
   ): Promise<Result<ReadonlyMap<MemberId, Member>, RepoError>>;
 

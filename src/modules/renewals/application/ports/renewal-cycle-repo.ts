@@ -513,6 +513,13 @@ export interface RenewalCycleRepo {
    *   3. `members.auto_invoice_enrolled_at IS NOT NULL` (opt-in only —
    *      Task 1).
    *   4. `members.archived_at IS NULL AND members.status <> 'archived'`.
+   *   4a. `members.erased_at IS NULL` — a GDPR/PDPA-erased member must never
+   *      be auto-billed (Task 15 review). NOT implied by (4): the F3 erasure
+   *      scrub deliberately leaves `status`/`archived_at` untouched
+   *      ("erasure is orthogonal to archive"), so an erased-but-active member
+   *      passes both of those. The scrub also NULLs
+   *      `auto_invoice_enrolled_at`, but that is one-shot — a later bulk
+   *      enrol could re-stamp the row, so the durable guard lives here.
    *   5. Dedup — NO existing membership invoice for the member with
    *      `status IN ('draft', 'issued')`. Deliberately narrower than the
    *      full "live invoice" set (`paid`/`credited`/`partially_credited`

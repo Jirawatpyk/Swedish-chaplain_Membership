@@ -168,6 +168,16 @@ export async function bulkEnrolAutoInvoice(
   //    One batched query for the whole request. Fails CLOSED: an infra
   //    failure aborts the entire request rather than silently enrolling
   //    members whose access could not be verified.
+  //
+  //    Cross-reference: `autoDraftDueRenewals` (Task 7) applies the SAME
+  //    `deriveMembershipAccess` predicate to the same member, but asks a
+  //    DIFFERENT question and so uses a different threshold — it refuses to
+  //    DRAFT unless access is exactly `full` (`access !== 'full'` →
+  //    `skippedTerminated`), whereas this use case only refuses to ENROL a
+  //    `terminated` member. Same predicate, different question: enrolling is
+  //    a reversible-in-principle preference with no side effect; drafting
+  //    mints a document. The asymmetry is deliberate — see the skip-semantics
+  //    section of this file's header. Do not "align" them without reading it.
   const accessResult = await deps.membershipAccess.getMembershipAccessMany(
     deps.tenant,
     data.member_ids,
@@ -192,7 +202,11 @@ export async function bulkEnrolAutoInvoice(
       // 4. Batched locking read. `FOR UPDATE` pins every row for the rest
       //    of the tx, so the `auto_invoice_enrolled_at` value we partition
       //    on cannot change under us between here and the UPDATE.
-      const lookupResult = await deps.memberRepo.findManyByIdsInTx(tx, memberIds);
+      const lookupResult = await deps.memberRepo.findManyByIdsInTx(
+        tx,
+        deps.tenant.slug,
+        memberIds,
+      );
       if (!lookupResult.ok) {
         logger.error(
           { err: lookupResult.error, requestId: meta.requestId },
@@ -249,6 +263,19 @@ export async function bulkEnrolAutoInvoice(
               );
               if (!persistResult.ok) {
                 throw new Error(`persist:${persistResult.error.code}`);
+              }
+              // Task 15 review (Minor) — the three buckets must always sum to
+              // `member_ids.length`. That holds only if the UPDATE wrote
+              // exactly the rows we partitioned into `toEnrol`. It cannot
+              // currently diverge (the rows are pinned `FOR UPDATE` from the
+              // lookup above, and the repo's `IS NULL` filter can only match
+              // what we already checked), but if it ever did, the counts would
+              // silently stop summing and an admin would be told members were
+              // enrolled that were not. Fail the batch loudly instead.
+              if (persistResult.value.length !== toEnrol.length) {
+                throw new Error(
+                  `enrol_count_mismatch:expected=${toEnrol.length}:actual=${persistResult.value.length}`,
+                );
               }
               return persistResult.value;
             })();

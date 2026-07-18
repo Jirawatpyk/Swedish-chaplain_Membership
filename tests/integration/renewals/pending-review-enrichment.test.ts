@@ -107,8 +107,15 @@ describe('F8 pending-review company-name batch enrichment (070 perf)', () => {
 
       // THE N+1 INVARIANT: exactly one batch read for N cycles (not 2N).
       expect(spy).toHaveBeenCalledOnce();
+      // 107-auto-invoice Task 15 review (Minor) — `findManyByIdsInTx` gained
+      // an explicit `tenantId` param so it can filter tenant in the WHERE
+      // clause alongside RLS (Principle I two-layer isolation). Assert the
+      // caller actually threads the right slug: passing the wrong one (or a
+      // future refactor dropping the arg) would silently return an empty map
+      // rather than fail loudly, degrading every row to its cycle short-id.
+      expect(spy.mock.calls[0]?.[1]).toBe(tenantA.ctx.slug);
       // Called with the DISTINCT ids only.
-      const calledWith = spy.mock.calls[0]?.[1] ?? [];
+      const calledWith = spy.mock.calls[0]?.[2] ?? [];
       expect([...calledWith].sort()).toEqual([m1.memberId, m2.memberId].sort());
     } finally {
       spy.mockRestore();

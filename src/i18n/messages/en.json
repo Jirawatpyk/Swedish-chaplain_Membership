@@ -1052,7 +1052,7 @@
         }
       },
       "detail": {
-        "autoInvoiceEnrolledBadge": "Auto-invoice",
+        "autoInvoiceEnrolledBadge": "Auto-invoice: on",
         "title": "{companyName}",
         "subtitle": "{plan} · Year {year}",
         "subtitleArchived": "{plan} · Year {year} · Archived",
@@ -1573,15 +1573,15 @@
         "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
         "confirmInviteAction": "Send invitations",
         "confirmEnrolTitle": "Enrol {count, plural, one {# member} other {# members}} in auto-invoicing",
-        "confirmEnrolDescription": "Renewal invoices will be prepared automatically as a draft for these members ahead of their due date. A treasurer still reviews and issues every draft — nothing is sent without approval. Members whose membership has ended are skipped.",
+        "confirmEnrolDescription": "Renewal invoices will be prepared automatically as a draft for these members ahead of their due date. A treasurer still reviews and issues every draft — nothing is sent without approval. Members with unpaid or overdue invoices are still enrolled; only members whose membership has permanently ended are skipped. Enrolment can’t be switched off from here yet — ask an administrator if you need it reversed.",
         "confirmEnrolAction": "Enrol members",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "inviteQueued": "{invited, plural, one {# invitation queued} other {# invitations queued}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "enrolSucceeded": "{enrolled, plural, one {# member enrolled} other {# members enrolled}}",
-        "enrolSkippedAlready": "{skipped} already enrolled",
-        "enrolSkippedTerminated": "{skipped} skipped (membership ended)",
+        "enrolSkippedAlready": "{skipped, plural, one {# already enrolled} other {# already enrolled}}",
+        "enrolSkippedTerminated": "{skipped, plural, one {# skipped (membership ended)} other {# skipped (membership ended)}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "errors": {
           "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",

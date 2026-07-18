@@ -14,9 +14,10 @@
  *
  * Tenant isolation: the single `runInTenant(ctx, …)` wrapper applies the
  * Postgres RLS+FORCE policies via `SET LOCAL app.current_tenant`
- * (Constitution Principle I two-layer isolation). `findManyByIdsInTx`
- * takes only `tx` — the transaction session already carries tenant scope —
- * and never reaches for the pool-global `db` singleton.
+ * (Constitution Principle I two-layer isolation), and `findManyByIdsInTx`
+ * additionally filters `tenant_id` explicitly in its WHERE clause (added at
+ * the 107-auto-invoice Task 15 review — the app-layer half of the two
+ * layers). It never reaches for the pool-global `db` singleton.
  *
  * Error semantics: an infrastructure failure (RLS reject / connection /
  * timeout) from the repo PROPAGATES (throw) so the caller's best-effort
@@ -53,7 +54,11 @@ export async function fetchPendingReviewCompanyNames(args: {
 
   const tenantContext = asTenantContext(args.tenantSlug);
   const result = await runInTenant(tenantContext, (tx) =>
-    f3DrizzleMemberRepo.findManyByIdsInTx(tx, distinctIds.map(asMemberId)),
+    f3DrizzleMemberRepo.findManyByIdsInTx(
+      tx,
+      args.tenantSlug,
+      distinctIds.map(asMemberId),
+    ),
   );
 
   if (!result.ok) {

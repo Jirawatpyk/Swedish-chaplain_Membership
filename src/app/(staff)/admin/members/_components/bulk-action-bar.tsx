@@ -9,17 +9,38 @@
  *
  * Cap enforcement: if > 100 rows are selected, the action buttons are
  * disabled with a message instructing the admin to split the operation.
+ *
+ * Focus-on-close (107-auto-invoice Task 15 review, UX-1). EVERY successful
+ * bulk action unmounts this entire bar: `executeBulk` calls `onClear()` →
+ * the parent clears `selectedIds` → `count === 0` → this component returns
+ * `null`. So all three trigger buttons vanish, and Base UI's default
+ * focus-return (the original trigger) drops focus to `<body>` — a keyboard
+ * or screen-reader user must re-Tab from the top of the page after every
+ * bulk action. Fixed with ONE shared `finalFocus` for all three dialogs,
+ * built from `useDialogFinalFocus` (REUSED verbatim from
+ * `@/components/broadcast/reason-confirmation-dialog`, same as
+ * `auto-renewal-queue-actions.tsx` — not reimplemented). `lastTriggerRef`
+ * records whichever button opened the dialog (only one can be open at a
+ * time); `closedViaSuccessRef` is raised inside `executeBulk` BEFORE
+ * `onClear()`, so on a successful close the resolver skips the
+ * about-to-unmount trigger and lands on the `#main-content` landmark. On
+ * Cancel / ESC / a failed action the bar survives, the flag stays false,
+ * and focus returns to the trigger as normal. WCAG 2.1 AA SC 2.4.3.
+ *
+ * This was pre-existing on Archive and Send-invite; Task 15 added the third
+ * case and fixes all three together.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, MailIcon, ReceiptTextIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, FileTextIcon, MailIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 // I9 round-10 ui-design-specialist — `change_plan` was declared but
@@ -62,9 +83,24 @@ export function BulkActionBar({
   const count = selectedIds.length;
   const overCap = count > BULK_CAP;
 
+  // Focus-on-close (see module header). One ref pair serves all three
+  // dialogs — only one can be open at a time, and every successful action
+  // unmounts all three triggers together.
+  const lastTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closedViaSuccessRef = useRef<boolean>(false);
+  const finalFocus = useDialogFinalFocus(
+    lastTriggerRef,
+    undefined,
+    closedViaSuccessRef,
+  );
+
   const executeBulk = useCallback(
     async (action: BulkAction, params?: Record<string, unknown>) => {
       if (overCap) return;
+      // Reset per attempt: a failed action leaves the bar (and its
+      // triggers) mounted, so focus must return to the trigger, not the
+      // landmark. Only the success path below raises this.
+      closedViaSuccessRef.current = false;
       setExecuting(true);
       setProgress({ action, total: count });
 
@@ -106,20 +142,33 @@ export function BulkActionBar({
             // is no `failed` bucket here — the endpoint is all-or-nothing,
             // so any real failure arrives as a non-2xx and never reaches
             // this branch.
-            const parts = [t('enrolSucceeded', { enrolled: body.enrolled })];
-            if (body.skipped_already > 0) {
-              parts.push(t('enrolSkippedAlready', { skipped: body.skipped_already }));
+            //
+            // Defaulted for the same reason the invite arm defaults `counts`:
+            // an `undefined` reaching an ICU `{enrolled, plural, …}` throws
+            // FORMATTING_ERROR inside the toast call and silently eats the
+            // entire confirmation. Not reachable while the route always
+            // returns all three keys — this keeps the two arms symmetric so a
+            // future response-shape change degrades instead of disappearing.
+            const c = {
+              enrolled: 0,
+              skipped_already: 0,
+              skipped_terminated: 0,
+              ...(body ?? {}),
+            };
+            const parts = [t('enrolSucceeded', { enrolled: c.enrolled })];
+            if (c.skipped_already > 0) {
+              parts.push(t('enrolSkippedAlready', { skipped: c.skipped_already }));
             }
-            if (body.skipped_terminated > 0) {
+            if (c.skipped_terminated > 0) {
               parts.push(
-                t('enrolSkippedTerminated', { skipped: body.skipped_terminated }),
+                t('enrolSkippedTerminated', { skipped: c.skipped_terminated }),
               );
             }
             const message = parts.join(' · ');
             // A no-op (everyone already enrolled / terminated) gets a neutral
             // info toast — a green tick on zero writes misleads the admin into
             // thinking the roster changed.
-            if (body.enrolled > 0) toast.success(message);
+            if (c.enrolled > 0) toast.success(message);
             else toast.info(message);
           } else {
             toast.success(
@@ -129,6 +178,10 @@ export function BulkActionBar({
               }),
             );
           }
+          // Raise BEFORE onClear(): `onClear` is what unmounts this whole
+          // bar (and every trigger in it), and Base UI reads `finalFocus`
+          // when the dialog closes just after this callback resolves.
+          closedViaSuccessRef.current = true;
           onClear();
           router.refresh();
         } else if (res.status === 429) {
@@ -170,7 +223,16 @@ export function BulkActionBar({
         role="toolbar"
         aria-label={t('toolbarLabel')}
       >
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-4 px-4 py-3">
+        {/* `flex-wrap` on BOTH rows (Task 15 review, UX-5). `Button` carries
+            `whitespace-nowrap`, and the three action labels are long in every
+            locale (EN "Enrol in auto-invoicing" / SV "Anmäl till
+            autofakturering" / TH "เปิดใช้ใบแจ้งหนี้อัตโนมัติ"), so without
+            wrapping the bar's min-content width far exceeds the 320px floor in
+            ux-standards.md § 14 and the buttons overflow the viewport.
+            NOTE: layout-responsive.spec.ts does not cover /admin/members and
+            never selects rows, so this bar never renders there — the sweep
+            cannot catch a regression here. */}
+        <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
           {/* Left: selection count */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium" aria-live="polite">
@@ -198,13 +260,16 @@ export function BulkActionBar({
           </div>
 
           {/* Center: action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="destructive-outline"
               size="sm"
               disabled={executing || overCap}
-              onClick={() => setArchiveDialogOpen(true)}
-              className="min-h-[36px]"
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                setArchiveDialogOpen(true);
+              }}
+              className="min-h-11"
             >
               <ArchiveIcon className="mr-1.5 h-4 w-4" />
               {t('actions.archive')}
@@ -213,8 +278,11 @@ export function BulkActionBar({
               variant="outline"
               size="sm"
               disabled={executing || overCap}
-              onClick={() => setInviteDialogOpen(true)}
-              className="min-h-[36px]"
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                setInviteDialogOpen(true);
+              }}
+              className="min-h-11"
             >
               <MailIcon className="mr-1.5 h-4 w-4" />
               {t('actions.send_portal_invite')}
@@ -227,10 +295,18 @@ export function BulkActionBar({
               variant="outline"
               size="sm"
               disabled={executing || overCap}
-              onClick={() => setEnrolDialogOpen(true)}
-              className="min-h-[36px]"
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                setEnrolDialogOpen(true);
+              }}
+              className="min-h-11"
             >
-              <ReceiptTextIcon className="mr-1.5 h-4 w-4" />
+              {/* FileTextIcon, NOT ReceiptTextIcon: this action drafts an
+                  INVOICE (ใบแจ้งหนี้), and invoice/receipt/tax-invoice are
+                  legally distinct documents in Thai tax law — an icon that
+                  reads "receipt" on an invoice action is a real hazard here.
+                  ReceiptTextIcon appears nowhere else in the codebase. */}
+              <FileTextIcon className="mr-1.5 h-4 w-4" />
               {t('actions.enrol_auto_invoice')}
             </Button>
           </div>
@@ -240,7 +316,7 @@ export function BulkActionBar({
             variant="ghost"
             size="sm"
             onClick={onClear}
-            className="min-h-[36px]"
+            className="min-h-11"
           >
             <XIcon className="mr-1 h-4 w-4" />
             {t('clear')}
@@ -258,6 +334,7 @@ export function BulkActionBar({
         count={count}
         onConfirm={handleArchiveConfirm}
         pending={executing}
+        finalFocus={finalFocus}
       />
 
       <ConfirmationDialog
@@ -269,6 +346,7 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('send_portal_invite')}
+        finalFocus={finalFocus}
       />
 
       <ConfirmationDialog
@@ -280,6 +358,7 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('enrol_auto_invoice')}
+        finalFocus={finalFocus}
       />
 
       {progress && (

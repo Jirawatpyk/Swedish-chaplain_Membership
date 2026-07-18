@@ -43,6 +43,17 @@ type Props = {
   readonly onConfirm: () => void;
   /** H7: whether the archive action is in-flight (shows loader, disables action). */
   readonly pending?: boolean;
+  /**
+   * 107-auto-invoice Task 15 review (UX-1) — focus-return target on close.
+   * Required here (unlike most `ConfirmationDialog` callers, where it is an
+   * optional escape hatch) because this dialog's trigger lives in
+   * `BulkActionBar`, which unmounts ENTIRELY on every successful archive
+   * (`onClear()` → `count === 0` → `return null`). Base UI's default
+   * focus-return would target the vanished trigger and drop focus to
+   * `<body>`. Build via `useDialogFinalFocus`; see the BulkActionBar module
+   * header. WCAG 2.1 AA SC 2.4.3.
+   */
+  readonly finalFocus?: () => HTMLElement | null;
 };
 
 export function ArchiveConfirmDialog({
@@ -52,6 +63,7 @@ export function ArchiveConfirmDialog({
   count,
   onConfirm,
   pending = false,
+  finalFocus,
 }: Props) {
   const t = useTranslations('admin.members.bulk');
   const [typedPhrase, setTypedPhrase] = useState('');
@@ -81,7 +93,7 @@ export function ArchiveConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('archiveTitle', { count })}</AlertDialogTitle>
           <AlertDialogDescription>

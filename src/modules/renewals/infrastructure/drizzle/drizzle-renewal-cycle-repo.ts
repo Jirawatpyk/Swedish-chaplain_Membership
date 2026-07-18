@@ -1090,6 +1090,19 @@ export function makeDrizzleRenewalCycleRepo(
             AND m.auto_invoice_enrolled_at IS NOT NULL
             AND m.archived_at IS NULL
             AND m.status <> 'archived'
+            -- Task 15 review (Important) — a GDPR/PDPA-erased member must
+            -- never be auto-billed. scrubPiiInTx now NULLs
+            -- auto_invoice_enrolled_at, but that is a ONE-SHOT fix: nothing
+            -- stops a later bulk enrol from re-stamping an erased row, and
+            -- the scrub deliberately leaves status/archived_at alone
+            -- (erasure is orthogonal to archive), so the two gates above do
+            -- NOT cover this. Filtering at the repo predicate covers every
+            -- present and future enrolment path, where a write-path filter
+            -- would only cover the one that exists today. Same concept as
+            -- excludeErasedMembers in drizzle-member-renewal-flags-repo.ts.
+            -- NOTE: no backticks in this comment — it lives inside a JS
+            -- template literal, where a backtick would terminate the string.
+            AND m.erased_at IS NULL
             AND ${renewalCycles.expiresAt} <= ${args.nowIso}::timestamptz + (
               CASE WHEN m.billing_cycle = 'calendar'
                 THEN ${args.leadDaysCalendar}::int

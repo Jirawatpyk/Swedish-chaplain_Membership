@@ -27,9 +27,19 @@
  *   (g) lower bound — a cycle whose `expires_at` is already in the past
  *       relative to `nowIso` (already at/past T-0) → EXCLUDED (that cron
  *       is `listCyclesEligibleForAwaitingPayment`'s job, not this one's).
+ *   (h) GDPR/PDPA-ERASED member (`erased_at` set), still enrolled and
+ *       otherwise perfectly eligible → EXCLUDED. Task 15 review
+ *       (Important). NOT covered by (d) or by the archived gate: the F3
+ *       erasure scrub deliberately leaves `status`/`archived_at` untouched
+ *       ("erasure is orthogonal to archive"), and although the scrub now
+ *       NULLs `auto_invoice_enrolled_at`, that is one-shot — a later bulk
+ *       enrol can re-stamp an erased row. This fixture reproduces exactly
+ *       that state (erased AND re-enrolled) so the repo predicate is what
+ *       is under test, not the scrub.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { asSatang } from '@/lib/money';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -63,6 +73,7 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
   const mCalendar = randomUUID(); // (e) calendar, outside window → excluded, then included
   const mWrongStatus = randomUUID(); // (f) cycle status not eligible → excluded
   const mAlreadyPast = randomUUID(); // (g) already past T-0 → excluded
+  const mErased = randomUUID(); // (h) erased member, still enrolled → excluded
 
   // --- Cycle ids --------------------------------------------------------------
   const cIncluded = randomUUID();
@@ -73,6 +84,7 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
   const cCalendar = randomUUID();
   const cWrongStatus = randomUUID();
   const cAlreadyPast = randomUUID();
+  const cErased = randomUUID();
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -102,6 +114,7 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
       { memberId: mCalendar, enrolled: true, billingCycle: 'calendar' },
       { memberId: mWrongStatus, enrolled: true, billingCycle: 'rolling' },
       { memberId: mAlreadyPast, enrolled: true, billingCycle: 'rolling' },
+      { memberId: mErased, enrolled: true, billingCycle: 'rolling' },
     ];
 
     await runInTenant(tenant.ctx, (tx) =>
@@ -152,6 +165,17 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
     await seedCycle(cCalendar, mCalendar, 'upcoming', addDays(NOW_ISO, 35));
     await seedCycle(cWrongStatus, mWrongStatus, 'awaiting_payment', addDays(NOW_ISO, 18));
     await seedCycle(cAlreadyPast, mAlreadyPast, 'upcoming', addDays(NOW_ISO, -1));
+    // (h) identical to the (a) happy path — same status, same lead window —
+    // so the ONLY thing that can exclude it is the `erased_at IS NULL` gate.
+    await seedCycle(cErased, mErased, 'upcoming', addDays(NOW_ISO, 18));
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ erasedAt: new Date('2026-07-01T00:00:00Z') })
+        .where(
+          and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, mErased)),
+        ),
+    );
 
     // --- Invoices — minimal fields per status (see schema-invoices.ts CHECKs) --
     const draftLike = (
@@ -291,6 +315,10 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
     // (g) already past T-0 (lower bound `expires_at > nowIso`).
     expect(returnedIds).not.toContain(cAlreadyPast);
 
+    // (h) erased member — enrolled, active, in-window, correct status, no
+    // live invoice. Excluded ONLY by `m.erased_at IS NULL`.
+    expect(returnedIds).not.toContain(cErased);
+
     // Exactly the two positive cases from this tenant's fixture set.
     const ourIds = new Set<string>([
       cIncluded,
@@ -301,6 +329,7 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
       cCalendar,
       cWrongStatus,
       cAlreadyPast,
+      cErased,
     ]);
     const ourReturned = returnedIds.filter((id) => ourIds.has(id));
     expect(ourReturned.sort()).toEqual([cIncluded, cPaidOnly].sort());
@@ -332,6 +361,7 @@ describe('107-auto-invoice Task 6 — listCyclesEligibleForAutoDraft (live Neon)
     expect(returnedIds).not.toContain(cNotEnrolled);
     expect(returnedIds).not.toContain(cWrongStatus);
     expect(returnedIds).not.toContain(cAlreadyPast);
+    expect(returnedIds).not.toContain(cErased);
 
     expect(page.nextCursor).toBeNull();
   });

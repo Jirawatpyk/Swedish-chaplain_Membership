@@ -1052,7 +1052,7 @@
         }
       },
       "detail": {
-        "autoInvoiceEnrolledBadge": "Autofakturering",
+        "autoInvoiceEnrolledBadge": "Autofakturering: på",
         "title": "{companyName}",
         "subtitle": "{plan} · År {year}",
         "subtitleArchived": "{plan} · År {year} · Arkiverad",
@@ -1573,15 +1573,15 @@
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
         "confirmEnrolTitle": "Anmäl {count, plural, one {# medlem} other {# medlemmar}} till autofakturering",
-        "confirmEnrolDescription": "Förnyelsefakturor förbereds automatiskt som utkast för dessa medlemmar inför förfallodagen. En kassatjänsteman granskar och utfärdar fortfarande varje utkast — ingenting skickas utan godkännande. Medlemmar vars medlemskap har upphört hoppas över.",
+        "confirmEnrolDescription": "Förnyelsefakturor förbereds automatiskt som utkast för dessa medlemmar inför förfallodagen. En kassatjänsteman granskar och utfärdar fortfarande varje utkast — ingenting skickas utan godkännande. Medlemmar med obetalda eller förfallna fakturor anmäls fortfarande; endast medlemmar vars medlemskap har upphört permanent hoppas över. Anmälan kan ännu inte stängas av härifrån — kontakta en administratör om den behöver återkallas.",
         "confirmEnrolAction": "Anmäl medlemmar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "enrolSucceeded": "{enrolled, plural, one {# medlem anmäld} other {# medlemmar anmälda}}",
-        "enrolSkippedAlready": "{skipped} redan anmälda",
-        "enrolSkippedTerminated": "{skipped} hoppades över (medlemskap avslutat)",
+        "enrolSkippedAlready": "{skipped, plural, one {# redan anmäld} other {# redan anmälda}}",
+        "enrolSkippedTerminated": "{skipped, plural, one {# hoppades över (medlemskap avslutat)} other {# hoppades över (medlemskap avslutat)}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "errors": {
           "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
