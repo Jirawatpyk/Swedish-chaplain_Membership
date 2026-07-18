@@ -476,6 +476,70 @@ describe('<EventFeeForm>', () => {
     ).toBeUndefined();
   });
 
+  it('409 with existing_invoice_id → duplicate dialog renders a "View invoice" link', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: 'duplicate' },
+            existing_invoice_id: 'eeeeeeee-5555-4555-8555-eeeeeeeeeeee',
+          }),
+          { status: 409 },
+        ),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await screen.findByText(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    );
+    const link = screen.getByRole('link', {
+      name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.viewInvoice,
+    });
+    expect(link).toHaveAttribute(
+      'href',
+      '/admin/invoices/eeeeeeee-5555-4555-8555-eeeeeeeeeeee',
+    );
+  });
+
+  it('409 with existing_invoice_id: null → duplicate dialog renders only Close (no link)', async () => {
+    const fetchMock = mockFetchRegistrations([matchedRegistration]);
+    vi.stubGlobal('fetch', fetchMock);
+    renderForm({ initialEventId: 'ev-1' });
+    fireEvent.click(await screen.findByRole('button', { name: /Alice/ }));
+
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { code: 'duplicate' }, existing_invoice_id: null }),
+          { status: 409 },
+        ),
+    );
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.recordAndIssue,
+      }),
+    );
+
+    await screen.findByText(
+      enMessages.admin.invoices.eventFeeForm.duplicateDialog.title,
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: enMessages.admin.invoices.eventFeeForm.duplicateDialog.cancel,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('non-member with empty buyer → inline errors + no POST', async () => {
     const fetchMock = mockFetchRegistrations([nonMemberRegistration]);
     vi.stubGlobal('fetch', fetchMock);

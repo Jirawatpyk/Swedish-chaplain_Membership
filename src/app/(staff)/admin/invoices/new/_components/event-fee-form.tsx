@@ -53,12 +53,13 @@
  */
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { AlertTriangleIcon, Loader2Icon } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -481,9 +482,8 @@ function AsPaidPaymentFields({
             {t('payment.dateHint')}
           </p>
         )}
-        {/* 064 H-1 — amber warning-callout (same palette as the
-            schedule-editor read-only notice): non-blocking, so
-            role="status" (polite live region), NOT role="alert". */}
+        {/* 064 H-1 — non-blocking warning callout (semantic tone="warning"),
+            so role="status" (polite live region), NOT role="alert". */}
         {showVatPeriodWarning && (
           <InlineAlert
             id="payment-date-vat-warning"
@@ -593,6 +593,7 @@ export function EventFeeForm({
   const [buyerErrors, setBuyerErrors] = useState<NonMemberBuyerErrors>({});
   const [amountError, setAmountError] = useState<string | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateInvoiceId, setDuplicateInvoiceId] = useState<string | null>(null);
 
   // Issuance mode — the admin's EXPLICIT pick. While null, the effective
   // mode falls back to `defaultModeFor` so the default stays reactive to the
@@ -953,6 +954,10 @@ export function EventFeeForm({
           return;
         }
         if (res.status === 409) {
+          const dupBody = await res.json().catch(() => ({}));
+          setDuplicateInvoiceId(
+            (dupBody as { existing_invoice_id?: string | null }).existing_invoice_id ?? null,
+          );
           setDuplicateOpen(true);
           return;
         }
@@ -1233,6 +1238,14 @@ export function EventFeeForm({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
+            {duplicateInvoiceId !== null && (
+              <Link
+                href={`/admin/invoices/${duplicateInvoiceId}`}
+                className={buttonVariants({ variant: 'default' })}
+              >
+                {t('duplicateDialog.viewInvoice')}
+              </Link>
+            )}
             <AlertDialogCancel>{t('duplicateDialog.cancel')}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>

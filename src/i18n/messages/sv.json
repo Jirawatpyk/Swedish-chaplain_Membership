@@ -2222,7 +2222,8 @@
         },
         "duplicateDialog": {
           "title": "En faktura finns redan",
-          "description": "En evenemangsfaktura har redan skapats för denna deltagare. Visa den befintliga fakturan istället för att skapa en dubblett.",
+          "description": "En evenemangsfaktura finns redan för denna deltagare. Öppna den istället för att skapa en dubblett.",
+          "viewInvoice": "Visa faktura",
           "cancel": "Stäng"
         },
         "mode": {
