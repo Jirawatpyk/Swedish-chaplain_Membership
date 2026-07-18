@@ -610,6 +610,37 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
     expect(input.eventRegistrationId).toBe(VALID_REG_ID);
   });
 
+  it('ignores client-supplied tenantId / actorUserId / requestId in the body (CWE-915)', async () => {
+    // Regression guard for the mass-assignment fix: the route spreads the body
+    // FIRST and server-derived identity LAST. Without that order a caller could
+    // stamp another user's id onto the audit event a draft emits. This test
+    // sends hostile values for all three server-derived fields and asserts the
+    // server values win — it FAILS if the route ever reverts to spreading the
+    // body last.
+    createEventInvoiceDraftMock.mockResolvedValueOnce(ok(STUB_INVOICE));
+
+    const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+    await POST(
+      makePostRequest({
+        eventRegistrationId: VALID_REG_ID,
+        amountOverride: 50000,
+        tenantId: 'attacker-tenant',
+        actorUserId: 'victim-user-99',
+        requestId: 'forged-request-id',
+      }),
+    );
+
+    expect(createEventInvoiceDraftMock).toHaveBeenCalledTimes(1);
+    const input = createEventInvoiceDraftMock.mock.calls[0]![1] as {
+      tenantId: string;
+      actorUserId: string;
+      requestId: string;
+    };
+    expect(input.tenantId).toBe('test-swecham');
+    expect(input.actorUserId).toBe('admin-user-1');
+    expect(input.requestId).toBe('req-event-draft-1');
+  });
+
   // -------------------------------------------------------------------------
   // PII hygiene — buyer fields MUST NOT appear in logs.
   // -------------------------------------------------------------------------

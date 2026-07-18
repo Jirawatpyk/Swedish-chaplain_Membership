@@ -14,6 +14,7 @@ import {
   voidInvoice,
   voidInvoiceSchema,
   makeVoidInvoiceDeps,
+  parseInvoiceId,
   type VoidInvoiceError,
 } from '@/modules/invoicing';
 import { serialiseInvoice, stripReason } from '../../_serialise';
@@ -58,6 +59,27 @@ export async function POST(
   }
 
   const { invoiceId } = await params;
+  // Validate the path param up front. The wide `voidInvoiceSchema` used to do
+  // this as a side effect (its `invoiceId` is `z.string().uuid()`); narrowing
+  // the body schema to close CWE-915 dropped that guard, so a malformed id
+  // would otherwise reach `asInvoiceId` (an unchecked cast) → Postgres 22P02
+  // → an opaque 500 instead of a clean 400 on this money-path route.
+  const parsedInvoiceId = parseInvoiceId(invoiceId);
+  if (!parsedInvoiceId.ok) {
+    // Mirror zod's `.flatten()` shape used by the body-validation 400 below, so
+    // a client always reads a field error the same way (`details.fieldErrors`)
+    // regardless of which input failed.
+    return NextResponse.json(
+      {
+        error: {
+          code: 'invalid_body',
+          details: { formErrors: [], fieldErrors: { invoiceId: ['invalid_invoice_id'] } },
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
@@ -97,7 +119,7 @@ export async function POST(
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
-    invoiceId,
+    invoiceId: parsedInvoiceId.value,
     voidReason: parsed.data.voidReason,
   });
   if (!result.ok) {

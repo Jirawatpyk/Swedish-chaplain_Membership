@@ -215,6 +215,15 @@ describe('InvoiceStatusChart', () => {
     expect(screen.getByText('1 draft invoice not shown')).toBeInTheDocument();
   });
 
+  it('states the measurement basis so it is not confused with the ex-VAT/fiscal-year KPIs', () => {
+    // This donut is all-time + VAT-inclusive; the revenue KPI beside it is
+    // fiscal-year + ex-VAT. The basis caption is what stops two legitimately
+    // different totals from reading as a broken system, so it must render
+    // whenever the chart has data.
+    renderChart(FULL);
+    expect(screen.getByText('All fiscal years · includes VAT')).toBeInTheDocument();
+  });
+
   // WCAG 1.4.1 (Use of Color) — the donut's success/warning/destructive
   // fills are near-equal luminance (fail CVD separation), and until now the
   // only text labels were in the sr-only table + hover-only tooltip: a
