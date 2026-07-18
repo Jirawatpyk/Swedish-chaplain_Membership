@@ -433,9 +433,13 @@
       "kpi": {
         "sectionLabel": "Key metrics",
         "total": "Total members",
+        "totalCaption": "All statuses",
         "active": "Active members",
+        "activeCaption": "Currently active",
         "atRisk": "At-risk members",
-        "revenue": "Paid revenue (fiscal year to date, ex-VAT)"
+        "atRiskCaption": "By renewal risk",
+        "revenue": "Paid revenue",
+        "revenueCaption": "Fiscal year to date · ex-VAT"
       },
       "needsAttention": {
         "title": "Needs attention",
