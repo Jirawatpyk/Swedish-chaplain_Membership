@@ -29,7 +29,7 @@
 ## File Structure
 
 **New files**
-- `drizzle/migrations/0258_auto_invoice_columns_and_audit.sql` — 4 tables' columns + `invoice_origin` enum + 2 `audit_event_type` values.
+- `drizzle/migrations/0259_auto_invoice_columns_and_audit.sql` — 4 tables' columns + `invoice_origin` enum + 2 `audit_event_type` values.
 - `src/modules/renewals/application/use-cases/auto-draft-due-renewals.ts` — cron worker body (draft creation).
 - `src/modules/renewals/application/use-cases/issue-auto-drafted-renewal.ts` — queue-issue action (owns `renewal_cycles`).
 - `src/modules/renewals/application/use-cases/prune-auto-drafts.ts` — housekeeping (discard stale drafts).
@@ -46,9 +46,9 @@
 ## Task 1: Schema migration + Drizzle columns
 
 **Files:**
-- Create: `drizzle/migrations/0258_auto_invoice_columns_and_audit.sql`
+- Create: `drizzle/migrations/0259_auto_invoice_columns_and_audit.sql`
 - Modify: `src/modules/invoicing/infrastructure/db/schema-invoices.ts` (enum near :46, column near :96); `src/modules/members/infrastructure/db/schema-members.ts` (near :170); `src/modules/renewals/infrastructure/schema-renewal-cycles.ts` (near :72); `src/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings.ts` (near :80, CHECK via `(table) => [ ... ]` at :129)
-- Modify: `drizzle/migrations/meta/_journal.json` (append `idx: 260`, `tag: "0258_auto_invoice_columns_and_audit"`)
+- Modify: `drizzle/migrations/meta/_journal.json` (append `idx: 260`, `tag: "0259_auto_invoice_columns_and_audit"`)
 - Test: `tests/integration/invoicing/auto-invoice-schema.test.ts`
 
 **Interfaces:**
@@ -57,7 +57,7 @@
 - [ ] **Step 1: Write the migration SQL** (mirror `0255` CREATE TYPE + `0252` idempotent CHECK):
 
 ```sql
--- 0258_auto_invoice_columns_and_audit.sql
+-- 0259_auto_invoice_columns_and_audit.sql
 CREATE TYPE "invoice_origin" AS ENUM('manual', 'auto_renewal');--> statement-breakpoint
 ALTER TABLE "invoices" ADD COLUMN "origin" "invoice_origin" NOT NULL DEFAULT 'manual';--> statement-breakpoint
 ALTER TABLE "members" ADD COLUMN "auto_invoice_enrolled_at" timestamp with time zone;--> statement-breakpoint
@@ -101,7 +101,7 @@ it('new columns exist with correct defaults + lead-days CHECK', async () => {
 ```
 
 - [ ] **Step 4: Run migration + test.** `pnpm db:migrate` then `pnpm test:integration tests/integration/invoicing/auto-invoice-schema.test.ts` → PASS.
-- [ ] **Step 5: `pnpm typecheck` then commit.** `git add drizzle/ src/modules/*/infrastructure/db/ src/modules/renewals/infrastructure/schema-renewal-cycles.ts tests/integration/invoicing/auto-invoice-schema.test.ts && git commit -m "feat(auto-invoice): schema — invoice_origin + enrolment/settings columns (mig 0258)"`
+- [ ] **Step 5: `pnpm typecheck` then commit.** `git add drizzle/ src/modules/*/infrastructure/db/ src/modules/renewals/infrastructure/schema-renewal-cycles.ts tests/integration/invoicing/auto-invoice-schema.test.ts && git commit -m "feat(auto-invoice): schema — invoice_origin + enrolment/settings columns (mig 0259)"`
 
 ---
 
@@ -110,7 +110,7 @@ it('new columns exist with correct defaults + lead-days CHECK', async () => {
 **Files (all 8 places — recon confirmed the spec's list of 7 omits places 7 & 8):**
 - Modify: `src/modules/renewals/application/use-cases/../application/ports/renewal-audit-emitter.ts` (tuple :233 + assertion :241,243 + optional payload shapes :313-1287 + `cron_kind` union :1142-1148 + `kind_specific` :1196-1201)
 - Modify: `src/modules/renewals/infrastructure/drizzle/drizzle-renewal-audit-emitter.ts` (`F8_ENUM_SHIPPED_TUPLE` :251)
-- Modify: `drizzle/migrations/0258_auto_invoice_columns_and_audit.sql` (append 2× `ALTER TYPE ADD VALUE`)
+- Create: `drizzle/migrations/0260_auto_invoice_audit_events.sql` (2× `ALTER TYPE ADD VALUE`) + `_journal.json` entry (0259 is already applied to dev — a NEW migration, not an append)
 - Modify: `tests/unit/renewals/application/ports.test.ts:63` (`70`→`72`)
 - Modify: `tests/contract/renewals-audit-port.contract.test.ts:65` (title) + `:75` (`toHaveLength(70)`→`72`)
 - Modify: `src/modules/auth/infrastructure/db/schema.ts` (`auditEventTypeEnum` tuple before :428 — **NOT** `DB_ONLY`)
@@ -138,7 +138,7 @@ Add `'auto_draft'` to the `cron_kind` union (:1142-1148) and a `kind_specific` a
 
 - [ ] **Step 2: Add both to `F8_ENUM_SHIPPED_TUPLE`** (`drizzle-renewal-audit-emitter.ts` before :251, after `'payment_on_terminated_member',`). These ship wired in this same feature → SHIPPED, not `_F8_ENUM_DEFERRED`. (Omitting this is the exact `pinoFallback` prod-throw the spec warns of.)
 
-- [ ] **Step 3: Append the enum values to migration 0258** (from Task 1):
+- [ ] **Step 3: Create a NEW migration `0260_auto_invoice_audit_events.sql`** (0259 is already applied to dev, so append is wrong — a fresh migration is applied by `db:migrate`). Append its `_journal.json` entry (next `idx`, `+100000ms` `when` cadence):
 ```sql
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_auto_drafted';--> statement-breakpoint
 ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_auto_draft_discarded';
