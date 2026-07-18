@@ -331,10 +331,11 @@ export function ScheduleEditor({
           }));
           // Plain-language save toast (follow-up UX fix): the raw
           // change-diff counts `(+added -removed =unchanged)` read as
-          // noise to admins. `unchanged` is dropped entirely; `added`/
-          // `removed` only appear when non-zero — the ICU message keys
-          // off `total` (=0 → plain confirmation, otherwise the counted
-          // sentence) so the branch lives in the translation, not here.
+          // noise to admins. `unchanged` is dropped entirely; the ICU
+          // message keys off `total = added + removed` (=0 → plain
+          // "schedule saved" confirmation, otherwise "· {added} added,
+          // {removed} removed") so the branch lives in the translation,
+          // not here.
           const added = body.change_diff.added?.length ?? 0;
           const removed = body.change_diff.removed?.length ?? 0;
           toast.success(

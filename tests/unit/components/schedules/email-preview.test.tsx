@@ -14,8 +14,8 @@
  *     screen-reader users on each change.
  *   - If it IS covered → render the `stepCard.preview.heading` label plus
  *     a localized one-line plain-language summary built by
- *     `timingSentence` (v2 rework Issue 4 — `stepCard.timing.*` keys,
- *     not the cryptic `stepCard.offsetDay.*` "T-30" form).
+ *     `timingSentence` (`stepCard.timing.*` keys — the cryptic "T-30"
+ *     form was removed in v3 cleanup).
  */
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';

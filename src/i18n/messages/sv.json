@@ -3233,15 +3233,6 @@
               "email": "E-post",
               "task": "Uppgift"
             },
-            "offsetDay": {
-              "before": "T-{days}",
-              "after": "T+{days}",
-              "exact": "T+0"
-            },
-            "stepIdLabel": "Steg-ID",
-            "offsetDaysLabel": "Dagar (− = före, + = efter)",
-            "templateIdLabel": "E-postmall",
-            "taskTypeLabel": "Uppgiftstyp",
             "assigneeLabel": "Tilldelad roll",
             "assigneeRole": {
               "admin": "Administratör",

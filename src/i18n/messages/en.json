@@ -3233,15 +3233,6 @@
               "email": "Email",
               "task": "Task"
             },
-            "offsetDay": {
-              "before": "T-{days}",
-              "after": "T+{days}",
-              "exact": "T+0"
-            },
-            "stepIdLabel": "Step ID",
-            "offsetDaysLabel": "Offset days",
-            "templateIdLabel": "Email template",
-            "taskTypeLabel": "Task type",
             "assigneeLabel": "Assignee role",
             "assigneeRole": {
               "admin": "Administrator",
