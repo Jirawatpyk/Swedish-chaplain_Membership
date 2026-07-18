@@ -52,7 +52,7 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     await expect(metrics.getByText('Total members')).toBeVisible();
     await expect(metrics.getByText('Active members')).toBeVisible();
     await expect(metrics.getByText('At-risk members')).toBeVisible();
-    await expect(metrics.getByText('Paid revenue (YTD)')).toBeVisible();
+    await expect(metrics.getByText('Paid revenue (fiscal year to date, ex-VAT)')).toBeVisible();
     // Admin sees the real THB revenue figure (not redacted).
     await expect(metrics.getByText(/THB|฿/)).toBeVisible();
 
@@ -91,7 +91,7 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
 
     const metrics = page.getByRole('region', { name: /key metrics/i });
     await expect(metrics).toBeVisible();
-    await expect(metrics.getByText('Paid revenue (YTD)')).toBeVisible();
+    await expect(metrics.getByText('Paid revenue (fiscal year to date, ex-VAT)')).toBeVisible();
     // "read-only on finance" → the manager DOES see the real THB revenue value.
     await expect(metrics.getByText(/THB|฿/)).toBeVisible();
     await expect(metrics.getByText('Active members')).toBeVisible();

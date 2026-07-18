@@ -63,10 +63,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // This enforces amountOverride bounds + uuid format + buyer shape at
   // the HTTP boundary, giving callers a typed 400 before touching the DB.
   const parsed = createEventInvoiceDraftSchema.safeParse({
+    ...(body as Record<string, unknown>),
+    // Server-derived identity is spread LAST so a client-supplied
+    // `tenantId`/`actorUserId`/`requestId` in the body can never win
+    // (CWE-915). With the body last, a caller could stamp someone else's
+    // user id onto the audit event this request emits. `.strict()` is no
+    // defence here — these are known keys of the schema, so the spread
+    // order IS the control.
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
     requestId,
-    ...(body as Record<string, unknown>),
   });
   if (!parsed.success) {
     return NextResponse.json(

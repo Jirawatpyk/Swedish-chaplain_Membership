@@ -435,7 +435,7 @@
         "total": "Totalt antal medlemmar",
         "active": "Aktiva medlemmar",
         "atRisk": "Medlemmar i riskzonen",
-        "revenue": "Betalda intäkter (i år)"
+        "revenue": "Betalda intäkter (räkenskapsår hittills, exkl. moms)"
       },
       "needsAttention": {
         "title": "Kräver åtgärd",
@@ -454,18 +454,18 @@
         "title": "Intäktstrend (12 månader)",
         "empty": "Inga betalda intäkter registrerade ännu.",
         "sparse": "Begränsad historik — trenden byggs upp när fler månaders intäkter registrerats.",
-        "total": "Totalt 12 månader",
+        "total": "Totalt 12 månader (efter betalningsdatum, exkl. moms)",
         "month": "Månad",
         "amount": "Betalda intäkter",
-        "perMonth": "Per månad"
+        "perMonth": "Per månad · innevarande månad pågår fortfarande"
       },
       "memberGrowth": {
         "title": "Medlemstillväxt (12 månader)",
         "empty": "Ingen medlemsdata ännu.",
         "sparse": "Begränsad historik — trenden byggs upp när medlemsantalet växer över fler månader.",
-        "total": "Totalt antal medlemmar",
-        "cumulative": "Kumulativt",
-        "netNew": "+{count} i år",
+        "total": "Kumulativt antal medlemmar",
+        "cumulative": "Kumulativt · innevarande månad pågår fortfarande",
+        "netNew": "+{count} på 12 månader",
         "month": "Månad",
         "count": "Medlemmar"
       },
@@ -481,9 +481,10 @@
         "topTier": "Topp: {tier} · {pct}"
       },
       "invoiceStatus": {
-        "title": "Fordringar efter belopp",
-        "empty": "Inga utestående fordringar ännu.",
-        "totalLabel": "Totalt utestående",
+        "title": "Fakturavärde efter status",
+        "empty": "Inga utfärdade fakturor ännu.",
+        "totalLabel": "Totalt fakturerat",
+        "basisCaption": "Alla räkenskapsår · inkl. moms",
         "draftCaption": "{count, plural, one {# utkastfaktura visas inte} other {# utkastfakturor visas inte}}",
         "statusColumnHeader": "Status",
         "amountColumnHeader": "Belopp",
@@ -5658,6 +5659,9 @@
       "email_verification_resent": "Verifieringsmejl skickat på nytt",
       "email_dispatch_failed": "E-postutskick misslyckades",
       "invitation_bounced": "Inbjudan studsade",
+      "invitation_expired": "Inbjudan har gått ut",
+      "invitation_reissued": "Inbjudan utfärdad på nytt",
+      "invitation_revoked": "Inbjudan återkallad",
       "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd",
       "at_risk_score_recomputed": "Riskpoäng omräknad",
       "at_risk_score_threshold_crossed": "Riskbandet ändrades",
