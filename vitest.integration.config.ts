@@ -47,6 +47,12 @@ export default defineConfig({
         singleFork: true,
       },
     },
+    // HARD dependency (pinned explicit, not left to the default): a per-file
+    // module-registry reset. Under `singleFork` all integration files share one
+    // OS process; the void-on-reissue integration test mutates
+    // process.env.FEATURE_VOID_ON_REISSUE in `vi.hoisted`, and `isolate: true`
+    // is what stops that env from leaking across files. Do NOT set false.
+    isolate: true,
   },
   resolve: {
     alias: {

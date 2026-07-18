@@ -96,7 +96,7 @@ List the member's **strictly-older** outstanding **new-flow** bills and void eac
 
 ### 4.5 Audit + idempotency
 - **Success:** reuse `invoice_voided` (10y retention, `audit-port.ts:201`) + a `supersededByInvoiceId` payload field (no new enum).
-- **Idempotency:** voiding an already-`void` bill → `invalid_status` → skipped; a caller retry does not double-void; the per-member lock (§4.3.2) serializes concurrent issues.
+- **Idempotency:** voiding an already-`void` bill → `invalid_status` → skipped; a caller retry does not double-void. Concurrent same-member issues are handled by the §4.2 **asymmetric ordering** (never zero survivors — see the corrected §4.3.2 guarantee), **not** a lock.
 
 ---
 
