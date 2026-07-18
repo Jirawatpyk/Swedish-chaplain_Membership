@@ -506,6 +506,44 @@ export interface RenewalCycleRepo {
   ): Promise<AutoDraftEligiblePage>;
 
   /**
+   * 107-auto-invoice Task 7 — precise per-(member, plan_year) dedup
+   * re-check, run under the per-cycle advisory lock immediately before
+   * drafting. `listCyclesEligibleForAutoDraft`'s own dedup (Task 6) is
+   * coarse + MEMBER-scoped (any draft/issued invoice, any plan_year) —
+   * by the time a cycle reaches this re-check it should already be
+   * true that no such invoice exists, so this is a genuine TOCTOU
+   * guard: did a concurrent writer (a member self-renewing via
+   * `confirmRenewal` in the gap between the list query and this lock)
+   * create one in the race window? `status IN ('draft','issued')`
+   * mirrors Task 6's own dedup predicate — NOT the broader
+   * paid-inclusive content guard (design §5.4) Task 9 uses at ISSUE
+   * time as the primary duplicate-§86/4 barrier; this method only
+   * protects against drafting a second DRAFT.
+   */
+  hasLiveMembershipInvoiceForPlanYearInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    planYear: number,
+  ): Promise<boolean>;
+
+  /**
+   * 107-auto-invoice Task 7 — stamp `renewal_cycles.auto_draft_invoice_id`
+   * with the cron-created DRAFT invoice's id (Task 1 added the nullable,
+   * no-FK column; this is its first writer). Plain UPDATE, no CAS — the
+   * column is a forensic reference for the review queue (a later task),
+   * not a state-machine field, so a concurrent overwrite is not a race
+   * this method needs to defend against (the per-cycle advisory lock
+   * the caller already holds serialises writers on this cycle anyway).
+   */
+  stampAutoDraftInvoiceIdInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    invoiceId: string,
+  ): Promise<void>;
+
+  /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).
    * Returns rows enriched with `members.company_name` + last reminder
    * + DB-side derived `urgency` bucket + summary aggregates. Cursor is

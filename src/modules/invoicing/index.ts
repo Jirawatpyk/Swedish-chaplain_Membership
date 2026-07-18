@@ -516,6 +516,12 @@ export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant
 // PR #173 round-2 review — narrow tx-threaded fiscal-year-start read for F8's
 // re-anchor (avoids a nested pooled connection inside the settlement tx).
 export { readFiscalYearStartMonthInTx } from './infrastructure/repos/drizzle-tenant-settings-repo';
+// 107-auto-invoice Task 7 — narrow non-tx read of the auto-invoice
+// three-key gate + cadence config for F8's daily auto-draft cron.
+export {
+  readAutoInvoiceSettingsForTenant,
+  type AutoInvoiceSettingsRow,
+} from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
 export {
   makeDrizzleInvoiceRepo,

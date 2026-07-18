@@ -668,6 +668,15 @@ export {
   type EnterAwaitingPaymentOnExpiryError,
 } from './application/use-cases/enter-awaiting-payment-on-expiry';
 
+// --- 107-auto-invoice Task 7 — autoDraftDueRenewals (daily auto-draft cron) ---
+export {
+  autoDraftDueRenewals,
+  autoDraftDueRenewalsInputSchema,
+  type AutoDraftDueRenewalsInput,
+  type AutoDraftDueRenewalsOutput,
+  type AutoDraftDueRenewalsError,
+} from './application/use-cases/auto-draft-due-renewals';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,

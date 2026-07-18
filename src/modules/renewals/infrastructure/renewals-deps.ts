@@ -69,6 +69,7 @@ const eventAttendeesPort = env.features.f6EventCreate
   ? drizzleEventAttendeesAdapter
   : eventAttendeesStub;
 import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
+import { autoInvoiceSettingsBridge } from './ports-adapters/auto-invoice-settings-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
@@ -129,6 +130,7 @@ import type {
 } from '../application/ports/renewal-audit-emitter';
 import type { ConsumedLinkTokensRepo } from '../application/ports/consumed-link-tokens-repo';
 import type { F4InvoicingForRenewalBridge } from '../application/ports/f4-invoicing-bridge';
+import type { AutoInvoiceSettingsPort } from '../application/ports/auto-invoice-settings-port';
 import type { F5RefundBridge } from '../application/ports/f5-refund-bridge';
 import type { PlanLookupForRenewalPort } from '../application/ports/plan-lookup-for-renewal';
 import type { MemberPlanLookupPort } from '../application/ports/member-plan-lookup-port';
@@ -212,6 +214,13 @@ export interface RenewalsDeps {
    * the T130 confirm POST route handler.
    */
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
+  /**
+   * 107-auto-invoice Task 7 — F8 → F4 tenant auto-invoice settings
+   * lookup (three-key dark-ship gate + lead-day/page-size cadence).
+   * Consumed by `autoDraftDueRenewals` before it calls
+   * `cyclesRepo.listCyclesEligibleForAutoDraft`.
+   */
+  readonly autoInvoiceSettings: AutoInvoiceSettingsPort;
   /**
    * Phase 5 Wave B (T122) — F8 → F2 plan-lookup port for the optional
    * plan-change branch of confirm-renewal. Returns the new plan's
@@ -429,6 +438,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     consumedLinkTokensRepo: makeDrizzleConsumedLinkTokensRepo(tenant),
     f5RefundBridge,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    autoInvoiceSettings: autoInvoiceSettingsBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
     memberPlanLookup: memberPlanLookupDrizzle,

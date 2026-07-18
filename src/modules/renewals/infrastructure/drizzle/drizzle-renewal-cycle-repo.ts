@@ -1111,6 +1111,41 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async hasLiveMembershipInvoiceForPlanYearInTx(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      planYear: number,
+    ): Promise<boolean> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ one: sql<number>`1` })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+            eq(invoices.planYear, planYear),
+            inArray(invoices.status, ['draft', 'issued']),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
+    },
+
+    async stampAutoDraftInvoiceIdInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      invoiceId: string,
+    ): Promise<void> {
+      const txDb = tx as typeof db;
+      await txDb
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: invoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId));
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,

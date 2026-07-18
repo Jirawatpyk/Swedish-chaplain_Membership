@@ -1821,6 +1821,13 @@
       "when": 1798538800000,
       "tag": "0260_auto_invoice_audit_events",
       "breakpoints": true
+    },
+    {
+      "idx": 263,
+      "version": "7",
+      "when": 1798538900000,
+      "tag": "0261_seed_auto_invoice_system_actor",
+      "breakpoints": true
     }
   ]
 }
