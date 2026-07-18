@@ -442,6 +442,17 @@ async function processOne(
     tx1Result.value;
 
   // --- F4 call: STANDALONE, no F8 tx/lock open (Review I2 fix) ------------
+  // The per-cycle lock is deliberately released here (tx1 already closed
+  // above) — mirrors confirm-renewal.ts's split-tx shape: never hold an F8
+  // lock across F4's own commit. This DOES widen a window where a
+  // concurrent `confirmRenewal` (which takes the SAME per-cycle lock as
+  // its first action) can pass its own dedup and create a second live
+  // invoice for this (member, planYear) before our draft commits.
+  // Accepted (re-review, not fixed here): worst case is one ISSUED
+  // invoice + one stale DRAFT, never a duplicate §86/4 — Task 9's
+  // content-guard refuses to issue the stale draft, and Task 11's
+  // prune-auto-drafts sweeps it. Double-DRAFT is explicitly "harmless"
+  // per design §5.4; the content-guard is the double-BILL barrier.
   // Create-half only — no number, no PDF, no email — `draftInvoiceForRenewal`
   // unconditionally stamps `origin='auto_renewal'` + `autoEmailOnIssue=false`.
   const draftResult = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
