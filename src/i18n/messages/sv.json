@@ -1985,7 +1985,8 @@
           "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
-          "receiptNumber": "Skattekvittonr."
+          "receiptNumber": "Skattekvittonr.",
+          "queue": "Kö"
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -2036,6 +2037,12 @@
             "all": "All moms",
             "standard": "Standardmoms",
             "zeroRated": "Nollskattesats §80/1(5)"
+          },
+          "origin": {
+            "label": "Ursprung",
+            "all": "Alla ursprung",
+            "manual": "Manuell",
+            "autoRenewal": "Kö för automatisk förnyelse"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
@@ -2043,7 +2050,22 @@
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
         "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
-        "tableCaption": "Lista över fakturor för de valda filtren."
+        "tableCaption": "Lista över fakturor för de valda filtren.",
+        "queue": {
+          "wouldBeRefused": "Skulle nekas",
+          "wouldBeRefusedAria": "Skulle nekas — en aktiv faktura för denna medlem och det här verksamhetsåret finns redan",
+          "viewConflictingInvoice": "Visa befintlig faktura",
+          "unresolved": "Kan inte verifieras",
+          "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris eller täckningsperiod mot förnyelsecykeln. Granska manuellt innan du utfärdar.",
+          "drift": "Priset har ändrats",
+          "driftAria": "Priset har ändrats — låst till {frozen} THB, nuvarande katalogpris är {current} THB",
+          "driftTooltip": "Låst till {frozen} THB när utkastet skapades; nuvarande planpris i katalogen är {current} THB.",
+          "driftTooltipUnknown": "Det här priset kunde inte bekräftas mot en aktiv planpost i katalogen för det här året.",
+          "billYearMismatch": "Faktureringsår ≠ täckningsår",
+          "billYearMismatchTooltip": "Den här fakturan avser verksamhetsår {coverageYear}. Detta är förväntat i den rullande faktureringsmodellen när en förnyelseperiod korsar ett årsskifte för verksamhetsåret.",
+          "billYearMismatchTooltipUnknown": "Täckningsåret för den här fakturan kunde inte fastställas.",
+          "staleness": "{days, plural, =0 {Skapades idag} one {Skapades för # dag sedan} other {Skapades för # dagar sedan}}"
+        }
       },
       "csvExport": {
         "trigger": "Exportera CSV",

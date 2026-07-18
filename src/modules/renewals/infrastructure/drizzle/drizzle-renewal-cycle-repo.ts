@@ -1226,6 +1226,72 @@ export function makeDrizzleRenewalCycleRepo(
       return row ? rowToDomain(row) : null;
     },
 
+    async findCyclesByAutoDraftInvoiceIds(
+      tenantId: string,
+      invoiceIds: readonly string[],
+    ): Promise<ReadonlyMap<string, RenewalCycle>> {
+      const out = new Map<string, RenewalCycle>();
+      if (invoiceIds.length === 0) return out;
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              inArray(renewalCycles.autoDraftInvoiceId, [...invoiceIds]),
+            ),
+          );
+        for (const row of rows) {
+          if (row.autoDraftInvoiceId !== null) {
+            out.set(row.autoDraftInvoiceId, rowToDomain(row));
+          }
+        }
+        return out;
+      });
+    },
+
+    async listMembershipInvoicesForPlanYearPairs(
+      tenantId: string,
+      pairs: ReadonlyArray<{ readonly memberId: string; readonly planYear: number }>,
+    ): Promise<ReadonlyArray<MembershipInvoiceRef>> {
+      if (pairs.length === 0) return [];
+      return runInTenant(tenant, async (tx) => {
+        const pairConditions = pairs.map((p) =>
+          and(eq(invoices.memberId, p.memberId), eq(invoices.planYear, p.planYear)),
+        );
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            memberId: invoices.memberId,
+            planYear: invoices.planYear,
+            status: invoices.status,
+            origin: invoices.origin,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantId),
+              eq(invoices.invoiceSubject, 'membership'),
+              or(...pairConditions)!,
+            ),
+          );
+        return rows.flatMap((row) =>
+          row.memberId === null || row.planYear === null
+            ? []
+            : [
+                {
+                  invoiceId: row.invoiceId,
+                  memberId: row.memberId,
+                  planYear: row.planYear,
+                  status: row.status,
+                  origin: row.origin,
+                },
+              ],
+        );
+      });
+    },
+
     async listMembershipInvoicesForPlanYearInTx(
       tx: unknown,
       tenantId: string,

@@ -178,6 +178,14 @@ export interface InvoiceRepo {
       readonly taxPointState?: 'pre_payment' | 'at_payment' | undefined;
       //   pinned per-invoice §80/1(5) treatment → invoices.vat_treatment = ?
       readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5' | undefined;
+      /**
+       * 107-auto-invoice Task 13 — restrict to invoices drafted by the
+       * cron (`'auto_renewal'`) vs. every human-created draft/issue
+       * (`'manual'`). Absent = no restriction (today's behaviour,
+       * unchanged). Powers the admin auto-renewal review queue —
+       * `origin='auto_renewal'` maps directly to `invoices.origin`.
+       */
+      readonly origin?: 'manual' | 'auto_renewal' | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

@@ -497,6 +497,24 @@ export function makeMembersMembershipStatusDeps(
   };
 }
 
+/**
+ * 107-auto-invoice Task 13 — lean composition for the admin
+ * `/admin/invoices` list page's auto-renewal review-queue context read
+ * (`loadAutoRenewalQueueContext`). Mirrors `makeMembersMembershipStatusDeps`
+ * above: the F4 page is a hot admin path rendered on every request, so it
+ * must not eagerly construct the full ~20-adapter `makeRenewalsDeps` bag
+ * just to read two deps.
+ */
+export function makeAutoRenewalQueueContextDeps(
+  tenantId: string,
+): Pick<RenewalsDeps, 'cyclesRepo' | 'planLookupForRenewal'> {
+  const tenant = asTenantContext(tenantId);
+  return {
+    cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
+  };
+}
+
 // Re-export the stub so test composition + early-Phase emit sites can
 // fall back to the in-memory pino logger when the real adapter is
 // undesirable (e.g. unit tests that don't want to write to audit_log).

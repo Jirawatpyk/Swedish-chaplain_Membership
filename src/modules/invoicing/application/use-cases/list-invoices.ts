@@ -100,6 +100,11 @@ export const listInvoicesPagedSchema = z.object({
   //   - vatTreatment 'standard' | 'zero_rated_80_1_5' — the pinned per-invoice
   //                         §80/1(5) treatment (drives the VAT rate, FR-025).
   vatTreatment: z.enum(['standard', 'zero_rated_80_1_5']).optional(),
+  // 107-auto-invoice Task 13 — admin auto-renewal review queue filter.
+  // Absent = no restriction (unchanged default behaviour). See the
+  // forced-`includeDrafts` note on `listInvoicesPaged` below (BUG-015):
+  // an `origin='auto_renewal'` query must never silently drop drafts.
+  origin: z.enum(['manual', 'auto_renewal']).optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -113,6 +118,20 @@ export async function listInvoicesPaged(
   deps: ListInvoicesDeps,
   input: ListInvoicesPagedInput,
 ): Promise<Result<ListInvoicesPagedOutput, never>> {
+  // 107-auto-invoice Task 13 (BUG-015) — the auto-renewal review queue is BY
+  // DEFINITION a drafts view (`origin='auto_renewal' AND status='draft'`).
+  // The repo's draft-exclusion guard fires whenever `includeDrafts` is
+  // false, REGARDLESS of what `status` the caller asked for — so a caller
+  // that filters on `origin:'auto_renewal'` without ALSO remembering to
+  // pass `includeDrafts:true` gets a silently empty result (the exact #15
+  // failure mode this task's brief is named after). Forcing it here, at the
+  // use-case boundary, protects every caller (the admin page today, any
+  // future API route or script) rather than relying on each call site to
+  // remember the flag. Safe for every OTHER status value too: when
+  // `status` narrows to something non-draft (e.g. 'issued'), the repo's
+  // `eq(status, opts.status)` predicate already excludes drafts on its own
+  // — forcing `includeDrafts` here is then a no-op, never a widening.
+  const includeDrafts = input.includeDrafts || input.origin === 'auto_renewal';
   const { rows, total } = await deps.invoiceRepo.listPaged(input.tenantId, {
     offset: input.offset,
     pageSize: input.pageSize,
@@ -122,12 +141,13 @@ export async function listInvoicesPaged(
     fiscalYear: input.fiscalYear,
     memberId: input.memberId,
     search: input.search,
-    includeDrafts: input.includeDrafts,
+    includeDrafts,
     paidOnlineOnly: input.paidOnlineOnly,
     invoiceSubject: input.invoiceSubject,
     documentType: input.documentType,
     taxPointState: input.taxPointState,
     vatTreatment: input.vatTreatment,
+    origin: input.origin,
   });
   return ok({ rows, total });
 }

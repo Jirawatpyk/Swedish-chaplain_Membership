@@ -788,6 +788,11 @@ export function makeDrizzleInvoiceRepo(
           // Maps directly to the stored `invoice_subject` discriminator.
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
+        if (opts.origin !== undefined) {
+          // 107-auto-invoice Task 13 — admin auto-renewal review queue.
+          // Maps directly to `invoices.origin`.
+          filters.push(eq(invoices.origin, opts.origin));
+        }
         // 088 T065b (FR-031) — tax-document-type filter. Derived from the
         // numbering columns + status (see the port doc + T065b report):
         //   sc → 088 bill still awaiting payment (bill number, no §86/4 receipt).

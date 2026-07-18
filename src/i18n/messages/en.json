@@ -1985,7 +1985,8 @@
           "actions": "Actions",
           "buyer": "Buyer",
           "method": "Method",
-          "receiptNumber": "Receipt No."
+          "receiptNumber": "Receipt No.",
+          "queue": "Queue"
         },
         "subjectChip": {
           "event": "Event",
@@ -2036,6 +2037,12 @@
             "all": "All VAT",
             "standard": "Standard VAT",
             "zeroRated": "Zero-rated §80/1(5)"
+          },
+          "origin": {
+            "label": "Origin",
+            "all": "All origins",
+            "manual": "Manual",
+            "autoRenewal": "Auto-renewal queue"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
@@ -2043,7 +2050,22 @@
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
         "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
-        "tableCaption": "List of invoices for the selected filters."
+        "tableCaption": "List of invoices for the selected filters.",
+        "queue": {
+          "wouldBeRefused": "Would be refused",
+          "wouldBeRefusedAria": "Would be refused — a live bill for this member and plan year already exists",
+          "viewConflictingInvoice": "View existing bill",
+          "unresolved": "Unable to verify",
+          "unresolvedTooltip": "We couldn't confirm this draft's price or coverage against its renewal cycle. Review it manually before issuing.",
+          "drift": "Price changed",
+          "driftAria": "Price changed — frozen at {frozen} THB, current catalogue price is {current} THB",
+          "driftTooltip": "Frozen at {frozen} THB when drafted; the current plan catalogue price is {current} THB.",
+          "driftTooltipUnknown": "This price could not be confirmed against an active plan catalogue entry for this year.",
+          "billYearMismatch": "Bill year ≠ coverage year",
+          "billYearMismatchTooltip": "This bill is for fiscal year {coverageYear}. This is expected under the rolling-anchor billing model when a renewal period crosses a fiscal-year boundary.",
+          "billYearMismatchTooltipUnknown": "The coverage year for this bill could not be determined.",
+          "staleness": "{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}"
+        }
       },
       "csvExport": {
         "trigger": "Export CSV",

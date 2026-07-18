@@ -713,6 +713,21 @@ export {
   type ReconcileIssuedOrphansError,
 } from './application/use-cases/reconcile-issued-orphans';
 
+// --- 107-auto-invoice Task 13 — loadAutoRenewalQueueContext (review-queue read) ---
+// READ-ONLY per-row decision context (drift / bill-year vs coverage-year /
+// would-be-refused prediction) for the admin `/admin/invoices` auto-renewal
+// review queue. Composed via the lean `makeAutoRenewalQueueContextDeps`
+// factory below — no mutation, so no advisory lock / audit emit here.
+export {
+  loadAutoRenewalQueueContext,
+  loadAutoRenewalQueueContextInputSchema,
+  type LoadAutoRenewalQueueContextInput,
+  type LoadAutoRenewalQueueContextOutput,
+  type LoadAutoRenewalQueueContextDeps,
+  type LoadAutoRenewalQueueContextError,
+  type AutoRenewalQueueRowMeta,
+} from './application/use-cases/load-auto-renewal-queue-context';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,
@@ -914,6 +929,9 @@ export {
   // `cyclesRepo` + `clock` (067 #4: avoids the ~20-adapter makeRenewalsDeps
   // on the directory hot path).
   makeMembersMembershipStatusDeps,
+  // 107-auto-invoice Task 13 — lean factory for the admin invoices list
+  // page's review-queue context read (`loadAutoRenewalQueueContext`).
+  makeAutoRenewalQueueContextDeps,
   f8OnPaidCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

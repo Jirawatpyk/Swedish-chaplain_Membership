@@ -648,6 +648,51 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle | null>;
 
   /**
+   * 107-auto-invoice Task 13 — batched, NON-transactional sibling of
+   * {@link findByAutoDraftInvoiceIdInTx}, for the admin review-queue LIST
+   * page: given a page of `origin='auto_renewal'` draft invoiceIds,
+   * resolves each one's originating cycle in ONE query
+   * (`renewal_cycles.auto_draft_invoice_id IN (...)`) instead of an N+1
+   * round-trip per row. Read-only — no lock, no tx (mirrors
+   * `findLatestCyclesForMembers`'s non-tx batched shape).
+   *
+   * Keyed by `invoiceId` (the map key IS the value the caller already has
+   * per row) rather than returning an array + forcing the caller to
+   * re-index. A row with no matching cycle is simply ABSENT from the
+   * result — this is the Task 7 "orphaned after commit" window (see that
+   * module's docstring): tx2 (stamp + audit) can fail AFTER the F4 draft's
+   * own tx already committed, leaving a real draft invoice with no
+   * `auto_draft_invoice_id` back-reference. Callers must treat a missing
+   * entry as "cannot resolve queue context for this row", never throw.
+   */
+  findCyclesByAutoDraftInvoiceIds(
+    tenantId: string,
+    invoiceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, RenewalCycle>>;
+
+  /**
+   * 107-auto-invoice Task 13 — batched, NON-transactional sibling of
+   * {@link listMembershipInvoicesForPlanYearInTx}, for the admin
+   * review-queue LIST page's "would this be refused?" prediction: given a
+   * page of (memberId, planYear) pairs (one per queue row), returns every
+   * membership invoice matching ANY of those pairs in ONE query, so the
+   * page can group results back per row without an N+1 round-trip.
+   *
+   * Same narrow projection + no-status-filter contract as the tx-scoped
+   * sibling (the caller applies `LIVE_MEMBERSHIP_BILL_STATUSES` itself,
+   * from `_lib/live-membership-bill.ts`, mirroring
+   * `issueAutoDraftedRenewal`'s actual guard). This is a READ-ONLY
+   * PREDICTION for display purposes — it is NOT the authoritative guard
+   * (which re-checks under the per-cycle lock at issue time); a TOCTOU gap
+   * between viewing the queue and clicking Issue is expected and
+   * acceptable here.
+   */
+  listMembershipInvoicesForPlanYearPairs(
+    tenantId: string,
+    pairs: ReadonlyArray<{ readonly memberId: string; readonly planYear: number }>,
+  ): Promise<ReadonlyArray<MembershipInvoiceRef>>;
+
+  /**
    * 107-auto-invoice Task 9 — every membership invoice for one
    * (member, plan_year), any status, any origin.
    *

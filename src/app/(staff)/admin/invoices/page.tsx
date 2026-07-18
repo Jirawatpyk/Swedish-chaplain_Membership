@@ -35,6 +35,11 @@ import {
 } from '@/modules/payments';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import {
+  loadAutoRenewalQueueContext,
+  makeAutoRenewalQueueContextDeps,
+  type AutoRenewalQueueRowMeta,
+} from '@/modules/renewals';
 import { runListEventNamesByIds } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { TableContainer } from '@/components/layout';
@@ -130,6 +135,14 @@ interface SearchParams {
   readonly docType?: string;
   readonly taxPoint?: string;
   readonly vat?: string;
+  /**
+   * 107-auto-invoice Task 13 — `?origin=manual|auto_renewal` restricts the
+   * list to invoices drafted by a human vs. the daily cron. Honoured ONLY
+   * when `FEATURE_AUTO_INVOICE` is on (mirrors the 088 tax-document filter
+   * gating above). `auto_renewal` is the admin review-queue entry point —
+   * it forces drafts into view (BUG-015) regardless of the `status` filter.
+   */
+  readonly origin?: string;
 }
 
 export default async function AdminInvoicesPage({
@@ -178,7 +191,25 @@ export default async function AdminInvoicesPage({
   const qTrim = query.q?.trim();
   const statusFilter =
     query.status && VALID_STATUSES.has(query.status) ? query.status : undefined;
-  const includeDrafts = statusFilter === 'draft';
+  // 107-auto-invoice Task 13 — admin auto-renewal review-queue filter.
+  // Gated on `FEATURE_AUTO_INVOICE` (mirrors the 088 `f088TaxAtPayment`
+  // gate below) so a stray `?origin=` on a flag-off tenant is IGNORED here
+  // — no restriction is applied and `InvoiceFilters` renders no chip for
+  // it (mirrors the `show088Filters` guard pattern).
+  const autoInvoiceEnabled = env.features.autoInvoice;
+  const originFilter =
+    autoInvoiceEnabled &&
+    (query.origin === 'manual' || query.origin === 'auto_renewal')
+      ? query.origin
+      : undefined;
+  // BUG-015 — the review queue IS drafts (`origin='auto_renewal' AND
+  // status='draft'`), so selecting the queue must force drafts into view
+  // even if the admin never separately picked `?status=draft`. The
+  // `listInvoicesPaged` use-case forces this too (protects every OTHER
+  // caller), but keeping it in sync HERE matters for this page's own
+  // downstream reads that branch on `includeDrafts` (`needsMemberDirectory`
+  // below) rather than only the outbound repo call.
+  const includeDrafts = statusFilter === 'draft' || originFilter === 'auto_renewal';
   const paidOnlineOnly = query.paidOnline === '1';
   // 088 T021b / FR-035 — the command-palette "Record payment for …" action
   // deep-links to ?status=issued&pay=1. The action is generic (no specific
@@ -224,7 +255,8 @@ export default async function AdminInvoicesPage({
     Boolean(subjectFilter) ||
     Boolean(documentTypeFilter) ||
     Boolean(taxPointFilter) ||
-    Boolean(vatTreatmentFilter);
+    Boolean(vatTreatmentFilter) ||
+    Boolean(originFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -265,6 +297,7 @@ export default async function AdminInvoicesPage({
     ...(documentTypeFilter ? { documentType: documentTypeFilter } : {}),
     ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
     ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
+    ...(originFilter ? { origin: originFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -313,6 +346,59 @@ export default async function AdminInvoicesPage({
       );
     }
   }
+
+  // 107-auto-invoice Task 13 — batched per-row decision context for the
+  // auto-renewal review queue (drift / bill-year-vs-coverage-year /
+  // would-be-refused prediction). Only fetched when the queue filter is
+  // active — the default view never pays this cost. `origin='auto_renewal'`
+  // membership drafts always carry `memberId`/`planId`/`planYear` (F8's
+  // `draftInvoiceForRenewal` bridge only ever drafts membership invoices —
+  // `invoiceSubject !== 'membership'` is defensively excluded so a
+  // malformed row can never reach the cross-module call with a null
+  // field). A lookup failure degrades to an empty map (logged) rather
+  // than 500ing the list — every row then renders its queue-context
+  // block as "unresolved" instead of a false-clean signal.
+  const queueMetaById: ReadonlyMap<string, AutoRenewalQueueRowMeta> = await (async () => {
+    if (
+      originFilter !== 'auto_renewal' ||
+      !invoicesResult.ok ||
+      invoicesResult.value.rows.length === 0
+    ) {
+      return new Map();
+    }
+    const rows = invoicesResult.value.rows.flatMap((r) =>
+      r.invoiceSubject === 'membership' && r.memberId !== null
+        ? [
+            {
+              invoiceId: r.invoiceId,
+              memberId: r.memberId,
+              planId: r.planId,
+              planYear: r.planYear,
+            },
+          ]
+        : [],
+    );
+    try {
+      const ctxResult = await loadAutoRenewalQueueContext(
+        makeAutoRenewalQueueContextDeps(tenantCtx.slug),
+        { tenantId: tenantCtx.slug, rows },
+      );
+      if (!ctxResult.ok) {
+        logger.warn(
+          { tenantId: tenantCtx.slug, err: ctxResult.error },
+          '[admin-invoices-list] loadAutoRenewalQueueContext rejected input — queue rows render as unresolved',
+        );
+        return new Map();
+      }
+      return ctxResult.value;
+    } catch (err) {
+      logger.warn(
+        { tenantId: tenantCtx.slug, rowCount: rows.length, err },
+        '[admin-invoices-list] loadAutoRenewalQueueContext threw — queue rows render as unresolved',
+      );
+      return new Map();
+    }
+  })();
 
   // F5 Phase 5 (T096) — succeeded online payment method per invoice on
   // the current page. Single batched query keyed by invoice_id; absent
@@ -500,6 +586,53 @@ export default async function AdminInvoicesPage({
         billDocumentNumberRaw:
           taxDocumentKind !== 'none' ? r.billDocumentNumberRaw : null,
         taxDocumentKind,
+        // 107-auto-invoice Task 13 — auto-renewal review-queue per-row
+        // decision context. `null` outside the queue view (originFilter
+        // !== 'auto_renewal') so the standard list is unaffected.
+        // Staleness is computed HERE (not in loadAutoRenewalQueueContext)
+        // because it needs only this row's own `createdAt` — no cross-
+        // module data — so it stays correct even when the F8 enrichment
+        // degrades.
+        queueMeta:
+          originFilter === 'auto_renewal'
+            ? (() => {
+                const meta = queueMetaById.get(r.invoiceId) ?? null;
+                const stalenessDays = Math.max(
+                  0,
+                  Math.floor(
+                    (Date.parse(nowUtcIso) - Date.parse(r.createdAt)) /
+                      86_400_000,
+                  ),
+                );
+                return meta
+                  ? {
+                      unresolved: false as const,
+                      stalenessDays,
+                      driftFlagged: meta.driftFlagged,
+                      frozenPriceThb: meta.frozenPriceThb,
+                      currentCataloguePriceThb: meta.currentCataloguePriceThb,
+                      billYearCoverageYearMismatch:
+                        meta.billYearCoverageYearMismatch,
+                      coverageYear: meta.coverageYear,
+                      wouldBeRefused: meta.wouldBeRefused,
+                      conflictingInvoiceId: meta.conflictingInvoiceId,
+                    }
+                  : {
+                      // Enrichment failed/degraded OR this row wasn't a
+                      // membership draft (defensive) — render "unresolved"
+                      // rather than a false-clean signal.
+                      unresolved: true as const,
+                      stalenessDays,
+                      driftFlagged: false,
+                      frozenPriceThb: null,
+                      currentCataloguePriceThb: null,
+                      billYearCoverageYearMismatch: false,
+                      coverageYear: null,
+                      wouldBeRefused: false,
+                      conflictingInvoiceId: null,
+                    };
+              })()
+            : null,
         };
       })
     : [];
@@ -544,8 +677,13 @@ export default async function AdminInvoicesPage({
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 088 T065b — the three tax-document filters render only when the
-              tax-at-payment flag is on (flag-off renders today's filter set). */}
-          <InvoiceFilters show088Filters={f088TaxAtPayment} />
+              tax-at-payment flag is on (flag-off renders today's filter set).
+              107-auto-invoice Task 13 — the origin filter renders only when
+              FEATURE_AUTO_INVOICE is on. */}
+          <InvoiceFilters
+            show088Filters={f088TaxAtPayment}
+            showAutoInvoiceFilter={autoInvoiceEnabled}
+          />
           {payIntent && isAdmin && rows.length > 0 ? (
             // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
             // to the per-row Record payment button (role=status = polite, this
@@ -590,6 +728,9 @@ export default async function AdminInvoicesPage({
               <InvoicesTable
                 rows={rows}
                 showMethodColumn={paidOnlineOnly}
+                // 107-auto-invoice Task 13 — the queue-context column renders
+                // only in the auto-renewal review-queue view.
+                showQueueMetaColumn={originFilter === 'auto_renewal'}
                 // 088 T021c / FR-035 — per-row Record payment quick action.
                 // Admin-only (money mutation); managers are read-only on
                 // finance. `todayIso` is the tenant-timezone (Bangkok) today —

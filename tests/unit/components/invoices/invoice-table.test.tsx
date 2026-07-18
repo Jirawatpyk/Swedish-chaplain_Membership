@@ -33,6 +33,7 @@ const messages = {
           buyer: 'Buyer',
           method: 'Method',
           receiptNumber: 'Receipt No.',
+          queue: 'Queue',
         },
         statuses: {
           draft: 'Draft',
@@ -56,6 +57,22 @@ const messages = {
         receiptNumberCombinedTooltip: 'Combined mode',
         receiptNumberCombinedAria: 'Combined mode',
         tableCaption: 'List of invoices for the selected filters.',
+        queue: {
+          wouldBeRefused: 'Would be refused',
+          wouldBeRefusedAria: 'Would be refused — a live bill already exists',
+          viewConflictingInvoice: 'View existing bill',
+          unresolved: 'Unable to verify',
+          unresolvedTooltip: 'Could not verify.',
+          drift: 'Price changed',
+          driftAria: 'Price changed',
+          driftTooltip: 'Frozen at {frozen} THB; current is {current} THB.',
+          driftTooltipUnknown: 'Could not confirm.',
+          billYearMismatch: 'Bill year ≠ coverage year',
+          billYearMismatchTooltip: 'This bill is for fiscal year {coverageYear}.',
+          billYearMismatchTooltipUnknown: 'Coverage year unknown.',
+          staleness:
+            '{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}',
+        },
         actions: {
           download: 'Invoice',
           downloadReceipt: 'Receipt',
@@ -135,6 +152,14 @@ function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages}>
       <InvoicesTable rows={rows} />
+    </NextIntlClientProvider>,
+  );
+}
+
+function renderQueueTable(rows: InvoicesTableRow[], showQueueMetaColumn: boolean) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <InvoicesTable rows={rows} showQueueMetaColumn={showQueueMetaColumn} />
     </NextIntlClientProvider>,
   );
 }
@@ -673,5 +698,77 @@ describe('<InvoicesTable> — 088 tax-at-payment disambiguation (A-refined)', ()
     expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
     const receiptDownload = screen.getByTestId('row-download-receipt');
     expect(receiptDownload).toHaveAttribute('aria-label', 'Download receipt RC-2026-000123');
+  });
+});
+
+/**
+ * 107-auto-invoice Task 13 — auto-renewal review-queue column.
+ *
+ * `showQueueMetaColumn` gates a whole extra column so the STANDARD list
+ * view (the default, `showQueueMetaColumn` unset) is byte-identical to
+ * before this task — no header, no cell, regardless of whether a row
+ * happens to carry `queueMeta`. When the column IS shown, a `null`
+ * `queueMeta` (any row outside the queue's own origin filter) renders a
+ * plain em-dash rather than crashing or silently omitting the cell.
+ */
+describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice Task 13)', () => {
+  it('showQueueMetaColumn unset (default) → NO "Queue" column header, even if a row carries queueMeta', () => {
+    renderTable([
+      baseRow({
+        queueMeta: {
+          unresolved: false,
+          stalenessDays: 2,
+          driftFlagged: true,
+          frozenPriceThb: '50000.00',
+          currentCataloguePriceThb: '60000.00',
+          billYearCoverageYearMismatch: false,
+          coverageYear: 2026,
+          wouldBeRefused: false,
+          conflictingInvoiceId: null,
+        },
+      }),
+    ]);
+    expect(screen.queryByTestId('column-header-queue')).toBeNull();
+    expect(screen.queryByTestId('queue-drift')).toBeNull();
+  });
+
+  it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash', () => {
+    renderQueueTable([baseRow({ queueMeta: null })], true);
+    expect(screen.getByTestId('column-header-queue')).toHaveTextContent('Queue');
+    const cell = screen.getByTestId('queue-meta-cell');
+    expect(cell).toHaveTextContent('—');
+  });
+
+  it('showQueueMetaColumn=true + queueMeta present → renders the badges inside the table (would-be-refused distinct state)', () => {
+    renderQueueTable(
+      [
+        baseRow({
+          invoiceId: 'inv-queue-1',
+          documentNumber: '—',
+          status: 'draft',
+          queueMeta: {
+            unresolved: false,
+            stalenessDays: 7,
+            driftFlagged: false,
+            frozenPriceThb: '50000.00',
+            currentCataloguePriceThb: '50000.00',
+            billYearCoverageYearMismatch: false,
+            coverageYear: 2026,
+            wouldBeRefused: true,
+            conflictingInvoiceId: 'inv-conflict-9',
+          },
+        }),
+      ],
+      true,
+    );
+    const badge = screen.getByTestId('queue-would-be-refused');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('Would be refused');
+    expect(
+      screen.getByRole('link', { name: 'View existing bill' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-conflict-9');
+    expect(screen.getByTestId('queue-staleness')).toHaveTextContent(
+      'Drafted 7 days ago',
+    );
   });
 });

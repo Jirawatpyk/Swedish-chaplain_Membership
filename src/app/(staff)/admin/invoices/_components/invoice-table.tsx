@@ -52,6 +52,10 @@ import {
 import { cn } from '@/lib/utils';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 import { RecordPaymentDialog } from './record-payment-dialog';
+import {
+  AutoRenewalQueueBadges,
+  type AutoRenewalQueueMeta,
+} from './auto-renewal-queue-badges';
 import type { InvoiceStatus } from '@/modules/invoicing';
 
 /**
@@ -183,6 +187,15 @@ export type InvoicesTableRow = {
    * OPTIONAL (undefined → `'none'`) so legacy constructors are unaffected.
    */
   readonly taxDocumentKind?: 'none' | 'bill' | 'tax_receipt';
+  /**
+   * 107-auto-invoice Task 13 — auto-renewal review-queue per-row decision
+   * context (drift / bill-year-vs-coverage-year / would-be-refused
+   * prediction / staleness). `null` outside the queue view — page.tsx only
+   * populates this when `?origin=auto_renewal` is active. Rendered by
+   * `AutoRenewalQueueBadges` in a dedicated column, shown only when
+   * `showQueueMetaColumn` is true.
+   */
+  readonly queueMeta?: AutoRenewalQueueMeta | null;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -252,6 +265,7 @@ function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
 export function InvoicesTable({
   rows,
   showMethodColumn = false,
+  showQueueMetaColumn = false,
   canRecordPayment = false,
   todayIso,
 }: {
@@ -262,6 +276,13 @@ export function InvoicesTable({
    * to keep the standard list compact (95% of rows would carry no badge).
    */
   showMethodColumn?: boolean;
+  /**
+   * 107-auto-invoice Task 13 — render the auto-renewal review-queue
+   * decision-context column (drift / bill-year-vs-coverage-year /
+   * would-be-refused / staleness). Driven by `?origin=auto_renewal`;
+   * hidden by default so the standard list is unchanged.
+   */
+  showQueueMetaColumn?: boolean;
   /**
    * 088 T021c / FR-035 — enable the per-row "Record payment" quick action on
    * issued / overdue bills. Admin-only (money mutation); the list page passes
@@ -377,6 +398,15 @@ export function InvoicesTable({
             <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.status')}
             </TableHead>
+            {showQueueMetaColumn && (
+              <TableHead
+                scope="col"
+                className={headCls}
+                data-testid="column-header-queue"
+              >
+                {t('columns.queue')}
+              </TableHead>
+            )}
             {showMethodColumn && (
               <TableHead
                 scope="col"
@@ -574,6 +604,15 @@ export function InvoicesTable({
                   )}
                 </div>
               </TableCell>
+              {showQueueMetaColumn && (
+                <TableCell className="align-middle" data-testid="queue-meta-cell">
+                  {r.queueMeta ? (
+                    <AutoRenewalQueueBadges meta={r.queueMeta} />
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+              )}
               {showMethodColumn && (
                 <TableCell className="align-middle whitespace-nowrap">
                   {r.onlinePaymentMethod ? (
