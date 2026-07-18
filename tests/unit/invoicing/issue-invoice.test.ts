@@ -202,6 +202,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),

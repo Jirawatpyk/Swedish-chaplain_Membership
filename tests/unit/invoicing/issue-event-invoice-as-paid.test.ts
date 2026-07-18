@@ -280,6 +280,7 @@ function makeDeps(
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(OPAQUE_TX)),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
       // Wave-4 S28 — the use case takes the row lock + draft load in ONE
       // combined read now: null fixture → invoice_not_found probe; a

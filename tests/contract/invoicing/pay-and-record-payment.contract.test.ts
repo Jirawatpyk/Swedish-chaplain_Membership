@@ -173,6 +173,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): Re
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(Symbol('tx'))),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => loaded),
       findById: vi.fn(),
       list: vi.fn(),

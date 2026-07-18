@@ -184,6 +184,15 @@ export {
   type IssueInvoiceSuccess,
 } from './application/use-cases/issue-invoice';
 
+// 107-auto-invoice Task 10 — the generic issue route's guard against a
+// queue-owned `auto_renewal` draft (Task 9's paired ship gate).
+export {
+  guardGenericRouteIssueOrigin,
+  type GuardGenericRouteIssueOriginInput,
+  type GuardGenericRouteIssueOriginError,
+  type GuardGenericRouteIssueOriginDeps,
+} from './application/use-cases/guard-generic-route-issue-origin';
+
 // Cluster 5 (Finding 1) — observable auto-email dispatch outcome surfaced by
 // the issuance + payment use-cases so the admin toast can warn on a silent
 // "no email on file" skip.
@@ -461,6 +470,7 @@ export {
   makeCreateInvoiceDraftDeps,
   makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
+  makeGuardGenericRouteIssueOriginDeps,
   makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
   makeListTaxDocumentRegisterDeps,

@@ -554,6 +554,26 @@ export function makeDrizzleInvoiceRepo(
       });
     },
 
+    async getOrigin(
+      invoiceId: InvoiceId,
+      tenantIdArg: string,
+    ): Promise<'manual' | 'auto_renewal' | null> {
+      // 107-auto-invoice Task 10 — narrow single-column read, same
+      // `withTenantConn` seam as `findById` immediately above (inline
+      // against a caller `externalTx` when present, else its own
+      // `runInTenant`). No lock, no line-item join — see the port docstring
+      // for why this is safe (origin is write-once at insertDraft).
+      return withTenantConn(async (txUnknown) => {
+        const tx = txUnknown as TenantTx;
+        const [row] = await tx
+          .select({ origin: invoices.origin })
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+          .limit(1);
+        return row?.origin ?? null;
+      });
+    },
+
     async list(tenantIdArg: string, opts) {
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];

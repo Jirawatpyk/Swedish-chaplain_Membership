@@ -102,6 +102,29 @@ export interface InvoiceRepo {
   /** Generic loader used by detail / portal / signed-url paths. */
   findById(invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
 
+  /**
+   * 107-auto-invoice Task 10 — read-only `origin` peek, tenant-scoped, no
+   * lock. Deliberately returns the bare enum rather than a full `Invoice` —
+   * `origin` is NOT (yet) a field on the domain `Invoice` type, and adding it
+   * there would touch every one of the ~140 existing call sites that build an
+   * `Invoice` literal, for a single boundary check. This is the ONE
+   * consumer: the generic issue route's guard against a queue-owned
+   * `auto_renewal` draft reaching it directly (bypassing every guard inside
+   * `issueAutoDraftedRenewal` — see `guard-generic-route-issue-origin.ts`).
+   *
+   * No lock is needed: `origin` is written EXACTLY ONCE, at `insertDraft`
+   * (see its `origin?` param above) — no method in this port ever updates
+   * it afterward. A read taken before a later `issueInvoice` call therefore
+   * cannot race a concurrent write to this column; the authoritative
+   * `status` re-check still happens inside `issueInvoice`'s own row lock.
+   *
+   * Returns `null` when no row exists for this tenant — callers MUST treat
+   * that as "not this guard's concern" and let the downstream `issueInvoice`
+   * call produce its own `invoice_not_found` (with its cross-tenant-probe
+   * audit); duplicating that audit here would double-emit it.
+   */
+  getOrigin(invoiceId: InvoiceId, tenantId: string): Promise<'manual' | 'auto_renewal' | null>;
+
   /** List with cursor pagination. Drafts excluded by default. */
   list(
     tenantId: string,

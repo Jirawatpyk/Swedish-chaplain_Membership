@@ -366,6 +366,16 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // 107-auto-invoice Task 10 — the generic issue route's origin
+        // guard: the paired ship gate closing Task 9's duplicate-§86/4
+        // barrier bypass. Small (one branch), but it directly gates
+        // whether an auto_renewal draft can be minted outside the
+        // renewals queue's guards.
+        'src/modules/invoicing/application/use-cases/guard-generic-route-issue-origin.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         'src/modules/invoicing/application/use-cases/record-payment.ts': {
           lines: 100,
           branches: 100,

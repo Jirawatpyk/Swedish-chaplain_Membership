@@ -65,6 +65,7 @@ function makeDeps(draft: Invoice | null): TestDeps {
     invoiceRepo: {
       withTx,
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),

@@ -153,6 +153,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),

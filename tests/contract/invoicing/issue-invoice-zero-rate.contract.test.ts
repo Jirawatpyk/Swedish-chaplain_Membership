@@ -198,6 +198,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(Symbol('tx'))),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       findByIdInTx: vi.fn(async () => draft),
       findById: vi.fn(),
       list: vi.fn(),

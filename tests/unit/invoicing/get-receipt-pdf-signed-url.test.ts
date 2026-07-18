@@ -200,6 +200,7 @@ function makeDeps(invoice: Invoice | null) {
     invoiceRepo: {
       findById: vi.fn(async () => invoice),
       // Stubs for unused methods on the port — keep typing happy.
+      getOrigin: vi.fn(),
       withTx: vi.fn(),
       insertDraft: vi.fn(),
       findByIdInTx: vi.fn(),

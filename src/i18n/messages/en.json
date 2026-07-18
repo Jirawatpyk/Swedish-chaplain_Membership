@@ -2516,7 +2516,8 @@
           "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again.",
-          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support."
+          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support.",
+          "origin_auto_renewal_use_queue": "This draft was created automatically for a member's renewal and must be issued from the Renewals area, not from here."
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
