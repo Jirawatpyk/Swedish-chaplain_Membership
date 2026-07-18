@@ -68,6 +68,14 @@ import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 vi.hoisted(() => {
   process.env.FEATURE_VOID_ON_REISSUE = 'true';
 });
+// Undo the mutation above once this file's tests finish. Under
+// `vitest.integration.config.ts`'s `singleFork` pool, every integration file
+// shares one OS process — `isolate: true` resets the module registry per
+// file but does NOT reset `process.env`, so without this the mutation would
+// leak into whichever integration file runs next in the same fork.
+afterAll(() => {
+  delete process.env.FEATURE_VOID_ON_REISSUE;
+});
 // See file docstring — mirrors `processor-bridge.test.ts`'s mocking policy.
 vi.mock('@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter', async () => {
   const { Sha256Hex: S } = await import(

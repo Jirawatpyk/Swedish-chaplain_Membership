@@ -79,8 +79,10 @@ export async function issueMembershipBill(
   }
 
   // 3. List the member's strictly-older outstanding new-flow membership bills
-  //    (asymmetric (created_at, id) < newBill → the newest is never voided →
-  //    deterministic single survivor under concurrent same-member issue).
+  //    (asymmetric (created_at, id) < newBill → the newest is never voidable →
+  //    never zero survivors; exactly one for the reactivation shape (older bill
+  //    pre-committed), but two brand-new concurrent same-member issues may
+  //    leave two — closed by sub-project #2's content guard).
   const newBill = issued.value;
   const supersedeWarnings: string[] = [];
   let older: ReadonlyArray<{ readonly invoiceId: string }> = [];

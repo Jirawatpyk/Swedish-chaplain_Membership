@@ -65,7 +65,8 @@ interface LegacyRow {
 
 async function main(): Promise<void> {
   const rows: LegacyRow[] = (await db.execute(sql`
-    SELECT tenant_id, invoice_id, document_number, member_id, issue_date
+    SELECT tenant_id, invoice_id, document_number, member_id,
+      TO_CHAR(issue_date, 'YYYY-MM-DD') AS issue_date
     FROM invoices
     WHERE invoice_subject = 'membership'
       AND status = 'issued'

@@ -688,8 +688,11 @@ export function makeDrizzleInvoiceRepo(
      * NULL AND document_number NULL) excludes legacy §86/4 bills; status
      * excludes paid/void/credited; invoice_subject excludes event invoices.
      * The `(created_at, invoice_id) < bound` row-comparison is asymmetric BY
-     * DESIGN — it never matches the bound (newest) bill itself, so concurrent
-     * same-member issues converge on one deterministic survivor.
+     * DESIGN — it never matches the bound (newest) bill itself, so the newest
+     * bill is never voidable → never zero survivors; exactly one for the
+     * reactivation shape (older bill pre-committed), but two brand-new
+     * concurrent same-member issues may leave two — closed by sub-project #2's
+     * content guard.
      */
     async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
       return runInTenant(ctx, async (tx) => {

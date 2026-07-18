@@ -131,6 +131,9 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
     if (result.status !== 'issued') throw new Error('expected issued');
     expect(result.invoiceNumber).toBe('IN-2026-000045');
     expect(result.invoiceNumber).not.toBe('[object Object]');
+    // 106-void-on-reissue (Task 4) — `supersedeWarnings` threaded verbatim
+    // from `issueMembershipBill` onto the port's 'issued' arm.
+    expect(result.supersedeWarnings).toEqual([]);
   });
 
   it('defensive: both numbers NULL → empty string (no crash)', async () => {
@@ -144,5 +147,8 @@ describe('088 T069 — f4InvoicingForRenewalBridge number resolution (FR-018)', 
     expect(result.status).toBe('issued');
     if (result.status !== 'issued') throw new Error('expected issued');
     expect(result.invoiceNumber).toBe('');
+    // 106-void-on-reissue (Task 4) — `supersedeWarnings` threaded verbatim
+    // from `issueMembershipBill` onto the port's 'issued' arm.
+    expect(result.supersedeWarnings).toEqual([]);
   });
 });

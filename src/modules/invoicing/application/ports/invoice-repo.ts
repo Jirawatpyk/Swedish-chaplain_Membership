@@ -154,7 +154,9 @@ export interface InvoiceRepo {
    * void-on-reissue: the member's strictly-older outstanding new-flow membership
    * bills (status='issued', bill_document_number_raw NOT NULL, document_number
    * NULL, (created_at, invoice_id) < bound). Asymmetric ordering makes the newest
-   * bill un-voidable → deterministic single survivor under concurrent issue.
+   * bill un-voidable → never zero survivors; exactly one for the reactivation
+   * shape (older bill pre-committed), but two brand-new concurrent same-member
+   * issues may leave two — closed by sub-project #2's content guard.
    */
   listSupersedableMembershipBills(
     tenantId: string,
