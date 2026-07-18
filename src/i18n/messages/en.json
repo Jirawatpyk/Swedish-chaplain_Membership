@@ -435,7 +435,7 @@
         "total": "Total members",
         "active": "Active members",
         "atRisk": "At-risk members",
-        "revenue": "Paid revenue (YTD)"
+        "revenue": "Paid revenue (fiscal year to date, ex-VAT)"
       },
       "needsAttention": {
         "title": "Needs attention",
@@ -454,18 +454,18 @@
         "title": "Revenue trend (12 months)",
         "empty": "No paid revenue recorded yet.",
         "sparse": "Limited history — the trend builds up as more months of revenue are recorded.",
-        "total": "12-month total",
+        "total": "12-month total (by payment date, ex-VAT)",
         "month": "Month",
         "amount": "Paid revenue",
-        "perMonth": "Per month"
+        "perMonth": "Per month · current month still in progress"
       },
       "memberGrowth": {
         "title": "Member growth (12 months)",
         "empty": "No member data yet.",
         "sparse": "Limited history — the trend builds up as membership grows over more months.",
-        "total": "Total members",
-        "cumulative": "Cumulative",
-        "netNew": "+{count} this year",
+        "total": "Cumulative members",
+        "cumulative": "Cumulative · current month still in progress",
+        "netNew": "+{count} over 12 months",
         "month": "Month",
         "count": "Members"
       },
@@ -481,9 +481,10 @@
         "topTier": "Top: {tier} · {pct}"
       },
       "invoiceStatus": {
-        "title": "Receivables by value",
-        "empty": "No outstanding receivables yet.",
-        "totalLabel": "Total outstanding",
+        "title": "Invoice value by status",
+        "empty": "No issued invoices yet.",
+        "totalLabel": "Total invoiced",
+        "basisCaption": "All fiscal years · includes VAT",
         "draftCaption": "{count, plural, one {# draft invoice not shown} other {# draft invoices not shown}}",
         "statusColumnHeader": "Status",
         "amountColumnHeader": "Amount",
@@ -5658,6 +5659,9 @@
       "email_verification_resent": "Verification email resent",
       "email_dispatch_failed": "Email dispatch failed",
       "invitation_bounced": "Invitation bounced",
+      "invitation_expired": "Invitation expired",
+      "invitation_reissued": "Invitation reissued",
+      "invitation_revoked": "Invitation revoked",
       "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit",
       "at_risk_score_recomputed": "Risk score recomputed",
       "at_risk_score_threshold_crossed": "Risk band changed",

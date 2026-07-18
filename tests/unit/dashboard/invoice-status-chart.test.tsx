@@ -168,7 +168,7 @@ describe('InvoiceStatusChart', () => {
 
   it('renders the empty-state text (no chart, no table) when there are no buckets', () => {
     const { container } = renderChart({ buckets: [], draftCount: 0 });
-    expect(screen.getByText('No outstanding receivables yet.')).toBeInTheDocument();
+    expect(screen.getByText('No issued invoices yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(container.querySelector('.recharts-responsive-container')).not.toBeInTheDocument();
   });
@@ -182,7 +182,7 @@ describe('InvoiceStatusChart', () => {
       ],
       draftCount: 0,
     });
-    expect(screen.getByText('No outstanding receivables yet.')).toBeInTheDocument();
+    expect(screen.getByText('No issued invoices yet.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 
@@ -195,19 +195,19 @@ describe('InvoiceStatusChart', () => {
       ],
       draftCount: 7,
     });
-    expect(screen.getByText('No outstanding receivables yet.')).toBeInTheDocument();
+    expect(screen.getByText('No issued invoices yet.')).toBeInTheDocument();
     expect(screen.getByText('7 draft invoices not shown')).toBeInTheDocument();
   });
 
   it('renders the chart title (as the CardTitle — also appears as the hidden table caption)', () => {
     renderChart(FULL);
-    const matches = screen.getAllByText('Receivables by value');
+    const matches = screen.getAllByText('Invoice value by status');
     expect(matches).toHaveLength(2);
     expect(
-      screen.getByText('Receivables by value', { selector: '[data-slot="card-title"]' }),
+      screen.getByText('Invoice value by status', { selector: '[data-slot="card-title"]' }),
     ).toBeInTheDocument();
     const table = screen.getByRole('table');
-    expect(within(table).getByText('Receivables by value')).toBeInTheDocument();
+    expect(within(table).getByText('Invoice value by status')).toBeInTheDocument();
   });
 
   it('singular draft caption reads naturally for count=1', () => {

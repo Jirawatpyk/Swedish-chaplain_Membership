@@ -24,8 +24,8 @@
  * Two isolated tenants:
  *   - Tenant A — the base scenario (paid / issued-future / issued-past-due /
  *     draft / void) using REAL wall-clock time, so the OVERDUE COUNT can be
- *     pinned against `countOverdue(ctx)` — which is hard-coded to
- *     `new Date()` internally (no `nowIso` param on that method). Due dates
+ *     pinned against `countOverdue(ctx, nowIso)` — this suite passes the real
+ *     clock so the two sides stay comparable. Due dates
  *     are `bangkokLocalDate(now) ± 30 days` so the scenario is stable
  *     regardless of which real calendar day the suite executes on.
  *   - Tenant B — a FIXED synthetic `nowIso` ("2026-07-15T17:30:00.000Z" =
@@ -257,7 +257,10 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
     it('the overdue bucket COUNT equals countOverdue(ctx) — same underlying rule, independently derived', async () => {
       const nowIso = new Date().toISOString();
       const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso);
-      const overdueCount = await invoiceSourceAdapter.countOverdue(tenantA.ctx);
+      const overdueCount = await invoiceSourceAdapter.countOverdue(
+        tenantA.ctx,
+        new Date().toISOString(),
+      );
       expect(bucket(dist, 'overdue').count).toBe(overdueCount);
     });
   });
