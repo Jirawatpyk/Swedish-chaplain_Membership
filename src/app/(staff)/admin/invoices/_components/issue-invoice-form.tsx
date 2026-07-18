@@ -46,6 +46,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { computeIssueReviewModel } from '../_lib/issue-review';
@@ -479,16 +480,14 @@ export function IssueInvoiceForm({
           />
           {/* 088 T061d — non-blocking ≥ 5,000 THB advisory (WARN, not a block). */}
           {lowAmountWarn && (
-            <Alert
+            <InlineAlert
               role="status"
-              className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+              tone="warning"
               data-testid="zero-rate-low-amount-warning"
             >
               <TriangleAlertIcon className="size-4" aria-hidden="true" />
-              <AlertDescription className="text-amber-900 dark:text-amber-200">
-                {tForm('lowAmountWarning')}
-              </AlertDescription>
-            </Alert>
+              <InlineAlertDescription>{tForm('lowAmountWarning')}</InlineAlertDescription>
+            </InlineAlert>
           )}
         </fieldset>
       )}
@@ -567,15 +566,12 @@ export function IssueInvoiceForm({
           {review.warnings.length > 0 && (
             <div className="grid gap-2">
               {review.warnings.includes('no_payment_path') && (
-                <Alert
-                  role="status"
-                  className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
-                >
+                <InlineAlert role="status" tone="warning">
                   <TriangleAlertIcon className="size-4" aria-hidden="true" />
-                  <AlertDescription className="text-amber-900 dark:text-amber-200">
+                  <InlineAlertDescription>
                     {t('review.warnings.noPaymentPath')}
-                  </AlertDescription>
-                </Alert>
+                  </InlineAlertDescription>
+                </InlineAlert>
               )}
               {/* Gated on `isMembership` to match the branch-line ROW above: a
                   non-membership (event-fee) sale renders no §86/4 branch line at
@@ -584,15 +580,12 @@ export function IssueInvoiceForm({
                   sentinel used to provide at the model's input. */}
               {isMembership &&
                 review.warnings.includes('no_branch_line_not_vat_registrant') && (
-                  <Alert
-                    role="status"
-                    className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
-                  >
+                  <InlineAlert role="status" tone="warning">
                     <TriangleAlertIcon className="size-4" aria-hidden="true" />
-                    <AlertDescription className="text-amber-900 dark:text-amber-200">
+                    <InlineAlertDescription>
                       {t('review.warnings.notVatRegistrant')}
-                    </AlertDescription>
-                  </Alert>
+                    </InlineAlertDescription>
+                  </InlineAlert>
                 )}
             </div>
           )}
@@ -600,16 +593,16 @@ export function IssueInvoiceForm({
       )}
 
       {showNoTaxIdHint && (
-        <Alert className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+        <InlineAlert tone="warning">
           <InfoIcon className="size-4" aria-hidden="true" />
-          <AlertDescription className="text-amber-900 dark:text-amber-200">
+          <InlineAlertDescription>
             {/* 088 (FR-014/SC-005) — under the bill→payment flow the issued
                 doc is a non-tax ใบแจ้งหนี้; the §86/4 tax invoice/receipt is
                 minted at payment. Legacy flow (flag OFF) still issues a §87
                 tax invoice at issue → keep the original copy. */}
             {t(taxAtPayment ? 'noTaxIdHint088' : 'noTaxIdHint')}
-          </AlertDescription>
-        </Alert>
+          </InlineAlertDescription>
+        </InlineAlert>
       )}
 
       {/* FR-032 — inline, focused failure surface for the irreversible issue
