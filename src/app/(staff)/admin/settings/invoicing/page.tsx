@@ -24,7 +24,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { FormContainer } from '@/components/layout';
+import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { InvoiceSettingsForm } from '@/components/invoices/invoice-settings-form';
 import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/invoice-settings-form';
@@ -133,7 +133,7 @@ export default async function InvoiceSettingsPage() {
     : DEFAULTS;
 
   return (
-    <FormContainer>
+    <DetailContainer>
       {/* Header role-Badge dropped — the user-menu (top-right) already
           renders a translated role badge, and the form's `disabled`
           prop signals read-only state for managers. The header chip
@@ -156,6 +156,6 @@ export default async function InvoiceSettingsPage() {
           />
         </CardContent>
       </Card>
-    </FormContainer>
+    </DetailContainer>
   );
 }

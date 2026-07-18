@@ -1709,12 +1709,21 @@
         "identity": "Tenant legal identity",
         "tax": "Tax",
         "numbering": "Document numbering",
+        "numberingPrefixes": "Prefixes",
         "defaults": "Invoicing defaults",
         "logo": "Logo",
         "seller": "Seller branch (§86/4)",
         "whtNote": "Withholding-tax note",
         "terminationNotice": "Termination notice",
-        "bank": "Offline payment (bank transfer)"
+        "bank": "Offline payment (bank transfer)",
+        "organization": "Organization",
+        "documentNotes": "Document notes",
+        "payment": "Payment",
+        "branding": "Branding"
+      },
+      "nav": {
+        "label": "Settings sections",
+        "jumpTo": "Jump to section…"
       },
       "labels": {
         "currencyCode": "Currency code",
@@ -1727,7 +1736,7 @@
         "addressTh": "Registered address (Thai)",
         "addressEn": "Registered address (English)",
         "vatPercent": "VAT rate (%)",
-        "registrationFee": "Registration fee (THB)",
+        "registrationFee": "Registration fee ({currency})",
         "invoicePrefix": "Invoice number prefix",
         "creditNotePrefix": "Credit-note number prefix",
         "receiptMode": "Receipt numbering mode",
@@ -1807,7 +1816,9 @@
         "sellerBranch": "A branch requires a 5-digit branch code; a head office must leave it blank.",
         "bankSwift": "SWIFT/BIC must be 8 or 11 characters (letters and digits).",
         "bankAccountNo": "Account number must be digits (dashes or spaces allowed).",
-        "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC."
+        "receiptPrefixReserved": "\"RE\" is reserved for §105 event receipts. Use a different receipt number prefix such as RC.",
+        "requiredFields": "Fill in the highlighted required fields.",
+        "readOnly": "The system is temporarily read-only for maintenance. Try again shortly."
       },
       "saving": "Saving…",
       "actions": {
@@ -1824,6 +1835,10 @@
         "description": "Changing an invoice, receipt, or credit-note prefix starts a NEW numbering stream. Already-issued documents keep their numbers; the §87 sequential trail records the change. Continue?",
         "confirm": "Change prefix",
         "cancel": "Cancel"
+      },
+      "stickyBar": {
+        "label": "Save changes",
+        "unsaved": "You have unsaved changes"
       }
     },
     "creditNotes": {
@@ -3027,6 +3042,12 @@
         "lapsedDef": "The grace period has run out — the membership has ended and needs admin reactivation."
       },
       "subtitle": "Active members by renewal date and tier.",
+      "tabs": {
+        "ariaLabel": "Renewals sections",
+        "pipeline": "Pipeline",
+        "tasks": "Tasks",
+        "tierUpgrades": "Tier upgrades"
+      },
       "pendingReview": {
         "tab": "Pending review",
         "sectionTitle": "Reactivations awaiting your decision",
@@ -3242,21 +3263,54 @@
               "email": "Email",
               "task": "Task"
             },
-            "offsetDay": {
-              "before": "T-{days}",
-              "after": "T+{days}",
-              "exact": "T+0"
-            },
-            "stepIdLabel": "Step ID",
-            "offsetDaysLabel": "Offset days",
-            "templateIdLabel": "Email template",
-            "taskTypeLabel": "Task type",
             "assigneeLabel": "Assignee role",
             "assigneeRole": {
               "admin": "Administrator",
               "manager": "Manager",
               "executive_director": "Executive Director"
+            },
+            "timing": {
+              "label": "Send timing",
+              "beforeRenewal": "{days} days before renewal",
+              "afterRenewal": "{days} days after renewal",
+              "onRenewal": "On renewal date",
+              "customOption": "Custom…",
+              "customDaysLabel": "Number of days",
+              "direction": {
+                "label": "Before or after renewal",
+                "before": "Before",
+                "after": "After"
+              }
+            },
+            "preview": {
+              "heading": "Reminder email is configured for this timing",
+              "noCopyWarning": "No message exists for this timing — this email will not be sent. Pick a standard timing."
+            },
+            "taskType": {
+              "label": "Task type",
+              "hint": "Can't find the task type? Type to add your own.",
+              "searchPlaceholder": "Search task types…",
+              "emptyMessage": "No task type found.",
+              "customValue": "Use \"{value}\"",
+              "phone_call": "Phone call",
+              "admin_notify": "Notify admin",
+              "admin_notify_lapsed": "Notify admin (lapsed)",
+              "director_call": "Director call",
+              "quarterly_review_meeting": "Quarterly review meeting",
+              "meeting_proposed": "Meeting proposed",
+              "benefit_fulfillment_report": "Benefit fulfillment report",
+              "contract_renewal": "Contract renewal",
+              "in_person_meeting": "In-person meeting",
+              "board_escalation": "Board escalation"
             }
+          },
+          "timeline": {
+            "ariaLabel": "Reminder timeline for {tier}",
+            "scrollRegionLabel": "Reminder timeline for {tier}, scrollable",
+            "dueLabel": "Due date",
+            "legendEmail": "Email",
+            "legendTask": "Task",
+            "emptyDue": "No reminders yet — only the due date is shown."
           },
           "actions": {
             "save": "Save schedule",
@@ -3269,7 +3323,7 @@
             "stepRemoved": "Step removed"
           },
           "saved": {
-            "toast": "Schedule for {tier} saved (+{added} -{removed} ={unchanged})"
+            "toast": "{total, plural, =0 {{tier} schedule saved} other {{tier} schedule saved · {added} added, {removed} removed}}"
           },
           "empty": {
             "noPoliciesTitle": "No reminder steps yet",
@@ -3283,6 +3337,9 @@
           },
           "manager": {
             "readOnlyNotice": "You have read-only access to renewal schedules. Ask an admin to make changes."
+          },
+          "reorder": {
+            "announce": "Step moved to position {position} of {total}"
           },
           "lastSaved": "Last saved {date}",
           "stepCount": "{count, plural, =0 {No steps} one {1 step} other {{count} steps}}"
@@ -3704,6 +3761,11 @@
           "phone_call": "Phone call",
           "in_person_meeting": "In-person meeting",
           "board_escalation": "Board escalation",
+          "admin_notify": "Notify admin",
+          "admin_notify_lapsed": "Notify admin (lapsed)",
+          "director_call": "Director call",
+          "meeting_proposed": "Meeting proposed",
+          "contract_renewal": "Contract renewal",
           "verify_pending_tier_upgrade": "Verify pending tier upgrade",
           "manual_outreach_required": "Manual outreach required",
           "termination_warning_blocked": "Termination deferred - no statutory warning ≥ 14 days old",
@@ -4230,6 +4292,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {No new rows — all already imported.} one {1 row imported.} other {# rows imported.}}",
         "retryCta": "Try again",
         "uploadAnother": "Upload another CSV",
+        "viewHistory": "View import history",
         "preview": {
           "fileNameLabel": "File",
           "columnMappingTitle": "Detected columns",

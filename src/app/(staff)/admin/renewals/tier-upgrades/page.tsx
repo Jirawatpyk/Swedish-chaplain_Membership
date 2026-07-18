@@ -24,6 +24,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
+import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { fetchPlanDisplay } from '../[cycleId]/_lib/cycle-detail-fetchers';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -108,6 +109,7 @@ export default async function TierUpgradeQueuePage() {
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <RenewalsSectionTabs />
       {hasError ? (
         // Phase 7 review-fix Round 2 IMP-8 + Round 4 SUG-6: explicit
         // role="alert" added here on the Card element. The Card

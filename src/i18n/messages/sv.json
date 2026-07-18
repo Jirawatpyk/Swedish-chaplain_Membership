@@ -1709,12 +1709,21 @@
         "identity": "Juridisk identitet",
         "tax": "Skatt",
         "numbering": "Dokumentnumrering",
+        "numberingPrefixes": "Prefix",
         "defaults": "Faktureringsstandard",
         "logo": "Logotyp",
         "seller": "Säljarens filial (§86/4)",
         "whtNote": "Notering om källskatt",
         "terminationNotice": "Uppsägningsnotering",
-        "bank": "Offlinebetalning (banköverföring)"
+        "bank": "Offlinebetalning (banköverföring)",
+        "organization": "Organisation",
+        "documentNotes": "Dokumentanteckningar",
+        "payment": "Betalning",
+        "branding": "Varumärke"
+      },
+      "nav": {
+        "label": "Inställningssektioner",
+        "jumpTo": "Gå till sektion…"
       },
       "labels": {
         "currencyCode": "Valutakod",
@@ -1727,7 +1736,7 @@
         "addressTh": "Registrerad adress (thai)",
         "addressEn": "Registrerad adress (engelska)",
         "vatPercent": "Momssats (%)",
-        "registrationFee": "Registreringsavgift (THB)",
+        "registrationFee": "Registreringsavgift ({currency})",
         "invoicePrefix": "Fakturanummerprefix",
         "creditNotePrefix": "Kreditnotaprefix",
         "receiptMode": "Kvittonumreringsläge",
@@ -1807,7 +1816,9 @@
         "sellerBranch": "En filial kräver en femsiffrig filialkod; ett huvudkontor måste lämna den tom.",
         "bankSwift": "SWIFT/BIC måste vara 8 eller 11 tecken (bokstäver och siffror).",
         "bankAccountNo": "Kontonumret måste bestå av siffror (bindestreck eller mellanslag tillåtna).",
-        "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC."
+        "receiptPrefixReserved": "\"RE\" är reserverat för §105-evenemangskvitton. Använd ett annat kvittonummerprefix, till exempel RC.",
+        "requiredFields": "Fyll i de markerade obligatoriska fälten.",
+        "readOnly": "Systemet är tillfälligt skrivskyddat för underhåll. Försök igen snart."
       },
       "saving": "Sparar…",
       "actions": {
@@ -1824,6 +1835,10 @@
         "description": "Att ändra ett prefix för faktura, kvitto eller kreditnota startar en NY nummerserie. Redan utfärdade dokument behåller sina nummer; §87-spårningen registrerar ändringen. Fortsätta?",
         "confirm": "Ändra prefix",
         "cancel": "Avbryt"
+      },
+      "stickyBar": {
+        "label": "Spara ändringar",
+        "unsaved": "Du har osparade ändringar"
       }
     },
     "creditNotes": {
@@ -3027,6 +3042,12 @@
         "lapsedDef": "Respitperioden har löpt ut — medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "tabs": {
+        "ariaLabel": "Förnyelsesektioner",
+        "pipeline": "Pipeline",
+        "tasks": "Uppgifter",
+        "tierUpgrades": "Nivåhöjningar"
+      },
       "pendingReview": {
         "tab": "Väntar på granskning",
         "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
@@ -3242,21 +3263,54 @@
               "email": "E-post",
               "task": "Uppgift"
             },
-            "offsetDay": {
-              "before": "T-{days}",
-              "after": "T+{days}",
-              "exact": "T+0"
-            },
-            "stepIdLabel": "Steg-ID",
-            "offsetDaysLabel": "Dagar (− = före, + = efter)",
-            "templateIdLabel": "E-postmall",
-            "taskTypeLabel": "Uppgiftstyp",
             "assigneeLabel": "Tilldelad roll",
             "assigneeRole": {
               "admin": "Administratör",
               "manager": "Chef",
               "executive_director": "Verkställande direktör"
+            },
+            "timing": {
+              "label": "Sändningstid",
+              "beforeRenewal": "{days} dagar före förnyelse",
+              "afterRenewal": "{days} dagar efter förnyelse",
+              "onRenewal": "På förnyelsedagen",
+              "customOption": "Anpassad…",
+              "customDaysLabel": "Antal dagar",
+              "direction": {
+                "label": "Före eller efter förnyelse",
+                "before": "Före",
+                "after": "Efter"
+              }
+            },
+            "preview": {
+              "heading": "Påminnelsemail är konfigurerat för denna tidpunkt",
+              "noCopyWarning": "Inget meddelande finns för denna tidpunkt — detta e-postmeddelande skickas inte. Välj en standardtidpunkt."
+            },
+            "taskType": {
+              "label": "Uppgiftstyp",
+              "hint": "Hittar du inte uppgiftstypen? Skriv för att lägga till en egen.",
+              "searchPlaceholder": "Sök uppgiftstyper…",
+              "emptyMessage": "Ingen uppgiftstyp hittades.",
+              "customValue": "Använd \"{value}\"",
+              "phone_call": "Telefonsamtal",
+              "admin_notify": "Meddela administratör",
+              "admin_notify_lapsed": "Meddela administratör (förfallet medlemskap)",
+              "director_call": "Direktörssamtal",
+              "quarterly_review_meeting": "Kvartalsvis avstämningsmöte",
+              "meeting_proposed": "Möte föreslaget",
+              "benefit_fulfillment_report": "Rapport om förmånsanvändning",
+              "contract_renewal": "Avtalsförnyelse",
+              "in_person_meeting": "Fysiskt möte",
+              "board_escalation": "Eskalering till styrelsen"
             }
+          },
+          "timeline": {
+            "ariaLabel": "Påminnelsetidslinje för {tier}",
+            "scrollRegionLabel": "Påminnelsetidslinje för {tier}, rullningsbar",
+            "dueLabel": "Förfallodatum",
+            "legendEmail": "E-post",
+            "legendTask": "Uppgift",
+            "emptyDue": "Inga påminnelser ännu — endast förfallodatumet visas."
           },
           "actions": {
             "save": "Spara schema",
@@ -3269,7 +3323,7 @@
             "stepRemoved": "Steg borttaget"
           },
           "saved": {
-            "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
+            "toast": "{total, plural, =0 {Schemat för {tier} sparat} other {Schemat för {tier} sparat · {added} {added, plural, one {tillagd} other {tillagda}}, {removed} {removed, plural, one {borttagen} other {borttagna}}}}"
           },
           "empty": {
             "noPoliciesTitle": "Inga påminnelsesteg ännu",
@@ -3283,6 +3337,9 @@
           },
           "manager": {
             "readOnlyNotice": "Du har endast läsbehörighet till förnyelseschemat. Be en administratör att göra ändringar."
+          },
+          "reorder": {
+            "announce": "Steg flyttat till position {position} av {total}"
           },
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
@@ -3704,6 +3761,11 @@
           "phone_call": "Telefonsamtal",
           "in_person_meeting": "Fysiskt möte",
           "board_escalation": "Eskalering till styrelsen",
+          "admin_notify": "Meddela administratör",
+          "admin_notify_lapsed": "Meddela administratör (förfallet medlemskap)",
+          "director_call": "Direktörssamtal",
+          "meeting_proposed": "Möte föreslaget",
+          "contract_renewal": "Avtalsförnyelse",
           "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
           "manual_outreach_required": "Manuell kontakt krävs",
           "termination_warning_blocked": "Avslut uppskjutet - ingen stadgeenlig varning äldre än 14 dagar",
@@ -4230,6 +4292,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {Inga nya rader — alla har redan importerats.} one {1 rad importerad.} other {# rader importerade.}}",
         "retryCta": "Försök igen",
         "uploadAnother": "Ladda upp en till CSV",
+        "viewHistory": "Visa importhistorik",
         "preview": {
           "fileNameLabel": "Fil",
           "columnMappingTitle": "Identifierade kolumner",
