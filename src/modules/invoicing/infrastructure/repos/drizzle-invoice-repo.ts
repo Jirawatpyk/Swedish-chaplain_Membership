@@ -682,6 +682,43 @@ export function makeDrizzleInvoiceRepo(
       });
     },
 
+    /**
+     * void-on-reissue (Task 2) — the member's strictly-older outstanding
+     * new-flow MEMBERSHIP bills. Shape filter (bill_document_number_raw NOT
+     * NULL AND document_number NULL) excludes legacy §86/4 bills; status
+     * excludes paid/void/credited; invoice_subject excludes event invoices.
+     * The `(created_at, invoice_id) < bound` row-comparison is asymmetric BY
+     * DESIGN — it never matches the bound (newest) bill itself, so the newest
+     * bill is never voidable → never zero survivors; exactly one for the
+     * reactivation shape (older bill pre-committed), but two brand-new
+     * concurrent same-member issues may leave two — closed by sub-project #2's
+     * content guard.
+     */
+    async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await (tx as TenantTx)
+          .select({ invoiceId: invoices.invoiceId })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              eq(invoices.memberId, memberId),
+              eq(invoices.invoiceSubject, 'membership'),
+              eq(invoices.status, 'issued'),
+              isNotNull(invoices.billDocumentNumberRaw),
+              isNull(invoices.documentNumber),
+              // Cast the ISO string inside SQL so postgres-js doesn't try to
+              // serialize a raw JS Date inside a composite row-value tuple
+              // (same fix as drizzle-member-repo.ts's cursor comparison).
+              sql`(${invoices.createdAt}, ${invoices.invoiceId}) < (${bound.createdAt.toISOString()}::timestamptz, ${bound.invoiceId})`,
+              ne(invoices.invoiceId, bound.excludeInvoiceId),
+            ),
+          )
+          .orderBy(invoices.createdAt, invoices.invoiceId);
+        return rows.map((r) => ({ invoiceId: r.invoiceId }));
+      });
+    },
+
     async listPaged(tenantIdArg: string, opts) {
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];

@@ -173,6 +173,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, cap: Captured): IssueInvoiceDe
       findById: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),
+      listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(async (_tx, input: Record<string, unknown>) => {
         cap.applyIssueInputs.push(input);
         return {

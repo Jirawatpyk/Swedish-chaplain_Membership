@@ -341,6 +341,12 @@ const schema = z.object({
   // irreversible; see plan § Rollout / Constitution Gate X).
   FEATURE_088_TAX_AT_PAYMENT: booleanFromString.default(false),
 
+  // 106-void-on-reissue — a re-issued (renewal-reissued) membership bill
+  // auto-voids the member's strictly-older, still-outstanding new-flow bills
+  // (best-effort, metric-only on failure). Default false — ships dark; a
+  // dangling duplicate bill is the pre-existing behaviour, not a regression.
+  FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
+
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
   // F1+F4 transactional API. Hosted on the same Resend account; uses a
@@ -994,6 +1000,8 @@ export const env = {
     // 088 — §87-at-payment tax flow (bill → ใบแจ้งหนี้) + US8 zero-rate UI.
     // Default false; ships dark. See schema docstring above + plan § Rollout.
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
+    // 106-void-on-reissue — auto-void superseded membership bills on reissue.
+    voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
   },
 
   // F4 Invoicing

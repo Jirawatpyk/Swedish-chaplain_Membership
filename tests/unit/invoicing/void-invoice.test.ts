@@ -700,3 +700,109 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     expect(pl.blob_bytes_uploaded).toBe(false);
   });
 });
+
+/**
+ * 106-void-on-reissue Task 1 — `voidInvoice` gains three optional
+ * composition-only inputs so `issueMembershipBill` (a later task) can
+ * auto-void a member's prior membership bill without emailing them and
+ * without ever VOID-stamping a paid §86/4:
+ *   - `requireStatus: 'issued'` — tax-safety barrier; refuses anything that
+ *     is not still `issued` (a paid §86/4 must go through a §86/10 credit
+ *     note, never an automated void).
+ *   - `suppressCancellationEmail` — skip the FR-036 outbox row on an
+ *     automated supersede (the member gets the NEW bill's email instead).
+ *   - `supersededByInvoiceId` — structured audit trail linking the voided
+ *     row to the invoice that replaced it.
+ *
+ * Adaptation note: the brief's tests 3+4 pass
+ * `makeDeps(loaded, { settings: { autoEmailEnabled: true } })`, but
+ * `VoidInvoiceDeps` has no `settings` field (settings are read via
+ * `tenantSettingsRepo.getForIssue`, not a deps override) — `makeSettings()`
+ * already defaults `autoEmailEnabled: true` and `makeIssuedBill()` already
+ * carries `autoEmailOnIssue: true`, so the intent ("tenant
+ * auto_email_enabled=true") is met by the plain `makeDeps(loaded)` default;
+ * the invalid override was dropped rather than adapted to a different shape.
+ */
+describe('void-on-reissue options', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('requireStatus:"issued" refuses a paid bill (does not VOID-stamp a §86/4)', async () => {
+    const loaded = makePaidMembershipTwoBlob(); // status: 'paid'
+    const deps = makeDeps(loaded);
+    const res = await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'auto-void: superseded',
+      requireStatus: 'issued',
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toEqual({ code: 'invalid_status', status: 'paid' });
+    expect(deps.pdfRender.render).not.toHaveBeenCalled(); // never re-rendered a §86/4
+  });
+
+  it('requireStatus:"issued" still voids an issued bill', async () => {
+    const loaded = makeIssuedBill(); // status: 'issued', new-flow bill
+    const deps = makeDeps(loaded);
+    const res = await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'auto-void: superseded',
+      requireStatus: 'issued',
+    });
+    expect(res.ok).toBe(true);
+    // No supersededByInvoiceId was passed → the audit payload must omit the key
+    // entirely (mirrors the presence test below for the sibling ternary-spread
+    // field), not merely carry it as `undefined`.
+    const voidedEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    const payload = voidedEmit![1].payload as Record<string, unknown>;
+    expect('superseded_by_invoice_id' in payload).toBe(false);
+  });
+
+  it('suppressCancellationEmail:true enqueues NO outbox row (tenant auto_email_enabled=true)', async () => {
+    const loaded = makeIssuedBill();
+    const deps = makeDeps(loaded);
+    await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'auto-void: superseded',
+      suppressCancellationEmail: true,
+    });
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('manual void (no suppress flag) STILL enqueues the cancellation email (regression)', async () => {
+    const loaded = makeIssuedBill();
+    const deps = makeDeps(loaded);
+    await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'manual cancel',
+    });
+    expect(deps.outbox.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('supersededByInvoiceId is written to the invoice_voided payload', async () => {
+    const loaded = makeIssuedBill();
+    const deps = makeDeps(loaded);
+    await voidInvoice(deps, {
+      tenantId: 't1',
+      actorUserId: 'admin-1',
+      invoiceId: loaded.invoiceId,
+      voidReason: 'auto-void: superseded',
+      supersededByInvoiceId: '11111111-1111-1111-1111-111111111111',
+    });
+    const voidedEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'invoice_voided',
+    );
+    expect(
+      (voidedEmit?.[1].payload as Record<string, unknown> | undefined)
+        ?.superseded_by_invoice_id,
+    ).toBe('11111111-1111-1111-1111-111111111111');
+  });
+});

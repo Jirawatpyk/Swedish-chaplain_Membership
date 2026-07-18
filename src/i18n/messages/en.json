@@ -2578,7 +2578,7 @@
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
           "legacy_no_tin_event_needs_remediation": "This event invoice was issued to a buyer without a tax ID under the old flow — its issued PDF is already the official receipt, so recording a payment would create a second receipt. Please follow the remediation runbook instead.",
           "legacy_invoice_needs_reissue": "This is a legacy invoice with no bill number — it must be voided and re-issued before a payment can be recorded.",
-          "membership_terminated": "This member's membership has been terminated — use Renew Lapsed Member to reactivate and re-invoice, then record the payment against the new invoice, and void this old bill.",
+          "membership_terminated": "This member's membership has been terminated — use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open bill is still there, void it.",
           "new_flow_bill_requires_flag_on": "This bill was created for the tax-at-payment flow, which is currently switched off. Re-enable it, or void and re-issue the bill, before recording payment.",
           "concurrent": "This invoice was already paid or changed in another session. Refresh to see the latest status and the receipt (RC) number.",
           "refreshAction": "Refresh",
@@ -3419,7 +3419,7 @@
         "pendingNoticeTitle": "Awaiting your decision",
         "terminatedCallout": {
           "title": "This membership is terminated",
-          "body": "To accept a payment (including a bank transfer already received): use Renew Lapsed Member to reactivate and re-invoice, record the payment against the new invoice, then void the old open bill."
+          "body": "To accept a payment (including a bank transfer already received): use \"Renew member\" to reactivate and re-invoice, then record the payment against the new invoice. If the member's previous open bill is still there, void it."
         },
         "pendingNoticeBody": "This member paid to reactivate a lapsed membership, but auto-reactivation is blocked for them. Approve to complete the renewal, or reject to cancel it and refund the payment.",
         "refundSettlingBadge": "Refund settling",

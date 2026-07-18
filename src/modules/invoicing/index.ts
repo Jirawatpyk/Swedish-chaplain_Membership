@@ -335,6 +335,14 @@ export {
   type VoidInvoiceError,
 } from './application/use-cases/void-invoice';
 
+// 106-void-on-reissue — issueInvoice + best-effort supersede-void of the
+// member's strictly-older outstanding new-flow membership bills.
+export {
+  issueMembershipBill,
+  type IssueMembershipBillDeps,
+  type IssueMembershipBillSuccess,
+} from './application/use-cases/issue-membership-bill';
+
 export {
   getCreditNote,
   type GetCreditNoteInput,
@@ -468,6 +476,7 @@ export {
   makeRecordPaymentDeps,
   makeRenderReceiptPdfDeps,
   makeVoidInvoiceDeps,
+  makeIssueMembershipBillDeps,
   makeIssueCreditNoteDeps,
   makeGetCreditNoteDeps,
   makeListCreditNotesDeps,

@@ -289,6 +289,7 @@ function makeDeps(
       findById: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),
+      listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
       applyPayment: vi.fn(),

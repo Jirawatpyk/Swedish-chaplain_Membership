@@ -165,6 +165,7 @@ function makeDeps(
       findById: vi.fn(),
       list: vi.fn(),
         listPaged: vi.fn(),
+      listSupersedableMembershipBills: vi.fn(),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(),
       // applyPayment echoes the input back as the updated invoice —
