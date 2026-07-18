@@ -64,6 +64,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -484,18 +485,15 @@ function AsPaidPaymentFields({
             schedule-editor read-only notice): non-blocking, so
             role="status" (polite live region), NOT role="alert". */}
         {showVatPeriodWarning && (
-          <p
+          <InlineAlert
             id="payment-date-vat-warning"
             role="status"
+            tone="warning"
             data-testid="payment-date-vat-warning"
-            className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/50 p-3 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-100"
           >
-            <AlertTriangleIcon
-              aria-hidden="true"
-              className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-500"
-            />
-            <span>{t('payment.vatPeriodWarning')}</span>
-          </p>
+            <AlertTriangleIcon className="size-4" aria-hidden="true" />
+            <InlineAlertDescription>{t('payment.vatPeriodWarning')}</InlineAlertDescription>
+          </InlineAlert>
         )}
       </div>
       <div className="flex flex-col gap-[var(--field-label-gap)]">
