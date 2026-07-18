@@ -1,0 +1,597 @@
+/**
+ * 107-auto-invoice Task 9 — `issueAutoDraftedRenewal` integration test (live
+ * Neon). THE tax-sensitive path: it mints a real §86/4-era membership bill
+ * from a cron-created `origin='auto_renewal'` draft.
+ *
+ * Scenario map (each `it` names its brief item):
+ *
+ *   (a) Issue silently (`sendEmail:false`, tenant `auto_email_enabled=true`)
+ *       → number minted, cycle `awaiting_payment` + `linked_invoice_id` set,
+ *       ZERO outbox rows (the tenant default must NOT leak through).
+ *   (b) Issue + Send → exactly ONE outbox row.
+ *   (b2) Issue + Send for a member with NO primary contact → succeeds,
+ *       skipped-with-warning, zero outbox (F4's empty-recipient guard).
+ *   (c) Member terminated AFTER the draft → refused INSIDE the use-case
+ *       (`member_terminated`); the draft is untouched.
+ *   (d) ⛔ SHIP-BLOCKER — paid-race content guard. An orphan/unlinked bill
+ *       B1 already `paid` for (member, planYear) → Issue REFUSED
+ *       (`duplicate_live_bill`); no second §86/4 is minted.
+ *   (e) HARD REQ #1 — shape checks. `origin='manual'` → refused; a draft
+ *       whose stamped cycle belongs to a DIFFERENT member → refused; a
+ *       `plan_year` that drifted from `deriveFiscalYear(cycle.periodFrom)`
+ *       → refused. None of them ever issue.
+ *   (f) Draft-discard — a sibling `origin='auto_renewal' status='draft'`
+ *       for the same (member, planYear) is discarded on issue with a
+ *       `renewal_auto_draft_discarded { reason:'superseded_on_issue' }`
+ *       audit row; and the status-guarded delete refuses to clobber an
+ *       already-promoted (issued) invoice.
+ *   (g) Orphan recovery — the link step is forced to fail ONCE; the
+ *       idempotent retry re-links, no duplicate invoice.
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { and, eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { db, runInTenant } from '@/lib/db';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { auditLog, notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
+import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
+import { issueAutoDraftedRenewal, makeRenewalsDeps } from '@/modules/renewals';
+import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
+import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
+import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+
+const NOW = new Date('2026-07-15T00:00:00.000Z');
+/** Every fixture cycle starts here → `deriveFiscalYear(periodFrom)` = 2025. */
+const PERIOD_FROM = '2025-08-01T00:00:00Z';
+const PLAN_YEAR = deriveFiscalYear(PERIOD_FROM);
+
+let tenant: TestTenant;
+let user: TestUser;
+let planId: string;
+
+function depsFor(t: TestTenant) {
+  const real = makeRenewalsDeps(t.ctx.slug);
+  return { ...real, clock: { now: () => NOW } };
+}
+
+async function seedMember(opts: {
+  readonly t: TestTenant;
+  readonly withContact?: boolean;
+}): Promise<string> {
+  const memberId = randomUUID();
+  await runInTenant(opts.t.ctx, async (tx) => {
+    await tx.insert(members).values({
+      tenantId: opts.t.ctx.slug,
+      memberId,
+      memberNumber: nextSeedMemberNumber(),
+      companyName: `Auto-Issue T9 Co ${memberId.slice(0, 6)}`,
+      country: 'TH' as const,
+      taxId: '9999999999999',
+      addressLine1: '99 Rama IV Road',
+      city: 'Sathon',
+      province: 'Bangkok',
+      postalCode: '10120',
+      planId,
+      planYear: PLAN_YEAR,
+      billingCycle: 'rolling',
+      autoInvoiceEnrolledAt: new Date('2026-01-01T00:00:00Z'),
+    });
+    if (opts.withContact !== false) {
+      await tx.insert(contacts).values({
+        tenantId: opts.t.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Auto',
+        lastName: 'Issue',
+        email: `auto.${memberId.slice(0, 8)}@member.example`,
+        isPrimary: true,
+      });
+    }
+  });
+  return memberId;
+}
+
+async function seedCycle(opts: {
+  readonly t: TestTenant;
+  readonly memberId: string;
+}): Promise<{ readonly cycleId: string; readonly periodTo: Date }> {
+  const cycleId = randomUUID();
+  const periodFrom = new Date(PERIOD_FROM);
+  const periodTo = new Date(periodFrom);
+  periodTo.setUTCMonth(periodTo.getUTCMonth() + 12);
+  await runInTenant(opts.t.ctx, (tx) =>
+    tx.insert(renewalCycles).values({
+      tenantId: opts.t.ctx.slug,
+      cycleId,
+      memberId: opts.memberId,
+      status: 'upcoming',
+      periodFrom,
+      periodTo,
+      expiresAt: periodTo,
+      cycleLengthMonths: 12,
+      tierAtCycleStart: 'regular',
+      planIdAtCycleStart: planId,
+      frozenPlanPriceThb: '50000.00',
+      frozenPlanTermMonths: 12,
+      frozenPlanCurrency: 'THB',
+      anchoredAt: periodFrom,
+    }),
+  );
+  return { cycleId, periodTo };
+}
+
+/** Creates a genuine `origin='auto_renewal'` draft via the T5 bridge (the
+ *  exact call Task 7's cron makes) and stamps it onto the cycle. */
+async function seedAutoDraft(opts: {
+  readonly t: TestTenant;
+  readonly memberId: string;
+  readonly cycleId: string | null;
+}): Promise<string> {
+  const deps = depsFor(opts.t);
+  const drafted = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
+    tenantId: opts.t.ctx.slug,
+    memberId: opts.memberId,
+    planId,
+    planYear: PLAN_YEAR,
+    frozenPlanPriceThb: '50000.00' as never,
+    actorUserId: user.userId,
+    requestId: null,
+  });
+  if (drafted.status !== 'drafted') {
+    throw new Error(`fixture draft failed: ${JSON.stringify(drafted)}`);
+  }
+  if (opts.cycleId !== null) {
+    const cycleId = opts.cycleId;
+    await runInTenant(opts.t.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: drafted.invoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId)),
+    );
+  }
+  return drafted.invoiceId;
+}
+
+/** member + cycle + stamped auto-draft, the standard queue-row fixture. */
+async function seedQueueRow(opts: {
+  readonly t: TestTenant;
+  readonly withContact?: boolean;
+}): Promise<{
+  readonly memberId: string;
+  readonly cycleId: string;
+  readonly invoiceId: string;
+}> {
+  const memberId = await seedMember({
+    t: opts.t,
+    ...(opts.withContact !== undefined ? { withContact: opts.withContact } : {}),
+  });
+  const { cycleId } = await seedCycle({ t: opts.t, memberId });
+  const invoiceId = await seedAutoDraft({ t: opts.t, memberId, cycleId });
+  return { memberId, cycleId, invoiceId };
+}
+
+async function invoiceRow(t: TestTenant, invoiceId: string) {
+  const [row] = await runInTenant(t.ctx, (tx) =>
+    tx
+      .select({
+        status: invoices.status,
+        origin: invoices.origin,
+        planYear: invoices.planYear,
+        documentNumber: invoices.documentNumber,
+        billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+      })
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, t.ctx.slug), eq(invoices.invoiceId, invoiceId))),
+  );
+  return row;
+}
+
+async function cycleRow(t: TestTenant, cycleId: string) {
+  const [row] = await runInTenant(t.ctx, (tx) =>
+    tx
+      .select({
+        status: renewalCycles.status,
+        linkedInvoiceId: renewalCycles.linkedInvoiceId,
+      })
+      .from(renewalCycles)
+      .where(eq(renewalCycles.cycleId, cycleId)),
+  );
+  return row;
+}
+
+async function outboxCountForInvoice(t: TestTenant, invoiceId: string): Promise<number> {
+  const rows = await db
+    .select()
+    .from(notificationsOutbox)
+    .where(
+      and(
+        eq(notificationsOutbox.tenantId, t.ctx.slug),
+        eq(notificationsOutbox.notificationType, 'invoice_auto_email'),
+      ),
+    );
+  return rows.filter(
+    (r) => (r.contextData as Record<string, unknown>).invoice_id === invoiceId,
+  ).length;
+}
+
+describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () => {
+  beforeAll(async () => {
+    user = await createActiveTestUser('admin');
+    tenant = await createTestTenant('test');
+    planId = `f8-t9-plan-${randomUUID().slice(0, 8)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planYear: PLAN_YEAR,
+        planName: { en: 'Auto-Issue T9 Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    await seedTenantFiscal({
+      tenant,
+      invoiceNumberPrefix: 'SC',
+      receiptNumberPrefix: 'RC',
+    });
+    // `auto_email_enabled=true` is the DEFAULT — scenario (a) proves the
+    // explicit `sendEmail:false` intent OUTRANKS it (the T4 override gotcha).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(tenantInvoiceSettings)
+        .set({ autoEmailEnabled: true, autoInvoiceEnabled: true })
+        .where(eq(tenantInvoiceSettings.tenantId, tenant.ctx.slug)),
+    );
+  }, 180_000);
+
+  afterAll(async () => {
+    await tenant.cleanup().catch(() => {});
+  }, 60_000);
+
+  it('(a) issue silently → number minted, cycle awaiting_payment + linked, ZERO outbox', async () => {
+    const { cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.invoiceId).toBe(invoiceId);
+    expect(result.value.invoiceNumber).not.toBe('');
+    expect(result.value.linkWarning).toBeNull();
+
+    const inv = await invoiceRow(tenant, invoiceId);
+    expect(inv?.status).toBe('issued');
+    // Exactly one of the two number columns is populated (088 flag-dependent).
+    expect(
+      (inv?.documentNumber ?? null) !== null ||
+        (inv?.billDocumentNumberRaw ?? null) !== null,
+    ).toBe(true);
+
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('awaiting_payment');
+    expect(cyc?.linkedInvoiceId).toBe(invoiceId);
+
+    expect(await outboxCountForInvoice(tenant, invoiceId)).toBe(0);
+  }, 90_000);
+
+  it('(b) issue + send → exactly ONE outbox row', async () => {
+    const { invoiceId } = await seedQueueRow({ t: tenant });
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: true,
+      requestId: null,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    expect(await outboxCountForInvoice(tenant, invoiceId)).toBe(1);
+  }, 90_000);
+
+  it('(b2) issue + send, member has NO primary contact → succeeds, skipped, zero outbox', async () => {
+    const { invoiceId } = await seedQueueRow({ t: tenant, withContact: false });
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: true,
+      requestId: null,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    expect((await invoiceRow(tenant, invoiceId))?.status).toBe('issued');
+    expect(await outboxCountForInvoice(tenant, invoiceId)).toBe(0);
+  }, 90_000);
+
+  it('(c) member terminated after the draft → member_terminated, draft untouched', async () => {
+    const { memberId, invoiceId } = await seedQueueRow({ t: tenant });
+    // A NEWER `lapsed` cycle makes `findLatestCycleForMember` resolve
+    // `terminated` (the same shape Task 7's test (c) uses).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: randomUUID(),
+        memberId,
+        status: 'lapsed',
+        periodFrom: new Date('2026-01-01T00:00:00Z'),
+        periodTo: new Date('2027-01-01T00:00:00Z'),
+        expiresAt: new Date('2027-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        closedAt: new Date('2026-06-01T00:00:00Z'),
+        closedReason: 'grace_expired',
+      }),
+    );
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_terminated');
+    expect((await invoiceRow(tenant, invoiceId))?.status).toBe('draft');
+  }, 90_000);
+
+  it('(d) ⛔ SHIP-BLOCKER — a PAID bill for (member, planYear) → duplicate_live_bill, no second §86/4', async () => {
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    // B1 — an orphan/unlinked membership bill for the SAME (member,
+    // planYear) that has already been paid. Built through the real F4
+    // issue path so it carries a real §87/bill number, then marked paid
+    // directly (the settlement path itself is out of scope here).
+    const b1 = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+    const deps = depsFor(tenant);
+    const issuedB1 = await deps.f4InvoicingBridge.issueExistingDraftForRenewal({
+      tenantId: tenant.ctx.slug,
+      invoiceId: b1,
+      actorUserId: user.userId,
+      autoEmailOnIssue: false,
+      requestId: null,
+    });
+    expect(issuedB1.status).toBe('issued');
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(invoices)
+        .set({ status: 'paid' })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, b1))),
+    );
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('duplicate_live_bill');
+
+    // The draft is STILL a draft — no number was burned, no second §86/4.
+    const inv = await invoiceRow(tenant, invoiceId);
+    expect(inv?.status).toBe('draft');
+    expect(inv?.documentNumber).toBeNull();
+    expect(inv?.billDocumentNumberRaw).toBeNull();
+    // The cycle was NOT flipped/linked either.
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('upcoming');
+    expect(cyc?.linkedInvoiceId).toBeNull();
+  }, 120_000);
+
+  it('(e) HARD REQ #1 — manual origin / cross-member / plan_year drift are all refused, never issued', async () => {
+    // --- e1: origin='manual' (a treasurer's own draft) ------------------
+    const manualMember = await seedMember({ t: tenant });
+    const { cycleId: manualCycle } = await seedCycle({ t: tenant, memberId: manualMember });
+    const deps = depsFor(tenant);
+    const manualDraft = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
+      tenantId: tenant.ctx.slug,
+      memberId: manualMember,
+      planId,
+      planYear: PLAN_YEAR,
+      frozenPlanPriceThb: '50000.00' as never,
+      actorUserId: user.userId,
+      requestId: null,
+    });
+    if (manualDraft.status !== 'drafted') throw new Error('fixture failed');
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(invoices)
+        .set({ origin: 'manual' })
+        .where(
+          and(
+            eq(invoices.tenantId, tenant.ctx.slug),
+            eq(invoices.invoiceId, manualDraft.invoiceId),
+          ),
+        );
+      await tx
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: manualDraft.invoiceId })
+        .where(eq(renewalCycles.cycleId, manualCycle));
+    });
+
+    const e1 = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId: manualDraft.invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(e1.ok).toBe(false);
+    if (!e1.ok) expect(e1.error.kind).toBe('invalid_draft');
+    expect((await invoiceRow(tenant, manualDraft.invoiceId))?.status).toBe('draft');
+
+    // --- e2: the stamped cycle belongs to a DIFFERENT member -----------
+    const ownerA = await seedQueueRow({ t: tenant });
+    const strangerB = await seedMember({ t: tenant });
+    const { cycleId: strangerCycle } = await seedCycle({ t: tenant, memberId: strangerB });
+    // Point B's cycle at A's draft — the "wrong/stale invoiceId" shape.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: null })
+        .where(eq(renewalCycles.cycleId, ownerA.cycleId));
+      await tx
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: ownerA.invoiceId })
+        .where(eq(renewalCycles.cycleId, strangerCycle));
+    });
+
+    const e2 = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId: ownerA.invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(e2.ok).toBe(false);
+    if (!e2.ok) expect(e2.error.kind).toBe('invalid_draft');
+    expect((await invoiceRow(tenant, ownerA.invoiceId))?.status).toBe('draft');
+
+    // --- e3: plan_year drift (a post-draft re-anchor moved periodFrom) --
+    const drift = await seedQueueRow({ t: tenant });
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        // periodFrom now derives fiscal year 2027, but the draft carries 2025.
+        .set({ periodFrom: new Date('2027-03-01T00:00:00Z') })
+        .where(eq(renewalCycles.cycleId, drift.cycleId)),
+    );
+
+    const e3 = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId: drift.invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(e3.ok).toBe(false);
+    if (!e3.ok) expect(e3.error.kind).toBe('invalid_draft');
+    expect((await invoiceRow(tenant, drift.invoiceId))?.status).toBe('draft');
+  }, 120_000);
+
+  it('(f) draft-discard — sibling auto_renewal draft discarded + audited; an issued invoice is NOT clobbered', async () => {
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    // A sibling auto-draft for the SAME (member, planYear) — the harmless
+    // double-DRAFT shape design §5.4 tolerates and tx3 cleans up.
+    const sibling = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.discardedInvoiceIds).toContain(sibling);
+
+    // The sibling is GONE; the issued one survives.
+    expect(await invoiceRow(tenant, sibling)).toBeUndefined();
+    expect((await invoiceRow(tenant, invoiceId))?.status).toBe('issued');
+
+    const discardAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'renewal_auto_draft_discarded' as never),
+          ),
+        ),
+    );
+    const mine = discardAudits.filter(
+      (r) => (r.payload as Record<string, unknown>).invoice_id === sibling,
+    );
+    expect(mine.length).toBe(1);
+    expect(mine[0]?.payload).toMatchObject({
+      cycle_id: cycleId,
+      member_id: memberId,
+      invoice_id: sibling,
+      reason: 'superseded_on_issue',
+    });
+
+    // --- the status-guarded delete must NOT clobber a promoted draft ----
+    // (the concurrent-promotion case: by the time the discard runs, the
+    // row is already `issued` and carries a burned document number).
+    const deps = depsFor(tenant);
+    const discardIssued = await deps.f4InvoicingBridge.discardAutoDraftForRenewal({
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      requestId: null,
+    });
+    expect(discardIssued.status).toBe('not_draft');
+    expect((await invoiceRow(tenant, invoiceId))?.status).toBe('issued');
+  }, 120_000);
+
+  it('(g) orphan recovery — link forced to fail once → idempotent retry re-links', async () => {
+    const { cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+
+    const real = makeRenewalsDeps(tenant.ctx.slug);
+    let failures = 0;
+    const flakyCyclesRepo: typeof real.cyclesRepo = {
+      ...real.cyclesRepo,
+      transitionStatus: async (tx, tid, cid, args) => {
+        if (cid === cycleId && failures === 0) {
+          failures += 1;
+          throw new Error('simulated link failure — orphan recovery test');
+        }
+        return real.cyclesRepo.transitionStatus(tx, tid, cid, args);
+      },
+    };
+    const deps = { ...real, cyclesRepo: flakyCyclesRepo, clock: { now: () => NOW } };
+
+    const result = await issueAutoDraftedRenewal(deps, {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(failures).toBe(1);
+    // The retry succeeded — no warning, cycle correctly linked ONCE.
+    expect(result.value.linkWarning).toBeNull();
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('awaiting_payment');
+    expect(cyc?.linkedInvoiceId).toBe(invoiceId);
+
+    // Exactly one invoice exists for this member — no duplicate was minted.
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId))),
+    );
+    expect(rows.length).toBe(1);
+  }, 120_000);
+});
