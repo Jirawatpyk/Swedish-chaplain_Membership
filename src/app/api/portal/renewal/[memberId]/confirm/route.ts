@@ -189,6 +189,18 @@ export async function POST(
             code: result.error.kind,
             correlationId,
           });
+        case 'invoice_already_exists':
+          // 107-auto-invoice Task 9 (review Important 2) — a bill for this
+          // renewal already exists (typically issued by a treasurer from the
+          // auto-renewal review queue). 409, not an error state: the member
+          // should PAY that bill. `invoice_id` lets the portal redirect
+          // straight to it rather than dead-ending the member.
+          return errorResponse({
+            status: 409,
+            code: 'invoice_already_exists',
+            correlationId,
+            details: { invoice_id: result.error.invoiceId },
+          });
         case 'invoice_creation_failed':
           return errorResponse({
             status: 502,

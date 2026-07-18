@@ -90,6 +90,20 @@ import {
   InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
+/**
+ * 107-auto-invoice Task 9 (review Important 2) — statuses that mean "a real
+ * membership bill already exists for this (member, plan_year)". Mirrors the
+ * renewals queue's own `BLOCKING_LIVE_BILL_STATUSES`; `void` is excluded so a
+ * voided-for-correction bill does not permanently wedge the member.
+ */
+const LIVE_MEMBERSHIP_BILL_STATUSES: ReadonlySet<string> = new Set([
+  'draft',
+  'issued',
+  'paid',
+  'partially_credited',
+  'credited',
+]);
+
 export const confirmRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
@@ -136,6 +150,16 @@ export type ConfirmRenewalError =
     }
   | { readonly kind: 'plan_not_found' }
   | { readonly kind: 'plan_inactive' }
+  | {
+      /**
+       * 107-auto-invoice Task 9 (review Important 2) — a live membership bill
+       * already exists for this cycle / (member, plan_year), typically because
+       * a treasurer issued it from the auto-renewal review queue. The member
+       * should PAY that bill, not mint a second one.
+       */
+      readonly kind: 'invoice_already_exists';
+      readonly invoiceId: string | null;
+    }
   | {
       readonly kind: 'invoice_creation_failed';
       readonly stage: 'create' | 'issue';
@@ -315,6 +339,50 @@ export async function confirmRenewal(
     }
     // (cycle.status === 'awaiting_payment' falls through unchanged —
     // already payable, proceed.)
+
+    // 107-auto-invoice Task 9 (review Important 2) — refuse to mint a SECOND
+    // §86/4 for a cycle that already has a live membership bill.
+    //
+    // Task 9 makes "cycle is awaiting_payment AND already linked to an issued
+    // bill" a ROUTINE admin-created state (a treasurer issues from the review
+    // queue), while the member's portal "Confirm & Pay" button stays live. So
+    // the sequence admin-issues → member-confirms is now normal, not rare, and
+    // without this guard it falls straight through the `already payable,
+    // proceed` path above: a second number is burned, `linkInvoice` then
+    // throws InvoiceLinkConflictError, and the orphan must be voided —
+    // producing a phantom cancelled document in the ภ.พ.30 filing.
+    //
+    // This is deliberately a WRITE-PATH guard, not a hidden portal button:
+    // the portal page is cached/soft-navigated and the member may already be
+    // mid-flow when the admin issues.
+    const existingBillYear = deriveFiscalYear(cycle.periodFrom);
+    const liveBills =
+      await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+        tx,
+        input.tenantId,
+        cycle.memberId,
+        existingBillYear,
+      );
+    const liveBill = liveBills.find((row) =>
+      LIVE_MEMBERSHIP_BILL_STATUSES.has(row.status),
+    );
+    if (cycle.linkedInvoiceId !== null || liveBill) {
+      logger.warn(
+        {
+          cycleId: cycle.cycleId,
+          memberId: cycle.memberId,
+          linkedInvoiceId: cycle.linkedInvoiceId,
+          conflictingInvoiceId: liveBill?.invoiceId ?? null,
+          conflictingStatus: liveBill?.status ?? null,
+          planYear: existingBillYear,
+        },
+        '[confirm-renewal] refused — a live membership bill already exists for this cycle/(member, plan_year)',
+      );
+      return err({
+        kind: 'invoice_already_exists' as const,
+        invoiceId: cycle.linkedInvoiceId ?? liveBill?.invoiceId ?? null,
+      });
+    }
 
     // Plan-change branch (FR-021b atomic)
     let planChanged = false;
@@ -703,6 +771,11 @@ export function selfServiceFailureReason(
     case 'plan_not_found':
     case 'plan_inactive':
       return 'plan_inactive';
+    case 'invoice_already_exists':
+      // Not a failure of the renewal itself — a bill already exists and the
+      // member should pay it. Bucketed with the terminal/no-op outcomes so it
+      // does not inflate the F4-failure alert.
+      return 'cycle_terminal';
     case 'invalid_input':
       return 'invalid_input';
     case 'cross_member_probe':

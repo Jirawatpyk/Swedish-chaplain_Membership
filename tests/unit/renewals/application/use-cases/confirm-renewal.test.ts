@@ -212,6 +212,11 @@ function fakeDeps(args: {
       countCyclesForMemberInTx: countCyclesForMemberInTxMock,
       // F2 fix (final-review, 2026-07-09) — settled-history discriminator.
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
+      // 107-auto-invoice Task 9 (review Important 2) — the duplicate-bill
+      // guard's read. Default: no existing live bill, so these pre-existing
+      // cases exercise the unchanged happy path. The refusal branch is
+      // covered live-Neon by issue-auto-drafted-renewal.test.ts case (i).
+      listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),
