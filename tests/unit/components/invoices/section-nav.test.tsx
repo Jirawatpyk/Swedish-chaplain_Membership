@@ -45,6 +45,26 @@ it('scrolls to and focuses a section on nav click', () => {
   expect(document.querySelector('#tax [data-section-heading]')).toHaveFocus();
 });
 
+// code-review follow-up (finding 5) — the mobile <select> (and the
+// desktop nav buttons' aria-current) are controlled by useScrollSpy's
+// `active`, which used to only update once the IntersectionObserver
+// fired AFTER the smooth-scroll settled — visibly snapping back to the
+// previous section right after a click. `goToSection` now calls
+// `setActive` synchronously on click, so aria-current must flip
+// immediately, with NO IntersectionObserver callback fired at all
+// (NoopIntersectionObserver's `observe` never calls back in this suite).
+it('optimistically sets aria-current on the clicked nav button, without waiting for a scroll-spy callback', () => {
+  const scrollSpy = vi.fn<(arg?: boolean | ScrollIntoViewOptions) => void>();
+  HTMLElement.prototype.scrollIntoView = scrollSpy;
+  wrap(<SectionNav sections={sections} />);
+
+  expect(screen.getByRole('button', { name: /tax/i })).not.toHaveAttribute('aria-current');
+  fireEvent.click(screen.getByRole('button', { name: /tax/i }));
+
+  expect(screen.getByRole('button', { name: /tax/i })).toHaveAttribute('aria-current', 'location');
+  expect(screen.getByRole('button', { name: /org/i })).not.toHaveAttribute('aria-current');
+});
+
 it('marks the active section (first, before any scroll spy update) with aria-current', () => {
   wrap(<SectionNav sections={sections} />);
   expect(screen.getByRole('button', { name: /org/i })).toHaveAttribute('aria-current', 'location');

@@ -183,6 +183,49 @@ describe('InvoiceSettingsForm — C1(b) server fieldErrors mapping', () => {
     // ...but only the FIRST one (object key order) gets focus.
     expect(document.activeElement?.id).toBe('addr_th');
   });
+
+  // code-review follow-up (finding 2) — the OLD behaviour focused
+  // `fieldNames[0]` (zod's `Object.keys(fieldErrors)` declaration order),
+  // which need not match DOM/visual top-to-bottom order. Here the fieldErrors
+  // object is declared "low field" (Numbering section, further down the
+  // page) FIRST and "high field" (Organization section, topmost) SECOND —
+  // the reverse of the previous test — proving focus now follows DOM order
+  // (`focusFirstInvalidField`), not schema-declaration order.
+  it('focuses the topmost (DOM-order) field, not fieldNames[0], when zod key order is low-field-first', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'invalid_body',
+            details: {
+              formErrors: [],
+              fieldErrors: {
+                // "low" field (Numbering section — further down the DOM)
+                // declared FIRST.
+                invoice_number_prefix: ['String must contain at least 1 character(s)'],
+                // "high" field (Organization section — DOM-topmost)
+                // declared SECOND.
+                registered_address_th: ['String must contain at least 1 character(s)'],
+              },
+            },
+          },
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const { container, findByText } = renderSettings();
+    const form = container.querySelector('form')!;
+
+    fireEvent.submit(form);
+
+    await findByText(/fill in the highlighted required fields/i);
+    expect(container.querySelector('#inv_prefix')).toHaveAttribute('aria-invalid', 'true');
+    expect(container.querySelector('#addr_th')).toHaveAttribute('aria-invalid', 'true');
+    // Focus lands on the DOM-topmost invalid field (`addr_th`), NOT
+    // `fieldNames[0]` (`inv_prefix`).
+    expect(document.activeElement?.id).toBe('addr_th');
+  });
 });
 
 describe('InvoiceSettingsForm — C1(c) empty required-text field blocks submit client-side', () => {
@@ -219,5 +262,21 @@ describe('InvoiceSettingsForm — C1(c) empty required-text field blocks submit 
     expect(container.querySelector('#legal_name_th')).toHaveAttribute('aria-invalid', 'true');
     // The later field wasn't reached by this guard at all.
     expect(container.querySelector('#cn_prefix')).not.toHaveAttribute('aria-invalid');
+  });
+});
+
+describe('InvoiceSettingsForm — code-review follow-up (finding 3): aria-invalid clears on input', () => {
+  it('removes aria-invalid from a corrected field the moment it is edited, without waiting for re-submit', () => {
+    const { container } = renderSettings({ legal_name_en: '' });
+    const form = container.querySelector('form')!;
+
+    fireEvent.submit(form);
+    expect(container.querySelector('#legal_name_en')).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.input(container.querySelector('#legal_name_en')!, {
+      target: { value: 'Fixed Co., Ltd.' },
+    });
+
+    expect(container.querySelector('#legal_name_en')).not.toHaveAttribute('aria-invalid');
   });
 });

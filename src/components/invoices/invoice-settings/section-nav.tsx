@@ -24,33 +24,47 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-/**
- * Scrolls the target section into view, then moves focus to its heading
- * (`[data-section-heading]`, which carries `tabIndex={-1}`) so keyboard
- * and screen-reader users land where sighted users land visually.
- */
-function goToSection(id: string): void {
-  const section = document.getElementById(id);
-  section?.scrollIntoView({
-    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
-    block: 'start',
-  });
-  // I4 (wave B) — `{ preventScroll: true }` stops the browser's own
-  // scroll-into-view-on-focus from snap-cancelling the smooth
-  // `scrollIntoView` animation above in Safari/Firefox. Focus still
-  // lands on the heading; only the browser's redundant auto-scroll is
-  // suppressed.
-  section?.querySelector<HTMLElement>('[data-section-heading]')?.focus({ preventScroll: true });
-}
-
 export function SectionNav({ sections }: { readonly sections: ReadonlyArray<SectionNavItem> }) {
   const t = useTranslations('admin.invoiceSettings');
   // Stable id list — a fresh array every render would tear down and
   // rebuild useScrollSpy's IntersectionObserver on every render (its
   // effect depends on `[sectionIds]` by reference).
   const sectionIds = useMemo(() => sections.map((section) => section.id), [sections]);
-  const active = useScrollSpy(sectionIds);
+  const { active, setActive } = useScrollSpy(sectionIds);
   const selectedId = active ?? sections[0]?.id ?? '';
+
+  /**
+   * Scrolls the target section into view, then moves focus to its heading
+   * (`[data-section-heading]`, which carries `tabIndex={-1}`) so keyboard
+   * and screen-reader users land where sighted users land visually.
+   *
+   * code-review follow-up (finding 5) — moved inside `SectionNav` (from
+   * module scope) so it can close over `setActive` and set the target
+   * section as `active` OPTIMISTICALLY, the instant the jump is
+   * triggered. Without this, `active` (and therefore the mobile
+   * `<select>`'s controlled `value`) only updates once the
+   * IntersectionObserver fires after the smooth-scroll animation
+   * settles — the select visibly snapped back to the previously-active
+   * section right after a pick. The scroll-spy then keeps `active`
+   * correct as the user continues to scroll. (Re-selecting the
+   * already-active option is an inherent native-`<select>` no-op — the
+   * browser doesn't fire `onChange` when the value doesn't change — and
+   * is acceptable: the user is already at that section.)
+   */
+  function goToSection(id: string): void {
+    const section = document.getElementById(id);
+    section?.scrollIntoView({
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      block: 'start',
+    });
+    // I4 (wave B) — `{ preventScroll: true }` stops the browser's own
+    // scroll-into-view-on-focus from snap-cancelling the smooth
+    // `scrollIntoView` animation above in Safari/Firefox. Focus still
+    // lands on the heading; only the browser's redundant auto-scroll is
+    // suppressed.
+    section?.querySelector<HTMLElement>('[data-section-heading]')?.focus({ preventScroll: true });
+    setActive(id);
+  }
 
   return (
     <>

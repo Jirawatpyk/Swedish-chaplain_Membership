@@ -137,6 +137,51 @@ describe('InvoiceSettingsForm — Minor: disable in-form Save when nothing to sa
   });
 });
 
+describe('InvoiceSettingsForm — code-review follow-up (finding 1): symmetric normalization keeps dirty clean after save', () => {
+  it('does not count a trailing-space-only change to a trimmed field as dirty', () => {
+    // bank_swift is stored server-side already trimmed; a user typing a
+    // trailing space (which the PATCH body trims away — see `orNull`/
+    // `swiftTrimmed` in handleSubmit) must not be treated as a real change.
+    const { container } = renderSettings({ bank_swift: 'ABCDTHBK' });
+    fireEvent.change(container.querySelector('#bank_swift')!, {
+      target: { value: 'ABCDTHBK ' }, // trailing space only
+    });
+    expect(container.querySelector('button[type="submit"]')).toBeDisabled();
+  });
+
+  it('clears dirty once a save reloads initialValues with the server-normalized (trimmed/uppercased) value', () => {
+    const { container, rerender } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceSettingsForm initialValues={FIXTURE} currentUserRole="admin" exists />
+      </NextIntlClientProvider>,
+    );
+
+    // Admin types a lower-case currency code.
+    fireEvent.change(container.querySelector('#currency_code')!, {
+      target: { value: 'usd' },
+    });
+    expect(container.querySelector('button[type="submit"]')).toBeEnabled();
+
+    // Simulate a successful save's `router.refresh()`: the parent Server
+    // Component re-fetches and passes a NEW `initialValues` prop with the
+    // server-normalized (upper-cased) value. React does NOT reset the
+    // `currencyCode` useState just because a prop changed — the field's
+    // raw local state ("usd") is untouched — so the fix must normalize
+    // BOTH sides identically for the dirty compare to agree afterward.
+    rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceSettingsForm
+          initialValues={{ ...FIXTURE, currency_code: 'USD' }}
+          currentUserRole="admin"
+          exists
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(container.querySelector('button[type="submit"]')).toBeDisabled();
+  });
+});
+
 describe('InvoiceSettingsForm — Minor: READ_ONLY_MODE 503 gets a specific message', () => {
   it('shows the read-only message (not the generic "save failed") on a 503 read-only-mode response', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValue(

@@ -148,6 +148,21 @@ function fieldIdFor(schemaFieldName: string): string {
   return FIELD_ID_MAP[schemaFieldName] ?? schemaFieldName;
 }
 
+// code-review follow-up (finding 1) — the PATCH body (see `body` in
+// `handleSubmit` below) normalizes these fields with trim / trim+uppercase
+// before sending. Applying the SAME normalization to BOTH `initialRecord`
+// and `currentValues` in the dirty-comparison keeps `isDirty`'s per-key
+// compare from flagging the form dirty purely over whitespace/case the
+// server would have normalized away anyway (e.g. saving a lower-case
+// currency code, or a trailing-space bank field, must not leave the form
+// permanently dirty after a successful save + `router.refresh()`).
+function trimStr(v: string): string {
+  return v.trim();
+}
+function trimUpper(v: string): string {
+  return v.trim().toUpperCase();
+}
+
 // Task 7 — two-column sticky-nav section map (spec §4.3). Module-scope so
 // the array reference is stable across renders: `SectionNav` memoises its
 // derived `sectionIds` on this reference, and a fresh array every render
@@ -258,10 +273,10 @@ export function InvoiceSettingsForm({
   // bar + the beforeunload guard. Same flat key set on both sides so
   // `isDirty` does a straight per-key `Object.is` diff.
   const initialRecord: Record<string, unknown> = {
-    currency_code: initialValues.currency_code,
+    currency_code: trimUpper(initialValues.currency_code),
     legal_name_th: initialValues.legal_name_th,
     legal_name_en: initialValues.legal_name_en,
-    brand_name: initialValues.brand_name,
+    brand_name: trimStr(initialValues.brand_name),
     tax_id: initialValues.tax_id,
     registered_address_th: initialValues.registered_address_th,
     registered_address_en: initialValues.registered_address_en,
@@ -276,26 +291,26 @@ export function InvoiceSettingsForm({
     auto_email_enabled: initialValues.auto_email_enabled,
     logo_blob_key: initialValues.logo_blob_key,
     seller_is_head_office: initialValues.seller_is_head_office,
-    seller_branch_code: initialValues.seller_branch_code ?? '',
-    wht_note_th: initialValues.wht_note_th ?? '',
-    wht_note_en: initialValues.wht_note_en ?? '',
-    termination_notice_th: initialValues.termination_notice_th ?? '',
-    termination_notice_en: initialValues.termination_notice_en ?? '',
-    bank_payee_name: initialValues.bank_payee_name ?? '',
-    bank_account_no: initialValues.bank_account_no ?? '',
-    bank_account_type: initialValues.bank_account_type ?? '',
-    bank_name: initialValues.bank_name ?? '',
-    bank_branch: initialValues.bank_branch ?? '',
-    bank_address: initialValues.bank_address ?? '',
-    bank_swift: initialValues.bank_swift ?? '',
-    payment_instructions_th: initialValues.payment_instructions_th ?? '',
-    payment_instructions_en: initialValues.payment_instructions_en ?? '',
+    seller_branch_code: trimStr(initialValues.seller_branch_code ?? ''),
+    wht_note_th: trimStr(initialValues.wht_note_th ?? ''),
+    wht_note_en: trimStr(initialValues.wht_note_en ?? ''),
+    termination_notice_th: trimStr(initialValues.termination_notice_th ?? ''),
+    termination_notice_en: trimStr(initialValues.termination_notice_en ?? ''),
+    bank_payee_name: trimStr(initialValues.bank_payee_name ?? ''),
+    bank_account_no: trimStr(initialValues.bank_account_no ?? ''),
+    bank_account_type: trimStr(initialValues.bank_account_type ?? ''),
+    bank_name: trimStr(initialValues.bank_name ?? ''),
+    bank_branch: trimStr(initialValues.bank_branch ?? ''),
+    bank_address: trimStr(initialValues.bank_address ?? ''),
+    bank_swift: trimUpper(initialValues.bank_swift ?? ''),
+    payment_instructions_th: trimStr(initialValues.payment_instructions_th ?? ''),
+    payment_instructions_en: trimStr(initialValues.payment_instructions_en ?? ''),
   };
   const currentValues: Record<string, unknown> = {
-    currency_code: currencyCode,
+    currency_code: trimUpper(currencyCode),
     legal_name_th: legalNameTh,
     legal_name_en: legalNameEn,
-    brand_name: brandName,
+    brand_name: trimStr(brandName),
     tax_id: taxId,
     registered_address_th: addrTh,
     registered_address_en: addrEn,
@@ -310,20 +325,20 @@ export function InvoiceSettingsForm({
     auto_email_enabled: autoEmail,
     logo_blob_key: logoBlobKey,
     seller_is_head_office: sellerIsHeadOffice,
-    seller_branch_code: sellerBranchCode,
-    wht_note_th: whtNoteTh,
-    wht_note_en: whtNoteEn,
-    termination_notice_th: terminationNoticeTh,
-    termination_notice_en: terminationNoticeEn,
-    bank_payee_name: bankPayeeName,
-    bank_account_no: bankAccountNo,
-    bank_account_type: bankAccountType,
-    bank_name: bankName,
-    bank_branch: bankBranch,
-    bank_address: bankAddress,
-    bank_swift: bankSwift,
-    payment_instructions_th: paymentInstructionsTh,
-    payment_instructions_en: paymentInstructionsEn,
+    seller_branch_code: trimStr(sellerBranchCode),
+    wht_note_th: trimStr(whtNoteTh),
+    wht_note_en: trimStr(whtNoteEn),
+    termination_notice_th: trimStr(terminationNoticeTh),
+    termination_notice_en: trimStr(terminationNoticeEn),
+    bank_payee_name: trimStr(bankPayeeName),
+    bank_account_no: trimStr(bankAccountNo),
+    bank_account_type: trimStr(bankAccountType),
+    bank_name: trimStr(bankName),
+    bank_branch: trimStr(bankBranch),
+    bank_address: trimStr(bankAddress),
+    bank_swift: trimUpper(bankSwift),
+    payment_instructions_th: trimStr(paymentInstructionsTh),
+    payment_instructions_en: trimStr(paymentInstructionsEn),
   };
   const dirty = isAdmin && isDirty(initialRecord, currentValues);
   useUnsavedGuard(dirty);
@@ -609,10 +624,16 @@ export function InvoiceSettingsForm({
         // function), so every input is still rendered `disabled` right
         // now. A disabled element cannot receive focus, so the update
         // that re-enables the field must be flushed to the DOM before
-        // `focusField` can move focus onto it (the `finally` block's
+        // focus can move onto it (the `finally` block's
         // `setSubmitting(false)` below would otherwise land too late).
         flushSync(() => setSubmitting(false));
-        focusField(fieldIdFor(fieldNames[0]!));
+        // code-review follow-up (finding 2) — `fieldNames[0]` is
+        // `Object.keys(fieldErrors)` (zod schema declaration order), which
+        // does not necessarily match the field's visual/DOM position. Every
+        // named field was just `markInvalid`'d above (aria-invalid="true"),
+        // so `focusFirstInvalidField`'s DOM-order `querySelector` lands on
+        // the TOPMOST invalid field regardless of schema key order.
+        focusFirstInvalidField();
       } else if (res.status === 400) {
         setError(t('errors.validation'));
       } else if (res.status === 403) {
@@ -633,6 +654,16 @@ export function InvoiceSettingsForm({
     <form
       ref={formRef}
       onSubmit={handleSubmit}
+      // code-review follow-up (finding 3) — `markInvalid` sets aria-invalid
+      // imperatively via `setAttribute`; without this, it was only ever
+      // cleared at the START of the next submit (see the querySelectorAll
+      // sweep above), so a field the admin had already corrected kept its
+      // red/invalid ring until they re-submitted. Single delegated handler
+      // clears the attribute the moment the edited field's value changes.
+      onInput={(e) => {
+        const el = e.target as HTMLElement;
+        if (el.getAttribute?.('aria-invalid') === 'true') el.removeAttribute('aria-invalid');
+      }}
       // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
       method="post"
       className="flex flex-col gap-[var(--page-section-gap)] md:flex-row md:items-start md:gap-8"
