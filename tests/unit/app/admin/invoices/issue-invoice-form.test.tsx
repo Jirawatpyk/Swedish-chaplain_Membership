@@ -377,3 +377,96 @@ describe('IssueInvoiceForm — target-size min-h-11 on new inputs (FR-036 / SC-0
     expect(screen.getByLabelText(/to confirm/i)).toHaveClass('min-h-11');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 088 FR-032 — post-fetch `formError` surface (`issue-invoice-error`).
+//
+// Issuing pins an IMMUTABLE §86/4 tax snapshot (void-only to change), so a
+// POST failure must land INLINE in a focused role="alert" — never a transient
+// toast the admin can miss. `issue-error-routing.ts` (the pure classifier) is
+// unit-tested separately; these cases cover the RENDER half — that the routed
+// result actually reaches the DOM through the `InlineAlert` migration.
+// ---------------------------------------------------------------------------
+
+/** Reject `res` shape the form reads: `res.json().error.code`. */
+function rejectingFetch(code: string) {
+  return vi.fn(async () => ({
+    ok: false,
+    json: async () => ({ error: { code } }),
+  }));
+}
+
+/** Satisfy the typed-phrase gate on a default (standard-rate) form and submit. */
+function confirmAndSubmit() {
+  fireEvent.change(screen.getByLabelText(/to confirm/i), {
+    target: { value: 'ISSUE' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: /^Issue$/ }));
+}
+
+describe('IssueInvoiceForm — concurrent 409 inline recovery (FR-032)', () => {
+  it('renders the "already issued — refresh" prompt and refreshes on click', async () => {
+    const fetchMock = rejectingFetch('invoice_already_issued');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      expect(screen.queryByTestId('issue-invoice-error')).toBeNull();
+
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // A stale-write 409 is NOT the admin's error → neutral, not destructive.
+      expect(alert).toHaveAttribute('data-tone', 'neutral');
+      expect(alert).toHaveAttribute('role', 'alert');
+      expect(alert).toHaveTextContent(
+        'This invoice was already issued in another session. Refresh to see the latest status and its number.',
+      );
+
+      expect(refreshMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('IssueInvoiceForm — failure branch is focused + destructive (FR-032)', () => {
+  it('renders the dedicated operator-actionable copy and moves focus onto the alert', async () => {
+    const fetchMock = rejectingFetch('settings_missing');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveTextContent(
+        "Invoice settings haven't been configured for this organisation yet — configure them before issuing.",
+      );
+      // Not missable: tabIndex={-1} + the focus effect park focus on the alert.
+      expect(alert).toHaveAttribute('tabindex', '-1');
+      await waitFor(() => expect(alert).toHaveFocus());
+      // The refresh affordance is concurrent-only.
+      expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('interpolates the raw code into codeFallback for an unrouted failure', async () => {
+    const fetchMock = rejectingFetch('some_unmapped_code');
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      confirmAndSubmit();
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveAttribute('data-tone', 'destructive');
+      expect(alert).toHaveTextContent('Error code: some_unmapped_code');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

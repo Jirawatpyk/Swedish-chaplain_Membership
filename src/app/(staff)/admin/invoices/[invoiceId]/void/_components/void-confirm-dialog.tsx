@@ -62,9 +62,18 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
     if (formError) errorRef.current?.focus();
   }, [formError]);
 
-  // CR-6: focus the reason field on mount + Esc → cancel route.
+  // CR-6: initial focus on the reason field — MOUNT ONLY, deliberately split
+  // from the Esc effect below. It must NOT share that effect's `pending`
+  // dependency: a re-run on the transition's pending true→false flip fires
+  // AFTER the `formError` effect above (effects run in declaration order) and
+  // stole focus back off the error alert, silently defeating the FR-032
+  // "focused, unmissable failure" guarantee for this irreversible mutation.
   useEffect(() => {
     reasonRef.current?.focus();
+  }, []);
+
+  // CR-6: Esc → cancel route (re-subscribes on `pending` for a fresh closure).
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !pending) {
         e.preventDefault();
@@ -130,7 +139,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       }}
       className="flex flex-col gap-6"
     >
-      {/* UX-1 — destructive Alert gives terminal-action warning
+      {/* UX-1 — destructive InlineAlert gives terminal-action warning
         * the visual weight it deserves (AlertTriangle + destructive
         * palette). Previous muted-card treatment under-signalled the
         * irreversibility of void vs the rest of the form copy. */}
