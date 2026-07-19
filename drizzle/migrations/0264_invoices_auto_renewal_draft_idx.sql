@@ -1,0 +1,47 @@
+-- ---------------------------------------------------------------------------
+-- 107-auto-invoice Task 16 review (MAJOR-2) — partial index backing the
+-- auto-renewal review-queue gauges.
+--
+-- `observeAutoInvoiceGaugesForTenant`
+-- (src/app/api/cron/renewals/auto-draft-coordinator/route.ts) emits
+-- `renewals_auto_draft_queue_size` and
+-- `renewals_auto_draft_oldest_age_seconds`, both over the treasurer's review
+-- queue: origin='auto_renewal' AND status='draft'.
+--
+-- The first revision expressed those as COUNT(*) FILTER / MIN(...) FILTER
+-- over an outer `FROM invoices`. A FILTER clause is never index-eligible, so
+-- the planner read every tenant row and discarded the rest. Measured on the
+-- dev branch with EXPLAIN (ANALYZE, BUFFERS):
+--
+--   Seq Scan on invoices  (rows=50) (actual time=1.080..10.310)
+--     Filter: (tenant_id = 'swecham')
+--     Rows Removed by Filter: 389
+--   Execution Time: 11.724 ms
+--
+-- ...for a query whose answer is almost always 0. The route now uses scalar
+-- subqueries with the predicate in WHERE; this index makes both of them a
+-- bounded index read, and orders by created_at so MIN(created_at) is an
+-- index-ordered first-row fetch rather than an aggregate over the matches.
+--
+-- Partial on purpose: the qualifying set is a small, transient working queue
+-- (a row leaves it as soon as a treasurer issues or discards the draft), so
+-- the index stays tiny regardless of how large `invoices` grows. Same
+-- rationale as membership_plans_tenant_active_idx (migration 0006) and
+-- renewal_cycles_lapsed_tier_idx (migration 0100).
+--
+-- NO `CONCURRENTLY` — deliberate, and the second time this has been written
+-- down (see migration 0054 and migration 0100's Round 7 B-R6-1 note).
+-- Drizzle's migration runner wraps every migration in a single BEGIN/COMMIT
+-- block, and CREATE INDEX CONCURRENTLY is illegal inside a transaction; it
+-- would fail the deploy. The brief AccessExclusiveLock is a non-issue here:
+-- `invoices` is small (prod ~90 rows at time of writing) and the predicate
+-- currently matches ZERO rows, because the feature ships dark behind three
+-- default-off keys. If a future backfill ever needs a non-blocking rebuild,
+-- drop + recreate CONCURRENTLY via a manual ops step OUTSIDE the migrator.
+--
+-- IF NOT EXISTS so a re-run against a partially-migrated branch is a no-op.
+-- ---------------------------------------------------------------------------
+
+CREATE INDEX IF NOT EXISTS "invoices_auto_renewal_draft_idx"
+  ON "invoices" USING btree ("tenant_id", "created_at")
+  WHERE origin = 'auto_renewal' AND status = 'draft';

@@ -25,6 +25,7 @@ import {
   pgEnum,
   primaryKey,
   check,
+  index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
@@ -395,6 +396,19 @@ export const invoices = pgTable(
     uniqueIndex('invoices_tenant_bill_raw_uniq')
       .on(table.tenantId, table.billDocumentNumberRaw)
       .where(sql`bill_document_number_raw IS NOT NULL`),
+    // 107-auto-invoice Task 16 review MAJOR-2 (migration 0264) — backs the
+    // auto-renewal review-queue gauges (`renewals_auto_draft_queue_size` +
+    // `renewals_auto_draft_oldest_age_seconds`) emitted daily from the
+    // auto-draft coordinator. The gauge SQL puts this predicate in WHERE
+    // (not COUNT(*) FILTER, which is never index-eligible and measured a
+    // full seq scan: 389 rows discarded, 11.7ms). `created_at` is the
+    // second column so MIN(created_at) is an index-ordered first-row read.
+    // Partial: the qualifying set is a small transient working queue — a
+    // row leaves it the moment a treasurer issues or discards the draft —
+    // so the index stays tiny however large `invoices` grows.
+    index('invoices_auto_renewal_draft_idx')
+      .on(table.tenantId, table.createdAt)
+      .where(sql`origin = 'auto_renewal' AND status = 'draft'`),
     // FK DECISION (054-event-fee-invoices, Task 3+4):
     //   `(tenant_id, event_registration_id)` → `event_registrations
     //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware

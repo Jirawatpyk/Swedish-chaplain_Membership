@@ -40,6 +40,24 @@ interface CapturedCounterAdd {
 const counterAddsByName = new Map<string, CapturedCounterAdd[]>();
 const observableGaugesCreated = new Set<string>();
 
+/**
+ * Review M-2 — when true, the fake meter's `createCounter` /
+ * `createObservableGauge` throw.
+ *
+ * Without this the `not.toThrow()` cases were vacuous: the fake meter never
+ * failed, so `safeMetric`'s swallow — the thing those tests claim to cover,
+ * and the thing the whole "a gauge must never take the cron down" guarantee
+ * rests on — was never actually exercised. Any assertion that a wrapper
+ * swallows errors has to produce an error first.
+ */
+let meterShouldThrow = false;
+
+function throwIfArmed(): void {
+  if (meterShouldThrow) {
+    throw new Error('meter exploded (simulated OTel SDK failure)');
+  }
+}
+
 function getOrCreateCounterBucket(name: string): CapturedCounterAdd[] {
   let bucket = counterAddsByName.get(name);
   if (!bucket) {
@@ -58,13 +76,25 @@ vi.mock('@opentelemetry/api', async () => {
     ...actual,
     metrics: {
       getMeter: () => ({
-        createCounter: (name: string) => ({
-          add: (value: number, attrs: Record<string, unknown>) => {
-            getOrCreateCounterBucket(name).push({ value, attrs });
-          },
-        }),
+        createCounter: (name: string) => {
+          throwIfArmed();
+          return {
+            add: (value: number, attrs: Record<string, unknown>) => {
+              // Also armed HERE, not only in the factory. `counter()` in
+              // metrics.ts memoises instruments in a module-level Map, so a
+              // counter already created by an earlier test is never
+              // re-created — arming only the factory left these tests
+              // vacuous a second time (verified: 3 failures showing `add`
+              // had succeeded). Throwing at the call site exercises
+              // safeMetric regardless of memoisation.
+              throwIfArmed();
+              getOrCreateCounterBucket(name).push({ value, attrs });
+            },
+          };
+        },
         createHistogram: () => ({ record: () => {} }),
         createObservableGauge: (name: string) => {
+          throwIfArmed();
           observableGaugesCreated.add(name);
           return { addCallback: () => {} };
         },
@@ -92,6 +122,7 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
     // reset between cases — drop it so a re-observe assertion cannot read
     // a value bled in from an earlier test.
     __test__clearGaugeValues();
+    meterShouldThrow = false;
   });
 
   // -----------------------------------------------------------------------
@@ -120,8 +151,14 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       expect(bucket.every((b) => b.value === 1)).toBe(true);
     });
 
-    it('never throws — safeMetric swallow contract holds', () => {
+    it('swallows a THROWING meter — safeMetric contract (review M-2)', () => {
+      // Arm the fake meter to blow up, so this actually exercises
+      // safeMetric instead of asserting that a no-op does not throw.
+      meterShouldThrow = true;
       expect(() => renewalsMetrics.autoDraftCreated(TENANT)).not.toThrow();
+      // ...and nothing was recorded, i.e. it failed closed, not silently
+      // half-way.
+      expect(counterAddsByName.get('renewals_auto_draft_created_total')).toBeUndefined();
     });
   });
 
@@ -151,10 +188,12 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       ]);
     });
 
-    it('never throws', () => {
+    it('swallows a THROWING meter — safeMetric contract (review M-2)', () => {
+      meterShouldThrow = true;
       expect(() =>
         renewalsMetrics.autoDraftSkipped(TENANT, 'race_lost'),
       ).not.toThrow();
+      expect(counterAddsByName.get('renewals_auto_draft_skipped_total')).toBeUndefined();
     });
   });
 
@@ -169,8 +208,10 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       expect(bucket![0]).toEqual({ value: 1, attrs: { tenant: TENANT } });
     });
 
-    it('never throws', () => {
+    it('swallows a THROWING meter — safeMetric contract (review M-2)', () => {
+      meterShouldThrow = true;
       expect(() => renewalsMetrics.autoDraftErrors(TENANT)).not.toThrow();
+      expect(counterAddsByName.get('renewals_auto_draft_errors_total')).toBeUndefined();
     });
   });
 
@@ -244,6 +285,61 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
     expect(__test__readGaugeValues('renewals_auto_draft_queue_size')?.get(TENANT)).toBe(1);
     expect(__test__readGaugeValues('renewals_auto_draft_oldest_age_seconds')?.get(TENANT)).toBe(2);
     expect(__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT)).toBe(3);
+  });
+
+  // -----------------------------------------------------------------------
+  // forgetAutoInvoiceGauges — staleness contract (review MAJOR-4)
+  // -----------------------------------------------------------------------
+  //
+  // `gaugeValues` is a last-observed-wins accumulator that nothing deletes
+  // from, and the gauge callbacks re-read it at every scrape. So a feed
+  // whose query starts failing would keep re-reporting its last successful
+  // value forever. For `renewals_awaiting_payment_no_invoice` that is
+  // corrosive: a stale `0` masks exactly the wedge the gauge exists to
+  // catch. These tests pin the "absent, not frozen" behaviour.
+  describe('forgetAutoInvoiceGauges (staleness contract)', () => {
+    it('drops all three gauge values for the tenant', () => {
+      renewalsMetrics.observeAutoDraftQueueSizeGauge(TENANT, 5);
+      renewalsMetrics.observeAutoDraftOldestAgeGauge(TENANT, 600);
+      renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(TENANT, 2);
+
+      renewalsMetrics.forgetAutoInvoiceGauges(TENANT);
+
+      expect(__test__readGaugeValues('renewals_auto_draft_queue_size')?.get(TENANT)).toBeUndefined();
+      expect(__test__readGaugeValues('renewals_auto_draft_oldest_age_seconds')?.get(TENANT)).toBeUndefined();
+      expect(__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT)).toBeUndefined();
+    });
+
+    it('does NOT disturb another tenant — one tenant failing must not blank a healthy one', () => {
+      renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(TENANT, 2);
+      renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(OTHER_TENANT, 7);
+
+      renewalsMetrics.forgetAutoInvoiceGauges(TENANT);
+
+      const bucket = __test__readGaugeValues('renewals_awaiting_payment_no_invoice')!;
+      expect(bucket.get(TENANT)).toBeUndefined();
+      expect(bucket.get(OTHER_TENANT)).toBe(7);
+    });
+
+    it('is a safe no-op when the tenant was never observed', () => {
+      expect(() =>
+        renewalsMetrics.forgetAutoInvoiceGauges('never-seen-tenant'),
+      ).not.toThrow();
+    });
+
+    it('a stale value does NOT survive — the regression this prevents', () => {
+      // Simulate: successful pass observes 0 (no wedge), then the query
+      // starts failing. Without the forget call the gauge would keep
+      // reporting 0 at every scrape and AI-A1 would never fire again.
+      renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(TENANT, 0);
+      expect(__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT)).toBe(0);
+
+      renewalsMetrics.forgetAutoInvoiceGauges(TENANT);
+
+      // Absent, not 0. Absence is a condition monitoring can alert on.
+      const bucket = __test__readGaugeValues('renewals_awaiting_payment_no_invoice');
+      expect(bucket?.has(TENANT)).toBe(false);
+    });
   });
 
   // -----------------------------------------------------------------------

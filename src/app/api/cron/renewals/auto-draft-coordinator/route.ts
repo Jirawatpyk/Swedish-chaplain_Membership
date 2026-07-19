@@ -23,16 +23,13 @@
  * enforced per-tenant inside the worker's use-case call (Task 7).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { runInTenant } from '@/lib/db';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
-import { asTenantContext } from '@/modules/tenants';
-import { makeRenewalsDeps } from '@/modules/renewals';
+import { makeRenewalsDeps, readAutoInvoiceGaugeRow } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,13 +73,25 @@ export const dynamic = 'force-dynamic';
  * equivalent today, and matching the screen matters more than defensive
  * narrowing).
  *
- * The `MIN(created_at)` carries the SAME `FILTER` as the `COUNT`. Without
- * it the age would be measured from the oldest invoice of ANY origin/status
- * in the tenant — a number that looks perfectly plausible and is meaningless
- * (verified against the dev branch: filtered 7884965s vs unfiltered
- * 7885772s over the same rows). `COALESCE` handles the empty queue, where
- * `MIN` is NULL and the subtraction would otherwise observe NULL instead of
- * the correct 0.
+ * Both are written as scalar subqueries with the predicate in `WHERE`, NOT
+ * as `COUNT(*) FILTER (...)` over an outer `FROM invoices` (review MAJOR-2).
+ * A `FILTER` clause is never index-eligible: the planner must read every
+ * tenant row and discard non-matching ones. Measured on the dev branch
+ * before the change — `Seq Scan on invoices, rows=50, Rows Removed by
+ * Filter: 389, Execution Time: 11.7 ms` — for a query whose answer is
+ * almost always 0. With the predicate in `WHERE`, the partial index
+ * `invoices_auto_renewal_draft_idx (tenant_id, created_at) WHERE
+ * origin='auto_renewal' AND status='draft'` (migration 0264) serves both,
+ * and `MIN(created_at)` becomes an index-ordered first-row read.
+ *
+ * The restructure also removes a whole BUG CLASS. The previous shape needed
+ * the same `FILTER` repeated on both the `COUNT` and the `MIN`, and omitting
+ * it on the `MIN` silently measured age from the oldest invoice of ANY
+ * origin/status — a number that looks perfectly plausible and is meaningless
+ * (verified: filtered 7884965s vs unfiltered 7885772s over identical rows).
+ * With each aggregate in its own subquery, its predicate sits in a `WHERE`
+ * that cannot be forgotten without the query failing to mean anything at
+ * all. `COALESCE` still covers the empty queue, where `MIN` is NULL.
  *
  * *(3) wedged-state detector.* A non-zero value means a member is suspended
  * pending payment of a bill that does not exist — never billed, never
@@ -94,66 +103,85 @@ export const dynamic = 'force-dynamic';
  *
  * "Live invoice" is member-level (`invoice_subject='membership' AND status
  * IN ('draft','issued')`) — the exact `noLiveMembershipInvoiceSql`
- * definition `listCyclesEligibleForAutoDraft` already uses, so the detector
- * and the drafter agree on what "already billed" means. That also keeps the
- * population disjoint from Task 11's orphans: an orphan HAS a live issued
- * invoice, so `NOT EXISTS` excludes it and the two signals stay independent.
+ * definition `listCyclesEligibleForAutoDraft` already uses. This is not just
+ * drift-avoidance, it is semantic: the drafter uses the member-level rule to
+ * decide who to bill, so a plan-year-precise detector would flag members the
+ * drafter is *deliberately declining* to draft for and report a wedge the
+ * system is behaving correctly about. It also keeps the population disjoint
+ * from Task 11's orphans: an orphan HAS a live issued invoice, so
+ * `NOT EXISTS` excludes it and the two signals stay independent.
+ *
+ * **The member-side gate is load-bearing (review BLOCKER-1).** The original
+ * version copied `noLiveMembershipInvoiceSql` but not the member gate that
+ * sits beside it in the same repo function, so the detector and the drafter
+ * agreed on *invoice liveness* but not on *who is billable* — and AI-A1's
+ * "steady state is 0" was simply false. Four routine paths landed in the
+ * population: (a) an invoice voided for correction (nothing clears
+ * `linked_invoice_id` on void, and void-on-reissue is now a treasurer's
+ * routine action); (b) an archive-cascade failure (`archive-member.ts` runs
+ * it post-commit and non-fatal); (c) the erasure window (`scrubPiiInTx`
+ * leaves `status`/`archived_at` alone by design); and (d)
+ * `listCyclesEligibleForAwaitingPayment`, which has no member gate at all
+ * and so flips archived members' cycles to `awaiting_payment`. Gating on
+ * `archived_at IS NULL AND status <> 'archived' AND erased_at IS NULL`
+ * removes (b), (c) and (d).
+ *
+ * Case (a) — void — is deliberately KEPT in the population: a member whose
+ * invoice was voided for correction genuinely IS awaiting a bill, so
+ * excluding void would blind the gauge to a real wedge. What is wrong is
+ * alerting on it *instantaneously*, since that state is expected to be
+ * brief. Hence AI-A1 ships report-only, and when promoted must fire on
+ * SUSTAINED wedge (age-based), never on `> 0`. See `docs/observability.md`
+ * § 26.3 and `docs/runbooks/auto-invoice-wedged-cycles.md`.
+ *
+ * Enrolment (`auto_invoice_enrolled_at`) is deliberately NOT part of the
+ * gate even though the drafter checks it. Enrolment decides WHO repairs a
+ * wedge (cron vs treasurer), not whether the state is broken — a
+ * non-enrolled member sitting in `awaiting_payment` with no invoice is
+ * exactly as wedged, and gating on enrolment would hide them.
  */
+/**
+ * Hard ceiling on the gauge feed, in ms (review MAJOR-1).
+ *
+ * `try`/`catch` guards a THROW, not a HANG. A gauge query wedged on a lock
+ * or a stalled Neon connection would otherwise sit here burning the
+ * coordinator's remaining Vercel function budget with nothing to show for
+ * it. 5 s is ~400x the measured cost of the (pre-index) aggregate, so it can
+ * only fire on a genuine stall, never on ordinary slowness.
+ *
+ * The losing promise is abandoned, not cancelled — Postgres will finish or
+ * error on its own and the result is discarded. That is acceptable precisely
+ * because this path has no side effects beyond writing a gauge value.
+ */
+const GAUGE_FEED_TIMEOUT_MS = 5_000;
+
 async function observeAutoInvoiceGaugesForTenant(
   tenantId: string,
 ): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const ctx = asTenantContext(tenantId);
-    type Row = {
-      queue_size: number;
-      oldest_age_seconds: number;
-      awaiting_payment_no_invoice: number;
-    };
-    const rows = await runInTenant<ReadonlyArray<Row>>(ctx, async (tx) => {
-      const result = await tx.execute(sql`
-        SELECT
-          -- (1) + (2) Review-queue depth and head-of-queue age.
-          -- See the JSDoc above for why this predicate, why MIN carries the
-          -- same FILTER, and why COALESCE is required.
-          COUNT(*) FILTER (
-            WHERE origin = 'auto_renewal' AND status = 'draft'
-          )::int AS queue_size,
-          COALESCE(
-            EXTRACT(
-              EPOCH FROM (
-                NOW() - MIN(created_at) FILTER (
-                  WHERE origin = 'auto_renewal' AND status = 'draft'
-                )
-              )
+    // SQL lives in `@/modules/renewals` (auto-invoice-gauge-query.ts) rather
+    // than inline here, so it can be pinned by an integration test against
+    // live Neon — review MAJOR-3. A Next.js route cannot export arbitrary
+    // symbols for a test to import, and the coordinator unit test mocks
+    // `runInTenant`, so inline the query was covered by nothing.
+    const query = readAutoInvoiceGaugeRow(tenantId);
+
+    const row = await Promise.race([
+      query,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `gauge feed exceeded ${GAUGE_FEED_TIMEOUT_MS}ms — abandoned`,
+              ),
             ),
-            0
-          )::int AS oldest_age_seconds,
-          -- (3) Wedged-state detector: cycles awaiting payment with no live
-          -- membership invoice to pay. Steady-state expectation is 0.
-          -- See the JSDoc above for the full rationale.
-          (
-            SELECT COUNT(*)::int
-            FROM renewal_cycles rc
-            WHERE rc.tenant_id = ${tenantId}
-              AND rc.status = 'awaiting_payment'
-              AND NOT EXISTS (
-                SELECT 1
-                FROM invoices live
-                WHERE live.tenant_id = rc.tenant_id
-                  AND live.member_id = rc.member_id
-                  AND live.invoice_subject = 'membership'
-                  AND live.status IN ('draft', 'issued')
-              )
-          ) AS awaiting_payment_no_invoice
-        FROM invoices
-        WHERE tenant_id = ${tenantId}
-      `);
-      // Drizzle's postgres-js driver returns the rows array directly.
-      // Cast through `unknown` because the helper-level Row type is
-      // narrower than the driver's untyped rowset.
-      return (result as unknown as ReadonlyArray<Row>) ?? [];
-    });
-    const row = rows[0];
+          GAUGE_FEED_TIMEOUT_MS,
+        );
+      }),
+    ]);
+
     if (!row) return;
     renewalsMetrics.observeAutoDraftQueueSizeGauge(tenantId, row.queue_size);
     renewalsMetrics.observeAutoDraftOldestAgeGauge(
@@ -165,6 +193,14 @@ async function observeAutoInvoiceGaugesForTenant(
       row.awaiting_payment_no_invoice,
     );
   } catch (e) {
+    // Review MAJOR-4 — drop this tenant's last-observed values rather than
+    // leaving them frozen. Without this, a permanently-failing query keeps
+    // re-reporting the last successful number at every scrape: a stale `> 0`
+    // alerts forever on an already-repaired wedge, and a stale `0` masks a
+    // real one — destroying the "0 means 0" property AI-A1 rests on. An
+    // ABSENT series is a condition monitoring can express ("alert on no
+    // data"); a stale number is a lie. See the method's docstring.
+    renewalsMetrics.forgetAutoInvoiceGauges(tenantId);
     logger.warn(
       {
         err: e instanceof Error ? e.message : String(e),
@@ -173,6 +209,11 @@ async function observeAutoInvoiceGaugesForTenant(
       },
       'cron.renewals.auto-draft.coordinator.gauge_observe_failed',
     );
+  } finally {
+    // Release the timeout handle on every path, including the happy one —
+    // a pending timer would otherwise keep the event loop (and the Vercel
+    // function) alive for up to 5s after the work is done.
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -344,16 +385,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return r.value;
   });
 
-  // Task 16 — feed the per-tenant auto-invoice gauges AFTER the fan-out so
-  // they reflect the state this pass just produced. `allSettled` + the
-  // helper's own try/catch mean a gauge failure can neither reject here nor
-  // affect the summary below.
-  await Promise.allSettled(
-    activeTenants.map((tenantId) =>
-      observeAutoInvoiceGaugesForTenant(tenantId),
-    ),
-  );
-
   const tenantsSucceeded = perTenantResults.filter(
     (r) => r.error === undefined,
   ).length;
@@ -437,6 +468,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     renewalsMetrics.coordinatorTenantsFailed('auto_draft', summary.tenants_failed);
   }
   renewalsMetrics.coordinatorDurationMs('auto_draft', summary.duration_ms);
+
+  // Task 16 — feed the per-tenant auto-invoice gauges.
+  //
+  // Placement is deliberate (review MAJOR-1): AFTER the fan-out, so the
+  // numbers reflect the state this pass just produced, but also after the
+  // durable audit row AND after `coordinatorDurationMs`. An earlier revision
+  // ran this before `summary.duration_ms` was computed, which folded gauge
+  // latency into both the audit row and `renewals.coordinator.duration_ms` —
+  // the very metric docs/observability.md § 26.4 names as the stand-in for
+  // the not-yet-recorded p95 SLO. Measuring the observer inside the
+  // measurement is exactly backwards. The dispatch coordinator already gets
+  // this right (duration first, then gauges); this now matches it.
+  await Promise.allSettled(
+    activeTenants.map((tenantId) =>
+      observeAutoInvoiceGaugesForTenant(tenantId),
+    ),
+  );
 
   logger.info(
     {

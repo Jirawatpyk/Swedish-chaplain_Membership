@@ -1842,6 +1842,13 @@
       "when": 1798539100000,
       "tag": "0263_member_auto_invoice_enrolled_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 266,
+      "version": "7",
+      "when": 1798539200000,
+      "tag": "0264_invoices_auto_renewal_draft_idx",
+      "breakpoints": true
     }
   ]
 }

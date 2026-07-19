@@ -1622,6 +1622,15 @@ tenants table post-F10); `reason` is a closed 3-value enum
 (`AutoDraftSkipReason`). No unbounded dimension is emitted — no `memberId`, no
 `invoiceId`, no invoice number.
 
+Query cost: the three gauges come from ONE aggregate
+(`readAutoInvoiceGaugeRow`, `src/modules/renewals/infrastructure/`), backed by
+the partial index `invoices_auto_renewal_draft_idx` (migration 0264). Measured
+on the dev branch: 11.7 ms full seq scan before the index + `WHERE`
+restructure, 0.37 ms index-only after. The feed runs after the coordinator's
+audit row and duration metric so its latency is never folded into
+`renewals.coordinator.duration_ms`, and it is bounded by a 5 s timeout —
+`try`/`catch` guards a throw, not a hang.
+
 ### 26.2 The `membership_not_full` label — read before renaming
 
 `renewals_auto_draft_skipped_total{reason="membership_not_full"}` is fed from
@@ -1645,13 +1654,50 @@ unlabelled, and is pinned by `tests/unit/lib/metrics-auto-invoice.test.ts`
 
 ### 26.3 Alerts
 
-| ID | Rule | Severity | Routing |
+**Routing note — read first.** Nothing in this feature bills, emails, or moves
+money automatically: the cron only pre-fills DRAFTS, and a draft has no tax
+number, no PDF and no email until a human clicks Issue. Every condition below
+is measured in **days**, not minutes. The whole set therefore routes to a
+**business-hours channel** (`#chamber-ops`), NOT to `#oncall-platform` or
+PagerDuty. Waking someone at 3am for a renewal draft that will still be a
+renewal draft at 9am is how an alert channel earns the mute button.
+
+| ID | Rule | Severity | Routing + action |
 |---|---|---|---|
-| AI-A1 | `renewals_awaiting_payment_no_invoice{tenant}` > 0 for 2 consecutive daily samples | alarm | `#oncall-platform` — a member is suspended pending payment of a bill that does not exist: never billed, never chased, and invisible on every other panel (`membership_suspended_count` counts them as ordinary unpaid). Runbook: list the wedged cycles with the `NOT EXISTS` query in `auto-draft-coordinator/route.ts`, then either issue the missing invoice or transition the cycle back. Distinct from Task 11's orphans (those HAVE a live issued invoice and are excluded by the `NOT EXISTS`). |
-| AI-A2 | `renewals_auto_draft_errors_total{tenant}` >= 1 in any 24-h window | alarm | `#oncall-platform` — a renewal did not get drafted today. Correlate with the `F8.AUTO_DRAFT.CYCLE_FAILED` log (carries `cycleId` + serialised error) for the specific rows. The next cron pass retries. |
-| AI-A3 | `renewals_auto_draft_oldest_age_seconds{tenant}` > 14 days | alarm | `#oncall-platform` (business, not platform) — renewals are drafted but nobody is issuing them; members are not being billed. Alert on **age**, not depth: a queue of 40 that turns over daily is healthy, a queue of 3 whose head is 45 days old means three renewals were quietly abandoned. |
-| AI-A4 | `renewals_auto_draft_skipped_total{reason="race_lost"}` share rising above baseline over 7 d | report | No page — the cron is colliding with member self-service renewals more than expected. Review cron scheduling. |
-| AI-A5 | `renewals_auto_draft_created_total{tenant}` == 0 for 7 consecutive days **while** enrolled members exist | report | No page — expected while the feature ships dark (all three keys default off). Becomes meaningful only after flag-flip; confirm the keys before investigating. |
+| AI-A1 | `renewals_awaiting_payment_no_invoice{tenant}` > 0 | 📉 **report-only** | `#chamber-ops` — a member is suspended pending payment of a bill that does not exist: never billed, never chased, invisible on every other panel. **Runbook: `docs/runbooks/auto-invoice-wedged-cycles.md`** (first triage step: *was an invoice recently voided for this member?* — see below). Report-only until a real 0 baseline exists; § 6 of the runbook covers promotion. |
+| AI-A2 | `renewals_auto_draft_errors_total{tenant}` ≥ 1 in 24 h | 📉 report | `#chamber-ops` — a renewal did not get drafted today. The next daily pass retries, so a single occurrence is not actionable on its own. Correlate with the `F8.AUTO_DRAFT.CYCLE_FAILED` log (carries `cycleId` + serialised error). |
+| AI-A2b | `renewals_auto_draft_errors_total` ≥ 1 on **two consecutive days**, OR error share > 20 % of `cycles_processed` in one pass | ⚠ alarm | `#chamber-ops` — *the retry did not clear it.* This is the actionable form: a persistent per-cycle fault (bad plan data, F4 bridge contract drift, RLS regression) rather than a transient blip. |
+| AI-A3 | `renewals_auto_draft_oldest_age_seconds{tenant}` — **panel, no threshold** | 📊 panel | `#chamber-ops` review. Deliberately un-thresholded: 14 days was a guess about treasurer working rhythm, and no baseline exists yet. Watch **age**, not depth — a queue of 40 that turns over daily is healthy; a queue of 3 whose head is 45 days old means three renewals were quietly abandoned. Set a threshold once a real turnover rhythm is observed. |
+| AI-A4 | `renewals_auto_draft_skipped_total{reason="race_lost"}` share vs baseline | 📊 panel, unset | The cron colliding with member self-service renewals more than expected. No threshold until there is a baseline. |
+| AI-A5 | `renewals_auto_draft_created_total{tenant}` == 0 for 7 consecutive days | 📉 report | `#chamber-ops` — **not yet implementable as stated.** The useful form is "0 drafts created *while enrolled members exist*", but there is no enrolled-member gauge to express the guard, so this would fire every day the feature ships dark. Either add `renewals_auto_invoice_enrolled_members{tenant}` and gate on it, or restate as a manual weekly check after flag-flip. Tracked in § 26.6. |
+
+**Gauge absence is a distinct condition.** All three gauges are *deleted* for a
+tenant when their feed query fails (`forgetAutoInvoiceGauges`), rather than
+left frozen at their last value — a stale `0` on AI-A1 would silently mask
+exactly the wedge the gauge exists to catch. Any monitor built on these must
+treat **no data** as investigable, not as 0. The paired signal is the
+`cron.renewals.auto-draft.coordinator.gauge_observe_failed` warn log.
+
+### 26.3a Known benign contributor to AI-A1 — voided invoices
+
+A membership invoice voided for correction leaves its cycle in
+`awaiting_payment` (nothing clears `renewal_cycles.linked_invoice_id` on void)
+while the invoice itself leaves the live `draft`/`issued` set. That member is
+counted as wedged until the corrected invoice is issued.
+
+This is **kept in the population deliberately**: such a member genuinely *is*
+awaiting a bill, and excluding void would blind the gauge to a real wedge
+(an invoice voided and then never reissued is precisely the failure worth
+catching). What is wrong is alerting on it *instantaneously* — the state is
+expected to be brief. Hence AI-A1 is report-only, and its promotion criteria
+(runbook § 6) require firing on *sustained* wedge rather than on `> 0`.
+
+Excluded from the population, by contrast, are archived members, members with
+`status='archived'`, and erased members — all three are non-billable, all three
+reach `awaiting_payment` through routine paths (archive-cascade failure, the
+erasure window, and `listCyclesEligibleForAwaitingPayment`'s lack of a member
+gate), and counting them made "steady state is 0" false on day one.
+
 
 ### 26.4 Gap — no latency SLO yet
 
@@ -1669,3 +1715,16 @@ No feature-specific extension. The § 3 universal list applies; note in
 particular that invoice NUMBERS must never become metric labels (unbounded
 cardinality) — drafts have none until issued, and the issued path logs the
 `invoiceId` uuid only.
+
+### 26.6 Open items
+
+Carried from the Task 16 review. None blocks the dark ship; all should be
+closed before or shortly after flag-flip.
+
+| # | Item | Why it is open |
+|---|---|---|
+| 1 | **Alert thresholds are unbaselined.** AI-A1 report-only; AI-A3 + AI-A4 are panels with no threshold. | The feature ships dark, so no production distribution exists. Set thresholds from observed data, not intuition — see the runbook § 6 for AI-A1's promotion criteria. |
+| 2 | **No `renewals_auto_invoice_enrolled_members{tenant}` gauge.** | AI-A5's "while enrolled members exist" guard cannot be expressed without it, so the rule is currently not implementable as written. Either add the gauge or restate AI-A5 as a manual weekly check. |
+| 3 | **No p95 SLO for the auto-draft pass.** | See § 26.4. Needs a maintainer decision before flag-flip. |
+| 4 | **The two pre-existing F8 gauges still go stale on failure.** `observeCycleStateGauge` and `observeMembershipSuspendedCountGauge` keep re-reporting their last value forever if their feed breaks; only the three auto-invoice gauges are cleared (`forgetAutoInvoiceGauges`). | Deliberately out of scope for Task 16 — nothing pages on those two today. Worth fixing when either becomes an alert source. |
+| 5 | **Gauge cadence is daily.** A cycle that wedges and is repaired inside 24 h may never be sampled. | Matches the `observeCycleStateGauge` precedent and is adequate for a backlog signal, but it is not incident-response-grade. Raising it means a separate 5-minute gauge cron (the `payments.stale_pending_count` pattern). |

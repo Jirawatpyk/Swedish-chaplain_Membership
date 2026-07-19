@@ -54,14 +54,30 @@ vi.mock('@/lib/env', () => ({
 // spread its other exports — that transitively evaluates
 // `renewals-deps.ts`, whose Drizzle adapters import `@/lib/db` at
 // module scope (a real Postgres client keyed off `env.db.url`, which
-// our minimal mocked `env` above doesn't have). Neither cron route
-// under test calls `runInTenant`/`db` directly (Task 8 ambiguity
-// resolution #1 — the worker never opens its own outer tx), but this
-// mock is still required to satisfy that transitive import chain.
+// our minimal mocked `env` above doesn't have).
+//
+// The WORKER route still never calls `runInTenant`/`db` directly (Task 8
+// ambiguity resolution #1 — it never opens its own outer tx). The
+// COORDINATOR does, as of Task 16: `observeAutoInvoiceGaugesForTenant`
+// runs one aggregate under `runInTenant` to feed the auto-invoice gauges.
+// (Review M-3 — this comment previously claimed neither route did, which
+// stopped being true and is the first thing a reader of this file sees.)
+//
+// `runInTenantMock` is overridable per-test so the gauge feed's
+// never-block guarantee can actually be exercised — see the
+// "gauge feed is non-blocking" describe block. The default resolves
+// `execute` to `undefined`, which the route's `?? []` turns into an empty
+// rowset and an early return, so the gauge path no-ops for every test
+// that is not specifically about it.
+const runInTenantMock = vi.hoisted(() =>
+  vi.fn(async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
+    fn({ execute: vi.fn(async () => undefined) }),
+  ),
+);
+
 vi.mock('@/lib/db', () => ({
   db: {},
-  runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
-    fn({ execute: vi.fn(async () => undefined) }),
+  runInTenant: runInTenantMock,
 }));
 
 const autoDraftMock = vi.hoisted(() => vi.fn());
@@ -347,5 +363,86 @@ describe('cron auto-draft-coordinator route (auto-invoice #2 / Task 8)', () => {
     const bodyText = JSON.stringify(body);
     expect(bodyText).not.toContain('hunter2');
     expect(bodyText).not.toContain('aws.neon.tech');
+  });
+
+  // -------------------------------------------------------------------------
+  // Task 16 review MAJOR-3 — the gauge feed's never-block guarantee.
+  //
+  // The default `runInTenantMock` resolves `execute` to `undefined`, which
+  // the route turns into `[]` and returns early from — so every test above
+  // exercises a gauge path that does nothing. The whole "a metrics failure
+  // must never fail or delay the cron" claim therefore had ZERO coverage.
+  // These cases make the feed actually fail and assert the cron is unharmed.
+  // -------------------------------------------------------------------------
+  describe('gauge feed is non-blocking (review MAJOR-3)', () => {
+    const OK_WORKER_RESPONSE = {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        skipped: false,
+        tenant_id: TENANT_SLUG,
+        drafted: 3,
+        skipped_existing: 1,
+        skipped_race_lost: 0,
+        skipped_terminated: 0,
+        errors: 0,
+        cycles_processed: 4,
+        duration_ms: 700,
+      }),
+    };
+
+    it('a REJECTING gauge query still returns 200 with an unchanged summary', async () => {
+      fetchMock.mockResolvedValue(OK_WORKER_RESPONSE);
+      runInTenantMock.mockRejectedValueOnce(
+        new Error('relation "invoices" does not exist'),
+      );
+
+      const res = await coordinatorPOST(makeRequest(VALID_AUTH));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      // The summary is computed from the fan-out, not the gauge feed —
+      // a broken gauge must not make a healthy pass look failed.
+      expect(body.tenants_enqueued).toBe(1);
+      expect(body.tenants_succeeded).toBe(1);
+      expect(body.tenants_failed).toBe(0);
+      expect(body.per_tenant_results[0].drafted).toBe(3);
+      // The durable audit row is still written.
+      expect(auditEmitMock).toHaveBeenCalledTimes(1);
+      expect(auditEmitMock.mock.calls[0]![0].type).toBe(
+        'cron_dispatch_orchestrated',
+      );
+    });
+
+    it('a THROWING gauge query does not prevent the audit row', async () => {
+      fetchMock.mockResolvedValue(OK_WORKER_RESPONSE);
+      runInTenantMock.mockImplementationOnce(() => {
+        throw new Error('synchronous explosion inside runInTenant');
+      });
+
+      const res = await coordinatorPOST(makeRequest(VALID_AUTH));
+
+      expect(res.status).toBe(200);
+      expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('the gauge feed runs AFTER the audit emit + duration metric (ordering)', async () => {
+      // Review MAJOR-1: gauge latency must not be folded into
+      // `renewals.coordinator.duration_ms` or delay the durable audit row.
+      // Pin the ordering by recording when each side ran.
+      const order: string[] = [];
+      auditEmitMock.mockImplementationOnce(async () => {
+        order.push('audit');
+      });
+      runInTenantMock.mockImplementationOnce(async () => {
+        order.push('gauge');
+        return [];
+      });
+      fetchMock.mockResolvedValue(OK_WORKER_RESPONSE);
+
+      await coordinatorPOST(makeRequest(VALID_AUTH));
+
+      expect(order).toEqual(['audit', 'gauge']);
+    });
   });
 });

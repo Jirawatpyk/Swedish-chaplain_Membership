@@ -950,3 +950,10 @@ export {
   f8OnPaidCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';
+
+// 107-auto-invoice Task 16 — aggregate behind the auto-invoice observable
+// gauges, consumed by the auto-draft coordinator cron. Exported through the
+// barrel (not deep-imported) so Presentation touches only the module's public
+// interface, matching how that same route consumes `makeRenewalsDeps`.
+export { readAutoInvoiceGaugeRow } from './infrastructure/auto-invoice-gauge-query';
+export type { AutoInvoiceGaugeRow } from './infrastructure/auto-invoice-gauge-query';

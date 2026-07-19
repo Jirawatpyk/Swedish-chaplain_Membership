@@ -139,6 +139,16 @@ function observeTenantGauge(
 }
 
 /**
+ * 107-auto-invoice Task 16 — the three auto-invoice gauge names, as one
+ * list so the observe and forget paths cannot drift apart.
+ */
+const AUTO_INVOICE_GAUGE_NAMES = [
+  'renewals_auto_draft_queue_size',
+  'renewals_auto_draft_oldest_age_seconds',
+  'renewals_awaiting_payment_no_invoice',
+] as const;
+
+/**
  * 107-auto-invoice Task 16 — closed enum for the
  * `renewals_auto_draft_skipped_total{reason}` label.
  *
@@ -3436,6 +3446,43 @@ export const renewalsMetrics = {
       tenantId,
       count,
     );
+  },
+
+  /**
+   * 107-auto-invoice Task 16 review (MAJOR-4) — drop this tenant's last
+   * observed values for all three auto-invoice gauges.
+   *
+   * **Why this exists.** `gaugeValues` is a last-observed-wins accumulator
+   * that nothing ever deletes from, and the observable-gauge callbacks
+   * re-read it at every scrape. So if the feed query starts failing, the
+   * catch swallows the error and the gauges keep re-reporting the LAST
+   * SUCCESSFUL value — forever, at every scrape interval, with no
+   * indication it is frozen. For a backlog gauge that is merely annoying;
+   * for `renewals_awaiting_payment_no_invoice` it is corrosive, because
+   * AI-A1's whole design rests on "0 means 0":
+   *   - a stale `> 0` alerts forever on a wedge that was already repaired;
+   *   - a stale `0` silently masks a real wedge — the exact failure the
+   *     gauge was built to prevent.
+   *
+   * Calling this on the failure path converts a frozen series into an
+   * ABSENT series, which is a condition monitoring can actually express
+   * ("alert on no data"). Absence is honest; a stale number is not.
+   *
+   * Scoped to one tenant: a failure observing tenant A must not blank
+   * tenant B's perfectly good values.
+   *
+   * Note the two PRE-EXISTING gauges (`observeCycleStateGauge`,
+   * `observeMembershipSuspendedCountGauge`) share this staleness
+   * behaviour and are NOT fixed here — deliberately out of scope, and
+   * nothing pages on them today. AI-A1 is the first alert that would page
+   * on a gauge of this shape, which is why the fix lands with it.
+   */
+  forgetAutoInvoiceGauges(tenantId: string): void {
+    safeMetric(() => {
+      for (const gaugeName of AUTO_INVOICE_GAUGE_NAMES) {
+        gaugeValues.get(gaugeName)?.delete(tenantId);
+      }
+    });
   },
 
   /**

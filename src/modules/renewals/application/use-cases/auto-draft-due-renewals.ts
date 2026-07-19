@@ -327,12 +327,17 @@ export async function autoDraftDueRenewals(
   });
 }
 
-type ProcessOneOutcome =
-  | 'drafted'
-  | 'skipped_existing'
-  | 'skipped_race_lost'
-  | 'skipped_terminated'
-  | 'draft_failed';
+/**
+ * Task 16 review (M-1): the skip arm is `Tx1SkipOutcome` BY REFERENCE, not a
+ * hand-copied duplicate of its members. Previously the two unions were
+ * maintained independently, so a contributor adding a skip bucket was forced
+ * by the switch's `_exhaustive: never` pin to COUNT it, but nothing forced
+ * them to LABEL it — `AUTO_DRAFT_SKIP_REASON_LABEL` would still have
+ * type-checked against the old, narrower union. Deriving it here ties the two
+ * together: a new skip outcome now breaks the label record as well as the
+ * switch, which is what the Task 16 report claimed was already true.
+ */
+type ProcessOneOutcome = 'drafted' | Tx1SkipOutcome | 'draft_failed';
 
 /** tx1's early-exit channel — the 3 skip outcomes decidable BEFORE the F4 call. */
 export type Tx1SkipOutcome =
