@@ -366,7 +366,14 @@ export async function issueAutoDraftedRenewal(
       input.tenantId,
       cycle.memberId,
     );
-    if (guards?.erased === true) {
+    // `null` (member row RLS-hidden / absent) refuses TOO — erasure state
+    // unknown is not erasure state false. A DELIBERATE divergence from the port
+    // docstring's default caller behaviour ("treats this the same as
+    // both-guards-false"), which is written for the F4 invoice-paid path where
+    // proceeding is the benign outcome; here the guarded write mints a §86/4
+    // that no re-drive can un-mint. Matches the sibling fail-closed default in
+    // `bulk-enrol-auto-invoice.ts` (`?.access ?? 'terminated'`).
+    if (guards === null || guards.erased) {
       logger.warn(
         {
           errorId: 'F8.AUTO_ISSUE.MEMBER_ERASED',
@@ -374,8 +381,9 @@ export async function issueAutoDraftedRenewal(
           cycleId: cycle.cycleId,
           invoiceId: input.invoiceId,
           planYear,
+          guardsUnreadable: guards === null,
         },
-        '[issue-auto-drafted-renewal] refused — the member has been erased; a §86/4 must never be minted for an anonymised tombstone',
+        '[issue-auto-drafted-renewal] refused — the member is erased or unreadable; a §86/4 must never be minted for an anonymised tombstone',
       );
       return err({ kind: 'member_erased' as const });
     }

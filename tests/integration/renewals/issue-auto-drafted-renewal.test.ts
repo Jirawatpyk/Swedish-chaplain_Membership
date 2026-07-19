@@ -965,4 +965,59 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     );
     expect(forSibling.length).toBe(0);
   }, 120_000);
+
+  it('(m) ⛔ an UNREADABLE member row (null guards) fails CLOSED, not open', async () => {
+    // `readReactivationGuardsInTx` documents `null` as "the member row is not
+    // visible (RLS-hidden / absent)" — i.e. the erasure state is UNKNOWN, not
+    // known-false. On this path unknown must refuse: the write it guards mints
+    // a §86/4 tax document, and minting one for a member who may have been
+    // erased is not an outcome a re-drive can undo.
+    //
+    // This is a DELIBERATE divergence from the port docstring's default caller
+    // behaviour ("treats this the same as both-guards-false"), which is written
+    // for the F4 invoice-paid auto-complete path where the benign outcome is to
+    // proceed. It matches the sibling fail-closed default in
+    // `bulk-enrol-auto-invoice.ts` (`?.access ?? 'terminated'`, "an unexpected
+    // gap fails CLOSED rather than enrolling silently").
+    //
+    // Unreachable through the DB today (the cycle's FK keeps the member row
+    // alive and the tenant GUC is set), so the null is injected at the port —
+    // the point is that the DEFAULT is safe if that ever stops holding.
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    const siblingId = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+
+    const real = depsFor(tenant);
+    const deps = {
+      ...real,
+      memberRenewalFlagsRepo: {
+        ...real.memberRenewalFlagsRepo,
+        readReactivationGuardsInTx: async () => null,
+      },
+    };
+
+    const result = await issueAutoDraftedRenewal(deps, {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_erased');
+
+    // Same completion proof as case (l): no number minted, cycle untouched,
+    // and the sibling draft survives — the guard is above the sweep.
+    const inv = await invoiceRow(tenant, invoiceId);
+    expect(inv?.status).toBe('draft');
+    expect(inv?.documentNumber).toBeNull();
+
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('upcoming');
+    expect(cyc?.linkedInvoiceId).toBeNull();
+
+    const sibling = await invoiceRow(tenant, siblingId);
+    expect(sibling?.status).toBe('draft');
+  }, 120_000);
 });
