@@ -15,7 +15,6 @@ import {
   processWebhookEvent,
   type ProcessWebhookEventDeps,
 } from '@/modules/payments';
-import { PERMANENT_SUB_USE_CASE_DETAILS } from '@/modules/payments/application/use-cases/process-webhook-event';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
 import type { VerifiedStripeEvent } from '../../../../src/modules/payments/application/ports';
@@ -913,23 +912,124 @@ describe('processWebhookEvent (T056)', () => {
   });
 
   /**
-   * F5R2-M1 — pin the membership of `PERMANENT_SUB_USE_CASE_DETAILS`.
-   * The set is the single discriminator between "Stripe retries 72h"
-   * (transient) and "Stripe stops retrying" (permanent). Without a
-   * membership test, a future PR that removes (say) `'bridge_error'`
-   * thinking it should retry would silently regress the F5R1-IMP2 fix
-   * with no test failure. Snapshot the canonical 6 codes here.
+   * money-remediation Task 5 — sub-detail plumbing.
+   *
+   * Replaces `R2-M1: PERMANENT_SUB_USE_CASE_DETAILS membership snapshot`.
+   * The drift that snapshot guarded against is real; it was guarding the
+   * wrong artefact. The classification table now lives in
+   * `tests/unit/payments/application/webhook-permanence.test.ts`; these
+   * tests pin the thing that table cannot see — that the F4 sub-code
+   * actually REACHES the classifier instead of being discarded by
+   * `subUseCaseErr`, which is the defect Task 5 fixes.
+   *
+   * These drive the REAL confirm-payment → bridge chain (only the bridge
+   * port is stubbed), so a stubbed-out dispatcher cannot fake a pass.
    */
-  it('R2-M1: PERMANENT_SUB_USE_CASE_DETAILS membership snapshot', () => {
-    expect(PERMANENT_SUB_USE_CASE_DETAILS).toEqual(
-      new Set([
-        'tenant_settings_missing',
-        'bridge_error',
-        'invoice_not_found',
-        'invoice_shape_invalid',
-        'payment_method_unsupported',
-        'invariant_auto_refunded_missing_invoice_id',
-      ]),
+  it('T5: transient F4 sub-code (pdf_render_failed) → subDetail plumbed + transient', async () => {
+    const deps = makeDeps();
+    // `summariseF4Error` keys the bridge error on `code`; confirm-payment
+    // then lifts that code into `ConfirmPaymentError.detail`. This is the
+    // exact value that used to be thrown away.
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', detail: 'TypeError' }),
     );
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.detail).toBe('bridge_error');
+    // Without the plumbing this is `null` and the predicate is fed nothing.
+    expect(result.error.subDetail).toBe('pdf_render_failed');
+    // Pre-Task-5 this was 'permanent' — a retryable render failure got a
+    // 200-ack and the captured money silently stranded (finding F-1).
+    expect(result.error.permanence).toBe('transient');
+    expect(result.error.retryCeilingExceeded).toBe(false);
+  });
+
+  it('T5: permanent F4 sub-code (legacy_no_tin) → subDetail plumbed + permanent', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'legacy_no_tin_event_needs_remediation', detail: 'x' }),
+    );
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.subDetail).toBe('legacy_no_tin_event_needs_remediation');
+    expect(result.error.permanence).toBe('permanent');
+  });
+
+  /**
+   * The retry ceiling. Task 5 turns transient F4 declines into 500s, and
+   * Stripe DISABLES endpoints that fail persistently — so a systemic F4 /
+   * Blob outage would otherwise become "webhook endpoint disabled", which
+   * is strictly worse than the outage. There is no alerting backend in
+   * this repo (no Prometheus/Grafana/PagerDuty, no configured OTel
+   * reader), so "land it behind an alert" is unsatisfiable and the
+   * ceiling is mandatory, not optional.
+   *
+   * Mirrors the existing 48h give-up in `confirm-payment.ts`
+   * (`STALE_REFUND_GIVE_UP_SECONDS`).
+   */
+  it('T5: transient past the 48h ceiling escalates to permanent (bounded retry budget)', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', detail: 'TypeError' }),
+    );
+    // Event created 49h before the stubbed clock.
+    const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+    const event = makeEvent({ createdAtUnixSeconds: nowSeconds - 49 * 60 * 60 });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    // Classification is unchanged — the escalation is a separate axis, so
+    // the forensic row can say "transient class, gave up" rather than
+    // lying about F4 being permanently broken.
+    expect(result.error.subDetail).toBe('pdf_render_failed');
+    expect(result.error.permanence).toBe('permanent');
+    expect(result.error.retryCeilingExceeded).toBe(true);
+  });
+
+  it('T5: a transient just INSIDE the ceiling still retries', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', detail: 'TypeError' }),
+    );
+    const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+    const event = makeEvent({ createdAtUnixSeconds: nowSeconds - 47 * 60 * 60 });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.permanence).toBe('transient');
+    expect(result.error.retryCeilingExceeded).toBe(false);
+  });
+
+  it('T5: the ceiling never DOWNGRADES an already-permanent classification', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'settings_missing', detail: 'x' }),
+    );
+    const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+    const event = makeEvent({ createdAtUnixSeconds: nowSeconds - 49 * 60 * 60 });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.permanence).toBe('permanent');
+    // Classified permanent on its own merits — NOT via the ceiling. The
+    // forensic must not misattribute it to a give-up.
+    expect(result.error.retryCeilingExceeded).toBe(false);
+  });
+
+  it('T5: dispatch_threw branches carry a null subDetail (no F4 code exists there)', async () => {
+    const deps = makeDeps();
+    rejectSecondTx(deps, new Error('neon down'));
+    const event = makeEvent({
+      type: 'charge.refunded',
+      dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch_threw');
+    expect(result.error.subDetail).toBeNull();
+    expect(result.error.permanence).toBe('transient');
   });
 });
