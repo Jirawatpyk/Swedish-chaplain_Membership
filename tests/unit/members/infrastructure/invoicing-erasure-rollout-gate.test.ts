@@ -69,7 +69,14 @@ describe('FEATURE_ERASURE_DISCARD_DRAFTS — OFF (default)', () => {
     // would be withheld forever and the US2d reconciler would re-drive this
     // member on every sweep.
     const deps = buildEraseDeps();
-    deps.invoicingErasure = disabledInvoicingErasureAdapter;
+    // Wrapped in `vi.fn` (the fixture types this slot as a Mock) but delegating
+    // to the REAL disabled adapter — the behaviour under test must not be a
+    // hand-written stand-in, or this would assert nothing about the gate.
+    deps.invoicingErasure = {
+      discardDraftsForMember: vi.fn(
+        disabledInvoicingErasureAdapter.discardDraftsForMember,
+      ),
+    };
 
     const res = await eraseMember(
       asMemberId('m-1'),

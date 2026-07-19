@@ -415,7 +415,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
       try {
         const deps = buildEraseDeps();
         // A message that would be a PII/SQL-leak vector if it were logged.
-        (deps[port] as Record<string, unknown>)[method] = vi.fn(async () => {
+        (deps[port] as unknown as Record<string, unknown>)[method] = vi.fn(async () => {
           throw new Error('boom secret@example.com');
         });
 
