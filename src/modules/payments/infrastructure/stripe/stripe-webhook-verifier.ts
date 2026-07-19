@@ -30,10 +30,88 @@ import type {
   WebhookVerifierPort,
   VerifiedStripeEvent,
 } from '../../application/ports/webhook-verifier-port';
+import { parseRefundId } from '../../domain/refund';
 import { getStripeClient } from './stripe-client';
 import { WebhookSignatureError } from './errors';
 
 const CLOCK_SKEW_TOLERANCE_SECONDS = 300; // ±5 min (Stripe SDK default)
+
+/**
+ * Extract an id from a Stripe field that may arrive either as a bare id
+ * string OR as an EXPANDED object (`{ id, … }`). Returns null when the
+ * field is absent or neither shape.
+ *
+ * The expanded case is not hypothetical: it is exactly how `latest_charge`
+ * lost its id before the 2026-04-25 finding #13 fix, and how a Dispute's
+ * `charge` fell back to the dispute id before PCI-2. A bare
+ * `typeof === 'string'` narrowing silently yields nothing on an expanded
+ * object — which, for Task 9's `payment_intent`, would make the anti-forgery
+ * cross-check unsatisfiable and the whole marker path dead. Same failure
+ * shape as validating an `rfnd_…` id with a uuid regex, one layer down.
+ *
+ * PCI SAQ-A: pulls ONLY `.id`. Never copy the expanded object — a Charge
+ * carries `payment_method_details.card.last4/brand`.
+ */
+function extractExpandableId(
+  raw: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = raw[key];
+  if (typeof value === 'string') return value;
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>)['id'] === 'string'
+  ) {
+    return (value as Record<string, unknown>)['id'] as string;
+  }
+  return null;
+}
+
+/**
+ * Money-remediation Task 9 (F-9) — read + validate the app-initiated
+ * refund marker `metadata.refundId` off a Stripe Refund node.
+ *
+ * Validation uses the Domain's `parseRefundId` (`RE_ULID_LIKE`), NOT a
+ * uuid matcher: `generateRefundId()` emits `rfnd_<32 hex>` (37 chars) and
+ * migration `0243` records the same fact — "F5 refund ids are
+ * `rfnd_<ulid>`, NOT uuid". A uuid regex here would reject EVERY real
+ * refund id, leaving the fallback permanently inert while the
+ * over-correction guard stayed green: a mitigation that fails in the
+ * direction that looks like success.
+ *
+ * `RE_ULID_LIKE` gives the same trust-perimeter protection a uuid matcher
+ * would — bounded Crockford-base32 charset, bounded 20–40 length — against
+ * a value that is fully attacker-controlled. It also matters at the DB
+ * seam: `refunds.id` is `text`, not `uuid` (`0034_create_refunds.sql:15`),
+ * so nothing downstream would reject a forged marker on a cast; this is
+ * the only gate.
+ *
+ * Returns null for absent / non-string / malformed markers. A PRESENT but
+ * malformed marker is logged at warn — absence is the normal shape of a
+ * genuine Dashboard refund and must stay silent, but a marker that is
+ * there and wrong is either SDK drift or a forgery attempt.
+ */
+function extractAppRefundId(
+  node: { readonly metadata?: unknown },
+  eventId: string,
+): string | null {
+  const metadata = node.metadata;
+  if (metadata === null || typeof metadata !== 'object') return null;
+  const rawMarker = (metadata as Record<string, unknown>)['refundId'];
+  if (typeof rawMarker !== 'string' || rawMarker.length === 0) return null;
+  const parsed = parseRefundId(rawMarker);
+  if (!parsed.ok) {
+    // PCI SAQ-A: log the LENGTH, never the value — `metadata` is
+    // caller-controlled free text and a forged marker may embed anything.
+    logger.warn(
+      { eventId, markerLength: rawMarker.length },
+      'stripe-webhook-verifier.app_refund_marker_malformed',
+    );
+    return null;
+  }
+  return parsed.value;
+}
 
 /**
  * Parse `t=<unix-seconds>` from a Stripe-Signature header of the form
@@ -97,6 +175,11 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
   //     (eventId, account, livemode, objectType).
   let amountSatang: import('@/lib/money').Satang | undefined;
   let amountProjectionFailed = false;
+  // Task 9 (F-9) — app-initiated refund markers + the PI they must agree
+  // with. Both stay `undefined` on arms that cannot carry them, so the
+  // envelope shape is unchanged for every non-refund event.
+  let appRefundIds: Record<string, string> | undefined;
+  let paymentIntentId: string | null | undefined;
   const projectAmountSafely = (kind: string, n: number): void => {
     try {
       amountSatang = asSatang(BigInt(n));
@@ -145,14 +228,29 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     }
   } else if (objectType === 'charge') {
     const refunds = raw['refunds'] as
-      | { data?: Array<{ id?: string }> }
+      | { data?: Array<{ id?: string; metadata?: unknown }> }
       | null
       | undefined;
     if (refunds?.data) {
       refundIds = refunds.data
         .map((r) => (typeof r.id === 'string' ? r.id : null))
         .filter((v): v is string => v !== null);
+      // Task 9 (F-9) — collect the app-initiated marker for each refund
+      // node that carries one. A charge can carry SEVERAL refunds (partial
+      // refunds accumulate), and they are independently app- or
+      // Dashboard-initiated, so this is a per-refund map rather than a
+      // single event-level field. Refunds without a valid marker are
+      // simply absent → the OOB forensic still fires for them.
+      const markers: Record<string, string> = {};
+      for (const node of refunds.data) {
+        if (typeof node.id !== 'string') continue;
+        const marker = extractAppRefundId(node, event.id);
+        if (marker !== null) markers[node.id] = marker;
+      }
+      if (Object.keys(markers).length > 0) appRefundIds = markers;
     }
+    // Anti-forgery cross-check input — see the port docstring.
+    paymentIntentId = extractExpandableId(raw, 'payment_intent');
     if (typeof raw['amount'] === 'number') {
       projectAmountSafely('charge', raw['amount'] as number);
     }
@@ -214,6 +312,15 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     } else {
       latestChargeId = null;
     }
+    // Task 9 (F-9) — the Refund object carries its OWN marker + PI. Keyed
+    // by the Refund's own id so BOTH handlers read one uniformly-shaped
+    // envelope field (`processRefundUpdated` looks up `appRefundIds[id]`).
+    const marker = extractAppRefundId(
+      raw as { readonly metadata?: unknown },
+      event.id,
+    );
+    if (marker !== null) appRefundIds = { [rawId]: marker };
+    paymentIntentId = extractExpandableId(raw, 'payment_intent');
     if (typeof raw['amount'] === 'number') {
       projectAmountSafely('refund', raw['amount'] as number);
     }
@@ -236,6 +343,8 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
       ...(amountSatang !== undefined ? { amountSatang } : {}),
       ...(amountProjectionFailed ? { amountProjectionFailed: true } : {}),
       ...(refundStatus !== undefined ? { refundStatus } : {}),
+      ...(appRefundIds !== undefined ? { appRefundIds } : {}),
+      ...(paymentIntentId !== undefined ? { paymentIntentId } : {}),
     },
   };
 

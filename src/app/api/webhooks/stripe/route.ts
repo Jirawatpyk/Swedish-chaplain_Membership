@@ -394,6 +394,35 @@ export function reprojectDataObject(
     ...(typeof rawDataObject?.['refundStatus'] === 'string'
       ? { refundStatus: rawDataObject['refundStatus'] }
       : {}),
+    // Money-remediation Task 9 (F-9) — preserve the verifier-set
+    // app-initiated refund markers + the PaymentIntent id they are
+    // cross-checked against. Both are set by `project()`'s charge + refund
+    // arms; without these copies the F-9 fallback in
+    // `process-charge-refunded` / `process-refund-updated` would never fire
+    // in production while every unit test (which builds the use-case input
+    // directly) stayed green — the EXACT shape of Bugs #5 and #6, which is
+    // why the superset guard covers both keys.
+    //
+    // Deliberately copied AS-IS, with NO re-validation of the marker: the
+    // authoritative `parseRefundId` gate lives at the single trust
+    // perimeter in `stripe-webhook-verifier.ts` (whose docstring claims
+    // that role), and in production `rawDataObject` IS that verifier's
+    // output. Do NOT "harden" this by re-parsing here — a second guard for
+    // the SAME condition makes the perimeter guard's mutation test pass
+    // when the perimeter guard is deleted, blinding the suite to a real
+    // regression.
+    ...(rawDataObject?.['appRefundIds'] !== undefined
+      ? {
+          appRefundIds: rawDataObject['appRefundIds'] as Readonly<
+            Record<string, string>
+          >,
+        }
+      : {}),
+    ...(rawDataObject?.['paymentIntentId'] !== undefined
+      ? {
+          paymentIntentId: rawDataObject['paymentIntentId'] as string | null,
+        }
+      : {}),
   };
 }
 

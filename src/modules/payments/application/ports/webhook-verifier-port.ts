@@ -154,6 +154,63 @@ export interface VerifiedStripeEvent {
      * (`webhook-reprojection-superset.test.ts`) already covers it.
      */
     readonly refundStatus?: string | null;
+    /**
+     * Money-remediation Task 9 (F-9) — the APP-INITIATED refund marker,
+     * keyed by Stripe refund id (`re_…` → our `refunds.id`).
+     *
+     * `issueRefund` stamps `metadata.refundId` on the Stripe Refund
+     * BEFORE the external `createRefund` call, so this key exists even
+     * when the post-call `attachProcessorRefundId` write never lands
+     * (Neon blip, function timeout, client-side timeout on a request
+     * Stripe actually honoured). Without it, `charge.refunded` arriving
+     * ahead of the attach finds no row and fires a FALSE
+     * `out_of_band_refund_detected` — a 10-year forensic that claims
+     * money left by an unauthorised route, plus an on-call page.
+     *
+     * Populated by BOTH verifier arms:
+     *   · `charge`  — one entry per `refunds.data[i]` that carries a
+     *     well-formed marker (a charge can carry several refunds).
+     *   · `refund`  — a single entry keyed by the Refund's own id.
+     * A refund with no marker (a genuine Stripe-Dashboard refund) is
+     * simply absent from the map, so the OOB forensic still fires.
+     *
+     * SECURITY — over-suppression is the dangerous direction. This value
+     * is attacker-influenceable: anyone with Stripe Dashboard access (the
+     * exact actor the OOB alert exists to catch) can set
+     * `metadata.refundId` on a hand-made refund and attempt to mute their
+     * own alarm. It is therefore NOT sufficient on its own. Consumers MUST
+     * pair it with all three remaining mitigations:
+     *   1. the `processor_refund_id IS NULL` repo predicate (structurally
+     *      incapable of touching an already-matched row),
+     *   2. an explicit tenant filter on the lookup, and
+     *   3. the `paymentIntentId` cross-check below.
+     * Validated here at the trust perimeter via the Domain's
+     * `parseRefundId` — malformed markers are dropped, never forwarded.
+     *
+     * PCI SAQ-A: an opaque id pair only — never card metadata, never the
+     * raw Stripe metadata bag (which is caller-controlled free text).
+     */
+    readonly appRefundIds?: Readonly<Record<string, string>>;
+    /**
+     * Money-remediation Task 9 (F-9) — the PaymentIntent id owning this
+     * charge/refund (`ch_….payment_intent` / `re_….payment_intent`).
+     *
+     * Sole purpose is the anti-forgery cross-check on the marker above:
+     * a matched `refunds` row's parent payment must carry the SAME
+     * `processor_payment_intent_id`. That makes a forged marker useless —
+     * an attacker refunding their own charge cannot make it point at
+     * someone else's PaymentIntent. When the cross-check FAILS the
+     * consumer must still emit the OOB forensic: a marker naming a row
+     * under a different PI is corrupted or hostile, not a benign miss.
+     *
+     * `null` when the field is absent or unextractable; consumers treat
+     * null as "cannot cross-check" and therefore DO NOT suppress.
+     *
+     * PCI SAQ-A: a bare `pi_…` id — Stripe can return `payment_intent`
+     * EXPANDED as a full object, so the verifier extracts ONLY `.id`
+     * (mirrors the `latest_charge` / dispute-`charge` discipline).
+     */
+    readonly paymentIntentId?: string | null;
   };
 }
 
