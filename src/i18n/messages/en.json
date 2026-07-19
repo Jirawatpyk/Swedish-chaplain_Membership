@@ -2331,6 +2331,20 @@
           "annualFee": "Annual fee: {amount} THB (before VAT)",
           "changePlan": "Change member's plan →"
         },
+        "duplicateConfirm": {
+          "title": "This member already has an invoice for {year}",
+          "description": "A second invoice for the same membership year is allowed, but it creates another tax document. Review the existing one before you continue.",
+          "fields": {
+            "documentNumber": "Document number",
+            "status": "Status",
+            "amount": "Amount"
+          },
+          "notYetNumbered": "Not yet numbered (draft)",
+          "notYetTotalled": "Not yet totalled (draft)",
+          "viewExisting": "Open the existing invoice in a new tab",
+          "cancel": "Cancel",
+          "createAnyway": "Create a second invoice"
+        },
         "renewalContext": {
           "renewal": "Current period ends {periodTo} — paying this bill renews the membership ({from} to {to}).",
           "firstPayment": "Membership period has not started — paying this bill starts the 12-month period from the payment date.",

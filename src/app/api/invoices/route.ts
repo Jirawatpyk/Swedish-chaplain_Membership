@@ -61,6 +61,24 @@ const createBodySchema = z.object({
   plan_id: z.string().min(1),
   plan_year: z.number().int(),
   auto_email_on_issue: z.boolean().nullable().optional(),
+  /**
+   * Deliberate-duplicate acknowledgement. A member CAN legitimately hold two
+   * live membership invoices in the same plan year — this is the one surface
+   * where that is a decision a human is allowed to make, so the refusal is
+   * overridable here and nowhere else (the renewal/automated paths refuse
+   * hard with no override; a duplicate there is always a bug).
+   *
+   * `z.literal(true)` — the ONLY accepted value is the JSON boolean `true`.
+   * A string `"true"`, `1`, `"1"` or any other truthy value is a 400, so the
+   * override cannot be set by a coercion accident or smuggled through a
+   * form/query encoding. There is no default-on path: absent means refuse.
+   *
+   * The client may only send it after the admin has SEEN the existing
+   * invoice's details (see the duplicate-confirmation dialog in
+   * `invoice-form.tsx`) — the point is an informed decision, not a reflexive
+   * click-through.
+   */
+  acknowledge_duplicate: z.literal(true).optional(),
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -133,10 +151,57 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     planYear: parsed.data.plan_year,
     autoEmailOnIssue: parsed.data.auto_email_on_issue ?? null,
     ...(membershipCoverage ? { membershipCoverage } : {}),
+    // Forwarded only when literally `true` — never `?? false`, so the
+    // use-case sees `undefined` (its refuse-by-default) rather than an
+    // explicit negative that a future refactor might misread as "considered
+    // and declined".
+    ...(parsed.data.acknowledge_duplicate === true
+      ? { acknowledgeDuplicate: true as const }
+      : {}),
   });
 
   const result = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenantCtx.slug), input);
   if (!result.ok) {
+    // A duplicate refusal is a 409 that the client is EXPECTED to recover
+    // from, so unlike every other error code it carries a detail body: the
+    // admin has to see which document already exists (and be able to open it)
+    // before deciding whether a second one is deliberate. Sending back only
+    // `{ code }` here would reduce the confirmation dialog to a bare "are you
+    // sure?", which is the reflexive click-through this guard exists to
+    // prevent. No PII is added — an invoice id, its number, status and total
+    // for a member the caller already named in the request body.
+    if (result.error.code === 'duplicate_membership_invoice') {
+      logger.warn(
+        {
+          tenantSlug: tenantCtx.slug,
+          memberId: parsed.data.member_id,
+          planYear: parsed.data.plan_year,
+          existingInvoiceId: result.error.existingInvoiceId,
+          existingStatus: result.error.existingStatus,
+        },
+        'invoice draft create refused — a live membership invoice already exists for this member and plan year',
+      );
+      return NextResponse.json(
+        {
+          error: {
+            code: result.error.code,
+            existing: {
+              invoice_id: result.error.existingInvoiceId,
+              status: result.error.existingStatus,
+              document_number: result.error.existingDocumentNumber,
+              // bigint is not JSON-serialisable — send satang as a string and
+              // let the client format it (the same treatment money gets on
+              // every other F4 wire surface).
+              total_satang:
+                result.error.existingTotalSatang === null
+                  ? null
+                  : String(result.error.existingTotalSatang),
+            },
+          },
+        },
+        { status: 409 },
+      );
+    }
     const status =
       result.error.code === 'settings_missing' || result.error.code === 'plan_not_found'
         ? 409

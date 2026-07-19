@@ -239,6 +239,52 @@ export async function createInvoiceDraft(
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
 
+    // --- Deliberate-duplicate guard ----------------------------------------
+    //
+    // A member CAN legitimately hold two live membership invoices in the same
+    // plan year — but it must be deliberate, never accidental. So this ASKS
+    // rather than forbids: refuse by default, proceed on an explicit
+    // acknowledgement, and record the override in the audit payload.
+    //
+    // Why a guard and not a `(tenant_id, member_id, plan_year) WHERE
+    // invoice_subject='membership' AND status <> 'void'` unique index (which
+    // the `event` subject did get, in migration 0201): today "one live bill
+    // per plan year" coincides with "one per membership term" ONLY because
+    // every renewal cycle in production happens to be 12 months. Introduce a
+    // shorter-term plan and two legitimate bills could share a plan year — at
+    // which point a database constraint would be flatly wrong and would need
+    // a migration to undo. An asking guard is correct under both regimes.
+    //
+    // PLACEMENT — above the first write, deliberately. `err(...)` inside this
+    // `withTx` callback does NOT throw: the transaction COMMITS. Everything
+    // above this line is a read, so refusing here persists nothing and emits
+    // no audit row. Do not move it below `insertDraft`.
+    //
+    // PRECEDENCE — after the member gates on purpose. "You already billed
+    // this member" is only a meaningful thing to tell an operator once the
+    // member is known to exist and be billable; and the acknowledgement must
+    // never be able to wave through an archived member.
+    //
+    // The `void` exclusion lives in the adapter's `ne(status,'void')`
+    // predicate: an invoice voided for correction has to stay freely
+    // re-issuable, or a mis-issued document would fence the member out of
+    // being billed at all.
+    const existingBill = await deps.invoiceRepo.findLiveMembershipBillInTx(tx, {
+      tenantId: input.tenantId,
+      memberId: input.memberId,
+      planYear: input.planYear,
+    });
+    const acknowledgedDuplicate = existingBill !== null && input.acknowledgeDuplicate === true;
+    if (existingBill && !acknowledgedDuplicate) {
+      return err({
+        code: 'duplicate_membership_invoice',
+        existingInvoiceId: existingBill.invoiceId,
+        existingStatus: existingBill.status,
+        existingDocumentNumber: existingBill.documentNumber,
+        existingTotalSatang: existingBill.totalSatang,
+      });
+    }
+
     // TODO (server-side plan-parity guard): invoice plan MUST match the
     // member's current plan (US1 "confirm the membership tier"). Enforced
     // by the UI today (Plan field read-only, bound to the member's plan);
@@ -508,6 +554,22 @@ export async function createInvoiceDraft(
         // FR-022 — flags a frozen-price renewal §86/4 (membership line
         // billed at the cycle's frozen price, reg-fee suppressed).
         is_renewal: isRenewal,
+        // Deliberate-duplicate override. Answers "who knowingly created a
+        // second live membership invoice for this plan year, and against
+        // which existing one" — `actorUserId` on this same audit row is the
+        // who. Emitted UNCONDITIONALLY (false/null on an ordinary draft) so
+        // that "not a duplicate" and "a duplicate we failed to detect" are
+        // distinguishable in the trail rather than both being an absent key.
+        //
+        // Carried on the payload of the existing `invoice_draft_created`
+        // event rather than a dedicated event type: a new type needs an
+        // 8-place lockstep plus an enum migration, and the migration numbers
+        // after 0258 are already claimed on another branch. Worth promoting
+        // to its own type once that lands — see the report.
+        acknowledged_duplicate: acknowledgedDuplicate,
+        acknowledged_duplicate_of_invoice_id: acknowledgedDuplicate
+          ? existingBill!.invoiceId
+          : null,
       },
     });
 

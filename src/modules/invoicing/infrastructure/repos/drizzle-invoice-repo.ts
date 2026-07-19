@@ -578,6 +578,57 @@ export function makeDrizzleInvoiceRepo(
       });
     },
 
+    async findLiveMembershipBillInTx(txUnknown, input) {
+      // Uses the CALLER's tx (the `*InTx` convention): `createInvoiceDraft`
+      // must read the same snapshot it is about to insert into, and opening a
+      // second pooled connection here would neither see that snapshot nor
+      // carry the caller's `SET LOCAL app.current_tenant`. Tenant scope
+      // therefore rides the caller's GUC; the explicit `tenantId` predicate
+      // is application-layer defence-in-depth alongside RLS (Constitution
+      // Principle I § 1), matching the sibling reads in this file.
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          documentNumber: invoices.documentNumber,
+          billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          totalSatang: invoices.totalSatang,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.memberId, input.memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+            eq(invoices.planYear, input.planYear),
+            // `ne(status,'void')` rather than an IN-list of the live statuses:
+            // a future `invoiceStatusEnum` addition then defaults to BLOCKING
+            // (safe — ask before minting a second tax document) instead of
+            // silently falling through the guard. A voided invoice must NOT
+            // block: one voided for correction has to stay re-issuable.
+            ne(invoices.status, 'void'),
+          ),
+        )
+        // Deterministic pick so the invoice surfaced to the operator (and the
+        // deep-link they are asked to inspect) is stable across retries:
+        // newest first, so they land on the document they most recently dealt
+        // with. Ties broken by id so the order is total.
+        .orderBy(desc(invoices.createdAt), desc(invoices.invoiceId))
+        .limit(1);
+      if (!row) return null;
+      return {
+        invoiceId: row.invoiceId,
+        status: row.status,
+        // 088 tax-at-payment issues a pre-payment BILL number and leaves
+        // `document_number` null until the receipt; either is a real number
+        // the admin would recognise on the document, so prefer whichever
+        // exists. Both null = the existing invoice is still a draft.
+        documentNumber: row.documentNumber ?? row.billDocumentNumberRaw ?? null,
+        totalSatang: row.totalSatang,
+      };
+    },
+
     async list(tenantIdArg: string, opts) {
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];
