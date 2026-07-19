@@ -55,6 +55,7 @@ import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure
 import { invoicingErasureAdapter } from '@/modules/members/infrastructure/adapters/invoicing-erasure-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
@@ -88,6 +89,12 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
   const secondDraftInvoiceId = randomUUID();
   const issuedInvoiceId = randomUUID();
   const peerDraftInvoiceId = randomUUID();
+  // The shape auto-invoice actually produces: origin='auto_renewal' PLUS a
+  // renewal_cycles row stamping `auto_draft_invoice_id`. The other fixtures
+  // here are bare `invoices` rows with neither, i.e. the one draft shape this
+  // feature never creates.
+  const autoDraftInvoiceId = randomUUID();
+  const autoCycleId = randomUUID();
 
   async function seedMember(memberId: string, name: string): Promise<void> {
     await runInTenant(tenant.ctx, async (tx) => {
@@ -117,6 +124,53 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
         dueDate: null,
       }),
     );
+  }
+
+  /**
+   * The auto-invoice-shaped draft: `origin='auto_renewal'` plus a
+   * `renewal_cycles` row whose `auto_draft_invoice_id` points back at it.
+   *
+   * Coverage gap this closes: every other draft fixture here is a bare
+   * `invoices` row, so nothing proved the cascade handles the shape the feature
+   * under review actually emits. It does — the candidate scan filters on member
+   * + status only — but "it should" and "it does, against live Neon" are
+   * different claims on a compliance path.
+   *
+   * The cycle's stamp is deliberately left DANGLING after the discard rather
+   * than cleared: migration 0259 declares `auto_draft_invoice_id uuid` with no
+   * REFERENCES, and `issue-auto-drafted-renewal` documents tolerating a stale
+   * stamp, so the dangling pointer is expected and harmless.
+   */
+  async function seedAutoRenewalDraft(): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: autoDraftInvoiceId,
+        memberId: erasedMemberId,
+        planYear: 2026,
+        planId,
+        draftByUserId: admin.userId,
+        status: 'draft',
+        origin: 'auto_renewal',
+        dueDate: null,
+      });
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: autoCycleId,
+        memberId: erasedMemberId,
+        status: 'upcoming',
+        periodFrom: new Date('2026-01-01T00:00:00Z'),
+        periodTo: new Date('2027-01-01T00:00:00Z'),
+        expiresAt: new Date('2027-01-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        autoDraftInvoiceId,
+      });
+    });
   }
 
   /**
@@ -203,6 +257,7 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
 
     await seedDraft(draftInvoiceId, erasedMemberId);
     await seedDraft(secondDraftInvoiceId, erasedMemberId);
+    await seedAutoRenewalDraft();
     await seedIssued(issuedInvoiceId, erasedMemberId);
     await seedDraft(peerDraftInvoiceId, peerMemberId);
   }, 60_000);
@@ -217,9 +272,18 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
           inArray(invoices.invoiceId, [
             draftInvoiceId,
             secondDraftInvoiceId,
+            autoDraftInvoiceId,
             issuedInvoiceId,
             peerDraftInvoiceId,
           ]),
+        ),
+      );
+    await db
+      .delete(renewalCycles)
+      .where(
+        and(
+          eq(renewalCycles.tenantId, tenant.ctx.slug),
+          eq(renewalCycles.cycleId, autoCycleId),
         ),
       );
     await tenant.cleanup();
@@ -239,7 +303,14 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
     expect(
       before.map((r) => r.invoiceId).sort(),
       'fixture did not land — the assertions below would be vacuous',
-    ).toEqual([draftInvoiceId, secondDraftInvoiceId, issuedInvoiceId].sort());
+    ).toEqual(
+      [
+        draftInvoiceId,
+        secondDraftInvoiceId,
+        autoDraftInvoiceId,
+        issuedInvoiceId,
+      ].sort(),
+    );
 
     const res = await eraseMember(
       asMemberId(erasedMemberId),
@@ -256,10 +327,23 @@ describe('COMP-1 §6.2 — erasure discards drafts, retains issued (live Neon)',
         .where(eq(invoices.memberId, erasedMemberId)),
     );
 
-    // BOTH drafts gone; the issued document survives, still `issued`.
+    // ALL THREE drafts gone — including the auto-renewal-shaped one, which is
+    // the shape this feature actually produces; the issued document survives,
+    // still `issued`.
     expect(after).toHaveLength(1);
     expect(after[0]?.invoiceId).toBe(issuedInvoiceId);
     expect(after[0]?.status).toBe('issued');
+    expect(after.map((r) => r.invoiceId)).not.toContain(autoDraftInvoiceId);
+
+    // The cycle's back-reference is left dangling by design (no FK; the issue
+    // path tolerates a stale stamp) — assert that rather than leave it unstated.
+    const cycle = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ stamp: renewalCycles.autoDraftInvoiceId })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, autoCycleId)),
+    );
+    expect(cycle[0]?.stamp).toBe(autoDraftInvoiceId);
   }, 60_000);
 
   it('leaves a PEER member’s draft untouched (member-scoped, not tenant-wide)', async () => {
