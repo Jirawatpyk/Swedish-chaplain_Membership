@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { F5_AUDIT_RETENTION_YEARS } from '@/modules/payments/application/ports/audit-port';
+import { F8_AUDIT_EVENT_TYPES } from '@/modules/renewals/application/ports/renewal-audit-emitter';
 import { getEnumParity } from '../helpers/assert-enum-parity';
 
 const F5_PREFIXES = [
@@ -63,8 +64,27 @@ const F6_WEBHOOK_EXCLUSIONS = new Set([
   'webhook_ingest_precondition_failed',
 ]);
 
+/**
+ * F8 (renewals) owns `payment_on_terminated_member` (migration 0257, PR #212)
+ * — an audit event about the RENEWAL consequence of a payment, emitted from
+ * `src/modules/renewals/**`, not a payment-lifecycle event. It collides with
+ * the `payment_` prefix above, so without this exclusion the parity check
+ * reports it as F5 drift and this suite is red for a reason that has nothing
+ * to do with payments.
+ *
+ * Derived from F8's canonical list rather than hardcoded, mirroring the F6
+ * drift guard below: a hand-maintained copy would rot the moment renewals adds
+ * another `payment_*` event, which is exactly how this failure arrived.
+ */
+const F8_PAYMENT_PREFIXED_EXCLUSIONS = new Set<string>(
+  (F8_AUDIT_EVENT_TYPES as readonly string[]).filter((e) =>
+    F5_PREFIXES.some((p) => e.startsWith(p)),
+  ),
+);
+
 function isF5Event(label: string): boolean {
   if (F6_WEBHOOK_EXCLUSIONS.has(label)) return false;
+  if (F8_PAYMENT_PREFIXED_EXCLUSIONS.has(label)) return false;
   return F5_PREFIXES.some((p) => label.startsWith(p));
 }
 
@@ -82,6 +102,24 @@ describe('F5 audit_event_type ↔ F5AuditEventType parity', () => {
       { missingInSql: result.missingInSql, missingInTs: result.missingInTs },
       `Drift detected:\n  SQL missing TS values: ${JSON.stringify(result.missingInSql)}\n  TS union missing SQL values: ${JSON.stringify(result.missingInTs)}\n\nAdd a migration to extend audit_event_type, OR update F5AuditEventType + F5_AUDIT_RETENTION_YEARS in src/modules/payments/application/ports/audit-port.ts.\n\nNote: if the new event type does NOT match the F5 prefix list extend F5_PREFIXES in this test.`,
     ).toEqual({ missingInSql: [], missingInTs: [] });
+  });
+
+  /**
+   * An exclusion list is a way to silence this gate, so it needs its own
+   * guard: if a genuinely F5-owned event ever appeared in F8's list, the
+   * derivation above would quietly stop checking it and real drift would go
+   * unreported. Ownership is exclusive, so the two sets must be disjoint.
+   */
+  it('F8 exclusions never mask an F5-owned event (over-exclusion guard)', () => {
+    const f5Owned = new Set(Object.keys(F5_AUDIT_RETENTION_YEARS));
+    const overlap = [...F8_PAYMENT_PREFIXED_EXCLUSIONS].filter((e) =>
+      f5Owned.has(e),
+    );
+
+    expect(
+      overlap,
+      `These events are excluded as F8-owned but ALSO appear in F5_AUDIT_RETENTION_YEARS, so the parity gate has stopped checking them: ${JSON.stringify(overlap)}`,
+    ).toEqual([]);
   });
 
   // F5R3 MED-2 (2026-05-16) — drift guard for the hardcoded
