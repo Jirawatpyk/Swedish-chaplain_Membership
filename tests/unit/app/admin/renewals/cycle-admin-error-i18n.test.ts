@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANCEL_CYCLE_ERROR_CODES,
   MARK_PAID_OFFLINE_ERROR_CODES,
+  resolveExistingBillHref,
   resolveOrphanInvoiceHref,
 } from '@/app/(staff)/admin/renewals/[cycleId]/_components/cycle-admin-error-codes';
 import en from '@/i18n/messages/en.json';
@@ -155,5 +156,49 @@ describe('resolveOrphanInvoiceHref (DV-5 mark-paid DO-NOT-RETRY deep-link)', () 
       }),
     ).toBeNull();
     expect(resolveOrphanInvoiceHref({ code: 'server_error' })).toBeNull();
+  });
+});
+
+describe('resolveExistingBillHref (duplicate-membership-bill deep-link)', () => {
+  it('returns the encoded invoice deep-link for membership_bill_already_exists with an id', () => {
+    expect(
+      resolveExistingBillHref({
+        code: 'membership_bill_already_exists',
+        existing_invoice_id: 'inv-777',
+      }),
+    ).toBe('/admin/invoices/inv-777');
+  });
+
+  it('encodes the invoice id (path-injection / special chars are escaped)', () => {
+    expect(
+      resolveExistingBillHref({
+        code: 'membership_bill_already_exists',
+        existing_invoice_id: 'a/b c',
+      }),
+    ).toBe(`/admin/invoices/${encodeURIComponent('a/b c')}`);
+  });
+
+  it('returns null WITHOUT an id (→ generic toast)', () => {
+    expect(
+      resolveExistingBillHref({ code: 'membership_bill_already_exists' }),
+    ).toBeNull();
+  });
+
+  it('does NOT collapse with the orphan-invoice branch', () => {
+    // The two errors mean opposite things — orphan = a document WAS minted,
+    // existing-bill = nothing was minted. Each helper must ignore the other's
+    // code so the toasts can never be swapped.
+    expect(
+      resolveExistingBillHref({
+        code: 'f4_orphan_invoice',
+        existing_invoice_id: 'inv-777',
+      }),
+    ).toBeNull();
+    expect(
+      resolveOrphanInvoiceHref({
+        code: 'membership_bill_already_exists',
+        orphan_invoice_id: 'inv-777',
+      }),
+    ).toBeNull();
   });
 });
