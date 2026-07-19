@@ -861,6 +861,8 @@ redact list (see § 21.4).
 | `out_of_band_refund_rejected_total` | counter | `tenant`, `processor_env` | FR-011a leading indicator (admin refunded via Stripe Dashboard, not in-app) |
 | `member_invite_to_payment_funnel_dropoff` | counter | `tenant`, `step` | F5.1 promotion KPI (FR-016a) |
 | `payments.stale_pending_count` | gauge | `tenant` | post-critique X1+E3 — pending > 24h zombies |
+| `payments.unprocessed_events_count` | gauge | `tenant` | money-remediation Task 1 — `processor_events` the dispatcher started and never marked processed (`outcome='processed'` + `processed_at IS NULL` + age > 15 min). The only instrument that scans this table. Production baseline is **0**. |
+| `payments_unreconciled_total` | counter | `path`, `permanence`, `tenant` | money-remediation Task 1 — roll-up over the five F4/F5 Stripe-vs-ledger divergence counters. Alert on this; break down by `path`. `permanence='permanent'` means no automated mechanism will re-drive it. |
 | `receipt_pdf_render_duration_ms` | histogram | `tenant`, `outcome` (rendered\|failed) | T166 async receipt render — worker p95 budget |
 | `receipt_pdf_render_failures_total` | counter | `tenant`, `cause` (render_failed\|blob_upload_failed\|invalid_state\|invoice_not_found\|settings_missing) | T166 — render-pipeline forensics by failure cause |
 | `receipt_pdf_pending_count` | gauge | `tenant` | T166 — paid invoices stuck in `receipt_pdf_status='pending'` (sampled by reconciliation cron) |
@@ -895,6 +897,8 @@ identifier.
 | webhook backlog > 5 min | **page** | event delivery queue unhealthy | check Vercel function execution + Stripe webhook UI |
 | payment-success rate < 95 % (1 h, ex bank-decline) | **alarm** | feature regression or processor outage | check Stripe status + `payments.failed.count` per `reason_code` |
 | `payments.stale_pending_count` > 5 for any tenant | **alarm** | post-critique X1+E3 — zombie pending | `docs/runbooks/stale-pending-refund-sweep.md` (covers payment+refund both) |
+| `payments.unprocessed_events_count` > 0 for any tenant, sustained ≥ 15 min | **alarm** | webhook dispatch started and never completed — F-1 divergence class; production baseline is 0, so any non-zero is new | `docs/runbooks/unprocessed-events-count.md` |
+| `payments_unreconciled_total{permanence='permanent'}` > 0 | **alarm** | a Stripe-vs-ledger divergence landed on a path nothing will retry — a human must reconcile | `docs/runbooks/unprocessed-events-count.md` § Triage |
 | `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
 | `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
 | `pdf_render_permanently_failed` ≥ 1 (any tenant) | **page** | T166 receipt PDF worker exhausted 3 attempts — invoice `paid` with no receipt PDF available to member | `docs/runbooks/receipt-pdf-permanently-failed.md` |
@@ -929,6 +933,7 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - `docs/runbooks/out-of-band-refund.md` — FR-011a admin used Stripe Dashboard instead of in-app refund
 - `docs/runbooks/stale-pending-refund-sweep.md` — pending refund > 24h recovery
 - `docs/runbooks/stale-pending-count.md` — cron-job.org configuration for `payments.stale_pending_count` gauge (T138)
+- `docs/runbooks/unprocessed-events-count.md` — unreconciled `processor_events` gauge + the `payments_unreconciled_total` roll-up (money-remediation Task 1)
 - `docs/runbooks/receipt-pdf-permanently-failed.md` — T166 receipt PDF worker exhausted 3 attempts (page on-call)
 - `docs/runbooks/receipt-pdf-async-rollback.md` — T166 async receipt PDF kill-switch flip (`FEATURE_F5_ASYNC_RECEIPT_PDF=false`)
 

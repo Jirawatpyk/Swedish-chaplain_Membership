@@ -820,6 +820,51 @@ export const erasureMetrics = {
 //   - `outcome` ∈ {ok, retryable, permanent, idempotency_conflict}
 //   - NO user/member id labels (high-cardinality forbidden)
 
+/**
+ * Money-remediation Task 1 — the alertable roll-up behind the five
+ * F4/F5 "Stripe and the ledger now disagree" counters.
+ *
+ * Each of those five counters stays exactly as it is: they are the
+ * dashboard inputs that say WHICH divergence happened. This roll-up is the
+ * single series an alert rule binds to, so a sixth divergence site added
+ * later inherits paging instead of needing a sixth rule nobody writes.
+ *
+ * It is emitted from inside those five helpers rather than from their call
+ * sites deliberately. The call sites live in `confirm-payment.ts`,
+ * `issue-refund.ts` and the stale-pending-refund sweep — money-path files
+ * that Task 1 is specifically supposed to leave alone. Emitting here also
+ * makes it structurally impossible to bump a specific counter without
+ * bumping the roll-up, which no amount of call-site discipline guarantees.
+ *
+ * `permanence` answers one mechanical question — does an automated
+ * mechanism exist that will re-drive this divergence?
+ *   - `transient`: yes. `refundFinaliseDoubleFault` leaves a `pending`
+ *     refund row, which the stale-pending-refund sweep re-reads.
+ *   - `permanent`: no. The three `confirm-payment` Phase-B counters all sit
+ *     on paths that answer Stripe 200, and Stripe does not redeliver a 2xx;
+ *     `stalePendingRefundEscalated` fires only once the sweep has already
+ *     tried and given up. These require a human.
+ *
+ * `tenant` is `'unresolved'` where the emitting path has no tenant in hand,
+ * matching `webhookReceiveCount`'s existing convention — a consistent label
+ * set keeps the series aggregable in PromQL.
+ */
+function bumpUnreconciled(
+  path:
+    | 'confirm_payment_give_up_phase_b'
+    | 'confirm_payment_stale_refund_phase_b'
+    | 'confirm_payment_late_charge_phase_b'
+    | 'refund_finalise_double_fault'
+    | 'stale_pending_refund_escalated',
+  permanence: 'transient' | 'permanent',
+  tenantId?: string,
+): void {
+  counter(
+    'payments_unreconciled_total',
+    'Roll-up of every F4/F5 divergence where Stripe and the local ledger disagree — page on this, break it down by `path`',
+  ).add(1, { path, permanence, tenant: tenantId ?? 'unresolved' });
+}
+
 export const paymentsMetrics = {
   /**
    * Latency of `/api/payments/initiate` end-to-end including Stripe
@@ -1129,6 +1174,7 @@ export const paymentsMetrics = {
       'payments_confirm_payment_give_up_phase_b_mark_processed_failed_total',
       'Auto-refund give-up Phase B markProcessed throw — processor_events.processed_at left NULL',
     ).add(1);
+    bumpUnreconciled('confirm_payment_give_up_phase_b', 'permanent');
   },
 
   /**
@@ -1158,6 +1204,7 @@ export const paymentsMetrics = {
       'payments_confirm_payment_stale_refund_phase_b_mark_failed_total',
       'Stale-refund Phase B markProcessed throw — processor_events.processed_at left NULL',
     ).add(1);
+    bumpUnreconciled('confirm_payment_stale_refund_phase_b', 'permanent');
   },
 
   /**
@@ -1177,6 +1224,11 @@ export const paymentsMetrics = {
       'payments_confirm_payment_late_charge_phase_b_mark_failed_total',
       'Late-charge (#8) Phase B mark throw — processor_events.processed_at left NULL',
     ).add(1);
+    // NB: this helper's docstring above claims recovery is automatic via
+    // Stripe retry idempotency. That is finding F-2 part 2 — the path
+    // answers 200 and Stripe does not redeliver a 2xx, so nothing retries.
+    // The label follows the mechanism; correcting the prose is Task 3.
+    bumpUnreconciled('confirm_payment_late_charge_phase_b', 'permanent');
   },
 
   /**
@@ -1191,6 +1243,9 @@ export const paymentsMetrics = {
       'payments_refund_finalise_double_fault_total',
       'issueRefund Phase B + finaliseFailedRefund both threw — money moved, local row stuck pending',
     ).add(1, { tenant: tenantId });
+    // `transient`: the row is left `pending`, which the stale-pending-refund
+    // sweep re-reads and reconciles against Stripe.
+    bumpUnreconciled('refund_finalise_double_fault', 'transient', tenantId);
   },
 
   /**
@@ -1303,6 +1358,36 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments.unprocessed_events_count{tenant}` — async gauge over
+   * `processor_events` rows the webhook dispatcher STARTED and never
+   * finished: `outcome='processed'` (written optimistically in the step-6
+   * ingest tx) AND `processed_at IS NULL` (written only at the tail of the
+   * dispatch tx) AND older than the in-flight window.
+   *
+   * This is the only instrument that can observe an F-1-class divergence —
+   * money-side state committed while the event was 200-acked and never
+   * marked reconciled, so Stripe never redelivers and no sweep looks at it
+   * (`sweepStalePendingRefunds` scans `refunds`, not `processor_events`).
+   *
+   * Rows that are unprocessed BY DESIGN are excluded by the `outcome`
+   * predicate: unknown-processor-account acknowledgements and the three
+   * `rejected_*` audit rows never get a `processed_at` and would otherwise
+   * pin this gauge at a large constant.
+   *
+   * Emitted by `/api/internal/metrics/unprocessed-events-count` at 5-min
+   * cadence. `tenant='unresolved'` for rows whose tenant was never resolved.
+   * Alert threshold: > 0 for any tenant sustained over 15 min.
+   */
+  unprocessedEventsCount(tenantId: string, count: number): void {
+    observeGauge(
+      'payments_unprocessed_events_count',
+      'processor_events rows the dispatcher started and never marked processed, past the in-flight window',
+      { tenant: tenantId },
+      count,
+    );
+  },
+
+  /**
    * `payments_stale_pending_refund_escalated_total{tenant}` — counter
    * incremented (A.14 / M-i) by the Stripe-aware stale-pending-refund
    * sweep for each stale refund it could NOT terminalise this run because
@@ -1319,6 +1404,9 @@ export const paymentsMetrics = {
       'payments_stale_pending_refund_escalated_total',
       'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
     ).add(1, { tenant: tenantId });
+    // `permanent`: this fires only AFTER the sweep has tried and could not
+    // terminalise the row. There is no further automated attempt.
+    bumpUnreconciled('stale_pending_refund_escalated', 'permanent', tenantId);
   },
 
   /**

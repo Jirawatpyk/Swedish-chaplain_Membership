@@ -48,6 +48,7 @@ gone on Pro.
 | Job | Endpoint | Cadence | Auth | Detail runbook |
 |-----|----------|---------|------|----------------|
 | F5 stale-pending-count | `GET /api/internal/metrics/stale-pending-count` | `*/5 * * * *` | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-count.md](./stale-pending-count.md) |
+| F5 unprocessed-events-count | `GET /api/internal/metrics/unprocessed-events-count` | `*/5 * * * *` | `Authorization: Bearer ${CRON_SECRET}` | [unprocessed-events-count.md](./unprocessed-events-count.md) |
 | F5 stale-refund sweep | `POST /api/cron/sweep-stale-pending-refunds` | `0 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [stale-pending-refund-sweep.md](./stale-pending-refund-sweep.md) |
 | F4 outbox purge | `POST /api/cron/outbox-purge` | `15 20 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | (in `vercel.json`) |
 | F4 receipt-pdf reconcile | `POST /api/internal/cron/receipt-pdf-reconcile` | `30 3 * * *` (native Vercel) | `Authorization: Bearer ${CRON_SECRET}` | [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md) |
@@ -685,7 +686,7 @@ Recovery:
 
 ## Migration path: Pro plan (DONE — 2026-07-17)
 
-SweCham upgraded to Vercel Pro and **all 32 cron jobs now run on native
+SweCham upgraded to Vercel Pro and **all 34 cron jobs now run on native
 Vercel Cron** via `vercel.json`. This section is the authoritative
 mapping. cron-job.org is a **paused standby** (kept, not deleted).
 
@@ -709,14 +710,18 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (32 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (34 jobs)
 
-Pro plan limit is 40 cron jobs/project — 32 used, 8 headroom.
+Pro plan limit is 40 cron jobs/project — **34 used, 6 headroom** (verified by
+counting `vercel.json` on 2026-07-19, not by trusting this line: it read 32
+while the file already carried 33). A feature branch in flight adds 3 more on
+merge (→ 37/40). **Re-count before adding a cron.**
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|
 | `/api/cron/outbox-dispatch` | `* * * * *` | every 60s (transactional email drainer) | GET+POST |
 | `/api/internal/metrics/stale-pending-count` | `*/5 * * * *` | every 5 min | GET |
+| `/api/internal/metrics/unprocessed-events-count` | `*/5 * * * *` | every 5 min | GET |
 | `/api/internal/metrics/broadcasts-gauges` | `*/5 * * * *` | every 5 min | GET |
 | `/api/cron/broadcasts/dispatch-scheduled` | `*/5 * * * *` | every 5 min | GET+POST |
 | `/api/cron/broadcasts/split-large-broadcasts` | `*/5 * * * *` | every 5 min | GET+POST |

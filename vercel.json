@@ -4,6 +4,7 @@
     { "path": "/api/cron/outbox-dispatch", "schedule": "* * * * *" },
 
     { "path": "/api/internal/metrics/stale-pending-count", "schedule": "*/5 * * * *" },
+    { "path": "/api/internal/metrics/unprocessed-events-count", "schedule": "*/5 * * * *" },
     { "path": "/api/internal/metrics/broadcasts-gauges", "schedule": "*/5 * * * *" },
 
     { "path": "/api/cron/broadcasts/dispatch-scheduled", "schedule": "*/5 * * * *" },
