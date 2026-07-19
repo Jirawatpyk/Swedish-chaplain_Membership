@@ -54,7 +54,7 @@ One sentence: *the machine does the typing (drafts), the human keeps the decisio
 ### 5.1 The cron (trigger + selection) — vercel.json native
 A **new fifth renewals cron**, not folded into `enter-awaiting`. Copy the existing coordinator → worker → use-case trio + **one `vercel.json` line** (the repo has migrated to Vercel-native cron; `GET = POST` alias, `enter-awaiting-payment-coordinator/route.ts:51`):
 - **Coordinator** `.../cron/renewals/auto-draft-coordinator/route.ts`: `runtime=nodejs`, `force-dynamic`, `export const GET = POST`, `gateCronBearerOrRespond`, short-circuit → `200 {skipped}` when `!f8Renewals && !autoInvoice` or `readOnlyMode`, fresh `correlationId`, `Promise.allSettled` per tenant, emit `cron_dispatch_orchestrated` (`cron_kind:'auto_draft'`).
-- **Worker** `.../cron/renewals/auto-draft/[tenantId]/route.ts`: bearer gate, flag guard, `tenantId===env.tenant.slug` else 400, `runInTenant` → advisory lock `renewals:autodraft:<tenantId>` (namespace **disjoint** from the per-cycle + dispatch locks and F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:` — asserted by test) → `makeRenewalsDeps` → use-case → `200` counters.
+- **Worker** `.../cron/renewals/auto-draft/[tenantId]/route.ts`: bearer gate, flag guard, `tenantId===env.tenant.slug` else 400, `runInTenant` → advisory lock `renewals:autodraft:<tenantId>` (namespace **disjoint** from the per-cycle + dispatch locks and F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:` — asserted by test) **[†1 — NOT IMPLEMENTED; see Amendment †1, 2026-07-19]** → `makeRenewalsDeps` → use-case → `200` counters.
 - **Use-case** `auto-draft-due-renewals.ts` + barrel export.
 - **Schedule** `0 22 * * *` UTC = **05:00 ICT**, in the renewals block **before** the 06:00 dispatch chain (UTC-only model; verified correct offset).
 
@@ -79,7 +79,7 @@ The queue surfaces the **drift flag** (§5.10), the **bill-year ≠ coverage-yea
 
 **Draft-discard (deadlock-safe).** When a bill is issued for a member, discard stale `status='draft'` membership invoices for the same `(member, plan_year)`. Both are F4 invoices so it is atomic-achievable, but it runs **post-issue in its own tx** with a **`requireStatus:'draft'`** guard (a `DELETE ... WHERE status='draft'` no-ops safely if a concurrent tx is promoting the draft → issued). It must **not** run inside the issue tx (two concurrent same-member issues each locking+deleting the other's draft → deadlock, the `for-no-key-update-deadlock` class).
 
-**Other layers:** content-based draft dedup in the eligibility query (a re-run never mints a second draft; a self-renewed member is excluded); per-run advisory lock + per-cycle tx re-read at draft time (mirrors `enter-awaiting`'s TOCTOU pattern). **Double-draft** is possible but harmless; **double-open-bill** is prevented by the content guard, not by construction claims.
+**Other layers:** content-based draft dedup in the eligibility query (a re-run never mints a second draft; a self-renewed member is excluded); per-run advisory lock **[†1 — dropped; see Amendment †1]** + per-cycle tx re-read at draft time (mirrors `enter-awaiting`'s TOCTOU pattern). **Double-draft** is possible but harmless; **double-open-bill** is prevented by the content guard, not by construction claims.
 
 ### 5.5 Failure handling + orphan-window recovery
 - Coordinator `Promise.allSettled` per tenant; worker per-cycle try/catch around a per-cycle tx (lock → re-read → draft → `emitInTx`), counting `drafted / skipped_existing / skipped_opt_out / skipped_terminated / errors` and continuing (ship a **throw-path integration test** where the bridge rejects mid-batch). The **daily re-run IS the retry**; the **range** window self-heals a missed day. Auth via shared `gateCronBearerOrRespond`. Feature-off/read-only → `200 {skipped}`, never 503.
@@ -179,7 +179,7 @@ Per-draft `renewal_auto_drafted` (member, cycle, plan_year, frozen price, covera
 13. **Drift flag** — frozen ≠ catalogue price → the queue flags it.
 14. **Reminder handoff (F8 live, live Neon)** — a `draft` triggers neither an invoice-referencing ladder nudge nor due-track; after issue, the cycle is `awaiting_payment` and enters `dueTrackCycleIds` so the ladder email stands down — one stream, asserting the issue→due-date window precisely.
 15. **Audit completeness (live Neon)** — `renewal_auto_drafted` + `renewal_auto_draft_discarded` actually persist via `emitInTx` (proves pgEnum + `F8_ENUM_SHIPPED` + the count bump 70→72); `cron_dispatch_orchestrated{cron_kind:'auto_draft'}` is accepted; the ×3-locale `audit.eventType` labels exist.
-16. **Advisory-lock disjointness** — `renewals:autodraft:*` does not contend with per-cycle/dispatch/`invoicing:` locks.
+16. **Advisory-lock disjointness** — `renewals:autodraft:*` does not contend with per-cycle/dispatch/`invoicing:` locks. **[†1 — SHIPPED INVERTED; see Amendment †1]**
 17. **Cross-tenant** — eligibility + issue are tenant-scoped; a peer tenant is never drafted/issued.
 18. **Flag-off / read-only** → `200 {skipped}`, nothing created.
 
@@ -222,3 +222,53 @@ Per-draft `renewal_auto_drafted` (member, cycle, plan_year, frozen price, covera
 3. **Enrollment** → **opt-in for the first cohort** (bulk admin action); revisit opt-out later.
 4. **Cadence** → **per-tenant config columns** + self-healing range window.
 5. **Price** → **frozen price + a queue drift flag.**
+
+---
+
+## Amendments
+
+### †1 — the `renewals:autodraft:<tenantId>` per-run mutex was deliberately NOT implemented (2026-07-19)
+
+**Status:** spec superseded by the implementation. §5.1, §5.4 and test #16 above
+mandate a per-run advisory lock in the auto-draft worker route. It does not
+exist, and the omission is intentional. Recorded here because the spec was
+never amended, leaving a traceability gap that Spec Kit governance requires
+closing before `/speckit.ship`.
+
+**Decision:** keep the implementation as shipped. Do NOT add the mutex.
+
+**Why — two independent reasons, the second decisive:**
+
+1. *The mutex buys almost nothing.* What it would prevent is a double-draft
+   from two overlapping runs. That is already an accepted condition
+   (`F8.AUTO_DRAFT.ORPHANED_AFTER_COMMIT`); a double-draft is harmless
+   (drafts mint no §87 number), the eligibility query is content-deduped, and
+   `discardSupersededDrafts` sweeps a superseded sibling on the treasurer's
+   routine Issue click. Reaching the overlap at all needs a manual
+   `CRON_SECRET` POST racing the daily cron — the schedule cannot self-overlap.
+
+2. *Asserting the mandated namespace disjointness would have MANDATED A
+   DEFECT.* Auto-draft deliberately SHARES the per-cycle key
+   `renewals:<tenantId>:<cycleId>` with `confirmRenewal`,
+   `enterAwaitingPaymentOnExpiry`, `markPaidOffline` and
+   `issueAutoDraftedRenewal`. That sharing IS the safety property: the cron
+   and a member clicking "renew" mutate the same cycle row and must
+   serialise. Giving auto-draft a private `renewals:autodraft:*` namespace so
+   it could run "without contention" would let the cron draft a renewal
+   invoice at the same moment `confirmRenewal` bills that member directly —
+   **two bills for one renewal**. Test #16 therefore ships in its INVERTED,
+   correct form (`auto-invoice-dark-ship.test.ts` § B), asserting the sharing
+   rather than the disjointness.
+
+**Third constraint, from the route's own design:** wrapping the worker in an
+outer `runInTenant` + lock would hold an F8 transaction and advisory lock open
+across every F4 `createInvoiceDraft` commit in the batch — the "never hold an
+F8 lock across an F4 commit" anti-pattern that Task 7's split-tx restructure
+exists to avoid. The rationale is recorded in the route docstring
+(`.../cron/renewals/auto-draft/[tenantId]/route.ts`).
+
+**Consequence for the reader:** treat §5.1's "advisory lock
+`renewals:autodraft:<tenantId>`" and §5.4's "per-run advisory lock" as
+withdrawn, and test #16 as satisfied by its inverted form. Nothing else in
+§5.4's layered defence changes — the per-cycle lock, the content-based dedup
+and the pre-issue content guard all ship as specified.
