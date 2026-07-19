@@ -183,15 +183,27 @@ async function observeAutoInvoiceGaugesForTenant(
     ]);
 
     if (!row) return;
-    renewalsMetrics.observeAutoDraftQueueSizeGauge(tenantId, row.queue_size);
-    renewalsMetrics.observeAutoDraftOldestAgeGauge(
-      tenantId,
-      row.oldest_age_seconds,
-    );
-    renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(
-      tenantId,
-      row.awaiting_payment_no_invoice,
-    );
+    // Task 17 (Task 16 review MINOR-2) — one ALL-OR-NOTHING call rather than
+    // three independent ones. Each individual observe method swallows its own
+    // failure via `safeMetric`, so three separate calls could not report a
+    // partial emit failure to this catch: the query would have succeeded, no
+    // exception would reach here, `forgetAutoInvoiceGauges` would never run,
+    // and one of the three gauges would sit frozen at its previous value while
+    // the other two went fresh. On `renewals_awaiting_payment_no_invoice` — the
+    // wedge detector, whose meaning depends on "0 means 0" — a frozen 0 hides
+    // the very members it exists to surface. The atomic call rolls the whole
+    // tenant triple back to ABSENT on any failure and reports it here.
+    const observed = renewalsMetrics.observeAutoInvoiceGauges(tenantId, {
+      queueSize: row.queue_size,
+      oldestAgeSeconds: row.oldest_age_seconds,
+      awaitingPaymentNoInvoice: row.awaiting_payment_no_invoice,
+    });
+    if (!observed) {
+      logger.warn(
+        { tenantId, gaugeKind: 'renewals_auto_invoice' },
+        'cron.renewals.auto-draft.coordinator.gauge_emit_failed',
+      );
+    }
   } catch (e) {
     // Review MAJOR-4 — drop this tenant's last-observed values rather than
     // leaving them frozen. Without this, a permanently-failing query keeps

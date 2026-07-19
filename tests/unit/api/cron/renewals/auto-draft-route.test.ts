@@ -118,6 +118,17 @@ vi.mock('@/lib/otel-tracer', () => ({
   ) => fn({ setAttribute: () => {} }),
 }));
 
+// Task 17 — `observeAutoInvoiceGauges` + `forgetAutoInvoiceGauges` were
+// MISSING from this mock, so on the one path that reaches them (a gauge
+// query that actually returns a row) the route hit
+// "observeAutoDraftQueueSizeGauge is not a function", the catch then hit the
+// same on `forgetAutoInvoiceGauges`, and the resulting throw was swallowed by
+// the coordinator's `Promise.allSettled`. Net effect: the gauge EMIT path was
+// unreachable in tests and every case here passed without it. Stubbed now, so
+// the emit can be asserted rather than accidentally no-opped.
+const observeAutoInvoiceGaugesMock = vi.hoisted(() => vi.fn(() => true));
+const forgetAutoInvoiceGaugesMock = vi.hoisted(() => vi.fn());
+
 vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
     cronBearerAuthRejected: vi.fn(),
@@ -128,6 +139,8 @@ vi.mock('@/lib/metrics', () => ({
     coordinatorTenantsSucceeded: vi.fn(),
     coordinatorTenantsFailed: vi.fn(),
     coordinatorDurationMs: vi.fn(),
+    observeAutoInvoiceGauges: observeAutoInvoiceGaugesMock,
+    forgetAutoInvoiceGauges: forgetAutoInvoiceGaugesMock,
   },
 }));
 
@@ -423,6 +436,56 @@ describe('cron auto-draft-coordinator route (auto-invoice #2 / Task 8)', () => {
       const res = await coordinatorPOST(makeRequest(VALID_AUTH));
 
       expect(res.status).toBe(200);
+      expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    });
+
+    // -----------------------------------------------------------------------
+    // Task 17 (Task 16 review MINOR-2) — the SUCCESSFUL emit path.
+    //
+    // Everything above drives the gauge QUERY to fail. Nothing drove it to
+    // succeed, so the emit itself — the code that actually writes the three
+    // gauges — was covered by nothing at this layer.
+    // -----------------------------------------------------------------------
+    it('a successful gauge row is emitted ALL-OR-NOTHING via observeAutoInvoiceGauges', async () => {
+      fetchMock.mockResolvedValue(OK_WORKER_RESPONSE);
+      runInTenantMock.mockImplementationOnce(async () => [
+        {
+          queue_size: 12,
+          oldest_age_seconds: 3600,
+          awaiting_payment_no_invoice: 2,
+        },
+      ]);
+
+      const res = await coordinatorPOST(makeRequest(VALID_AUTH));
+
+      expect(res.status).toBe(200);
+      // One atomic call, not three independent ones — three separate calls
+      // could not report a partial emit failure (each swallows its own).
+      expect(observeAutoInvoiceGaugesMock).toHaveBeenCalledTimes(1);
+      expect(observeAutoInvoiceGaugesMock).toHaveBeenCalledWith(TENANT_SLUG, {
+        queueSize: 12,
+        oldestAgeSeconds: 3600,
+        awaitingPaymentNoInvoice: 2,
+      });
+    });
+
+    it('a FAILED emit (all-or-nothing rollback) still returns 200 and keeps the audit row', async () => {
+      fetchMock.mockResolvedValue(OK_WORKER_RESPONSE);
+      runInTenantMock.mockImplementationOnce(async () => [
+        {
+          queue_size: 1,
+          oldest_age_seconds: 1,
+          awaiting_payment_no_invoice: 1,
+        },
+      ]);
+      // The metrics layer reports the rollback rather than throwing.
+      observeAutoInvoiceGaugesMock.mockReturnValueOnce(false);
+
+      const res = await coordinatorPOST(makeRequest(VALID_AUTH));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.tenants_succeeded).toBe(1);
       expect(auditEmitMock).toHaveBeenCalledTimes(1);
     });
 

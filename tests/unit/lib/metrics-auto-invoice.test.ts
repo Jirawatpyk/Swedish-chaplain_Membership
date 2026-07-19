@@ -221,25 +221,28 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
   const gaugeCases = [
     {
       label: 'observeAutoDraftQueueSizeGauge',
+      method: 'observeAutoDraftQueueSizeGauge',
       gaugeName: 'renewals_auto_draft_queue_size',
       call: (t: string, v: number) =>
         renewalsMetrics.observeAutoDraftQueueSizeGauge(t, v),
     },
     {
       label: 'observeAutoDraftOldestAgeGauge',
+      method: 'observeAutoDraftOldestAgeGauge',
       gaugeName: 'renewals_auto_draft_oldest_age_seconds',
       call: (t: string, v: number) =>
         renewalsMetrics.observeAutoDraftOldestAgeGauge(t, v),
     },
     {
       label: 'observeAwaitingPaymentNoInvoiceGauge',
+      method: 'observeAwaitingPaymentNoInvoiceGauge',
       gaugeName: 'renewals_awaiting_payment_no_invoice',
       call: (t: string, v: number) =>
         renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(t, v),
     },
   ] as const;
 
-  for (const { label, gaugeName, call } of gaugeCases) {
+  for (const { label, method, gaugeName, call } of gaugeCases) {
     describe(label, () => {
       it(`registers an ObservableGauge named \`${gaugeName}\``, () => {
         call(TENANT, 7);
@@ -274,6 +277,37 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       it('accepts zero without throwing (empty-queue steady state)', () => {
         expect(() => call(TENANT, 0)).not.toThrow();
         expect(__test__readGaugeValues(gaugeName)?.get(TENANT)).toBe(0);
+      });
+
+      // -------------------------------------------------------------------
+      // Task 17 (Task 16 review MINOR-1) — the gauge REGISTRATION swallow.
+      // -------------------------------------------------------------------
+      //
+      // `meterShouldThrow` arms `createObservableGauge`, but before this case
+      // existed no gauge test ever set it — so the gauge half of the
+      // `safeMetric` never-throw contract was asserted by nothing, while the
+      // three counters had explicit coverage.
+      //
+      // `vi.resetModules()` is load-bearing, NOT ceremony. `observableGauges`
+      // in metrics.ts is a module-level Map that is never cleared, so
+      // `createObservableGauge` fires only on the FIRST observe of a given
+      // name in a worker process. Every case above has already registered
+      // these three names, so arming the meter and calling the statically
+      // imported method would take the `if (!observableGauges.has(...))`
+      // branch NOT taken, touch the meter zero times, and pass while
+      // exercising nothing — the exact memoisation trap that made the counter
+      // swallow tests vacuous twice (see the `meterShouldThrow` docstring).
+      // A fresh module registry gives an empty instrument cache, so the
+      // registration branch is genuinely re-entered.
+      it('swallows a THROWING meter on the gauge REGISTRATION path', async () => {
+        vi.resetModules();
+        const fresh = await import('@/lib/metrics');
+        meterShouldThrow = true;
+
+        expect(() => fresh.renewalsMetrics[method](TENANT, 5)).not.toThrow();
+
+        // The instrument was never registered, so nothing can be scraped.
+        expect(observableGaugesCreated.has(gaugeName)).toBe(false);
       });
     });
   }
@@ -340,6 +374,109 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       const bucket = __test__readGaugeValues('renewals_awaiting_payment_no_invoice');
       expect(bucket?.has(TENANT)).toBe(false);
     });
+  });
+
+  // -----------------------------------------------------------------------
+  // observeAutoInvoiceGauges — all-or-nothing (Task 16 review MINOR-2)
+  // -----------------------------------------------------------------------
+  //
+  // The three individual observe methods each swallow internally, so three
+  // separate calls cannot report a partial emit failure to the cron route:
+  // the route's catch only sees QUERY failures. A `createObservableGauge`
+  // that threw on the second of three would leave gauge 1 fresh, gauge 2
+  // absent and gauge 3 STALE at its previous value — and nothing about that
+  // combination looks wrong on a dashboard. On
+  // `renewals_awaiting_payment_no_invoice` a frozen `0` hides precisely the
+  // wedged members the gauge exists to surface.
+  describe('observeAutoInvoiceGauges (all-or-nothing)', () => {
+    const VALUES = {
+      queueSize: 4,
+      oldestAgeSeconds: 900,
+      awaitingPaymentNoInvoice: 2,
+    } as const;
+
+    it('observes all three and reports success', () => {
+      expect(renewalsMetrics.observeAutoInvoiceGauges(TENANT, VALUES)).toBe(true);
+      expect(__test__readGaugeValues('renewals_auto_draft_queue_size')?.get(TENANT)).toBe(4);
+      expect(__test__readGaugeValues('renewals_auto_draft_oldest_age_seconds')?.get(TENANT)).toBe(900);
+      expect(__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT)).toBe(2);
+    });
+
+    it('never throws even when the meter explodes — cron-path contract', () => {
+      meterShouldThrow = true;
+      expect(() =>
+        renewalsMetrics.observeAutoInvoiceGauges(TENANT, VALUES),
+      ).not.toThrow();
+    });
+
+    // THE assertion of this block: a failed emit must leave NO stale value
+    // behind on ANY of the three, including ones written before the throw.
+    it('rolls the whole tenant triple back to ABSENT when an emit fails', async () => {
+      // Seed a previous successful pass, so there IS something to go stale.
+      renewalsMetrics.observeAutoInvoiceGauges(TENANT, VALUES);
+      expect(__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT)).toBe(2);
+
+      // Fresh module registry so the registration branch is re-entered and
+      // the armed meter is actually reached (same memoisation trap as the
+      // MINOR-1 cases above) — but the accumulator is fresh too, so re-seed
+      // it through the fresh module first.
+      vi.resetModules();
+      const fresh = await import('@/lib/metrics');
+      fresh.renewalsMetrics.observeAutoInvoiceGauges(TENANT, VALUES);
+      expect(
+        fresh.__test__readGaugeValues('renewals_awaiting_payment_no_invoice')?.get(TENANT),
+      ).toBe(2);
+
+      meterShouldThrow = true;
+      vi.resetModules();
+      const fresher = await import('@/lib/metrics');
+      // Carry a stale value into the fresher registry, then fail an emit.
+      fresher.renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(TENANT, 2);
+      const okAfter = fresher.renewalsMetrics.observeAutoInvoiceGauges(TENANT, {
+        queueSize: 9,
+        oldestAgeSeconds: 9,
+        awaitingPaymentNoInvoice: 9,
+      });
+
+      expect(okAfter).toBe(false);
+      // Absent — not 2 (stale) and not 9 (half-written).
+      for (const name of [
+        'renewals_auto_draft_queue_size',
+        'renewals_auto_draft_oldest_age_seconds',
+        'renewals_awaiting_payment_no_invoice',
+      ]) {
+        expect(fresher.__test__readGaugeValues(name)?.get(TENANT)).toBeUndefined();
+      }
+    });
+
+    // NO peer-tenant-on-failure case here, deliberately.
+    //
+    // An earlier draft of this block had one ("observe tenant B, arm the
+    // meter, observe tenant A, assert B survives"). It passed — and tested
+    // nothing. Probed by asserting the call reported failure: it returned
+    // `true`. Reachability analysis explains why, and the conclusion
+    // generalises beyond the test:
+    //
+    //   Inside `observeTenantGaugeOrThrow` the only statements that can throw
+    //   are `createObservableGauge` / `addCallback`, both guarded by
+    //   `if (!observableGauges.has(name))`. The Map writes cannot throw. So
+    //   once a gauge name is registered in a process, observing it again is
+    //   infallible — and all three names register together on the first
+    //   `observeAutoInvoiceGauges` call, because that is the only caller in
+    //   the cron route.
+    //
+    // Therefore a failure can only occur on the FIRST call in a process, at
+    // which point no peer tenant has values to protect: the coordinator's
+    // `Promise.allSettled` fan-out means whichever tenant goes first is the
+    // one that registers, and a later tenant simply retries any registration
+    // the first left undone. There is no reachable state where tenant A's
+    // failure could touch tenant B's values.
+    //
+    // The rollback primitive's per-tenant scoping IS still asserted — see
+    // "does NOT disturb another tenant" in the `forgetAutoInvoiceGauges`
+    // block above, where it is reachable directly. Writing an unreachable
+    // scenario here would have added a fifth always-green test to a file
+    // whose header already documents three such incidents.
   });
 
   // -----------------------------------------------------------------------

@@ -109,6 +109,45 @@ export function __test__clearGaugeValues(): void {
  * unit-testable — see `observeCycleStateGauge`'s docstring) and no caller
  * benefit. New gauges use the helper; old ones stay as they are.
  *
+ * **This variant PROPAGATES failures** — note the name. Use
+ * {@link observeTenantGauge} instead unless you specifically need to know
+ * whether the emit landed. The only current caller that does is
+ * `observeAutoInvoiceGauges`, which needs a failure signal to roll its
+ * three-gauge set back to absent rather than leave one frozen (Task 17 /
+ * Task 16 review MINOR-2).
+ *
+ * Only the instrument-registration branch can actually throw: the two Map
+ * writes cannot, and registration happens once per gauge name per process.
+ * A caller relying on the failure signal is therefore guarding a
+ * first-observe OTel-SDK failure, not a steady-state one.
+ */
+function observeTenantGaugeOrThrow(
+  gaugeName: string,
+  description: string,
+  tenantId: string,
+  value: number,
+): void {
+  const bucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+  bucket.set(tenantId, value);
+  gaugeValues.set(gaugeName, bucket);
+
+  if (!observableGauges.has(gaugeName)) {
+    const gauge = meter().createObservableGauge(gaugeName, { description });
+    observableGauges.set(gaugeName, gauge);
+    gauge.addCallback((result) => {
+      const b = gaugeValues.get(gaugeName);
+      if (!b) return;
+      for (const [tenantLabel, v] of b.entries()) {
+        result.observe(v, { tenant: tenantLabel });
+      }
+    });
+  }
+}
+
+/**
+ * The never-throw wrapper around {@link observeTenantGaugeOrThrow} — the
+ * default entry point, and what every gauge method on the public API uses.
+ *
  * Wrapped in `safeMetric` here so every caller inherits the never-throw
  * contract — these run inside cron paths where a metrics failure must
  * never fail or delay the pass.
@@ -119,33 +158,45 @@ function observeTenantGauge(
   tenantId: string,
   value: number,
 ): void {
-  safeMetric(() => {
-    const bucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
-    bucket.set(tenantId, value);
-    gaugeValues.set(gaugeName, bucket);
-
-    if (!observableGauges.has(gaugeName)) {
-      const gauge = meter().createObservableGauge(gaugeName, { description });
-      observableGauges.set(gaugeName, gauge);
-      gauge.addCallback((result) => {
-        const b = gaugeValues.get(gaugeName);
-        if (!b) return;
-        for (const [tenantLabel, v] of b.entries()) {
-          result.observe(v, { tenant: tenantLabel });
-        }
-      });
-    }
-  });
+  safeMetric(() =>
+    observeTenantGaugeOrThrow(gaugeName, description, tenantId, value),
+  );
 }
 
 /**
- * 107-auto-invoice Task 16 — the three auto-invoice gauge names, as one
- * list so the observe and forget paths cannot drift apart.
+ * 107-auto-invoice Task 16 — the three auto-invoice gauges (name +
+ * description) as ONE table, so the observe, atomic-observe and forget paths
+ * cannot drift apart.
+ *
+ * Task 17 review MINOR-2 widened this from a bare name list to carry the
+ * descriptions too: `observeAutoInvoiceGauges` below needs the same
+ * name/description pairs the three individual methods use, and a second
+ * copy of those strings is exactly the kind of duplication that goes stale
+ * silently (a description edit in one place only, invisible until someone
+ * reads two dashboards side by side).
  */
+const AUTO_INVOICE_GAUGE_SPECS = {
+  queueSize: {
+    name: 'renewals_auto_draft_queue_size',
+    description:
+      "Auto-renewal invoice drafts awaiting treasurer review (origin='auto_renewal', status='draft'), per tenant (107-auto-invoice)",
+  },
+  oldestAgeSeconds: {
+    name: 'renewals_auto_draft_oldest_age_seconds',
+    description:
+      'Age in seconds of the oldest auto-renewal draft awaiting treasurer review, per tenant (107-auto-invoice)',
+  },
+  awaitingPaymentNoInvoice: {
+    name: 'renewals_awaiting_payment_no_invoice',
+    description:
+      'Renewal cycles awaiting payment with no live membership invoice — wedged, never billed nor chased (107-auto-invoice)',
+  },
+} as const;
+
 const AUTO_INVOICE_GAUGE_NAMES = [
-  'renewals_auto_draft_queue_size',
-  'renewals_auto_draft_oldest_age_seconds',
-  'renewals_awaiting_payment_no_invoice',
+  AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+  AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+  AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
 ] as const;
 
 /**
@@ -3375,8 +3426,8 @@ export const renewalsMetrics = {
    */
   observeAutoDraftQueueSizeGauge(tenantId: string, count: number): void {
     observeTenantGauge(
-      'renewals_auto_draft_queue_size',
-      "Auto-renewal invoice drafts awaiting treasurer review (origin='auto_renewal', status='draft'), per tenant (107-auto-invoice)",
+      AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+      AUTO_INVOICE_GAUGE_SPECS.queueSize.description,
       tenantId,
       count,
     );
@@ -3403,8 +3454,8 @@ export const renewalsMetrics = {
    */
   observeAutoDraftOldestAgeGauge(tenantId: string, seconds: number): void {
     observeTenantGauge(
-      'renewals_auto_draft_oldest_age_seconds',
-      'Age in seconds of the oldest auto-renewal draft awaiting treasurer review, per tenant (107-auto-invoice)',
+      AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+      AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.description,
       tenantId,
       seconds,
     );
@@ -3441,11 +3492,90 @@ export const renewalsMetrics = {
    */
   observeAwaitingPaymentNoInvoiceGauge(tenantId: string, count: number): void {
     observeTenantGauge(
-      'renewals_awaiting_payment_no_invoice',
-      'Renewal cycles awaiting payment with no live membership invoice — wedged, never billed nor chased (107-auto-invoice)',
+      AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
+      AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.description,
       tenantId,
       count,
     );
+  },
+
+  /**
+   * 107-auto-invoice Task 17 (Task 16 review MINOR-2) — observe all three
+   * auto-invoice gauges for a tenant ALL-OR-NOTHING. Returns `true` when
+   * every gauge landed, `false` when the set was rolled back.
+   *
+   * **The hole this closes.** The three individual observe methods above
+   * each swallow internally via `safeMetric`. The coordinator cron therefore
+   * could not tell an observe failure from a success: its `catch` only fires
+   * for the QUERY (or the timeout), never for the emit. So if the query
+   * succeeded but one `createObservableGauge` threw, the route's catch never
+   * ran, `forgetAutoInvoiceGauges` was never called, and that one gauge kept
+   * re-reporting its previous value at every scrape while the other two went
+   * fresh. A partially-stale triple is worse than a wholly-absent one,
+   * because nothing about it looks wrong.
+   *
+   * The gauge it would strand is the one that matters:
+   * `renewals_awaiting_payment_no_invoice` is the wedge detector, and its
+   * whole design rests on "0 means 0" (see `forgetAutoInvoiceGauges`). A
+   * frozen `0` there hides exactly the members it exists to surface.
+   *
+   * All-or-nothing rather than detect-and-repair on purpose: a partial write
+   * is unobservable from outside (the accumulator write happens BEFORE the
+   * instrument registration inside `observeTenantGaugeOrThrow`, so a
+   * registration failure leaves the value set but unscrapeable). Clearing
+   * the whole tenant triple on any failure converts every partial outcome
+   * into the one state monitoring can express — absent.
+   *
+   * Never throws, matching the contract of everything else in this file:
+   * the caller is a cron path where a metrics failure must not fail the
+   * pass. The `forget` is best-effort too (it is itself `safeMetric`-wrapped).
+   *
+   * Requires an OTel SDK failure to fire at all, so this is a remote path —
+   * but it was the last one left that could freeze a wedge gauge.
+   */
+  observeAutoInvoiceGauges(
+    tenantId: string,
+    values: {
+      readonly queueSize: number;
+      readonly oldestAgeSeconds: number;
+      readonly awaitingPaymentNoInvoice: number;
+    },
+  ): boolean {
+    try {
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+        AUTO_INVOICE_GAUGE_SPECS.queueSize.description,
+        tenantId,
+        values.queueSize,
+      );
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+        AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.description,
+        tenantId,
+        values.oldestAgeSeconds,
+      );
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
+        AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.description,
+        tenantId,
+        values.awaitingPaymentNoInvoice,
+      );
+      return true;
+    } catch {
+      // Roll the whole tenant triple back to ABSENT — see the docstring.
+      // Inlined rather than delegating to `forgetAutoInvoiceGauges` below:
+      // referencing `renewalsMetrics` from inside its own object literal
+      // makes TS fall back to an implicit `any` for the whole const
+      // (circular inference). Same three-name loop, same `safeMetric`
+      // never-throw guarantee, driven by the same `AUTO_INVOICE_GAUGE_NAMES`
+      // constant, so the two cannot drift.
+      safeMetric(() => {
+        for (const gaugeName of AUTO_INVOICE_GAUGE_NAMES) {
+          gaugeValues.get(gaugeName)?.delete(tenantId);
+        }
+      });
+      return false;
+    }
   },
 
   /**

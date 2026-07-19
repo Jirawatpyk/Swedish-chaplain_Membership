@@ -70,6 +70,9 @@ gone on Pro.
 | **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
+| **auto-invoice auto-draft (coordinator)** (107 Task 8) | **`POST /api/cron/renewals/auto-draft-coordinator`** | **`0 5 * * *`** (daily 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — pre-fills renewal invoice **drafts**; also feeds the 3 auto-invoice gauges. Ships dark (3 keys, all default-off) |
+| **auto-invoice prune-auto-drafts** (107 Task 11) | **`POST /api/cron/renewals/prune-auto-drafts`** | **`15 7 * * *`** (daily 07:15 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — discards auto-drafts whose cycle left the eligibility window (self-renewed / lapsed) |
+| **auto-invoice reconcile-issued-orphans** (107 Task 11) | **`POST /api/cron/renewals/reconcile-issued-orphans`** | **`30 7 * * *`** (daily 07:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — re-links an `issued` auto-drafted invoice whose `linked_invoice_id` never got stamped |
 | **F6 idempotency sweep** | **`POST /api/internal/retention/sweep-eventcreate-idempotency`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 | **F6.1 error-CSV blob TTL sweep** (T058 — folded into F6 T154 on 2026-05-19) | **`POST /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
@@ -1315,6 +1318,107 @@ them via the admin New-invoice form (which does NOT suppress the reg fee)
 instead of Renewals → mark paid offline.** Reserve mark-paid-offline for
 members whose invoice already exists (issued via New-invoice or a renewal
 dispatch) and who simply paid by an offline method (bank transfer, cheque).
+
+## Auto-invoice — auto-draft renewals (107-auto-invoice)
+
+Three daily crons. **None of them bills anybody.** The coordinator
+pre-fills renewal invoices as `status='draft', origin='auto_renewal'` —
+no §87 document number, no PDF, no email — and a treasurer works the
+`/admin/invoices` auto-renewal review queue, choosing *Issue + Send*,
+*Issue silently* or *Discard* per row. Nothing leaves the building until
+a human clicks. The other two crons are housekeeping around that queue.
+
+| Cron | ICT | Does |
+|---|---|---|
+| `auto-draft-coordinator` | 05:00 | Fans out per tenant; creates drafts; feeds the 3 gauges |
+| `prune-auto-drafts` | 07:15 | Discards drafts whose cycle left the `upcoming\|reminded` window |
+| `reconcile-issued-orphans` | 07:30 | Re-links an issued auto-draft whose cycle back-reference is missing |
+
+The coordinator runs **before** the 06:00 ICT reminder-dispatch chain so a
+treasurer working the queue is never racing the dispatcher; the two
+housekeeping jobs run **after** the 07:00 chain so a same-day self-renew or
+lapse has already flipped its cycle before the sweep looks at it.
+
+### Enabling: the three-key procedure
+
+All three keys default to off, and **all three must be on** before a single
+draft is created. They are independent — turning on any one or two changes
+nothing. Enable in this order; each step is separately reversible.
+
+1. **`FEATURE_AUTO_INVOICE=true`** (Vercel env, then redeploy) — the master
+   kill-switch. Off ⇒ all four routes return `200 {skipped,
+   reason:'feature_flag_disabled'}`. Never 503: a cron must not retry-storm.
+   Independent of `FEATURE_F8_RENEWALS`, which must ALSO be true.
+2. **`tenant_invoice_settings.auto_invoice_enabled = true`** for the tenant,
+   plus its cadence columns (`auto_invoice_lead_days_rolling`,
+   `..._calendar`, `auto_invoice_page_size`). Enforced in the **use-case**,
+   not just the route — the cron short-circuits before it even runs the
+   eligibility query. A tenant with **no settings row at all** is treated as
+   disabled (absent ≠ enabled).
+3. **`members.auto_invoice_enrolled_at IS NOT NULL`** per member — set via
+   the Members directory bulk-enrol action. This is the per-member opt-in
+   and the intended blast-radius control: start with a 2–3 member pilot,
+   confirm the queue populates and no email goes out, then widen.
+
+To stand the feature down, reverse any ONE key — key 1 is the fastest
+(env + redeploy, no data change) and stops all three crons at the route.
+
+> **Enrolment today is one-way from the admin UI**: the bulk action enrols,
+> and there is no bulk un-enrol surface yet, so the confirmation dialog warns
+> operators to be deliberate. Un-enrolling currently means clearing
+> `auto_invoice_enrolled_at` directly. If you need to stop drafting for a
+> cohort right now, turning off key 2 (tenant) or key 1 (env) is the
+> supported route and takes effect on the next pass.
+
+### The bill year is NOT the coverage year — do not "correct" it
+
+A renewal invoice's `plan_year` is derived from the cycle's **`period_from`**
+(`deriveFiscalYear(cycle.periodFrom)`), matching how `confirmRenewal` derives
+it for the exact same renewal — the two paths must produce an identical
+§86/4. The **coverage window** the member is buying is the *next* term
+(`period_to` → `period_to + frozen_plan_term_months`).
+
+So for a rolling-anchor member whose cycle began Aug 2025, the queue and the
+document legitimately show a **2025** bill year while the coverage runs
+**Aug 2026 → Aug 2027**, and the document number carries the 2025 fiscal
+sequence (`SC-2025-…`). This is correct and must not be "fixed": changing
+the derivation would make a cron-drafted renewal and a member-self-renewed
+one produce different tax documents for the same renewal.
+
+The queue surfaces this as a `billYearStale` flag when `plan_year` differs
+from *today's* fiscal year — informational, expected for most rows during
+renewal season, and **not** a refusal on its own. A genuine refusal is
+`plan_year_drift`: the invoice's stamped `plan_year` disagrees with the
+year re-derived from its own cycle. That one blocks Issue.
+
+### Alerts: report-only
+
+The **gauge-based** signals ship **un-thresholded on purpose** — no baseline
+exists until the feature has actually run against real data, and a threshold
+guessed before that would either cry wolf or hide the thing it was built to
+catch. AI-A1 is *report-only*; AI-A3 and AI-A4 are *panels with no threshold*.
+Treat them as a dashboard to read during the pilot, not as an on-call signal,
+and set thresholds only from observed steady state.
+
+The one exception is **AI-A2b** (auto-draft errors on two consecutive days, or
+>20 % error share in a pass), which IS an alarm — it is error-rate based, not
+gauge based, so it needs no baseline: a retry that failed to clear is
+actionable on any volume. AI-A2 and AI-A5 are report-level.
+
+The one to watch is `renewals_awaiting_payment_no_invoice` (wedge detector).
+When it IS promoted it must fire on a **sustained** wedge (age-based), never
+on `> 0` — a voided-for-correction invoice puts a member in that population
+briefly and legitimately.
+
+Definitions, the full alert list and the wedge triage steps are **not
+restated here** — see [`docs/observability.md` § 26](../observability.md) and
+[auto-invoice-wedged-cycles.md](./auto-invoice-wedged-cycles.md).
+
+If the gauge feed itself fails, the coordinator drops that tenant's three
+values rather than leaving them frozen, and logs
+`cron.renewals.auto-draft.coordinator.gauge_observe_failed` (query/timeout)
+or `…gauge_emit_failed` (emit rolled back). An **absent** series is the
+honest signal; a stale number is not. Alert on no-data, not on a value.
 
 ## F6 — idempotency sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T116)
 
