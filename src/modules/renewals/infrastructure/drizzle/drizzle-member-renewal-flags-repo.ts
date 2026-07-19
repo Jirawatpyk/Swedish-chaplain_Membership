@@ -301,6 +301,16 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       // strict isolating RLS policy, so the SET LOCAL binding is the tenant
       // fence (see this file's header) — no explicit tenant predicate needed
       // or used by the sibling `members` reads here.
+      //
+      // NOTE for anyone comparing the two: the members-module twin of this
+      // query, `findErasedIdsInTx` in
+      // `src/modules/members/infrastructure/db/drizzle-member-repo.ts`, DOES
+      // add an explicit `eq(members.tenantId, …)` beside the same RLS GUC.
+      // Neither is wrong — each follows its own file's documented convention
+      // (that file states the explicit predicate as two-layer isolation per
+      // Constitution Principle I; this file's header treats the GUC as the
+      // fence for `members` reads). They were added in one commit, so the
+      // difference is deliberate rather than drift.
       const rows = await runInTenant(tenant, (tx) =>
         tx
           .select({ memberId: members.memberId })
