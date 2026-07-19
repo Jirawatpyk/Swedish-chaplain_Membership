@@ -11,7 +11,20 @@ import type { RefundStatus } from '../../domain/refund';
 import type { Satang } from '@/lib/money';
 
 export interface PaymentsRepo {
-  /** Run `fn` inside a serializable transaction; rollback on throw. */
+  /**
+   * Run `fn` inside a serializable transaction; rollback on throw.
+   *
+   * **Careful: `return err(...)` from `fn` does NOT roll back.** It is not a
+   * throw, so the transaction COMMITS the writes the refusal was refusing —
+   * finding F-1, and the same shape as F-3.
+   *
+   * If `fn` can refuse after issuing a write, use
+   * `runTxDecided(repo, fn)` from
+   * `@/modules/payments/application/settlement/tx-decision`, which forces the
+   * callback to say `commitTx(v)` or `rollbackTx(v)` and rejects a bare
+   * `Err` at compile time. Plain `withTx` remains correct for read-only work
+   * and for callbacks with no refusal path.
+   */
   withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
 
   /**

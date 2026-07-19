@@ -70,8 +70,54 @@ export interface RollbackDecision<T> {
 /** The callback's verdict: persist this transaction, or unwind it. */
 export type TxDecision<T> = CommitDecision<T> | RollbackDecision<T>;
 
-/** Persist the transaction's writes and resolve with `value`. */
-export function commitTx<T>(value: T): CommitDecision<T> {
+/**
+ * Persist the transaction's writes and resolve with `value`.
+ *
+ * **`Err<E>` does not compile here.** The parameter is intersected with
+ * `{ ok?: true }`, so an `Err` (whose `ok` is `false`) reduces the parameter
+ * to `never` and the call fails.
+ *
+ * That narrowing is the whole point of the primitive rather than a nicety.
+ * The F-1 site is `confirm-payment.ts:801`, which today reads
+ * `return err<ConfirmPaymentError>({ code: 'bridge_error' })` straight out of
+ * the `withTx` callback. The most mechanical possible conversion is to wrap
+ * that in `commitTx(` — which reproduces F-1 exactly, with a new API on top.
+ * The correct conversion is `rollbackTx(err(...))`, and without this
+ * constraint the type system has no opinion between the two.
+ *
+ * `null` and `undefined` stay legal ("committed, nothing to report").
+ * `Ok<T>` stays legal. If you genuinely need to commit AND return a refusal,
+ * use `commitTxWithRefusal` and say why.
+ */
+export function commitTx<T>(
+  value: T & ({ readonly ok?: true | undefined } | null | undefined),
+): CommitDecision<T> {
+  return { [TX_DECISION]: 'commit', value };
+}
+
+/**
+ * Commit the transaction and STILL return a refusal — the deliberate escape
+ * hatch from `commitTx`'s `Err` ban.
+ *
+ * **When this is right:** the transaction wrote something that must survive
+ * regardless of the refusal, and the refusal describes the caller's outcome
+ * rather than the transaction's. The canonical case is a forensic or audit
+ * row: "record that we could not proceed, then tell the caller we could not
+ * proceed." Rolling back there would destroy the evidence that the refusal
+ * happened at all.
+ *
+ * **When this is wrong — and it is the common case:** the transaction wrote
+ * money-side state (a payment flipped `succeeded`, a refund row inserted, a
+ * status transitioned) and the refusal means that state should never have
+ * been persisted. That is finding F-1. Use `rollbackTx` instead.
+ *
+ * The test: *would I be comfortable if this write survived and the caller saw
+ * an error?* If the honest answer is no, you want `rollbackTx`.
+ *
+ * Deliberately verbose to name and to read in a diff — reaching for it should
+ * be a decision a reviewer notices, not a way around a type error.
+ */
+export function commitTxWithRefusal<T>(value: T): CommitDecision<T> {
   return { [TX_DECISION]: 'commit', value };
 }
 

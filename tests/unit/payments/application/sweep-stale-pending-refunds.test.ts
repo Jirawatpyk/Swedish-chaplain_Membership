@@ -307,7 +307,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     }
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'credit_note_bridge_declined');
     expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
       'sweep_stale_pending_refunds.escalation',
       expect.objectContaining({ reason: 'credit_note_bridge_declined' }),
@@ -430,7 +430,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     }
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'stripe_pending');
     // A.16 (H-e) — a Stripe-still-pending stale refund is awaiting the async
     // charge.refund.updated webhook → the monitoring signal fires (independent
     // of the aged-escalation signal above).
@@ -465,7 +465,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'missing_processor_refund_id');
     expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
       'sweep_stale_pending_refunds.escalation',
       expect.objectContaining({ reason: 'missing_processor_refund_id' }),

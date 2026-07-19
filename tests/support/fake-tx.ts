@@ -83,6 +83,41 @@ export function recordWrite(tx: unknown, op: string, detail?: unknown): void {
   }
 }
 
+/**
+ * Assert that `op` was attempted and then thrown away.
+ *
+ * Use this instead of a bare `expect(runner.committed).toEqual([])`.
+ * `recordWrite` no-ops when handed a tx that is not a fake handle, so if the
+ * stub under test never received the fake — a DI wiring mistake, which is easy
+ * to make and invisible — then NOTHING is recorded, `committed` is `[]`, and
+ * the bare assertion passes while proving nothing. That is the exact
+ * false-green shape this repo keeps shipping.
+ *
+ * Checking both halves closes it: `discarded` must contain the write (proving
+ * the stub really was wired to the fake and really did attempt the write) AND
+ * `committed` must not (proving the rollback actually discarded it).
+ */
+export function expectRolledBack(runner: FakeTxRunner, op: string): void {
+  const discarded = runner.discarded.filter((w) => w.op === op);
+  const committed = runner.committed.filter((w) => w.op === op);
+  if (discarded.length === 0) {
+    throw new Error(
+      `expectRolledBack: no discarded write recorded for "${op}". ` +
+        `Either the write was never attempted, or the collaborator stub did not ` +
+        `receive the fake tx handle (check the DI wiring — recordWrite silently ` +
+        `no-ops on a non-fake tx). Recorded ops: ` +
+        `discarded=[${runner.discarded.map((w) => w.op).join(', ')}] ` +
+        `committed=[${runner.committed.map((w) => w.op).join(', ')}]`,
+    );
+  }
+  if (committed.length > 0) {
+    throw new Error(
+      `expectRolledBack: "${op}" was COMMITTED (${committed.length}×) — the ` +
+        `transaction did not roll back.`,
+    );
+  }
+}
+
 export function makeFakeTxRunner(): FakeTxRunner {
   const committed: RecordedWrite[] = [];
   const discarded: RecordedWrite[] = [];

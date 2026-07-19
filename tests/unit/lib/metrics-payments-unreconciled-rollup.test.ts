@@ -129,7 +129,8 @@ describe('payments_unreconciled_total — divergence roll-up', () => {
     ],
     [
       'stalePendingRefundEscalated',
-      () => paymentsMetrics.stalePendingRefundEscalated('t1'),
+      () =>
+        paymentsMetrics.stalePendingRefundEscalated('t1', 'missing_processor_refund_id'),
       { path: 'stale_pending_refund_escalated', permanence: 'permanent', tenant: 't1' },
     ],
   ])('%s rolls up exactly once with its own path label', (_name, emit, attrs) => {
@@ -144,12 +145,34 @@ describe('payments_unreconciled_total — divergence roll-up', () => {
     paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
     paymentsMetrics.confirmPaymentLateChargePhaseBMarkFailed();
     paymentsMetrics.refundFinaliseDoubleFault('t1');
-    paymentsMetrics.stalePendingRefundEscalated('t1');
+    paymentsMetrics.stalePendingRefundEscalated('t1', 'stripe_pending');
 
     const paths = rollupAdds().map((a) => a.attrs.path);
     expect(paths).toHaveLength(5);
     expect(new Set(paths).size).toBe(5);
   });
+
+  it.each([
+    ['stripe_pending', 'transient'],
+    ['credit_note_bridge_declined', 'transient'],
+    ['missing_processor_refund_id', 'permanent'],
+  ] as const)(
+    'escalation reason %s is %s — permanence follows the re-drive mechanism',
+    (reason, permanence) => {
+      // `maybeEscalate` has no once-only latch: it fires on EVERY sweep pass
+      // while the row is aged and still pending, and the next pass re-reads
+      // the row. So `stripe_pending` (Stripe may settle later) and
+      // `credit_note_bridge_declined` (the CN bridge is idempotent and gets
+      // retried) DO have an automated re-drive; only a row with no Stripe
+      // refund id can never be reconciled by the sweep.
+      //
+      // Blanket-permanent pages on two self-healing classes; blanket-transient
+      // leaves the one that never heals unattended. This is what a paging rule
+      // keys on.
+      paymentsMetrics.stalePendingRefundEscalated('t1', reason);
+      expect(rollupAdds()[0]!.attrs.permanence).toBe(permanence);
+    },
+  );
 
   it('labels an unlabelled-tenant site "unresolved" rather than omitting the key', () => {
     // Mixed label sets on one instrument break PromQL aggregation across the

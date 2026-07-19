@@ -22,6 +22,7 @@ import {
   proveNothingMoved,
   type MoneyExit,
   type ProcessorFailureKind,
+  type RejectionProof,
 } from '@/modules/payments/domain/settlement/money-moved';
 import type { ProcessorGatewayError } from '@/modules/payments/application/ports';
 
@@ -60,11 +61,27 @@ describe('proveNothingMoved', () => {
   );
 
   it('cannot be forged from an object literal', () => {
-    // The brand is a module-private symbol, so `{}` is not a RejectionProof.
-    // If this ever compiles, the guard is decorative and F-3's fix has no
-    // teeth. Asserted at runtime here; enforced at compile time by the fact
-    // that no exported member can construct the brand key.
-    const proof = proveNothingMoved('rejected');
-    expect(Object.getOwnPropertySymbols(proof as object)).toHaveLength(1);
+    // COMPILE-TIME. The brand symbol is module-private, so nothing outside
+    // `money-moved.ts` can construct a RejectionProof. `tsconfig` includes
+    // test sources, so this `@ts-expect-error` is checked by `pnpm typecheck`
+    // and fails the build if the error stops occurring.
+    //
+    // The concrete failure it guards: Task 6 threads RejectionProof through
+    // `RefundsRepo.updateStatus`'s `nextStatus:'failed'` overload. A test
+    // author who cannot construct one to make a stub compile will reach for
+    // exporting REJECTION_PROOF — at which point F-3's guard becomes
+    // decoration and every test stays green. If this line ever compiles, that
+    // has already happened.
+    // @ts-expect-error - the REJECTION_PROOF brand is not constructible here
+    const forged: RejectionProof = { forged: true };
+    expect(forged).toBeDefined();
+  });
+
+  it('an unknown exit yields nothing assignable to RejectionProof', () => {
+    // The runtime half of the same guarantee: `proveNothingMoved('unknown')`
+    // is `null`, so a caller demanding a proof cannot be satisfied by an
+    // unknown money exit even with a non-null assertion at runtime.
+    const maybe = proveNothingMoved(classifyGatewayFailure('retryable'));
+    expect(maybe).toBeNull();
   });
 });

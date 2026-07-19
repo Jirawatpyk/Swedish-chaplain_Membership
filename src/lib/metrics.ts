@@ -849,6 +849,16 @@ export const erasureMetrics = {
  * matching `webhookReceiveCount`'s existing convention — a consistent label
  * set keeps the series aggregable in PromQL.
  */
+/**
+ * Why the stale-pending-refund sweep could not terminalise a row. Mirrors the
+ * `reason` argument of `maybeEscalate` in `sweep-stale-pending-refunds.ts`;
+ * it decides the roll-up's `permanence` (see `stalePendingRefundEscalated`).
+ */
+export type StalePendingRefundEscalationReason =
+  | 'stripe_pending'
+  | 'missing_processor_refund_id'
+  | 'credit_note_bridge_declined';
+
 function bumpUnreconciled(
   path:
     | 'confirm_payment_give_up_phase_b'
@@ -1399,14 +1409,38 @@ export const paymentsMetrics = {
    * has been stuck beyond the async settlement window and ops must
    * intervene. Fires alongside a structured `logger.warn`.
    */
-  stalePendingRefundEscalated(tenantId: string): void {
+  stalePendingRefundEscalated(
+    tenantId: string,
+    reason: StalePendingRefundEscalationReason,
+  ): void {
     counter(
       'payments_stale_pending_refund_escalated_total',
       'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
     ).add(1, { tenant: tenantId });
-    // `permanent`: this fires only AFTER the sweep has tried and could not
-    // terminalise the row. There is no further automated attempt.
-    bumpUnreconciled('stale_pending_refund_escalated', 'permanent', tenantId);
+    // Permanence is per-REASON, not per-counter. `maybeEscalate` has no
+    // once-only latch: it fires on EVERY sweep pass while the row is aged and
+    // still `pending`, and the next pass re-reads that row. So for two of the
+    // three reasons an automated mechanism genuinely will re-drive it:
+    //
+    //   stripe_pending              → Stripe may settle later; the next sweep
+    //                                 retrieves the real status → transient
+    //   credit_note_bridge_declined → the next sweep retries the idempotent
+    //                                 CN bridge → transient
+    //   missing_processor_refund_id → the sweep can never reconcile a row it
+    //                                 has no Stripe id for; it is skipped
+    //                                 forever and ops must work it by hand
+    //                                 via the dashboard → permanent
+    //
+    // Labelling all three `permanent` would page on two classes that heal
+    // themselves; labelling all three `transient` would let the one that
+    // never heals sit unattended. Reason is NOT added as a label on the
+    // existing counter — that series predates this change and dashboards key
+    // on its current shape.
+    bumpUnreconciled(
+      'stale_pending_refund_escalated',
+      reason === 'missing_processor_refund_id' ? 'permanent' : 'transient',
+      tenantId,
+    );
   },
 
   /**

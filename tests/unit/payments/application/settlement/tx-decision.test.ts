@@ -15,11 +15,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   commitTx,
+  commitTxWithRefusal,
   rollbackTx,
   runTxDecided,
+  type TxDecision,
   type TxRunner,
 } from '@/modules/payments/application/settlement/tx-decision';
-import { makeFakeTxRunner, recordWrite } from '../../../../support/fake-tx';
+import { err, ok } from '@/lib/result';
+import {
+  expectRolledBack,
+  makeFakeTxRunner,
+  recordWrite,
+} from '../../../../support/fake-tx';
 
 describe('runTxDecided', () => {
   it('commits and returns the value when the callback decides commit', async () => {
@@ -50,8 +57,10 @@ describe('runTxDecided', () => {
 
     expect(outcome.committed).toBe(false);
     expect(outcome.value).toEqual({ kind: 'terminal_divergence', detail: 'pdf_render_failed' });
-    expect(runner.committed).toEqual([]);
-    expect(runner.discarded).toHaveLength(1);
+    // Two-sided: the write must appear in `discarded` (proving it was really
+    // attempted through the fake) AND be absent from `committed`. A bare
+    // `committed === []` also passes when the stub never got the fake handle.
+    expectRolledBack(runner, 'refunds.updateStatus');
   });
 
   it('propagates a genuine fault instead of disguising it as a rollback decision', async () => {
@@ -127,5 +136,77 @@ describe('TxDecision brand', () => {
     const payload = { refundId: 'rfnd_1' };
     expect(commitTx(payload).value).toBe(payload);
     expect(rollbackTx(payload).value).toBe(payload);
+  });
+});
+
+/**
+ * COMPILE-TIME guarantees. These are the actual enforcement — a runtime
+ * assertion cannot test "this does not typecheck". `tsconfig` includes test
+ * sources, so every `@ts-expect-error` below is checked by `pnpm typecheck`
+ * and FAILS THE BUILD if the error it expects stops occurring.
+ *
+ * Without these the narrowing is one careless signature edit away from
+ * silently becoming decoration, and every runtime test stays green.
+ */
+describe('compile-time guarantees', () => {
+  it('rejects a bare Result from the callback — and the RUNTIME does not', async () => {
+    const runner = makeFakeTxRunner();
+
+    // Bound to a variable so the type error lands on THIS assignment. Inlined
+    // as a callback argument, the error surfaces on the `runTxDecided(...)`
+    // call line instead and a `@ts-expect-error` sitting on the `return` is
+    // reported as unused — which fails the build for the wrong reason and
+    // teaches the next author to delete the pin.
+    //
+    // Returning `err(...)` from a withTx callback is what commits the writes
+    // the refusal was refusing. This directive is the guarantee.
+    // @ts-expect-error - Err<E> is not a TxDecision
+    const refusingCallback: (tx: unknown) => Promise<TxDecision<unknown>> = async (
+      tx: unknown,
+    ) => {
+      recordWrite(tx, 'payments.updateStatus', { nextStatus: 'succeeded' });
+      return err({ code: 'bridge_error' });
+    };
+
+    const outcome = await runTxDecided(runner, refusingCallback);
+
+    // Deliberately asserting the UNPROTECTED runtime behaviour, because it
+    // shows why the compile-time pin above carries the whole weight: an
+    // unbranded return has no rollback marker, so the transaction COMMITS and
+    // the value is silently `undefined`. That is F-1, reproduced exactly, and
+    // nothing at runtime objects to it.
+    expect(outcome.committed).toBe(true);
+    expect(outcome.value).toBeUndefined();
+    expect(runner.committed.map((w) => w.op)).toEqual(['payments.updateStatus']);
+  });
+
+  it('rejects commitTx(err(...)) — the wrong mechanical conversion of F-1', () => {
+    // `confirm-payment.ts:801` currently reads `return err(...)`. Wrapping it
+    // in `commitTx(` is the shortest edit and reproduces F-1 exactly.
+    // @ts-expect-error - commitTx bans Err<E>; use rollbackTx or commitTxWithRefusal
+    const wrong = commitTx(err({ code: 'bridge_error' }));
+    expect(wrong.value.ok).toBe(false);
+  });
+
+  it('rejects a hand-rolled object literal posing as a TxDecision', () => {
+    // The brand symbol is module-private, so a literal cannot satisfy it.
+    // If this ever compiles, `commitTx`/`rollbackTx` stop being the only way
+    // to produce a decision and the explicitness is gone.
+    // @ts-expect-error - the TX_DECISION brand is not constructible here
+    const forged: TxDecision<string> = { value: 'swept' };
+    expect(forged.value).toBe('swept');
+  });
+
+  it('still ALLOWS the legitimate shapes', () => {
+    // Guards over-correction: a constraint that also banned Ok, plain
+    // objects, or null would push authors straight back to the escape hatch.
+    expect(commitTx(ok({ id: 1 })).value.ok).toBe(true);
+    expect(commitTx({ kind: 'skip' as const }).value.kind).toBe('skip');
+    expect(commitTx(null).value).toBeNull();
+    expect(commitTx(undefined).value).toBeUndefined();
+    expect(rollbackTx(err({ code: 'bridge_error' })).value.ok).toBe(false);
+    // The escape hatch exists precisely so "commit an audit row, then return
+    // a refusal" stays expressible.
+    expect(commitTxWithRefusal(err({ code: 'noted' })).value.ok).toBe(false);
   });
 });

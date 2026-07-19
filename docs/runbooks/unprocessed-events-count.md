@@ -60,14 +60,19 @@ baseline above:
 | `rejected_environment_mismatch` | livemode-mismatch audit | never dispatched |
 | `rejected_api_version_mismatch` | API-version-mismatch audit | never dispatched |
 
-The unknown-**event-type** branch (`process-webhook-event.ts:831`) also writes
-`acknowledged_only`, but sets `outcome` and `processed_at` in one transaction,
-so it never appears here.
+The unknown-**event-type** branch (`process-webhook-event.ts:828-834`) also
+writes `acknowledged_only`, but sets `outcome` and `processed_at` in ONE
+transaction, so a successful one never appears here.
 
-**Known blind spot**: if *that* transaction fails, its row is
-`acknowledged_only` + NULL — indistinguishable from an unknown-account row, so
-this gauge will not see it. That path returns a transient `dispatch_failed`,
-so Stripe retries and it self-heals. Documented, not silent.
+**No blind spot there.** If that transaction fails, both writes roll back and
+the row stays at its step-6 values — `outcome='processed'`, `processed_at`
+NULL — so this gauge **does** count it, which is correct: the event genuinely
+was not reconciled. It also returns a transient `dispatch_failed`, so Stripe
+retries and the row normally clears well inside the 15-minute window.
+
+> An earlier revision of this runbook described the above as a blind spot.
+> That was wrong. **Do not dismiss a hit as "the documented blind spot"** —
+> there isn't one on this path, and every hit is a real unreconciled event.
 
 ## Triage
 

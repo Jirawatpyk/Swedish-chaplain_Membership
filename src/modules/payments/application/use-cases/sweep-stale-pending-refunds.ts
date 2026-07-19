@@ -255,7 +255,7 @@ function maybeEscalate(
     ageDays: Math.floor(ageMs / DAY_MS),
     reason,
   });
-  paymentsMetrics.stalePendingRefundEscalated(tenantId);
+  paymentsMetrics.stalePendingRefundEscalated(tenantId, reason);
   return true;
 }
 
@@ -502,6 +502,31 @@ export async function sweepStalePendingRefunds(
               // the row stays pending → the next sweep (or the webhook)
               // retries; the CN bridge is idempotent so a retry reconciles
               // cleanly.
+              //
+              // ── NOTE FOR TASK 3 / TASK 6 ────────────────────────────────
+              // This `rollbackTx` is currently DEFENSIVE, not load-bearing:
+              // `finalizeSucceededRefund`'s only `return err` is at
+              // `_finalize-succeeded-refund.ts:203`, and its first local write
+              // is at `:240`, so when the bridge declines NOTHING has been
+              // written yet and commit-vs-rollback is observationally
+              // identical. That is why the retrofit was behaviour-neutral.
+              //
+              // It becomes load-bearing the moment any write is issued before
+              // that `err`. Concrete triggers:
+              //   (a) Task 3 adding a forensic audit emit inside this tx
+              //       before the bridge call;
+              //   (b) Task 6 adding a guard or `updateStatus` before it;
+              //   (c) anyone moving the CN bridge off step 1.
+              //
+              // When that happens, write the sweep-level fake-tx test
+              // (`tests/support/fake-tx.ts`): assert via `expectRolledBack`
+              // that `discarded` CONTAINS the write and `committed` does NOT —
+              // always both halves, because a bare `committed === []` also
+              // passes when the stub never received the fake handle. Then
+              // mutate `rollbackTx` → `commitTx` and confirm it turns RED. If
+              // it stays green the stub is not getting the fake handle; fix
+              // the wiring before trusting any green.
+              // ────────────────────────────────────────────────────────────
               return rollbackTx({
                 kind: 'terminal_divergence',
                 detail: finalized.error.code,

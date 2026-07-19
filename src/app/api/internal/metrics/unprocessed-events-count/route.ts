@@ -29,11 +29,14 @@
  * this instrument worth deploying: production reads 0 today, so any future
  * non-zero is unambiguously new.
  *
- * (The unknown-EVENT-TYPE `acknowledged_only` branch sets `outcome` and
- * `processed_at` in one tx, so it is excluded either way. If THAT tx were to
- * fail, its row would be indistinguishable from an unknown-account row — but
- * that path returns a transient `dispatch_failed`, so Stripe retries it and
- * it self-heals. Documented blind spot, not a silent one.)
+ * (The unknown-EVENT-TYPE `acknowledged_only` branch at
+ * `process-webhook-event.ts:828-834` sets `outcome` and `processed_at` in ONE
+ * tx, so a successful one is excluded by the `processed_at` half. If that tx
+ * FAILS, both writes roll back and the row stays at its step-6 values —
+ * `outcome='processed'`, `processed_at NULL` — so it IS counted here. That is
+ * the correct outcome: the event genuinely was not reconciled. It also
+ * returns a transient `dispatch_failed`, so Stripe retries and the row
+ * normally clears on its own well inside the 15-minute window.)
  *
  * **Scheduling**: native Vercel Cron (GET-only, UTC), 5-minute cadence,
  * mirroring the sibling `stale-pending-count` route. Vercel injects the
