@@ -121,6 +121,22 @@ export interface InvoicingBridgePort {
      * write-side record-payment guard still enforces the flag). Forwarded verbatim.
      */
     readonly reconciliationPath: boolean;
+    /**
+     * F-1 item 4 / Variant B (money-remediation Task 7) — thread the caller's
+     * tx so the F4 payability read runs on the SAME pooled connection instead
+     * of `makeGetInvoiceDeps` opening a second `runInTenant`.
+     *
+     * `confirm-payment` calls this from inside its Phase-A `withTx` while
+     * holding `FOR UPDATE` on the payment row, so the un-threaded form
+     * acquires a second pooled connection while the first is still held — the
+     * self-deadlock shape `getInvoiceCreditedTotal` (B.1 Fix#2) and
+     * `getInvoiceStatus` already fixed. This closes the last of the three.
+     *
+     * The connection already carries `SET LOCAL app.current_tenant`, so the
+     * read stays tenant-scoped. Omit it for standalone reads (the self-pay
+     * `initiate-payment` path is not inside a tx and passes nothing).
+     */
+    readonly externalTx?: unknown;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**
@@ -231,6 +247,42 @@ export interface InvoicingBridgePort {
       {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
+        /**
+         * F-4 (money-remediation Task 7) — the invoice's F4-authoritative
+         * status, so the refund pre-flight can mirror F4's credit-note STATUS
+         * gate (`issue-credit-note.ts:419`) instead of only its amount gate.
+         *
+         * The caller MUST admit exactly `paid` and `partially_credited`. A
+         * `=== 'paid'` shortcut looks equivalent and is not: after the first
+         * partial refund F4 flips the invoice to `partially_credited`, so the
+         * shortcut breaks every SECOND partial refund — a live regression
+         * worse than the bug this field exists to fix.
+         */
+        readonly status: InvoiceStatus;
+        /**
+         * F-4 — mirrors F4's §105 gate (`issue-credit-note.ts:476`,
+         * `receipt_not_creditable`). `false` when the invoice is an EVENT
+         * invoice issued to a non-VAT-registrant buyer: that buyer received a
+         * §105 ใบเสร็จรับเงิน, never a TIN-bearing §86/4 tax invoice, so they
+         * have no input VAT to reverse and a §86/10 ใบลดหนี้ against it is
+         * legally void. This is PERMANENT — no retry ever clears it.
+         *
+         * Derived by the adapter via the SAME shared discriminator F4 uses
+         * (`inferEventDocumentKind` ∘ `resolveBuyerIsVatRegistrant`), so
+         * issue-time, credit-time and this pre-flight cannot drift apart.
+         */
+        readonly creditable: boolean;
+        /**
+         * F-4 — mirrors F4's materialised-receipt gate
+         * (`issue-credit-note.ts:491`, `receipt_not_rendered`): a §86/10
+         * ใบลดหนี้ can only adjust a receipt that actually exists as bytes.
+         * `true` iff `receiptPdfStatus === 'rendered'`.
+         *
+         * Unlike the other two axes this one is TRANSIENT — the async receipt
+         * worker may still be `pending`, in which case the refund becomes
+         * possible once it renders.
+         */
+        readonly receiptRendered: boolean;
       },
       { readonly code: 'not_found' | 'invalid_total' | 'read_failed' }
     >

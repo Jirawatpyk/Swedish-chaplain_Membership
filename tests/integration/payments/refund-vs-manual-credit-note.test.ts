@@ -265,6 +265,22 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
         pdfSha256: 'a'.repeat(64),
         pdfTemplateVersion: 1,
         pdfDocKind: 'invoice',
+        // CORRECTED FIXTURE (F-4 / money-remediation Task 7), not a value bent
+        // to fit a new guard. `partially_credited` means a credit note was
+        // already issued against this invoice; issuing one requires passing
+        // `issue-credit-note.ts:491`, which demands
+        // `receipt_pdf_status = 'rendered'`. So the pre-fix row — NULL — was a
+        // state F4 itself could not have produced.
+        //
+        // The DB CHECK does not catch it: `invoices_paid_has_receipt_status`
+        // (migration 0056) constrains only `status = 'paid'` and deliberately
+        // leaves the credited statuses free to be NULL.
+        //
+        // Production confirms the correction rather than the fixture: all 70
+        // paid invoices carry 'rendered', and zero rows exist in any credited
+        // status (no credit note has ever been issued in prod), so there is no
+        // legacy NULL population this fixture could have been representing.
+        receiptPdfStatus: 'rendered',
       });
 
       // The REAL F4 credit-note row backing the invoice's credited_total. A

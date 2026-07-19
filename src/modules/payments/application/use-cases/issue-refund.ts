@@ -61,6 +61,10 @@ import type {
   RefundsRepo,
   TenantPaymentSettingsRepo,
 } from '../ports';
+// F-4 (Task 7) — type-only, through F4's public barrel (the same path the
+// bridge PORT already uses for this type). Principle III: Application talks to
+// a sibling context's published contract, never its internals.
+import type { InvoiceStatus } from '@/modules/invoicing';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
 import {
   classifyGatewayFailure,
@@ -166,6 +170,40 @@ export type IssueRefundError =
    * two apart stops an on-call from hunting a non-existent orphaned refund.
    */
   | { readonly code: 'f4_preflight_read_error'; readonly detail: string }
+  /**
+   * F-4 (money-remediation Task 7) — the refund was refused in Phase A because
+   * F4 would decline the §86/10 credit note. Money did NOT move; no Stripe
+   * refund exists to hunt; no `refunds` row and no `refund_initiated` audit
+   * were written. All three map to **409**, not 502: retrying the identical
+   * request changes nothing, so a retryable-looking status code would only
+   * invite the click that F-3 showed is expensive.
+   *
+   * `f4_preflight_invalid_status` — mirrors `issue-credit-note.ts:419`. The
+   * common trigger is an invoice voided after payment (the void route accepts
+   * `paid` and writes nothing to payments, so the payment still looks fully
+   * refundable). Carries the status so ops can tell `void` from `credited`
+   * without a second query.
+   */
+  | {
+      readonly code: 'f4_preflight_invalid_status';
+      readonly status: InvoiceStatus;
+    }
+  /**
+   * F-4 — mirrors `issue-credit-note.ts:476` (§105). PERMANENT: the buyer
+   * received a ใบเสร็จรับเงิน, not a TIN-bearing §86/4 tax invoice, so there is
+   * no input VAT to reverse and a §86/10 ใบลดหนี้ would be legally void. No
+   * retry and no operator action clears this — a refund here needs a different
+   * instrument entirely.
+   */
+  | { readonly code: 'f4_preflight_not_creditable' }
+  /**
+   * F-4 — mirrors `issue-credit-note.ts:491`. TRANSIENT, unlike its two
+   * siblings: the async receipt-PDF worker may still be `pending`, and the
+   * refund becomes possible as soon as the receipt materialises. Still 409
+   * (the current state genuinely forbids it), but the copy tells the admin to
+   * wait rather than to escalate.
+   */
+  | { readonly code: 'f4_preflight_receipt_not_rendered' }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   /**
    * Money-remediation F-3 leg 1/2 — the Stripe refund SUCCEEDED and the F4
@@ -528,6 +566,66 @@ async function issueRefundBody(
           code: 'f4_preflight_read_error',
           detail: `invoice_credited_total_read_failed:${invoiceCredited.error.code}`,
         },
+      } as const;
+    }
+
+    // F-4 (money-remediation Task 7) — preflight PARITY with F4's credit-note
+    // gates. The pre-fix preflight mirrored only F4's AMOUNT gate, so a refund
+    // that F4 would decline on any of the other three axes still reached
+    // Stripe: the money moved, and only then did the CN bridge refuse.
+    //
+    // Reachable in production with no feature flag: void a `paid` invoice
+    // (`POST /api/invoices/[id]/void` accepts `paid` per 088 § F.3 and writes
+    // nothing to payments), then refund. Blocking here is FREE — the money has
+    // not moved yet — whereas every downstream remedy is a manual runbook.
+    //
+    // ALL THREE guards sit ABOVE `checkRefundNotExceedingRemainder`, the
+    // `refundsRepo.insert`, and the `refund_initiated` emit, and that ordering
+    // is a correctness requirement rather than a style choice: `err()` inside
+    // `runInTenant` COMMITS, so a guard below either write would leave a
+    // phantom `pending` row (which then blocks every future refund on this
+    // payment via `ctx.pendingCount > 0`) plus a false audit trail behind what
+    // is supposed to be a refusal.
+    //
+    // All three map to 409, never 502: money did not move, no orphaned Stripe
+    // refund exists, and retrying the identical request changes nothing.
+
+    // Mirrors `issue-credit-note.ts:419` EXACTLY. The allow-list must stay
+    // `paid | partially_credited`: F4 flips an invoice to `partially_credited`
+    // after the first partial refund's CN, so narrowing this to `=== 'paid'`
+    // would break every SECOND partial refund — a live regression strictly
+    // worse than the bug this guard closes.
+    if (
+      invoiceCredited.value.status !== 'paid' &&
+      invoiceCredited.value.status !== 'partially_credited'
+    ) {
+      return {
+        kind: 'rejected',
+        error: {
+          code: 'f4_preflight_invalid_status',
+          status: invoiceCredited.value.status,
+        },
+      } as const;
+    }
+
+    // Mirrors `issue-credit-note.ts:476` (§105). PERMANENT: a buyer who
+    // received a §105 ใบเสร็จรับเงิน rather than a §86/4 tax invoice has no
+    // input VAT to reverse, so no retry and no operator action can ever make
+    // this refund creditable.
+    if (!invoiceCredited.value.creditable) {
+      return {
+        kind: 'rejected',
+        error: { code: 'f4_preflight_not_creditable' },
+      } as const;
+    }
+
+    // Mirrors `issue-credit-note.ts:491`. TRANSIENT, unlike the two above —
+    // the async receipt worker may still be rendering, and the refund becomes
+    // possible once it lands. The copy says so.
+    if (!invoiceCredited.value.receiptRendered) {
+      return {
+        kind: 'rejected',
+        error: { code: 'f4_preflight_receipt_not_rendered' },
       } as const;
     }
 

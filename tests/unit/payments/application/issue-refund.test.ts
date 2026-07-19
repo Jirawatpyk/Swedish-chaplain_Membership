@@ -213,8 +213,19 @@ function makeDeps(
     // + total===payment.amount so the invoice bound never binds tighter than
     // the payment bound → every existing assertion (payment-cap only) is
     // preserved. Per-test overrides exercise the credit-based cap.
+    // F-4 (money-remediation Task 7) — the read also carries the three axes of
+    // F4's credit-note gate. Defaults are the ALLOW values (a paid, creditable
+    // invoice whose receipt has rendered) so every pre-existing assertion in
+    // this file keeps testing what it was written to test; the F-4 describe
+    // block below overrides them per axis.
     getInvoiceCreditedTotal: vi.fn(async () =>
-      ok({ creditedTotalSatang: asSatang(0n), totalSatang: PAYMENT_AMOUNT_SATANG }),
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        status: 'paid' as const,
+        creditable: true,
+        receiptRendered: true,
+      }),
     ),
     // tax#5 (B.2) — the shared finaliser now reads the invoice's
     // F4-AUTHORITATIVE post-CN status (not a projection of the F5 payment
@@ -486,6 +497,94 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       }
     }
     expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+  });
+
+  // ── F-4: pre-flight parity with F4's other three credit-note gates ───────
+  //
+  // The pre-fix pre-flight mirrored only F4's AMOUNT gate, so a refund F4
+  // would decline on status / §105 creditability / receipt-render still
+  // reached Stripe and moved real money.
+  //
+  // Each case asserts the MONEY fact first. `insert` and the `refund_initiated`
+  // emit are asserted absent as well, and that pair is what pins guard
+  // PLACEMENT rather than mere existence: `err()` inside `runInTenant` COMMITS,
+  // so a guard below either write would leave a phantom `pending` row (which
+  // then blocks every future refund on this payment) plus a false audit trail.
+  const preflightRejectionCases = [
+    {
+      name: 'voided invoice',
+      overrides: { status: 'void' as const },
+      expectedCode: 'f4_preflight_invalid_status',
+    },
+    {
+      name: 'already fully-credited invoice',
+      overrides: { status: 'credited' as const },
+      expectedCode: 'f4_preflight_invalid_status',
+    },
+    {
+      name: '§105 receipt (non-VAT-registrant event buyer) — permanently uncreditable',
+      overrides: { creditable: false },
+      expectedCode: 'f4_preflight_not_creditable',
+    },
+    {
+      name: 'receipt PDF not yet rendered',
+      overrides: { receiptRendered: false },
+      expectedCode: 'f4_preflight_receipt_not_rendered',
+    },
+  ];
+
+  for (const c of preflightRejectionCases) {
+    it(`F-4 — refuses BEFORE Stripe: ${c.name}`, async () => {
+      const deps = makeDeps();
+      asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: PAYMENT_AMOUNT_SATANG,
+          status: 'paid' as const,
+          creditable: true,
+          receiptRendered: true,
+          ...c.overrides,
+        }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+
+      // Money first — before any error-code assertion, so a mutant cannot die
+      // on the cosmetic check before reaching the path that matters.
+      expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+      expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+      expect(
+        asMock(deps.audit.emit).mock.calls.find(
+          (call) => call[1].eventType === 'refund_initiated',
+        ),
+      ).toBeUndefined();
+
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe(c.expectedCode);
+    });
+  }
+
+  // The allow-list must be `paid | partially_credited`, mirroring
+  // `issue-credit-note.ts:419`. F4 flips an invoice to `partially_credited`
+  // once the first partial refund's credit note lands, so a `=== 'paid'`
+  // shortcut would break every SECOND partial refund. This test exists solely
+  // to make that shortcut fail here, at unit speed, rather than in production.
+  it('F-4 — ALLOWS a refund on a partially_credited invoice (2nd partial refund)', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        status: 'partially_credited' as const,
+        creditable: true,
+        receiptRendered: true,
+      }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.processorGateway.createRefund)).toHaveBeenCalledTimes(1);
   });
 
   // ── F-3 leg 1: deferral ─────────────────────────────────────────────────

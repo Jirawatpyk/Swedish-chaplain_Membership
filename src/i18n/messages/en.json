@@ -3928,6 +3928,9 @@
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
         "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
+        "f4_preflight_invalid_status": "This invoice can no longer be credited, so it can't be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
+        "f4_preflight_not_creditable": "This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it needs a manual process — please contact finance.",
+        "f4_preflight_receipt_not_rendered": "The receipt for this payment is still being generated. No money was moved — try the refund again in a few minutes.",
         "internal_error": "An unexpected error occurred. Please try again."
       },
       "cmdk": {

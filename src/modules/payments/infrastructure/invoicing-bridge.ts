@@ -27,6 +27,11 @@ import {
   markPaidFromProcessor as f4MarkPaidFromProcessor,
   issueCreditNoteFromRefund as f4IssueCreditNoteFromRefund,
   makeGetInvoiceDeps,
+  // F-4 (Task 7) — the SHARED §86/10 doc-kind discriminator. Imported from
+  // F4's public barrel (never a deep import) so the refund pre-flight and
+  // F4's own credit gate cannot drift apart.
+  inferEventDocumentKind,
+  resolveBuyerIsVatRegistrant,
   type InvoiceForPayment as F4InvoiceForPayment,
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
 } from '@/modules/invoicing';
@@ -193,7 +198,11 @@ function summariseF4Error<E extends {
 
 export const invoicingBridge: InvoicingBridgePort = {
   async getInvoiceForPayment(input) {
-    const deps = makeGetInvoiceDeps(input.tenantId);
+    // F-1 item 4 / Variant B — thread the caller's tx (confirm-payment holds
+    // `FOR UPDATE` on the payment row while calling this). Undefined on the
+    // self-pay initiate path, where `makeGetInvoiceDeps` opens its own
+    // tenant-bound tx exactly as before.
+    const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
     const result = await f4GetInvoiceForPayment(deps, {
       tenantId: input.tenantId,
       invoiceId: input.invoiceId,
@@ -355,6 +364,23 @@ export const invoicingBridge: InvoicingBridgePort = {
         // `invalid_total` instead of a raw 500 through the tracer.
         creditedTotalSatang: asSatang(inv.creditedTotal.satang),
         totalSatang: asSatang(inv.total.satang),
+        // F-4 (Task 7) — the other two axes of F4's credit-note gate, read off
+        // the invoice ALREADY in hand. No extra round-trip: `f4GetInvoice`
+        // above returned the whole aggregate; the pre-fix contract simply did
+        // not surface these, which is why the pre-flight could not check them
+        // even by accident.
+        status: inv.status,
+        // §105 creditability — derived through the SAME shared discriminator
+        // `issue-credit-note.ts` uses, deliberately rather than re-deriving it
+        // here. Keying this on TIN-presence while F4's gate keys on registrant
+        // status is exactly the lockstep divergence `document-kind.ts` exists
+        // to prevent (059 / PR-A Task 6a).
+        creditable:
+          inferEventDocumentKind(
+            inv.invoiceSubject,
+            resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
+          ) !== 'receipt_separate',
+        receiptRendered: inv.receiptPdfStatus === 'rendered',
       });
     } catch (e) {
       paymentsMetrics.f4BridgeUnknownErrorShape(

@@ -141,8 +141,22 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
       // Stub: credited=0 + total===payment.amount (TOTAL_SATANG) so the
       // invoice-credit cap never binds tighter than the payment-based cap —
       // the multi-partial + FR-011b assertions below stay on the payment path.
+      // F-4 (money-remediation Task 7) — `status` / `creditable` /
+      // `receiptRendered` feed the Phase-A gates that mirror F4's credit-note
+      // rules. This file stubs the bridge WHOLESALE and its seeded invoice
+      // rows are `draft` (they exist only to satisfy the payments FK), so it
+      // does NOT exercise those gates and must not be read as covering them —
+      // `refund-vs-voided-invoice.test.ts` binds the real bridge and owns
+      // that job. The permissive values below keep this file on the
+      // payment-cap path it was written to test.
       getInvoiceCreditedTotal: vi.fn(async () =>
-        ok({ creditedTotalSatang: asSatang(0n), totalSatang: asSatang(TOTAL_SATANG) }),
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: asSatang(TOTAL_SATANG),
+          status: 'paid' as const,
+          creditable: true,
+          receiptRendered: true,
+        }),
       ),
       // tax#5 (B.2) — the shared finaliser reads F4's authoritative post-CN
       // invoice status. The F4 CN chain is stubbed here (no real invoice-status

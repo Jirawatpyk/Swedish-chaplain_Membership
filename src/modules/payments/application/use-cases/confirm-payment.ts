@@ -447,6 +447,14 @@ async function confirmPaymentBody(
       invoiceId: payment.invoiceId,
       taxAtPayment: deps.taxAtPayment,
       reconciliationPath: true,
+      // F-1 item 4 / Variant B (money-remediation Task 7) — thread THIS tx.
+      // We are inside `paymentsRepo.withTx` holding `FOR UPDATE` on the
+      // payment row; without this the adapter opens a SECOND `runInTenant`,
+      // acquiring another pooled connection while the first is still held —
+      // the self-deadlock shape that `getInvoiceCreditedTotal` (B.1 Fix#2) and
+      // `getInvoiceStatus` already thread around. This was the last of the
+      // three F4 reads still doing it.
+      externalTx: tx,
     });
     if (!invoiceResult.ok) {
       if (invoiceResult.error.code === 'not_found') {

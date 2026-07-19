@@ -128,6 +128,26 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // on-call does NOT hunt a non-existent orphaned refund via the
       // out-of-band-refund runbook. Retrying the same request is the fix.
       return { status: 502, routeCode: 'f4_preflight_read_error' };
+    // F-4 (money-remediation Task 7) — all three are 409, NEVER 502. The
+    // refund was refused BEFORE Stripe: no money moved, no orphaned refund
+    // exists, and retrying the identical request changes nothing. A 502 here
+    // would read as "try again", which is exactly the click F-3 proved
+    // expensive.
+    //
+    // Kept as three DISTINCT route codes rather than one collapsed code
+    // because the operator response differs per axis (see each copy string).
+    case 'f4_preflight_invalid_status':
+      // Look at the invoice: it was voided after payment, or is already fully
+      // credited.
+      return { status: 409, routeCode: 'f4_preflight_invalid_status' };
+    case 'f4_preflight_not_creditable':
+      // Permanent (§105). A credit note is the wrong instrument for this
+      // buyer; no amount of retrying or waiting changes that.
+      return { status: 409, routeCode: 'f4_preflight_not_creditable' };
+    case 'f4_preflight_receipt_not_rendered':
+      // Transient: resolves on its own once the async receipt worker
+      // finishes. The copy must say "wait", not "escalate".
+      return { status: 409, routeCode: 'f4_preflight_receipt_not_rendered' };
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure

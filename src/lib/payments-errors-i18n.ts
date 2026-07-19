@@ -59,6 +59,14 @@ export type F5RouteErrorCode =
   // succeed → out-of-band-refund runbook) so on-call does not chase a
   // non-existent refund. Both currently map to 502.
   | 'f4_preflight_read_error'
+  // F-4 (money-remediation Task 7) — the refund was refused in Phase A
+  // because F4's credit-note gates would decline it. Money did NOT move.
+  // All three are 409, and DELIBERATELY not collapsed into one code: the
+  // operator response differs per axis (fix the invoice / permanent, use a
+  // different instrument / just wait for the receipt render).
+  | 'f4_preflight_invalid_status'
+  | 'f4_preflight_not_creditable'
+  | 'f4_preflight_receipt_not_rendered'
   // Money-remediation F-3 — the refund SETTLED at the processor; only the
   // credit note is outstanding, and the stale-pending sweep retries it. MUST
   // stay distinct from `f4_bridge_error`, whose copy ("issuance failed") reads
@@ -183,6 +191,31 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   f4_preflight_read_error: {
     message: 'Could not verify the refundable balance right now. No money was moved — please retry.',
     messageThai: 'ไม่สามารถตรวจสอบยอดที่คืนได้ในขณะนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองใหม่อีกครั้ง',
+  },
+  f4_preflight_invalid_status: {
+    // Explicitly states that no money moved. The admin's next step is the
+    // invoice, not the refund screen or the payment processor.
+    message:
+      "This invoice can no longer be credited, so it cannot be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
+    messageThai:
+      'ใบแจ้งหนี้นี้ไม่สามารถออกใบลดหนี้ได้แล้ว จึงไม่สามารถคืนเงินได้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาตรวจสอบใบแจ้งหนี้ อาจถูกยกเลิกหรือออกใบลดหนี้เต็มจำนวนไปแล้ว',
+  },
+  f4_preflight_not_creditable: {
+    // Permanent by law, so the copy must not imply retrying. §105 receipt
+    // holders have no input VAT to reverse.
+    message:
+      'This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it requires a manual process — please contact finance.',
+    messageThai:
+      'การชำระเงินนี้ออกเป็นใบเสร็จรับเงิน ไม่ใช่ใบกำกับภาษี จึงออกใบลดหนี้ไม่ได้ ยังไม่มีการเคลื่อนไหวของเงิน การคืนเงินต้องดำเนินการด้วยกระบวนการพิเศษ กรุณาติดต่อฝ่ายการเงิน',
+  },
+  f4_preflight_receipt_not_rendered: {
+    // The only one of the three that clears itself. Say "wait", not
+    // "escalate" — an admin told to escalate a self-healing state files a
+    // ticket that resolves before anyone reads it.
+    message:
+      'The receipt for this payment is still being generated. No money was moved — please try the refund again in a few minutes.',
+    messageThai:
+      'ระบบกำลังสร้างใบเสร็จสำหรับการชำระเงินนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองคืนเงินอีกครั้งในอีกสักครู่',
   },
   f4_bridge_deferred: {
     // Deliberately reassuring and explicitly non-actionable. The admin has
