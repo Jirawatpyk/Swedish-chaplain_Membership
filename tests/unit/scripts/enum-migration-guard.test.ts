@@ -121,7 +121,7 @@ describe('findMissingEnumValues', () => {
           'renewal_lapse_deferred_invoice_not_due',
           // 0247 (059-membership-suspension Task 17):
           'event_attendance_by_suspended_member',
-          // 0257 (059-membership-suspension Task 5):
+          // 0257 (066-renewal-swecham-round2 §4.4/§6):
           'payment_on_terminated_member',
           // 0260 (107-auto-invoice Task 2):
           'renewal_auto_drafted',
@@ -191,7 +191,7 @@ describe('findMissingEnumValues', () => {
           'renewal_lapse_deferred_invoice_not_due',
           // 0247 (059-membership-suspension Task 17):
           'event_attendance_by_suspended_member',
-          // 0257 (059-membership-suspension Task 5):
+          // 0257 (066-renewal-swecham-round2 §4.4/§6):
           'payment_on_terminated_member',
           // 0260 (107-auto-invoice Task 2):
           'renewal_auto_drafted',

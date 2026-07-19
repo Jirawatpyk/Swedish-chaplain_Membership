@@ -79,8 +79,9 @@ const MATRIX: BenefitMatrix = {
 };
 
 // Issue far enough in the past that the bill is overdue at REAL read-time
-// (`countOverdue` uses `new Date()`), whatever the tenant's net-days / fiscal
-// start; pay before real-today so record-payment's date clamp is satisfied.
+// (this suite passes the real clock into `countOverdue`), whatever the
+// tenant's net-days / fiscal start; pay before real-today so record-payment's
+// date clamp is satisfied.
 const ISSUE_NOW = '2026-01-15T09:00:00Z';
 const PAY_NOW = '2026-06-15T09:00:00Z';
 const PAYMENT_DATE = '2026-06-15';
@@ -274,7 +275,10 @@ describe('088 T071b — timeline + AR/overdue regression for a document_number-N
     // (b) AR / overdue counts include the document_number-NULL bill.
     // Fresh tenant → the ONLY issued invoice is this bill, so the counts are
     // deterministic 1.
-    const f9Overdue = await invoiceSourceAdapter.countOverdue(tenant.ctx);
+    const f9Overdue = await invoiceSourceAdapter.countOverdue(
+      tenant.ctx,
+      new Date().toISOString(),
+    );
     expect(f9Overdue).toBe(1);
     const f8Overdue = await f8OverdueCount(tenant.ctx, memberId);
     expect(f8Overdue).toBe(1);
@@ -301,7 +305,10 @@ describe('088 T071b — timeline + AR/overdue regression for a document_number-N
     receiptNumber = paidRow!.receiptDocumentNumberRaw!;
 
     // (b) once paid, the bill drops out of BOTH overdue counts.
-    const f9Overdue = await invoiceSourceAdapter.countOverdue(tenant.ctx);
+    const f9Overdue = await invoiceSourceAdapter.countOverdue(
+      tenant.ctx,
+      new Date().toISOString(),
+    );
     expect(f9Overdue).toBe(0);
     const f8Overdue = await f8OverdueCount(tenant.ctx, memberId);
     expect(f8Overdue).toBe(0);

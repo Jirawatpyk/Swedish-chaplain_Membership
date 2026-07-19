@@ -9,9 +9,15 @@
  * In all cases we assert NO horizontal body scroll and the correct
  * `[data-variant]` is present.
  *
- * The form block exercises three representative routes
- * (`/admin/settings/invoicing`, `/admin/plans/new`, `/portal/account`) to
- * protect SC-002 across categories — prior revision covered only one.
+ * The form block exercises representative routes (`/admin/plans/new`,
+ * `/portal/account`, `/portal/edit`, `/portal/contacts/invite`) to protect
+ * SC-002 across categories — prior revision covered only one.
+ *
+ * Task-8 HIGH (settings-ux-invoice-reminders wave B) — `/admin/settings/
+ * invoicing` moved OUT of the form block and into the detail block below:
+ * its two-column sticky-nav shell now renders `DetailContainer`
+ * (`data-variant="detail"`, ~1152px), not `FormContainer` (see
+ * `docs/ux-standards.md` §18.2's documented exception row).
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
@@ -26,12 +32,16 @@ const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 const VIEWPORTS_FULL = [375, 1280, 1440, 1920] as const;
 const VIEWPORTS_DETAIL = [375, 1440] as const;
 
-const ADMIN_FORM_ROUTES = ['/admin/settings/invoicing', '/admin/plans/new'] as const;
+const ADMIN_FORM_ROUTES = ['/admin/plans/new'] as const;
 const PORTAL_FORM_ROUTES = [
   '/portal/account',
   '/portal/edit',
   '/portal/contacts/invite',
 ] as const;
+// Task-8 HIGH — /admin/settings/invoicing renders DetailContainer (its
+// two-column sticky-nav shell), not FormContainer. See docs/ux-standards.md
+// §18.2's documented exception row.
+const ADMIN_DETAIL_ROUTES = ['/admin', '/admin/settings/invoicing'] as const;
 const PORTAL_DETAIL_ROUTES = ['/portal/profile'] as const;
 
 async function signInAdmin(page: Page): Promise<void> {
@@ -118,27 +128,29 @@ test.describe('F5 container widths @layout', () => {
   });
 
   test.describe('container-widths detail', () => {
-    for (const width of VIEWPORTS_DETAIL) {
-      test(`DetailContainer on /admin @ ${width}px`, async ({ page }) => {
-        await page.setViewportSize({ width, height: 900 });
-        await signInAdmin(page);
-        await page.goto('/admin');
-        await waitForLayoutContainer(page);
+    for (const route of ADMIN_DETAIL_ROUTES) {
+      for (const width of VIEWPORTS_DETAIL) {
+        test(`DetailContainer on ${route} @ ${width}px`, async ({ page }) => {
+          await page.setViewportSize({ width, height: 900 });
+          await signInAdmin(page);
+          await page.goto(route);
+          await waitForLayoutContainer(page);
 
-        const container = page.locator('[data-slot="layout-container"][data-variant="detail"]').first();
-        await expect(container).toBeVisible();
+          const container = page.locator('[data-slot="layout-container"][data-variant="detail"]').first();
+          await expect(container).toBeVisible();
 
-        const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
-        if (width === 1440) {
-          // SC-003 pixel parity with legacy admin ContentContainer (72rem = 1152px).
-          expect(boxWidth).toBeGreaterThanOrEqual(1148);
-          expect(boxWidth).toBeLessThanOrEqual(1156);
-        } else {
-          expect(boxWidth, 'detail container takes full viewport width at 375px').toBe(width);
-        }
+          const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+          if (width === 1440) {
+            // SC-003 pixel parity with legacy admin ContentContainer (72rem = 1152px).
+            expect(boxWidth).toBeGreaterThanOrEqual(1148);
+            expect(boxWidth).toBeLessThanOrEqual(1156);
+          } else {
+            expect(boxWidth, 'detail container takes full viewport width at 375px').toBe(width);
+          }
 
-        await assertNoHorizontalScroll(page);
-      });
+          await assertNoHorizontalScroll(page);
+        });
+      }
     }
 
     // Portal detail routes — additional SC-003 coverage beyond /admin.

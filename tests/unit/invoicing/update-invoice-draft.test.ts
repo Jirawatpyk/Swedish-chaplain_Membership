@@ -71,6 +71,7 @@ function makeDeps(draft: Invoice | null): TestDeps {
       list: vi.fn(),
         listPaged: vi.fn(),
       listSupersedableMembershipBills: vi.fn(),
+      findEventInvoiceIdByRegistration: vi.fn(async () => null),
       applyIssue: vi.fn(),
       deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),

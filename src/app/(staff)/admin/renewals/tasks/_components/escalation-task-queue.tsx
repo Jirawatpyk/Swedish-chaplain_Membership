@@ -55,6 +55,7 @@ import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
 import { StatusTablist, STATUS_TABS, type StatusTab } from './status-tablist';
 import { selectActionErrorKey } from './describe-error';
+import { resolveTaskTypeLabel } from './resolve-task-type-label';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
 
 export interface EscalationTaskQueueItem {
@@ -488,7 +489,7 @@ export function EscalationTaskQueue({
             <option value="">{t('task_type_filter_all')}</option>
             {distinctTaskTypes.map((tt) => (
               <option key={tt} value={tt}>
-                {t(`taskType.${tt}`)}
+                {resolveTaskTypeLabel(t, tt)}
               </option>
             ))}
           </select>
@@ -649,7 +650,7 @@ export function EscalationTaskQueue({
                         <YearInCyclePill
                           yearInCycle={task.yearInCycle}
                           totalYears={task.totalYears}
-                          taskTypeLabel={t(`taskType.${task.taskType}`)}
+                          taskTypeLabel={resolveTaskTypeLabel(t, task.taskType)}
                         />
                       </TableCell>
                       <TableCell>

@@ -54,7 +54,7 @@ const CHART_TITLES = {
   revenueTrend: 'Revenue trend (12 months)',
   memberGrowth: 'Member growth (12 months)',
   membershipTier: 'Membership by tier',
-  invoiceStatus: 'Receivables by value',
+  invoiceStatus: 'Invoice value by status',
 } as const;
 
 /** Same filter every a11y spec in this suite uses (`f9-a11y.spec.ts`,
@@ -299,9 +299,9 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     // invoice-status-chart.tsx's docblock: "real DOM, not SVG-only").
     // Only present when the donut has data — matches the empty-state
     // skip pattern used above.
-    const totalOutstanding = page.getByText('Total outstanding');
-    if (await totalOutstanding.isVisible().catch(() => false)) {
-      await expect(totalOutstanding).toBeVisible();
+    const totalInvoiced = page.getByText('Total invoiced');
+    if (await totalInvoiced.isVisible().catch(() => false)) {
+      await expect(totalInvoiced).toBeVisible();
     }
 
     // Hidden <ChartDataTable>s — one per chart, always present in the DOM

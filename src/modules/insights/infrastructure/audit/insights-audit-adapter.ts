@@ -16,7 +16,8 @@
  * `F9AuditPayloadByType` on the port.
  */
 import { sql } from 'drizzle-orm';
-import { db, type TenantTx } from '@/lib/db';
+import { db, runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { insightsMetrics } from '@/lib/metrics';
@@ -71,7 +72,24 @@ export const insightsAuditAdapter: InsightsAuditPort = {
     // metric is the durable alert signal — pino logs roll off long before the
     // 5-year audit retention, so a swallowed write would otherwise be invisible.
     try {
-      await insertAuditRow(db, event);
+      // Tenant-scoped even on the best-effort path: `runInTenant` gets a
+      // connection carrying `SET LOCAL app.current_tenant`, so the row is
+      // written under RLS like every other query in this module. This used to
+      // reach for the pool-global `db` singleton — the one connection in
+      // insights without tenant context — which is exactly what `recordInTx`
+      // above forbids. The row still landed under the right tenant because
+      // `tenant_id` is bound from the event, but with no second layer behind
+      // it. Safe to open a transaction here: every caller is a read-side or
+      // probe path, none holds a row lock (nesting under one would risk the
+      // FK-child deadlock class).
+      //
+      // A tenant-less event has no context to set, so it keeps the plain
+      // auto-commit path.
+      if (event.tenantId === null) {
+        await insertAuditRow(db, event);
+      } else {
+        await runInTenant(asTenantContext(event.tenantId), (tx) => insertAuditRow(tx, event));
+      }
     } catch (e) {
       logger.error(
         {

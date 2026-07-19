@@ -120,7 +120,7 @@ export async function computeDashboardSnapshot(
       // Revenue KPI windows by the tenant FISCAL year (derived in the adapter
       // from this instant + fiscalYearStartMonth), not the calendar `year`.
       deps.invoiceSource.getYtdPaidRevenueSatang(ctx, now.toISOString()),
-      deps.invoiceSource.countOverdue(ctx),
+      deps.invoiceSource.countOverdue(ctx, now.toISOString()),
       deps.broadcastSource.countAwaitingApproval(ctx),
       deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
       deps.memberSource.joinDistribution(ctx, monthKeys),

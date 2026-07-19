@@ -190,12 +190,36 @@ export default async function StaffHomePage() {
   const kpis: ReadonlyArray<{
     key: string;
     label: string;
+    caption: string;
     rawValue: number;
     variant: 'integer' | 'thb';
   }> = [
-    { key: 'total', label: t('kpi.total'), rawValue: metrics.counts.total, variant: 'integer' },
-    { key: 'active', label: t('kpi.active'), rawValue: metrics.counts.active, variant: 'integer' },
-    { key: 'atRisk', label: t('kpi.atRisk'), rawValue: metrics.counts.atRisk, variant: 'integer' },
+    // Each caption states the tile's basis: `total` counts every status
+    // (active + inactive + archived, per computeDashboardSnapshot), which the
+    // bare "Total members" label does not convey; `revenue` is fiscal-year and
+    // ex-VAT, distinct from the VAT-inclusive/all-time invoice-status donut and
+    // the rolling-12-month trend on the same screen.
+    {
+      key: 'total',
+      label: t('kpi.total'),
+      caption: t('kpi.totalCaption'),
+      rawValue: metrics.counts.total,
+      variant: 'integer',
+    },
+    {
+      key: 'active',
+      label: t('kpi.active'),
+      caption: t('kpi.activeCaption'),
+      rawValue: metrics.counts.active,
+      variant: 'integer',
+    },
+    {
+      key: 'atRisk',
+      label: t('kpi.atRisk'),
+      caption: t('kpi.atRiskCaption'),
+      rawValue: metrics.counts.atRisk,
+      variant: 'integer',
+    },
     // FR-007: revenue is visible to all staff (admin + the "read-only on
     // finance" manager role); only members are denied the dashboard
     // (handled upstream). Satang → THB conversion happens HERE (at the call
@@ -204,6 +228,7 @@ export default async function StaffHomePage() {
     {
       key: 'revenue',
       label: t('kpi.revenue'),
+      caption: t('kpi.revenueCaption'),
       rawValue: Number(metrics.ytdPaidRevenueSatang) / 100,
       variant: 'thb',
     },
@@ -363,6 +388,7 @@ export default async function StaffHomePage() {
           <KpiCard
             key={kpi.key}
             label={kpi.label}
+            caption={kpi.caption}
             value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} />}
           />
         ))}

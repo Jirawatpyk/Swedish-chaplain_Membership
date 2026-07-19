@@ -690,6 +690,7 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/admin/plans/[year]/[planId]`                      | `DetailContainer` | 72rem |
 | `/admin/plans/[year]/[planId]/edit`                 | `FormContainer`   | 42rem |
 | `/admin/settings/fees`                              | `FormContainer`   | 42rem |
+| `/admin/settings/invoicing`                         | `DetailContainer`\* | 72rem |
 | `/admin/members`                                    | `TableContainer`  | 96rem |
 | `/admin/members/new`                                | `FormContainer`   | 42rem |
 | `/admin/members/[memberId]`                         | `DetailContainer` | 72rem |
@@ -700,6 +701,16 @@ been **removed** and its two tokens (`--content-max-width-admin`,
 | `/portal/account`                                   | `FormContainer`   | 42rem |
 | `/portal/edit`                                      | `FormContainer`   | 42rem |
 | `/portal/contacts/invite`                           | `FormContainer`   | 42rem |
+
+\* **Documented exception** — `/admin/settings/invoicing` is a settings/edit
+form, which the §18.1 one-liner would default to `FormContainer` (42rem).
+It uses `DetailContainer` (72rem) instead because its shell is a two-column
+sticky-nav layout (`SectionNav` left rail + `StickySaveBar`, six field
+sections): 42rem minus the rail/overhead doesn't leave enough width for a
+legible 2-column field grid. Any other future settings page that adopts the
+same sticky-nav shell (not just a single-column form) should follow this
+same exception, not the default rule. (`settings-ux-invoice-reminders`
+fix-wave, Task 7/8.)
 
 ### 18.3 Code examples
 

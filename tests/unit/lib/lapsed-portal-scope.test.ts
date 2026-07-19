@@ -159,15 +159,22 @@ describe('checkPortalAccess — full access (no cycle / good standing)', () => {
     expect(emitMock).not.toHaveBeenCalled();
   });
 
-  it('lapsed but NOT yet expired (still in grace) → allowed (full)', async () => {
-    const cycle = buildCycle({ expiresAt: '2027-01-01T00:00:00Z' }); // future relative to FIXED_NOW
+  it('lapsed with a FUTURE expiresAt → STILL terminated (065 §5.2 — no grace restore)', async () => {
+    // Regression pin for 065 §5.2⇄§5.3 (see deriveMembershipAccess docstring):
+    // a `lapsed` cycle is terminated regardless of `expiresAt`. A member born
+    // `awaiting_payment` and lapsed at due+60 carries a far-future `expiresAt`;
+    // the REMOVED "expiresAt < now" grace gate would have wrongly restored FULL
+    // access. This used to be a full-access case (hence its place in this
+    // block) — post-065 it asserts the corrected terminated behavior, and
+    // `/portal/dashboard` is not on the terminated allowlist → blocked.
+    const cycle = buildCycle({ expiresAt: '2027-01-01T00:00:00Z' }); // future vs FIXED_NOW; status defaults to 'lapsed'
     const { deps } = fakeDeps({ cycle });
     const r = await checkPortalAccess(deps, {
       ...baseCtx,
       pathname: '/portal/dashboard',
     });
-    expect(r.allowed).toBe(true);
-    if (r.allowed) expect(r.reason).toBe('full');
+    expect(r.allowed).toBe(false);
+    if (!r.allowed) expect(r.reason).toBe('terminated_route_blocked');
   });
 
   it('completed cycle → allowed (full)', async () => {

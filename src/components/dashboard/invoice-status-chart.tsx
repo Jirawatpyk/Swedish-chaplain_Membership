@@ -270,7 +270,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
                   readers reach it in normal reading order. Visually overlaid
                   on the donut hole via CSS position, not Recharts geometry.
                   Label BEFORE value (not value-then-label) so SR/reading
-                  order says "Total outstanding. THB 10K." rather than the
+                  order says "Total invoiced. THB 10K." rather than the
                   bare amount followed by an unattached caption.
                   `z-0` pairs with the canvas's `z-10` above; `px-6` + the
                   compact `compactTotalLabel` (vs. the full `totalLabel`)
@@ -309,6 +309,16 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
               ))}
             </ul>
             {draftCaption}
+            {/* States this chart's measurement basis, which differs from every
+                other money figure on the page: all-time (the port is never
+                given a fiscal year) and VAT-INCLUSIVE (`total_satang` less
+                credits), where the revenue KPI and the trend sparkline are
+                fiscal-year/rolling-window and ex-VAT. Two honest numbers on
+                one screen that don't tie out read as a broken system unless
+                each says what it measures. */}
+            <p className="mt-1 text-center text-caption text-muted-foreground">
+              {t('basisCaption')}
+            </p>
             {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
                 SR/no-JS data path; visually hidden when data is present, the
                 empty-state paragraph above is the SR equivalent otherwise.

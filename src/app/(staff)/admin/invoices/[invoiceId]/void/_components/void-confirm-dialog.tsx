@@ -29,7 +29,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   InlineAlert,
   InlineAlertDescription,
@@ -63,9 +62,18 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
     if (formError) errorRef.current?.focus();
   }, [formError]);
 
-  // CR-6: focus the reason field on mount + Esc → cancel route.
+  // CR-6: initial focus on the reason field — MOUNT ONLY, deliberately split
+  // from the Esc effect below. It must NOT share that effect's `pending`
+  // dependency: a re-run on the transition's pending true→false flip fires
+  // AFTER the `formError` effect above (effects run in declaration order) and
+  // stole focus back off the error alert, silently defeating the FR-032
+  // "focused, unmissable failure" guarantee for this irreversible mutation.
   useEffect(() => {
     reasonRef.current?.focus();
+  }, []);
+
+  // CR-6: Esc → cancel route (re-subscribes on `pending` for a fresh closure).
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !pending) {
         e.preventDefault();
@@ -131,7 +139,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       }}
       className="flex flex-col gap-6"
     >
-      {/* UX-1 — destructive Alert gives terminal-action warning
+      {/* UX-1 — destructive InlineAlert gives terminal-action warning
         * the visual weight it deserves (AlertTriangle + destructive
         * palette). Previous muted-card treatment under-signalled the
         * irreversibility of void vs the rest of the form copy. */}
@@ -149,16 +157,16 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
           move focus here so the admin cannot miss it. A concurrent 409 shows a
           "refresh" prompt; other failures show a destructive alert. */}
       {formError && (
-        <Alert
+        <InlineAlert
           ref={errorRef}
           tabIndex={-1}
-          variant={formError.kind === 'failure' ? 'destructive' : 'default'}
+          tone={formError.kind === 'failure' ? 'destructive' : 'neutral'}
           className="outline-none"
           data-testid="void-invoice-error"
         >
           <AlertTriangleIcon className="size-4" aria-hidden="true" />
           {formError.kind === 'concurrent' ? (
-            <AlertDescription className="flex flex-col items-start gap-2">
+            <InlineAlertDescription className="flex flex-col items-start gap-2">
               <span>{t('errors.concurrent')}</span>
               <Button
                 type="button"
@@ -169,11 +177,11 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
               >
                 {t('errors.refreshAction')}
               </Button>
-            </AlertDescription>
+            </InlineAlertDescription>
           ) : (
-            <AlertDescription>{formError.message}</AlertDescription>
+            <InlineAlertDescription>{formError.message}</InlineAlertDescription>
           )}
-        </Alert>
+        </InlineAlert>
       )}
 
       <div className="grid gap-2">

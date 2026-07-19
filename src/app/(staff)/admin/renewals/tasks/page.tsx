@@ -43,6 +43,7 @@ import {
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
+import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 
 const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 const VALID_ASSIGNMENTS = new Set(['all', 'mine', 'unassigned'] as const);
@@ -208,6 +209,7 @@ export default async function EscalationTaskQueuePage({
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <RenewalsSectionTabs />
       {hasError ? (
         <Card
           className="border-destructive/40 bg-destructive/5"

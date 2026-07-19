@@ -41,6 +41,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createEventInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-event-invoice-draft';
+import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
 import { makeCreateEventInvoiceDraftDeps } from '@/modules/invoicing/application/invoicing-deps';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -83,6 +84,9 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
   let memberId: string;
   let companyNoTinMemberId: string;
   let archivedMemberId: string;
+  // C1 (duplicate-CTA) — the matched-member draft's id, captured so the
+  // duplicate-guard test can assert the 409's `existingInvoiceId` points at it.
+  let matchedInvoiceId: InvoiceId;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -338,6 +342,8 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
     expect(result.ok, result.ok ? 'ok' : `err: ${result.error.code}`).toBe(true);
     if (!result.ok) throw new Error(`expected ok, got ${result.error.code}`);
     const invoiceId = result.value.invoiceId;
+    // C1 — remember this id; the duplicate-guard test asserts the 409 surfaces it.
+    matchedInvoiceId = invoiceId;
 
     const [row] = await db
       .select()
@@ -397,7 +403,17 @@ describe('createEventInvoiceDraft — live-Neon integration (Model B, member + n
       eventRegistrationId: matchedRegId,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('duplicate');
+    if (!result.ok) {
+      expect(result.error.code).toBe('duplicate');
+      // C1 (duplicate-CTA) — the 409 must surface the id of the invoice that
+      // already exists, so the client can offer a "View invoice" link. The
+      // catch runs a fresh tenant-scoped read AFTER the tx rolled back and finds
+      // the FIRST (matched-member) draft — the only non-void event invoice for
+      // this registration (the partial unique index excludes void rows).
+      if (result.error.code === 'duplicate') {
+        expect(result.error.existingInvoiceId).toBe(matchedInvoiceId);
+      }
+    }
   }, 30_000);
 
   it('§86/4 doc-type model: matched company member with null tax_id → succeeds as a draft (events do NOT block; issued later as a §105 receipt — 054 Task 9)', async () => {

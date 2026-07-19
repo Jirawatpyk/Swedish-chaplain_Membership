@@ -407,9 +407,10 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
   // 409 — duplicate
   // -------------------------------------------------------------------------
 
-  it('409 duplicate — a non-void event invoice already exists for this registration', async () => {
+  it('409 duplicate — a non-void event invoice already exists for this registration (body carries existing_invoice_id — C1)', async () => {
+    const EXISTING_ID = 'inv_01EXISTINGEVENTDRAFT001';
     createEventInvoiceDraftMock.mockResolvedValueOnce(
-      err({ code: 'duplicate' }),
+      err({ code: 'duplicate', existingInvoiceId: EXISTING_ID }),
     );
 
     const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
@@ -417,8 +418,32 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
       makePostRequest({ eventRegistrationId: VALID_REG_ID }),
     );
     expect(res.status).toBe(409);
-    const body = (await res.json()) as { error: { code: string } };
+    const body = (await res.json()) as {
+      error: { code: string };
+      existing_invoice_id: string | null;
+    };
     expect(body.error.code).toBe('duplicate');
+    // C1 (duplicate-CTA) — the id rides at the TOP LEVEL (snake_case), so the
+    // client can offer a "View invoice" link.
+    expect(body).toHaveProperty('existing_invoice_id', EXISTING_ID);
+  });
+
+  it('409 duplicate — existing_invoice_id is null when the existing row is unresolvable (concurrent void)', async () => {
+    createEventInvoiceDraftMock.mockResolvedValueOnce(
+      err({ code: 'duplicate', existingInvoiceId: null }),
+    );
+
+    const { POST } = await importRoute() as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(
+      makePostRequest({ eventRegistrationId: VALID_REG_ID }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as {
+      error: { code: string };
+      existing_invoice_id: string | null;
+    };
+    expect(body.error.code).toBe('duplicate');
+    expect(body).toHaveProperty('existing_invoice_id', null);
   });
 
   // -------------------------------------------------------------------------
@@ -608,6 +633,37 @@ describe('contract: POST /api/invoices/event-draft (Task 12)', () => {
     expect(input.actorUserId).toBe('admin-user-1');
     expect(input.requestId).toBe('req-event-draft-1');
     expect(input.eventRegistrationId).toBe(VALID_REG_ID);
+  });
+
+  it('ignores client-supplied tenantId / actorUserId / requestId in the body (CWE-915)', async () => {
+    // Regression guard for the mass-assignment fix: the route spreads the body
+    // FIRST and server-derived identity LAST. Without that order a caller could
+    // stamp another user's id onto the audit event a draft emits. This test
+    // sends hostile values for all three server-derived fields and asserts the
+    // server values win — it FAILS if the route ever reverts to spreading the
+    // body last.
+    createEventInvoiceDraftMock.mockResolvedValueOnce(ok(STUB_INVOICE));
+
+    const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+    await POST(
+      makePostRequest({
+        eventRegistrationId: VALID_REG_ID,
+        amountOverride: 50000,
+        tenantId: 'attacker-tenant',
+        actorUserId: 'victim-user-99',
+        requestId: 'forged-request-id',
+      }),
+    );
+
+    expect(createEventInvoiceDraftMock).toHaveBeenCalledTimes(1);
+    const input = createEventInvoiceDraftMock.mock.calls[0]![1] as {
+      tenantId: string;
+      actorUserId: string;
+      requestId: string;
+    };
+    expect(input.tenantId).toBe('test-swecham');
+    expect(input.actorUserId).toBe('admin-user-1');
+    expect(input.requestId).toBe('req-event-draft-1');
   });
 
   // -------------------------------------------------------------------------

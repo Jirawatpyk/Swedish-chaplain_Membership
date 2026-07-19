@@ -15,10 +15,13 @@
  */
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import Link from 'next/link';
 import { env } from '@/lib/env';
 import { requireSession } from '@/lib/auth-session';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
 
 export default async function CsvImportPage() {
@@ -35,7 +38,22 @@ export default async function CsvImportPage() {
   const t = await getTranslations('admin.events.import');
   return (
     <TableContainer>
-      <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
+      <PageHeader
+        title={t('pageTitle')}
+        subtitle={t('pageSubtitle')}
+        actions={
+          // Nav-orphans follow-up: the CSV import-history viewer
+          // (`/admin/events/import/history`) existed but had no visible
+          // link into it from the import form — palette-only. Mirrors the
+          // history page's own "Back to import" action button style.
+          <Link
+            href="/admin/events/import/history"
+            className={cn(buttonVariants({ variant: 'outline' }))}
+          >
+            {t('viewHistory')}
+          </Link>
+        }
+      />
       <CsvMappingForm />
     </TableContainer>
   );

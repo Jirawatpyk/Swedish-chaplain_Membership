@@ -33,7 +33,9 @@ export function TypedPhraseConfirm({ companyName, value, onChange }: Props) {
   const errorId = `${fieldId}-error`;
 
   const expected = `REFUND ${companyName}`;
-  // Case-sensitive — see component docstring above for rationale.
+  // Refund is deliberately case-SENSITIVE (unlike Issue/Void, which are
+  // case-insensitive) — a completed Stripe refund cannot be undone, so the extra
+  // friction is intentional. See design 2026-07-18 §Decisions(4). Not drift.
   const matches = value === expected;
   const hasInput = value.length > 0;
   const showError = hasInput && !matches;

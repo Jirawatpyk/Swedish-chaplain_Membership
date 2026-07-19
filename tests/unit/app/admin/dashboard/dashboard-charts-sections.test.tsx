@@ -174,7 +174,7 @@ describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => 
   it('mounts MembershipTierChart + InvoiceStatusChart with the snapshot data (real titles present)', async () => {
     const html = await renderPage();
     expect(html).toContain(en.admin.dashboard.membershipTier.title); // 'Membership by tier'
-    expect(html).toContain(en.admin.dashboard.invoiceStatus.title); // 'Receivables by value'
+    expect(html).toContain(en.admin.dashboard.invoiceStatus.title); // 'Invoice value by status'
     // Tier data actually reached the component (not an empty-state render).
     expect(html).toContain('Gold');
     expect(html).not.toContain(en.admin.dashboard.membershipTier.empty);

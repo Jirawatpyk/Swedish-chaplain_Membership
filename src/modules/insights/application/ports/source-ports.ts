@@ -215,7 +215,13 @@ export interface InvoiceSource {
    */
   getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint>;
   /** Count of overdue invoices for the tenant (FR-002 needs-attention). */
-  countOverdue(ctx: TenantContext): Promise<number>;
+  /**
+   * `nowIso` is injected, not read from the host clock, so this KPI and the
+   * donut's overdue bucket resolve "is it past due?" against ONE instant —
+   * they are computed in the same `Promise.all` and previously sampled the
+   * clock separately, which also left the count untestable at a pinned time.
+   */
+  countOverdue(ctx: TenantContext, nowIso: string): Promise<number>;
   /**
    * Monthly PAID revenue (satang) bucketed by the tenant-tz month a paid
    * invoice was settled, for the 12-month revenue trend (FR-001a). Returns a

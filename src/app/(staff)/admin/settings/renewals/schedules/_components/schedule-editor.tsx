@@ -19,35 +19,31 @@
  * + a banner-style notice. Server-side RBAC at the PUT route is the
  * canonical gate — this UI affordance is defence-in-depth.
  */
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   Plus,
-  Trash2,
-  ChevronUp,
-  ChevronDown,
-  AlertCircle,
+  Eye,
   CalendarPlus,
   Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { LiveRegion } from '@/components/ui/live-region';
 
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
-import { TIER_BUCKETS, type TierBucket } from '@/modules/renewals/client';
+import {
+  TIER_BUCKETS,
+  TIER_REMINDER_OFFSETS,
+  daysFromOffsetKey,
+  type TierBucket,
+} from '@/modules/renewals/client';
+import { StepCard } from './step-card';
+import { ReminderTimeline } from './reminder-timeline';
+import { composeUniqueStepId, composeTemplateId } from './step-id-composer';
 
 // ---------------------------------------------------------------------------
 // Wire-shape types — match the route-handler JSON contract.
@@ -66,6 +62,56 @@ export interface SchedulePolicyWire {
   tier_bucket: TierBucket;
   steps: ReadonlyArray<ScheduleStepWire>;
   updated_at: string;
+}
+
+/**
+ * v3 rework (`.superpowers/sdd/rework-stepcard-v3-brief.md`, Change 3) —
+ * editor-local step shape. `step_id` is recomposed on every timing/
+ * channel edit (including on every keystroke in the new custom-day
+ * input — see `step-card.tsx`), so keying `<StepCard>` by `step_id`
+ * remounted the whole card mid-edit and dropped focus. `_uiKey` is a
+ * STABLE, edit-independent identity generated once per step (see
+ * `nextUiKey` below) that never itself gets recomputed on edit — every
+ * `{...step, ...}` spread inside `step-card.tsx`'s onChange handlers
+ * carries it forward automatically (TypeScript's structural typing
+ * doesn't strip extra runtime properties from a spread), and the two
+ * handlers that build a fresh literal instead of spreading
+ * (`handleChannelChange`'s two branches) thread it through explicitly.
+ *
+ * NEVER sent over the wire — `toWireSteps` strips it before every PUT
+ * (see `handleSave`) so the request body stays byte-identical to
+ * `{ steps: ScheduleStepWire[] }`.
+ */
+export interface EditorStep extends ScheduleStepWire {
+  readonly _uiKey: string;
+}
+
+export interface EditorSchedulePolicy {
+  tier_bucket: TierBucket;
+  steps: EditorStep[];
+  updated_at: string;
+}
+
+// Deterministic, monotonically-incrementing `_uiKey` source. `Math.random()`
+// / `Date.now()` / an argless `new Date()` are BANNED for this purpose (v3
+// brief) — a random or clock-based key would defeat the whole point of a
+// STABLE key. Module-level so every step ever created by this editor
+// (across every tier bucket) gets a globally distinct key.
+let uiKeySeq = 0;
+
+function nextUiKey(tierBucket: TierBucket): string {
+  return `${tierBucket}-${uiKeySeq++}`;
+}
+
+/**
+ * Strip `_uiKey` before the PUT body is built. Exported for direct unit
+ * testing (same "extract for testability" convention as
+ * `isOfflineFetchError` / `emptyStep` below) — proves the wire payload
+ * stays byte-identical to `ScheduleStepWire[]` without needing to mock
+ * `fetch` end to end.
+ */
+export function toWireSteps(steps: ReadonlyArray<EditorStep>): ScheduleStepWire[] {
+  return steps.map(({ _uiKey, ...wire }) => wire);
 }
 
 export interface ScheduleEditorProps {
@@ -106,334 +152,62 @@ export function isOfflineFetchError(e: unknown): boolean {
   );
 }
 
-function emptyStep(): ScheduleStepWire {
-  // J8-M33: random suffix so multiple "Add step" clicks within one
-  // session produce unique step_ids — server zod's distinct-step_ids
-  // invariant otherwise rejects the save with `invalid_steps` 422.
-  // 8-hex chars from a v4 UUID gives 16M possibilities, plenty for the
-  // 20-step cap on a single bucket.
+/**
+ * Task 9: compose VALID wire identifiers for a fresh step instead of the
+ * placeholder `new-<uuid>` / `renewal.t-30` shape the old `StepRow`-era
+ * default used (no tier suffix on `template_id` — the gateway's
+ * `deriveTierFromTemplateId` can never resolve it, so the step could
+ * never actually send).
+ *
+ * v2 rework (`.superpowers/sdd/rework-stepcard-v2-brief.md`, Issue 3a):
+ * previously this ALWAYS defaulted to -30/email, so clicking "Add step"
+ * twice produced two `t-30.email` steps — a duplicate React list key
+ * AND a 422 from the Domain's bucket-wide `parseSchedulePolicySteps`
+ * uniqueness check. `existingSteps` (the bucket's current step list) now
+ * lets the default ADVANCE to the tier's first standard offset not
+ * already used by an existing EMAIL step (the natural collision key is
+ * offset+channel, matching `composeStepId`'s own contract). If every
+ * standard offset is already taken, fall back to the first standard
+ * offset and let `composeUniqueStepId` (step-id-composer.ts)
+ * deterministically disambiguate the step_id.
+ *
+ * Exported for direct unit testing —
+ * tests/unit/components/schedules/schedule-editor.test.tsx.
+ */
+export function emptyStep(
+  tier: TierBucket,
+  existingSteps: ReadonlyArray<ScheduleStepWire>,
+): EditorStep {
+  const usedEmailOffsets = new Set(
+    existingSteps.filter((s) => s.channel === 'email').map((s) => s.offset_days),
+  );
+  const standardOffsetDays = TIER_REMINDER_OFFSETS[tier].map(daysFromOffsetKey);
+  const offsetDays =
+    standardOffsetDays.find((d) => !usedEmailOffsets.has(d)) ?? standardOffsetDays[0] ?? -30;
+  const existingIds = new Set(existingSteps.map((s) => s.step_id));
   return {
-    step_id: `new-${crypto.randomUUID().slice(0, 8)}`,
-    offset_days: -30,
+    // v3 — the other half of Change 3 ("Add step" gets a fresh stable
+    // key; `policiesByBucket` below covers the "loaded from server" half).
+    _uiKey: nextUiKey(tier),
+    step_id: composeUniqueStepId({ offsetDays, channel: 'email' }, existingIds),
+    offset_days: offsetDays,
     channel: 'email',
-    template_id: 'renewal.t-30',
+    template_id: composeTemplateId(offsetDays, tier),
   };
 }
 
 function policiesByBucket(
   policies: ReadonlyArray<SchedulePolicyWire>,
-): Record<TierBucket, SchedulePolicyWire | undefined> {
-  const out: Partial<Record<TierBucket, SchedulePolicyWire>> = {};
+): Record<TierBucket, EditorSchedulePolicy | undefined> {
+  const out: Partial<Record<TierBucket, EditorSchedulePolicy>> = {};
   for (const p of policies) {
-    out[p.tier_bucket] = p;
+    out[p.tier_bucket] = {
+      tier_bucket: p.tier_bucket,
+      steps: p.steps.map((s) => ({ ...s, _uiKey: nextUiKey(p.tier_bucket) })),
+      updated_at: p.updated_at,
+    };
   }
-  return out as Record<TierBucket, SchedulePolicyWire | undefined>;
-}
-
-function formatOffset(
-  days: number,
-  t: ReturnType<typeof useTranslations<'admin.renewals.settings.schedules'>>,
-): string {
-  if (days === 0) return t('stepCard.offsetDay.exact');
-  if (days < 0)
-    return t('stepCard.offsetDay.before', { days: Math.abs(days) });
-  return t('stepCard.offsetDay.after', { days });
-}
-
-// ---------------------------------------------------------------------------
-// Per-step row sub-component
-// ---------------------------------------------------------------------------
-
-interface StepRowProps {
-  readonly tierBucket: TierBucket;
-  readonly step: ScheduleStepWire;
-  readonly index: number;
-  readonly total: number;
-  readonly readOnly: boolean;
-  readonly onChange: (next: ScheduleStepWire) => void;
-  readonly onRemove: () => void;
-  readonly onMoveUp: () => void;
-  readonly onMoveDown: () => void;
-}
-
-function StepRow({
-  tierBucket,
-  step,
-  index,
-  total,
-  readOnly,
-  onChange,
-  onRemove,
-  onMoveUp,
-  onMoveDown,
-}: StepRowProps) {
-  const t = useTranslations('admin.renewals.settings.schedules');
-  // J1-B10: prefix every form-field id with `tierBucket` because base-ui
-  // `Tabs.Panel` keeps inactive panels mounted via `hidden`. Without the
-  // prefix the same `step-id-0` exists 5 times in the DOM and
-  // `<Label htmlFor>` resolves to the wrong field on 4 of 5 tabs
-  // (WCAG 4.1.1 Parsing — duplicate id attributes).
-  const idPrefix = `${tierBucket}-${index}`;
-  return (
-    <div className="rounded-md border bg-card p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Badge variant="outline" className="font-mono">
-          {formatOffset(step.offset_days, t)} ·{' '}
-          {t(`stepCard.channel.${step.channel}`)}
-        </Badge>
-        <div className="flex items-center gap-1">
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            disabled={readOnly || index === 0}
-            onClick={onMoveUp}
-            aria-label={t('actions.moveUp')}
-          >
-            <ChevronUp aria-hidden="true" className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            disabled={readOnly || index === total - 1}
-            onClick={onMoveDown}
-            aria-label={t('actions.moveDown')}
-          >
-            <ChevronDown aria-hidden="true" className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            disabled={readOnly}
-            onClick={onRemove}
-            aria-label={t('actions.removeStep')}
-          >
-            <Trash2 aria-hidden="true" className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {/*
-         * J7-H17: required + aria-required on text inputs so the
-         * server's `invalid_steps` 422 has a matching client-side
-         * cue (HTML5 invalid pseudo-class fires too). Empty step_id
-         * fails the wire-level zod (.min(1)) anyway — the attr
-         * stops admin from submitting before the round-trip.
-         */}
-        <div>
-          <Label htmlFor={`step-id-${idPrefix}`}>{t('stepCard.stepIdLabel')}</Label>
-          <Input
-            id={`step-id-${idPrefix}`}
-            value={step.step_id}
-            disabled={readOnly}
-            required
-            aria-required="true"
-            maxLength={100}
-            onChange={(e) => onChange({ ...step, step_id: e.target.value })}
-          />
-        </div>
-        <div>
-          {/*
-           * J8-M19: replaced the legacy `T±` mangled label
-           * (.slice(0,1)+'±' built from "T-30") with a proper
-           * localized i18n key. Previous code rendered "T±" in EN
-           * and the same mangled string in TH/SV — admin had no
-           * idea what the offset_days field was for.
-           */}
-          <Label htmlFor={`offset-days-${idPrefix}`}>
-            {t('stepCard.offsetDaysLabel')}
-          </Label>
-          <Input
-            id={`offset-days-${idPrefix}`}
-            type="number"
-            value={step.offset_days}
-            disabled={readOnly}
-            required
-            aria-required="true"
-            min={-365}
-            max={365}
-            step={1}
-            onChange={(e) =>
-              onChange({ ...step, offset_days: Number(e.target.value) })
-            }
-          />
-        </div>
-        <div>
-          {/*
-            K3-BLK-1: previously the rendered label was
-            `"Email / Task"` — those are option VALUES, not the field's
-            name. Screen-reader users heard "Email / Task, combobox"
-            without a clue what the field controls (WCAG 4.1.2
-            Name/Role/Value). Now uses a dedicated `channelLabel` i18n
-            key that names the field ("Delivery channel" / "ช่องทางการ
-            ส่ง" / "Leveranskanal"); the option values render inside
-            the SelectContent below where they belong.
-          */}
-          <Label htmlFor={`channel-${idPrefix}`}>
-            {t('stepCard.channelLabel')}
-          </Label>
-          <Select
-            value={step.channel}
-            disabled={readOnly}
-            onValueChange={(v) => {
-              const nextChannel = v as ScheduleStepWire['channel'];
-              if (nextChannel === 'email') {
-                onChange({
-                  step_id: step.step_id,
-                  offset_days: step.offset_days,
-                  channel: 'email',
-                  template_id: step.template_id ?? 'renewal.placeholder',
-                });
-              } else {
-                onChange({
-                  step_id: step.step_id,
-                  offset_days: step.offset_days,
-                  channel: 'task',
-                  task_type: step.task_type ?? 'phone_call',
-                  assignee_role: step.assignee_role ?? 'admin',
-                });
-              }
-            }}
-          >
-            <SelectTrigger id={`channel-${idPrefix}`} className="w-full">
-              {/* Base UI's `<SelectValue />` renders the raw value string
-                  ("email" / "task") not the translated children of the
-                  selected `<SelectItem>` — so the trigger looked
-                  un-translated AND truncated. `<TranslatedSelectValue>`
-                  passes the raw value through `t()` to render the same
-                  label as the dropdown items. `w-full` on the trigger
-                  makes it span the form column so the translated label
-                  isn't clipped (line-clamp-1 was hiding longer locales). */}
-              <TranslatedSelectValue
-                placeholder={t('stepCard.channelLabel')}
-                translate={(v) => {
-                  if (!v) return null;
-                  // Round 5 SUG-6 — try/catch shields the runtime from
-                  // a `MISSING_MESSAGE` throw if a future channel enum
-                  // value (e.g. 'sms') ships before the i18n keys do.
-                  // Falls back to the raw enum literal — visible-but-
-                  // ugly is better than blank-trigger or 500-page.
-                  try {
-                    return t(`stepCard.channel.${v}` as 'stepCard.channel.email');
-                  } catch {
-                    return v;
-                  }
-                }}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="email">
-                {t('stepCard.channel.email')}
-              </SelectItem>
-              <SelectItem value="task">
-                {t('stepCard.channel.task')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {step.channel === 'email' ? (
-          <div>
-            <Label htmlFor={`template-${idPrefix}`}>
-              {t('stepCard.templateIdLabel')}
-            </Label>
-            {/* J7-H17: email steps require a template_id (server zod
-             * enforces .min(1) when channel='email'); mirror the rule
-             * client-side via required+aria-required. */}
-            <Input
-              id={`template-${idPrefix}`}
-              value={step.template_id ?? ''}
-              disabled={readOnly}
-              required
-              aria-required="true"
-              maxLength={200}
-              onChange={(e) =>
-                onChange({ ...step, template_id: e.target.value })
-              }
-            />
-          </div>
-        ) : (
-          <>
-            <div>
-              <Label htmlFor={`task-type-${idPrefix}`}>
-                {t('stepCard.taskTypeLabel')}
-              </Label>
-              {/* J7-H17: task steps require task_type (server zod
-               * enforces .min(1) when channel='task'). */}
-              <Input
-                id={`task-type-${idPrefix}`}
-                value={step.task_type ?? ''}
-                disabled={readOnly}
-                required
-                aria-required="true"
-                maxLength={100}
-                onChange={(e) =>
-                  onChange({ ...step, task_type: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor={`assignee-${idPrefix}`}>
-                {t('stepCard.assigneeLabel')}
-              </Label>
-              <Select
-                value={step.assignee_role ?? 'admin'}
-                disabled={readOnly}
-                onValueChange={(v) =>
-                  onChange({
-                    ...step,
-                    assignee_role: v as Exclude<
-                      ScheduleStepWire['assignee_role'],
-                      undefined
-                    >,
-                  })
-                }
-              >
-                <SelectTrigger id={`assignee-${idPrefix}`} className="w-full">
-                  {/* Same un-translated-trigger fix as the channel
-                      Select above — Base UI's `<SelectValue />` renders
-                      the raw enum literal. */}
-                  <TranslatedSelectValue
-                    placeholder={t('stepCard.assigneeLabel')}
-                    translate={(v) => {
-                      if (!v) return null;
-                      // Round 5 SUG-6 — same MISSING_MESSAGE shield as
-                      // the channel select above.
-                      try {
-                        return t(
-                          `stepCard.assigneeRole.${v}` as 'stepCard.assigneeRole.admin',
-                        );
-                      } catch {
-                        return v;
-                      }
-                    }}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {/*
-                   * J8-M20: previously rendered raw enum values
-                   * ("admin"/"manager"/"executive_director"). TH+SV
-                   * admins saw English-only role names — break of
-                   * ux-standards § i18n no-hardcoded-strings rule.
-                   */}
-                  <SelectItem value="admin">
-                    {t('stepCard.assigneeRole.admin')}
-                  </SelectItem>
-                  <SelectItem value="manager">
-                    {t('stepCard.assigneeRole.manager')}
-                  </SelectItem>
-                  <SelectItem value="executive_director">
-                    {t('stepCard.assigneeRole.executive_director')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
+  return out as Record<TierBucket, EditorSchedulePolicy | undefined>;
 }
 
 // ---------------------------------------------------------------------------
@@ -450,14 +224,41 @@ export function ScheduleEditor({
   // surfaces Buddhist Era for `th-TH` users.
   const fmt = useFormatter();
   const [byBucket, setByBucket] = useState(() => policiesByBucket(initialPolicies));
+  // Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a ref
+  // mirror of `byBucket` so `handleSave`'s success branch can read the
+  // CURRENT steps synchronously at the moment a save resolves, not the
+  // stale pre-save snapshot it captured before the awaited `fetch`. NOT
+  // a side-effect inside a `setState` updater — React StrictMode
+  // double-invokes updaters in dev, so mutating an outer variable there
+  // is unreliable; this effect-based mirror is the safe alternative.
+  const byBucketRef = useRef(byBucket);
+  useEffect(() => {
+    byBucketRef.current = byBucket;
+  }, [byBucket]);
   const [activeBucket, setActiveBucket] = useState<TierBucket>(
     TIER_BUCKETS[0],
   );
   const [pending, startTransition] = useTransition();
   const [saveError, setSaveError] = useState<string | null>(null);
+  // C1 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — unsaved-
+  // changes guard. Every bucket edited since its last SUCCESSFUL save is
+  // tracked here (added in `replaceSteps`, deleted on save success below);
+  // `dirtyBuckets.size > 0` drives the `beforeunload` effect further down.
+  // Simpler than diffing wire-shape against a saved snapshot and matches
+  // "unsaved since last save" exactly — see the brief for the trade-off.
+  const [dirtyBuckets, setDirtyBuckets] = useState<Set<TierBucket>>(
+    () => new Set<TierBucket>(),
+  );
+  // I3 (`.superpowers/sdd/followup-reminder-uxwave-brief.md`) — reorder
+  // (move-up/move-down) used to be silent for keyboard/SR users: the array
+  // reorders but the buttons don't move and focus stays put. Mounted
+  // unconditionally with empty content (LiveRegion's own contract — a
+  // conditionally-mounted live region is not announced by most screen
+  // readers), updated by `onMoveUp`/`onMoveDown` below.
+  const [reorderAnnouncement, setReorderAnnouncement] = useState('');
 
   const stepsFor = useCallback(
-    (b: TierBucket): ScheduleStepWire[] => {
+    (b: TierBucket): EditorStep[] => {
       const policy = byBucket[b];
       return policy ? [...policy.steps] : [];
     },
@@ -465,15 +266,25 @@ export function ScheduleEditor({
   );
 
   const replaceSteps = useCallback(
-    (b: TierBucket, next: ScheduleStepWire[]) => {
+    (b: TierBucket, next: EditorStep[]) => {
       setByBucket((prev) => {
         const existing = prev[b];
-        const updated: SchedulePolicyWire = {
+        const updated: EditorSchedulePolicy = {
           tier_bucket: b,
           steps: next,
           updated_at: existing?.updated_at ?? '',
         };
         return { ...prev, [b]: updated };
+      });
+      // C1 — every edit path (add/remove/reorder/inline-field-change/undo)
+      // funnels through this one function, so marking the bucket dirty
+      // here covers all of them without threading a flag through each
+      // call site.
+      setDirtyBuckets((prev) => {
+        if (prev.has(b)) return prev;
+        const nextDirty = new Set(prev);
+        nextDirty.add(b);
+        return nextDirty;
       });
     },
     [],
@@ -490,7 +301,10 @@ export function ScheduleEditor({
             {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ steps: stepsNow }),
+              // v3 Change 3 — `stepsNow` carries the editor-local `_uiKey`;
+              // strip it so the wire body stays byte-identical to
+              // `{ steps: ScheduleStepWire[] }`.
+              body: JSON.stringify({ steps: toWireSteps(stepsNow) }),
             },
           );
           if (!res.ok) {
@@ -544,21 +358,59 @@ export function ScheduleEditor({
             toast.error(t('error.saveFailed'));
             return;
           }
-          // Refresh local cache with server-confirmed policy.
+          // Follow-up (`.superpowers/sdd/followup-saverace-brief.md`) — a
+          // save can be in flight while the admin keeps editing THIS
+          // bucket: StepCard's fields and the move-up/down reorder
+          // buttons are gated only by `readOnly`, never by this save's
+          // `pending` flag (only the Add-step/Save buttons are). `stepsNow`
+          // above is a snapshot taken BEFORE the awaited `fetch`, so it
+          // goes stale the instant a mid-save edit lands. Read the CURRENT
+          // steps synchronously via `byBucketRef` and wire-shape-compare
+          // against the snapshot (`toWireSteps` strips the editor-only
+          // `_uiKey`, so a pure `_uiKey` remap — e.g. from a concurrent
+          // reload — never counts as an edit).
+          const currentSteps = byBucketRef.current[b]?.steps ?? [];
+          const editedDuringSave =
+            JSON.stringify(toWireSteps(currentSteps)) !==
+            JSON.stringify(toWireSteps(stepsNow));
+          // Refresh local cache with server-confirmed policy — but never
+          // clobber a newer mid-save edit with the stale pre-save
+          // snapshot; keep whatever is currently shown instead.
           setByBucket((prev) => ({
             ...prev,
             [b]: {
               tier_bucket: b,
-              steps: stepsNow,
+              steps: editedDuringSave ? (prev[b]?.steps ?? currentSteps) : stepsNow,
               updated_at: body.updated_at,
             },
           }));
+          // C1 — this bucket's edits are now persisted; clear its dirty
+          // flag so the `beforeunload` guard stops firing once every
+          // bucket is saved. If the admin edited THIS bucket again while
+          // the save was in flight, that newer edit was never sent to the
+          // server — stay dirty so the guard keeps protecting it.
+          setDirtyBuckets((prev) => {
+            if (editedDuringSave) return prev;
+            if (!prev.has(b)) return prev;
+            const nextDirty = new Set(prev);
+            nextDirty.delete(b);
+            return nextDirty;
+          });
+          // Plain-language save toast (follow-up UX fix): the raw
+          // change-diff counts `(+added -removed =unchanged)` read as
+          // noise to admins. `unchanged` is dropped entirely; the ICU
+          // message keys off `total = added + removed` (=0 → plain
+          // "schedule saved" confirmation, otherwise "· {added} added,
+          // {removed} removed") so the branch lives in the translation,
+          // not here.
+          const added = body.change_diff.added?.length ?? 0;
+          const removed = body.change_diff.removed?.length ?? 0;
           toast.success(
             t('saved.toast', {
               tier: t(`tabs.${b}`),
-              added: body.change_diff.added?.length ?? 0,
-              removed: body.change_diff.removed?.length ?? 0,
-              unchanged: body.change_diff.unchanged?.length ?? 0,
+              total: added + removed,
+              added,
+              removed,
             }),
           );
         } catch (e) {
@@ -592,6 +444,26 @@ export function ScheduleEditor({
     [stepsFor, t],
   );
 
+  // C1 — hand-rolled to match the three sibling admin forms exactly
+  // (`member-form.tsx`, `issue-invoice-form.tsx`, broadcast
+  // `compose-form.tsx`) rather than the shared invoice-settings
+  // `useUnsavedGuard` — kept contained to this surface; a shared-hook
+  // extraction is a separate future cleanup. Covers tab close / hard nav /
+  // refresh only — App Router exposes no clean SPA route-change
+  // interception.
+  useEffect(() => {
+    const dirty = dirtyBuckets.size > 0;
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      // Modern browsers ignore the message string and show their own copy;
+      // preventDefault + returnValue is the cross-browser invocation pattern.
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirtyBuckets]);
+
   return (
     <Tabs
       value={activeBucket}
@@ -605,17 +477,20 @@ export function ScheduleEditor({
         ))}
       </TabsList>
 
+      {/* I3 — always mounted (empty content on first render); a
+          conditionally-mounted live region is not announced by most
+          screen readers. Updated by onMoveUp/onMoveDown below. */}
+      <LiveRegion politeness="polite">{reorderAnnouncement}</LiveRegion>
+
       {readOnly ? (
-        <Card className="mt-3 border-amber-300 bg-amber-50/50 dark:bg-amber-950/20">
-          <CardContent
-            role="status"
-            aria-live="polite"
-            className="flex items-center gap-2 py-3 text-sm"
-          >
-            <AlertCircle aria-hidden="true" className="h-4 w-4 text-amber-700 dark:text-amber-500" />
-            {t('manager.readOnlyNotice')}
-          </CardContent>
-        </Card>
+        // I2 follow-up fix — this notice is INFORMATIONAL ("you're in
+        // read-only mode"), not a warning; raw amber read as a warning
+        // tone. `InlineAlert tone="info"` matches the semantic-color
+        // token, `role="status"` preserved from the original CardContent.
+        <InlineAlert tone="info" role="status" className="mt-3">
+          <Eye aria-hidden="true" />
+          <InlineAlertDescription>{t('manager.readOnlyNotice')}</InlineAlertDescription>
+        </InlineAlert>
       ) : null}
 
       {TIER_BUCKETS.map((b) => {
@@ -624,6 +499,7 @@ export function ScheduleEditor({
         return (
           <TabsContent key={b} value={b} className="mt-4">
             <div className="flex flex-col gap-4">
+              <ReminderTimeline tierBucket={b} steps={steps} />
               {steps.length === 0 ? (
                 /*
                  * J8-M28: replaced the bare-text "No schedule policies"
@@ -642,7 +518,7 @@ export function ScheduleEditor({
                       type="button"
                       variant="outline"
                       disabled={readOnly}
-                      onClick={() => replaceSteps(b, [emptyStep()])}
+                      onClick={() => replaceSteps(b, [emptyStep(b, steps)])}
                     >
                       <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
                       {t('actions.addStep')}
@@ -651,22 +527,27 @@ export function ScheduleEditor({
                 />
               ) : null}
               {steps.map((step, idx) => (
-                <StepRow
-                  // K5: previously `${b}-${idx}` — array-index keys
-                  // make React reconciliation diff by position, so when
-                  // admin clicks Move-up/Move-down the input field
-                  // values appeared to swap (state stayed bound to the
-                  // index that no longer pointed at the same step).
-                  // step_id is unique-per-row (enforced by `emptyStep()`
-                  // via `crypto.randomUUID()`) and stable across
-                  // reorders — React now correctly tracks the same
-                  // logical row even when its index changes.
-                  key={`${b}-${step.step_id}`}
+                <StepCard
+                  // K5: previously `${b}-${idx}` — array-index keys make
+                  // React reconciliation diff by position, so when admin
+                  // clicks Move-up/Move-down the input field values
+                  // appeared to swap (state stayed bound to the index
+                  // that no longer pointed at the same step).
+                  //
+                  // v3 rework (Change 3): `${b}-${step.step_id}` (the K5
+                  // fix) was itself a bug — `step_id` is recomposed on
+                  // every timing/channel edit (including every keystroke
+                  // in the new custom-day input), so the key changed
+                  // mid-edit and remounted the card, dropping focus.
+                  // `_uiKey` is generated once per step and never
+                  // recomputed on edit — see its doc comment above.
+                  key={step._uiKey}
                   tierBucket={b}
                   step={step}
                   index={idx}
                   total={steps.length}
                   readOnly={readOnly}
+                  siblingSteps={steps.filter((_, i) => i !== idx)}
                   onChange={(next) => {
                     const arr = [...steps];
                     arr[idx] = next;
@@ -707,6 +588,11 @@ export function ScheduleEditor({
                     arr[idx - 1] = cur;
                     arr[idx] = prev;
                     replaceSteps(b, arr);
+                    // I3 — new 1-based position of the step that just moved
+                    // (0-based idx-1, so 1-based is idx).
+                    setReorderAnnouncement(
+                      t('reorder.announce', { position: idx, total: steps.length }),
+                    );
                   }}
                   onMoveDown={() => {
                     if (idx === steps.length - 1) return;
@@ -716,6 +602,11 @@ export function ScheduleEditor({
                     arr[idx] = nxt;
                     arr[idx + 1] = cur;
                     replaceSteps(b, arr);
+                    // I3 — new 1-based position (0-based idx+1, so 1-based
+                    // is idx+2).
+                    setReorderAnnouncement(
+                      t('reorder.announce', { position: idx + 2, total: steps.length }),
+                    );
                   }}
                 />
               ))}
@@ -737,7 +628,7 @@ export function ScheduleEditor({
                     type="button"
                     variant="outline"
                     disabled={readOnly || pending}
-                    onClick={() => replaceSteps(b, [...steps, emptyStep()])}
+                    onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
                   >
                     <Plus aria-hidden="true" className="mr-1 h-4 w-4" />
                     {t('actions.addStep')}

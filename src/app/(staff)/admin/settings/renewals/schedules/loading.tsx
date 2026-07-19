@@ -25,6 +25,8 @@ export default async function Loading() {
             <Skeleton key={i} className="h-9 w-28" />
           ))}
         </div>
+        {/* timeline-strip placeholder (horizontal journey Stepper) */}
+        <Skeleton className="h-28 w-full rounded-md" />
         {/* 3 step-row placeholders */}
         {Array.from({ length: 3 }).map((_, i) => (
           <Card key={i}>
