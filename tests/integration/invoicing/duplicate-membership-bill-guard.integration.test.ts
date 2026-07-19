@@ -86,6 +86,10 @@ describe('duplicate membership-bill guard (live Neon)', () => {
       planId,
       planYear: PLAN_YEAR,
       autoEmailOnIssue: false,
+      // Every test here plays the ADMIN "New invoice" surface, which opts
+      // into the check on every submit. Callers that omit the policy (the
+      // void-on-reissue chain) skip it entirely — pinned in the unit suite.
+      duplicatePolicy: 'refuse',
       ...overrides,
     } as CreateInvoiceDraftInput;
   }
@@ -215,7 +219,7 @@ describe('duplicate membership-bill guard (live Neon)', () => {
     const first = await draft(memberId);
     if (!first.ok) throw new Error('seed draft failed');
 
-    const second = await draft(memberId, { acknowledgeDuplicate: true });
+    const second = await draft(memberId, { duplicatePolicy: 'acknowledged' });
     if (!second.ok) throw new Error(`ack should proceed: ${JSON.stringify(second.error)}`);
     expect(String(second.value.invoiceId)).not.toBe(String(first.value.invoiceId));
 

@@ -151,13 +151,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     planYear: parsed.data.plan_year,
     autoEmailOnIssue: parsed.data.auto_email_on_issue ?? null,
     ...(membershipCoverage ? { membershipCoverage } : {}),
-    // Forwarded only when literally `true` — never `?? false`, so the
-    // use-case sees `undefined` (its refuse-by-default) rather than an
-    // explicit negative that a future refactor might misread as "considered
-    // and declined".
-    ...(parsed.data.acknowledge_duplicate === true
-      ? { acknowledgeDuplicate: true as const }
-      : {}),
+    // This route is the one INTERACTIVE membership-invoice surface — there is
+    // a human here to ask — so it always opts into the duplicate check.
+    // `'acknowledged'` only when the client sent the literal boolean `true`,
+    // which the form does solely from the confirmation dialog after showing
+    // the operator the existing document. Everything else is `'refuse'`.
+    duplicatePolicy:
+      parsed.data.acknowledge_duplicate === true ? ('acknowledged' as const) : ('refuse' as const),
   });
 
   const result = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenantCtx.slug), input);

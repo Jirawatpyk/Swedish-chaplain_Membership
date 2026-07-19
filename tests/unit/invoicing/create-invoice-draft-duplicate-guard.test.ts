@@ -153,12 +153,15 @@ const baseInput = {
   planYear: 2026,
 };
 
+/** What the admin "New invoice" route sends on an ordinary submit. */
+const refuseInput = { ...baseInput, duplicatePolicy: 'refuse' as const };
+
 describe('createInvoiceDraft — deliberate-duplicate guard', () => {
   describe('refuse by default', () => {
     it('refuses when the member already holds a live membership bill for the plan year', async () => {
       const h = makeHarness(EXISTING_ISSUED_BILL);
 
-      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(refuseInput));
 
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('unreachable');
@@ -171,7 +174,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
       // field the UI needs to render + deep-link the existing invoice.
       const h = makeHarness(EXISTING_ISSUED_BILL);
 
-      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(refuseInput));
 
       if (result.ok) throw new Error('expected refusal');
       expect(result.error).toEqual({
@@ -194,7 +197,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
         totalSatang: null,
       });
 
-      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+      const result = await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(refuseInput));
 
       if (result.ok) throw new Error('expected refusal');
       if (result.error.code !== 'duplicate_membership_invoice') throw new Error('wrong code');
@@ -209,7 +212,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
       // emit a false audit row. Pin the placement, not just the return value.
       const h = makeHarness(EXISTING_ISSUED_BILL);
 
-      await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+      await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(refuseInput));
 
       expect(h.insertDraft).not.toHaveBeenCalled();
       expect(h.emit).not.toHaveBeenCalled();
@@ -218,7 +221,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
     it('asks about exactly the (tenant, member, plan_year) it is about to mint, on the caller tx', async () => {
       const h = makeHarness(null);
 
-      await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+      await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(refuseInput));
 
       expect(h.findLive).toHaveBeenCalledWith({ tag: 'the-tx' }, {
         tenantId: 'test-swecham',
@@ -234,7 +237,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
 
       const result = await createInvoiceDraft(
         h.deps,
-        createInvoiceDraftSchema.parse({ ...baseInput, acknowledgeDuplicate: true }),
+        createInvoiceDraftSchema.parse({ ...baseInput, duplicatePolicy: 'acknowledged' }),
       );
 
       expect(result.ok).toBe(true);
@@ -248,7 +251,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
 
       await createInvoiceDraft(
         h.deps,
-        createInvoiceDraftSchema.parse({ ...baseInput, acknowledgeDuplicate: true }),
+        createInvoiceDraftSchema.parse({ ...baseInput, duplicatePolicy: 'acknowledged' }),
       );
 
       expect(h.emit).toHaveBeenCalledTimes(1);
@@ -271,7 +274,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
 
       await createInvoiceDraft(
         h.deps,
-        createInvoiceDraftSchema.parse({ ...baseInput, acknowledgeDuplicate: true }),
+        createInvoiceDraftSchema.parse({ ...baseInput, duplicatePolicy: 'acknowledged' }),
       );
 
       const emitted = h.emit.mock.calls[0]![1] as { payload: Record<string, unknown> };
@@ -280,28 +283,55 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
     });
   });
 
-  describe('the acknowledgement cannot be set by accident', () => {
+  describe('the policy cannot be set by accident', () => {
     it.each([
       ['the string "true"', 'true'],
-      ['the string "false"', 'false'],
+      ['the boolean true', true],
       ['the number 1', 1],
-      ['the boolean false', false],
-      ['the string "1"', '1'],
-    ])('rejects %s — only the JSON boolean true is accepted', (_label, value) => {
+      ['an unknown policy name', 'allow'],
+      ['an empty string', ''],
+    ])('rejects %s — only the two named policies are accepted', (_label, value) => {
+      // Coercion resistance at the WIRE boundary (`acknowledge_duplicate:
+      // z.literal(true)`) is pinned in
+      // tests/contract/invoices/create-draft-duplicate-ack.contract.test.ts.
+      // Here the point is that the internal policy is a closed enum, so a
+      // truthy value can never be read as "acknowledged".
       const parsed = createInvoiceDraftSchema.safeParse({
         ...baseInput,
-        acknowledgeDuplicate: value,
+        duplicatePolicy: value,
       });
       expect(parsed.success).toBe(false);
     });
+  });
 
-    it('defaults to REFUSE when the field is absent', async () => {
+  describe('callers that did NOT opt in are unaffected', () => {
+    it('does not even query when duplicatePolicy is absent', async () => {
+      // `createInvoiceDraft` is shared. void-on-reissue
+      // (issueMembershipBill / issueInvoiceForRenewal) legitimately drafts a
+      // REPLACEMENT bill while the superseded one is still `issued` — voiding
+      // the old one is the NEXT step. An always-on guard here would break
+      // that shipped path, so an absent policy must skip the check entirely,
+      // not merely tolerate a hit.
       const h = makeHarness(EXISTING_ISSUED_BILL);
-      const parsed = createInvoiceDraftSchema.parse(baseInput);
-      expect(parsed.acknowledgeDuplicate).toBeUndefined();
 
-      const result = await createInvoiceDraft(h.deps, parsed);
-      expect(result.ok).toBe(false);
+      const result = await createInvoiceDraft(
+        h.deps,
+        createInvoiceDraftSchema.parse(baseInput),
+      );
+
+      expect(result.ok).toBe(true);
+      expect(h.findLive).not.toHaveBeenCalled();
+      expect(h.insertDraft).toHaveBeenCalledTimes(1);
+    });
+
+    it('records a non-opted-in draft as NOT an acknowledged duplicate', async () => {
+      const h = makeHarness(EXISTING_ISSUED_BILL);
+
+      await createInvoiceDraft(h.deps, createInvoiceDraftSchema.parse(baseInput));
+
+      const emitted = h.emit.mock.calls[0]![1] as { payload: Record<string, unknown> };
+      expect(emitted.payload.acknowledged_duplicate).toBe(false);
+      expect(emitted.payload.acknowledged_duplicate_of_invoice_id).toBeNull();
     });
   });
 
@@ -311,7 +341,7 @@ describe('createInvoiceDraft — deliberate-duplicate guard', () => {
 
       const result = await createInvoiceDraft(
         h.deps,
-        createInvoiceDraftSchema.parse({ ...baseInput, acknowledgeDuplicate: true }),
+        createInvoiceDraftSchema.parse({ ...baseInput, duplicatePolicy: 'acknowledged' }),
       );
 
       if (result.ok) throw new Error('expected refusal');

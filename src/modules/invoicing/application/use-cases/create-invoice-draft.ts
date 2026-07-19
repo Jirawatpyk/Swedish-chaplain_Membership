@@ -50,23 +50,34 @@ export const createInvoiceDraftSchema = z.object({
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
   /**
-   * Deliberate-duplicate override. A member CAN legitimately hold two live
-   * membership invoices in the same plan year — but it must be deliberate,
-   * never accidental. Absent/undefined (the default on every caller that has
-   * not thought about it) means REFUSE on a duplicate.
+   * How this caller wants an existing live membership invoice for the same
+   * (tenant, member, plan_year) handled. A member CAN legitimately hold two
+   * live membership invoices in one plan year — but on an INTERACTIVE
+   * surface it must be deliberate, never accidental.
    *
-   * `z.literal(true)` — NOT `z.boolean()` and never a coerced string. The
-   * only accepted value is the JSON boolean `true`, so this cannot be set by
-   * a stray `"false"`, `0`, `"0"`, or any other truthy-string smuggling
-   * through a query string or form encoding. There is no default-on path.
+   *   - absent         — do not check. The caller has already established
+   *                      whether a second bill is correct.
+   *   - 'refuse'       — refuse with `duplicate_membership_invoice`, carrying
+   *                      the existing document so a human can decide.
+   *   - 'acknowledged' — a human was shown the existing document and chose to
+   *                      proceed; the override is recorded in the audit payload.
    *
-   * Only the admin "New invoice" surface may set it, and only after showing
-   * the operator the existing invoice's details. Automated and renewal
-   * callers (`confirmRenewal`, `adminRenewLapsedMember`, the auto-draft cron,
-   * `markPaidOffline`) must NEVER pass it — a duplicate there is always a bug
-   * and their own guards refuse hard with no override.
+   * WHY ABSENT MEANS "DO NOT CHECK", rather than the safer-sounding default
+   * of always checking: `createInvoiceDraft` is shared, and the void-on-
+   * reissue chain legitimately mints a second live bill for a plan year.
+   * `issueMembershipBill` / `issueInvoiceForRenewal` draft the REPLACEMENT
+   * bill while the superseded one is still `issued` — voiding the old one is
+   * the step AFTER this one. An always-on guard here would break that shipped
+   * path. The automated/renewal callers are not left unprotected:
+   * `confirmRenewal`, `adminRenewLapsedMember`, the auto-draft cron and
+   * `markPaidOffline` each carry their own hard, non-overridable duplicate
+   * guard, sited where they can tell a deliberate reissue from a mistake.
+   *
+   * So this field really marks "there is a human here to ask" — which is why
+   * only the admin "New invoice" route sets it, and why it sets it on EVERY
+   * submit rather than only when it suspects a duplicate.
    */
-  acknowledgeDuplicate: z.literal(true).optional(),
+  duplicatePolicy: z.enum(['refuse', 'acknowledged']).optional(),
   /**
    * F8-completion Slice 1 (FR-022) — RENEWAL signal. When present, the
    * draft is a §86/4 renewal invoice and the membership line is billed
@@ -147,8 +158,9 @@ export type CreateInvoiceDraftError =
    * "duplicate exists" they would reflexively click through. `documentNumber`
    * and `totalSatang` are null when the existing invoice is itself a draft.
    *
-   * Recoverable by design: re-submitting with `acknowledgeDuplicate: true`
-   * proceeds and records the override in the audit payload.
+   * Recoverable by design: re-submitting with
+   * `duplicatePolicy: 'acknowledged'` proceeds and records the override in
+   * the audit payload.
    */
   | {
       code: 'duplicate_membership_invoice';
@@ -242,9 +254,14 @@ export async function createInvoiceDraft(
     // --- Deliberate-duplicate guard ----------------------------------------
     //
     // A member CAN legitimately hold two live membership invoices in the same
-    // plan year — but it must be deliberate, never accidental. So this ASKS
-    // rather than forbids: refuse by default, proceed on an explicit
-    // acknowledgement, and record the override in the audit payload.
+    // plan year — but on an interactive surface it must be deliberate, never
+    // accidental. So this ASKS rather than forbids: refuse, and proceed only
+    // on an explicit acknowledgement that is recorded in the audit payload.
+    //
+    // Runs ONLY when the caller opted in via `duplicatePolicy` — see that
+    // field's note for why an always-on check here would break void-on-
+    // reissue, which drafts the replacement bill while the superseded one is
+    // still live. Automated callers carry their own hard guards instead.
     //
     // Why a guard and not a `(tenant_id, member_id, plan_year) WHERE
     // invoice_subject='membership' AND status <> 'void'` unique index (which
@@ -269,12 +286,16 @@ export async function createInvoiceDraft(
     // predicate: an invoice voided for correction has to stay freely
     // re-issuable, or a mis-issued document would fence the member out of
     // being billed at all.
-    const existingBill = await deps.invoiceRepo.findLiveMembershipBillInTx(tx, {
-      tenantId: input.tenantId,
-      memberId: input.memberId,
-      planYear: input.planYear,
-    });
-    const acknowledgedDuplicate = existingBill !== null && input.acknowledgeDuplicate === true;
+    const existingBill =
+      input.duplicatePolicy === undefined
+        ? null
+        : await deps.invoiceRepo.findLiveMembershipBillInTx(tx, {
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          });
+    const acknowledgedDuplicate =
+      existingBill !== null && input.duplicatePolicy === 'acknowledged';
     if (existingBill && !acknowledgedDuplicate) {
       return err({
         code: 'duplicate_membership_invoice',
