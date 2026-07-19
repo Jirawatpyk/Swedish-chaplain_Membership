@@ -202,6 +202,10 @@ function makeDeps(invoice: Invoice | null) {
       // Stubs for unused methods on the port — keep typing happy.
       withTx: vi.fn(),
       insertDraft: vi.fn(),
+      // Duplicate guard read — unused by this use case (only
+      // `createInvoiceDraft` calls it, and only when a caller opts in via
+      // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
+      findLiveMembershipBillInTx: vi.fn(async () => null),
       findByIdInTx: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),

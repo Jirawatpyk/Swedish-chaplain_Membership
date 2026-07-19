@@ -107,6 +107,10 @@ function makeDeps(invoice: Invoice | null) {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
+        // Duplicate guard read — unused by this use case (only
+        // `createInvoiceDraft` calls it, and only when a caller opts in via
+        // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
+        findLiveMembershipBillInTx: vi.fn(async () => null),
         findByIdInTx: vi.fn(),
         findById: vi.fn(async () => invoice),
         list: vi.fn(),
