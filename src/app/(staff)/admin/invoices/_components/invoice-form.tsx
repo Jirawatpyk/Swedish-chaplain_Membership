@@ -64,12 +64,47 @@ export type PlanOption = {
  * is itself still a draft — F4 allocates the §87 number and freezes totals at
  * issue, so an unnumbered duplicate is normal, not missing data.
  */
-type ExistingDuplicate = {
+export type ExistingDuplicate = {
   readonly invoiceId: string;
   readonly status: string;
   readonly documentNumber: string | null;
   readonly totalSatang: string | null;
 };
+
+/**
+ * Decide whether a failed POST /api/invoices response is the recoverable
+ * duplicate refusal, and if so extract the existing document to show.
+ *
+ * Extracted as a pure function because it carries the only real branching in
+ * the duplicate flow, and the AlertDialog around it cannot be exercised in
+ * jsdom (Base UI dialog portals do not mount there — this repo covers dialog
+ * mechanics in Playwright, see tests/e2e/destructive-confirm.spec.ts).
+ *
+ * Returns null for every other error code AND for a duplicate response whose
+ * `existing` block is incomplete: a confirmation dialog rendered with blanks
+ * where the document number and amount should be is worse than the ordinary
+ * error toast, because it asks the admin to make an informed decision while
+ * withholding the information.
+ */
+export function parseDuplicateRefusal(body: unknown): ExistingDuplicate | null {
+  const error = (body as { error?: { code?: unknown; existing?: unknown } } | null)?.error;
+  if (!error || error.code !== 'duplicate_membership_invoice') return null;
+  const existing = error.existing as Partial<Record<string, unknown>> | undefined;
+  const invoiceId = existing?.invoice_id;
+  const status = existing?.status;
+  if (typeof invoiceId !== 'string' || invoiceId === '') return null;
+  if (typeof status !== 'string' || status === '') return null;
+  const documentNumber = existing?.document_number;
+  const totalSatang = existing?.total_satang;
+  return {
+    invoiceId,
+    status,
+    // Null is MEANINGFUL here (the existing invoice is a draft, so it has no
+    // §87 number and no frozen total yet) — not missing data to paper over.
+    documentNumber: typeof documentNumber === 'string' ? documentNumber : null,
+    totalSatang: typeof totalSatang === 'string' ? totalSatang : null,
+  };
+}
 
 function formatSatang(satang: number): string {
   const whole = Math.floor(satang / 100);
@@ -334,16 +369,9 @@ export function CreateDraftForm({
         // deliberate. Anything the server didn't fully describe falls through
         // to the ordinary toast below rather than opening a dialog with
         // blanks in it.
-        const existing = (
-          body as { error?: { existing?: Partial<ExistingDuplicate> } }
-        )?.error?.existing;
-        if (code === 'duplicate_membership_invoice' && existing?.invoiceId && existing.status) {
-          setDuplicate({
-            invoiceId: existing.invoiceId,
-            status: existing.status,
-            documentNumber: existing.documentNumber ?? null,
-            totalSatang: existing.totalSatang ?? null,
-          });
+        const existing = parseDuplicateRefusal(body);
+        if (existing) {
+          setDuplicate(existing);
           return;
         }
         // Cluster 5 (Finding 3) — a freshly-imported member whose plan-year or
@@ -465,10 +493,16 @@ export function CreateDraftForm({
       >
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>{tDup('title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {tDup('description', { year: planYear })}
-            </AlertDialogDescription>
+            {/*
+              `year` is passed as a STRING on purpose: ICU formats a numeric
+              argument with the locale's number rules, which would print the
+              plan year as "2,026". A year is an identifier, not a quantity.
+              Caught by the real-en.json render convention, not by typecheck.
+            */}
+            <AlertDialogTitle>
+              {tDup('title', { year: String(planYear) })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{tDup('description')}</AlertDialogDescription>
           </AlertDialogHeader>
 
           {duplicate && (
