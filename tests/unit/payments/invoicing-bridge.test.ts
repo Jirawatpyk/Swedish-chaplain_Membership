@@ -39,7 +39,28 @@ const f4Mock = vi.hoisted(() => ({
   makeGetInvoiceDeps: vi.fn(() => ({})),
 }));
 
-vi.mock('@/modules/invoicing', () => f4Mock);
+// F-4 (money-remediation Task 7) — the bridge now also derives §105
+// creditability, so it imports `inferEventDocumentKind` +
+// `resolveBuyerIsVatRegistrant` from this same barrel. A mock factory that
+// omits them makes both `undefined`, and the bridge's call throws into its own
+// catch — surfacing as a bogus `invalid_total` rather than a missing-export
+// error. (That is exactly how this file failed when the fields were added.)
+//
+// They are wired to their REAL implementations, not stubs: the whole point of
+// the derivation is that the pre-flight and F4's own credit gate share ONE
+// discriminator, so a stub here would test the opposite of the invariant.
+// Safe to import for real — `document-kind.ts` is pure Domain (Principle III:
+// zero framework/ORM imports), so it drags in no DB or server-only module.
+vi.mock('@/modules/invoicing', async () => {
+  const docKind = await vi.importActual<
+    typeof import('@/modules/invoicing/domain/document-kind')
+  >('@/modules/invoicing/domain/document-kind');
+  return {
+    ...f4Mock,
+    inferEventDocumentKind: docKind.inferEventDocumentKind,
+    resolveBuyerIsVatRegistrant: docKind.resolveBuyerIsVatRegistrant,
+  };
+});
 
 // Import AFTER vi.mock so the bridge sees the mock.
 async function loadBridge() {
@@ -306,6 +327,94 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
     // The tx is threaded as the 2nd arg of makeGetInvoiceDeps.
     expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, sentinelTx);
   });
+
+  // F-4 (money-remediation Task 7) — the three new axes are DERIVED here, off
+  // the invoice already in hand. The §105 axis in particular cannot be reached
+  // from the payments integration suite without seeding a full F6 event +
+  // event_registration (the `invoices_subject_fields_ck` CHECK requires both),
+  // so this is where that derivation is pinned.
+  const derivationCases = [
+    {
+      name: 'membership invoice → creditable (§86/4 tax invoice)',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRendered: true, status: 'paid' },
+    },
+    {
+      name: 'event invoice, NON-registrant buyer → NOT creditable (§105 receipt)',
+      invoice: {
+        invoiceSubject: 'event',
+        memberId,
+        // A passport number in `tax_id` must NOT read as VAT-registrant — the
+        // gate keys on the recorded registrant flag, never on TIN presence.
+        memberIdentitySnapshot: { tax_id: 'AA1234567', buyer_is_vat_registrant: false },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: false, receiptRendered: true, status: 'paid' },
+    },
+    {
+      name: 'event invoice, VAT-registrant buyer → creditable',
+      invoice: {
+        invoiceSubject: 'event',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRendered: true, status: 'paid' },
+    },
+    {
+      name: 'receipt PDF still pending → receiptRendered false',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'pending',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRendered: false, status: 'paid' },
+    },
+    {
+      name: 'voided invoice → status surfaced verbatim',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'rendered',
+        status: 'void',
+      },
+      expected: { creditable: true, receiptRendered: true, status: 'void' },
+    },
+  ];
+
+  for (const c of derivationCases) {
+    it(`F-4 derivation — ${c.name}`, async () => {
+      f4Mock.getInvoice.mockResolvedValueOnce(
+        ok({
+          id: invoiceId,
+          total: { satang: 107_000n },
+          creditedTotal: { satang: 0n },
+          ...c.invoice,
+        }),
+      );
+
+      const bridge = await loadBridge();
+      const result = await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.creditable).toBe(c.expected.creditable);
+        expect(result.value.receiptRendered).toBe(c.expected.receiptRendered);
+        expect(result.value.status).toBe(c.expected.status);
+      }
+    });
+  }
 });
 
 // B.2 (tax#5) — `getInvoiceStatus` wraps F4's `getInvoice` and returns the
