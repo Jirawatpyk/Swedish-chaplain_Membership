@@ -50,6 +50,7 @@ import { TablePagination } from '@/components/layout/table-pagination';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { InvoicesTable, type InvoicesTableRow } from './_components/invoice-table';
+import { isAutoRenewalQueueView } from './_components/queue-view';
 import { InvoiceFilters } from './_components/invoice-filters';
 import { CsvExportDialog } from './_components/csv-export-dialog';
 
@@ -161,8 +162,11 @@ interface SearchParams {
    * 107-auto-invoice Task 13 — `?origin=manual|auto_renewal` restricts the
    * list to invoices drafted by a human vs. the daily cron. Honoured ONLY
    * when `FEATURE_AUTO_INVOICE` is on (mirrors the 088 tax-document filter
-   * gating above). `auto_renewal` is the admin review-queue entry point —
-   * it forces drafts into view (BUG-015) regardless of the `status` filter.
+   * gating above). Origin is a PLAIN filter: the review queue proper is
+   * `origin=auto_renewal` AND `status=draft` (see `isAutoRenewalQueueView`),
+   * and the Origin select pushes both. `origin=auto_renewal` with any other
+   * status lists those invoices under the ordinary list framing — drafts stay
+   * visible either way (BUG-015).
    */
   readonly origin?: string;
 }
@@ -232,6 +236,20 @@ export default async function AdminInvoicesPage({
   // downstream reads that branch on `includeDrafts` (`needsMemberDirectory`
   // below) rather than only the outbound repo call.
   const includeDrafts = statusFilter === 'draft' || originFilter === 'auto_renewal';
+  // Verdict F1 — the review queue is `origin='auto_renewal' AND status='draft'`
+  // (the definition the comment above and `listInvoicesPaged` both already
+  // state). Keying the queue CHROME on origin alone made mixed-status the
+  // default and only rendering: a paid FY2025 §86/4 wore a red `critical`
+  // "Would be refused — coverage has lapsed" badge, and the table announced
+  // "List of auto-renewal drafts awaiting review" to screen readers over
+  // legally-final tax documents. Origin remains a plain filter — auto-renewal
+  // with any other status lists those invoices under the ordinary list framing.
+  // Declared HERE (not at the render site) so the per-row F8 enrichment below
+  // can gate on it too and never compute a refusal verdict for a paid document.
+  const isQueueView = isAutoRenewalQueueView({
+    origin: originFilter,
+    status: statusFilter,
+  });
   const paidOnlineOnly = query.paidOnline === '1';
   // 088 T021b / FR-035 — the command-palette "Record payment for …" action
   // deep-links to ?status=issued&pay=1. The action is generic (no specific
@@ -382,7 +400,7 @@ export default async function AdminInvoicesPage({
   // block as "unresolved" instead of a false-clean signal.
   const queueMetaById: ReadonlyMap<string, AutoRenewalQueueRowMeta> = await (async () => {
     if (
-      originFilter !== 'auto_renewal' ||
+      !isQueueView ||
       !invoicesResult.ok ||
       invoicesResult.value.rows.length === 0
     ) {
@@ -617,7 +635,7 @@ export default async function AdminInvoicesPage({
         // degrades. Prices are formatted HERE too (review A6) — the
         // client component never does money math.
         queueMeta:
-          originFilter === 'auto_renewal'
+          isQueueView
             ? (() => {
                 const meta = queueMetaById.get(r.invoiceId) ?? null;
                 const stalenessDays = Math.max(
@@ -664,11 +682,6 @@ export default async function AdminInvoicesPage({
     : [];
 
   const total = invoicesResult.ok ? invoicesResult.value.total : 0;
-
-  // Review A8 — the queue view gets its own heading/description so
-  // screen-reader + sighted users alike get "this is the auto-renewal
-  // review queue" orientation, not the generic invoices-list framing.
-  const isQueueView = originFilter === 'auto_renewal';
 
   return (
     <TableContainer>

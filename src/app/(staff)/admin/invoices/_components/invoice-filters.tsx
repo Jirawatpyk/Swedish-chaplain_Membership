@@ -12,6 +12,7 @@
 import { useCallback, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { originFilterPatch } from './queue-view';
 import { SearchIcon, XIcon, CheckIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -300,12 +301,18 @@ export function InvoiceFilters({
       </Select>
       {/* 107-auto-invoice Task 13 — origin filter (All origins / Manual /
           Auto-renewal queue). Rendered only when FEATURE_AUTO_INVOICE is on.
-          Selecting "Auto-renewal queue" is the review-queue entry point —
-          the page forces drafts into view for this value (BUG-015). */}
+          Selecting "Auto-renewal queue" is the review-queue entry point, so it
+          pushes `status=draft` alongside the origin: the queue IS drafts
+          (verdict F1 — keying the queue chrome on origin alone let paid §86/4
+          documents render as work items with a false "would be refused" badge
+          and a false "drafts awaiting review" screen-reader announcement).
+          Leaving the queue clears only that imposed `draft`. */}
       {showAutoInvoiceFilter && (
         <Select
           value={currentOrigin}
-          onValueChange={(v) => pushUrl({ origin: v && v !== 'all' ? v : null })}
+          onValueChange={(v) =>
+            pushUrl(originFilterPatch(v, searchParams.get('status')))
+          }
         >
           <SelectTrigger
             className="sm:w-[13rem]"
