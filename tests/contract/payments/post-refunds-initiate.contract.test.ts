@@ -460,6 +460,35 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     );
   });
 
+  // F-4 (money-remediation Task 7) — the three pre-flight refusals mirror F4's
+  // credit-note gates. They MUST be 409, never 502: money did not move, no
+  // orphaned Stripe refund exists, and retrying the identical request changes
+  // nothing. A 502 reads as retryable, and F-3 established that the retry click
+  // is exactly what turns a declined refund into a double payout.
+  //
+  // Each keeps a DISTINCT route code — the operator's next step differs per
+  // axis (check the invoice / permanent, escalate / just wait for the render),
+  // so collapsing them into one code would make the copy wrong for two thirds
+  // of the cases.
+  const preflightRefusals = [
+    { code: 'f4_preflight_invalid_status', error: { code: 'f4_preflight_invalid_status', status: 'void' } },
+    { code: 'f4_preflight_not_creditable', error: { code: 'f4_preflight_not_creditable' } },
+    { code: 'f4_preflight_receipt_not_rendered', error: { code: 'f4_preflight_receipt_not_rendered' } },
+  ] as const;
+
+  for (const c of preflightRefusals) {
+    it(`409 ${c.code} — F4 would decline the credit note; refused before Stripe`, async () => {
+      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(err(c.error));
+
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(VALID_BODY));
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect((body['error'] as Record<string, unknown>)['code']).toBe(c.code);
+    });
+  }
+
   it('429 rate_limited — admin 20/5min budget exceeded; carries Retry-After', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     const { rateLimiter } = await getMockedAuthDeps();
