@@ -16,18 +16,62 @@
  * predicate is application-layer defence-in-depth alongside RLS
  * (Constitution Principle I § 1).
  */
-import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { and, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
+import { db, runInTenant, type TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { invoicesTable } from '@/modules/invoicing';
 import type {
   HasUnpaidNotYetDueMembershipInvoiceInput,
   InvoiceDueBridge,
+  LiveMembershipBill,
+  LiveMembershipBillInput,
   OldestUnpaidMembershipInvoiceDueDateInput,
 } from '../../application/ports/invoice-due-bridge';
 
 export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridge {
   return {
+    async findLiveMembershipBillInTx(
+      tx: unknown,
+      input: LiveMembershipBillInput,
+    ): Promise<LiveMembershipBill | null> {
+      // Uses the CALLER's tx (the `*InTx` convention — see the port note):
+      // the caller holds a per-(tenant, cycle) advisory lock on that tx, and
+      // `runInTenant` here would take a second pooled connection that neither
+      // sees the lock's snapshot nor is safe to open mid-transaction.
+      // Tenant scope therefore rides the caller's `SET LOCAL
+      // app.current_tenant` GUC; the explicit `tenantId` predicate is
+      // application-layer defence-in-depth alongside RLS (Constitution
+      // Principle I § 1), matching the sibling reads below.
+      //
+      // `ne(status, 'void')` rather than an IN-list of live statuses: a future
+      // `invoiceStatusEnum` addition then defaults to BLOCKING (safe — refuse
+      // to mint a second tax document) instead of silently falling through the
+      // guard, which is the direction a §86/4 duplicate check must fail.
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoicesTable.invoiceId,
+          status: invoicesTable.status,
+        })
+        .from(invoicesTable)
+        .where(
+          and(
+            eq(invoicesTable.tenantId, input.tenantId),
+            eq(invoicesTable.memberId, input.memberId),
+            eq(invoicesTable.invoiceSubject, 'membership'),
+            eq(invoicesTable.planYear, input.planYear),
+            ne(invoicesTable.status, 'void'),
+          ),
+        )
+        // Deterministic pick so the id surfaced to the operator (and the
+        // deep-link in the toast) is stable across retries: newest first, so
+        // they land on the document they most recently dealt with.
+        .orderBy(sql`${invoicesTable.createdAt} DESC`)
+        .limit(1);
+      const row = rows[0];
+      return row ? { invoiceId: row.invoiceId, status: row.status } : null;
+    },
+
     async hasUnpaidNotYetDueMembershipInvoice(
       input: HasUnpaidNotYetDueMembershipInvoiceInput,
     ): Promise<boolean> {

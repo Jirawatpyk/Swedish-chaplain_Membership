@@ -56,7 +56,53 @@ export interface OldestUnpaidMembershipInvoiceDueDateInput {
   readonly sinceDueDate: string;
 }
 
+/**
+ * Duplicate-membership-bill guard (production defect fix) — the lookup key
+ * for "does this member already hold a live §86/4 for this plan year?".
+ *
+ * `planYear` is the value the settlement sites derive via
+ * `deriveFiscalYear(cycle.periodFrom)` and hand to the F4 chain, so the guard
+ * asks about exactly the document the chain is about to mint.
+ */
+export interface LiveMembershipBillInput {
+  readonly tenantId: string;
+  readonly memberId: string;
+  readonly planYear: number;
+}
+
+export interface LiveMembershipBill {
+  readonly invoiceId: string;
+  /** F4 `invoiceStatusEnum` value — never `'void'` (see the port method). */
+  readonly status: string;
+}
+
 export interface InvoiceDueBridge {
+  /**
+   * The member's existing LIVE membership bill for `planYear`, or `null`.
+   *
+   * "Live" = `status <> 'void'`, i.e. `draft` | `issued` | `paid` |
+   * `partially_credited` | `credited` all count. `void` deliberately does
+   * NOT: an invoice voided for correction has to stay re-issuable, otherwise
+   * a mis-issued document would fence the member out of settlement forever.
+   *
+   * Tx-threaded (`*InTx` convention) because the only caller runs inside a
+   * `runInTenant` block that already holds a per-(tenant, cycle) advisory
+   * lock — opening a second pooled connection there would both miss the
+   * lock's snapshot and risk self-deadlock.
+   *
+   * Exists because F4 enforces no such invariant: the `event` invoice
+   * subject got a partial unique index in migration 0201
+   * (`invoices_event_registration_uniq`), but the `membership` subject never
+   * got the analogous `(tenant_id, member_id, plan_year) WHERE
+   * invoice_subject='membership' AND status <> 'void'`, and
+   * `createInvoiceDraft` has no duplicate branch in its error union. Until
+   * that index exists this read IS the invariant.
+   */
+  findLiveMembershipBillInTx(
+    tx: unknown,
+    input: LiveMembershipBillInput,
+  ): Promise<LiveMembershipBill | null>;
+
   /**
    * `true` iff the member has at least one `invoice_subject='membership'`
    * invoice with `status='issued'` (unpaid — draft/paid/void/credited/

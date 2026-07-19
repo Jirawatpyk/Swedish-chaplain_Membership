@@ -144,6 +144,16 @@ function fakeDeps(args: {
     oldestUnpaidMembershipInvoiceDueDate: invoiceDueMock as never,
     // Plan-change Phase-2 probe (Step 2.5) — unused by lapseCyclesOnGraceExpiry.
     hasIssuedMembershipInvoiceForMemberInTx: (async () => null) as never,
+    // Duplicate-membership-bill guard — `lapseCyclesOnGraceExpiry` never
+    // calls this (it mints no invoices). Throwing rather than returning
+    // `null` keeps the stub honest: if the lapse cron ever starts consulting
+    // it, these tests fail loudly instead of silently exercising a
+    // "no existing bill" answer nobody chose.
+    findLiveMembershipBillInTx: (async () => {
+      throw new Error(
+        'findLiveMembershipBillInTx is not part of the lapse-cron contract',
+      );
+    }) as never,
   };
 
   const findByTenantMock = vi.fn(async () =>

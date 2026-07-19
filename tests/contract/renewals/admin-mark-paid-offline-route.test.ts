@@ -211,6 +211,29 @@ describe('POST /api/admin/renewals/[cycleId]/mark-paid-offline — contract', ()
     expect(body.error.current_status).toBe('completed');
   });
 
+  // Duplicate-membership-bill guard — the refusal must reach the operator as
+  // an ACTIONABLE 409 carrying the existing invoice id, not a generic failure:
+  // the UI deep-links that id so they can record the payment against the
+  // document that already exists. Distinct code from `f4_orphan_invoice`
+  // because nothing was minted here.
+  it('409 membership_bill_already_exists surfaces existing_invoice_id', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    markPaidOfflineMock.mockResolvedValueOnce(
+      err({
+        kind: 'membership_bill_already_exists',
+        existingInvoiceId: 'inv-existing-42',
+        existingStatus: 'issued',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('membership_bill_already_exists');
+    expect(body.error.existing_invoice_id).toBe('inv-existing-42');
+    expect(body.error.existing_status).toBe('issued');
+  });
+
   // Round 9 W-R8-5 — extend B-R7-1 stage-scrub coverage to the
   // f4_orphan_invoice 409 path. The 502 f4_failure path was already
   // pinned at line 183-209; the 409 path needs symmetric coverage so
