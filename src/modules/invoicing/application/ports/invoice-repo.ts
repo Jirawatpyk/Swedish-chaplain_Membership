@@ -14,6 +14,25 @@ import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-ob
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { VatTreatment } from '@/modules/invoicing/domain/policies/vat-treatment';
 
+/**
+ * The identifying facts about an already-existing live membership invoice —
+ * enough for an admin to recognise the document and decide whether a second
+ * one is deliberate. See `InvoiceRepo.findLiveMembershipBillInTx`.
+ */
+export interface LiveMembershipBillView {
+  readonly invoiceId: string;
+  /** F4 `invoiceStatusEnum` value — never `'void'` (see the port method). */
+  readonly status: InvoiceStatus;
+  /**
+   * The §87 sequential number, or the 088 pre-payment bill number when the
+   * tax-at-payment flow issued one. Null on a draft (numbers are allocated at
+   * issue), so the UI must render a "not yet numbered" affordance.
+   */
+  readonly documentNumber: string | null;
+  /** Grand total in satang. Null on a draft (totals freeze at issue). */
+  readonly totalSatang: bigint | null;
+}
+
 export interface InvoiceRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
   withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
@@ -105,6 +124,53 @@ export interface InvoiceRepo {
     eventRegistrationId: string,
     tenantId: string,
   ): Promise<InvoiceId | null>;
+
+  /**
+   * The member's existing LIVE membership invoice for `planYear`, or null —
+   * the `membership`-subject analogue of `findEventInvoiceIdByRegistration`
+   * above, which the `event` subject has had since 088.
+   *
+   * "Live" = `status <> 'void'`, i.e. `draft` | `issued` | `paid` |
+   * `partially_credited` | `credited` all count. `void` deliberately does
+   * NOT: an invoice voided for correction has to stay freely re-issuable,
+   * otherwise a mis-issued document would fence the member out of being
+   * billed at all. Expressed as `ne(status,'void')` rather than an IN-list of
+   * live statuses so that a future `invoiceStatusEnum` addition defaults to
+   * BLOCKING (safe — ask before minting a second tax document) instead of
+   * silently falling through the guard.
+   *
+   * Returns enough to let an admin SEE what already exists and make an
+   * informed decision — id, document number, amount, status — not merely
+   * "a duplicate exists". Both `documentNumber` and `totalSatang` are null on
+   * a DRAFT (F4 assigns the §87 sequential number and freezes totals at
+   * issue), which is itself the informative answer: `status` carries it.
+   *
+   * Tx-threaded (`*InTx`) because the only caller runs inside
+   * `createInvoiceDraft`'s `withTx` block and must read the same snapshot it
+   * is about to insert into. Mirrors `findLiveMembershipBillInTx` on the F8
+   * `InvoiceDueBridge` port, which asks the identical question from the
+   * renewal side — deliberately the same name and the same predicate so the
+   * two read as one rule, not two.
+   *
+   * NOTE — why this is a guard and not a unique index. The `event` subject
+   * got a partial unique index in migration 0201; `membership` deliberately
+   * does not. Today "one live bill per (member, plan_year)" happens to
+   * coincide with "one per membership term" only because every renewal cycle
+   * in production is 12 months. Introduce a shorter-term plan and two
+   * legitimate bills could share one plan year — a database constraint would
+   * then be flatly wrong and need a migration to undo. So the invariant lives
+   * here, where it can ASK rather than forbid: automated/renewal callers
+   * refuse hard on a hit, the admin path surfaces the existing document and
+   * lets a human acknowledge it.
+   */
+  findLiveMembershipBillInTx(
+    tx: unknown,
+    input: {
+      readonly tenantId: string;
+      readonly memberId: string;
+      readonly planYear: number;
+    },
+  ): Promise<LiveMembershipBillView | null>;
 
   /** List with cursor pagination. Drafts excluded by default. */
   list(

@@ -50,6 +50,24 @@ export const createInvoiceDraftSchema = z.object({
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
   /**
+   * Deliberate-duplicate override. A member CAN legitimately hold two live
+   * membership invoices in the same plan year — but it must be deliberate,
+   * never accidental. Absent/undefined (the default on every caller that has
+   * not thought about it) means REFUSE on a duplicate.
+   *
+   * `z.literal(true)` — NOT `z.boolean()` and never a coerced string. The
+   * only accepted value is the JSON boolean `true`, so this cannot be set by
+   * a stray `"false"`, `0`, `"0"`, or any other truthy-string smuggling
+   * through a query string or form encoding. There is no default-on path.
+   *
+   * Only the admin "New invoice" surface may set it, and only after showing
+   * the operator the existing invoice's details. Automated and renewal
+   * callers (`confirmRenewal`, `adminRenewLapsedMember`, the auto-draft cron,
+   * `markPaidOffline`) must NEVER pass it — a duplicate there is always a bug
+   * and their own guards refuse hard with no override.
+   */
+  acknowledgeDuplicate: z.literal(true).optional(),
+  /**
    * F8-completion Slice 1 (FR-022) — RENEWAL signal. When present, the
    * draft is a §86/4 renewal invoice and the membership line is billed
    * at the cycle's FROZEN price instead of the live F2 catalogue price
@@ -117,6 +135,28 @@ export type CreateInvoiceDraftError =
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
   | { code: 'plan_not_found' }
+  /**
+   * The member ALREADY holds a live (`status <> 'void'`) membership invoice
+   * for this plan year, and the caller did not acknowledge it. Minting
+   * another would produce a SECOND numbered §86/4 for one membership year —
+   * always a bug on an automated path, and on the admin path a decision only
+   * a human should make.
+   *
+   * Carries the existing document's identifying facts so the caller can show
+   * the admin WHAT already exists (and deep-link to it) rather than a bare
+   * "duplicate exists" they would reflexively click through. `documentNumber`
+   * and `totalSatang` are null when the existing invoice is itself a draft.
+   *
+   * Recoverable by design: re-submitting with `acknowledgeDuplicate: true`
+   * proceeds and records the override in the audit payload.
+   */
+  | {
+      code: 'duplicate_membership_invoice';
+      existingInvoiceId: string;
+      existingStatus: string;
+      existingDocumentNumber: string | null;
+      existingTotalSatang: bigint | null;
+    }
   | { code: 'invalid_line'; reason: string };
 // NOTE: a `plan_mismatch` variant is intentionally ABSENT — the
 // member/plan parity guard is UI-enforced today (the invoice form's Plan
