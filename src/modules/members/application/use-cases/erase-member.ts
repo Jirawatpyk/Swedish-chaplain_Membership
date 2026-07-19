@@ -25,6 +25,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { erasureMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -836,8 +837,24 @@ export async function eraseMember(
       // this block only gates the completion proof.
       allCascadesClean = false;
     }
-  } catch {
+  } catch (e) {
+    // The catch must log even though the adapter owns the cascade-detail log:
+    // this block only runs when the adapter threw OUTSIDE its own try/catch
+    // (a missing/misconfigured `deps.invoicingErasure`, a port later swapped
+    // for one that throws, a failing logger) — precisely the cases where the
+    // adapter logged NOTHING. Without this, the operator sees an erasure that
+    // never completes and a reconciler that re-drives forever, with no
+    // diagnosis, on a path carrying a statutory deadline.
     allCascadesClean = false;
+    logger.error(
+      {
+        err: errKind(e),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'f4_invoice_draft_discard',
+      },
+      'erase-member: invoicing draft-discard cascade threw',
+    );
   }
 
   // F1 linked-user erasure (US2a) — the keystone that closes the US1→US2
@@ -998,8 +1015,20 @@ export async function eraseMember(
     if (r.outcome !== 'ok') {
       allCascadesClean = false;
     }
-  } catch {
+  } catch (e) {
+    // Logs for the same reason as the F4 cascade above: the adapter logs
+    // before any throw it raises internally, so reaching here means it threw
+    // where it could not log (DI gap / swapped port / failing logger).
     allCascadesClean = false;
+    logger.error(
+      {
+        err: errKind(e),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'f6_event_registration_erasure',
+      },
+      'erase-member: event-registration cascade threw',
+    );
   }
 
   // COMP-1 / F9 — erase the member's insights DIRECTORY footprint: the
@@ -1019,8 +1048,18 @@ export async function eraseMember(
     if (r.outcome !== 'ok') {
       allCascadesClean = false;
     }
-  } catch {
+  } catch (e) {
+    // Logs for the same reason as the two cascades above — see the F4 block.
     allCascadesClean = false;
+    logger.error(
+      {
+        err: errKind(e),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'f9_directory_erasure',
+      },
+      'erase-member: directory cascade threw',
+    );
   }
 
   // COMP-1 US3-C — best-effort sub-processor erasure propagation. NON-BLOCKING

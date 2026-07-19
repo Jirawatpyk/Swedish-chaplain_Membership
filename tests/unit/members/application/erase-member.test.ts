@@ -18,6 +18,7 @@ import {
 } from '@/modules/members/application/use-cases/erase-member';
 import { asMemberId } from '@/modules/members';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { MemberErasureReason } from '@/modules/members/application/ports/broadcasts-content-scrub-port';
 import { buildEraseDeps } from './erase-member.fixtures';
 
@@ -394,6 +395,55 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
+  });
+
+  // Each of these three cascades previously caught with a bare `catch {}` that
+  // set the flag and logged NOTHING. The comment justifying that pointed at the
+  // adapter owning the cascade-detail log — true for the ordinary path, but
+  // this catch only fires when the adapter threw OUTSIDE its own try/catch (DI
+  // gap, a port later swapped for a throwing one, a failing logger), i.e.
+  // exactly when the adapter logged nothing. The operator was left with an
+  // erasure that never completes, a reconciler re-driving forever, and no
+  // diagnosis — on a path with a statutory deadline.
+  describe.each([
+    ['invoicingErasure', 'discardDraftsForMember', 'f4_invoice_draft_discard'],
+    ['eventRegistrationErasure', 'eraseAllForMember', 'f6_event_registration_erasure'],
+    ['directoryErasure', 'eraseForMember', 'f9_directory_erasure'],
+  ] as const)('a THROW from the %s cascade is logged', (port, method, cascade) => {
+    it(`logs cascade=${cascade} with the error CLASS, never the message`, async () => {
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      try {
+        const deps = buildEraseDeps();
+        // A message that would be a PII/SQL-leak vector if it were logged.
+        (deps[port] as Record<string, unknown>)[method] = vi.fn(async () => {
+          throw new Error('boom secret@example.com');
+        });
+
+        const res = await eraseMember(
+          asMemberId('m-1'),
+          { reason: 'gdpr_erasure_request' },
+          META,
+          deps,
+        );
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+
+        const call = errorSpy.mock.calls.find(
+          (c) => (c[0] as { cascade?: string } | undefined)?.cascade === cascade,
+        );
+        expect(call).toBeDefined();
+        const ctx = call?.[0] as Record<string, unknown>;
+        expect(ctx.memberId).toBe('m-1');
+        expect(ctx.requestId).toBe(META.requestId);
+        // `errKind` — the error CLASS only. Logging `.message` here would put
+        // adapter-supplied text (Drizzle SQL fragments, member PII) into a log
+        // aggregator; see the rationale on `errKind` in src/lib/log-id.ts.
+        expect(ctx.err).toBe('Error');
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret@example.com');
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
   });
 
   it('records the discarded-draft count on the member_erased DPO payload', async () => {
