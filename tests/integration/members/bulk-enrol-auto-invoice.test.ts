@@ -34,6 +34,9 @@
  *   (g) Cross-tenant probe — a member id belonging to another tenant is
  *       invisible (`not_found`), and that foreign member is never
  *       mutated. Constitution Principle I mandatory isolation test.
+ *   (h) A GDPR/PDPA-erased member is bucketed `skippedErased` and never
+ *       stamped — `scrubPiiInTx` resets `auto_invoice_enrolled_at` to NULL
+ *       on erasure, and this path must not silently reverse that.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -65,6 +68,7 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
   const mAlready = randomUUID(); // already stamped → skippedAlready
   const mTerminated = randomUUID(); // lapsed cycle → access 'terminated' → skipped
   const mSuspended = randomUUID(); // awaiting_payment cycle → 'suspended' → enrolled
+  const mErased = randomUUID(); // GDPR-erased, no cycle → 'full' → skippedErased
   const mForeign = randomUUID(); // lives in otherTenant → invisible
 
   const cTerminated = randomUUID();
@@ -73,7 +77,11 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
   const seedMembers = async (
     t: TestTenant,
     plan: string,
-    specs: ReadonlyArray<{ memberId: string; enrolledAt: Date | null }>,
+    specs: ReadonlyArray<{
+      memberId: string;
+      enrolledAt: Date | null;
+      erasedAt?: Date | null;
+    }>,
   ) =>
     runInTenant(t.ctx, (tx) =>
       tx.insert(members).values(
@@ -81,11 +89,16 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
           tenantId: t.ctx.slug,
           memberId: m.memberId,
           memberNumber: nextSeedMemberNumber(),
-          companyName: `Enrol Co ${m.memberId.slice(0, 6)}`,
+          // Erasure scrubs `company_name` to '[erased]' but deliberately
+          // leaves `status` alone ("erasure is orthogonal to archive") — an
+          // erased member therefore still classifies `full` and is still
+          // selectable in the directory the bulk bar acts on.
+          companyName: m.erasedAt ? '[erased]' : `Enrol Co ${m.memberId.slice(0, 6)}`,
           country: 'TH' as const,
           planId: plan,
           planYear: 2026,
           autoInvoiceEnrolledAt: m.enrolledAt,
+          erasedAt: m.erasedAt ?? null,
         })),
       ),
     );
@@ -196,6 +209,7 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
       { memberId: mAlready, enrolledAt: ORIGINAL_ENROLLED_AT },
       { memberId: mTerminated, enrolledAt: null },
       { memberId: mSuspended, enrolledAt: null },
+      { memberId: mErased, enrolledAt: null, erasedAt: new Date('2026-06-01T00:00:00Z') },
     ]);
     await seedMembers(otherTenant, otherPlanId, [
       { memberId: mForeign, enrolledAt: null },
@@ -217,6 +231,7 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
           mAlready,
           mTerminated,
           mSuspended,
+          mErased,
           mForeign,
         ]),
       );
@@ -237,6 +252,7 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
       enrolled: 1,
       skippedAlready: 1,
       skippedTerminated: 1,
+      skippedErased: 0,
     });
 
     // (a) fresh member actually stamped
@@ -268,8 +284,38 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
       enrolled: 1,
       skippedAlready: 0,
       skippedTerminated: 0,
+      skippedErased: 0,
     });
     expect(await readEnrolledAt(tenant, mSuspended)).toBeInstanceOf(Date);
+  });
+
+  it('(h) ⛔ GDPR Art.17 — an ERASED member is never (re-)enrolled', async () => {
+    // `scrubPiiInTx` resets `auto_invoice_enrolled_at` to NULL on erasure with
+    // the comment "an erased member MUST NOT stay enrolled in automated
+    // billing". Without a gate here, a routine bulk enrol over the directory
+    // silently reverses that reset — erasure leaves `status='active'`, so the
+    // member is still listed, still selectable, and still classifies `full`.
+    const result = await bulkEnrolAutoInvoice(
+      { action: 'enrol_auto_invoice', member_ids: [mErased, mFresh] },
+      { actorUserId: user.userId, requestId: 'req-enrol-erased' },
+      deps(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // mFresh is already enrolled by (a) → skippedAlready. The buckets must
+    // still sum to member_ids.length (2).
+    expect(result.value).toEqual({
+      enrolled: 0,
+      skippedAlready: 1,
+      skippedTerminated: 0,
+      skippedErased: 1,
+    });
+
+    // The column stays NULL — the scrub's reset survives.
+    expect(await readEnrolledAt(tenant, mErased)).toBeNull();
+    // No audit row claiming we enrolled a data subject who exercised Art.17.
+    expect(await countEnrolAudits(mErased)).toBe(0);
   });
 
   it('(e) is idempotent — a second run skips and emits no new audit row', async () => {
@@ -287,6 +333,7 @@ describe('107-auto-invoice Task 15 — bulkEnrolAutoInvoice (live Neon)', () => 
       enrolled: 0,
       skippedAlready: 1,
       skippedTerminated: 0,
+      skippedErased: 0,
     });
     expect(await countEnrolAudits(mFresh)).toBe(before);
   });

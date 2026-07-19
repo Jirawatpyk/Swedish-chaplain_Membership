@@ -898,4 +898,71 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     );
     expect(rows.length).toBe(1);
   }, 120_000);
+
+  it('(l) ⛔ GDPR Art.17 — an ERASED member is refused, ABOVE the sibling sweep', async () => {
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    // A sibling auto-draft for the same (member, planYear). Its survival is
+    // what proves the erasure guard sits ABOVE `discardSupersededDrafts`:
+    // `return err(...)` inside `runInTenant` does NOT roll the tx back, so a
+    // guard placed below the sweep would COMMIT this row's deletion (and a
+    // `renewal_auto_draft_discarded` audit row) for an issue that never
+    // happened.
+    const siblingId = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+
+    // Erase. `scrubPiiInTx` keeps `status` and the cycle untouched ("erasure
+    // is orthogonal to archive") and stamps only `erased_at`, scrubbing
+    // `company_name` to '[erased]'. The cycle therefore stays `upcoming` with
+    // a FUTURE `expires_at`, so `deriveMembershipAccess` still returns `full`
+    // — the `member_terminated` gate provably does NOT catch this, which is
+    // the entire reason this guard has to exist separately.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ erasedAt: new Date('2026-07-01T00:00:00Z'), companyName: '[erased]' })
+        .where(
+          and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, memberId)),
+        ),
+    );
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_erased');
+
+    // No §86/4 number was minted and the draft is untouched.
+    const inv = await invoiceRow(tenant, invoiceId);
+    expect(inv?.status).toBe('draft');
+    expect(inv?.documentNumber).toBeNull();
+
+    // The cycle was neither flipped nor linked.
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('upcoming');
+    expect(cyc?.linkedInvoiceId).toBeNull();
+
+    // GUARD-ORDERING ASSERTION — the sibling must still be a live draft.
+    const sibling = await invoiceRow(tenant, siblingId);
+    expect(sibling?.status).toBe('draft');
+
+    // …and no supersede audit row was written for it.
+    const discardRows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'renewal_auto_draft_discarded' as never),
+        ),
+      );
+    const forSibling = discardRows.filter(
+      (r) => (r.payload as Record<string, unknown> | null)?.invoice_id === siblingId,
+    );
+    expect(forSibling.length).toBe(0);
+  }, 120_000);
 });
