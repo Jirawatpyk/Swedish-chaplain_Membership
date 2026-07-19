@@ -14,6 +14,16 @@
 #                       F4-ship-with-fixmes regression net erosion
 #                       class. Cheap (~1 sec).
 #
+#   - check:env-example : every key in the src/lib/env.ts zod schema
+#                       is documented in .env.example. The two files
+#                       had drifted by 14 keys before this gate
+#                       existed — including one that made
+#                       .env.example non-bootable when copied
+#                       verbatim. Belongs in pre-push because the
+#                       drift is introduced by the same commit that
+#                       adds the key. Cheap (~1 sec, no I/O beyond
+#                       two file reads).
+#
 #   - vitest payments contract : F5R3 H-5 contract drift class —
 #                       webhook Result<T,E> envelope +
 #                       WebhookSignatureError mock importActual.
@@ -33,6 +43,7 @@ pnpm check:layout
 pnpm check:template-seed
 pnpm check:fixme
 pnpm check:dates
+pnpm check:env-example
 pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================
