@@ -78,6 +78,7 @@ import { noopLogger } from '../ports/logger-port';
 import { retentionFor } from '../ports/audit-port';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
+import { commitTx, rollbackTx, runTxDecided } from '../settlement/tx-decision';
 import { paymentsMetrics } from '@/lib/metrics';
 
 // --- M-i bounds (module consts per Constitution X) --------------------------
@@ -142,18 +143,42 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_OLDER_THAN_HOURS = 720; // 30 days
 
 /**
- * Sentinel thrown to roll the per-row tx back when the F4 credit-note
- * bridge declines on the `succeeded` path (Stripe DEFINITIVELY confirmed
- * succeeded, so we must NOT mark the refund failed). The row stays pending
- * for the next sweep / webhook. `constructor.name` only surfaces in the
- * row-skip warn — no PII leaks.
+ * Ops-facing `errKind` label for the F4-credit-note-decline row skip.
+ *
+ * Preserved VERBATIM from the `SweepFinalizeError` sentinel this branch used
+ * to throw (money-remediation Task 2 replaced the throw with a
+ * `rollbackTx(...)` decision). It is a log label that dashboards, the runbook
+ * and `sweep-stale-pending-refunds.test.ts` all key on — the retrofit's
+ * contract is zero observable change, so the string stays put. Renaming it is
+ * a separate, deliberate change once those consumers are checked.
  */
-class SweepFinalizeError extends Error {
-  constructor(readonly detail: string) {
-    super('sweep refund finalize failed');
-    this.name = 'SweepFinalizeError';
-  }
-}
+const DIVERGENCE_ERR_KIND = 'SweepFinalizeError';
+
+/**
+ * Per-row outcome carried out of the transaction.
+ *
+ * `terminal_divergence` is the F4-credit-note-bridge decline on a
+ * Stripe-CONFIRMED `succeeded` refund: the money HAS moved, so the row must
+ * NOT be marked failed, and the transaction must unwind so the next sweep (or
+ * the webhook) can retry against the idempotent bridge.
+ *
+ * It travels as a VALUE rather than the old thrown sentinel so the outer
+ * `catch` no longer has to tell a deliberate refusal apart from a Neon fault
+ * by `instanceof` — `catch` now means "something broke", full stop.
+ */
+type SweepRowOutcome =
+  | { readonly kind: 'swept' }
+  | { readonly kind: 'skip' }
+  | {
+      readonly kind: 'terminal_divergence';
+      /**
+       * The declining bridge error code. Carried but deliberately NOT logged,
+       * because the sentinel it replaces also carried an unread `detail` and
+       * this retrofit changes no observable behaviour. Surfacing it is a
+       * free win for the forensic-emit task.
+       */
+      readonly detail: string;
+    };
 
 /**
  * Classify the retrieved Stripe refund status into the three transition
@@ -430,8 +455,9 @@ export async function sweepStalePendingRefunds(
     // have finalised it between our list-read and now → skip, NO false audit
     // → RR-1 invariant preserved by the under-lock re-check).
     try {
-      const outcome = await deps.paymentsRepo.withTx(
-        async (tx): Promise<'swept' | 'skip'> => {
+      const outcome = await runTxDecided<SweepRowOutcome>(
+        deps.paymentsRepo,
+        async (tx) => {
           const locked = await deps.refundsRepo.lockForUpdateByProcessorRefundId(
             tx,
             input.tenantId,
@@ -440,7 +466,9 @@ export async function sweepStalePendingRefunds(
           if (locked === null || locked.status !== 'pending') {
             // Concurrently finalised (or vanished) — idempotent skip. NO
             // audit emitted → no false stale/refund audit on a lost race.
-            return 'skip';
+            // Committed (not rolled back) to preserve the pre-retrofit
+            // behaviour exactly; nothing was written either way.
+            return commitTx({ kind: 'skip' });
           }
 
           if (cls.kind === 'succeeded') {
@@ -470,19 +498,22 @@ export async function sweepStalePendingRefunds(
             });
             if (!finalized.ok) {
               // F4 CN bridge declined. Stripe DEFINITIVELY says succeeded, so
-              // we must NOT mark the refund failed. Throw to roll the per-row
-              // tx back → the row stays pending → the next sweep (or the
-              // webhook) retries; the CN bridge is idempotent so a retry
-              // reconciles cleanly.
-              throw new SweepFinalizeError(finalized.error.code);
+              // we must NOT mark the refund failed. Unwind the per-row tx →
+              // the row stays pending → the next sweep (or the webhook)
+              // retries; the CN bridge is idempotent so a retry reconciles
+              // cleanly.
+              return rollbackTx({
+                kind: 'terminal_divergence',
+                detail: finalized.error.code,
+              });
             }
             if (finalized.value.siblingWon) {
               // A concurrent writer finalised first — it owns the CN, the
               // payment flip, the `refund_succeeded` audit AND the metric.
-              return 'skip';
+              return commitTx({ kind: 'skip' });
             }
             paymentsMetrics.refundSucceededCount(input.tenantId);
-            return 'swept';
+            return commitTx({ kind: 'swept' });
           }
 
           // cls.kind === 'failed' (Stripe settled failed | canceled). Flip
@@ -518,34 +549,29 @@ export async function sweepStalePendingRefunds(
             retentionYears: retentionFor('refund_failed'),
           });
           paymentsMetrics.refundFailedCount(input.tenantId, failureReasonCode);
-          return 'swept';
+          return commitTx({ kind: 'swept' });
         },
       );
-      if (outcome === 'swept') sweptCount += 1;
-      else skippedCount += 1;
-    } catch (cause) {
-      // Per-row tx rolled back (SweepFinalizeError on F4 decline OR a DB
-      // fault). Row stays pending for the next sweep. constructor.name only
-      // (no `.message`) — Postgres/Stripe errors can carry SQL params /
-      // partial values per the log-redact contract.
-      logger.warn('sweep_stale_pending_refunds.row_skipped', {
-        tenantId: input.tenantId,
-        refundId: row.id,
-        paymentId: row.paymentId,
-        errKind: cause instanceof Error ? cause.constructor.name : 'unknown',
-      });
-      skippedCount += 1;
-      // Round-2 review fix (#35): a `SweepFinalizeError` is the F4 credit-note
-      // bridge DECLINING on a Stripe-CONFIRMED `succeeded` refund (FEATURE_F4_
-      // INVOICING off, invoice hard-deleted, or a durable F4 fault). The money
-      // is refunded at Stripe but NO §86/4/§87 credit note is booked, and the
-      // row retries forever. Escalate it once aged past the threshold — the
-      // SAME ops signal the two other stuck-forever classes (missing_processor_
-      // refund_id / stripe_pending) already fire. A transient decline that
-      // clears on the next sweep never ages in, so no false page. A generic DB
-      // fault (non-SweepFinalizeError) is NOT escalated — it is most likely a
-      // transient Neon blip that the next sweep retries cleanly.
-      if (cause instanceof SweepFinalizeError) {
+
+      if (outcome.value.kind === 'terminal_divergence') {
+        // Per-row tx unwound by decision: the F4 credit-note bridge DECLINED
+        // on a Stripe-CONFIRMED `succeeded` refund (FEATURE_F4_INVOICING off,
+        // invoice hard-deleted, or a durable F4 fault). The money is refunded
+        // at Stripe but NO §86/4/§87 credit note is booked, and the row
+        // retries forever.
+        //
+        // Round-2 review fix (#35): escalate once aged past the threshold —
+        // the SAME ops signal the two other stuck-forever classes
+        // (missing_processor_refund_id / stripe_pending) already fire. A
+        // transient decline that clears on the next sweep never ages in, so
+        // no false page.
+        logger.warn('sweep_stale_pending_refunds.row_skipped', {
+          tenantId: input.tenantId,
+          refundId: row.id,
+          paymentId: row.paymentId,
+          errKind: DIVERGENCE_ERR_KIND,
+        });
+        skippedCount += 1;
         if (
           maybeEscalate(
             logger,
@@ -557,7 +583,26 @@ export async function sweepStalePendingRefunds(
         ) {
           escalatedCount += 1;
         }
+      } else if (outcome.value.kind === 'swept') {
+        sweptCount += 1;
+      } else {
+        skippedCount += 1;
       }
+    } catch (cause) {
+      // Reaching here now means a GENUINE fault — the deliberate F4-decline
+      // refusal is a value, handled above. Row stays pending for the next
+      // sweep. constructor.name only (no `.message`) — Postgres/Stripe errors
+      // can carry SQL params / partial values per the log-redact contract.
+      //
+      // NOT escalated: a generic DB fault is most likely a transient Neon
+      // blip that the next sweep retries cleanly.
+      logger.warn('sweep_stale_pending_refunds.row_skipped', {
+        tenantId: input.tenantId,
+        refundId: row.id,
+        paymentId: row.paymentId,
+        errKind: cause instanceof Error ? cause.constructor.name : 'unknown',
+      });
+      skippedCount += 1;
     }
   }
 

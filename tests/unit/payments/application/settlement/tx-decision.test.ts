@@ -12,11 +12,12 @@
  * (`tests/support/fake-tx.ts`), because a runner that cannot roll back can
  * only ever produce green tests about rollback.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   commitTx,
   rollbackTx,
   runTxDecided,
+  type TxRunner,
 } from '@/modules/payments/application/settlement/tx-decision';
 import { makeFakeTxRunner, recordWrite } from '../../../../support/fake-tx';
 
@@ -100,8 +101,16 @@ describe('runTxDecided', () => {
   it('passes the runner-supplied tx handle straight through to the callback', async () => {
     // The callback must write on the SAME tx the runner opened; handing it a
     // fresh connection is the documented RLS-bypass footgun.
+    //
+    // Declared as a generic method rather than `vi.fn` on purpose: a `vi.fn`
+    // wrapper collapses `R` to `unknown` and stops satisfying `TxRunner`,
+    // which is the port-shape drift this repo has been bitten by before.
     const handle = { marker: 'tx-handle' };
-    const runner = { withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(handle)) };
+    const runner: TxRunner = {
+      async withTx<R>(fn: (tx: unknown) => Promise<R>): Promise<R> {
+        return fn(handle);
+      },
+    };
 
     let seen: unknown;
     await runTxDecided(runner, async (tx) => {
