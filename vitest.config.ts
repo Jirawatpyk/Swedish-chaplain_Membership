@@ -78,6 +78,17 @@ export default defineConfig({
     // working when someone adds a fourth bulk contract file, which is the
     // failure mode a per-file fix would not survive.
     //
+    // This is a TRADE, not a pure win: read the wall-clock column above — the
+    // capped run is SLOWER end to end (84.8 s → 99.2 s on the repro). What it
+    // buys is determinism; the faster number is a run that FAILED. Accepted on
+    // that basis. If someone later reverts this for speed, they are re-buying
+    // the starvation failure, so re-measure both columns before deciding.
+    //
+    // Scope: this caps the DEFAULT (unit/contract) project only.
+    // `vitest.integration.config.ts` is deliberately untouched — it runs
+    // `pool: 'forks'` with `singleFork: true`, so it is already serialised and
+    // a worker cap there would be meaningless.
+    //
     // Percentage rather than a hard number so CI runners with a different
     // core count scale with the box instead of inheriting this laptop's 4.
     maxWorkers: '50%',

@@ -179,7 +179,9 @@ export type EraseMemberDeps = {
   // → the US2d reconciler re-drives.
   directoryErasure: DirectoryErasurePort;
   // COMP-1 §6.2 — F4 invoicing draft discard (post-commit best-effort).
-  // DISCARDS the member's `draft` invoices; RETAINS everything `issued` and
+  // DISCARDS EVERY `draft` invoice the member holds — auto-renewal,
+  // admin-created manual, and F6 event-fee alike (the scan filters on member +
+  // status and nothing else); RETAINS everything `issued` and
   // beyond. A draft carries no §87 sequence number and no statutory retention
   // duty, so Art. 5(1)(c) data-minimisation + Art. 17 apply cleanly; an issued
   // document is retained under the Thai RD §87/3 legal-obligation carve-out,
@@ -187,9 +189,10 @@ export type EraseMemberDeps = {
   // Without this cascade the draft SURVIVED erasure: the branch's `erased_at`
   // gates then refuse to issue it, leaving a permanently un-issuable red row in
   // the treasurer's review queue that only a manual Discard could clear. (The
-  // Task 11 prune cron reaches only `origin='auto_renewal'` drafts stamped on a
-  // cycle — never a manual or event draft, and never before the next daily
-  // pass.) A 'failed' outcome flips allCascadesClean=false → member_erased
+  // Task 11 prune cron is NOT a fallback for this: it reaches only
+  // `origin='auto_renewal'` drafts stamped on a cycle — never a manual or event
+  // draft, and never before the next daily pass. That narrowness is the PRUNE
+  // CRON's, not this cascade's; see the reach note above.) A 'failed' outcome flips allCascadesClean=false → member_erased
   // withheld → the US2d reconciler re-drives (the scan-and-discard is
   // idempotent).
   invoicingErasure: InvoicingErasurePort;

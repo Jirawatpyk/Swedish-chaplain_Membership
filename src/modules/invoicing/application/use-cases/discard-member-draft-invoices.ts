@@ -3,7 +3,16 @@
  * erasure cascade (GDPR Art. 17 / PDPA §33).
  *
  * **Retention policy (the whole point of this use-case).** Erasure DISCARDS
- * `draft` invoices and RETAINS everything `issued` and beyond:
+ * `draft` invoices and RETAINS everything `issued` and beyond.
+ *
+ * **Reach: EVERY draft the member holds** — auto-renewal, admin-created
+ * manual, and F6 event-fee alike. The candidate scan filters on member +
+ * `status='draft'` and NOTHING else: no `origin`, no `invoiceSubject`. That is
+ * deliberate, not an oversight — a manual or event-fee draft holds the
+ * member's name and address just as an auto-renewal one does, so sparing it
+ * would leave exactly the PII an Art.17 erasure exists to remove. Do not
+ * "narrow" this to `origin='auto_renewal'`; the auto-invoice queue is merely
+ * where these drafts are most VISIBLE, not the limit of what is erased.
  *
  *   - a `draft` carries no §87 sequence number and no statutory retention duty.
  *     It is a pending billing INSTRUCTION for a data subject who has asked to be
@@ -27,6 +36,18 @@
  * `deleteInvoiceDraft`, co-committed with the DELETE), so the compliance trail
  * names every invoice removed and by whom. The caller additionally surfaces the
  * aggregate count on the `member_erased` DPO record.
+ *
+ * **Known asymmetry with F8's discard path — deliberate, not an oversight.**
+ * `issue-auto-drafted-renewal`'s `discardSupersededDrafts` emits F8's
+ * `renewal_auto_draft_discarded` ALONGSIDE F4's `invoice_draft_deleted`; this
+ * path emits only the F4 event. So an auto-renewal draft removed by ERASURE is
+ * invisible to anyone reconstructing renewal-queue history from F8 events
+ * alone — reconstruct from `invoice_draft_deleted` (which names the invoice and
+ * is the authoritative per-document record) plus the `member_erased` DPO row.
+ * Accepted rather than fixed: a second event type here is an 8-place lockstep
+ * plus a migration, and `member_terminated`-style refusals on the same surface
+ * carry the same gap, so it is queued as one follow-up covering both rather
+ * than half-closed immediately before merge.
  *
  * Never throws: per-row fault isolation means one bad row cannot strand the
  * rest of the work-list (mirrors `prune-auto-drafts`'s per-candidate try/catch),

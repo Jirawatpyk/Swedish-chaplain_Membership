@@ -9,7 +9,10 @@
  * in turn composes F4's own `deleteInvoiceDraft`.
  *
  * **Retention policy** (see the F4 use-case for the full rationale): DISCARDS
- * `draft` invoices, RETAINS `issued` and beyond. A draft carries no §87
+ * `draft` invoices, RETAINS `issued` and beyond. This reaches EVERY draft the
+ * member holds — auto-renewal, admin-created manual, and F6 event-fee alike
+ * (member + `status='draft'` and nothing else) — because a manual draft holds
+ * the same PII an Art.17 erasure exists to remove. A draft carries no §87
  * sequence number and no statutory retention duty (Art. 5(1)(c) minimisation +
  * Art. 17 apply); an issued document is retained under the Thai RD §87/3
  * legal-obligation carve-out, Art. 17(3)(b). Nothing already issued is deleted,
