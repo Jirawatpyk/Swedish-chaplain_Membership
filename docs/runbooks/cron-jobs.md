@@ -1345,6 +1345,48 @@ All three keys default to off, and **all three must be on** before a single
 draft is created. They are independent — turning on any one or two changes
 nothing. Enable in this order; each step is separately reversible.
 
+**Step 0 — review `members.billing_cycle` before you touch key 1.** This is a
+data prerequisite, not a switch, and it is the one step that cannot be
+reversed by flipping something back off: once a draft is created against the
+wrong lead window it must be discarded by hand.
+
+`members.billing_cycle` (`'calendar' | 'rolling'`) selects **which lead window
+the auto-draft cron uses** for that member — `auto_invoice_lead_days_calendar`
+vs `auto_invoice_lead_days_rolling` (both tenant columns from key 2, each
+constrained to 1–120 days). A member on the wrong value is drafted on the
+wrong schedule: too early (a draft sits in the queue for weeks, and the
+`plan_year` may re-derive against a different fiscal year) or too late (the
+term lapses before the bill is reviewed).
+
+The column arrived in migration `0255_members_billing_cycle.sql` as a
+**best-effort backfill**, not a clean signal:
+
+- every row was seeded `'rolling'`, then flipped to `'calendar'` where the
+  member's LATEST renewal cycle has `period_from` = 1 January (Asia/Bangkok);
+- the migration's own comment records the failure mode — *"a rolling member
+  whose FIRST payment landed in January has `period_from` = Jan 1 and is
+  indistinguishable by date from a calendar member — it is over-marked
+  `'calendar'`"* — and states that **"the admin-review pass is mandatory
+  before the auto-invoice phase consumes the column."**
+
+That phase is this feature. So the error skews **one way**: expect false
+`'calendar'`, not false `'rolling'`. Concentrate the review on members marked
+`'calendar'` whose January anniversary could be an artefact of a January first
+payment, rather than re-checking every row.
+
+Scope it to who can actually be drafted — only enrolled members are read by
+the cron, so the review only has to cover the cohort you intend to enrol in
+key 3. Reviewing a 2–3 member pilot cohort first, then widening, keeps this
+proportionate.
+
+> **There is no bulk-correct tool for `billing_cycle`** — deliberately
+> deferred, not an oversight. The path today is the **per-member edit form**;
+> `GET /api/members` does serialise `billing_cycle`, so the current values can
+> be read in bulk even though they must be written one at a time. If the
+> review turns up more than a handful of corrections, say so before starting —
+> building the tool may be cheaper than the manual pass, and that is a
+> maintainer call, not a runbook one.
+
 1. **`FEATURE_AUTO_INVOICE=true`** (Vercel env, then redeploy) — the master
    kill-switch. Off ⇒ all four routes return `200 {skipped,
    reason:'feature_flag_disabled'}`. Never 503: a cron must not retry-storm.
@@ -1363,12 +1405,15 @@ nothing. Enable in this order; each step is separately reversible.
 To stand the feature down, reverse any ONE key — key 1 is the fastest
 (env + redeploy, no data change) and stops all three crons at the route.
 
-> **Enrolment today is one-way from the admin UI**: the bulk action enrols,
-> and there is no bulk un-enrol surface yet, so the confirmation dialog warns
-> operators to be deliberate. Un-enrolling currently means clearing
-> `auto_invoice_enrolled_at` directly. If you need to stop drafting for a
-> cohort right now, turning off key 2 (tenant) or key 1 (env) is the
-> supported route and takes effect on the next pass.
+> **Enrolment is reversible from the admin UI.** The Members directory bulk
+> bar carries both directions — enrol and **un-enrol** (`unenrol_auto_invoice`
+> on `POST /api/members/bulk`, emitting `member_auto_invoice_unenrolled`; the
+> OFF event exists because clearing `auto_invoice_enrolled_at` destroys its own
+> evidence). Un-enrolling a cohort takes effect on the next pass and does not
+> touch any draft already created — discard those from the review queue.
+>
+> To stop drafting for **everyone** immediately, turning off key 2 (tenant) or
+> key 1 (env) remains the fastest route.
 
 ### The bill year is NOT the coverage year — do not "correct" it
 
