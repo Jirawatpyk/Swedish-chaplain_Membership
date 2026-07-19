@@ -24,6 +24,21 @@
 #                       adds the key. Cheap (~1 sec, no I/O beyond
 #                       two file reads).
 #
+#   - check:env-boot  : .env.example, copied VERBATIM, actually
+#                       satisfies the src/lib/env.ts schema. The
+#                       companion to check:env-example, not a
+#                       replacement: that gate checks a key is
+#                       DOCUMENTED, this one checks the documented
+#                       VALUE is valid. Five keys once carried
+#                       placeholders shorter than their own .min(32)
+#                       while check:env-example stayed green — the
+#                       template was unbootable and no gate said so.
+#                       Same pre-push rationale as its sibling: the
+#                       drift arrives in the commit that adds the key.
+#                       ~3.5 sec (spawns no DB/network — it boots the
+#                       zod schema in-process against a scratch copy
+#                       in the OS temp dir).
+#
 #   - vitest payments contract : F5R3 H-5 contract drift class —
 #                       webhook Result<T,E> envelope +
 #                       WebhookSignatureError mock importActual.
@@ -44,6 +59,7 @@ pnpm check:template-seed
 pnpm check:fixme
 pnpm check:dates
 pnpm check:env-example
+pnpm check:env-boot
 pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================
