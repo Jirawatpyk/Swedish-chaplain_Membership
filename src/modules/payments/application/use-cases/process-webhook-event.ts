@@ -245,6 +245,14 @@ export interface ProcessWebhookEventDeps {
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
   /**
+   * money-remediation Task 4 / finding F-1 — `FEATURE_F5_SETTLEMENT_ABORT`.
+   * Pure passthrough into the inner `confirmPayment` deps for the
+   * `payment_intent.succeeded` branch; the dispatcher itself does not read it.
+   * See `ConfirmPaymentDeps.settlementAbort` for the semantics. Wired from
+   * `env.features.f5SettlementAbort` at `makeProcessWebhookEventDeps`.
+   */
+  readonly settlementAbort: boolean;
+  /**
    * Optional structured logger. Currently the dispatcher emits via the
    * module-level `paymentsLogger` (see `route.ts`) and OTel spans; this
    * deps slot is reserved for future structured callsites inside the
@@ -457,6 +465,7 @@ async function processWebhookEventBody(
           // 088 SEC-MED — forward the honest flow flag into the webhook
           // confirm read (which sets reconciliationPath: true → guard dormant).
           taxAtPayment: deps.taxAtPayment,
+          settlementAbort: deps.settlementAbort,
           // Audit 2026-04-25 #4: pass processorEventsRepo so the
           // sub-use-case can fold markProcessed into its own withTx.
           processorEventsRepo: deps.processorEventsRepo,

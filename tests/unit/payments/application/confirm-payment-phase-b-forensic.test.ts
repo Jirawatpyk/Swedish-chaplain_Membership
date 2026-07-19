@@ -213,6 +213,9 @@ function makeHarness(
     },
     logger: { warn: warn as (msg: string, ctx: Record<string, unknown>) => void },
     taxAtPayment: 'off' as const,
+    // money-remediation Task 4 — flag OFF preserves the pre-remediation
+    // commit-on-bridge-decline behaviour this suite was written against.
+    settlementAbort: false,
   };
 
   return {

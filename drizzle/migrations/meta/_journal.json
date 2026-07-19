@@ -1821,6 +1821,13 @@
       "when": 1798539600000,
       "tag": "0268_refund_credit_note_waiver",
       "breakpoints": true
+    },
+    {
+      "idx": 270,
+      "version": "7",
+      "when": 1798539700000,
+      "tag": "0269_payment_settlement_rolled_back_audit",
+      "breakpoints": true
     }
   ]
 }

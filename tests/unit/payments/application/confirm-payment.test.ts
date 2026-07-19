@@ -5,6 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
+import {
+  makeFakeTxRunner,
+  recordWrite,
+  expectRolledBack,
+} from '../../../support/fake-tx';
 import { confirmPayment, type ConfirmPaymentDeps } from '@/modules/payments';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
@@ -127,6 +132,9 @@ function makeDeps(): ConfirmPaymentDeps {
     // reaches the (stubbed) payability read. The webhook read sets
     // reconciliationPath:true, so the guard would be dormant regardless.
     taxAtPayment: 'off' as const,
+    // money-remediation Task 4 — flag OFF preserves the pre-remediation
+    // commit-on-bridge-decline behaviour this suite was written against.
+    settlementAbort: false,
   };
 }
 
@@ -992,6 +1000,85 @@ describe('confirmPayment (T057)', () => {
     const bridgeCall = (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
       .mock.calls[0]?.[0];
     expect(bridgeCall?.method).toBe('stripe_promptpay');
+  });
+  // ─── money-remediation Task 4 (F-1) — the settlement-abort flag ──────────
+  //
+  // These two pin WHY the rest of this file could stay green through a change
+  // to commit semantics, and stop that from being mistaken for coverage.
+  //
+  // Every `paymentsRepo` double in this file stubs `withTx` as
+  // `vi.fn(async (fn) => fn({}))` — a function that runs the callback and
+  // neither commits nor rolls back. It cannot observe finding F-1 and it
+  // cannot observe the fix. The real assertion lives in
+  // `tests/integration/payments/confirm-payment-bridge-rollback.integration.test.ts`
+  // against live Neon.
+  describe('settlement abort on a bridge decline', () => {
+    it('flag OFF — a bridge decline still returns bridge_error (behaviour preserved)', async () => {
+      const deps = makeDeps();
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // No forensic row: the flag-off arm commits, so there is no rollback to
+      // describe and nothing would outlive it.
+      const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+      expect(
+        auditCalls.some((c) => c[1].eventType === 'payment_settlement_rolled_back'),
+      ).toBe(false);
+    });
+
+    it('flag ON — the payment-row write is ATTEMPTED and then DISCARDED', async () => {
+      // Uses Task 2's rollback-capable double (`tests/support/fake-tx.ts`).
+      // The suite's own `withTx: vi.fn(async (fn) => fn({}))` CANNOT express
+      // this: it has no notion of a write, so it cannot discard one, and every
+      // transactional assertion made against it passes whether or not anything
+      // rolls back. That double is why finding F-1 sat green under this file.
+      //
+      // Note what it does NOT do: it does not trip `runTxDecided`'s
+      // "runner does not roll back on throw" guard. That guard fires only for
+      // a double that SWALLOWS the rollback throw and resolves anyway; every
+      // double in this repo re-throws, so the signal propagates and
+      // `runTxDecided` reports `committed: false` — a rollback it never
+      // actually performed. Unit-level green here is therefore necessary but
+      // never sufficient; the load-bearing proof is the live-Neon test at
+      // tests/integration/payments/confirm-payment-bridge-rollback.integration.test.ts.
+      const runner = makeFakeTxRunner();
+      const deps = { ...makeDeps(), settlementAbort: true };
+      (deps.paymentsRepo as { withTx: unknown }).withTx = runner.withTx.bind(runner);
+      (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockImplementation(
+        async (tx: unknown) => {
+          recordWrite(tx, 'payments.updateStatus', { nextStatus: 'succeeded' });
+          return PENDING_PAYMENT;
+        },
+      );
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // Both halves: the write really was attempted (proving the fake was
+      // wired through) AND it did not survive.
+      expectRolledBack(runner, 'payments.updateStatus');
+
+      // The forensic emit runs BEFORE the rollback decision and on a `null`
+      // tx, so it is the one thing that outlives the transaction.
+      const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+      const forensic = auditCalls.find(
+        (c) => c[1].eventType === 'payment_settlement_rolled_back',
+      );
+      expect(forensic, 'forensic must be emitted before the decision').toBeDefined();
+      expect(forensic?.[0], 'forensic MUST use a null tx so it survives').toBeNull();
+      expect(forensic?.[1].payload.money_captured).toBe(true);
+      expect(forensic?.[1].payload.bridge_error_code).toBe('pdf_render_failed');
+      expect(forensic?.[1].retentionYears).toBe(10);
+    });
   });
 });
 

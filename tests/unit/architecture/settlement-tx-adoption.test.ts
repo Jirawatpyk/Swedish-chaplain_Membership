@@ -84,9 +84,9 @@ const KNOWN_RAW_WITHTX: ReadonlyMap<string, { readonly count: number; readonly r
     [
       'use-cases/confirm-payment.ts',
       {
-        count: 6,
+        count: 5,
         reason:
-          'Phase-A capture/settle tx + five Phase-B follow-ups (markProcessed, late-charge reconcile). Phase A is finding F-1 itself — Task 4 converts it.',
+          'Five Phase-B follow-ups (markProcessed, late-charge reconcile). Was 6 — money-remediation Task 4 converted the Phase-A capture/settle tx (finding F-1 itself) to runTxDecided.',
       },
     ],
     [
@@ -147,7 +147,7 @@ const KNOWN_RAW_WITHTX: ReadonlyMap<string, { readonly count: number; readonly r
  * Pinned independently of `KNOWN_RAW_WITHTX` so that trimming the inventory
  * without converting code fails instead of quietly lowering the bar.
  */
-const RAW_WITHTX_TOTAL = 22;
+const RAW_WITHTX_TOTAL = 21;
 
 /**
  * `commitTxWithRefusal` commits *and* returns a refusal. That is legitimate for
@@ -157,7 +157,18 @@ const RAW_WITHTX_TOTAL = 22;
  * rather than a way around `commitTx`'s `Err` ban.
  */
 const KNOWN_COMMIT_WITH_REFUSAL: ReadonlyMap<string, { readonly count: number; readonly reason: string }> =
-  new Map([]);
+  new Map([
+    [
+      'use-cases/confirm-payment.ts',
+      {
+        count: 2,
+        reason:
+          'money-remediation Task 4, both in the Phase-A settlement tx and both audited as NON-money-side. ' +
+          "(1) the `processor_unavailable` exit after a failed `retrievePaymentIntent`: no write precedes it on that path (the FOR UPDATE lock and the sibling-status read are reads; the `updateStatus` flip is below), so committing is a no-op that preserves pre-remediation behaviour exactly. " +
+          '(2) the FLAG-OFF arm of the bridge-decline fix: that arm IS finding F-1, retained deliberately and switchably behind `FEATURE_F5_SETTLEMENT_ABORT` so the prod cut-over is a Vercel env flip rather than a redeploy. It must be DELETED, not re-inventoried, once the flag is permanently ON.',
+      },
+    ],
+  ]);
 
 function listScannedFiles(): string[] {
   const out: string[] = [];

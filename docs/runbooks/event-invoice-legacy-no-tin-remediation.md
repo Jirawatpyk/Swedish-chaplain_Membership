@@ -70,14 +70,60 @@ stuck-`issued` invoice. The online path is now fenced at every layer:
   localized "under document correction — contact staff" notice
   (`portal.invoices.detail.legacyNoTinNotPayable`).
 - **In-flight PIs** (created before this fence deployed) that confirm via
-  webhook still capture money and fail the invoice flip — the webhook now
-  emits the dedicated error log
+  webhook still capture money and fail the invoice flip — the webhook emits
+  the dedicated error log
   `payments.confirm.legacy_no_tin_event_money_captured` (tenantId,
-  invoiceId, paymentId, paymentIntentId, amountSatang). **On seeing this
-  log**: refund the PI via the Stripe Dashboard (out-of-band; the
-  `charge.refunded` webhook records the forensic
-  `out_of_band_refund_detected` audit) and remediate the invoice per
-  Step 2 below.
+  invoiceId, paymentId, paymentIntentId, amountSatang).
+
+  **What happens to the DB state depends on `FEATURE_F5_SETTLEMENT_ABORT`.**
+  Check the flag in Vercel before acting on this log — the two cases need
+  different reconciliation, and getting it backwards means either refunding
+  a payment the system still believes is good, or leaving a real payment
+  unrecorded.
+
+  | | `FEATURE_F5_SETTLEMENT_ABORT=false` (pre-remediation) | `=true` (money-remediation Task 4) |
+  |---|---|---|
+  | `payments` row | committed **`succeeded`** | rolled back to **`pending`** |
+  | `payment_succeeded` audit | present | **absent** |
+  | invoice | stuck `issued` | stuck `issued` |
+  | §87 receipt number | possibly **consumed** (register gap) | not consumed |
+  | forensic audit | none beyond the log line | one `payment_settlement_rolled_back` row (10y) |
+  | Stripe | money **captured** | money **captured** |
+
+  **In BOTH cases Stripe has the member's money.** The rollback unwinds our
+  writes; it does not reach Stripe. Do not read a `pending` payment row as
+  "nothing happened".
+
+  **On seeing this log — flag OFF:** refund the PI via the Stripe Dashboard
+  (out-of-band; the `charge.refunded` webhook records the forensic
+  `out_of_band_refund_detected` audit) and remediate the invoice per Step 2
+  below. Note the §87 receipt counter may already have advanced past a number
+  no document carries — record the gap for the accountant; it cannot be
+  reclaimed.
+
+  **On seeing this log — flag ON:** query the forensic row first, then refund
+  the PI via the Stripe Dashboard and remediate per Step 2. There is no
+  payment row to reverse, because none was ever committed.
+
+  ```sql
+  -- Settlement rollbacks awaiting reconciliation. `money_captured` is always
+  -- true on these rows; the member has been charged.
+  SELECT timestamp,
+         tenant_id,
+         payload->>'payment_intent_id' AS payment_intent_id,
+         payload->>'invoice_id'        AS invoice_id,
+         payload->>'amount_satang'     AS amount_satang,
+         payload->>'bridge_error_code' AS bridge_error_code
+    FROM audit_log
+   WHERE event_type = 'payment_settlement_rolled_back'
+   ORDER BY timestamp DESC;
+  ```
+
+  A `bridge_error_code` of `legacy_no_tin_event_needs_remediation` is this
+  runbook's case. Any other code (e.g. `pdf_render_failed`) is a transient
+  infrastructure failure, not a legacy-document problem — re-drive the
+  payment once the underlying fault clears rather than remediating the
+  invoice.
 
 The guard is **interim**: every code site carries the grep-stable marker
 `REMOVE-WITH-064-REMEDIATION` (removal checklist below).

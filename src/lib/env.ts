@@ -347,6 +347,23 @@ const schema = z.object({
   // dangling duplicate bill is the pre-existing behaviour, not a regression.
   FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
 
+  // money-remediation Task 4 (finding F-1) — settlement-abort on a bridge
+  // decline. When TRUE, a refusal from the F4 invoicing bridge inside
+  // `confirmPayment`'s Phase-A transaction ROLLS BACK that transaction
+  // instead of committing it.
+  //
+  // Why a flag on a bug fix: `paymentsRepo.withTx` commits whenever the
+  // callback returns, so today a bridge decline commits every write the
+  // refusal was refusing — the payment row flipped `succeeded`, F4's
+  // `members.registration_fee_paid` flip, and (post-`allocateNext`
+  // failures) a consumed §87 receipt sequence number against no document.
+  // Rolling back is correct, but it changes commit semantics on the
+  // settlement path for every card and PromptPay payment in production,
+  // so the prod cut-over is a Vercel env flip rather than a redeploy.
+  //
+  // Default FALSE = pre-remediation behaviour, byte-for-byte.
+  FEATURE_F5_SETTLEMENT_ABORT: booleanFromString.default(false),
+
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
   // F1+F4 transactional API. Hosted on the same Resend account; uses a
@@ -1002,6 +1019,9 @@ export const env = {
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
     // 106-void-on-reissue — auto-void superseded membership bills on reissue.
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
+    // money-remediation Task 4 (F-1) — roll back the settlement tx when the
+    // F4 bridge declines, instead of committing the refused writes.
+    f5SettlementAbort: raw.FEATURE_F5_SETTLEMENT_ABORT,
   },
 
   // F4 Invoicing

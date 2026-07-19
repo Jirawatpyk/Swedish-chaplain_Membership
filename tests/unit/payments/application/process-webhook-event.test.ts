@@ -184,6 +184,9 @@ function makeDeps(): ProcessWebhookEventDeps {
     // Inert in this unit test: the bridge is mocked, so the flow flag only
     // reaches the (stubbed) inner confirm read (reconciliationPath:true → dormant).
     taxAtPayment: 'off' as const,
+    // money-remediation Task 4 — flag OFF preserves the pre-remediation
+    // commit-on-bridge-decline behaviour this suite was written against.
+    settlementAbort: false,
   };
 }
 

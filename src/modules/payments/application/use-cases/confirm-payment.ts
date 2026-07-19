@@ -47,6 +47,17 @@ import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succe
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
 import { markProcessedIfPresent, emitTerminalStateAck } from './_shared';
+// money-remediation Task 2 primitives (Task 4 adopts them here). `withTx`
+// commits whenever the callback returns, so `return err(...)` out of a
+// settlement tx persists the writes it is refusing — finding F-1. These make
+// the choice explicit: `commitTx` type-bans `Err`, so every exit below had to
+// be decided rather than defaulted.
+import {
+  commitTx,
+  commitTxWithRefusal,
+  rollbackTx,
+  runTxDecided,
+} from '../settlement/tx-decision';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 // REMOVE-WITH-064-REMEDIATION — used ONLY by the legacy no-TIN money-
 // captured ops log below (precedent: F4's record-payment.ts also imports
@@ -165,6 +176,22 @@ export interface ConfirmPaymentDeps {
    * `makeConfirmPaymentDeps` / `makeProcessWebhookEventDeps`.
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
+  /**
+   * money-remediation Task 4 / finding F-1 — `FEATURE_F5_SETTLEMENT_ABORT`.
+   *
+   * When `true`, a refusal from the F4 invoicing bridge ROLLS BACK the
+   * Phase-A settlement transaction. When `false` (the default, and the
+   * pre-remediation behaviour) the transaction COMMITS and the refusal is
+   * returned alongside the writes it was refusing — the payment row left
+   * `succeeded`, F4's `members.registration_fee_paid` flip, and any §87
+   * receipt sequence number `allocateNext` consumed before the failure.
+   *
+   * Flagged because this is the settlement path for every card and PromptPay
+   * payment in production; the prod cut-over is a Vercel env flip, not a
+   * redeploy. Wired from `env.features.f5SettlementAbort` at
+   * `makeConfirmPaymentDeps` / `makeProcessWebhookEventDeps`.
+   */
+  readonly settlementAbort: boolean;
   /**
    * Optional — when supplied alongside `input.processorEventId`,
    * `markProcessed` runs inside this use-case's withTx so the dispatch
@@ -465,6 +492,77 @@ async function emitPhaseBSettlementForensic(
     });
 }
 
+/**
+ * money-remediation Task 4 / finding F-1 — forensic row for a settlement
+ * transaction that was UNWOUND because the F4 invoicing bridge declined.
+ *
+ * ## Why this cannot be emitted through `tx`
+ *
+ * It is describing the rollback of that very transaction. A tx-bound emit
+ * would be unwound along with everything else, leaving no trace that a
+ * captured payment failed to settle — the rollback would erase its own
+ * evidence. `null` gets the adapter's own connection, which survives.
+ *
+ * That is the opposite of the reasoning at the `processor_unavailable` exit
+ * above, where `null` was chosen under a mistaken belief that a returned
+ * `err` rolled back. Here the rollback is real.
+ *
+ * ## Why the failure is swallowed
+ *
+ * The audit rail and the transaction that just failed are the same Neon
+ * instance, so a co-occurring fault is likely rather than exotic. Letting
+ * this throw would replace a clean `bridge_error` refusal with a thrown 500 —
+ * a different failure, not a fix — and would ALSO lose the rollback, because
+ * `runTxDecided` propagates genuine throws instead of honouring the decision.
+ * The adapter has already logged and bumped `useCaseAuditEmitFailed`, and the
+ * `payments.confirm.settlement_rolled_back` pino line below is the redundant
+ * trail.
+ *
+ * ## What the payload deliberately says
+ *
+ * `money_captured: true`. The rollback undoes OUR writes; it does not reach
+ * Stripe. An operator reading this row must not conclude the customer was
+ * made whole — they were not, and reconciling that is the whole point of the
+ * runbook this row points at.
+ */
+async function emitSettlementRollbackForensic(
+  deps: ConfirmPaymentDeps,
+  args: {
+    tenantId: string;
+    requestId: string | null;
+    paymentId: string;
+    invoiceId: string;
+    paymentIntentId: string;
+    amountSatang: bigint;
+    bridgeErrorCode: string;
+  },
+): Promise<void> {
+  await deps.audit
+    .emit(null, {
+      tenantId: args.tenantId,
+      requestId: args.requestId,
+      eventType: 'payment_settlement_rolled_back',
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      summary: `Settlement of payment ${args.paymentId} was ROLLED BACK — F4 declined with ${args.bridgeErrorCode}. Stripe has CAPTURED the money; the payment row is back to pending and invoice ${args.invoiceId} remains issued. Reconciliation required.`,
+      payload: {
+        payment_id: args.paymentId,
+        invoice_id: args.invoiceId,
+        payment_intent_id: args.paymentIntentId,
+        amount_satang: args.amountSatang.toString(),
+        bridge_error_code: args.bridgeErrorCode,
+        money_captured: true,
+        runbook_url:
+          'docs/runbooks/event-invoice-legacy-no-tin-remediation.md',
+      },
+      retentionYears: retentionFor('payment_settlement_rolled_back'),
+    })
+    .catch(() => {
+      // Triple-fault swallow — see the block comment above. The adapter's
+      // `null`-tx branch already log-and-swallows and bumps its own failure
+      // counter, and letting this escape would cost us the rollback itself.
+    });
+}
+
 async function confirmPaymentBody(
   deps: ConfirmPaymentDeps,
   input: ConfirmPaymentInput,
@@ -488,7 +586,14 @@ async function confirmPaymentBody(
   // Phase B OUTSIDE the tx (mirrors `stalePending`).
   let lateChargePending: LateChargePending | null = null;
 
-  const phaseA = await deps.paymentsRepo.withTx(async (tx) => {
+  // money-remediation Task 4 — Phase A runs through `runTxDecided`, so each of
+  // the twelve exits below is an explicit `commitTx` / `commitTxWithRefusal` /
+  // `rollbackTx` decision rather than an ambiguous `return`. `phaseA` is a
+  // `TxOutcome<Result<…>>`; its `.value` is the Result the caller sees and
+  // `.committed` records what actually happened to the transaction.
+  const phaseA = await runTxDecided<
+    Result<ConfirmPaymentOutcome, ConfirmPaymentError>
+  >(deps.paymentsRepo, async (tx) => {
     // R4 polish (M1): the `markProcessedIfPresent(deps, input, tx)` triple
     // appears 6× below. Local closure removes the repetition without
     // hiding the contract — `_shared.markProcessedIfPresent` is still
@@ -504,7 +609,9 @@ async function confirmPaymentBody(
       // Audit 2026-04-26 round-2 #5b: atomic markProcessed even for
       // unknown_intent so the dispatch tail short-circuits.
       await markProcessed();
-      return ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' });
+      // Commit: `markProcessed` is the whole point of this branch — it stops
+      // Stripe retrying a PI we have no row for.
+      return commitTx(ok<ConfirmPaymentOutcome>({ kind: 'unknown_intent' }));
     }
 
     // Step 2 — invoice payability. Webhook / reconciliation read:
@@ -552,10 +659,14 @@ async function confirmPaymentBody(
           },
           retentionYears: retentionFor('payment_invoice_not_found'),
         });
-        return ok<ConfirmPaymentOutcome>({
-          kind: 'invoice_not_found',
-          invoiceId: payment.invoiceId,
-        });
+        // Commit: the forensic audit row + `markProcessed` above are exactly
+        // what must survive — this is a permanent, unrecoverable mismatch.
+        return commitTx(
+          ok<ConfirmPaymentOutcome>({
+            kind: 'invoice_not_found',
+            invoiceId: payment.invoiceId,
+          }),
+        );
       }
       // F5R1-E3 — explicit `forbidden` early-return.
       // Pre-fix the comment said "forbidden won't happen webhook-side"
@@ -592,10 +703,14 @@ async function confirmPaymentBody(
           retentionYears: retentionFor('payment_invoice_not_found'),
         });
         await markProcessed();
-        return ok<ConfirmPaymentOutcome>({
-          kind: 'invoice_not_found',
-          invoiceId: payment.invoiceId,
-        });
+        // Commit: F4 `forbidden` is PERMANENT — the tx-bound forensic audit +
+        // `markProcessed` must persist or Stripe retries for 72h.
+        return commitTx(
+          ok<ConfirmPaymentOutcome>({
+            kind: 'invoice_not_found',
+            invoiceId: payment.invoiceId,
+          }),
+        );
       }
       // F5R3v3 H-1 (2026-05-16) — bridge surfaced corrupted F4 invoice
       // money (negative totalSatang). Stripe already CHARGED the
@@ -624,10 +739,14 @@ async function confirmPaymentBody(
           retentionYears: retentionFor('payment_invoice_not_found'),
         });
         await markProcessed();
-        return ok<ConfirmPaymentOutcome>({
-          kind: 'invoice_data_corrupt',
-          invoiceId: payment.invoiceId,
-        });
+        // Commit: the corrupt-invoice forensic + ack must persist; the
+        // customer is already charged and only an operator can fix the row.
+        return commitTx(
+          ok<ConfirmPaymentOutcome>({
+            kind: 'invoice_data_corrupt',
+            invoiceId: payment.invoiceId,
+          }),
+        );
       }
       // I4 (Task 7 remediation) — the F4 read THREW. MUST return early.
       //
@@ -643,6 +762,14 @@ async function confirmPaymentBody(
       // `PERMANENT_SUB_USE_CASE_DETAILS`), the route 500s, and Stripe retries
       // until the read recovers. Marking processed here would DROP a real
       // payment confirmation permanently, which is worse than a retry storm.
+      //
+      // Stack-assembly (task-4 F-1) — this exit sits INSIDE `runTxDecided`, so
+      // it must be a decision, not a bare `return err(...)`. `rollbackTx` is the
+      // canonical conversion (see tx-decision.ts: "return ok/err but I don't
+      // want the writes kept because it's an error → rollbackTx"). Nothing was
+      // written on this path anyway (no markProcessed, no audit), so the
+      // rollback is a money-safe no-op that surfaces the transient err
+      // unchanged. It is NOT a settlement abort — no forensic is owed here.
       if (invoiceResult.error.code === 'read_failed') {
         deps.logger?.warn('confirm_payment.invoice_read_failed', {
           tenantId: input.tenantId,
@@ -653,10 +780,12 @@ async function confirmPaymentBody(
           bridgeOutcome: 'read_failed',
           disposition: 'transient_err_stripe_will_retry',
         });
-        return err({
-          code: 'invoice_read_failed',
-          detail: 'invoice_payability_read_failed',
-        } as const);
+        return rollbackTx(
+          err({
+            code: 'invoice_read_failed',
+            detail: 'invoice_payability_read_failed',
+          } as const),
+        );
       }
       // not_payable → handled by stale-invoice branch below (we
       // re-derive via status).
@@ -727,12 +856,17 @@ async function confirmPaymentBody(
       // window against concurrent cancelPayment / 2nd webhook delivery.
       stalePending = { payment, cause, invoiceStatus };
       // Sentinel return — the kind matches what we'll ultimately
-      // return after Phase B; downstream branches at `if (phaseA.ok)`
-      // ignore this when stalePending is non-null.
-      return ok<ConfirmPaymentOutcome>({
-        kind: 'auto_refunded_stale_invoice',
-        invoiceId: payment.invoiceId,
-      });
+      // return after Phase B; the surrounding code reads `stalePending`
+      // and ignores this value when it is non-null.
+      // Commit: nothing money-side was written, and Phase B (the Stripe
+      // refund) runs only after this tx closes — rolling back would buy
+      // nothing and would discard `markProcessed` work on sibling paths.
+      return commitTx(
+        ok<ConfirmPaymentOutcome>({
+          kind: 'auto_refunded_stale_invoice',
+          invoiceId: payment.invoiceId,
+        }),
+      );
     }
 
     // Step 4 — transition check.
@@ -760,17 +894,24 @@ async function confirmPaymentBody(
           // Sentinel return — the surrounding code reads `lateChargePending`
           // and computes the real outcome in Phase B; this value is ignored
           // when `lateChargePending` is non-null.
-          return ok<ConfirmPaymentOutcome>({
-            kind: 'auto_refunded_stale_invoice',
-            invoiceId: payment.invoiceId,
-          });
+          // Commit: no writes in this branch (deliberately no `markProcessed`
+          // — Phase B folds it in after the auto-refund).
+          return commitTx(
+            ok<ConfirmPaymentOutcome>({
+              kind: 'auto_refunded_stale_invoice',
+              invoiceId: payment.invoiceId,
+            }),
+          );
         }
         // Atomic markProcessed (audit 2026-04-26 round-2 #5b).
         await markProcessed();
-        return ok<ConfirmPaymentOutcome>({
-          kind: 'already_succeeded',
-          invoiceId: payment.invoiceId,
-        });
+        // Commit: `markProcessed` is the only write and it is the point.
+        return commitTx(
+          ok<ConfirmPaymentOutcome>({
+            kind: 'already_succeeded',
+            invoiceId: payment.invoiceId,
+          }),
+        );
       }
       // illegal_transition (e.g. partially_refunded → succeeded). R4 I-3:
       // webhook-side this is a PERMANENT mismatch — returning err would
@@ -789,10 +930,14 @@ async function confirmPaymentBody(
         toStatus: 'succeeded',
         mismatchKind: 'illegal_transition',
       });
-      return ok<ConfirmPaymentOutcome>({
-        kind: 'already_succeeded',
-        invoiceId: payment.invoiceId,
-      });
+      // Commit: `markProcessed` + the terminal-state forensic must persist —
+      // this is a permanent mismatch and a retry cannot improve it.
+      return commitTx(
+        ok<ConfirmPaymentOutcome>({
+          kind: 'already_succeeded',
+          invoiceId: payment.invoiceId,
+        }),
+      );
     }
 
     // Step 5 — 1-succeeded-per-invoice invariant.
@@ -822,10 +967,14 @@ async function confirmPaymentBody(
         mismatchKind: 'invariant_violation_duplicate_succeeded',
         extraPayload: { invoice_id: payment.invoiceId },
       });
-      return ok<ConfirmPaymentOutcome>({
-        kind: 'already_succeeded',
-        invoiceId: payment.invoiceId,
-      });
+      // Commit: `markProcessed` + invariant-violation forensic must persist;
+      // a duplicate succeeded row already exists and will not un-exist.
+      return commitTx(
+        ok<ConfirmPaymentOutcome>({
+          kind: 'already_succeeded',
+          invoiceId: payment.invoiceId,
+        }),
+      );
     }
 
     // Step 6 — re-fetch PI for card metadata (PCI SAQ-A: card last4/brand
@@ -839,9 +988,15 @@ async function confirmPaymentBody(
       // Audit row for mid-webhook Stripe outages on retrievePaymentIntent
       // (migration 0047). Emitted on `null` (best-effort, separate tx)
       // because the function is about to `return err(...)` and the outer
-      // `withTx` will roll back — emitting through `tx` would discard the
-      // forensic row we want ops to see. Stripe retries the webhook on
-      // its own schedule; the gateway adapter also pino-warns via
+      // `withTx` was believed to roll back. money-remediation Task 4 —
+      // that belief was FALSE and is finding F-1: `withTx` is `runInTenant`,
+      // which COMMITS whenever the callback returns, so the refusal below
+      // never unwound anything. The `null` tx is kept regardless, because it
+      // is now load-bearing for the opposite reason: this exit is decided as
+      // `commitTxWithRefusal`, and a future author who re-decides it as
+      // `rollbackTx` would silently destroy a tx-bound forensic row. On a
+      // `null` tx the row survives either decision. Stripe retries the
+      // webhook on its own schedule; the gateway adapter also pino-warns via
       // `mapStripeError` at the boundary.
       await deps.audit.emit(null, {
         tenantId: input.tenantId,
@@ -856,10 +1011,27 @@ async function confirmPaymentBody(
         },
         retentionYears: retentionFor('payment_processor_retrieve_failed'),
       });
-      return err<ConfirmPaymentError>({
-        code: 'processor_unavailable',
-        reason: retrieved.error.kind,
-      });
+      // `commitTxWithRefusal`, deliberately, and NOT `commitTx` — `commitTx`
+      // type-bans `Err`, which is Task 2's narrowing doing its job: it forces
+      // this exit to be argued rather than wrapped.
+      //
+      // The argument: NOTHING money-side has been written on the path to this
+      // point. `lockForUpdateByPaymentIntentId` and
+      // `listSiblingStatusesForInvariant` are reads, the `updateStatus` flip
+      // is still below, and every tx-bound audit emit above belongs to a
+      // branch that already returned. Committing an empty transaction is a
+      // no-op, so this preserves pre-remediation behaviour EXACTLY on the
+      // path with the highest blast radius in the codebase.
+      //
+      // `rollbackTx` would be equally correct today, and is the safer choice
+      // the moment any write is added above this line. It is not taken now
+      // only because behaviour-preservation outweighs symmetry here.
+      return commitTxWithRefusal(
+        err<ConfirmPaymentError>({
+          code: 'processor_unavailable',
+          reason: retrieved.error.kind,
+        }),
+      );
     }
     const intent = retrieved.value;
 
@@ -876,7 +1048,21 @@ async function confirmPaymentBody(
     // cancel-payment's pattern) cannot silently regress the
     // financial-integrity invariant. canTransition narrowed
     // payment.status to 'pending' (only legal `from` for 'succeeded').
-    await deps.paymentsRepo.updateStatus(tx, {
+    // money-remediation Task 4 (adjacent fix) — CAPTURE the return.
+    //
+    // `updateStatus` returns `null` (it does NOT throw) when
+    // `expectedCurrentStatus` no longer matches, and its port docstring is
+    // explicit that "every caller passing `expectedCurrentStatus` MUST also
+    // handle the `null` race branch". This call site discarded it, so the
+    // documented defence-in-depth guard was inert: on a mismatch the UPDATE
+    // matched zero rows, execution continued, and the F4 bridge below flipped
+    // the invoice to `paid` against a payment row that was never advanced.
+    //
+    // The mismatch should be unreachable — we hold `FOR UPDATE` on this row
+    // for the whole transaction, so nothing can move it underneath us. That
+    // is exactly why it must roll back rather than continue: if it ever does
+    // fire, the lock/CAS model is wrong and no write here can be trusted.
+    const updated = await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'succeeded',
@@ -885,6 +1071,28 @@ async function confirmPaymentBody(
       card: intent.card,
       completedAt,
     });
+    if (updated === null) {
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+          paymentIntentId: input.paymentIntentId,
+          expectedCurrentStatus: payment.status,
+        },
+        'payments.confirm.cas_mismatch_under_row_lock',
+      );
+      // Rollback: nothing was written (the UPDATE matched zero rows), but
+      // returning `processor_unavailable` maps to a transient decline so the
+      // webhook is retried rather than 200-acked into silence. Committing an
+      // ack here would strand a captured payment on a `pending` row.
+      return rollbackTx(
+        err<ConfirmPaymentError>({
+          code: 'processor_unavailable',
+          reason: 'payment_row_cas_mismatch',
+        }),
+      );
+    }
 
     // Step 8 — audit.
     await deps.audit.emit(tx, {
@@ -976,13 +1184,10 @@ async function confirmPaymentBody(
     if (!bridgeResult.ok) {
       // REMOVE-WITH-064-REMEDIATION (online-payment site — master
       // checklist at the guard in record-payment.ts). LOUD ops signal:
-      // Stripe has CAPTURED the member's money (payment row committed
-      // `succeeded` — withTx commits on a returned err), but F4 refused
-      // the invoice flip because the row is a LEGACY issued no-TIN event
-      // invoice. The dispatcher classifies `bridge_error` as PERMANENT →
-      // 200-ack, no Stripe retry, NO auto-refund — so WITHOUT operator
-      // action the money stays stranded against a stuck-`issued` invoice.
-      // Operators: refund/reconcile per
+      // Stripe has CAPTURED the member's money, but F4 refused the invoice
+      // flip because the row is a LEGACY issued no-TIN event invoice. The
+      // dispatcher classifies `bridge_error` as PERMANENT → 200-ack, no
+      // Stripe retry, NO auto-refund. Operators: refund/reconcile per
       // docs/runbooks/event-invoice-legacy-no-tin-remediation.md (the
       // initiate-side guard blocks NEW PIs; only in-flight PIs created
       // before that guard deployed can reach this branch).
@@ -998,10 +1203,60 @@ async function confirmPaymentBody(
           'payments.confirm.legacy_no_tin_event_money_captured',
         );
       }
-      return err<ConfirmPaymentError>({
+
+      const refusal = err<ConfirmPaymentError>({
         code: 'bridge_error',
         detail: bridgeResult.error.code,
       });
+
+      // ─── money-remediation Task 4 — THIS IS THE F-1 FIX ───────────────
+      //
+      // What was here: `return err(...)`. `withTx` is `runInTenant`, which
+      // COMMITS whenever the callback returns — so the refusal persisted
+      // every write it was refusing:
+      //
+      //   • this payment row, flipped `succeeded` above;
+      //   • F4's `members.registration_fee_paid` flip
+      //     (`record-payment.ts`, issued before the failure point);
+      //   • and for any failure AFTER `sequenceAllocator.allocateNext`, a
+      //     CONSUMED §87 receipt sequence number with no document behind
+      //     it — a gap in a register Thai RD §87 requires to be gapless.
+      //
+      // F4 runs on OUR transaction here (the bridge threads `tx`, and
+      // `makeDrizzleInvoiceRepo`'s `withTx` short-circuits to it instead of
+      // opening its own). F4 therefore cannot unwind its own writes on a
+      // decline — it does not own the transaction. Only this decision can.
+      if (!deps.settlementAbort) {
+        // Flag OFF — pre-remediation behaviour, byte-for-byte. `commitTx`
+        // would not compile (it type-bans `Err`), and that is correct: this
+        // IS finding F-1, kept switchable only so the prod cut-over is a
+        // Vercel env flip rather than a redeploy.
+        return commitTxWithRefusal(refusal);
+      }
+
+      // Forensic FIRST, on a `null` tx, so it outlives the rollback that is
+      // about to erase every other trace of this attempt.
+      await emitSettlementRollbackForensic(deps, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        paymentId: payment.id,
+        invoiceId: payment.invoiceId,
+        paymentIntentId: input.paymentIntentId,
+        amountSatang: payment.amountSatang,
+        bridgeErrorCode: bridgeResult.error.code,
+      });
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: payment.invoiceId,
+          paymentId: payment.id,
+          paymentIntentId: input.paymentIntentId,
+          amountSatang: payment.amountSatang.toString(),
+          bridgeErrorCode: bridgeResult.error.code,
+        },
+        'payments.confirm.settlement_rolled_back',
+      );
+      return rollbackTx(refusal);
     }
 
     // Audit 2026-04-25 finding #4: fold markProcessed into THIS dispatch
@@ -1017,10 +1272,14 @@ async function confirmPaymentBody(
     // Powers SLO-F5-005 success-rate denominator + dashboard top-row gauge.
     paymentsMetrics.succeededCount(input.tenantId, payment.method);
 
-    return ok<ConfirmPaymentOutcome>({
-      kind: 'processed',
-      invoiceId: payment.invoiceId,
-    });
+    // Commit: the happy path — payment `succeeded`, F4 invoice flipped
+    // `paid`, `markProcessed` folded in, all in this one transaction.
+    return commitTx(
+      ok<ConfirmPaymentOutcome>({
+        kind: 'processed',
+        invoiceId: payment.invoiceId,
+      }),
+    );
   });
 
   // R2 H-3 — Phase B: stale-invoice auto-refund. Runs OUTSIDE the
@@ -1605,5 +1864,9 @@ async function confirmPaymentBody(
     });
   }
 
-  return phaseA;
+  // `phaseA` is a `TxOutcome`; `.value` is the Result the caller contracts
+  // for. `.committed` is deliberately NOT surfaced — the ok/err → HTTP
+  // mapping is Task 5's subject, and widening the return type here would
+  // change it as a side effect.
+  return phaseA.value;
 }

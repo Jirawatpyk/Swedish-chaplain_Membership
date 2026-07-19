@@ -158,7 +158,24 @@ export type F5AuditEventType =
   // "being reconciled" banner reverts to the "refunded" copy. 10y retention
   // (mirrors the failure forensic — money-trail-adjacent, Thai RD §87/3). Shares
   // the `auto_refund_` prefix so the parity test already covers it.
-  | 'auto_refund_reconciled';
+  | 'auto_refund_reconciled'
+  // money-remediation Task 4 / finding F-1 (migration 0267, 2026-07-20) —
+  // the settlement transaction was UNWOUND because the F4 invoicing bridge
+  // declined. This is the forensic counterpart to a rollback that, by
+  // construction, erases its own evidence: the payment row is back to
+  // `pending`, the invoice is still `issued`, and no `payment_succeeded` row
+  // exists — so without this event a bridge decline leaves nothing behind but
+  // a log line. Emitted on a `null` tx (its own connection) precisely so it
+  // SURVIVES the rollback it is describing.
+  //
+  // Nothing in the existing 83-value union fits: the two `payment_auto_
+  // refunded_*` values assert a Stripe refund that never happened here (the
+  // money is still captured — Stripe is untouched by a DB rollback), and
+  // reusing one would write a 10-year money-trail row that is materially
+  // false. 10y retention because it is money-trail-adjacent (Thai RD §87/3):
+  // it is the only durable record that a captured payment did NOT settle.
+  // Shares the `payment_` prefix, so `audit-event-type-parity` already covers it.
+  | 'payment_settlement_rolled_back';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -569,6 +586,24 @@ export interface F5AuditPayloadByType {
     readonly processor_refund_id: string;
     readonly note?: string;
   };
+  // money-remediation Task 4 (migration 0267) — settlement rolled back on a
+  // bridge decline. ID-refs + the F4 refusal code only. NO card metadata and
+  // NO raw Stripe text — SAQ-A intact. `bridge_error_code` is F4's typed
+  // `RecordPaymentError.code` (e.g. `pdf_render_failed`), which is what tells
+  // an operator whether the payment can simply be retried.
+  //
+  // `money_captured: true` is stated explicitly rather than implied: the
+  // rollback undoes OUR writes, never Stripe's capture. An operator reading
+  // this row must not conclude the customer was made whole.
+  payment_settlement_rolled_back: {
+    readonly payment_id: string;
+    readonly invoice_id: string;
+    readonly payment_intent_id: string;
+    readonly amount_satang: string;
+    readonly bridge_error_code: string;
+    readonly money_captured: true;
+    readonly runbook_url: string;
+  };
 }
 
 /**
@@ -678,6 +713,11 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // CF-2 (migration 0244) — manual-reconciliation acknowledgement. 10y to
   // mirror the failure forensic it resolves (same money-trail lineage).
   auto_refund_reconciled: 10,
+  // money-remediation Task 4 (migration 0267) — settlement-rollback forensic.
+  // 10y: it is the sole durable record that Stripe captured money which our
+  // system then declined to settle. Same money-trail class as
+  // `payment_succeeded` (Thai RD §87/3).
+  payment_settlement_rolled_back: 10,
 };
 
 /**

@@ -166,6 +166,9 @@ export async function makeProcessWebhookEventDeps(
     // (which sets reconciliationPath: true → guard dormant). Mirrors
     // makeInitiatePaymentDeps; no magic value.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
+    // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT: roll back
+    // the settlement tx when the F4 bridge declines. Default false (ships dark).
+    settlementAbort: env.features.f5SettlementAbort,
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
@@ -191,6 +194,9 @@ export async function makeConfirmPaymentDeps(
     // 088 SEC-MED — thread the honest flow flag into the confirm read (which
     // sets reconciliationPath: true → guard dormant). No magic value.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
+    // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT: roll back
+    // the settlement tx when the F4 bridge declines. Default false (ships dark).
+    settlementAbort: env.features.f5SettlementAbort,
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),

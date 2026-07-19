@@ -432,6 +432,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
   //     enum↔retention parity test enforces it. ---
   'invoice_buyer_identity_invalid',
+  // --- money-remediation Task 4 / finding F-1 (migration 0267, 2026-07-20) —
+  //     the F5 settlement transaction was ROLLED BACK because the F4
+  //     invoicing bridge declined. Emitted by `confirmPayment` on a `null`
+  //     tx (its own connection) so the forensic row SURVIVES the rollback it
+  //     describes — a rolled-back tx otherwise erases every trace that a
+  //     captured payment failed to settle. Payload carries the F4 refusal
+  //     code + `money_captured: true` (Stripe's capture is NOT undone by a DB
+  //     rollback). 10y retention (money-trail, Thai RD §87/3). Keep in
+  //     lockstep with F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5
+  //     parity test's `payment_` prefix already covers it. ---
+  'payment_settlement_rolled_back',
 ]);
 
 /**

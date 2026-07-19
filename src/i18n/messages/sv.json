@@ -5836,6 +5836,7 @@
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",
       "auto_refund_failed_needs_manual_reconcile": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
       "auto_refund_reconciled": "Automatisk återbetalning manuellt avstämd",
+      "payment_settlement_rolled_back": "Avräkning återställd — betalning mottagen men inte bokförd",
       "webhook_dispatch_permanent_failure": "Webhook-bearbetning permanent misslyckad",
       "registration_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (evenemangsregistreringar)",
       "event_buyer_pii_redacted": "Personuppgifter för biljettköpare maskerade",

@@ -5836,6 +5836,7 @@
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",
       "auto_refund_failed_needs_manual_reconcile": "Auto-refund failed — needs manual reconciliation",
       "auto_refund_reconciled": "Auto-refund reconciled manually",
+      "payment_settlement_rolled_back": "Settlement rolled back — payment captured but not applied",
       "webhook_dispatch_permanent_failure": "Webhook processing permanently failed",
       "registration_cross_tenant_probe": "Cross-tenant probe (event registrations)",
       "event_buyer_pii_redacted": "Event buyer PII redacted",

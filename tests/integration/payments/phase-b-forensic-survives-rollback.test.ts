@@ -289,6 +289,9 @@ describe('F-2 — Phase-B forensic survives the rollback (live Neon)', () => {
           audit: faultyAudit,
           clock: systemClock,
           taxAtPayment: 'off',
+          // money-remediation Task 4 — flag OFF preserves the pre-remediation
+          // commit-on-bridge-decline behaviour this suite was written against.
+          settlementAbort: false,
         },
         {
           tenantId: tenant.ctx.slug,
