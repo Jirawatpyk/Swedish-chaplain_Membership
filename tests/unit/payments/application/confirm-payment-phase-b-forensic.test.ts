@@ -331,6 +331,17 @@ describe('F-2 — Phase B forensic emit (stale-invoice auto-refund)', () => {
 
     expect(result.ok).toBe(true);
   });
+
+  it('deps.logger absent — the forensic still lands (the trail must not depend on optional wiring)', async () => {
+    const h = makeStale({ failInTxEmit: true });
+    // Omit rather than set-undefined — `exactOptionalPropertyTypes` is on.
+    const { logger: _omitted, ...depsNoLogger } = h.deps;
+
+    const result = await confirmPayment(depsNoLogger, INPUT);
+
+    expect(h.emitsOnNullTx(STALE_EVENT)).toHaveLength(1);
+    expect(result.ok).toBe(true);
+  });
 });
 
 describe('F-2 — Phase B forensic emit (late-charge auto-refund)', () => {
