@@ -1978,33 +1978,33 @@
       "autoRenewalQueue": {
         "actions": {
           "menuAria": "Åtgärder för {member}s förnyelseutkast",
-          "issueAndSend": "Skapa och skicka",
-          "issueSilently": "Skapa utan att skicka",
+          "issueAndSend": "Utfärda och skicka",
+          "issueSilently": "Utfärda utan att skicka",
           "discard": "Ta bort utkast",
           "cancel": "Avbryt",
           "sendDialog": {
-            "title": "Skapa och skicka den här fakturan?",
-            "description": "En medlemsfaktura skapas för {member} och skickas till huvudkontaktens e-post."
+            "title": "Utfärda och skicka den här fakturan?",
+            "description": "En medlemsfaktura utfärdas för {member} och skickas till huvudkontaktens e-post."
           },
           "silentDialog": {
-            "title": "Skapa fakturan utan att skicka den?",
-            "description": "En medlemsfaktura skapas för {member}. Inget e-postmeddelande skickas — du behöver leverera den på annat sätt."
+            "title": "Utfärda fakturan utan att skicka den?",
+            "description": "En medlemsfaktura utfärdas för {member}. Inget e-postmeddelande skickas — du behöver leverera den på annat sätt."
           },
           "discardDialog": {
             "title": "Ta bort det här utkastet?",
             "description": "Fakturautkastet för {member} tas bort permanent. Nästa automatiska förnyelsekörning kan skapa ett nytt utkast innan cykeln förfaller."
           },
           "toast": {
-            "issuedAndSent": "Faktura {number} skapad och skickad.",
-            "issuedSilently": "Faktura {number} skapad.",
+            "issuedAndSent": "Faktura {number} utfärdad och skickad.",
+            "issuedSilently": "Faktura {number} utfärdad.",
             "discarded": "Utkastet togs bort."
           },
           "errors": {
-            "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha skapats eller tagits bort. Uppdatera sidan.",
+            "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha utfärdats eller tagits bort. Uppdatera sidan.",
             "cycleNotFound": "Vi kunde inte hitta förnyelseposten för det här utkastet. Själva utkastet är oförändrat — uppdatera sidan och försök igen.",
             "invalidDraft": "Utkastet är inte längre giltigt. Uppdatera sidan och försök igen.",
-            "discardNotDraft": "Utkastet har redan skapats som faktura och kan inte längre tas bort. Uppdatera sidan.",
-            "issueFailed": "Fakturan kunde inte skapas. Försök igen.",
+            "discardNotDraft": "Utkastet har redan utfärdats och kan inte längre tas bort. Uppdatera sidan.",
+            "issueFailed": "Fakturan kunde inte utfärdas. Försök igen.",
             "discardFailed": "Utkastet kunde inte tas bort. Försök igen.",
             "network": "Ett nätverksfel uppstod. Försök igen.",
             "rateLimited": "För många åtgärder på kort tid — vänta en stund och försök igen.",
@@ -2114,7 +2114,7 @@
           "refusalReason": {
             "planYearDrift": "Förnyelseperioden ändrades efter att det här utkastet skapades.",
             "memberTerminated": "Den här medlemmens medlemskap har upphört.",
-            "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — kassera det här utkastet.",
+            "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — ta bort det här utkastet.",
             "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
           },
           "viewConflictingInvoice": "Visa befintlig faktura",
