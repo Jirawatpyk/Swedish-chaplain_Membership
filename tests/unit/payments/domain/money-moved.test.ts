@@ -18,33 +18,91 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  MONEY_MOVED_PERMANENT_CODES,
   classifyGatewayFailure,
   proveNothingMoved,
+  proveProcessorSettledFailed,
   type MoneyExit,
+  type ProcessorFailure,
   type ProcessorFailureKind,
   type RejectionProof,
 } from '@/modules/payments/domain/settlement/money-moved';
 import type { ProcessorGatewayError } from '@/modules/payments/application/ports';
 
 describe('classifyGatewayFailure', () => {
-  it('treats only a permanent failure as proof the money was rejected', () => {
-    expect(classifyGatewayFailure('permanent')).toBe<MoneyExit>('rejected');
+  it('treats a permanent failure as proof the money was rejected', () => {
+    expect(
+      classifyGatewayFailure({ kind: 'permanent', code: 'charge_already_refunded' }),
+    ).toBe<MoneyExit>('rejected');
   });
 
   it.each<ProcessorFailureKind>(['retryable', 'idempotency_conflict'])(
     'treats %s as UNKNOWN — the request may have reached the processor',
     (kind) => {
-      expect(classifyGatewayFailure(kind)).toBe<MoneyExit>('unknown');
+      expect(classifyGatewayFailure({ kind })).toBe<MoneyExit>('unknown');
     },
   );
 
-  it('stays in sync with the gateway port error kinds', () => {
+  it('treats a permanent failure with NO code as rejected', () => {
+    // `code` is only populated on the port's `permanent` variant; a
+    // permanent failure without one is still a refusal.
+    expect(classifyGatewayFailure({ kind: 'permanent' })).toBe<MoneyExit>('rejected');
+  });
+
+  // ── The exception that makes `kind` alone insufficient ──────────────────
+  //
+  // `stripe-gateway.ts` returns `{kind:'permanent', code:
+  // 'processor_response_amount_invalid'}` from a point where
+  // `client.refunds.create` ALREADY RESOLVED — Stripe accepted the refund and
+  // `refund.id` exists; only the response's `amount` field failed validation.
+  // The money moved. Classifying that as `rejected` would mint a proof for a
+  // settled refund, which is finding F-3 with extra steps.
+  //
+  // Reachable today from `confirm-payment.ts:838` and `:1204` (auto-refund),
+  // both of which omit `amountSatang` — the exact precondition for this code.
+  it.each(MONEY_MOVED_PERMANENT_CODES)(
+    'treats permanent/%s as UNKNOWN — the processor accepted before failing',
+    (code) => {
+      expect(classifyGatewayFailure({ kind: 'permanent', code })).toBe<MoneyExit>(
+        'unknown',
+      );
+    },
+  );
+
+  it('mints no proof for a permanent failure that already moved money', () => {
+    const exit = classifyGatewayFailure({
+      kind: 'permanent',
+      code: 'processor_response_amount_invalid',
+    });
+    expect(proveNothingMoved(exit)).toBeNull();
+  });
+
+  it('stays in sync with the gateway port error shape', () => {
     // Compile-time drift guard: if the port grows a fourth kind, this
     // assignment fails to typecheck and someone has to decide which exit it
     // maps to, rather than it silently defaulting.
-    const portKind: ProcessorGatewayError['kind'] = 'retryable';
-    const domainKind: ProcessorFailureKind = portKind;
-    expect(classifyGatewayFailure(domainKind)).toBe('unknown');
+    const portError: ProcessorGatewayError = { kind: 'retryable', reason: 'rate_limit' };
+    const domainFailure: ProcessorFailure = portError;
+    expect(classifyGatewayFailure(domainFailure)).toBe('unknown');
+  });
+});
+
+describe('proveProcessorSettledFailed', () => {
+  it.each(['failed', 'canceled'] as const)(
+    'mints a proof when the processor reports a %s settlement',
+    (status) => {
+      expect(proveProcessorSettledFailed(status)).not.toBeNull();
+    },
+  );
+
+  it('produces a proof interchangeable with proveNothingMoved', () => {
+    // Both minting functions must yield the SAME brand, or the two honest
+    // sources of evidence would need two parallel repo overloads.
+    const fromExit: RejectionProof | null = proveNothingMoved('rejected');
+    const fromProcessor: RejectionProof = proveProcessorSettledFailed('failed');
+    expect(Object.getOwnPropertySymbols(fromProcessor)).toEqual(
+      Object.getOwnPropertySymbols(fromExit ?? {}),
+    );
   });
 });
 
@@ -81,7 +139,7 @@ describe('proveNothingMoved', () => {
     // The runtime half of the same guarantee: `proveNothingMoved('unknown')`
     // is `null`, so a caller demanding a proof cannot be satisfied by an
     // unknown money exit even with a non-null assertion at runtime.
-    const maybe = proveNothingMoved(classifyGatewayFailure('retryable'));
+    const maybe = proveNothingMoved(classifyGatewayFailure({ kind: 'retryable' }));
     expect(maybe).toBeNull();
   });
 });
