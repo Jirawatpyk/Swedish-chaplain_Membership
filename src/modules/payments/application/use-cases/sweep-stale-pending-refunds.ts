@@ -512,7 +512,14 @@ export async function sweepStalePendingRefunds(
               // retries; the CN bridge is idempotent so a retry reconciles
               // cleanly.
               //
-              // ── NOTE FOR TASK 3 / TASK 6 ────────────────────────────────
+              // ── NOTE FOR TASK 4 ─────────────────────────────────────────
+              // Tasks 3 and 6 have both landed and NEITHER fired this.
+              // Task 3's forensic emits are `null`-tx emits in
+              // `confirm-payment.ts`'s Phase-B catches — a different file,
+              // and outside any transaction, so trigger (a) below is still
+              // unclaimed. No sweep-level fake-tx test was written, because
+              // with nothing written before the `err` it would assert
+              // nothing.
               // This `rollbackTx` is currently DEFENSIVE, not load-bearing:
               // `finalizeSucceededRefund`'s only `return err` is at
               // `_finalize-succeeded-refund.ts:203`, and its first local write
