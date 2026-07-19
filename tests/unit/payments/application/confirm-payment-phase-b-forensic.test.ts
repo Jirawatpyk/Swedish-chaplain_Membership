@@ -211,7 +211,7 @@ function makeHarness(
       nowIso: () => '2026-05-12T07:00:00.000Z',
       nowMs: () => 1_747_033_200_000,
     },
-    logger: { warn } as unknown as ConfirmPaymentDeps['logger'],
+    logger: { warn: warn as (msg: string, ctx: Record<string, unknown>) => void },
     taxAtPayment: 'off' as const,
   };
 
@@ -395,8 +395,8 @@ describe('F-2 — Phase B forensic emit (late-charge auto-refund)', () => {
 
   it('deps.logger absent — the forensic still lands (unit callers do not wire a logger)', async () => {
     const h = makeLateCharge({ failInTxEmit: true });
-    const depsNoLogger = { ...h.deps };
-    delete (depsNoLogger as { logger?: unknown }).logger;
+    // Omit rather than set-undefined — `exactOptionalPropertyTypes` is on.
+    const { logger: _omitted, ...depsNoLogger } = h.deps;
 
     const result = await confirmPayment(depsNoLogger, INPUT);
 

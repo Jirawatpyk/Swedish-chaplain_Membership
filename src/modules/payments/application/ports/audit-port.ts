@@ -246,6 +246,29 @@ export interface F5AuditPayloadByType {
       | 'invoice_unknown_status'
       | 'payment_terminal_failed_late_charge';
     processor_refund_id: string;
+    /**
+     * F-2 (money-remediation Task 3) — set ONLY on the `null`-tx forensic
+     * copy emitted from `confirmPayment`'s Phase-B catches, when the
+     * transaction that was recording an already-settled Stripe refund
+     * failed and rolled its own money-trail row back.
+     *
+     * Absent on the normal in-tx emit. Their presence is the flag that
+     * distinguishes "the auto-refund is recorded" from "the auto-refund
+     * happened and this row is the only thing that knows".
+     *
+     * `recovery` is a closed literal on purpose. It replaced
+     * `awaiting_stripe_retry_idempotency`, which was false: the use-case
+     * returns `ok`, the route 200-acks, and Stripe does not redeliver a
+     * 2xx — so the automatic retry that string promised can never fire.
+     * Widening this back to a free string would let the same false claim
+     * back in silently.
+     */
+    recovery?: 'manual_reconcile_via_runbook';
+    runbook_url?: string;
+    /** Error CLASS name only — never `.message` (PII / SQL fragments). */
+    phase_b_error_kind?: string;
+    /** Stripe's terminal verdict on the refund at creation time. */
+    refund_status?: string;
   };
   payment_auto_refunded_concurrent_manual_mark: Record<string, unknown>;
   payment_environment_mismatch: Record<string, unknown>;

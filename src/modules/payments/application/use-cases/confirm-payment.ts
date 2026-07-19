@@ -51,6 +51,7 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 // captured ops log below (precedent: F4's record-payment.ts also imports
 // the structured logger at the Application layer).
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -301,6 +302,96 @@ export function causeForInvoiceStatus(
     default:
       return 'invoice_unknown_status';
   }
+}
+
+/**
+ * F-2 (money-remediation Task 3) — the money trail for an auto-refund whose
+ * recording transaction died.
+ *
+ * ## Why this exists
+ *
+ * Both Phase-B blocks below run AFTER `createRefund` has moved real money.
+ * The single transaction that records the movement writes the durable `re_…`
+ * marker, the 10-year money-trail audit, and `markProcessed`. When that
+ * transaction fails — a Neon connection drop is the realistic trigger — the
+ * in-tx audit row rolls back with everything else. Before this helper the
+ * catch bumped a counter and wrote a pino line, and pino rolls off in 30
+ * days. So a real refund of real money existed with **no audit row at all**,
+ * against a Thai RD §87/3 obligation to keep one for ten years.
+ *
+ * The `null` tx is what makes the record survive: `drizzle-payments-audit`
+ * takes the auto-commit path for `null` and log-and-swallows its own
+ * failures, so this write is not part of the transaction it is reporting on.
+ *
+ * The pattern is the codebase's own — `issue-refund.ts` emits exactly this
+ * shape from the identical situation (its own Phase-B double-fault).
+ *
+ * ## Why `.catch()` is not optional
+ *
+ * The audit rail and the transaction that just failed are the same Neon
+ * instance, so a co-occurring outage is likely rather than exotic. Letting
+ * this throw would convert a swallowed 200 into a thrown 500 — a different
+ * failure, not a fix. The adapter has already logged and bumped
+ * `useCaseAuditEmitFailed` by the time we get here.
+ *
+ * ## Why `committed` is a parameter and not an assumption
+ *
+ * Reaching the `catch` does NOT prove the transaction failed: the metric
+ * bumps sit inside the same `try` (deliberately — they must not fire on a
+ * rolled-back tx). If one of those threw, the money trail is already
+ * durably on disk and emitting here would write a SECOND 10-year row for
+ * one refund, double-listing the task on the admin reconcile surface
+ * (`findStaleInvoiceAutoRefund`) — rows that cannot simply be deleted.
+ *
+ * The OTel wrappers swallow internally, so this is defensive today rather
+ * than load-bearing. It is keyed on the transaction outcome anyway, because
+ * the alternative is being correct only by accident of what currently sits
+ * inside the `try`.
+ */
+async function emitPhaseBSettlementForensic(
+  deps: ConfirmPaymentDeps,
+  args: {
+    committed: boolean;
+    tenantId: string;
+    requestId: string | null;
+    eventType:
+      | 'payment_auto_refunded_stale_invoice'
+      | 'payment_auto_refunded_concurrent_manual_mark';
+    paymentId: string;
+    invoiceId: string;
+    amountSatang: bigint;
+    cause: StaleRefundCause | 'payment_terminal_failed_late_charge';
+    processorRefundId: string;
+    refundStatus: string;
+    errorKind: string;
+  },
+): Promise<void> {
+  if (args.committed) return;
+  await deps.audit
+    .emit(null, {
+      tenantId: args.tenantId,
+      requestId: args.requestId,
+      eventType: args.eventType,
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      summary: `Phase B failed after Stripe refunded payment ${args.paymentId} — refund ${args.processorRefundId} IS REAL and its transaction rolled back; the webhook was 200-acked so nothing retries. Manual reconciliation required.`,
+      payload: {
+        payment_id: args.paymentId,
+        invoice_id: args.invoiceId,
+        refunded_amount_satang: args.amountSatang.toString(),
+        cause: args.cause,
+        processor_refund_id: args.processorRefundId,
+        refund_status: args.refundStatus,
+        phase_b_error_kind: args.errorKind,
+        recovery: 'manual_reconcile_via_runbook',
+        runbook_url: 'docs/runbooks/out-of-band-refund.md',
+      },
+      retentionYears: retentionFor(args.eventType),
+    })
+    .catch(() => {
+      // Triple-fault swallow — see the block comment above. The adapter's
+      // `null`-tx branch already log-and-swallows and bumps its own
+      // failure counter.
+    });
 }
 
 async function confirmPaymentBody(
@@ -828,8 +919,15 @@ async function confirmPaymentBody(
   // the payment-row FOR UPDATE lock. Idempotency: Stripe's
   // `auto-refund-${paymentId}` key returns the same refund on retry;
   // `markProcessedIfPresent` is idempotent (no-op when row already
-  // processed); audit emit on `null` tx commits independently so a
-  // Phase-B rollback still leaves a forensic trail.
+  // processed).
+  //
+  // F-2 (money-remediation Task 3) — this comment used to end "audit emit
+  // on `null` tx commits independently so a Phase-B rollback still leaves a
+  // forensic trail". That stopped being true when A.13 moved the emit INSIDE
+  // the tx (`drizzle-payments-audit.ts` bubbles the failure whenever
+  // `tx !== null`), so a Phase-B rollback left NO trail at all. The
+  // `emitPhaseBSettlementForensic` call in the catch below is what makes the
+  // sentence true again.
   // TS narrows the captured-let to `never` after the closure (it cannot
   // prove the assignment ran), so re-bind through an unknown cast.
   const stalePendingFinal = stalePending as StalePending | null;
@@ -980,6 +1078,9 @@ async function confirmPaymentBody(
     // on null-tx committed, markProcessed in a separate tx) that produced
     // duplicate audit rows on a mid-flight crash (old R3 H3-1 artefact).
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
+    // F-2: distinguishes "the transaction failed" from "something after the
+    // commit failed". See `emitPhaseBSettlementForensic`.
+    let phaseBCommitted = false;
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         // Guarded flip (`WHERE status='pending'` — expectedCurrentStatus
@@ -1105,6 +1206,7 @@ async function confirmPaymentBody(
           }
         }
       });
+      phaseBCommitted = true;
       // F5R1-E15 — metric AFTER the tx commits so a Phase B failure does
       // NOT bump it (the Stripe retry that recovers WILL bump it cleanly).
       paymentsMetrics.autoRefundedStaleCount(input.tenantId);
@@ -1114,25 +1216,36 @@ async function confirmPaymentBody(
         // does not over-count; a Stripe retry re-runs cleanly.
         paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
       }
-      /* v8 ignore start — best-effort Phase B catch; rare DB-outage
-       * race window. Recovery is automatic via Stripe retry idempotency
-       * key (nothing committed → Phase A re-runs against the still-pending
-       * row → same refund → this tx re-attempts cleanly). */
     } catch (phaseBErr) {
       // F5R3 CR-6 (2026-05-16) — bump dedicated counter + structured log
       // so chronic Phase B failures surface to alert rules (pino rolls
-      // off in 30 days). Recovery is automatic via Stripe retry
-      // idempotency.
+      // off in 30 days).
       paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
+      const phaseBErrKind = errKind(phaseBErr);
       deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,
-        errKind: phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',
-        recovery: 'awaiting_stripe_retry_idempotency',
+        errKind: phaseBErrKind,
+        // F-2 part 2: was `awaiting_stripe_retry_idempotency`. That claim
+        // was false — this function returns `ok`, the route 200-acks, and
+        // Stripe does not redeliver a 2xx, so the idempotency-key retry it
+        // promised can never fire. Nothing recovers this without a human.
+        recovery: 'manual_reconcile_via_runbook',
       });
-      void phaseBErr;
+      await emitPhaseBSettlementForensic(deps, {
+        committed: phaseBCommitted,
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: auditEventType,
+        paymentId: payment.id,
+        invoiceId: payment.invoiceId,
+        amountSatang: payment.amountSatang,
+        cause,
+        processorRefundId: refund.value.id,
+        refundStatus: refund.value.status,
+        errorKind: phaseBErrKind,
+      });
     }
-    /* v8 ignore stop */
 
     return ok<ConfirmPaymentOutcome>({
       kind: 'auto_refunded_stale_invoice',
@@ -1276,6 +1389,8 @@ async function confirmPaymentBody(
     // Stripe accepted the refund. In ONE tx: durably stamp the `re_…` id on
     // the STILL-`failed` row (RR-6 recognition marker; F-9 — status NOT
     // changed) + emit the 10y forensic money-trail + markProcessed.
+    // F-2: see the stale-invoice sibling above.
+    let phaseBCommitted = false;
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         const marked = await deps.paymentsRepo.attachAutoRefundMarkerIfAbsent(tx, {
@@ -1338,6 +1453,7 @@ async function confirmPaymentBody(
           });
         }
       });
+      phaseBCommitted = true;
       // Metric AFTER the tx commits so a Phase B failure does NOT bump it
       // (the Stripe retry that recovers WILL bump it cleanly).
       paymentsMetrics.lateChargeAutoRefundedCount(input.tenantId);
@@ -1345,24 +1461,34 @@ async function confirmPaymentBody(
         // Page ops on the money-not-returned path (mirrors the webhook metric).
         paymentsMetrics.autoRefundFailedNeedsReconcile(input.tenantId);
       }
-      /* v8 ignore start — best-effort Phase B catch; rare DB-outage race.
-       * Recovery is automatic via Stripe retry idempotency (nothing committed
-       * → Phase A re-runs against the still-`failed` row → same refund id →
-       * this tx re-attempts cleanly). */
     } catch (phaseBErr) {
       // Distinct late-charge (#8) counter — mirrors the distinct SUCCESS-path
       // metric `lateChargeAutoRefundedCount` so the two Phase B failure paths
       // (stale-invoice vs late-charge) are not conflated on SRE dashboards.
       paymentsMetrics.confirmPaymentLateChargePhaseBMarkFailed();
+      const phaseBErrKind = errKind(phaseBErr);
       deps.logger?.warn('confirm_payment.late_charge_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,
-        errKind: phaseBErr instanceof Error ? phaseBErr.constructor.name : 'unknown',
-        recovery: 'awaiting_stripe_retry_idempotency',
+        errKind: phaseBErrKind,
+        // F-2 part 2 — see the stale-invoice sibling. The 200-ack makes the
+        // previously-claimed `awaiting_stripe_retry_idempotency` impossible.
+        recovery: 'manual_reconcile_via_runbook',
       });
-      void phaseBErr;
+      await emitPhaseBSettlementForensic(deps, {
+        committed: phaseBCommitted,
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_auto_refunded_stale_invoice',
+        paymentId: payment.id,
+        invoiceId: payment.invoiceId,
+        amountSatang: payment.amountSatang,
+        cause: 'payment_terminal_failed_late_charge',
+        processorRefundId: refund.value.id,
+        refundStatus: refund.value.status,
+        errorKind: phaseBErrKind,
+      });
     }
-    /* v8 ignore stop */
 
     return ok<ConfirmPaymentOutcome>({
       kind: 'auto_refunded_stale_invoice',
