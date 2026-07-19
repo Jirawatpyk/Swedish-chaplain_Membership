@@ -120,6 +120,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics, type AutoDraftSkipReason } from '@/lib/metrics';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { addMonthsUtc } from '@/lib/dates';
 import { omitUndefined } from '@/lib/object-helpers';
@@ -258,20 +259,37 @@ export async function autoDraftDueRenewals(
       switch (outcome) {
         case 'drafted':
           drafted += 1;
+          renewalsMetrics.autoDraftCreated(input.tenantId);
           break;
         case 'skipped_existing':
           skippedExisting += 1;
+          renewalsMetrics.autoDraftSkipped(
+            input.tenantId,
+            AUTO_DRAFT_SKIP_REASON_LABEL.skipped_existing,
+          );
           break;
         case 'skipped_race_lost':
           skippedRaceLost += 1;
+          renewalsMetrics.autoDraftSkipped(
+            input.tenantId,
+            AUTO_DRAFT_SKIP_REASON_LABEL.skipped_race_lost,
+          );
           break;
         case 'skipped_terminated':
           skippedTerminated += 1;
+          // Label is `membership_not_full`, NOT `terminated` — this bucket
+          // counts suspended (incl. merely-unpaid) members too. See
+          // AUTO_DRAFT_SKIP_REASON_LABEL for the full rationale.
+          renewalsMetrics.autoDraftSkipped(
+            input.tenantId,
+            AUTO_DRAFT_SKIP_REASON_LABEL.skipped_terminated,
+          );
           break;
         case 'draft_failed':
           // A typed F4 Result failure, not a thrown exception — same
           // SRE-alert bucket as a genuine throw (see module docstring).
           errors += 1;
+          renewalsMetrics.autoDraftErrors(input.tenantId);
           break;
         default: {
           const _exhaustive: never = outcome;
@@ -283,6 +301,10 @@ export async function autoDraftDueRenewals(
       // whole cron run. Pass the Error OBJECT (not `e.message`) so
       // pino's err-serialiser captures the stack trace.
       errors += 1;
+      // Same counter as the typed `draft_failed` arm above — a thrown
+      // cycle and a returned failure share one SRE response (a renewal
+      // did not get drafted today), so they share one series.
+      renewalsMetrics.autoDraftErrors(input.tenantId);
       logger.error(
         {
           errorId: 'F8.AUTO_DRAFT.CYCLE_FAILED',
@@ -313,7 +335,54 @@ type ProcessOneOutcome =
   | 'draft_failed';
 
 /** tx1's early-exit channel — the 3 skip outcomes decidable BEFORE the F4 call. */
-type Tx1SkipOutcome = 'skipped_existing' | 'skipped_race_lost' | 'skipped_terminated';
+export type Tx1SkipOutcome =
+  | 'skipped_existing'
+  | 'skipped_race_lost'
+  | 'skipped_terminated';
+
+/**
+ * 107-auto-invoice Task 16 — internal skip bucket → metric `reason` label.
+ *
+ * Two of the three map across essentially unchanged. The third does not,
+ * and the divergence is deliberate:
+ *
+ *     skipped_terminated  →  membership_not_full
+ *
+ * **Why the names differ — do not "align" them.** The internal bucket is
+ * populated at step 3 of `processOne` from
+ * `deriveMembershipAccess(latestCycle, now).access !== 'full'`, and
+ * `access` is a THREE-value union: `'full' | 'suspended' | 'terminated'`
+ * (see `src/modules/renewals/domain/renewal-cycle.ts`). The `!== 'full'`
+ * test therefore admits SUSPENDED members as well as terminated ones —
+ * and `suspended` covers `reason: 'unpaid'`, which is the ordinary,
+ * expected state of any member carrying an outstanding invoice during
+ * renewal season, plus `reason: 'pending_review'`.
+ *
+ * Inside this use-case the name is harmless shorthand for "not billable
+ * right now" and it has its own review history; renaming shipped internals
+ * is churn. But a METRIC LABEL is a contract with a human reading a
+ * dashboard during an incident. A series called `terminated` that is
+ * mostly composed of members who simply have not paid yet would misinform
+ * that person permanently, and — because the number would look plausible —
+ * undetectably. `membership_not_full` says exactly what the bucket counts
+ * and nothing more.
+ *
+ * The mapping is pinned by
+ * `tests/unit/lib/metrics-auto-invoice.test.ts` (including an explicit
+ * "no label contains the word terminated" assertion), so an attempt to
+ * collapse the two names fails loudly rather than silently reintroducing
+ * the lie.
+ *
+ * Typed as an EXHAUSTIVE `Record<Tx1SkipOutcome, …>`: adding a fourth skip
+ * outcome breaks the build here until it is given a deliberate label.
+ */
+export const AUTO_DRAFT_SKIP_REASON_LABEL: Readonly<
+  Record<Tx1SkipOutcome, AutoDraftSkipReason>
+> = {
+  skipped_existing: 'existing_invoice',
+  skipped_race_lost: 'race_lost',
+  skipped_terminated: 'membership_not_full',
+};
 
 /** Everything tx2 + the F4 call need, resolved inside tx1 (then tx1 closes). */
 interface ReadyToDraft {

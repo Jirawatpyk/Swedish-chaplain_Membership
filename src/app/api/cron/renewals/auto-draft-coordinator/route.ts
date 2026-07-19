@@ -23,16 +23,158 @@
  * enforced per-tenant inside the worker's use-case call (Task 7).
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { runInTenant } from '@/lib/db';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { asTenantContext } from '@/modules/tenants';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * 107-auto-invoice Task 16 — observable-gauge feed.
+ *
+ * Emits the three per-tenant auto-invoice gauges once per coordinator pass
+ * (daily — sufficient cadence for backlog/SLO panels, matching the
+ * `observeCycleStateGaugesForTenant` precedent in the dispatch
+ * coordinator, which this function mirrors structurally).
+ *
+ * Runs AFTER the fan-out so the numbers reflect the state the cron just
+ * produced rather than yesterday's.
+ *
+ * Best-effort by contract: the whole body is wrapped in try/catch and every
+ * `renewalsMetrics.*` call is itself `safeMetric`-wrapped. A gauge that
+ * takes the cron down is worse than no gauge — a count-query glitch must
+ * never fail or delay a pass. Failures are logged at `warn` (not `error`:
+ * losing a day of gauge resolution is not an actionable page) so sustained
+ * failure is still detectable.
+ *
+ * Tenant isolation: the aggregate runs on the `tx` threaded from
+ * `runInTenant` (which sets `app.current_tenant`, so RLS+FORCE applies) AND
+ * carries an explicit `tenant_id = ${tenantId}` predicate on every table it
+ * touches — Constitution Principle I two-layer isolation, matching the
+ * Task 6/7/9 cross-module queries in `drizzle-renewal-cycle-repo.ts`.
+ *
+ * ---
+ * **Query notes** (kept here rather than as `--` comments inside the
+ * template: a backtick inside a tagged template literal terminates it, and
+ * these names all want backticks).
+ *
+ * *(1) + (2) queue depth and head-of-queue age.* `origin='auto_renewal' AND
+ * status='draft'` is the treasurer's review queue verbatim — the same
+ * predicate `load-auto-renewal-queue-context.ts` selects on. Keep the two in
+ * sync: a gauge that disagrees with the screen the operator is looking at is
+ * worse than no gauge. No `invoice_subject` filter, deliberately, for the
+ * same reason — the queue does not carry one either (only the membership
+ * auto-draft path ever writes `origin='auto_renewal'`, so the two are
+ * equivalent today, and matching the screen matters more than defensive
+ * narrowing).
+ *
+ * The `MIN(created_at)` carries the SAME `FILTER` as the `COUNT`. Without
+ * it the age would be measured from the oldest invoice of ANY origin/status
+ * in the tenant — a number that looks perfectly plausible and is meaningless
+ * (verified against the dev branch: filtered 7884965s vs unfiltered
+ * 7885772s over the same rows). `COALESCE` handles the empty queue, where
+ * `MIN` is NULL and the subtraction would otherwise observe NULL instead of
+ * the correct 0.
+ *
+ * *(3) wedged-state detector.* A non-zero value means a member is suspended
+ * pending payment of a bill that does not exist — never billed, never
+ * chased, and invisible on every other panel (`membership_suspended_count`
+ * counts them as ordinary unpaid, which raises no suspicion). Task 9
+ * documented the non-recovery window that produces this (mutual abort near
+ * the T-0 boundary); Task 11's reconcile repairs the INVERSE defect (issued
+ * invoice, missing cycle link) and cannot see this one.
+ *
+ * "Live invoice" is member-level (`invoice_subject='membership' AND status
+ * IN ('draft','issued')`) — the exact `noLiveMembershipInvoiceSql`
+ * definition `listCyclesEligibleForAutoDraft` already uses, so the detector
+ * and the drafter agree on what "already billed" means. That also keeps the
+ * population disjoint from Task 11's orphans: an orphan HAS a live issued
+ * invoice, so `NOT EXISTS` excludes it and the two signals stay independent.
+ */
+async function observeAutoInvoiceGaugesForTenant(
+  tenantId: string,
+): Promise<void> {
+  try {
+    const ctx = asTenantContext(tenantId);
+    type Row = {
+      queue_size: number;
+      oldest_age_seconds: number;
+      awaiting_payment_no_invoice: number;
+    };
+    const rows = await runInTenant<ReadonlyArray<Row>>(ctx, async (tx) => {
+      const result = await tx.execute(sql`
+        SELECT
+          -- (1) + (2) Review-queue depth and head-of-queue age.
+          -- See the JSDoc above for why this predicate, why MIN carries the
+          -- same FILTER, and why COALESCE is required.
+          COUNT(*) FILTER (
+            WHERE origin = 'auto_renewal' AND status = 'draft'
+          )::int AS queue_size,
+          COALESCE(
+            EXTRACT(
+              EPOCH FROM (
+                NOW() - MIN(created_at) FILTER (
+                  WHERE origin = 'auto_renewal' AND status = 'draft'
+                )
+              )
+            ),
+            0
+          )::int AS oldest_age_seconds,
+          -- (3) Wedged-state detector: cycles awaiting payment with no live
+          -- membership invoice to pay. Steady-state expectation is 0.
+          -- See the JSDoc above for the full rationale.
+          (
+            SELECT COUNT(*)::int
+            FROM renewal_cycles rc
+            WHERE rc.tenant_id = ${tenantId}
+              AND rc.status = 'awaiting_payment'
+              AND NOT EXISTS (
+                SELECT 1
+                FROM invoices live
+                WHERE live.tenant_id = rc.tenant_id
+                  AND live.member_id = rc.member_id
+                  AND live.invoice_subject = 'membership'
+                  AND live.status IN ('draft', 'issued')
+              )
+          ) AS awaiting_payment_no_invoice
+        FROM invoices
+        WHERE tenant_id = ${tenantId}
+      `);
+      // Drizzle's postgres-js driver returns the rows array directly.
+      // Cast through `unknown` because the helper-level Row type is
+      // narrower than the driver's untyped rowset.
+      return (result as unknown as ReadonlyArray<Row>) ?? [];
+    });
+    const row = rows[0];
+    if (!row) return;
+    renewalsMetrics.observeAutoDraftQueueSizeGauge(tenantId, row.queue_size);
+    renewalsMetrics.observeAutoDraftOldestAgeGauge(
+      tenantId,
+      row.oldest_age_seconds,
+    );
+    renewalsMetrics.observeAwaitingPaymentNoInvoiceGauge(
+      tenantId,
+      row.awaiting_payment_no_invoice,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId,
+        gaugeKind: 'renewals_auto_invoice',
+      },
+      'cron.renewals.auto-draft.coordinator.gauge_observe_failed',
+    );
+  }
+}
 
 interface PerTenantResult {
   readonly tenant_id: string;
@@ -201,6 +343,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
     return r.value;
   });
+
+  // Task 16 — feed the per-tenant auto-invoice gauges AFTER the fan-out so
+  // they reflect the state this pass just produced. `allSettled` + the
+  // helper's own try/catch mean a gauge failure can neither reject here nor
+  // affect the summary below.
+  await Promise.allSettled(
+    activeTenants.map((tenantId) =>
+      observeAutoInvoiceGaugesForTenant(tenantId),
+    ),
+  );
 
   const tenantsSucceeded = perTenantResults.filter(
     (r) => r.error === undefined,

@@ -1587,3 +1587,85 @@ occurred event is visible regardless of snapshot age.
 
 Tracer name (when traces are added): `swecham.insights`.
 
+
+---
+
+## 26. 107-auto-invoice — Auto-drafted renewal invoices — observability
+
+Feature shape: a daily cron pre-fills `origin='auto_renewal' status='draft'`
+membership invoices for enrolled members; a treasurer works a review queue and
+clicks Issue / Discard per row; a housekeeping cron reconciles orphans and
+prunes stale drafts. **Nothing bills automatically** — a draft carries no tax
+number, no PDF and no email until a human issues it. Ships dark behind three
+default-off keys (`FEATURE_AUTO_INVOICE` env, `tenant_invoice_settings.auto_invoice_enabled`,
+per-member `auto_invoice_enrolled_at`).
+
+Owner: Renewals/Billing. Tracer: `swecham.renewals` (shared with F8).
+
+### 26.1 Metrics catalogue
+
+All instruments are `safeMetric`-wrapped and emitted from cron paths — a
+metrics failure can never fail or delay a pass (§ 23.9 swallow contract
+applies, including its log-scrape requirement).
+
+| Metric | Type | Labels | Source | Notes |
+|---|---|---|---|---|
+| `renewals_auto_draft_created_total` | counter | `tenant` | `autoDraftDueRenewals` outcome switch | One per drafted cycle. Throughput, **not** spend — a draft is not a bill. |
+| `renewals_auto_draft_skipped_total` | counter | `tenant`, `reason` | same switch | `reason` is `existing_invoice` / `race_lost` / `membership_not_full`. Every skip is a normal outcome; watch the **mix**, not the total. |
+| `renewals_auto_draft_errors_total` | counter | `tenant` | same switch + per-cycle catch | Typed F4 `draft_failed` **and** thrown cycles — one series, one SRE response. |
+| `renewals_auto_draft_queue_size` | gauge | `tenant` | auto-draft coordinator cron (daily) | Treasurer review-queue depth (`origin='auto_renewal' AND status='draft'`) — the same predicate the queue screen selects on. |
+| `renewals_auto_draft_oldest_age_seconds` | gauge | `tenant` | same | Age of the head of that queue. 0 when empty. |
+| `renewals_awaiting_payment_no_invoice` | gauge | `tenant` | same | **Wedged-state detector.** Cycles `awaiting_payment` with no live membership invoice. Steady state is 0. |
+
+Cardinality: `tenant` is small-cardinality (single-tenant today, bounded by the
+tenants table post-F10); `reason` is a closed 3-value enum
+(`AutoDraftSkipReason`). No unbounded dimension is emitted — no `memberId`, no
+`invoiceId`, no invoice number.
+
+### 26.2 The `membership_not_full` label — read before renaming
+
+`renewals_auto_draft_skipped_total{reason="membership_not_full"}` is fed from
+the use-case's INTERNAL `skippedTerminated` bucket. **The two names differ
+deliberately and must stay different.**
+
+The internal bucket is populated from `deriveMembershipAccess(...).access !== 'full'`,
+and `access` is a three-value union (`full` / `suspended` / `terminated`).
+It therefore counts **suspended** members as well as terminated ones — and
+`suspended` includes the `unpaid` reason, the ordinary state of any member
+carrying an outstanding invoice during renewal season. A dashboard series
+labelled `terminated` that is mostly composed of members who simply have not
+paid yet would misinform whoever is on call, permanently and — because the
+number looks plausible — undetectably.
+
+The mapping lives in `AUTO_DRAFT_SKIP_REASON_LABEL`
+(`auto-draft-due-renewals.ts`), typed as an exhaustive
+`Record<Tx1SkipOutcome, AutoDraftSkipReason>` so a new skip outcome cannot ship
+unlabelled, and is pinned by `tests/unit/lib/metrics-auto-invoice.test.ts`
+(including an explicit "no label contains the word terminated" assertion).
+
+### 26.3 Alerts
+
+| ID | Rule | Severity | Routing |
+|---|---|---|---|
+| AI-A1 | `renewals_awaiting_payment_no_invoice{tenant}` > 0 for 2 consecutive daily samples | alarm | `#oncall-platform` — a member is suspended pending payment of a bill that does not exist: never billed, never chased, and invisible on every other panel (`membership_suspended_count` counts them as ordinary unpaid). Runbook: list the wedged cycles with the `NOT EXISTS` query in `auto-draft-coordinator/route.ts`, then either issue the missing invoice or transition the cycle back. Distinct from Task 11's orphans (those HAVE a live issued invoice and are excluded by the `NOT EXISTS`). |
+| AI-A2 | `renewals_auto_draft_errors_total{tenant}` >= 1 in any 24-h window | alarm | `#oncall-platform` — a renewal did not get drafted today. Correlate with the `F8.AUTO_DRAFT.CYCLE_FAILED` log (carries `cycleId` + serialised error) for the specific rows. The next cron pass retries. |
+| AI-A3 | `renewals_auto_draft_oldest_age_seconds{tenant}` > 14 days | alarm | `#oncall-platform` (business, not platform) — renewals are drafted but nobody is issuing them; members are not being billed. Alert on **age**, not depth: a queue of 40 that turns over daily is healthy, a queue of 3 whose head is 45 days old means three renewals were quietly abandoned. |
+| AI-A4 | `renewals_auto_draft_skipped_total{reason="race_lost"}` share rising above baseline over 7 d | report | No page — the cron is colliding with member self-service renewals more than expected. Review cron scheduling. |
+| AI-A5 | `renewals_auto_draft_created_total{tenant}` == 0 for 7 consecutive days **while** enrolled members exist | report | No page — expected while the feature ships dark (all three keys default off). Becomes meaningful only after flag-flip; confirm the keys before investigating. |
+
+### 26.4 Gap — no latency SLO yet
+
+The cron paths carry **no p95 latency SLO** and no duration histogram beyond
+the shared `renewals.coordinator.duration_ms{cron_kind="auto_draft"}` (§ 23.1).
+That is acceptable while the feature is dark and single-tenant: the daily pass
+is not user-facing and the coordinator histogram bounds it. **Before flag-flip
+to a tenant with `auto_invoice_enabled=true`, record a per-tenant SLO for the
+auto-draft pass** (the F8 dispatch precedent is < 60 s @ 5k members, FR-017).
+The review-queue SCREEN is user-facing and inherits the F9 dashboard budget.
+
+### 26.5 Forbidden log fields
+
+No feature-specific extension. The § 3 universal list applies; note in
+particular that invoice NUMBERS must never become metric labels (unbounded
+cardinality) — drafts have none until issued, and the issued path logs the
+`invoiceId` uuid only.
