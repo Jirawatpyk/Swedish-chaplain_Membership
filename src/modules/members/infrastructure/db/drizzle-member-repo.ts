@@ -523,10 +523,46 @@ export const drizzleMemberRepo: MemberRepo = {
             // enrolment timestamp is the audit-relevant one, and this
             // also makes a concurrent duplicate enrol a no-op.
             isNull(members.autoInvoiceEnrolledAt),
+            // GDPR Art.17 / PDPA §33 — never (re-)enrol an erased member.
+            // `scrubPiiInTx` resets this exact column to NULL on erasure
+            // ("an erased member MUST NOT stay enrolled in automated
+            // billing"); without this predicate a bulk enrol over the
+            // directory silently reverses that reset, because erasure leaves
+            // `status` alone and the member is still listed and selectable.
+            //
+            // This is defence-in-depth, NOT the primary gate: the caller
+            // partitions erased ids into `skippedErased` first (via
+            // `findErasedIdsInTx`). That ordering matters — the caller
+            // throws `enrol_count_mismatch` when RETURNING is short of what
+            // it asked for, so relying on this predicate ALONE would abort
+            // an otherwise-valid mixed batch instead of skipping one member.
+            isNull(members.erasedAt),
           ),
         )
         .returning({ memberId: members.memberId });
       return ok(rows.map((r) => r.memberId as MemberId));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findErasedIdsInTx(tx, tenantId, memberIds) {
+    try {
+      if (memberIds.length === 0) return ok(new Set<MemberId>());
+      const rows = await tx
+        .select({ memberId: members.memberId })
+        .from(members)
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation, matching the
+            // sibling reads in this file.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            isNotNull(members.erasedAt),
+          ),
+        );
+      return ok(new Set(rows.map((r) => r.memberId as MemberId)));
     } catch (e) {
       return err(unexpected(e));
     }

@@ -7,9 +7,9 @@
  * different code sets (`issueAutoDraftedRenewal`'s `IssueAutoDraftError`
  * vs. the bare `issueInvoice`'s `IssueInvoiceError`) and different UI
  * requirements: this router's `refusal_reason` branch is a HARD REQUIREMENT
- * (Task 14 brief §3) — it must map 1:1 onto the SAME three reasons Task
+ * (Task 14 brief §3) — it must map 1:1 onto the SAME four reasons Task
  * 13's `<AutoRenewalQueueBadges>` predicts (`plan_year_drift` /
- * `member_terminated` / `duplicate_live_bill`), so the caller renders the
+ * `member_terminated` / `member_erased` / `duplicate_live_bill`), so the caller renders the
  * identical copy the queue badge already showed for this row via the SAME
  * `admin.invoices.list.queue.refusalReason.*` i18n keys — not a duplicated
  * copy that could drift from Task 13's wording over time.
@@ -24,7 +24,11 @@ export type IssueAutoDraftErrorRouting =
       readonly kind: 'refusal_reason';
       /** Relative to `admin.invoices.list.queue.refusalReason.` — the SAME
        * key Task 13's queue badge reads, so wording never drifts. */
-      readonly reasonKey: 'planYearDrift' | 'memberTerminated' | 'duplicateLiveBill';
+      readonly reasonKey:
+        | 'planYearDrift'
+        | 'memberTerminated'
+        | 'memberErased'
+        | 'duplicateLiveBill';
       /** Only set for `duplicateLiveBill` — powers a "View existing bill" link,
        * mirroring `<AutoRenewalQueueBadges>`'s own conflicting-invoice link. */
       readonly conflictingInvoiceId?: string;
@@ -57,6 +61,9 @@ export function routeIssueAutoDraftError(
   }
   if (code === 'member_terminated') {
     return { kind: 'refusal_reason', reasonKey: 'memberTerminated' };
+  }
+  if (code === 'member_erased') {
+    return { kind: 'refusal_reason', reasonKey: 'memberErased' };
   }
   if (code === 'invalid_draft' && body?.reason === 'plan_year_drift') {
     return { kind: 'refusal_reason', reasonKey: 'planYearDrift' };

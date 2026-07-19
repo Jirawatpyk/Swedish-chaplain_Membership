@@ -108,6 +108,7 @@ function SeverityBadge({
 export type AutoRenewalRefusalReasonClient =
   | { readonly kind: 'plan_year_drift' }
   | { readonly kind: 'member_terminated' }
+  | { readonly kind: 'member_erased' }
   | { readonly kind: 'duplicate_live_bill'; readonly conflictingInvoiceId: string };
 
 /** Client-facing shape — mirrors `InvoicesTableRow['queueMeta']` (non-null).
@@ -136,6 +137,8 @@ export function AutoRenewalQueueBadges({ meta }: { meta: AutoRenewalQueueMeta })
         return t('refusalReason.planYearDrift');
       case 'member_terminated':
         return t('refusalReason.memberTerminated');
+      case 'member_erased':
+        return t('refusalReason.memberErased');
       case 'duplicate_live_bill':
         return t('refusalReason.duplicateLiveBill');
     }

@@ -325,6 +325,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         enrolled: enrolResult.value.enrolled,
         skipped_already: enrolResult.value.skippedAlready,
         skipped_terminated: enrolResult.value.skippedTerminated,
+        skipped_erased: enrolResult.value.skippedErased,
       };
       try {
         await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {

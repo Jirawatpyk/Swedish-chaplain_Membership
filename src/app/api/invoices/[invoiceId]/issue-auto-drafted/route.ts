@@ -84,6 +84,7 @@ const STATUS_BY_KIND: Readonly<
   cycle_not_found: 404,
   invalid_draft: 422,
   member_terminated: 409,
+  member_erased: 409,
   duplicate_live_bill: 409,
 };
 
@@ -125,6 +126,10 @@ function serialiseError(error: IssueAutoDraftError): Record<string, unknown> {
     case 'draft_not_found':
     case 'cycle_not_found':
     case 'member_terminated':
+    // `member_erased` carries no payload BY DESIGN — the bare code is all the
+    // UI needs, and anything more would leak detail about a subject who
+    // exercised Art.17 onto the wire.
+    case 'member_erased':
       return { code: error.kind };
   }
 }

@@ -344,6 +344,12 @@ export interface MemberRepo {
    * "who did we actually enrol" list the caller must use to decide which
    * audit events to emit — do NOT assume it equals `memberIds`.
    *
+   * Rows with `erased_at IS NOT NULL` are likewise never written (GDPR
+   * Art.17 / PDPA §33). That predicate is defence-in-depth only — callers
+   * MUST partition erased ids out FIRST via {@link MemberRepo.findErasedIdsInTx},
+   * because a caller that reconciles RETURNING against its requested set
+   * would otherwise abort the whole batch over one erased member.
+   *
    * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to
    * the ambient RLS `SET LOCAL app.current_tenant` — Constitution
    * Principle I two-layer isolation. This method WRITES the key that
@@ -356,6 +362,26 @@ export interface MemberRepo {
     memberIds: readonly MemberId[],
     enrolledAt: Date,
   ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
+
+  /**
+   * 107-auto-invoice — batched `erased_at IS NOT NULL` probe over a set of
+   * member ids, returning ONLY the erased ones.
+   *
+   * Exists because `erased_at` is deliberately NOT carried on the `Member`
+   * aggregate (see {@link MemberRepo.findErasedAtById}), so a caller holding
+   * `Member` rows from `findManyByIdsInTx` cannot partition on it. In-tx so
+   * it observes the same locked snapshot as that lookup.
+   *
+   * Erasure keeps `members.status` and does NOT archive the member ("erasure
+   * is orthogonal to archive"), so an erased member remains listed,
+   * selectable and classified `full` by `deriveMembershipAccess` — no other
+   * predicate a bulk caller already has will fence one out.
+   */
+  findErasedIdsInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlySet<MemberId>, RepoError>>;
 
   /**
    * Clear `auto_invoice_enrolled_at` (set it back to NULL) for a batch of

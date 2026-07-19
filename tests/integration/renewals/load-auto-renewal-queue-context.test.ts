@@ -29,6 +29,9 @@
  *   (c3) refusalReason=member_terminated — the member's CURRENT latest
  *                        cycle is `lapsed`, independent of this draft's own
  *                        (still-healthy) stamped cycle (review A2).
+ *   (c4) refusalReason=member_erased — the member was GDPR/PDPA-erased.
+ *                        NOT covered by (c3): erasure leaves `status` and the
+ *                        cycle alone, so access still resolves `full`.
  *   (d) orphan          — a draft with no stamped cycle (Task 7's "orphaned
  *                        after commit" window) → `priceUnverifiable:true`,
  *                        `cycleId:null`, `refusalReason:null` (membership +
@@ -475,6 +478,44 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
 
     const meta = result.value.get(invoiceId);
     expect(meta?.refusalReason?.kind).toBe('member_terminated');
+  }, 60_000);
+
+  it("(c4) the member has been GDPR-erased → refusalReason:member_erased, even though access is still 'full'", async () => {
+    const memberId = await seedMember();
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
+    const invoiceId = await seedAutoDraft({
+      memberId,
+      planYear: PLAN_YEAR,
+      frozenPlanPriceThb: '60000.00',
+      cycleId,
+    });
+    // Erasure stamps ONLY `erased_at` — `status` and the cycle are left
+    // untouched, so the cycle stays `upcoming` with a future `expires_at` and
+    // `deriveMembershipAccess` still resolves `full`. That is exactly why
+    // (c3)'s `member_terminated` prediction does NOT cover this case, and why
+    // the queue needs its own erasure signal rather than reusing that one.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ erasedAt: new Date('2026-07-01T00:00:00Z'), companyName: '[erased]' })
+        .where(eq(members.memberId, memberId)),
+    );
+
+    const result = await loadAutoRenewalQueueContext(
+      makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const meta = result.value.get(invoiceId);
+    // The row is still RETURNED (not filtered out) — the draft exists and
+    // Discard is a per-row action, so hiding it would strand it.
+    expect(meta).toBeDefined();
+    expect(meta?.refusalReason?.kind).toBe('member_erased');
   }, 60_000);
 
   it('(d) orphan draft (no stamped cycle) → priceUnverifiable:true, priceChanged:false, cycleId:null, refusalReason:null, never throws', async () => {

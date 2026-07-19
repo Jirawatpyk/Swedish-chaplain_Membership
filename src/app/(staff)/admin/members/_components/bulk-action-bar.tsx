@@ -205,6 +205,7 @@ export function BulkActionBar({
               enrolled: 0,
               skipped_already: 0,
               skipped_terminated: 0,
+              skipped_erased: 0,
               ...(body ?? {}),
             };
             const parts = [t('enrolSucceeded', { enrolled: c.enrolled })];
@@ -215,6 +216,13 @@ export function BulkActionBar({
               parts.push(
                 t('enrolSkippedTerminated', { skipped: c.skipped_terminated }),
               );
+            }
+            // Reported separately from `skipped_terminated`: an erased member
+            // can never be enrolled, whereas a terminated one can after
+            // renewing. Folding them would tell the admin to retry later on a
+            // member for whom that is not a legal option.
+            if (c.skipped_erased > 0) {
+              parts.push(t('enrolSkippedErased', { skipped: c.skipped_erased }));
             }
             const message = parts.join(' · ');
             // A no-op (everyone already enrolled / terminated) gets a neutral

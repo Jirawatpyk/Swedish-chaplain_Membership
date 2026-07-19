@@ -1586,6 +1586,7 @@
         "enrolSucceeded": "{enrolled, plural, one {# medlem anmäld} other {# medlemmar anmälda}}",
         "enrolSkippedAlready": "{skipped, plural, one {# redan anmäld} other {# redan anmälda}}",
         "enrolSkippedTerminated": "{skipped, plural, one {# hoppades över (medlemskap avslutat)} other {# hoppades över (medlemskap avslutat)}}",
+        "enrolSkippedErased": "{skipped, plural, one {# hoppades över (personuppgifter raderade)} other {# hoppades över (personuppgifter raderade)}}",
         "unenrolSucceeded": "{unenrolled, plural, one {# medlem autofaktureras inte längre} other {# medlemmar autofaktureras inte längre}}",
         "unenrolSkippedNotEnrolled": "{skipped, plural, one {# var inte anmäld} other {# var inte anmälda}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
@@ -2113,6 +2114,7 @@
           "refusalReason": {
             "planYearDrift": "Förnyelseperioden ändrades efter att det här utkastet skapades.",
             "memberTerminated": "Den här medlemmens medlemskap har upphört.",
+            "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — kassera det här utkastet.",
             "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
           },
           "viewConflictingInvoice": "Visa befintlig faktura",

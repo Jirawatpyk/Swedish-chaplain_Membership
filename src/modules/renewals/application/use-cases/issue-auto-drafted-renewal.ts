@@ -114,6 +114,45 @@
  * IS — issuing is what CREATES that state. `terminated` (lapsed, or cancelled
  * past coverage end) is the real do-not-bill signal, so that is the gate.
  *
+ * ## Erasure gate (GDPR Art.17 / PDPA §33) — SEPARATE from the access gate
+ *
+ * The membership-access gate above provably does NOT catch an erased member,
+ * so this needs its own predicate. Erasure (`scrubPiiInTx`) deliberately
+ * leaves `status` and the renewal cycle alone — "erasure is orthogonal to
+ * archive" — and stamps only `erased_at`. A queued auto-draft's cycle is
+ * unexpired BY CONSTRUCTION (`listCyclesEligibleForAutoDraft` requires
+ * `expires_at > now`), and `deriveMembershipAccess` returns `full` for an
+ * unexpired `upcoming`/`reminded`/`cancelled` cycle. So even after a fully
+ * SUCCESSFUL erasure cascade the draft stays issuable on the ordinary path,
+ * and `member_terminated` never fires. A treasurer clicking Issue would mint
+ * an immutable §87-numbered §86/4 naming `[erased]`, pin a
+ * `member_identity_snapshot` of scrubbed data, and render a PDF to Blob —
+ * new money-path processing for a subject who exercised Art.17, AFTER
+ * `member_erased` was emitted as completion proof.
+ *
+ * This is the SAME hard exclusion the drafter query already enforces
+ * (`drizzle-renewal-cycle-repo.ts` — `AND m.erased_at IS NULL`); before this
+ * gate the invariant was only one predicate deep, so anything that reached
+ * the queue by another route (a draft created BEFORE the erasure, which is
+ * the ordinary case) sailed through.
+ *
+ * NOTE the deliberate contrast with `admin-renew-lapsed-member.ts` /
+ * `confirm-renewal.ts`, which read the SAME `erased` flag but use it only to
+ * gate the printed coverage-window TEXT, explicitly NOT to refuse ("a hard
+ * erased refusal is a separate COMP-1 policy decision"). Those are
+ * human-initiated renewals of a membership. This is AUTOMATED billing, which
+ * erasure already opted the member out of by resetting
+ * `auto_invoice_enrolled_at` — so refusing here contradicts nothing.
+ *
+ * ### Ordering — the gate sits ABOVE `discardSupersededDrafts`
+ *
+ * `return err(...)` inside a `runInTenant` callback does NOT throw: the
+ * callback returns normally and the transaction COMMITS. A guard placed below
+ * the sweep would therefore leave the sibling deletions AND their
+ * `renewal_auto_draft_discarded { reason:'superseded_on_issue' }` audit rows
+ * persisted for an issue that never happened. Integration case (l) asserts
+ * the sibling survives, so moving this gate down turns that test red.
+ *
  * ## Audit
  *
  * No `renewal_entered_awaiting_payment` is emitted. Its `source` is a closed
@@ -197,6 +236,8 @@ export type IssueAutoDraftError =
       readonly detail: string;
     }
   | { readonly kind: 'member_terminated'; readonly reason: string }
+  /** The member exercised GDPR Art.17 / PDPA §33 — see the header's erasure note. */
+  | { readonly kind: 'member_erased' }
   | {
       readonly kind: 'duplicate_live_bill';
       readonly conflictingInvoiceId: string;
@@ -210,7 +251,12 @@ export type IssueAutoDraftError =
 
 export type IssueAutoDraftedRenewalDeps = Pick<
   RenewalsDeps,
-  'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'f4InvoicingBridge'
+  | 'tenant'
+  | 'cyclesRepo'
+  | 'auditEmitter'
+  | 'clock'
+  | 'f4InvoicingBridge'
+  | 'memberRenewalFlagsRepo'
 >;
 
 export async function issueAutoDraftedRenewal(
@@ -310,6 +356,28 @@ export async function issueAutoDraftedRenewal(
         kind: 'member_terminated' as const,
         reason: access.reason,
       });
+    }
+
+    // --- GDPR Art.17 / PDPA §33 erasure gate (see header) ------------------
+    // MUST stay directly above `discardSupersededDrafts` — the first write in
+    // this transaction. See the header's ordering note.
+    const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
+      tx,
+      input.tenantId,
+      cycle.memberId,
+    );
+    if (guards?.erased === true) {
+      logger.warn(
+        {
+          errorId: 'F8.AUTO_ISSUE.MEMBER_ERASED',
+          tenantId: input.tenantId,
+          cycleId: cycle.cycleId,
+          invoiceId: input.invoiceId,
+          planYear,
+        },
+        '[issue-auto-drafted-renewal] refused — the member has been erased; a §86/4 must never be minted for an anonymised tombstone',
+      );
+      return err({ kind: 'member_erased' as const });
     }
 
     // --- sweep superseded sibling auto-drafts, THEN guard -----------------

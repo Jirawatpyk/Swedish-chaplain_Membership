@@ -1586,6 +1586,7 @@
         "enrolSucceeded": "เปิดใช้งานแล้ว {enrolled} ราย",
         "enrolSkippedAlready": "เปิดใช้งานอยู่แล้ว {skipped} ราย",
         "enrolSkippedTerminated": "ข้าม {skipped} ราย (สิ้นสุดสถานะสมาชิก)",
+        "enrolSkippedErased": "ข้าม {skipped} ราย (ลบข้อมูลส่วนบุคคลแล้ว)",
         "unenrolSucceeded": "หยุดใบแจ้งหนี้อัตโนมัติแล้ว {unenrolled} ราย",
         "unenrolSkippedNotEnrolled": "ไม่ได้เปิดใช้งานอยู่แล้ว {skipped} ราย",
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
@@ -2113,6 +2114,7 @@
           "refusalReason": {
             "planYearDrift": "รอบการต่ออายุมีการเปลี่ยนแปลงหลังจากสร้างฉบับร่างนี้",
             "memberTerminated": "สถานะสมาชิกภาพของสมาชิกรายนี้หมดอายุแล้ว",
+            "memberErased": "ข้อมูลส่วนบุคคลของสมาชิกรายนี้ถูกลบตามคำขอของเจ้าของข้อมูลแล้ว จึงไม่สามารถออกใบแจ้งหนี้ใหม่ได้ กรุณายกเลิกร่างนี้",
             "duplicateLiveBill": "มีใบแจ้งหนี้ของสมาชิกและปีแผนนี้อยู่แล้ว"
           },
           "viewConflictingInvoice": "ดูใบแจ้งหนี้ที่มีอยู่",

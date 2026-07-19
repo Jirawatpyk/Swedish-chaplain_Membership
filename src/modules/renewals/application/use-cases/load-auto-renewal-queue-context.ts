@@ -37,7 +37,7 @@
  *      year — genuinely informative, not noise. Needs no cycle at all
  *      (`row.planYear` lives on the invoice), so it is computable even for
  *      an orphaned draft.
- *   3. **Would-be-refused** — review A2: simulates ALL THREE of
+ *   3. **Would-be-refused** — review A2: simulates ALL FOUR of
  *      `issueAutoDraftedRenewal`'s refusal reasons, in the SAME order the
  *      real guard evaluates them, so at most one is reported (matching
  *      what the treasurer would actually see on click):
@@ -51,7 +51,15 @@
  *           sat in the queue long enough for grace to expire, which the
  *           staleness signal already primes the treasurer to expect.
  *           Independent of whether THIS draft's own cycle resolved.
- *        c. `duplicate_live_bill` — HARD REQ #2: another membership
+ *        c. `member_erased` — the GDPR Art.17 / PDPA §33 gate. NOT
+ *           redundant with (b): erasure leaves `status` and the renewal
+ *           cycle untouched and stamps only `erased_at`, so an erased
+ *           member's unexpired cycle still resolves `full` and (b) never
+ *           fires. The row is deliberately SHOWN with this refusal rather
+ *           than filtered out of the queue — the draft still exists, and
+ *           Discard (the correct remedy) is a per-row action, so hiding
+ *           the row would strand it with no operator affordance.
+ *        d. `duplicate_live_bill` — HARD REQ #2: another membership
  *           invoice already exists for (member, planYear) in a live
  *           state (`LIVE_MEMBERSHIP_BILL_STATUSES` via
  *           `findLiveMembershipBill`, `_lib/live-membership-bill.ts`).
@@ -113,13 +121,14 @@ export type LoadAutoRenewalQueueContextError = InvalidInputError;
 
 export type LoadAutoRenewalQueueContextDeps = Pick<
   RenewalsDeps,
-  'cyclesRepo' | 'planLookupForRenewal' | 'clock'
+  'cyclesRepo' | 'planLookupForRenewal' | 'clock' | 'memberRenewalFlagsRepo'
 >;
 
 /** Why `issueAutoDraftedRenewal` would refuse this draft right now — first-match-wins, mirrors the real guard's evaluation order. */
 export type AutoRenewalRefusalReason =
   | { readonly kind: 'plan_year_drift' }
   | { readonly kind: 'member_terminated'; readonly reason: string }
+  | { readonly kind: 'member_erased' }
   | { readonly kind: 'duplicate_live_bill'; readonly conflictingInvoiceId: string };
 
 /** Per-row decision context, keyed by `invoiceId` in the returned map. */
@@ -224,6 +233,13 @@ export async function loadAutoRenewalQueueContext(
   const latestCycleByMember = new Map<string, RenewalCycle>();
   for (const c of latestCycles) latestCycleByMember.set(c.memberId, c);
 
+  // Batched erasure probe for the `member_erased` refusal reason. Erasure
+  // leaves `status` and the cycle alone, so `deriveMembershipAccess` still
+  // returns `full` for an erased member — the `member_terminated` prediction
+  // above provably does NOT cover this, exactly as in the real guard.
+  const erasedMemberIds =
+    await deps.memberRenewalFlagsRepo.findErasedMemberIds(memberIds);
+
   for (const row of input.rows) {
     const cycle = cyclesByInvoiceId.get(row.invoiceId) ?? null;
 
@@ -278,7 +294,15 @@ export async function loadAutoRenewalQueueContext(
       }
     }
 
-    // (c) duplicate_live_bill — sibling auto_renewal drafts excluded first
+    // (c) member_erased — GDPR Art.17 / PDPA §33. Evaluated AFTER
+    // member_terminated and BEFORE duplicate_live_bill, matching the real
+    // guard's order so at most one reason is reported and it is the one the
+    // treasurer would actually hit on click.
+    if (refusalReason === null && erasedMemberIds.has(row.memberId)) {
+      refusalReason = { kind: 'member_erased' };
+    }
+
+    // (d) duplicate_live_bill — sibling auto_renewal drafts excluded first
     // (mirrors the real guard's discard-before-check sequence).
     if (refusalReason === null) {
       const key = `${row.memberId}::${row.planYear}`;

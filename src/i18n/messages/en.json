@@ -1586,6 +1586,7 @@
         "enrolSucceeded": "{enrolled, plural, one {# member enrolled} other {# members enrolled}}",
         "enrolSkippedAlready": "{skipped, plural, one {# already enrolled} other {# already enrolled}}",
         "enrolSkippedTerminated": "{skipped, plural, one {# skipped (membership ended)} other {# skipped (membership ended)}}",
+        "enrolSkippedErased": "{skipped, plural, one {# skipped (personal data erased)} other {# skipped (personal data erased)}}",
         "unenrolSucceeded": "{unenrolled, plural, one {# member no longer auto-invoiced} other {# members no longer auto-invoiced}}",
         "unenrolSkippedNotEnrolled": "{skipped, plural, one {# was not enrolled} other {# were not enrolled}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
@@ -2113,6 +2114,7 @@
           "refusalReason": {
             "planYearDrift": "The renewal period changed after this draft was created.",
             "memberTerminated": "This member's coverage has lapsed.",
+            "memberErased": "This member's personal data has been erased at their request. No new invoice can be issued for them — discard this draft.",
             "duplicateLiveBill": "A bill for this member and plan year already exists."
           },
           "viewConflictingInvoice": "View existing bill",

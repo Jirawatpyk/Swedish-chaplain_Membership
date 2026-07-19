@@ -509,12 +509,17 @@ export function makeMembersMembershipStatusDeps(
  */
 export function makeAutoRenewalQueueContextDeps(
   tenantId: string,
-): Pick<RenewalsDeps, 'cyclesRepo' | 'planLookupForRenewal' | 'clock'> {
+): Pick<
+  RenewalsDeps,
+  'cyclesRepo' | 'planLookupForRenewal' | 'clock' | 'memberRenewalFlagsRepo'
+> {
   const tenant = asTenantContext(tenantId);
   return {
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     clock: wallClock,
+    // Batched `erased_at` probe for the `member_erased` refusal prediction.
+    memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
   };
 }
 
@@ -531,7 +536,12 @@ export function makeIssueAutoDraftedRenewalDeps(
   tenantId: string,
 ): Pick<
   RenewalsDeps,
-  'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'f4InvoicingBridge'
+  | 'tenant'
+  | 'cyclesRepo'
+  | 'auditEmitter'
+  | 'clock'
+  | 'f4InvoicingBridge'
+  | 'memberRenewalFlagsRepo'
 > {
   const tenant = asTenantContext(tenantId);
   return {
@@ -540,6 +550,9 @@ export function makeIssueAutoDraftedRenewalDeps(
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     clock: wallClock,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    // GDPR Art.17 erasure gate — reads `members.erased_at` under the lock,
+    // above the first write. See the use-case header's erasure note.
+    memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
   };
 }
 

@@ -39,6 +39,21 @@
  * enrolling an ex-member into automated billing is the one outcome with
  * real blast radius.
  *
+ * A GDPR/PDPA-ERASED member is skipped too, into its own `skippedErased`
+ * bucket. This is NOT derivable from `deriveMembershipAccess`: erasure
+ * leaves `members.status` and the renewal cycle untouched ("erasure is
+ * orthogonal to archive") and stamps only `erased_at`, so an erased member
+ * classifies `full` and is still listed and selectable in the directory the
+ * bulk bar acts on. `scrubPiiInTx` explicitly resets
+ * `auto_invoice_enrolled_at` to NULL on erasure with the comment "an erased
+ * member MUST NOT stay enrolled in automated billing" — without a gate here,
+ * a routine bulk enrol across the roster silently reverses that reset, and
+ * the audit trail would then claim we enrolled a data subject who exercised
+ * Art.17. Unlike `terminated`, this one is NOT recoverable by the member
+ * renewing, which is why it is a separate bucket rather than folded in.
+ *
+ * All four buckets ALWAYS sum to `member_ids.length`.
+ *
  * --- Transaction + guard ordering ----------------------------------------
  *
  * `return err(...)` inside a `runInTenant` callback does NOT roll the
@@ -137,6 +152,8 @@ export type BulkEnrolAutoInvoiceOutput = {
   enrolled: number;
   skippedAlready: number;
   skippedTerminated: number;
+  /** GDPR Art.17 / PDPA §33 — see the skip-semantics header. */
+  skippedErased: number;
 };
 
 // --- Implementation ----------------------------------------------------------
@@ -236,11 +253,29 @@ export async function bulkEnrolAutoInvoice(
         if (!membersMap.has(id)) throw new BulkEnrolNotFoundError(id);
       }
 
-      // 6. Partition into buckets. All three branches are decided from
+      // 5b. GDPR Art.17 / PDPA §33 erasure probe, on the SAME locked rows.
+      //     Needs its own read because `erased_at` is deliberately not
+      //     carried on the `Member` aggregate (see the port doc).
+      const erasedResult = await deps.memberRepo.findErasedIdsInTx(
+        tx,
+        deps.tenant.slug,
+        memberIds,
+      );
+      if (!erasedResult.ok) {
+        logger.error(
+          { err: erasedResult.error, requestId: meta.requestId },
+          'bulk-enrol-auto-invoice: findErasedIdsInTx unexpected error',
+        );
+        throw new Error(`erased_lookup_failed:${erasedResult.error.code}`);
+      }
+      const erasedIds = erasedResult.value;
+
+      // 6. Partition into buckets. All four branches are decided from
       //    locked rows + the pre-pass map, with no writes yet.
       const toEnrol: typeof memberIds = [];
       let skippedAlready = 0;
       let skippedTerminated = 0;
+      let skippedErased = 0;
 
       for (const memberId of memberIds) {
         const current = membersMap.get(memberId)!;
@@ -249,6 +284,19 @@ export async function bulkEnrolAutoInvoice(
         // unexpected gap fails CLOSED rather than enrolling silently.
         const access = accessByMember.get(memberId)?.access ?? 'terminated';
 
+        // Erased is checked FIRST — it is the strongest refusal and the one
+        // with a legal basis, and an erased member routinely classifies
+        // `full` (erasure keeps `status` and the cycle), so ordering it after
+        // the access check would let it fall through to `toEnrol`. It gets
+        // its OWN bucket rather than folding into `skippedTerminated`: the
+        // two are different facts with different operator remedies (a
+        // terminated member can be re-enrolled after renewing; an erased one
+        // never can), and conflating them would misreport a compliance skip
+        // as a lapsed membership.
+        if (erasedIds.has(memberId)) {
+          skippedErased++;
+          continue;
+        }
         if (access === 'terminated') {
           skippedTerminated++;
           continue;
@@ -319,6 +367,7 @@ export async function bulkEnrolAutoInvoice(
         enrolled: enrolledIds.length,
         skippedAlready,
         skippedTerminated,
+        skippedErased,
       };
     });
 

@@ -111,6 +111,14 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
+    // Typed off the real port (same rationale as `FindManyArgs` above) so
+    // the empty-set default cannot silently drift from the signature.
+    findErasedIdsInTx: vi.fn(
+      async (): ReturnType<BulkActionDeps['memberRepo']['findErasedIdsInTx']> => ({
+        ok: true as const,
+        value: new Set(),
+      }),
+    ),
     enrolAutoInvoiceInTx: vi.fn(),
     unenrolAutoInvoiceInTx: vi.fn(),
     },
