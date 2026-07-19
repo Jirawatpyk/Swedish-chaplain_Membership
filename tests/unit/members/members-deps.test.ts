@@ -22,6 +22,7 @@ import { f7BroadcastsContentScrubAdapter } from '@/modules/members/infrastructur
 import { f7BroadcastsDeliveryTombstoneAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-delivery-tombstone-adapter';
 import { eventRegistrationErasureAdapter } from '@/modules/members/infrastructure/adapters/event-registration-erasure-adapter';
 import { directoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
+import { invoicingErasureAdapter } from '@/modules/members/infrastructure/adapters/invoicing-erasure-adapter';
 import { f7BroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { subprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
 import type { TenantContext } from '@/modules/tenants';
@@ -67,6 +68,7 @@ describe('buildEraseMemberDeps', () => {
       'directoryErasure',
       'eventRegistrationErasure',
       'invitations',
+      'invoicingErasure',
       'memberRepo',
       'outboxCancel',
       'renewalsCascade',
@@ -127,6 +129,12 @@ describe('buildEraseMemberDeps', () => {
     // erasure). The full bag has no `directoryErasure` (erase-only), so pin the
     // real singleton.
     expect(erase.directoryErasure).toBe(directoryErasureAdapter);
+    // COMP-1 §6.2: a type-compatible but WRONG invoicingErasure adapter would
+    // silently skip the F4 draft discard — the erased member's pending draft
+    // invoices would survive Art.17 erasure as permanently un-issuable rows in
+    // the treasurer's review queue. The full bag has no `invoicingErasure`
+    // (erase-only), so pin the real singleton.
+    expect(erase.invoicingErasure).toBe(invoicingErasureAdapter);
     // M1/L1: a wrong tokens / userEmails / outboxCancel adapter would silently
     // skip the post-erasure PII-resurrection + outbox-dispatch defences. The
     // full `MembersDeps` bag DOES carry `tokens` + `userEmails` (used by the

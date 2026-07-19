@@ -47,6 +47,7 @@ import { userEmailAdapter } from '@/modules/members/infrastructure/adapters/user
 import { outboxCancelAdapter } from '@/modules/members/infrastructure/adapters/outbox-cancel-adapter';
 import { noopEventRegistrationErasureAdapter } from '@/modules/members/infrastructure/adapters/event-registration-erasure-adapter';
 import { noopDirectoryErasureAdapter } from '@/modules/members/infrastructure/adapters/directory-erasure-adapter';
+import { noopInvoicingErasureAdapter } from '@/modules/members/infrastructure/adapters/invoicing-erasure-adapter';
 import { noopBroadcastsAudienceDerivationAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { noopSubprocessorErasureAdapter } from '@/modules/members/infrastructure/adapters/subprocessor-erasure-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -113,6 +114,10 @@ function buildEraseMemberDeps(tenant: TestTenant): EraseMemberDeps {
     // the in-tx scrub + F1 cascade; the real directory_listings + logo erase is
     // covered live in tests/integration/insights/directory-erasure.test.ts).
     directoryErasure: noopDirectoryErasureAdapter,
+    // COMP-1 §6.2 — no-op F4 draft-discard adapter (this test exercises ONLY
+    // the in-tx scrub + F1 cascade; the real discard-drafts/retain-issued
+    // behaviour is covered live in erase-member-invoicing-discard.test.ts).
+    invoicingErasure: noopInvoicingErasureAdapter,
     // US3-C — no-op sub-processor cascade adapters (this test exercises ONLY the
     // in-tx scrub + F1 cascade; the real Resend audience-derivation + removal
     // are covered live in subprocessor-erasure.test.ts).

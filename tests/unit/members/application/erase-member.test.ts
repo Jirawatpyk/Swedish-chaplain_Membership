@@ -349,6 +349,72 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
+  // --- COMP-1 §6.2 — the F4 invoicing draft-discard cascade ------------------
+  // Erasure DISCARDS `draft` invoices and RETAINS `issued` and beyond: a draft
+  // carries no §87 sequence number and no statutory retention duty (Art.5(1)(c)
+  // minimisation + Art.17), while an issued document is retained under the Thai
+  // RD §87/3 legal-obligation carve-out (Art.17(3)(b)). Before this cascade
+  // existed the draft simply SURVIVED erasure — the treasurer was told to
+  // discard it by hand and nothing discarded it automatically (the Task 11
+  // prune cron only ever reaches `origin='auto_renewal'` drafts stamped on a
+  // cycle, never a manual or event draft, and never sooner than the next day).
+  it('discards the erased member’s pending invoice drafts on the post-commit cascade', async () => {
+    const deps = buildEraseDeps();
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.invoicingErasure.discardDraftsForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      { actorUserId: META.actorUserId, requestId: META.requestId },
+    );
+  });
+
+  it('withholds member_erased when the F4 draft-discard cascade fails', async () => {
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(
+      async () => ({ outcome: 'failed', discardedCount: 0 }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
+  it('a THROW from the F4 draft-discard cascade does not fail the erasure', async () => {
+    // The member row IS erased (the atomic scrub committed). A best-effort
+    // cascade throwing must never turn that into a failed erasure — it must
+    // only withhold the completion proof so the US2d reconciler re-drives.
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
+  it('records the discarded-draft count on the member_erased DPO payload', async () => {
+    // Erasure is a compliance path — a silent discard is not acceptable. F4
+    // emits `invoice_draft_deleted` per document; this count is the DPO-facing
+    // aggregate on the completion proof.
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(
+      async () => ({ outcome: 'ok', discardedCount: 2 }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erased, 'member_erased was not emitted').toBeDefined();
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      invoice_drafts_discarded_count: 2,
+    });
+  });
+
   // Distinct from the prior case (a non-ok OUTCOME): here the cascade adapter
   // THROWS. The post-commit cascade try/catch must catch it, flip
   // allCascadesClean=false, and suppress member_erased — never let a best-effort
