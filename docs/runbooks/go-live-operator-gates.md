@@ -24,7 +24,7 @@ Tick each as you complete its section. Order matters top-to-bottom.
 - [ ] **§4** Data prerequisites seeded (tenant row → 2026 plans → bootstrap admin → **PITR snapshot**)
 - [ ] **§5** Crons registered (cron-job.org externals + native `vercel.json` present)
 - [ ] **§6** ClamAV Fly.io scan-wrapper up **(only if enabling F7.1a image upload)**
-- [ ] **§7** Feature flags flipped in the staged order, each only after its gates pass
+- [ ] **§7** Feature flags flipped in the staged order, each only after its gates pass — **plus the two out-of-band flips at the end of §7**: `FEATURE_ERASURE_DISCARD_DRAFTS` (REQUIRED — closes an open GDPR Art.17 gap) and `FEATURE_AUTO_INVOICE` (3-key procedure, not a lone flag)
 - [ ] **§8** Safety net rehearsed (READ_ONLY_MODE, rollback, PITR restore path)
 - [ ] **§9** Member data imported; row counts reconciled; 5-member spot-check
 - [ ] **§10** Post-flip smoke verification green
@@ -312,6 +312,21 @@ Recommended launch order (lowest risk → highest; skip any feature you are defe
 
 > After each flip + redeploy, **Run** that feature's cron jobs once in cron-job.org — they should
 > now return `200` instead of the dark-launch `503`.
+
+**Not in the ordered list above — flip independently (both land with `107-auto-invoice`):**
+
+7. **`FEATURE_ERASURE_DISCARD_DRAFTS=true` — REQUIRED, not a deferrable feature flip.** Off is a
+   known, open **GDPR Art.17 / PDPA §33 gap**: an erased member's `draft` invoices survive erasure.
+   It hangs off `eraseMember`, which is **already production-live** (COMP-1 + the
+   `reconcile-erasures` cron), so the gap is open regardless of which features above you enable or
+   defer. ⚠️ The deletes are **irreversible**; issued documents are never touched (Thai RD §87/3 /
+   Art.17(3)(b)). Rehearse the safety net (§8) first. Detail:
+   `docs/runbooks/cron-jobs.md` § "Auto-invoice — auto-draft renewals" (the "fourth key" note).
+8. **`FEATURE_AUTO_INVOICE`** — env key **1 of 3**; the other two are database state, so flipping
+   this alone produces no drafts and looks like a broken feature. Do **not** flip it from this list —
+   follow `docs/runbooks/cron-jobs.md` § "Enabling: the three-key procedure"
+   (summary index: `docs/go-live-readiness.md` § 6.8), including its `billing_cycle` review
+   prerequisite and 2–3 member pilot.
 
 ---
 
