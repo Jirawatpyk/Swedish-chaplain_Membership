@@ -444,6 +444,11 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     lockstep with F3AuditEventType in
   //     `src/modules/members/application/ports/audit-port.ts`. ---
   'member_auto_invoice_enrolled',
+  // --- 107-auto-invoice Task 18 (migration 0265) — the OFF direction of
+  //     the same gating key. Clearing `auto_invoice_enrolled_at` erases
+  //     its own evidence, so the un-enrolment needs its own event for the
+  //     trail to answer "who stopped auto-billing this member". ---
+  'member_auto_invoice_unenrolled',
 ]);
 
 /**

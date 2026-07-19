@@ -77,6 +77,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
     enrolAutoInvoiceInTx: vi.fn(),
+    unenrolAutoInvoiceInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

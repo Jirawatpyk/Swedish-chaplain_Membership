@@ -532,6 +532,38 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async unenrolAutoInvoiceInTx(tx, tenantId, memberIds) {
+    try {
+      if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
+      const rows = await tx
+        .update(members)
+        .set({ autoInvoiceEnrolledAt: null })
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            // Only touch rows that are actually enrolled, so an
+            // already-un-enrolled member is a no-op and cannot produce a
+            // spurious audit row (see the port doc).
+            //
+            // Deliberately NO membership-state predicate here: a
+            // terminated, archived, or suspended member is un-enrolled
+            // like any other. Removing a billing preference is always
+            // allowed — refusing would leave an operator trying to STOP
+            // billing someone with no way to do it. See
+            // `bulkUnenrolAutoInvoice`'s header.
+            isNotNull(members.autoInvoiceEnrolledAt),
+          ),
+        )
+        .returning({ memberId: members.memberId });
+      return ok(rows.map((r) => r.memberId as MemberId));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findByLinkedUserId(ctx, userId) {
     try {
       // Join contacts → members to find the member whose contact has

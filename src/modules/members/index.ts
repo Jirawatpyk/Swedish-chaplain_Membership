@@ -324,8 +324,9 @@ export {
   type BulkActionMeta,
 } from './application/use-cases/bulk-action';
 
-// 107-auto-invoice Task 15 — the sole write path for the per-member
-// auto-invoice enrolment key (`members.auto_invoice_enrolled_at`).
+// 107-auto-invoice Task 15 — the sole write path that SETS the per-member
+// auto-invoice enrolment key (`members.auto_invoice_enrolled_at`); Task 18
+// below is the sole write path that clears it.
 export {
   bulkEnrolAutoInvoice,
   bulkEnrolAutoInvoiceSchema,
@@ -335,6 +336,19 @@ export {
   type BulkEnrolAutoInvoiceDeps,
   type BulkEnrolAutoInvoiceMeta,
 } from './application/use-cases/bulk-enrol-auto-invoice';
+
+// 107-auto-invoice Task 18 — the way back out. Unlike enrol, this applies
+// NO membership-state gate: terminated / archived / suspended members are
+// all un-enrolled. See the use-case header before changing that.
+export {
+  bulkUnenrolAutoInvoice,
+  bulkUnenrolAutoInvoiceSchema,
+  type BulkUnenrolAutoInvoiceInput,
+  type BulkUnenrolAutoInvoiceOutput,
+  type BulkUnenrolAutoInvoiceError,
+  type BulkUnenrolAutoInvoiceDeps,
+  type BulkUnenrolAutoInvoiceMeta,
+} from './application/use-cases/bulk-unenrol-auto-invoice';
 
 export {
   bulkSendPortalInvite,

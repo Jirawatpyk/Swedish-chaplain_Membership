@@ -82,7 +82,17 @@ export type F3AuditEventType =
   // UPDATE, with `action` + `bulk_request_id` in the payload so a bulk
   // run is correlatable — same singular-per-member convention
   // `bulkAction` uses for `member_archived` / `member_plan_changed`.
-  | 'member_auto_invoice_enrolled';
+  | 'member_auto_invoice_enrolled'
+  // 107-auto-invoice Task 18 (migration 0265) — an admin CLEARED
+  // `members.auto_invoice_enrolled_at`. The mirror of the event above,
+  // and it needs to exist for a reason the ON direction does not: the
+  // enrolment stamp is its own evidence, but clearing it erases that
+  // evidence, so without this row a member silently drops out of the
+  // auto-draft eligibility set with nothing recording who decided it or
+  // when. Emitted once per ACTUALLY un-enrolled member (never for a
+  // member who was already un-enrolled) inside the same tx as the
+  // UPDATE, with the same `action` + `bulk_request_id` payload shape.
+  | 'member_auto_invoice_unenrolled';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

@@ -130,6 +130,8 @@ describe('findMissingEnumValues', () => {
           'renewal_orphan_invoice_relinked',
           // 0263 (107-auto-invoice Task 15):
           'member_auto_invoice_enrolled',
+          // 0265 (107-auto-invoice Task 18):
+          'member_auto_invoice_unenrolled',
         ]),
       ],
     ]);
@@ -160,6 +162,7 @@ describe('findMissingEnumValues', () => {
           'renewal_auto_draft_discarded',
           'renewal_orphan_invoice_relinked',
           'member_auto_invoice_enrolled',
+          'member_auto_invoice_unenrolled',
         ]),
       ],
     ]);
@@ -197,6 +200,8 @@ describe('findMissingEnumValues', () => {
           'renewal_orphan_invoice_relinked',
           // 0263 (107-auto-invoice Task 15):
           'member_auto_invoice_enrolled',
+          // 0265 (107-auto-invoice Task 18):
+          'member_auto_invoice_unenrolled',
         ],
       },
     ]);

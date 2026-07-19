@@ -358,6 +358,36 @@ export interface MemberRepo {
   ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
 
   /**
+   * Clear `auto_invoice_enrolled_at` (set it back to NULL) for a batch of
+   * members in ONE round-trip, and return the ids it actually cleared.
+   *
+   * The exact inverse of `enrolAutoInvoiceInTx`, including the guard: only
+   * rows whose `auto_invoice_enrolled_at IS NOT NULL` are written, so a
+   * member who was never enrolled is a silent no-op and the RETURNING set
+   * is the authoritative "who did we actually un-enrol" list the caller
+   * must use to decide which audit events to emit. That matters more here
+   * than on the enrol side — un-enrolment DESTROYS the only record that
+   * the member was ever enrolled, so an audit row emitted for a member who
+   * was already un-enrolled would be un-disprovable noise in the trail.
+   *
+   * Takes no timestamp parameter: there is no "un-enrolled at" column to
+   * write. The when-and-by-whom lives in the `member_auto_invoice_
+   * unenrolled` audit row, which is the ONLY record of this change.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to
+   * the ambient RLS `SET LOCAL app.current_tenant` — Constitution
+   * Principle I two-layer isolation. A cross-tenant leak here is lower
+   * blast-radius than on the enrol side (it stops billing rather than
+   * starting it) but it is still an unauthorised write to another
+   * tenant's billing configuration.
+   */
+  unenrolAutoInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
+
+  /**
    * Resolve member by a linked contact's user_id. Used by portal
    * self-service (US5) to derive the member from the session user.
    * Returns the member whose contact has `linked_user_id = userId`

@@ -13,10 +13,10 @@
  * Focus-on-close (107-auto-invoice Task 15 review, UX-1). EVERY successful
  * bulk action removes this bar from the DOM: `executeBulk` calls
  * `onClear()` → the parent clears `selectedIds` → `count === 0` → this
- * component renders `null`. All three trigger buttons vanish, and Base UI's
+ * component renders `null`. All FOUR trigger buttons vanish, and Base UI's
  * default focus-return (the original trigger) drops focus to `<body>` — a
  * keyboard or screen-reader user must re-Tab from the top of the page after
- * every bulk action. Fixed with ONE shared `finalFocus` for all three dialogs,
+ * every bulk action. Fixed with ONE shared `finalFocus` for all four dialogs,
  * built from `useDialogFinalFocus` (REUSED verbatim from
  * `@/components/broadcast/reason-confirmation-dialog`, same as
  * `auto-renewal-queue-actions.tsx` — not reimplemented).
@@ -44,13 +44,14 @@
  * alive, DOM node gone.
  *
  * This was pre-existing on Archive and Send-invite; Task 15 added the third
- * case and fixes all three together.
+ * case and fixed all three together; Task 18 adds the fourth (un-enrol) to
+ * the same shared mechanism rather than growing a second one.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, FileTextIcon, MailIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -65,7 +66,11 @@ import { BULK_CAP } from '@/lib/members-bulk-constants';
 // dead code; if reintroduced, add both the button AND the union entry
 // in the same diff. The i18n string `admin.members.bulk.actions.change_plan`
 // is preserved for if/when the button lands.
-type BulkAction = 'archive' | 'send_portal_invite' | 'enrol_auto_invoice';
+type BulkAction =
+  | 'archive'
+  | 'send_portal_invite'
+  | 'enrol_auto_invoice'
+  | 'unenrol_auto_invoice';
 
 type Props = {
   readonly selectedIds: string[];
@@ -90,6 +95,7 @@ export function BulkActionBar({
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [enrolDialogOpen, setEnrolDialogOpen] = useState(false);
+  const [unenrolDialogOpen, setUnenrolDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{
     action: string;
@@ -99,9 +105,9 @@ export function BulkActionBar({
   const count = selectedIds.length;
   const overCap = count > BULK_CAP;
 
-  // Focus-on-close (see module header). One ref pair serves all three
+  // Focus-on-close (see module header). One ref pair serves all four
   // dialogs — only one can be open at a time, and every successful action
-  // removes all three triggers from the DOM together. These refs SURVIVE
+  // removes all four triggers from the DOM together. These refs SURVIVE
   // that: rendering `null` does not unmount the fiber (the parent's
   // `{isAdmin && …}` guard is constant), which is exactly why
   // `closedViaSuccessRef` has to be reset on dialog OPEN.
@@ -216,6 +222,24 @@ export function BulkActionBar({
             // thinking the roster changed.
             if (c.enrolled > 0) toast.success(message);
             else toast.info(message);
+          } else if (action === 'unenrol_auto_invoice') {
+            // Two buckets, not three: un-enrol applies no membership-state
+            // gate, so the only skip is "was not enrolled". Defaulted for the
+            // same reason as the enrol arm — an `undefined` reaching an ICU
+            // `{unenrolled, plural, …}` throws FORMATTING_ERROR inside the
+            // toast call and silently eats the entire confirmation.
+            const c = { unenrolled: 0, skipped_not_enrolled: 0, ...(body ?? {}) };
+            const parts = [t('unenrolSucceeded', { unenrolled: c.unenrolled })];
+            if (c.skipped_not_enrolled > 0) {
+              parts.push(
+                t('unenrolSkippedNotEnrolled', {
+                  skipped: c.skipped_not_enrolled,
+                }),
+              );
+            }
+            const message = parts.join(' · ');
+            if (c.unenrolled > 0) toast.success(message);
+            else toast.info(message);
           } else {
             toast.success(
               t('success', {
@@ -273,7 +297,7 @@ export function BulkActionBar({
         aria-label={t('toolbarLabel')}
       >
         {/* `flex-wrap` on BOTH rows (Task 15 review, UX-5). `Button` carries
-            `whitespace-nowrap`, and the three action labels are long in every
+            `whitespace-nowrap`, and the four action labels are long in every
             locale (EN "Enrol in auto-invoicing" / SV "Anmäl till
             autofakturering" / TH "เปิดใช้ใบแจ้งหนี้อัตโนมัติ"), so without
             wrapping the bar's min-content width far exceeds the 320px floor in
@@ -370,6 +394,35 @@ export function BulkActionBar({
               <FileTextIcon className="mr-1.5 h-4 w-4" />
               {t('actions.enrol_auto_invoice')}
             </Button>
+            {/* 107-auto-invoice Task 18 — the way back out of the button
+                above. Also `variant="outline"`, NOT destructive: it destroys
+                no data and issues no document; it only stops FUTURE drafts
+                being prepared, and any draft already in the review queue is
+                deliberately left alone (see the confirm copy). Styling it
+                destructive would overstate what it does and discourage the
+                operator from using the off switch at all. */}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={executing || overCap}
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
+                // after an earlier SUCCESS still returns focus to the
+                // trigger. The fiber (and this ref) survives `return null`.
+                closedViaSuccessRef.current = false;
+                setUnenrolDialogOpen(true);
+              }}
+              className="min-h-11"
+            >
+              {/* FileMinusIcon mirrors the enrol action's FileTextIcon with a
+                  "remove" affordance. Same reasoning as there: this is about
+                  an INVOICE (ใบแจ้งหนี้), and invoice / receipt / tax-invoice
+                  are legally distinct documents in Thai tax law, so a
+                  receipt-shaped icon here would be a real hazard. */}
+              <FileMinusIcon className="mr-1.5 h-4 w-4" />
+              {t('actions.unenrol_auto_invoice')}
+            </Button>
           </div>
 
           {/* Right: clear */}
@@ -421,6 +474,18 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('enrol_auto_invoice')}
+        finalFocus={finalFocus}
+      />
+
+      <ConfirmationDialog
+        open={unenrolDialogOpen}
+        onOpenChange={setUnenrolDialogOpen}
+        title={t('confirmUnenrolTitle', { count })}
+        description={t('confirmUnenrolDescription')}
+        confirmLabel={t('confirmUnenrolAction')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={executing}
+        onConfirm={() => executeBulk('unenrol_auto_invoice')}
         finalFocus={finalFocus}
       />
 

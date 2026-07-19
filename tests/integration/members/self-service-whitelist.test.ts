@@ -120,6 +120,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     // COMP-1 US2d (reconciler candidate) — interface compliance stub.
     findStuckErasuresInTx: async () => [],
     enrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
+    unenrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
   };
 
   const contactRepo: ContactRepo = {
