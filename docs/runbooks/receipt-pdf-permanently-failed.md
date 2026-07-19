@@ -1,7 +1,17 @@
 # Runbook — Receipt PDF Permanently Failed (T166)
 
 **Severity:** **page** (PagerDuty primary on-call)
-**Trigger:** `pdf_render_permanently_failed` audit row landed (or `receipt_pdf_render_failures_total{cause=*}` cumulative ≥ 3 for the same `invoice_id`).
+**Trigger:** `pdf_render_permanently_failed` audit row landed.
+
+> The former second trigger — `receipt_pdf_render_failures_total{cause=*}` cumulative ≥ 3
+> for the same `invoice_id` — **has been removed: that metric does not exist.** It is
+> documented in `docs/observability.md` § 21.1 but has no instrument and no emit site
+> anywhere in `src/` (verified 2026-07-19). The audit-row trigger above is real and
+> sufficient; the equivalent per-invoice attempt count is
+> `invoices.receipt_pdf_render_attempts`, queried in step 2 below.
+>
+> Note `pdf_render_permanently_failed` is itself an **audit event type, not a metric** —
+> alert on it with an `audit_log` query (as step 1 does), not a metric time series.
 **Surface:** F5 async receipt-PDF pipeline (T166).
 **Owner:** Payments / Invoicing (F4 + F5 maintainers).
 
@@ -48,8 +58,10 @@ in the webhook tx). It is a **document delivery** issue.
    FROM invoices
    WHERE tenant_id = $TENANT AND invoice_id = $INVOICE;
    ```
-   Cross-check with `receipt_pdf_render_failures_total{cause=…}` — the
-   `cause` label tells you which sub-step blew up:
+   `receipt_pdf_last_error` **is the only source for the cause** — the
+   `receipt_pdf_render_failures_total{cause=…}` metric this step used to
+   cross-check against does not exist (see the trigger note at the top).
+   The same cause vocabulary applies; match it against the error text:
    - `render_failed` — PDF engine threw (font, layout, data shape).
    - `blob_upload_failed` — Vercel Blob 5xx / network.
    - `invalid_state` — invoice flipped out of `paid` (rare; void race).
@@ -137,7 +149,10 @@ payments.
 ## Related
 
 - `docs/runbooks/receipt-pdf-async-rollback.md`
-- `docs/runbooks/auto-email-permanent-failure.md` (F4 sibling)
+- `docs/observability.md` § 19.3 "Auto-email permanent-failure recovery" (F4 sibling —
+  an **inline** section, not a file. This entry previously pointed at
+  `docs/runbooks/auto-email-permanent-failure.md`, which has never existed; corrected
+  2026-07-19)
 - `specs/009-online-payment/tasks.md` § T166-11
 - `src/app/api/internal/cron/receipt-pdf-reconcile/route.ts`
 - `src/modules/invoicing/application/use-cases/render-receipt-pdf.ts`

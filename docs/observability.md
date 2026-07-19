@@ -1147,6 +1147,7 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - `docs/runbooks/stale-pending-count.md` — cron-job.org configuration for `payments.stale_pending_count` gauge (T138)
 - `docs/runbooks/receipt-pdf-permanently-failed.md` — T166 receipt PDF worker exhausted 3 attempts (page on-call)
 - `docs/runbooks/receipt-pdf-async-rollback.md` — T166 async receipt PDF kill-switch flip (`FEATURE_F5_ASYNC_RECEIPT_PDF=false`)
+- `docs/runbooks/cross-tenant-probe.md` — `payment_cross_tenant_probe` investigation. **Backs the only Principle I alert in F5.** Referenced from § 21.3 since the F5 catalogue was written but not created on disk until 2026-07-19; the § 21.3 link dangled until then
 
 ### 21.6 Dashboard — F5 Online Payment (Vercel Analytics)
 
