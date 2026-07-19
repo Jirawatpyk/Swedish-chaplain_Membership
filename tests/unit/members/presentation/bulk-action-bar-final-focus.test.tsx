@@ -163,6 +163,8 @@ beforeEach(() => {
         enrolled: 1,
         skipped_already: 0,
         skipped_terminated: 0,
+        unenrolled: 1,
+        skipped_not_enrolled: 0,
       }),
     }),
   );
@@ -183,6 +185,9 @@ describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () =>
     { label: /^Archive$/, name: 'archive' },
     { label: /^Send invite$/, name: 'send_portal_invite' },
     { label: /^Enrol in auto-invoicing$/, name: 'enrol_auto_invoice' },
+    // Task 18 — the fourth trigger vanishes on success exactly like the
+    // other three, so it needs the same shared `finalFocus`.
+    { label: /^Stop auto-invoicing$/, name: 'unenrol_auto_invoice' },
   ] as const;
 
   for (const { label, name } of ACTIONS) {
