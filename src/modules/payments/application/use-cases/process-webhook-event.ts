@@ -635,6 +635,16 @@ async function processWebhookEventBody(
           ...(dataObject.amountProjectionFailed
             ? { amountProjectionFailed: true }
             : {}),
+          // F-9 (Task 9) — app-initiated refund markers + the PaymentIntent
+          // they are cross-checked against. Without BOTH, the fallback cannot
+          // recognise an app refund whose `processor_refund_id` has not been
+          // attached yet, and a false 10-year OOB forensic fires.
+          ...(dataObject.appRefundIds !== undefined
+            ? { appRefundIds: dataObject.appRefundIds }
+            : {}),
+          ...(dataObject.paymentIntentId !== undefined
+            ? { paymentIntentId: dataObject.paymentIntentId }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin
            * one livemode value at a time. Cross-livemode coverage
            * lives in the contract tests for /api/webhooks/stripe. */
@@ -725,6 +735,15 @@ async function processWebhookEventBody(
           // sentinel instead of a known-wrong 0 when the verifier could not
           // parse the Refund amount (mirrors the dispute branch). Defaults false.
           amountProjectionFailed: dataObject.amountProjectionFailed ?? false,
+          // F-9 (Task 9) — the Refund object carries its OWN marker, which the
+          // verifier keys by the Refund's own id, plus the PaymentIntent for
+          // the anti-forgery cross-check.
+          ...(dataObject.appRefundIds?.[dataObject.id] !== undefined
+            ? { appRefundId: dataObject.appRefundIds[dataObject.id] as string }
+            : {}),
+          ...(dataObject.paymentIntentId !== undefined
+            ? { paymentIntentId: dataObject.paymentIntentId }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
            * livemode value at a time. Cross-livemode coverage lives in the
            * contract tests for /api/webhooks/stripe. */

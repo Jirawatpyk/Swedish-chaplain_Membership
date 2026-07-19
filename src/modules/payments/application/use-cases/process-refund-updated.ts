@@ -72,6 +72,7 @@ import { retentionFor } from '../ports/audit-port';
 import { proveProcessorSettledFailed } from '../../domain/settlement/money-moved';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
+import { recogniseAppInitiatedRefund } from './_recognise-app-initiated-refund';
 import { paymentsMetrics } from '@/lib/metrics';
 import type { Satang } from '@/lib/money';
 
@@ -115,6 +116,19 @@ export interface ProcessRefundUpdatedInput {
   readonly amountProjectionFailed?: boolean;
   /** `event.livemode` → env label for the OOB per-env counter. */
   readonly processorEnv: 'test' | 'live';
+  /**
+   * Money-remediation Task 9 (F-9) — this Refund's app-initiated marker
+   * (`metadata.refundId`), stamped by `issueRefund` BEFORE the external call
+   * and format-validated at the verifier. Absent for a genuine
+   * Stripe-Dashboard refund, in which case the OOB forensic fires unchanged.
+   */
+  readonly appRefundId?: string;
+  /**
+   * Money-remediation Task 9 (F-9) — the Refund's PaymentIntent id, used ONLY
+   * for the anti-forgery cross-check. Absent or null makes the check
+   * unsatisfiable, which must NOT suppress.
+   */
+  readonly paymentIntentId?: string | null;
 }
 
 export type ProcessRefundUpdatedOutcome =
@@ -129,7 +143,15 @@ export type ProcessRefundUpdatedOutcome =
   | { readonly kind: 'still_pending'; readonly invoiceId: string }
   | { readonly kind: 'out_of_band' }
   | { readonly kind: 'auto_refund_recognized'; readonly invoiceId: string }
-  | { readonly kind: 'auto_refund_failed'; readonly invoiceId: string };
+  | { readonly kind: 'auto_refund_failed'; readonly invoiceId: string }
+  /**
+   * F-9 (Task 9) — the refund was recognised by its app-initiated marker and
+   * `processor_refund_id` was back-filled. DISTINCT from `still_pending`: the
+   * row is left pending on purpose, but the meaningful event is the repair that
+   * makes it matchable again. Deliberately NOT finalised here — see the
+   * suppression block for why.
+   */
+  | { readonly kind: 'app_refund_backfilled'; readonly invoiceId: string };
 
 /**
  * Single error class mirrors `processChargeRefunded` — the dispatcher maps
@@ -295,6 +317,57 @@ export async function processRefundUpdated(
               invoiceId: autoRefund.invoiceId,
             };
           }
+
+          // F-9 (Task 9) — before flagging OOB, consult the app-initiated
+          // marker `issueRefund` stamps BEFORE the external call. The lock
+          // above keys on `processor_refund_id`, which is written in a SEPARATE
+          // tx afterwards, so an admin refund whose attach has not landed (or
+          // never landed — `attachProcessorRefundId` throws with no try/catch,
+          // stranding the row NULL forever) is invisible to it and fires a
+          // FALSE 10-year forensic on every delivery. All four mitigations live
+          // in the helper; read its docstring before touching this.
+          const recognition = await recogniseAppInitiatedRefund(
+            { refundsRepo: deps.refundsRepo, ...(deps.logger ? { logger: deps.logger } : {}) },
+            tx,
+            {
+              tenantId: input.tenantId,
+              appRefundId: input.appRefundId,
+              processorRefundId: input.processorRefundId,
+              paymentIntentId: input.paymentIntentId,
+            },
+          );
+          if (recognition.kind === 'recognised') {
+            // Audit-SILENT suppression + PCI-clean ops log, mirroring the
+            // auto-refund arm above.
+            //
+            // NOT finalised in this pass, even though THIS handler owns
+            // finalisation (A.11). The row was just back-filled inside this tx;
+            // finalising it here would mean re-reading and re-locking a row we
+            // have already written in the same tx, duplicating
+            // `finalizeSucceededRefund`'s entry conditions on a path with no
+            // test coverage for the succeeded/failed split. The back-fill is
+            // sufficient and self-healing: Stripe re-delivers this settlement
+            // (and `refund.updated` fires again on every transition), and the
+            // next delivery matches by `processor_refund_id` through the
+            // ordinary FOUND path. The A.14 Stripe-aware sweep — which SKIPS
+            // rows with a NULL processor id — is now also able to reconcile it,
+            // which it never could before.
+            deps.logger?.info('process_refund_updated.app_refund_recognized', {
+              tenantId: input.tenantId,
+              refundId: recognition.refundId,
+              invoiceId: recognition.invoiceId,
+              processorRefundId: input.processorRefundId,
+              refundStatus: input.refundStatus,
+            });
+            await deps.processorEventsRepo.markProcessed(tx, input.eventId);
+            return {
+              kind: 'app_refund_backfilled',
+              invoiceId: recognition.invoiceId,
+            };
+          }
+          // Every other outcome — no marker, unresolved, PI mismatch, terminal
+          // row — falls through to the forensic BY DESIGN. A forged marker must
+          // not buy silence.
 
           // No in-app refund AND no auto-refund marker → genuine
           // Dashboard-initiated refund (FR-011a). Emit the 10y OOB forensic
