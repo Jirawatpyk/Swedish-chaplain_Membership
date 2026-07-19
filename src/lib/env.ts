@@ -352,6 +352,20 @@ const schema = z.object({
   // guard, gates no secret). Flip TRUE in Vercel env at ship-day.
   FEATURE_AUTO_INVOICE: booleanFromString.default(false),
 
+  // auto-invoice #2 — GDPR Art.17 / PDPA §33 erasure cascade that DELETES the
+  // erased member's `draft` invoices (issued documents are retained per Thai RD
+  // §87/3 / Art.17(3)(b)). Default false — ships dark like the rest of the
+  // branch, and unlike the rest of the branch it would otherwise go live the
+  // moment this merges: `eraseMember` is already in production (COMP-1, plus
+  // the reconcile-erasures cron re-drives it), so the cascade is reachable
+  // WITHOUT `FEATURE_AUTO_INVOICE`. The deletes are irreversible, hence its own
+  // key rather than folding into the master switch.
+  //
+  // OFF is a clean no-op, NOT a failed cascade: it must not flip
+  // `allCascadesClean`, or `member_erased` would be withheld forever and the
+  // US2d reconciler would re-drive in a loop.
+  FEATURE_ERASURE_DISCARD_DRAFTS: booleanFromString.default(false),
+
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
   // F1+F4 transactional API. Hosted on the same Resend account; uses a
@@ -1009,6 +1023,10 @@ export const env = {
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
     // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3).
     autoInvoice: raw.FEATURE_AUTO_INVOICE,
+    // auto-invoice #2 — rollout gate for the erasure draft-discard cascade.
+    // Independent of `autoInvoice`: the cascade hangs off production-live
+    // `eraseMember`, not off the auto-invoice queue. See the schema docstring.
+    erasureDiscardDrafts: raw.FEATURE_ERASURE_DISCARD_DRAFTS,
   },
 
   // F4 Invoicing

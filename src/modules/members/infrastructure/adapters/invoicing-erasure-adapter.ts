@@ -31,6 +31,34 @@ export const noopInvoicingErasureAdapter: InvoicingErasurePort = {
   },
 };
 
+/**
+ * Rollout-gated OFF variant, selected by `members-deps.ts` when
+ * `FEATURE_ERASURE_DISCARD_DRAFTS` is false (the default).
+ *
+ * Reports a clean `'ok'` BY DESIGN. A disabled cascade is not a failed one:
+ * returning `'failed'` here would flip `allCascadesClean` in `eraseMember`,
+ * permanently withhold the `member_erased` completion proof, and leave the US2d
+ * reconciler re-driving the same member forever.
+ *
+ * Distinct from `noopInvoicingErasureAdapter` (a test stub) precisely so the
+ * production skip is visible in logs — a silent no-op on a compliance path is
+ * indistinguishable from "the member had no drafts".
+ */
+export const disabledInvoicingErasureAdapter: InvoicingErasurePort = {
+  async discardDraftsForMember(tenant, memberId, meta) {
+    logger.info(
+      {
+        tenantId: tenant.slug,
+        memberId: memberId as string,
+        requestId: meta.requestId,
+        cascade: 'f4_draft_discard',
+      },
+      'members.erase.invoicing_draft_discard_disabled',
+    );
+    return { outcome: 'ok', discardedCount: 0 };
+  },
+};
+
 export const invoicingErasureAdapter: InvoicingErasurePort = {
   async discardDraftsForMember(tenant, memberId, meta) {
     try {

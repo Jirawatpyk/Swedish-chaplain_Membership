@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
 import { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
 import { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
@@ -33,7 +34,10 @@ import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/
 import { outboxCancelAdapter } from './infrastructure/adapters/outbox-cancel-adapter';
 import { eventRegistrationErasureAdapter } from './infrastructure/adapters/event-registration-erasure-adapter';
 import { directoryErasureAdapter } from './infrastructure/adapters/directory-erasure-adapter';
-import { invoicingErasureAdapter } from './infrastructure/adapters/invoicing-erasure-adapter';
+import {
+  disabledInvoicingErasureAdapter,
+  invoicingErasureAdapter,
+} from './infrastructure/adapters/invoicing-erasure-adapter';
 import { f7BroadcastsAudienceDerivationAdapter } from './infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { subprocessorErasureAdapter } from './infrastructure/adapters/subprocessor-erasure-adapter';
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
@@ -232,7 +236,16 @@ export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
     // pending `draft` invoices, RETAINS everything `issued` and beyond (Thai RD
     // §87/3 / GDPR Art.17(3)(b)). Best-effort + idempotent (re-scans on a
     // re-drive).
-    invoicingErasure: invoicingErasureAdapter,
+    //
+    // Rollout-gated (default OFF). `eraseMember` is already production-live, so
+    // unlike the rest of this branch the cascade is NOT covered by
+    // FEATURE_AUTO_INVOICE and would go live on merge — and its deletes are
+    // irreversible. The gate lives here, at the composition root, so the
+    // application layer stays env-free (Principle III). OFF resolves to an
+    // adapter that reports a clean 'ok', never 'failed' — see its docstring.
+    invoicingErasure: env.features.erasureDiscardDrafts
+      ? invoicingErasureAdapter
+      : disabledInvoicingErasureAdapter,
     // COMP-1 US3-C — sub-processor erasure propagation. The audience-derivation
     // adapter reads the member's (Resend audience, email) pairs INSIDE the
     // atomic scrub tx (before the delivery tombstone redacts the emails); the

@@ -1405,6 +1405,22 @@ proportionate.
 To stand the feature down, reverse any ONE key — key 1 is the fastest
 (env + redeploy, no data change) and stops all three crons at the route.
 
+> **A fourth key exists and is NOT part of this sequence.**
+> `FEATURE_ERASURE_DISCARD_DRAFTS` (env, default false) gates the GDPR Art.17 /
+> PDPA §33 cascade that DELETES an erased member's `draft` invoices. It hangs
+> off `eraseMember`, which is **already production-live** (COMP-1, plus the
+> `reconcile-erasures` cron re-drives it) — so it is reachable with keys 1–3 all
+> off, and standing the auto-invoice feature down does **not** stand this down.
+> Flip it independently, and expect it to take effect on the next erasure or
+> reconciler sweep. Issued documents are never touched (Thai RD §87/3 /
+> Art.17(3)(b)); only `draft` rows are removed, and the deletes are
+> irreversible.
+>
+> OFF is a clean skip, not a failed cascade: the erasure still completes and
+> still emits `member_erased`. Confirm from the log line
+> `members.erase.invoicing_draft_discard_disabled` (info, `cascade:
+> f4_draft_discard`) that the skip is the flag and not an empty draft set.
+
 > **Enrolment is reversible from the admin UI.** The Members directory bulk
 > bar carries both directions — enrol and **un-enrol** (`unenrol_auto_invoice`
 > on `POST /api/members/bulk`, emitting `member_auto_invoice_unenrolled`; the
