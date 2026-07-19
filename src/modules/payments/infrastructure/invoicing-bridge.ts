@@ -191,10 +191,17 @@ function summariseF4Error<E extends {
   // were absent / wrong shape). Pre-fix only the `detail`-fallback path
   // bumped the counter — a partial F4 error shape with `detail` present
   // but `code`+`kind` missing silently returned `code: 'f4_error'`. The
-  // dispatcher's PERMANENT_SUB_USE_CASE_DETAILS set does NOT include
-  // `'f4_error'`, so it classified as transient → Stripe 72h retry
-  // storm on a permanently-malformed error shape. The two-path emit
-  // closes both halves of the silent-misclassification window.
+  // dispatcher classifies `'f4_error'` as transient (it cannot read a
+  // shape it does not recognise), so a permanently-malformed error shape
+  // meant a Stripe retry storm. The two-path emit closes both halves of the
+  // silent-misclassification window.
+  //
+  // money-remediation Task 5 — that retry is now BOUNDED by
+  // `TRANSIENT_RETRY_CEILING_SECONDS`, and NOTE that this counter is noisy
+  // by construction: the `detail` fallback fires for EVERY F4 variant except
+  // pdf_render_failed / blob_upload_failed, because those two are the only
+  // ones carrying a `detail` field. Do not alert on it as an anomaly signal
+  // — alert on the `code === 'f4_error'` half, which is the real drift.
   if (
     detail.startsWith('unknown_f4_error_shape') ||
     code === 'f4_error'

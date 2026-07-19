@@ -412,6 +412,8 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
         kind: 'sub_use_case_error',
         eventType: 'payment_intent.succeeded',
         detail: 'processor_unavailable',
+        subDetail: null,
+        retryCeilingExceeded: false,
         permanence: 'transient',
       },
     });
@@ -445,7 +447,13 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
         code: 'dispatch_failed',
         kind: 'sub_use_case_error',
         eventType: 'payment_intent.succeeded',
-        detail: 'tenant_settings_missing',
+        // money-remediation Task 5 — post-Task-5 the dispatcher's `detail` is
+        // the coarse CODE and the discriminating sub-code sits in
+        // `subDetail`. Pinning the old shape here would have this test assert
+        // a combination the dispatcher can no longer produce.
+        detail: 'bridge_error',
+        subDetail: 'tenant_settings_missing',
+        retryCeilingExceeded: false,
         permanence: 'permanent',
       },
     });
@@ -485,13 +493,80 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
     };
     expect(eventArg.eventType).toBe('webhook_dispatch_permanent_failure');
     expect(eventArg.payload['dispatch_failure_kind']).toBe('sub_use_case_error');
-    expect(eventArg.payload['dispatch_failure_detail']).toBe(
+    expect(eventArg.payload['dispatch_failure_detail']).toBe('bridge_error');
+    // money-remediation Task 5 — the 5y forensic finally carries the F4/F5
+    // sub-code. Pre-Task-5 `dispatch_failure_detail` was `'bridge_error'` for
+    // EVERY F4 decline, so this row could not tell an operator which invoice
+    // state to repair.
+    expect(eventArg.payload['dispatch_failure_sub_detail']).toBe(
       'tenant_settings_missing',
+    );
+    // Classified permanent on its own merits — not a retry-budget give-up.
+    expect(eventArg.payload['dispatch_failure_retry_ceiling_exceeded']).toBe(
+      false,
     );
     expect(eventArg.payload['stripe_event_type']).toBe(
       'payment_intent.succeeded',
     );
     expect(eventArg.retentionYears).toBe(5);
+  });
+
+  /**
+   * money-remediation Task 5 — the retry-ceiling give-up, at the wire.
+   *
+   * Task 5 makes transient F4 declines return 500 where they returned 200,
+   * and Stripe DISABLES endpoints that fail persistently. The ceiling caps
+   * that exposure by 200-acking a transient once the event outlives 48h,
+   * with a forensic row that says so. This pins the two halves an operator
+   * reads: it stops the retries (200), and it does NOT claim the underlying
+   * failure was permanent.
+   */
+  it('T5: retry-ceiling give-up → 200 + forensic marked as a give-up, not a permanent failure', async () => {
+    const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'dispatch_failed',
+        kind: 'sub_use_case_error',
+        eventType: 'payment_intent.succeeded',
+        // A TRANSIENT class (Blob outage) that outlived the 48h budget.
+        detail: 'bridge_error',
+        subDetail: 'blob_upload_failed',
+        retryCeilingExceeded: true,
+        permanence: 'permanent',
+      },
+    });
+
+    const { req } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validhex',
+    });
+    const { POST } = (await importWebhookRoute()) as unknown as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    const res = (await POST(req)) as Response;
+
+    // 200 so Stripe drains the queue and does not disable the endpoint.
+    expect(res.status).toBe(200);
+
+    const f5EmitCalls = f5AuditAdapterEmitMock.mock.calls as Array<Array<unknown>>;
+    const emit = f5EmitCalls.find((call) => {
+      const arg = call[1] as { eventType?: string } | undefined;
+      return arg?.eventType === 'webhook_dispatch_permanent_failure';
+    });
+    expect(emit).toBeDefined();
+    const eventArg = emit![1] as {
+      summary: string;
+      payload: Record<string, unknown>;
+    };
+    expect(eventArg.payload['dispatch_failure_sub_detail']).toBe(
+      'blob_upload_failed',
+    );
+    expect(eventArg.payload['dispatch_failure_retry_ceiling_exceeded']).toBe(true);
+    // The summary must not read as "permanently failed" — at 3am that is the
+    // difference between "repair this invoice" and "Blob was down for 2 days".
+    expect(eventArg.summary).toContain('gave up after the transient retry ceiling');
+    expect(eventArg.summary).not.toContain('permanently failed');
   });
 
   it('R2-TY-B: verifier throws non-WebhookSignatureError (TypeError) → 401 verifier_internal_error branch (not webhook_signature_rejected reason)', async () => {

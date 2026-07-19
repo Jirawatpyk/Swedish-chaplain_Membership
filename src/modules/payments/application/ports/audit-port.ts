@@ -557,6 +557,29 @@ export interface F5AuditPayloadByType {
     readonly stripe_event_type: string;
     readonly dispatch_failure_kind: string;
     readonly dispatch_failure_detail: string;
+    /**
+     * money-remediation Task 5 — the F4 sub-code behind a `bridge_error`
+     * (`pdf_render_failed`, `legacy_invoice_needs_reissue`, …), or `null` on
+     * branches that have none.
+     *
+     * Added as a NEW field rather than folded into `dispatch_failure_detail`,
+     * which is the coarse dispatcher code and whose meaning must not change
+     * for rows already written. Before Task 5 the sub-code was discarded by
+     * `subUseCaseErr`, so this forensic recorded only `'bridge_error'` — true
+     * of every F4 decline and therefore useless for triage.
+     */
+    readonly dispatch_failure_sub_detail: string | null;
+    /**
+     * money-remediation Task 5 — `true` when this row exists because the
+     * event outlived `TRANSIENT_RETRY_CEILING_SECONDS`, NOT because the
+     * failure was classified permanent.
+     *
+     * The distinction is the whole point of the row at 3am: `false` means an
+     * operator must fix a specific invoice; `true` means F4 or Blob was down
+     * long enough that we stopped asking Stripe to retry, and the underlying
+     * failure may well have cleared on its own since.
+     */
+    readonly dispatch_failure_retry_ceiling_exceeded: boolean;
   };
   // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, RR-8 allow-list) —
   // CRITICAL-2 failed-auto-refund forensic. ID-refs + refund status + satang

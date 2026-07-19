@@ -842,7 +842,7 @@ Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
 `Stripe-Signature` header value is ever attributed** — those are in pino's
 redact list (see § 21.4).
 
-### 21.1 Metrics catalogue (19 metrics — T166 added 3; money-remediation Task 7 Track B added 1)
+### 21.1 Metrics catalogue (22 metrics — recounted at money-remediation Task 5, which added `f4_bridge_unknown_error_shape`; Task 7 Track B added `refunds.credit_note_waived.count`)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -867,6 +867,7 @@ redact list (see § 21.4).
 | `receipt_pdf_render_duration_ms` | histogram | `tenant`, `outcome` (rendered\|failed) | T166 async receipt render — worker p95 budget |
 | `receipt_pdf_render_failures_total` | counter | `tenant`, `cause` (render_failed\|blob_upload_failed\|invalid_state\|invoice_not_found\|settings_missing) | T166 — render-pipeline forensics by failure cause |
 | `receipt_pdf_pending_count` | gauge | `tenant` | T166 — paid invoices stuck in `receipt_pdf_status='pending'` (sampled by reconciliation cron) |
+| `f4_bridge_unknown_error_shape` | counter | `bridge_op` | **NOISY BY CONSTRUCTION — do not alert on the raw series.** `summariseF4Error` (`invoicing-bridge.ts`) bumps it whenever the F4 `detail` fallback fires, and that fallback fires for EVERY `RecordPaymentError` variant except `pdf_render_failed` / `blob_upload_failed` — the only two that carry a `detail` field at all. A healthy F4 decline therefore increments it. The half worth paging on is the other trigger: `code` itself falling through to the literal `'f4_error'`, which is genuine F4 error-shape drift. Recorded here after money-remediation Task 5, whose classification table keys on the F4 **code**, not this detail. |
 
 **Cardinality**: `reason_code` and `event_type` are bounded enums; `tenant` is
 small-cardinality (≤ a few hundred over project lifetime). `step` is enum from
@@ -887,7 +888,7 @@ identifier.
 | SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
 | SLO-F5-007 receipt email delivery time-to-first-attempt p95 (post T166 async) | ≤ 60 s post-webhook-ack | distributed trace `payment_intent.succeeded webhook_receive → receipt_email_outbox_dispatched` (added 2026-04-28 per review-20260428-102639.md S3 closure). Outbox cron cadence 5 min in dev / 1 min in prod; 60 s p95 budget assumes prod cadence + worker first-attempt success on the happy path. `pdf_render_permanently_failed` page (§ 21.3 below) is the alert on the failure tail. |
 
-### 21.3 Alert rules (12 alerts — T166 added `pdf_render_permanently_failed`; review-20260428-102639.md added `slo_f5_002b_breach`; Track B added `refund_credit_note_waived`)
+### 21.3 Alert rules (15 alerts — Task 5 added the transient-dispatch-failure alarm and recounted; Track B added `refund_credit_note_waived`)
 
 | Alert | Severity | Threshold | Runbook |
 |---|---|---|---|
@@ -902,6 +903,7 @@ identifier.
 | `payments.unprocessed_events_count` > 0 for any tenant, sustained ≥ 15 min | **alarm** | webhook dispatch started and never completed — F-1 divergence class; production baseline is 0, so any non-zero is new | `docs/runbooks/unprocessed-events-count.md` |
 | `payments_unreconciled_total{permanence='permanent'}` > 0 | **alarm** | a Stripe-vs-ledger divergence landed on a path nothing will retry — a human must reconcile | `docs/runbooks/unprocessed-events-count.md` § Triage |
 | `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
+| `payments.webhook_dispatch_failed{permanence='transient'}` sustained > 30 min | **alarm** | money-remediation Task 5 — transient F4 declines now return **500**, and **Stripe disables endpoints that fail persistently**. A systemic F4/Blob outage that runs long enough becomes "webhook endpoint disabled", which is strictly worse than the outage and needs a human in the Stripe Dashboard to undo. The in-code backstop is `TRANSIENT_RETRY_CEILING_SECONDS` (48 h, `process-webhook-event.ts`), after which the event is 200-acked with a `webhook_dispatch_permanent_failure` row carrying `dispatch_failure_retry_ceiling_exceeded: true`. **This row is NOT yet wired to any alerting backend** — see § 21.7. | Check Stripe Dashboard → Webhooks for endpoint health FIRST, then F4/Blob status. |
 | `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
 | `pdf_render_permanently_failed` ≥ 1 (any tenant) | **page** | T166 receipt PDF worker exhausted 3 attempts — invoice `paid` with no receipt PDF available to member | `docs/runbooks/receipt-pdf-permanently-failed.md` |
 | `slo_f5_002b_breach` — webhook span p95 (succeeded) > 1000 ms sustained 30 min | **alarm** | post-T166 async-PDF SLO regression — implies the F4 markPaid + outbox-enqueue tail is creeping back into the hot path, OR Neon/Vercel network latency degraded. Block T167 (optimistic-UI overlay deletion) — the gate condition is "prod p95 < 1000 ms for 7 consecutive days"; sustained breach resets the 7-day timer. | Dashboard panel: `webhook_span_duration_ms{event_type="payment_intent.succeeded"}`. Query: `histogram_quantile(0.95, rate(webhook_span_duration_ms_bucket{event_type="payment_intent.succeeded"}[30m]))`. Triage: check Vercel function timing breakdown + Neon connection pool wait + receipt outbox enqueue duration. Rollback: re-enable `FEATURE_F5_ASYNC_RECEIPT_PDF=true` if the breach correlates with the kill-switch flipping to false. |
@@ -952,6 +954,20 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - **alarm** → `#oncall-payments` Slack + on-call email digest
 - **page** → PagerDuty primary on-call rotation
 - **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥1/5min escalation
+
+> **Routing is ASPIRATIONAL, not wired.** As of money-remediation Task 5
+> (2026-07-20) this repository has **no alerting backend**: no Prometheus,
+> no Grafana, no PagerDuty integration, and no configured OTel metric
+> reader. Every counter in § 21.1 increments into a collector nothing
+> reads, and every rule in § 21.3 describes a query no scheduler runs.
+>
+> This is why money-remediation Task 5 put its transient-retry bound in the
+> code path (`TRANSIENT_RETRY_CEILING_SECONDS`) rather than behind an alert:
+> "ship it behind an alert" is unsatisfiable here, so a design that depends
+> on someone being paged is a design that fails silently. Treat that as the
+> standing constraint when reviewing any new failure mode on the money path
+> — the durable signal is the **audit row**, which persists 5–10 years, not
+> the metric.
 
 ---
 

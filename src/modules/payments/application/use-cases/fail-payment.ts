@@ -62,12 +62,16 @@ export type FailPaymentError =
    * F5R2-CRIT-2 — dedicated permanent code for tenant-settings-missing.
    * Mirrors the confirm-payment pattern (`bridge_error` /
    * `tenant_settings_missing` detail). The dispatcher's
-   * `categorisePermanence` reads `error.code`, so reusing
-   * `'processor_unavailable'` for this configuration gap caused the
-   * dispatcher to classify it as transient → Stripe retries 72h on a
-   * config gap that cannot self-heal. The dedicated `bridge_error`
-   * code is in `PERMANENT_SUB_USE_CASE_DETAILS` → permanent → Stripe
+   * The dispatcher classifies on `(error.code, error.detail)`, so reusing
+   * `'processor_unavailable'` for this configuration gap caused it to
+   * classify as transient → Stripe retries 72h on a config gap that cannot
+   * self-heal. The dedicated `bridge_error` + `tenant_settings_missing`
+   * detail classifies permanent (`classifyDispatchPermanence`) → Stripe
    * stops retrying + ops sees a forensic 200-ack audit row.
+   *
+   * money-remediation Task 5 — this pairing is load-bearing. The DETAIL is
+   * now what carries the permanence, not the code; changing either half
+   * silently re-opens the 72h retry storm.
    */
   | { readonly code: 'bridge_error'; readonly detail: string };
 
