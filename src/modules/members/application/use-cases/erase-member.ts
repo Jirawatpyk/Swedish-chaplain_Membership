@@ -45,6 +45,7 @@ import type { UserEmailPort } from '../ports/user-email-port';
 import type { OutboxCancelPort } from '../ports/outbox-cancel-port';
 import type { EventRegistrationErasurePort } from '../ports/event-registration-erasure-port';
 import type { DirectoryErasurePort } from '../ports/directory-erasure-port';
+import type { InvoicingErasurePort } from '../ports/invoicing-erasure-port';
 import type { BroadcastsAudienceDerivationPort } from '../ports/broadcasts-audience-derivation-port';
 import type {
   SubprocessorErasurePort,
@@ -176,6 +177,21 @@ export type EraseMemberDeps = {
   // outcome (or a throw) flips allCascadesClean=false → member_erased withheld
   // → the US2d reconciler re-drives.
   directoryErasure: DirectoryErasurePort;
+  // COMP-1 §6.2 — F4 invoicing draft discard (post-commit best-effort).
+  // DISCARDS the member's `draft` invoices; RETAINS everything `issued` and
+  // beyond. A draft carries no §87 sequence number and no statutory retention
+  // duty, so Art. 5(1)(c) data-minimisation + Art. 17 apply cleanly; an issued
+  // document is retained under the Thai RD §87/3 legal-obligation carve-out,
+  // Art. 17(3)(b) — nothing already issued is deleted, voided, or altered.
+  // Without this cascade the draft SURVIVED erasure: the branch's `erased_at`
+  // gates then refuse to issue it, leaving a permanently un-issuable red row in
+  // the treasurer's review queue that only a manual Discard could clear. (The
+  // Task 11 prune cron reaches only `origin='auto_renewal'` drafts stamped on a
+  // cycle — never a manual or event draft, and never before the next daily
+  // pass.) A 'failed' outcome flips allCascadesClean=false → member_erased
+  // withheld → the US2d reconciler re-drives (the scan-and-discard is
+  // idempotent).
+  invoicingErasure: InvoicingErasurePort;
   // COMP-1 US3-C — sub-processor erasure propagation (GDPR Art.17 / PDPA §33).
   // `broadcastsAudienceDerivation` reads the member's (Resend audience, email)
   // pairs INSIDE the atomic scrub tx (FAIL-LOUD), while the emails are still
@@ -787,6 +803,43 @@ export async function eraseMember(
     );
   }
 
+  // COMP-1 §6.2 — F4 invoicing draft discard. Runs AFTER the F8 renewals
+  // cascade above purely for readability (the auto-drafts this most often
+  // clears are stamped on the cycles that cascade just cancelled); the two are
+  // order-INDEPENDENT — F4's discard keys on (tenant, member, status='draft'),
+  // not on cycle state, so it is correct in either order and a re-drive after a
+  // renewals failure still discards.
+  //
+  // Retention line: `draft` goes, `issued` and beyond STAY (Thai RD §87/3 /
+  // GDPR Art.17(3)(b)). Enforced twice — the candidate scan asks only for
+  // drafts, and F4's `deleteInvoiceDraft` re-asserts `status='draft'` inside the
+  // DELETE statement — so a row promoted by a concurrent issue is retained and
+  // reported, never destroyed.
+  //
+  // Audit: F4 emits `invoice_draft_deleted` per discarded document (co-committed
+  // with the DELETE); `discardedCount` below is the DPO-facing aggregate carried
+  // on the `member_erased` completion proof. Best-effort + never-fatal: the
+  // member row IS erased (the atomic scrub committed), so a cascade failure must
+  // only withhold the completion proof, never fail the erasure. The adapter is
+  // documented never-throws; the defensive catch mirrors the F1/F7/F8/F9
+  // cascade structure.
+  let invoiceDraftsDiscardedCount = 0;
+  try {
+    const r = await deps.invoicingErasure.discardDraftsForMember(
+      deps.tenant,
+      memberId,
+      { actorUserId: meta.actorUserId, requestId: meta.requestId },
+    );
+    invoiceDraftsDiscardedCount = r.discardedCount;
+    if (r.outcome !== 'ok') {
+      // The adapter owns the cascade-detail log (counts + tenant + member);
+      // this block only gates the completion proof.
+      allCascadesClean = false;
+    }
+  } catch {
+    allCascadesClean = false;
+  }
+
   // F1 linked-user erasure (US2a) — the keystone that closes the US1→US2
   // residual: anonymise each login account linked to the erased member so its
   // email no longer resolves at sign-in (GDPR Art.17 / PDPA §33). Each
@@ -1042,6 +1095,13 @@ export async function eraseMember(
             reason,
             sessions_revoked_total: sessionsRevokedTotal,
             invitations_revoked_count: invitationsRevokedCount,
+            // COMP-1 §6.2 — the erasure's invoicing footprint at a glance for a
+            // DPO/auditor. The AUTHORITATIVE per-document trail is F4's own
+            // `invoice_draft_deleted` rows (one per discarded draft, naming the
+            // invoice id); this is the aggregate. On a re-drive completion the
+            // first pass already discarded them, so this reads 0 — same L4
+            // caveat as the two counts above, signalled by `re_drive`.
+            invoice_drafts_discarded_count: invoiceDraftsDiscardedCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag

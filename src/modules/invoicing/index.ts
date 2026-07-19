@@ -305,6 +305,17 @@ export {
   type DeleteInvoiceDraftError,
 } from './application/use-cases/delete-invoice-draft';
 
+// COMP-1 member-erasure cascade (GDPR Art.17 / PDPA §33) — discards the erased
+// member's `draft` invoices, RETAINS everything `issued` and beyond (Thai RD
+// §87/3 / Art.17(3)(b)). The single allowed F3 → F4 crossing point for erasure;
+// consumed by `members`' `invoicing-erasure-adapter`.
+export {
+  discardMemberDraftInvoices,
+  type DiscardMemberDraftInvoicesInput,
+  type DiscardMemberDraftInvoicesOutput,
+  type DiscardMemberDraftInvoicesDeps,
+} from './application/use-cases/discard-member-draft-invoices';
+
 export {
   getInvoice,
   type GetInvoiceInput,

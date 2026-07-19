@@ -33,6 +33,7 @@ import { f7BroadcastsDeliveryTombstoneAdapter } from './infrastructure/adapters/
 import { outboxCancelAdapter } from './infrastructure/adapters/outbox-cancel-adapter';
 import { eventRegistrationErasureAdapter } from './infrastructure/adapters/event-registration-erasure-adapter';
 import { directoryErasureAdapter } from './infrastructure/adapters/directory-erasure-adapter';
+import { invoicingErasureAdapter } from './infrastructure/adapters/invoicing-erasure-adapter';
 import { f7BroadcastsAudienceDerivationAdapter } from './infrastructure/adapters/broadcasts-audience-derivation-adapter';
 import { subprocessorErasureAdapter } from './infrastructure/adapters/subprocessor-erasure-adapter';
 import { drizzlePlanAdvisoryLockAdapter } from './infrastructure/adapters/plan-advisory-lock-adapter';
@@ -227,6 +228,11 @@ export function buildEraseMemberDeps(tenant: TenantContext): EraseMemberDeps {
     // COMP-1 / F9 — insights directory footprint erasure (directory_listings row
     // + public logo blob). Best-effort + re-drive-safe (blob-before-row).
     directoryErasure: directoryErasureAdapter,
+    // COMP-1 §6.2 — F4 invoicing draft discard: removes the erased member's
+    // pending `draft` invoices, RETAINS everything `issued` and beyond (Thai RD
+    // §87/3 / GDPR Art.17(3)(b)). Best-effort + idempotent (re-scans on a
+    // re-drive).
+    invoicingErasure: invoicingErasureAdapter,
     // COMP-1 US3-C — sub-processor erasure propagation. The audience-derivation
     // adapter reads the member's (Resend audience, email) pairs INSIDE the
     // atomic scrub tx (before the delivery tombstone redacts the emails); the
