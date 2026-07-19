@@ -68,6 +68,31 @@ describe('parseDuplicateRefusal', () => {
     expect(parseDuplicateRefusal(body)).toBeNull();
   });
 
+  it('discriminates on the CODE, not merely on a well-formed existing block', () => {
+    // Mutation-driven: deleting the `code !== 'duplicate_membership_invoice'`
+    // check left every other test green, because each "wrong code" fixture
+    // above ALSO lacked a usable `existing` block, so the completeness guard
+    // caught it instead. Two redundant guards hid the loss of one.
+    //
+    // A future error code that happens to carry a well-formed `existing`
+    // block must NOT be mistaken for a duplicate refusal — that would open a
+    // "create a second invoice?" dialog on an unrelated failure and invite an
+    // admin to mint a tax document in response to the wrong problem.
+    expect(
+      parseDuplicateRefusal({
+        error: {
+          code: 'some_future_error',
+          existing: {
+            invoice_id: EXISTING_ID,
+            status: 'issued',
+            document_number: 'SC-2026-0042',
+            total_satang: '2140000',
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it.each([
     ['no existing block', refusal({})],
     ['a missing invoice id', refusal({ status: 'issued' })],
