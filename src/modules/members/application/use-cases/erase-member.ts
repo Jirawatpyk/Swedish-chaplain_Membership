@@ -717,7 +717,7 @@ export async function eraseMember(
     allCascadesClean = false;
     logger.error(
       {
-        err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        err: errKind(cascadeErr),
         memberId,
         requestId: meta.requestId,
         cascade: 'f7_in_flight_broadcast_cancel',
@@ -798,7 +798,7 @@ export async function eraseMember(
     allCascadesClean = false;
     logger.error(
       {
-        err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        err: errKind(cascadeErr),
         memberId,
         requestId: meta.requestId,
         cascade: 'f8_in_flight_cycle_cancel',
@@ -907,7 +907,7 @@ export async function eraseMember(
       allCascadesClean = false;
       logger.error(
         {
-          err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+          err: errKind(cascadeErr),
           memberId,
           userId,
           requestId: meta.requestId,
@@ -966,7 +966,7 @@ export async function eraseMember(
     allCascadesClean = false;
     logger.error(
       {
-        err: cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr),
+        err: errKind(cascadeErr),
         memberId,
         requestId: meta.requestId,
         cascade: 'f7_content_scrub',
@@ -1109,10 +1109,7 @@ export async function eraseMember(
     // recordInTx runInTenant above can reach this catch.
     logger.error(
       {
-        err:
-          auditErr instanceof Error
-            ? auditErr.message
-            : String(auditErr),
+        err: errKind(auditErr),
         memberId,
         requestId: meta.requestId,
         cascade: 'subprocessor_erasure',
