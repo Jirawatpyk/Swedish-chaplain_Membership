@@ -32,6 +32,7 @@ import { makeDrizzleRefundsRepo } from '@/modules/payments/infrastructure/repos/
 // exporting it to make a stub compile would turn the guard into decoration.
 import { proveProcessorSettledFailed } from '@/modules/payments/domain/settlement/money-moved';
 import {
+  payments,
   refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
@@ -784,6 +785,209 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     // `finalizeSucceededRefund` reads the same aggregate and would flip a
     // payment to `refunded` on money that never settled).
     expect(afterSecond.succeededSumSatang).toBe(asSatang(0n));
+  });
+
+
+  // -------------------------------------------------------------------------
+  // Money-remediation Task 9 (F-9) — findAwaitingAttachByAppRefundId.
+  //
+  // Resolves a refund by the marker `issueRefund` stamps on Stripe BEFORE the
+  // external call, closing the window where `charge.refunded` overtakes
+  // `attachProcessorRefundId` and fires a false 10-year OOB forensic.
+  //
+  // These run against live Neon on purpose: the `IS NULL` predicate, the
+  // two-table tenant filter and the INNER join are SQL-level guarantees that a
+  // mock cannot demonstrate, and RLS only exists here.
+  // -------------------------------------------------------------------------
+  it('F-9: resolves an unattached pending refund + returns the parent PI', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(70_000n),
+        reason: 'f9 awaiting attach',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-1',
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Read the parent payment's real PI so the assertion pins the JOIN rather
+    // than merely "some non-empty string".
+    const [parent] = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ pi: payments.processorPaymentIntentId })
+        .from(payments)
+        .where(eq(payments.id, paymentIdA))
+        .limit(1),
+    );
+
+    const found = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe(refundId);
+    expect(found?.status).toBe('pending');
+    expect(found?.amountSatang).toBe(70_000n);
+    expect(found?.invoiceId).toBe(invoiceId);
+    expect(found?.parentProcessorPaymentIntentId).toBe(parent?.pi);
+  });
+
+  /**
+   * THE LOAD-BEARING PREDICATE. A row that already carries a
+   * `processor_refund_id` must be unreachable through this method — that is
+   * what stops an attacker-supplied `metadata.refundId` from addressing an
+   * already-matched refund and laundering it. Structural, not advisory.
+   */
+  it('F-9: returns null once processor_refund_id is attached (IS NULL predicate)', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const processorRefundId = `re_f9_attached_${randomUUID().slice(0, 8)}`;
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(11_000n),
+        reason: 'f9 already attached',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-2',
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Before the attach it IS reachable — proving the null below is caused by
+    // the attach and not by an unrelated seeding failure.
+    const before = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(before).not.toBeNull();
+
+    await runInTenant(tenantA.ctx, (tx) =>
+      repo.attachProcessorRefundId(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        processorRefundId,
+      }),
+    );
+
+    const after = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(after).toBeNull();
+  });
+
+  /**
+   * Principle I, Review-Gate blocker. A forged `metadata.refundId` naming
+   * another tenant's row must not resolve — probed the hard way, with tenant
+   * A's id passed explicitly as the app-layer filter so the DB-layer RLS
+   * backstop is tested independently of the WHERE clause.
+   */
+  it('F-9 cross-tenant: tenant B cannot resolve tenant A unattached refund', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(9_000n),
+        reason: 'f9 cross-tenant probe target',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-xtenant',
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Sanity: it IS resolvable from its own tenant, so a null from B is
+    // isolation and not a broken fixture.
+    const fromA = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(fromA).not.toBeNull();
+
+    const repoB = makeDrizzleRefundsRepo(tenantB.ctx.slug);
+    // (a) B's session, A's tenantId as the filter -> RLS must block.
+    const probeWithATenantId = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(probeWithATenantId).toBeNull();
+
+    // (b) B's session, B's own tenantId -> the WHERE clause must block.
+    const probeWithBTenantId = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAwaitingAttachByAppRefundId(tx, tenantB.ctx.slug, refundId),
+    );
+    expect(probeWithBTenantId).toBeNull();
+  });
+
+  /**
+   * PINS THE APP-LAYER TENANT FILTER, INDEPENDENTLY OF RLS.
+   *
+   * The cross-tenant test above runs from tenant B's session, so RLS alone
+   * blocks it — deleting the WHERE-clause tenant filter leaves that test GREEN
+   * (verified by mutation). Principle I requires BOTH layers, so one of them
+   * being untested is a real gap, not a stylistic one.
+   *
+   * This probes from tenant A's OWN session (RLS permits the row) while passing
+   * a DIFFERENT tenantId as the argument. Only the app-layer predicate can
+   * produce null here, so the mutation that removes it dies on this test.
+   */
+  it('F-9: app-layer tenant filter blocks a mismatched tenantId within a permitted session', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(8_000n),
+        reason: 'f9 app-layer filter probe',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-applayer',
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Same session, correct tenantId -> resolves. Anchors the null below.
+    const withOwnTenantId = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(withOwnTenantId).not.toBeNull();
+
+    // Same session (RLS satisfied), WRONG tenantId -> only the WHERE clause
+    // can reject this.
+    const withForeignTenantId = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantB.ctx.slug, refundId),
+    );
+    expect(withForeignTenantId).toBeNull();
+  });
+
+  it('F-9: returns null for an unknown marker', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const result = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, makeRefundUlid()),
+    );
+    expect(result).toBeNull();
   });
 
 });

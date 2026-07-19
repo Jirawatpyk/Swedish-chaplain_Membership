@@ -239,6 +239,68 @@ export interface RefundsRepo {
    * reconciled against Stripe and are skipped by the sweep (never
    * blind-failed — a real refund may exist).
    */
+  /**
+   * Money-remediation Task 9 (F-9) — resolve a refund row by the
+   * APP-INITIATED marker (`refunds.id`, echoed back to us as the Stripe
+   * Refund's `metadata.refundId`) instead of by `processor_refund_id`.
+   *
+   * WHY IT EXISTS. `issueRefund` writes `processor_refund_id` in a
+   * SEPARATE tx AFTER `createRefund` returns. Between the Stripe call and
+   * that write, a `charge.refunded` / `refund.updated` delivery finds no
+   * row by `processor_refund_id` and the handler fires a FALSE
+   * `out_of_band_refund_detected` — a 10-year forensic claiming money left
+   * by an unauthorised route, plus an on-call page, for a refund we
+   * initiated. The marker is the only key that exists BEFORE the external
+   * call, so it is the only key that closes the window. It also closes the
+   * durable variant, where the attach write never lands at all
+   * (`attachProcessorRefundId` throws on zero rows and has no try/catch, so
+   * a Neon blip or function timeout strands the row NULL forever and every
+   * delivery in Stripe's ~3-day retry series re-fires the false forensic).
+   *
+   * `WHERE processor_refund_id IS NULL` IS LOAD-BEARING — DO NOT RELAX IT.
+   * The caller's input is attacker-influenceable: anyone with Stripe
+   * Dashboard access (the exact actor the OOB alert exists to catch) can
+   * set `metadata.refundId` on a hand-made refund and try to mute their own
+   * alarm. This predicate makes the method STRUCTURALLY INCAPABLE of
+   * returning a row that already carries a processor id, so a forged marker
+   * can never re-point, re-attach, or launder an already-matched refund —
+   * the worst it can do is name a row that is genuinely still awaiting its
+   * id, which the caller then rejects on the PaymentIntent cross-check.
+   * Widening this to "find by id" would turn a false-alarm fix into an
+   * alarm-suppression primitive.
+   *
+   * Tenant isolation is two-layer per Principle I: the `tx` carries
+   * `SET LOCAL app.current_tenant` (RLS + FORCE) AND both tables are
+   * explicitly filtered on `tenantId`. A forged marker naming another
+   * tenant's refund must return null — and the caller must still emit the
+   * forensic, because that is a cross-tenant probe, not a benign miss.
+   *
+   * Returns the parent payment's `processorPaymentIntentId` so the caller
+   * can complete the anti-forgery cross-check in ONE query, without taking
+   * a lock (this runs inside a webhook dispatch tx; adding a second lock
+   * acquisition here would introduce an ordering hazard with
+   * `lockForUpdateByProcessorRefundId`).
+   *
+   * `status` is returned rather than filtered in SQL so the caller can
+   * decide explicitly: a terminal row with a NULL processor id was
+   * finalised under a rejection proof (Stripe said the money never moved),
+   * so a settlement webhook naming it is a genuine contradiction that MUST
+   * keep its forensic rather than being quietly back-filled.
+   */
+  findAwaitingAttachByAppRefundId(
+    tx: unknown,
+    tenantId: string,
+    appRefundId: string,
+  ): Promise<{
+    readonly id: string;
+    readonly paymentId: PaymentId;
+    readonly invoiceId: string;
+    readonly amountSatang: Satang;
+    readonly status: RefundStatus;
+    /** Parent `payments.processor_payment_intent_id` — cross-check input. */
+    readonly parentProcessorPaymentIntentId: string;
+  } | null>;
+
   listPendingOlderThan(
     tx: unknown,
     tenantId: string,

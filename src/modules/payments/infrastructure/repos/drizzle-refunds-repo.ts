@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -27,7 +27,7 @@ import type {
 } from '../../application/ports/refunds-repo';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
-import { refunds, type RefundRow } from '../schema';
+import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
@@ -278,6 +278,72 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         .for('no key update')
         .limit(1);
       return row ? toRefundDomain(row as RefundRow) : null;
+    },
+
+    // Money-remediation Task 9 (F-9). Full rationale on the port docstring;
+    // the security-critical points restated here because this is the SQL a
+    // reviewer actually reads:
+    //
+    //   · `isNull(refunds.processorRefundId)` is NOT an optimisation and NOT
+    //     defence-in-depth. It is what stops an attacker-supplied
+    //     `metadata.refundId` from ever addressing an already-matched refund.
+    //     Removing it converts a false-alarm fix into an alarm-suppression
+    //     primitive for the very actor the alarm watches.
+    //   · BOTH tables carry an explicit `tenantId` filter on top of the RLS
+    //     the `tx` already enforces (Principle I two-layer isolation). The
+    //     payments-side filter is not redundant: it keeps the join from
+    //     being the seam where a cross-tenant marker resolves a PI.
+    //
+    // INNER join — a refund with no visible parent payment yields null, which
+    // routes the caller to the forensic rather than to a suppression with an
+    // unverifiable PI.
+    async findAwaitingAttachByAppRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      appRefundId: string,
+    ): Promise<{
+      readonly id: string;
+      readonly paymentId: PaymentId;
+      readonly invoiceId: string;
+      readonly amountSatang: Satang;
+      readonly status: RefundStatus;
+      readonly parentProcessorPaymentIntentId: string;
+    } | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({
+          id: refunds.id,
+          paymentId: refunds.paymentId,
+          invoiceId: refunds.invoiceId,
+          amountSatang: refunds.amountSatang,
+          status: refunds.status,
+          parentProcessorPaymentIntentId: payments.processorPaymentIntentId,
+        })
+        .from(refunds)
+        .innerJoin(
+          payments,
+          and(
+            eq(payments.id, refunds.paymentId),
+            eq(payments.tenantId, tenantIdArg),
+          ),
+        )
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.id, appRefundId),
+            isNull(refunds.processorRefundId),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      return {
+        id: row.id,
+        paymentId: asPaymentId(row.paymentId),
+        invoiceId: row.invoiceId,
+        amountSatang: toBigintSatang(row.amountSatang, row.id),
+        status: assertRefundStatus(row.status, row.id),
+        parentProcessorPaymentIntentId: row.parentProcessorPaymentIntentId,
+      };
     },
 
     async listPendingOlderThan(
