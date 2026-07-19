@@ -48,6 +48,40 @@ export default defineConfig({
     // bugs (assertion failures + syntax errors land in <100ms
     // regardless) and absorbs the cold-import variance.
     testTimeout: 30_000,
+    // Worker cap — the fix for the DETERMINISTIC (not flaky) timeout that
+    // `tests/contract/members/bulk-enrol-auto-invoice.test.ts` hit whenever it
+    // was co-run with `tests/unit/members/presentation/`.
+    //
+    // Vitest defaults to one worker per CPU. Because `isolate` is on (and must
+    // stay on), every worker transforms and evaluates the module graph in its
+    // OWN registry — nothing is shared. So raising the worker count does not
+    // just divide the work, it MULTIPLIES the transform cost. Measured on the
+    // 44-file repro (12-CPU dev workstation, `pnpm vitest run
+    // tests/contract/members/bulk-enrol-auto-invoice.test.ts
+    // tests/unit/members/presentation/`):
+    //
+    //   workers | transform | collect  | result
+    //   --------|-----------|----------|---------------------------------
+    //   default | 129.63 s  | 516.68 s | FAIL — 2 tests, 84.8 s wall
+    //   4       |  10.64 s  | 137.13 s | PASS — 398/398, 99.2 s wall
+    //
+    // The failing test's cold `await import('@/app/api/members/bulk/route')`
+    // (which additionally `importActual`s two whole module barrels) was
+    // starved to 43_041 ms — past the 30 s ceiling below. It is NOT a hang:
+    // re-running the same combination with `--testTimeout=180000` goes
+    // 398/398 green with that one test reported at 43.0 s. So the cure is to
+    // stop oversubscribing the CPU, not to raise the ceiling again.
+    //
+    // Raising `testTimeout` is the treadmill this repo is already on — 5s →
+    // 10s → 30s, see the comment above, each bump prompted by this same class
+    // of failure. A worker cap fixes the whole class at once and keeps
+    // working when someone adds a fourth bulk contract file, which is the
+    // failure mode a per-file fix would not survive.
+    //
+    // Percentage rather than a hard number so CI runners with a different
+    // core count scale with the box instead of inheriting this laptop's 4.
+    maxWorkers: '50%',
+    minWorkers: 1,
     // Staff-review R3v2 (2026-05-16): hookTimeout was initially bumped
     // from the vitest default 10s to 30s in commit `21888223` to
     // support beforeAll-based route-module pre-warm hooks. **R3v2
