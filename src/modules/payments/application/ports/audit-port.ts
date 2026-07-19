@@ -83,6 +83,13 @@ export type F5AuditEventType =
   // `docs/runbooks/stale-pending-refund-sweep.md`. 10-year retention
   // because the row touches the F4 credit-note tax-document lineage.
   | 'stale_pending_refund_detected'
+  // Migration 0266 (money-remediation Task 6 / finding F-3) — the processor
+  // settled a refund but the F4 credit-note bridge could not book it, so the
+  // row was left `pending` for the stale-pending sweep instead of being
+  // terminalised `failed`. 10-year retention: it records a window in which
+  // money was returned to a customer with no §86/10 credit note against it,
+  // which is exactly what an auditor reconciling output VAT needs to see.
+  | 'refund_cn_deferred'
   // Migration 0052 (H-11 review 2026-04-27) — emitted from
   // confirmPayment when the state machine acknowledges a permanent
   // terminal-state mismatch (illegal_transition or duplicate-
@@ -406,6 +413,17 @@ export interface F5AuditPayloadByType {
     original_correlation_id: string;
     runbook_url: string;
   };
+  refund_cn_deferred: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    processor_refund_id: string;
+    /** `f4_bridge_phase_b_db_error` or `f4_bridge_{f4 error code}`. */
+    defer_reason_code: string;
+    detail: string;
+    runbook_url: string;
+  };
   payment_acknowledged_terminal_state: Record<string, unknown>;
   // Migration 0043 — F-09 rate-limit forensic events. Permissive shape
   // because the F1 generic auditRepo.append path doesn't carry F5-typed
@@ -536,6 +554,7 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   refund_failed: 10,
   out_of_band_refund_detected: 10,
   stale_pending_refund_detected: 10,
+  refund_cn_deferred: 10,
   dispute_created: 10,
 
   payment_environment_mismatch: 5,

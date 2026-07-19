@@ -52,9 +52,17 @@
  * (remaining rows deferred to the next idempotent sweep). All three log on
  * truncation/deferral — never silent.
  *
- * Runs daily via Vercel Cron (`0 3 * * *`) + cron-job.org (`0 15 * * *`,
- * redundant) at `/api/cron/sweep-stale-pending-refunds`. Idempotent —
- * dual-firing safe. Per-tenant; the cron iterates tenants and calls once each.
+ * Runs hourly via Vercel Cron (`7 * * * *`) at
+ * `/api/cron/sweep-stale-pending-refunds`. Idempotent — dual-firing safe.
+ * Per-tenant; the cron iterates tenants and calls once each.
+ *
+ * Raised from daily by money-remediation Task 6, which leaves MORE rows
+ * `pending` on purpose (a processor-settled refund whose credit note could not
+ * be booked is no longer falsely marked `failed`), and a pending row blocks
+ * every subsequent refund on that payment. NOTE the cadence is not the
+ * governor: `olderThanHours` defaults to 24 below, so a row is not eligible
+ * until it is a day old. Hourly takes the worst case ~48h → ~25h, not to ~1h.
+ * See the cron route's docstring for why the floor was left alone.
  *
  * PCI SAQ-A (Principle IV): every audit payload + log carries id-refs +
  * status + satang ONLY — no card metadata, no raw Stripe error text.
@@ -76,6 +84,7 @@ import type {
 } from '../ports';
 import { noopLogger } from '../ports/logger-port';
 import { retentionFor } from '../ports/audit-port';
+import { proveProcessorSettledFailed } from '../../domain/settlement/money-moved';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { commitTx, rollbackTx, runTxDecided } from '../settlement/tx-decision';
@@ -554,6 +563,11 @@ export async function sweepStalePendingRefunds(
             refundId: locked.id,
             tenantId: input.tenantId,
             nextStatus: 'failed',
+            // `retrieveRefund` just asked Stripe directly and got a terminal
+            // failed/canceled — the funds are back on the platform balance.
+            // A proven rejection (money-remediation F-3), evidenced by the
+            // processor rather than by a refused request.
+            rejectionProof: proveProcessorSettledFailed(cls.status),
             failureReasonCode,
             processorRefundId,
             completedAt,

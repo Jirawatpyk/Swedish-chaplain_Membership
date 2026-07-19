@@ -134,6 +134,20 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // (Stripe refund DID succeed; ops follow up via the out-of-
       // band-refund runbook).
       return { status: 502, routeCode: 'f4_bridge_error' };
+    case 'f4_bridge_deferred':
+      // Money-remediation F-3. Stripe SETTLED the refund; only the credit note
+      // is outstanding and the stale-pending sweep retries it. Still 502
+      // (the request did not fully complete) but a DISTINCT route code, and
+      // therefore distinct copy: `f4_bridge_error`'s "issuance failed" reads
+      // as retryable, and the admin retrying is precisely what turned this
+      // into a double refund before the row stopped being marked `failed`.
+      return { status: 502, routeCode: 'f4_bridge_deferred' };
+    case 'refund_needs_reconciliation':
+      // 409, NOT 502 — retrying changes nothing. A prior refund on this
+      // payment settled at Stripe but was recorded `failed`, so the
+      // remaining-refundable maths is blind to money that already left.
+      // A human must reconcile via `docs/runbooks/out-of-band-refund.md`.
+      return { status: 409, routeCode: 'refund_needs_reconciliation' };
   }
 }
 

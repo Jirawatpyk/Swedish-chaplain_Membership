@@ -355,6 +355,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       readonly pendingCount: number;
       readonly succeededSumSatang: Satang;
       readonly nextSeq: number;
+      readonly settledUnbookedCount: number;
     }> {
       const tx = txUnknown as TenantTx;
       // Single index scan over `refunds_tenant_payment_status_idx`
@@ -369,11 +370,46 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       // Drizzle + postgres.js returns COUNT/SUM as JS strings (BIGINT-
       // safe). Coerce to Number/BigInt at the boundary; matches the
       // pattern in `drizzle-payments-repo.nextAttemptSeq`.
+      //
+      // `settled_unbooked_count` — the F-3 casualty shape. All THREE
+      // predicates are load-bearing; broadening this is a live regression,
+      // not a hardening.
+      //
+      //   TARGETS (the only two writers that produce it), both in
+      //   `issue-refund.ts` BEFORE this remediation:
+      //     :633  failure_reason_code = 'f4_bridge_phase_b_db_error'
+      //     :698  failure_reason_code = `f4_bridge_${code}`
+      //   Both fired AFTER Stripe confirmed the refund succeeded, so the row
+      //   says `failed` while the customer's money is gone.
+      //
+      //   MUST NOT CATCH — `stripe_refund_%` rows are EXPECTED and benign.
+      //   Three writers produce `failed` WITH a non-null processor_refund_id
+      //   from a processor-confirmed NON-settlement (no money moved; the id
+      //   is kept for forensics and webhook matching):
+      //     issue-refund.ts:548          `stripe_refund_${refundStatus}`
+      //     process-refund-updated.ts:455 `stripe_refund_${incoming.status}`
+      //     sweep-stale-pending-refunds.ts:551 `stripe_refund_${cls.status}`
+      //   Dropping the reason-code predicate — "it looks redundant next to
+      //   processor_refund_id IS NOT NULL" — 409-blocks every future refund
+      //   on any payment whose Stripe refund ever settled failed or canceled.
+      //   That is unrecoverable by runbook because the data is not corrupt.
+      //   Measured on the dev branch when this was written: 18 such rows, and
+      //   zero `f4_bridge_%` rows.
+      //
+      //   KNOWN COUPLING: this keys on a reason-code PREFIX, so an F4 bridge
+      //   failure written under a different prefix would slip past. Accepted
+      //   — `f4_bridge_${code}` is interpolated, so the codes cannot be
+      //   enumerated. If you add an F4-decline writer, keep the prefix.
       const rows = (await tx.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE status = 'pending')                      AS pending_count,
           COALESCE(SUM(amount_satang) FILTER (WHERE status = 'succeeded'), 0) AS succeeded_sum_satang,
-          COUNT(*)                                                         AS total_count
+          COUNT(*)                                                         AS total_count,
+          COUNT(*) FILTER (
+            WHERE status = 'failed'
+              AND processor_refund_id IS NOT NULL
+              AND failure_reason_code LIKE 'f4_bridge_%'
+          )                                                                AS settled_unbooked_count
         FROM refunds
         WHERE tenant_id = ${tenantIdArg}
           AND payment_id = ${paymentId}
@@ -381,12 +417,14 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         pending_count: number | string;
         succeeded_sum_satang: number | string;
         total_count: number | string;
+        settled_unbooked_count: number | string;
       }>;
       const row = rows[0];
       return {
         pendingCount: Number(row?.pending_count ?? 0),
         succeededSumSatang: asSatang(BigInt(row?.succeeded_sum_satang ?? 0)),
         nextSeq: Number(row?.total_count ?? 0) + 1,
+        settledUnbookedCount: Number(row?.settled_unbooked_count ?? 0),
       };
     },
   };

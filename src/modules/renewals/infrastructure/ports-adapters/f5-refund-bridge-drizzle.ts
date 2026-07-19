@@ -85,6 +85,25 @@ export const f5RefundBridge: F5RefundBridge = {
       if (refundResult.error.code === 'refund_in_progress') {
         return { status: 'refund_pending' };
       }
+      // Money-remediation F-3 (Task 6): `f4_bridge_deferred` joins
+      // `refund_in_progress` on the WAIT side, and for the same reason. The
+      // money HAS gone back to the member — only the §86/10 credit note is
+      // outstanding, and the stale-pending sweep retries the idempotent
+      // bridge. Routing it to `refund_failed` would tell an admin to act on a
+      // refund that is progressing normally, and "act" here means click
+      // refund again. That click is the mechanism F-3 needed to double-refund;
+      // it is fenced now by the row staying `pending`, but presenting a
+      // succeeded refund as a failure is exactly the false alarm this
+      // remediation exists to remove.
+      //
+      // Ids are carried so the cycle is webhook-matchable while it self-heals.
+      if (refundResult.error.code === 'f4_bridge_deferred') {
+        return {
+          status: 'refund_pending',
+          refundId: refundResult.error.refundId,
+          processorRefundId: refundResult.error.processorRefundId,
+        };
+      }
       return {
         status: 'refund_failed',
         errorCode: refundResult.error.code,

@@ -26,6 +26,11 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { makeDrizzleRefundsRepo } from '@/modules/payments/infrastructure/repos/drizzle-refunds-repo';
+// Money-remediation Task 6: writing `failed` requires evidence. These cases
+// simulate a processor-confirmed failed settlement, so they mint the proof
+// from the real Domain function. The REJECTION_PROOF brand stays private —
+// exporting it to make a stub compile would turn the guard into decoration.
+import { proveProcessorSettledFailed } from '@/modules/payments/domain/settlement/money-moved';
 import {
   refunds,
   tenantPaymentSettings,
@@ -243,6 +248,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         refundId,
         tenantId: tenantA.ctx.slug,
         nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
         failureReasonCode: 'retryable',
         completedAt: failedAt,
       });
@@ -391,6 +397,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         refundId,
         tenantId: tenantA.ctx.slug,
         nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
         failureReasonCode: 'stale_pending_sweep',
         completedAt: new Date(completedAt.getTime() + 5_000),
         expectedCurrentStatus: 'pending',
@@ -410,6 +417,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           refundId: makeRefundUlid(), // never inserted
           tenantId: tenantA.ctx.slug,
           nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
           failureReasonCode: 'retryable',
           completedAt: new Date(),
         }),
@@ -656,4 +664,126 @@ describe('DrizzleRefundsRepo — live Neon', () => {
       expect(mine).toEqual([idOldest, idMiddle, idNewest]);
     });
   });
+  // ── money-remediation Task 6, change 5 ────────────────────────────────────
+  //
+  // `settledUnbookedCount` gates a 409 that PERMANENTLY blocks further refunds
+  // on the payment, so which rows it counts is the whole safety property.
+  //
+  // The remediation plan originally specified the predicate as
+  // `status='failed' AND processor_refund_id IS NOT NULL` — which also
+  // matches every refund Stripe legitimately settled `failed`/`canceled`
+  // (three writers produce exactly that shape, keeping the `re_…` id for
+  // forensics). Measured on the dev branch when this was written: 18 such
+  // rows, and zero real F-3 casualties. Shipping that predicate would have
+  // 409-blocked all of them forever, unrecoverable by runbook because the
+  // data is not corrupt.
+  //
+  // The two halves below are therefore inseparable. A test that only asserted
+  // the F-3 row IS counted would pass under the over-broad predicate.
+  it('settledUnbookedCount counts ONLY the F-3 casualty shape, never a benign Stripe-settled failure', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    // Own invoice + payment: `payments_one_active_per_invoice` forbids a
+    // second active payment on the shared fixture invoice, and an isolated
+    // partition also keeps the absolute counts below immune to whatever the
+    // sibling tests in this file leave behind.
+    const backstopInvoiceId = randomUUID();
+    const paymentId = makePaymentUlid() as PaymentId;
+    const paymentsRepo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: backstopInvoiceId,
+        memberId,
+        planYear: 2026,
+        planId: 'rfnd-plan',
+        draftByUserId: user.userId,
+      });
+    });
+    await paymentsRepo.withTx(async (tx) =>
+      paymentsRepo.insert(tx, {
+        id: paymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId: backstopInvoiceId,
+        memberId,
+        method: 'card',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-backstop',
+      }),
+    );
+
+    const seedFailed = async (reasonCode: string): Promise<void> => {
+      const refundId = makeRefundUlid();
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await repo.insert(tx, {
+          id: refundId,
+          tenantId: tenantA.ctx.slug,
+          paymentId,
+          invoiceId: backstopInvoiceId,
+          amountSatang: asSatang(100_000n),
+          reason: `seed ${reasonCode}`,
+          status: 'pending',
+          processorRefundId: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-backstop',
+          initiatedAt: new Date(),
+        });
+        await repo.updateStatus(tx, {
+          refundId,
+          tenantId: tenantA.ctx.slug,
+          nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
+          failureReasonCode: reasonCode,
+          // Non-null processor id on BOTH rows — that is precisely why the
+          // reason-code predicate has to carry the discrimination.
+          processorRefundId: `re_test_${randomUUID().slice(0, 8)}`,
+          completedAt: new Date(),
+        });
+      });
+    };
+
+    // (a) BENIGN — Stripe created the refund and then settled it failed. No
+    //     money moved; the id is kept so a late webhook can match. This must
+    //     NOT block future refunds.
+    await seedFailed('stripe_refund_failed');
+    const afterBenign = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterBenign.settledUnbookedCount).toBe(0);
+
+    // (b) BENIGN — the canceled variant, same reasoning.
+    await seedFailed('stripe_refund_canceled');
+    const afterCanceled = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterCanceled.settledUnbookedCount).toBe(0);
+
+    // (c) THE REAL THING — written by the pre-remediation `issue-refund.ts`
+    //     AFTER Stripe confirmed the refund succeeded. Money left; the row
+    //     lies. Both interpolated variants of the reason code are covered by
+    //     the `f4_bridge_%` prefix.
+    await seedFailed('f4_bridge_phase_b_db_error');
+    const afterCasualty = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterCasualty.settledUnbookedCount).toBe(1);
+
+    await seedFailed('f4_bridge_remainder_credit_exceeded');
+    const afterSecond = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterSecond.settledUnbookedCount).toBe(2);
+
+    // The benign rows must not have leaked into the money aggregate either —
+    // `succeededSumSatang` drives the remaining-refundable invariant, and the
+    // plan explicitly warns against folding this count into it (webhook-mode
+    // `finalizeSucceededRefund` reads the same aggregate and would flip a
+    // payment to `refunded` on money that never settled).
+    expect(afterSecond.succeededSumSatang).toBe(asSatang(0n));
+  });
+
 });

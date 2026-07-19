@@ -8,12 +8,23 @@
  *   2. Reject if status ∉ { succeeded, partially_refunded }
  *   3. Reject if a concurrent in-flight refund holds a pending row
  *   4. Pre-flight refund-not-exceeding-remainder (FR-011b)
- *   5. Allocate refund-sequence + idempotency key `rfnd-{paymentId}-{seq}`
+ *   5. Mint the refund id + idempotency key `rfnd-{refundId}` (stable per
+ *      logical attempt — see the note at the allocation site)
  *   6. Insert pending refund row + audit `refund_initiated` (atomic)
  *   7. Stripe `refunds.create` (outside tx — non-rollbackable external call)
  *   8. On Stripe success → F4 `issueCreditNoteFromRefund` bridge
  *   9. Finalise: update refund + payment status + audit `refund_succeeded`
- *  10. On Stripe / F4 failure → flip refund row to `failed` + audit `refund_failed`
+ *  10. On failure, the row's next state depends on WHAT THE MONEY DID, not on
+ *      the fact that something went wrong (money-remediation F-3):
+ *        - processor refused (`permanent`)            → `failed` + `refund_failed`
+ *        - processor settled it failed/canceled       → `failed` + `refund_failed`
+ *        - outcome unknown (`retryable`, conflict)    → stays `pending`
+ *        - processor SETTLED, credit note not booked  → stays `pending`
+ *                                                       + `refund_cn_deferred`
+ *      `failed` is read downstream as "no money left", so it may only be
+ *      written while holding a `RejectionProof`. The last two cases cannot
+ *      obtain one, which is why they are unrepresentable rather than merely
+ *      discouraged.
  *
  * Two-transaction design:
  *   - Phase A (prepareRefund tx)  — lock, validate, insert pending, audit init
@@ -51,6 +62,12 @@ import type {
   TenantPaymentSettingsRepo,
 } from '../ports';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
+import {
+  classifyGatewayFailure,
+  proveNothingMoved,
+  proveProcessorSettledFailed,
+  type RejectionProof,
+} from '../../domain/settlement/money-moved';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import {
   asPaymentId,
@@ -150,6 +167,37 @@ export type IssueRefundError =
    */
   | { readonly code: 'f4_preflight_read_error'; readonly detail: string }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
+  /**
+   * Money-remediation F-3 leg 1/2 — the Stripe refund SUCCEEDED and the F4
+   * credit-note bridge then declined (or Phase B threw). The refund row stays
+   * `pending` with its `processor_refund_id` attached; the stale-pending sweep
+   * retries the bridge, which is idempotent.
+   *
+   * DISTINCT from `f4_bridge_error`, which this replaces on those two paths,
+   * because `f4_bridge_error` maps to a 502 that reads as retryable. That read
+   * is precisely the click F-3 needs: the old code ALSO marked the row
+   * `failed`, which cleared the pending-refund guard and the succeeded-sum cap,
+   * so the retry minted a fresh Stripe idempotency key and paid the customer
+   * twice on a partial refund. Nothing is expected of the admin here.
+   */
+  | {
+      readonly code: 'f4_bridge_deferred';
+      readonly refundId: string;
+      readonly processorRefundId: string;
+      readonly detail: string;
+    }
+  /**
+   * Money-remediation F-3 backstop — this payment already carries a refund row
+   * in the F-3 casualty state (`failed` + `processor_refund_id` +
+   * `f4_bridge_%`): money settled at Stripe that no aggregate can see. The
+   * remaining-refundable invariant would be computed against a total that is
+   * too low, so a further refund could over-refund. Requires manual
+   * reconciliation via `docs/runbooks/out-of-band-refund.md`.
+   */
+  | {
+      readonly code: 'refund_needs_reconciliation';
+      readonly settledUnbookedCount: number;
+    }
   | { readonly code: 'tenant_settings_missing' };
 
 /**
@@ -162,15 +210,21 @@ const STRIPE_REFUND_REASON_REQUESTED_BY_CUSTOMER = 'requested_by_customer' as co
 
 /**
  * Phase-B failure helper — flips the pending refund row to `failed`
- * + emits a `refund_failed` audit row in a single tx. Used by both
- * the Stripe-failure branch and the F4-bridge-failure branch
- * (Q2: previously copy-pasted with subtly
- * different payloads — drift risk).
+ * + emits a `refund_failed` audit row in a single tx.
  *
  * Caller supplies the discriminating fields (`failureReasonCode`,
  * `summary`, optional `extraPayload`) — the helper owns the shared
  * scaffolding (tx open, updateStatus call, audit shape, retention
  * lookup).
+ *
+ * ## `rejectionProof` (money-remediation F-3)
+ *
+ * `failed` asserts that no money left the account, and every downstream
+ * guard believes it. The proof parameter makes that assertion checkable at
+ * compile time: it is unforgeable outside `domain/settlement/money-moved.ts`,
+ * so a caller who cannot prove the money stayed put cannot reach this helper
+ * at all. That is why the two post-Stripe-success decline paths now defer
+ * instead — not by convention, but because they have nothing to pass.
  */
 async function finaliseFailedRefund(
   deps: IssueRefundDeps,
@@ -183,6 +237,8 @@ async function finaliseFailedRefund(
     readonly actorUserId: string;
     readonly failureReasonCode: string;
     readonly summary: string;
+    /** Evidence that this refund moved no money. See the section above. */
+    readonly rejectionProof: RejectionProof;
     /**
      * #1 (2026-07-11) — when Stripe DID create the refund but it later
      * settled `failed`/`canceled`, persist the `re_…` id on the failed
@@ -195,19 +251,34 @@ async function finaliseFailedRefund(
     readonly processorRefundId?: string;
     readonly extraPayload?: Readonly<Record<string, unknown>>;
   },
-): Promise<void> {
+): Promise<'flipped' | 'sibling_won'> {
   const failedAt = new Date(deps.clock.nowMs());
-  await deps.paymentsRepo.withTx(async (tx) => {
-    await deps.refundsRepo.updateStatus(tx, {
+  const outcome = await deps.paymentsRepo.withTx(async (tx) => {
+    // F-10 — CAS predicate. This was the ONLY refund-status writer without
+    // either a row lock or an expected-status guard. Without it, a sibling
+    // that already finalised the row to `succeeded` (with a `credit_note_id`)
+    // gets `failed` stamped over it, which violates the
+    // `refunds_succeeded_iff_complete` biconditional CHECK, aborts the tx,
+    // and drops us into the double-fault handler — which then emits a 10-year
+    // forensic saying the refund is stuck pending, about a refund that
+    // succeeded and has a §86/10 credit note.
+    const updated = await deps.refundsRepo.updateStatus(tx, {
       refundId: input.refundId,
       tenantId: input.tenantId,
       nextStatus: 'failed',
+      rejectionProof: input.rejectionProof,
       failureReasonCode: input.failureReasonCode,
       ...(input.processorRefundId !== undefined
         ? { processorRefundId: input.processorRefundId }
         : {}),
       completedAt: failedAt,
+      expectedCurrentStatus: 'pending',
     });
+    if (updated === null) {
+      // Sibling won — the row is already terminal and owns its own audit.
+      // Emitting `refund_failed` here would contradict it.
+      return 'sibling_won' as const;
+    }
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
       requestId: input.requestId,
@@ -223,11 +294,72 @@ async function finaliseFailedRefund(
       },
       retentionYears: retentionFor('refund_failed'),
     });
+    return 'flipped' as const;
   });
   // T141 metric: refund failure forensics by reason_code (OUTSIDE tx
   // — the helper completed its own write tx; emit only after commit
-  // attempt to align with the audit row's existence).
-  paymentsMetrics.refundFailedCount(input.tenantId, input.failureReasonCode);
+  // attempt to align with the audit row's existence). Gated on the flip
+  // actually happening, mirroring the `siblingWon` metric gate on the
+  // success path: the sibling owns its own counters.
+  if (outcome === 'flipped') {
+    paymentsMetrics.refundFailedCount(input.tenantId, input.failureReasonCode);
+  }
+  return outcome;
+}
+
+/**
+ * Money-remediation F-3 leg 1 — the Stripe refund SUCCEEDED but the F4
+ * credit-note bridge could not book it.
+ *
+ * This is the contract the sibling at `sweep-stale-pending-refunds.ts:499-534`
+ * already documents for the identical situation: never terminalise a refund
+ * the processor confirmed. The row keeps `pending` + its `processor_refund_id`
+ * (attached earlier, before the status branch), which is exactly the shape the
+ * stale-pending sweep can reconcile — it retrieves the refund from Stripe,
+ * sees `succeeded`, and retries the idempotent bridge.
+ *
+ * Emits `refund_cn_deferred` (10y — it touches the §86/10 credit-note tax
+ * lineage) so the gap between "money returned" and "credit note booked" is on
+ * the record for the auditor reconciling output VAT, rather than being
+ * inferable only from an absence.
+ */
+async function deferRefundCreditNote(
+  deps: IssueRefundDeps,
+  input: {
+    readonly refundId: string;
+    readonly paymentId: string;
+    readonly invoiceId: string;
+    readonly tenantId: string;
+    readonly requestId: string | null;
+    readonly actorUserId: string;
+    readonly amountSatang: Satang;
+    readonly processorRefundId: string;
+    readonly deferReasonCode: string;
+    readonly detail: string;
+  },
+): Promise<void> {
+  await deps.audit.emit(null, {
+    tenantId: input.tenantId,
+    requestId: input.requestId,
+    eventType: 'refund_cn_deferred',
+    actorUserId: input.actorUserId,
+    summary:
+      `Refund ${input.refundId} settled at the processor (${input.processorRefundId}) ` +
+      `but the F4 credit note could not be booked (${input.deferReasonCode}); ` +
+      `row left pending for the stale-pending sweep to reconcile — no operator action required`,
+    payload: {
+      refund_id: input.refundId,
+      payment_id: input.paymentId,
+      invoice_id: input.invoiceId,
+      amount_satang: input.amountSatang.toString(),
+      processor_refund_id: input.processorRefundId,
+      defer_reason_code: input.deferReasonCode,
+      detail: input.detail,
+      runbook_url: 'docs/runbooks/stale-pending-refund-sweep.md',
+    },
+    retentionYears: retentionFor('refund_cn_deferred'),
+  });
+  paymentsMetrics.refundCreditNoteDeferred(input.tenantId, input.deferReasonCode);
 }
 
 export interface IssueRefundDeps {
@@ -340,6 +472,27 @@ async function issueRefundBody(
       return { kind: 'rejected', error: { code: 'refund_in_progress' } } as const;
     }
 
+    // Money-remediation F-3 backstop — refuse outright if this payment already
+    // carries a row the pre-remediation code terminalised after Stripe had
+    // settled it. Money moved that `succeededSumSatang` cannot see, so the
+    // remainder invariant below would authorise a refund against headroom that
+    // does not exist. 409, not 502: retrying changes nothing; a human must
+    // reconcile via the out-of-band-refund runbook first.
+    //
+    // ABOVE the insert and the `refund_initiated` emit on purpose — `err()`
+    // inside `runInTenant` COMMITS, so a guard placed below either of them
+    // would leave a phantom pending row plus a false audit trail behind a
+    // refusal.
+    if (ctx.settledUnbookedCount > 0) {
+      return {
+        kind: 'rejected',
+        error: {
+          code: 'refund_needs_reconciliation',
+          settledUnbookedCount: ctx.settledUnbookedCount,
+        },
+      } as const;
+    }
+
     // B.1 (#4) — fetch the invoice's F4-authoritative credited + total so the
     // pre-flight caps the refundable at the invoice's un-credited headroom
     // (`total − credited`) IN ADDITION to the payment-based cap. A refund that
@@ -396,8 +549,20 @@ async function issueRefundBody(
       } as const;
     }
 
-    const idempotencyKey = deps.idempotencyKeyFactory(`rfnd-${paymentId}-${ctx.nextSeq}`);
+    // F-3 leg 3 — the key is derived from THIS refund row's own id, which is
+    // immutable for the life of the logical attempt.
+    //
+    // It used to be `rfnd-{paymentId}-{ctx.nextSeq}`, where `nextSeq` is
+    // `COUNT(*) + 1` over ALL rows in the partition — status-blind. So the
+    // moment a first attempt left any row behind, the second attempt computed
+    // a DIFFERENT key, and Stripe correctly treated it as a new request. On a
+    // partial refund (where the charge-level cap still has headroom) that is a
+    // genuine second payout. The comment at `di.ts` claiming the seq-based key
+    // was "the Stripe dedupe contract" was false across exactly that retry.
+    //
+    // `ctx.nextSeq` is retained on the port for forensics only.
     const refundId = deps.generateRefundId();
+    const idempotencyKey = deps.idempotencyKeyFactory(`rfnd-${refundId}`);
     const initiatedAt = new Date(deps.clock.nowMs());
 
     await deps.refundsRepo.insert(tx, {
@@ -473,16 +638,54 @@ async function issueRefundBody(
   });
 
   if (!stripeRefund.ok) {
-    await finaliseFailedRefund(deps, {
-      refundId: prepared.refundId,
-      paymentId,
-      invoiceId: prepared.payment.invoiceId,
-      tenantId: input.tenantId,
-      requestId: input.requestId,
-      actorUserId: input.actorUserId,
-      failureReasonCode: stripeRefund.error.kind,
-      summary: `Stripe refund failed (${stripeRefund.error.kind}) for refund ${prepared.refundId}`,
-    });
+    // ── F-3 leg 2: certainty ────────────────────────────────────────────
+    // The code has always known the three gateway kinds apart; it just never
+    // used them to decide ROW STATE. It flipped `failed` on all three.
+    //
+    // Only a refusal proves the money stayed put. `retryable` means the
+    // request may have reached Stripe and the response was lost;
+    // `idempotency_conflict` means a request with that key already exists and
+    // may have settled. Both are UNKNOWN — and terminalising an unknown is
+    // what clears the pending-refund guard and the succeeded-sum cap so a
+    // retry can pay the customer a second time.
+    //
+    // `proveNothingMoved` returns `null` for both, so the `failed` write is
+    // not reachable for them: this is a type-level guarantee, not a
+    // convention. On an unknown we leave the row `pending` and let the
+    // stale-pending sweep ask Stripe what actually happened — the machinery
+    // it needs already exists.
+    const rejectionProof = proveNothingMoved(
+      classifyGatewayFailure(stripeRefund.error),
+    );
+    if (rejectionProof !== null) {
+      await finaliseFailedRefund(deps, {
+        refundId: prepared.refundId,
+        paymentId,
+        invoiceId: prepared.payment.invoiceId,
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        actorUserId: input.actorUserId,
+        rejectionProof,
+        failureReasonCode: stripeRefund.error.kind,
+        summary: `Stripe refund failed (${stripeRefund.error.kind}) for refund ${prepared.refundId}`,
+      });
+    } else {
+      // Unknown outcome — row stays `pending`. It has NO `processor_refund_id`
+      // (the attach below never ran), so the sweep cannot reconcile it against
+      // Stripe and will skip + escalate it once aged. That is deliberate: an
+      // escalated stuck refund is an ops signal, whereas the alternative is a
+      // silent double payout.
+      deps.logger?.warn('issue_refund.processor_outcome_unknown', {
+        tenantId: input.tenantId,
+        refundId: prepared.refundId,
+        paymentId,
+        // Bounded discriminator only — never `reason` (may embed account ids
+        // or key prefixes).
+        errKind: stripeRefund.error.kind,
+        rowState: 'left_pending_for_sweep',
+      });
+      paymentsMetrics.refundPendingAwaitingProcessor(input.tenantId);
+    }
     // Q1 fix: preserve all 3 gateway kinds —
     // previously `idempotency_conflict` silently collapsed to
     // `permanent`. Also propagate the gateway's `reason` string
@@ -545,6 +748,11 @@ async function issueRefundBody(
       requestId: input.requestId,
       actorUserId: input.actorUserId,
       processorRefundId: stripeRefund.value.id,
+      // Stripe created the refund object and then reported it terminally
+      // non-settling — the funds went back to the platform balance, so this
+      // IS a proven rejection, just evidenced by the processor's verdict
+      // rather than by a refused request.
+      rejectionProof: proveProcessorSettledFailed(refundStatus),
       failureReasonCode: `stripe_refund_${refundStatus}`,
       summary: `Stripe refund settled ${refundStatus} for refund ${prepared.refundId} (${stripeRefund.value.id})`,
     });
@@ -587,10 +795,19 @@ async function issueRefundBody(
 
   // -------------------------------------------------------------------------
   // `succeeded` — finalise via the shared `finalizeSucceededRefund` helper
-  // inside a Phase B tx. C2 (unchanged intent): wrap in try/catch so a DB
-  // outage AFTER Stripe + F4 CN success flips the row to `failed` (+
-  // double-fault handling) rather than leaving it stuck `pending` (which
-  // would block all future refunds via the `refund_in_progress` guard).
+  // inside a Phase B tx.
+  //
+  // F-3 leg 1 (money-remediation): BOTH failure exits below — the thrown
+  // Phase B and the declined bridge — used to flip this row to `failed`. Stripe
+  // has confirmed the money left. `failed` would be a false claim, and a false
+  // claim here is not cosmetic: it un-blocks the pending-refund guard, zeroes
+  // the settled-sum cap, and (before leg 3) rotated the idempotency key, so the
+  // admin's retry on the retryable-looking 502 paid the customer twice.
+  //
+  // Both now DEFER: the row stays `pending` with its `processor_refund_id`, and
+  // the stale-pending sweep retries the idempotent bridge. That is the contract
+  // the sibling sweep already documents for the identical situation.
+  //
   // The `expectedCurrentStatus='pending'` guard inside the helper closes
   // bug #1's double-book window (fixes the old `:474` missing guard); a
   // `null` return there is a benign sibling-won no-op (helper returns ok).
@@ -622,47 +839,74 @@ async function issueRefundBody(
     // audit, so the id is still traceable.
     const detailKind =
       phaseBError instanceof Error ? phaseBError.constructor.name : 'unknown';
-    await finaliseFailedRefund(deps, {
+    await deferRefundCreditNote(deps, {
       refundId: prepared.refundId,
       paymentId,
       invoiceId: prepared.payment.invoiceId,
       tenantId: input.tenantId,
       requestId: input.requestId,
       actorUserId: input.actorUserId,
+      amountSatang: input.amountSatang,
       processorRefundId: stripeRefund.value.id,
-      failureReasonCode: 'f4_bridge_phase_b_db_error',
-      summary: `Phase B finalisation failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
-      extraPayload: {
-        processor_refund_id: stripeRefund.value.id,
-        phase_b_error_kind: detailKind,
-      },
-    }).catch(async (finaliseError) => {
-      // Double-fault: even the failure-finalise tx threw → the row stays
-      // pending; the T130a stale-pending-refund sweep cron is the
-      // last-resort recovery. F5R3 CR-7: bump a counter + emit the
-      // `stale_pending_refund_detected` audit SYNCHRONOUSLY (10y forensic
-      // trail immediately, not up to 12h later) + a structured warn.
-      const finaliseErrKind =
-        finaliseError instanceof Error
-          ? finaliseError.constructor.name
-          : 'unknown';
+      deferReasonCode: 'f4_bridge_phase_b_db_error',
+      detail: detailKind,
+    }).catch(async (deferError) => {
+      // Double-fault: the deferral's own forensic emit threw. The row is
+      // already in the state we want (`pending` + `processor_refund_id`) — the
+      // sweep will still reconcile it. What is lost is the RECORD of why, so
+      // fall back to the pre-existing stale-pending forensic.
+      const deferErrKind =
+        deferError instanceof Error ? deferError.constructor.name : 'unknown';
       paymentsMetrics.refundFinaliseDoubleFault(input.tenantId);
-      deps.logger?.warn('issue_refund.finalise_failed_double_fault', {
+      deps.logger?.warn('issue_refund.defer_emit_double_fault', {
         tenantId: input.tenantId,
         refundId: prepared.refundId,
         paymentId,
         invoiceId: prepared.payment.invoiceId,
         processorRefundId: stripeRefund.value.id,
-        finaliseErrKind,
+        deferErrKind,
         recovery: 'awaiting_stale_pending_refund_sweep',
       });
+
+      // F-10 second half — do not claim "stuck pending" about a row a sibling
+      // may have already finalised to `succeeded` with a credit note. Re-read
+      // under a fresh tx and skip if it is terminal.
+      //
+      // The read is wrapped so it CANNOT throw, and a read failure falls
+      // through to emitting. Getting that fallback backwards is the whole
+      // hazard: a false-positive forensic is noise an operator dismisses in a
+      // minute, while a missing one loses 10 years of coverage on a real
+      // money divergence. Bias to emitting.
+      let stillPending = true;
+      try {
+        const current = await deps.paymentsRepo.withTx((tx) =>
+          deps.refundsRepo.findByProcessorRefundId(
+            tx,
+            input.tenantId,
+            stripeRefund.value.id,
+          ),
+        );
+        stillPending = current === null || current.status === 'pending';
+      } catch {
+        // Read failed — emit anyway. See the paragraph above.
+        stillPending = true;
+      }
+      if (!stillPending) {
+        deps.logger?.warn('issue_refund.defer_forensic_suppressed_sibling_won', {
+          tenantId: input.tenantId,
+          refundId: prepared.refundId,
+          paymentId,
+        });
+        return;
+      }
+
       await deps.audit
         .emit(null, {
           tenantId: input.tenantId,
           requestId: input.requestId,
           eventType: 'stale_pending_refund_detected',
           actorUserId: input.actorUserId,
-          summary: `Double-fault: issueRefund Phase B + finaliseFailedRefund both threw — refund ${prepared.refundId} stuck pending; Stripe ${stripeRefund.value.id} succeeded; ops follow up via runbook`,
+          summary: `Double-fault: issueRefund Phase B threw and the credit-note deferral forensic could not be written — refund ${prepared.refundId} pending; Stripe ${stripeRefund.value.id} succeeded; ops follow up via runbook`,
           payload: {
             refund_id: prepared.refundId,
             payment_id: paymentId,
@@ -680,29 +924,36 @@ async function issueRefundBody(
           // swallows + bumps useCaseAuditEmitFailed.
         });
     });
-    return err({ code: 'f4_bridge_error', detail: detailKind });
+    return err({
+      code: 'f4_bridge_deferred',
+      refundId: prepared.refundId,
+      processorRefundId: stripeRefund.value.id,
+      detail: detailKind,
+    });
   }
 
   if (!finalizeResult.ok) {
-    // F4 credit-note bridge declined. Stripe refund already succeeded →
-    // Stripe-refund-without-CN reconciliation is owned by the
-    // `out_of_band_refund_detected` runbook. Mark the refund failed.
-    await finaliseFailedRefund(deps, {
+    // F4 credit-note bridge declined on a Stripe-CONFIRMED succeeded refund.
+    // Leave the row `pending` with its `processor_refund_id` so the sweep can
+    // retry the idempotent bridge. See the block comment above the try.
+    await deferRefundCreditNote(deps, {
       refundId: prepared.refundId,
       paymentId,
       invoiceId: prepared.payment.invoiceId,
       tenantId: input.tenantId,
       requestId: input.requestId,
       actorUserId: input.actorUserId,
+      amountSatang: input.amountSatang,
       processorRefundId: stripeRefund.value.id,
-      failureReasonCode: `f4_bridge_${finalizeResult.error.code}`,
-      summary: `F4 credit-note issuance failed for refund ${prepared.refundId} (Stripe refund ${stripeRefund.value.id} succeeded — ops follow up via out-of-band-refund runbook)`,
-      extraPayload: {
-        processor_refund_id: stripeRefund.value.id,
-        f4_detail: finalizeResult.error.detail,
-      },
+      deferReasonCode: `f4_bridge_${finalizeResult.error.code}`,
+      detail: finalizeResult.error.detail,
     });
-    return err({ code: 'f4_bridge_error', detail: finalizeResult.error.detail });
+    return err({
+      code: 'f4_bridge_deferred',
+      refundId: prepared.refundId,
+      processorRefundId: stripeRefund.value.id,
+      detail: finalizeResult.error.detail,
+    });
   }
 
   // T141 metric: refund → CN throughput. AFTER the Phase B tx commits so

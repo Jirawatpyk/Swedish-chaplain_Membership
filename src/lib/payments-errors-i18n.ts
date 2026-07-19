@@ -59,6 +59,18 @@ export type F5RouteErrorCode =
   // succeed → out-of-band-refund runbook) so on-call does not chase a
   // non-existent refund. Both currently map to 502.
   | 'f4_preflight_read_error'
+  // Money-remediation F-3 — the refund SETTLED at the processor; only the
+  // credit note is outstanding, and the stale-pending sweep retries it. MUST
+  // stay distinct from `f4_bridge_error`, whose copy ("issuance failed") reads
+  // as retryable. That read is the click F-3 needed: the old code also marked
+  // the row `failed`, so the retry minted a fresh idempotency key and refunded
+  // the customer twice. Nothing is expected of the admin here.
+  | 'f4_bridge_deferred'
+  // Money-remediation F-3 backstop — this payment carries a refund row left
+  // in the F-3 casualty state (settled at Stripe, recorded `failed`). The
+  // refundable-remainder maths cannot see that money, so further refunds are
+  // blocked until a human reconciles.
+  | 'refund_needs_reconciliation'
   // CF-2 — the "mark failed auto-refund as reconciled" surface found NO
   // `auto_refund_failed_needs_manual_reconcile` forensic for the invoice, so
   // there is nothing to reconcile (409 conflict; the alert only offers the
@@ -171,6 +183,21 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   f4_preflight_read_error: {
     message: 'Could not verify the refundable balance right now. No money was moved — please retry.',
     messageThai: 'ไม่สามารถตรวจสอบยอดที่คืนได้ในขณะนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองใหม่อีกครั้ง',
+  },
+  f4_bridge_deferred: {
+    // Deliberately reassuring and explicitly non-actionable. The admin has
+    // just been told a refund "failed" by every previous version of this
+    // screen, and acted on it by clicking again.
+    message:
+      'Refund sent — the credit note is still being issued. No action needed; it completes automatically.',
+    messageThai:
+      'ส่งคำสั่งคืนเงินเรียบร้อยแล้ว กำลังออกใบลดหนี้ ไม่ต้องดำเนินการใดๆ ระบบจะทำให้เสร็จโดยอัตโนมัติ',
+  },
+  refund_needs_reconciliation: {
+    message:
+      'This payment has a refund awaiting manual reconciliation. Further refunds are blocked until it is resolved.',
+    messageThai:
+      'การชำระเงินนี้มีรายการคืนเงินที่รอการกระทบยอดด้วยเจ้าหน้าที่ ไม่สามารถคืนเงินเพิ่มได้จนกว่าจะดำเนินการเสร็จ',
   },
   no_failed_auto_refund: {
     message: 'There is no failed auto-refund to reconcile for this invoice.',

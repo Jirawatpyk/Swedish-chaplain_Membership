@@ -5811,6 +5811,7 @@
       "payment_processor_retrieve_failed": "ดึงข้อมูลจากผู้ให้บริการชำระเงินไม่สำเร็จ",
       "payment_invoice_not_found": "การชำระเงิน — ไม่พบใบแจ้งหนี้",
       "stale_pending_refund_detected": "ตรวจพบการคืนเงินค้างนานผิดปกติ",
+      "refund_cn_deferred": "เลื่อนการออกใบลดหนี้ของการคืนเงิน",
       "payment_acknowledged_terminal_state": "การชำระเงินอยู่ในสถานะสิ้นสุดแล้ว",
       "dispute_created": "เกิดข้อโต้แย้งการชำระเงิน",
       "refund_amount_mismatch_detected": "ตรวจพบยอดคืนเงินไม่ตรงกัน",

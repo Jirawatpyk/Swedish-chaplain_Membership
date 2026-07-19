@@ -95,6 +95,7 @@ function makeDeps(): ProcessRefundUpdatedDeps {
         pendingCount: 0,
         succeededSumSatang: asSatang(50_000n),
         nextSeq: 2,
+      settledUnbookedCount: 0,
       })),
     } as unknown as ProcessRefundUpdatedDeps['refundsRepo'],
     processorEventsRepo: {
@@ -424,6 +425,7 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
       pendingCount: 0,
       succeededSumSatang: asSatang(100_000n),
       nextSeq: 2,
+      settledUnbookedCount: 0,
     });
 
     const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
@@ -614,6 +616,7 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
       pendingCount: 0,
       succeededSumSatang: asSatang(100_000n),
       nextSeq: 2,
+      settledUnbookedCount: 0,
     });
 
     const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));

@@ -1473,6 +1473,27 @@ export const paymentsMetrics = {
       'Refund awaiting the async charge.refund.updated webhook (issue-refund pending return + sweep still-pending) — alert on sustained rate>0: subscription likely disabled (H-e)',
     ).add(1, { tenant: tenantId });
   },
+
+  /**
+   * `payments_refund_cn_deferred_total{tenant, reason_code}` — money-remediation
+   * F-3. The processor settled the refund but the F4 credit-note bridge could
+   * not book it, so the row was left `pending` for the stale-pending sweep
+   * instead of being terminalised `failed`.
+   *
+   * This is the counter that replaces the `refundFailedCount` volume those two
+   * paths used to produce — if a dashboard or alert keyed on refund-failure
+   * rate to detect F4 bridge trouble, it must move here or it goes quiet.
+   *
+   * Not itself a page: a transient decline clears on the next sweep. Alert on
+   * sustained `rate(...[1h]) > 0`, which means the bridge is durably failing
+   * and §86/10 credit notes are accumulating unbooked against refunded money.
+   */
+  refundCreditNoteDeferred(tenantId: string, reasonCode: string): void {
+    counter(
+      'payments_refund_cn_deferred_total',
+      'Refund settled at the processor but its F4 credit note could not be booked; row left pending for the sweep (money-remediation F-3)',
+    ).add(1, { tenant: tenantId, reason_code: reasonCode });
+  },
 } as const;
 
 // --- F7 broadcasts metrics (Phase 6 / US4 + Phase 9 anchor) ---------------------

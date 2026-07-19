@@ -69,6 +69,7 @@ import type {
   RefundsRepo,
 } from '../ports';
 import { retentionFor } from '../ports/audit-port';
+import { proveProcessorSettledFailed } from '../../domain/settlement/money-moved';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { paymentsMetrics } from '@/lib/metrics';
@@ -458,6 +459,11 @@ export async function processRefundUpdated(
             refundId: refund.id,
             tenantId: input.tenantId,
             nextStatus: 'failed',
+            // Stripe itself reported this refund terminally failed/canceled in
+            // the webhook payload — the funds went back to the platform
+            // balance. That is a proven rejection (money-remediation F-3), on
+            // evidence from the processor rather than from a refused request.
+            rejectionProof: proveProcessorSettledFailed(incoming.status),
             failureReasonCode,
             processorRefundId: input.processorRefundId,
             completedAt,

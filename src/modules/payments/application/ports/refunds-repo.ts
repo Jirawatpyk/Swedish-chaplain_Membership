@@ -10,6 +10,7 @@ import type { PaymentId } from '../../domain/payment';
 // Single source of truth — Domain owns the status enum so a future
 // `'voided'` addition (post-MVP) cannot drift between Domain + Port.
 import type { Refund, RefundStatus } from '../../domain/refund';
+import type { RejectionProof } from '../../domain/settlement/money-moved';
 import type { Satang } from '@/lib/money';
 export type { RefundStatus };
 
@@ -22,6 +23,66 @@ export interface RefundRow {
   readonly status: RefundStatus;
   readonly processorRefundId: string | null;
 }
+
+interface UpdateRefundStatusBase {
+  readonly refundId: string;
+  readonly tenantId: string;
+  readonly processorRefundId?: string | null;
+  readonly failureReasonCode?: string | null;
+  readonly creditNoteId?: string | null;
+  readonly completedAt: Date;
+  /**
+   * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
+   * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
+   * Zero rows matched → repo returns `null` (NOT throw) so the caller
+   * can distinguish a lost race from a genuine error. When omitted,
+   * the adapter throws on zero-match (preserves throw-on-zero
+   * semantics for callers that re-check under their own lock).
+   *
+   * Used by `sweepStalePendingRefunds` to ensure the sweep does
+   * not flip a row that has been concurrently finalised to
+   * `succeeded`/`failed` by a different writer (e.g. the webhook
+   * `charge.refunded` branch or issueRefund's Phase B).
+   *
+   * CONTRACT (mirrors `payments-repo.updateStatus` H-4): every
+   * caller passing `expectedCurrentStatus` MUST handle the `null`
+   * return branch. The sweep re-throws a sentinel on `null` so its
+   * per-row tx rolls back and no `stale_pending_refund_detected`
+   * audit commits.
+   */
+  readonly expectedCurrentStatus?: RefundStatus;
+}
+
+/**
+ * Writing `failed` requires evidence, not intent (money-remediation F-3).
+ *
+ * A `failed` refund row is read downstream as "no money left the account":
+ * it is excluded from `succeeded_sum_satang`, does not trip the
+ * `refund_in_progress` guard, and is counted by the sequence that used to
+ * derive the Stripe idempotency key. Marking a settled refund `failed`
+ * therefore clears every guard that would stop the next attempt from paying
+ * the customer a second time.
+ *
+ * The `rejectionProof` requirement is what makes that a COMPILE error rather
+ * than a code-review question. The brand is module-private to
+ * `domain/settlement/money-moved.ts`, so the only way to obtain one is to
+ * hold real evidence:
+ *   - `proveNothingMoved(classifyGatewayFailure(err))` — the processor refused
+ *   - `proveProcessorSettledFailed(status)` — the processor settled it failed
+ *
+ * A test stub NEVER needs to construct a proof: stubs receive this input, they
+ * do not build it. If you find yourself wanting to export the brand to make a
+ * stub compile, the stub is being written against the wrong seam — that
+ * export would turn this guard back into decoration with every test green.
+ */
+export type UpdateRefundStatusInput =
+  | (UpdateRefundStatusBase & {
+      readonly nextStatus: Exclude<RefundStatus, 'failed'>;
+    })
+  | (UpdateRefundStatusBase & {
+      readonly nextStatus: 'failed';
+      readonly rejectionProof: RejectionProof;
+    });
 
 export interface RefundsRepo {
   insert(
@@ -43,35 +104,7 @@ export interface RefundsRepo {
 
   updateStatus(
     tx: unknown,
-    input: {
-      readonly refundId: string;
-      readonly tenantId: string;
-      readonly nextStatus: RefundStatus;
-      readonly processorRefundId?: string | null;
-      readonly failureReasonCode?: string | null;
-      readonly creditNoteId?: string | null;
-      readonly completedAt: Date;
-      /**
-       * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
-       * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
-       * Zero rows matched → repo returns `null` (NOT throw) so the caller
-       * can distinguish a lost race from a genuine error. When omitted,
-       * the adapter throws on zero-match (preserves throw-on-zero
-       * semantics for callers that re-check under their own lock).
-       *
-       * Used by `sweepStalePendingRefunds` to ensure the sweep does
-       * not flip a row that has been concurrently finalised to
-       * `succeeded`/`failed` by a different writer (e.g. the webhook
-       * `charge.refunded` branch or issueRefund's Phase B).
-       *
-       * CONTRACT (mirrors `payments-repo.updateStatus` H-4): every
-       * caller passing `expectedCurrentStatus` MUST handle the `null`
-       * return branch. The sweep re-throws a sentinel on `null` so its
-       * per-row tx rolls back and no `stale_pending_refund_detected`
-       * audit commits.
-       */
-      readonly expectedCurrentStatus?: RefundStatus;
-    },
+    input: UpdateRefundStatusInput,
   ): Promise<RefundRow | null>;
 
   /** Look up an existing refund by Stripe refund id (dedupe webhook re-delivery). */
@@ -147,13 +180,17 @@ export interface RefundsRepo {
    *     `> 0` → use-case rejects with `refund_in_progress`.
    *   - `succeededSumSatang` — Σ amount_satang WHERE status='succeeded'.
    *     Drives the FR-011b remaining-refundable invariant.
-   *   - `nextSeq` — `COUNT(*) + 1` over all rows in the partition;
-   *     drives the Stripe idempotency key `rfnd-{paymentId}-{seq}`
-   *     so repeated client clicks within the lock window collapse
-   *     onto the same Stripe refund row.
+   *   - `nextSeq` — `COUNT(*) + 1` over all rows in the partition.
+   *     RETAINED for forensics only. It no longer derives the Stripe
+   *     idempotency key: `COUNT(*)` counts terminal rows too, so the key
+   *     rotated across retries and turned a partial-refund retry into a
+   *     genuine second payout (F-3 leg 3). The key is now `rfnd-{refundId}`,
+   *     stable per logical attempt.
+   *   - `settledUnbookedCount` — rows left in the F-3 casualty state by the
+   *     pre-remediation code. See the field's own note.
    *
    * Caller MUST invoke inside the tx that holds the
-   * `SELECT … FOR UPDATE` on `payments(id)` so all three reads see
+   * `SELECT … FOR UPDATE` on `payments(id)` so all reads see
    * the same committed snapshot.
    */
   getRefundContextForUpdate(
@@ -164,6 +201,19 @@ export interface RefundsRepo {
     readonly pendingCount: number;
     readonly succeededSumSatang: Satang;
     readonly nextSeq: number;
+    /**
+     * Rows this payment carries in the F-3 casualty state: `failed`, but
+     * with a `processor_refund_id` AND a `f4_bridge_%` failure reason —
+     * i.e. Stripe settled the money and the pre-remediation code
+     * terminalised the row anyway. Money moved that no aggregate here can
+     * see, so the remaining-refundable invariant is computed against a
+     * total that is too low.
+     *
+     * Deliberately NOT folded into `succeededSumSatang`: that aggregate is
+     * also read by `finalizeSucceededRefund` in webhook mode, and inflating
+     * it would flip a payment to `refunded` on money that never settled.
+     */
+    readonly settledUnbookedCount: number;
   }>;
 
   /**

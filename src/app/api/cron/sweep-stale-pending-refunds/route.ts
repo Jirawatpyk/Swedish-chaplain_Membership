@@ -1,8 +1,32 @@
 /**
  * T130a — Stale-pending-refund sweep cron.
  *
- * Scheduled via native Vercel Cron (`vercel.json`) — daily:
- *   { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "0 3 * * *" }
+ * Scheduled via native Vercel Cron (`vercel.json`) — hourly:
+ *   { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "7 * * * *" }
+ *
+ * ## Cadence is NOT the governor — the 24h floor is
+ *
+ * Raised from daily (`0 3 * * *`) by money-remediation Task 6, which
+ * deliberately parks MORE rows in `pending`: a refund the processor settled
+ * but whose F4 credit note could not be booked is now left `pending` rather
+ * than falsely marked `failed`. A pending row blocks every subsequent refund
+ * on that payment via the `refund_in_progress` guard, so the interval before
+ * the sweep can clear it became a real availability cost.
+ *
+ * But read `sweepStalePendingRefunds`: `olderThanHours` defaults to 24, so a
+ * row is not even ELIGIBLE until it is a day old. Hourly firing takes the
+ * worst case from ~48h to ~25h. It does NOT take it to ~1h, and no cron
+ * schedule can — the floor does that.
+ *
+ * The floor was left at 24h on purpose. Lowering it would have the sweep
+ * interrogate refunds that are legitimately still settling (async PromptPay
+ * can take hours), trading an availability inconvenience for a
+ * money-correctness risk. Production currently holds zero refunds, so the
+ * lockout is theoretical while acting on a live in-flight refund would not be.
+ *
+ * If the lockout window ever needs to actually shrink, the direction is a
+ * METHOD-CONDITIONAL floor — a synchronous card refund does not need the long
+ * window that async PromptPay does — not a blind reduction of the default.
  *
  * Pre-2026-07-17 (Hobby) this also had a redundant cron-job.org trigger at
  * `0 15 * * *` UTC (12h offset); cron-job.org is now a paused standby.
