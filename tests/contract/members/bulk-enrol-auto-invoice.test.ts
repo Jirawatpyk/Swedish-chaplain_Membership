@@ -136,7 +136,60 @@ describe('contract: POST /api/members/bulk — enrol_auto_invoice arm', () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     allowRateLimit();
     bulkEnrolMock.mockResolvedValueOnce(
-      ok({ enrolled: 2, skippedAlready: 1, skippedTerminated: 1 }),
+      ok({
+        enrolled: 2,
+        skippedAlready: 1,
+        skippedTerminated: 1,
+        skippedErased: 0,
+      }),
+    );
+    const { POST } = await import('@/app/api/members/bulk/route');
+    const res = await POST(
+      makeRequest({
+        action: 'enrol_auto_invoice',
+        member_ids: ['id-1', 'id-2', 'id-3', 'id-4'],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // `toEqual` on the WHOLE body, not key-by-key: this is the only test that
+    // pins the wire shape of the enrolment response, so an added/dropped key
+    // must fail here.
+    //
+    // The mock MUST supply `skippedErased` even though it is zero here. This
+    // suite previously omitted it, which made the assertion vacuous: the route
+    // mapped `skipped_erased: undefined`, `JSON.stringify` dropped the key
+    // entirely, and a three-key `toEqual` passed against a three-key body — so
+    // deleting the route's mapping left the suite GREEN. `ok()` infers its type
+    // from the literal, so typecheck could not see the hole either.
+    //
+    // Verified by mutation: dropping the route's `skipped_erased` mapping now
+    // fails THIS case. The separate non-zero case below covers what a zero
+    // cannot — a mapping hardcoded to a constant instead of reading the
+    // use-case value (that mutation passes here and fails only there).
+    expect(body).toEqual({
+      enrolled: 2,
+      skipped_already: 1,
+      skipped_terminated: 1,
+      skipped_erased: 0,
+    });
+  });
+
+  it('200 — surfaces a non-zero GDPR-erased skip bucket on the wire', async () => {
+    // The erased bucket is reported SEPARATELY from `skipped_terminated`: an
+    // erased member can never be enrolled, whereas a terminated one can after
+    // renewing (see the use-case + the toast branch in bulk-action-bar.tsx).
+    // Non-zero BY DESIGN: this is the only case that fails when the mapping is
+    // hardcoded to a constant rather than read from the use-case result.
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    allowRateLimit();
+    bulkEnrolMock.mockResolvedValueOnce(
+      ok({
+        enrolled: 1,
+        skippedAlready: 0,
+        skippedTerminated: 1,
+        skippedErased: 2,
+      }),
     );
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
@@ -148,9 +201,10 @@ describe('contract: POST /api/members/bulk — enrol_auto_invoice arm', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual({
-      enrolled: 2,
-      skipped_already: 1,
+      enrolled: 1,
+      skipped_already: 0,
       skipped_terminated: 1,
+      skipped_erased: 2,
     });
   });
 
