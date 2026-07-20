@@ -71,7 +71,11 @@ export type F5RouteErrorCode =
   // different instrument / just wait for the receipt render).
   | 'f4_preflight_invalid_status'
   | 'f4_preflight_not_creditable'
-  | 'f4_preflight_receipt_not_rendered'
+  // C2 (Task 7) — split from a single `f4_preflight_receipt_not_rendered`,
+  // whose copy told every admin to wait a few minutes. True only for
+  // `pending`; `failed` and NULL never clear on their own.
+  | 'f4_preflight_receipt_rendering'
+  | 'f4_preflight_receipt_render_stuck'
   // Money-remediation F-3 — the refund SETTLED at the processor; only the
   // credit note is outstanding, and the stale-pending sweep retries it. MUST
   // stay distinct from `f4_bridge_error`, whose copy ("issuance failed") reads
@@ -223,16 +227,27 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
     message:
       'This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it requires a manual process — please contact finance.',
     messageThai:
-      'การชำระเงินนี้ออกเป็นใบเสร็จรับเงิน ไม่ใช่ใบกำกับภาษี จึงออกใบลดหนี้ไม่ได้ ยังไม่มีการเคลื่อนไหวของเงิน การคืนเงินต้องดำเนินการด้วยกระบวนการพิเศษ กรุณาติดต่อฝ่ายการเงิน',
+      'การชำระเงินนี้ออกเป็นใบเสร็จรับเงินตามมาตรา 105 ไม่ใช่ใบกำกับภาษี/ใบเสร็จรับเงิน จึงออกใบลดหนี้ไม่ได้ ยังไม่มีการเคลื่อนไหวของเงิน การคืนเงินต้องดำเนินการด้วยเจ้าหน้าที่ กรุณาติดต่อฝ่ายสนับสนุน',
   },
-  f4_preflight_receipt_not_rendered: {
-    // The only one of the three that clears itself. Say "wait", not
-    // "escalate" — an admin told to escalate a self-healing state files a
-    // ticket that resolves before anyone reads it.
+  f4_preflight_receipt_rendering: {
+    // The ONE receipt state that clears itself. Say "wait", not "escalate" —
+    // an admin told to escalate a self-healing state files a ticket that
+    // resolves before anyone reads it.
     message:
       'The receipt for this payment is still being generated. No money was moved — please try the refund again in a few minutes.',
     messageThai:
-      'ระบบกำลังสร้างใบเสร็จสำหรับการชำระเงินนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองคืนเงินอีกครั้งในอีกสักครู่',
+      'ระบบกำลังสร้างใบเสร็จสำหรับการชำระเงินนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองคืนเงินอีกครั้งในอีก 2-3 นาที',
+  },
+  f4_preflight_receipt_render_stuck: {
+    // The opposite instruction, deliberately. This receipt is `failed` or has
+    // no status at all; no worker will pick it up, so "wait" would strand the
+    // member's money with nobody alerted. Points at the re-render action that
+    // actually unblocks it — the wording F4's own `receiptNotRendered` copy
+    // already uses on the credit-note screen.
+    message:
+      'The receipt for this payment was not generated, and it will not complete on its own. No money was moved. Re-render the receipt from the invoice page, then retry the refund — or contact support if it fails again.',
+    messageThai:
+      'ระบบไม่ได้สร้างใบเสร็จสำหรับการชำระเงินนี้ และจะไม่ดำเนินการต่อเอง ยังไม่มีการเคลื่อนไหวของเงิน กรุณาสร้างใบเสร็จใหม่จากหน้าใบแจ้งหนี้ แล้วลองคืนเงินอีกครั้ง หากยังไม่สำเร็จ กรุณาติดต่อฝ่ายสนับสนุน',
   },
   f4_bridge_deferred: {
     // Deliberately reassuring and explicitly non-actionable. The admin has

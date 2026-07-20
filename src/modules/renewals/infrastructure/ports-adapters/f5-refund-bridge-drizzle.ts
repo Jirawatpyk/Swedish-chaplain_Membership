@@ -104,6 +104,24 @@ export const f5RefundBridge: F5RefundBridge = {
           processorRefundId: refundResult.error.processorRefundId,
         };
       }
+      // I5 (money-remediation Task 7): `f4_preflight_receipt_rendering` joins
+      // the WAIT side by this adapter's OWN stated rule — do not tell an admin
+      // to act on a self-healing state, because "act" here means clicking
+      // refund again. The receipt PDF is still `pending` and the reconcile
+      // cron sweeps stuck pending rows, so the refund becomes possible on its
+      // own within minutes. Reachable narrowly but really: rejecting a pending
+      // reactivation on a just-paid renewal invoice, inside the render window.
+      //
+      // No ids: money did NOT move on this path (the pre-flight refused before
+      // Stripe), so there is no refund row and nothing webhook-matchable —
+      // unlike `f4_bridge_deferred` above, where the money DID move.
+      //
+      // Its sibling `f4_preflight_receipt_render_stuck` deliberately stays on
+      // the FAILED side: `failed`/NULL receipts never clear on their own, so
+      // an admin genuinely must act.
+      if (refundResult.error.code === 'f4_preflight_receipt_rendering') {
+        return { status: 'refund_pending' };
+      }
       return {
         status: 'refund_failed',
         errorCode: refundResult.error.code,

@@ -224,7 +224,7 @@ function makeDeps(
         totalSatang: PAYMENT_AMOUNT_SATANG,
         status: 'paid' as const,
         creditable: true,
-        receiptRendered: true,
+        receiptRenderState: 'rendered' as const,
       }),
     ),
     // tax#5 (B.2) — the shared finaliser now reads the invoice's
@@ -527,9 +527,21 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       expectedCode: 'f4_preflight_not_creditable',
     },
     {
-      name: 'receipt PDF not yet rendered',
-      overrides: { receiptRendered: false },
-      expectedCode: 'f4_preflight_receipt_not_rendered',
+      // C2 — TRANSIENT arm. The reconcile cron sweeps stuck `pending` rows, so
+      // this genuinely clears itself and the copy may say "wait".
+      name: 'receipt PDF still rendering (pending)',
+      overrides: { receiptRenderState: 'rendering' as const },
+      expectedCode: 'f4_preflight_receipt_rendering',
+    },
+    {
+      // C2 — OPERATOR arm: `failed` or NULL. Nothing sweeps these (the cron
+      // resets the attempts counter, and its scan predicate matches NULL not
+      // at all), so telling the admin to wait strands the member's money with
+      // nobody alerted. MUST be a different code from its sibling above —
+      // route codes are the i18n keys, so one code cannot carry both copies.
+      name: 'receipt PDF failed or never started (stuck)',
+      overrides: { receiptRenderState: 'unrendered' as const },
+      expectedCode: 'f4_preflight_receipt_render_stuck',
     },
   ];
 
@@ -542,7 +554,7 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
           totalSatang: PAYMENT_AMOUNT_SATANG,
           status: 'paid' as const,
           creditable: true,
-          receiptRendered: true,
+          receiptRenderState: 'rendered' as const,
           ...c.overrides,
         }),
       );
@@ -577,7 +589,7 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
         totalSatang: PAYMENT_AMOUNT_SATANG,
         status: 'partially_credited' as const,
         creditable: true,
-        receiptRendered: true,
+        receiptRenderState: 'rendered' as const,
       }),
     );
 

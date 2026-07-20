@@ -151,10 +151,17 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // Permanent (§105). A credit note is the wrong instrument for this
       // buyer; no amount of retrying or waiting changes that.
       return { status: 409, routeCode: 'f4_preflight_not_creditable' };
-    case 'f4_preflight_receipt_not_rendered':
-      // Transient: resolves on its own once the async receipt worker
-      // finishes. The copy must say "wait", not "escalate".
-      return { status: 409, routeCode: 'f4_preflight_receipt_not_rendered' };
+    case 'f4_preflight_receipt_rendering':
+      // TRANSIENT, and the only receipt state that is: the async worker is
+      // still `pending` and the reconcile cron sweeps stuck pending rows. The
+      // copy says "wait", and here that is true.
+      return { status: 409, routeCode: 'f4_preflight_receipt_rendering' };
+    case 'f4_preflight_receipt_render_stuck':
+      // NOT transient — `failed` or NULL. Distinct from its sibling because
+      // the copy must say "escalate", not "wait". Telling an admin to wait a
+      // few minutes for a render that will never happen strands the member's
+      // money with nobody alerted, which is the defect C2 exists to remove.
+      return { status: 409, routeCode: 'f4_preflight_receipt_render_stuck' };
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure

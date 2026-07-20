@@ -23,7 +23,7 @@
  * ## The fix under test
  *
  * The same single `f4GetInvoice` call now also surfaces `status`,
- * `creditable`, and `receiptRendered`; three guards reject inside Phase A's
+ * `creditable`, and `receiptRenderState`; four guards reject inside Phase A's
  * `withTx` **above** the amount check, the `refunds` insert, and the
  * `refund_initiated` emit. Placement is correctness, not style: `err()`
  * inside `runInTenant` COMMITS, so a guard below the insert would leave a
@@ -427,7 +427,7 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.code).toBe('f4_preflight_receipt_not_rendered');
+      expect(r.error.code).toBe('f4_preflight_receipt_rendering');
     }
   }, 60_000);
 

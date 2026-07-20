@@ -299,16 +299,33 @@ export interface InvoicingBridgePort {
          */
         readonly creditable: boolean;
         /**
-         * F-4 — mirrors F4's materialised-receipt gate
-         * (`issue-credit-note.ts:491`, `receipt_not_rendered`): a §86/10
-         * ใบลดหนี้ can only adjust a receipt that actually exists as bytes.
-         * `true` iff `receiptPdfStatus === 'rendered'`.
+         * C2 (Task 7 remediation) — HOW a blocked receipt clears, not merely
+         * whether it has. The pre-fix `receiptRendered: boolean` collapsed four
+         * DB states into one, and the single error it fed said "try again in a
+         * few minutes" — true for exactly one of them.
          *
-         * Unlike the other two axes this one is TRANSIENT — the async receipt
-         * worker may still be `pending`, in which case the refund becomes
-         * possible once it renders.
+         *   'rendered'   — `receipt_pdf_status = 'rendered'`. Creditable.
+         *   'rendering'  — `'pending'`. TRANSIENT: the reconcile cron's scan
+         *                  matches stuck `pending` rows, so it does clear
+         *                  itself. This is the only state where "wait" is true.
+         *   'unrendered' — `'failed'` OR **NULL**. Needs a human.
+         *
+         * Why `failed` is here and not under 'rendering': the reconcile cron
+         * RESETS `receipt_pdf_render_attempts` to 0 on every re-enqueue, so the
+         * counter oscillates and NO column on the row distinguishes "the cron
+         * will retry this" from "the cron gave up and paged". Given that, the
+         * conservative direction wins on asymmetry — a false "escalate" costs a
+         * self-resolving ticket, a false "wait a few minutes" costs the member
+         * their refund indefinitely. (If this proves noisy, the fix is a
+         * persisted at-rest "abandoned" marker written by the cron's
+         * permanently-failed branch, NOT resurrecting the attempts counter.)
+         *
+         * Why NULL is here: the cron's scan predicate is
+         * `receipt_pdf_status = 'failed' OR (= 'pending' AND stuck)`. SQL NULL
+         * compares equal to neither, so a null-status row is swept by nobody,
+         * ever. Legacy paid rows carry it.
          */
-        readonly receiptRendered: boolean;
+        readonly receiptRenderState: 'rendered' | 'rendering' | 'unrendered';
       },
       {
         readonly code:

@@ -432,7 +432,7 @@ export const invoicingBridge: InvoicingBridgePort = {
     // (barrel export dropped, circular-import TDZ, mock factory omission) or
     // when the F4 aggregate stops carrying a field read here. Keep this try.
     let creditable: boolean;
-    let receiptRendered: boolean;
+    let receiptRenderState: 'rendered' | 'rendering' | 'unrendered';
     try {
       // §105 creditability — derived through the SAME shared discriminator
       // `issue-credit-note.ts` uses, deliberately rather than re-deriving it
@@ -444,7 +444,23 @@ export const invoicingBridge: InvoicingBridgePort = {
           inv.invoiceSubject,
           resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
         ) !== 'receipt_separate';
-      receiptRendered = inv.receiptPdfStatus === 'rendered';
+      // C2 (Task 7 remediation) — map the FOUR DB states onto how each one
+      // actually clears, because that is what the copy and the F8 refund
+      // bridge branch on. `pending` is the only genuinely transient one: the
+      // reconcile cron's scan is
+      // `receipt_pdf_status = 'failed' OR (= 'pending' AND stuck)`.
+      //   - `failed` re-enqueues, but the cron RESETS the attempts counter to
+      //     0 each cycle, so nothing on the row says whether it will retry
+      //     again or has already been abandoned and paged. Conservative
+      //     direction: treat as needing a human.
+      //   - NULL matches NEITHER arm of that predicate (SQL NULL compares
+      //     equal to nothing), so those rows are swept by nobody, ever.
+      receiptRenderState =
+        inv.receiptPdfStatus === 'rendered'
+          ? 'rendered'
+          : inv.receiptPdfStatus === 'pending'
+            ? 'rendering'
+            : 'unrendered';
     } catch (e) {
       paymentsMetrics.f4BridgeUnknownErrorShape(
         'getInvoiceCreditedTotal_credit_gate_underivable',
@@ -480,7 +496,7 @@ export const invoicingBridge: InvoicingBridgePort = {
       // by accident.
       status: inv.status,
       creditable,
-      receiptRendered,
+      receiptRenderState,
     });
   },
 

@@ -473,7 +473,8 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   const preflightRefusals = [
     { code: 'f4_preflight_invalid_status', error: { code: 'f4_preflight_invalid_status', status: 'void' } },
     { code: 'f4_preflight_not_creditable', error: { code: 'f4_preflight_not_creditable' } },
-    { code: 'f4_preflight_receipt_not_rendered', error: { code: 'f4_preflight_receipt_not_rendered' } },
+    { code: 'f4_preflight_receipt_rendering', error: { code: 'f4_preflight_receipt_rendering' } },
+    { code: 'f4_preflight_receipt_render_stuck', error: { code: 'f4_preflight_receipt_render_stuck' } },
   ] as const;
 
   for (const c of preflightRefusals) {

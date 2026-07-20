@@ -142,7 +142,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
       // invoice-credit cap never binds tighter than the payment-based cap —
       // the multi-partial + FR-011b assertions below stay on the payment path.
       // F-4 (money-remediation Task 7) — `status` / `creditable` /
-      // `receiptRendered` feed the Phase-A gates that mirror F4's credit-note
+      // `receiptRenderState` feed the Phase-A gates that mirror F4's credit-note
       // rules. This file stubs the bridge WHOLESALE and its seeded invoice
       // rows are `draft` (they exist only to satisfy the payments FK), so it
       // does NOT exercise those gates and must not be read as covering them —
@@ -155,7 +155,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
           totalSatang: asSatang(TOTAL_SATANG),
           status: 'paid' as const,
           creditable: true,
-          receiptRendered: true,
+          receiptRenderState: 'rendered' as const,
         }),
       ),
       // tax#5 (B.2) — the shared finaliser reads F4's authoritative post-CN

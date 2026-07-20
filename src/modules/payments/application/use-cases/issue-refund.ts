@@ -213,13 +213,27 @@ export type IssueRefundError =
    */
   | { readonly code: 'f4_preflight_not_creditable' }
   /**
-   * F-4 — mirrors `issue-credit-note.ts:491`. TRANSIENT, unlike its two
-   * siblings: the async receipt-PDF worker may still be `pending`, and the
-   * refund becomes possible as soon as the receipt materialises. Still 409
-   * (the current state genuinely forbids it), but the copy tells the admin to
-   * wait rather than to escalate.
+   * C2 (Task 7 remediation) — mirrors F4's `receipt_not_rendered` gate, TRANSIENT
+   * arm. The async receipt-PDF worker is still `pending`, the reconcile cron
+   * sweeps stuck `pending` rows, and the refund becomes possible once the
+   * receipt lands. 409, and the copy tells the admin to WAIT.
+   *
+   * This is the ONLY receipt state where "try again in a few minutes" is true.
+   * It used to be said for all four, including two that never clear on their own.
    */
-  | { readonly code: 'f4_preflight_receipt_not_rendered' }
+  | { readonly code: 'f4_preflight_receipt_rendering' }
+  /**
+   * C2 — mirrors the same F4 gate, OPERATOR arm: `receipt_pdf_status` is
+   * `failed` or NULL. Not transient, and telling the admin to wait strands the
+   * member's money indefinitely while nobody is alerted.
+   *
+   * `failed` is here rather than under the transient arm because the reconcile
+   * cron resets `receipt_pdf_render_attempts` to 0 on every re-enqueue, so no
+   * column distinguishes "will retry" from "gave up and paged"; the asymmetry
+   * favours escalating. NULL is here because the cron's scan predicate matches
+   * neither NULL arm at all — those rows are swept by nobody, ever.
+   */
+  | { readonly code: 'f4_preflight_receipt_render_stuck' }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   /**
    * Money-remediation F-3 leg 1/2 — the Stripe refund SUCCEEDED and the F4
@@ -649,13 +663,22 @@ async function issueRefundBody(
       } as const;
     }
 
-    // Mirrors `issue-credit-note.ts:491`. TRANSIENT, unlike the two above —
-    // the async receipt worker may still be rendering, and the refund becomes
-    // possible once it lands. The copy says so.
-    if (!invoiceCredited.value.receiptRendered) {
+    // C2 (Task 7 remediation) — mirrors F4's `receipt_not_rendered` gate, but
+    // split by HOW the block clears. The pre-fix single code told every admin
+    // to "try again in a few minutes" — true only for `pending`. A `failed` or
+    // NULL receipt never clears on its own (the reconcile cron resets the
+    // attempts counter, and its scan predicate matches NULL not at all), so
+    // that copy left the member's money stranded with nobody alerted.
+    if (invoiceCredited.value.receiptRenderState === 'rendering') {
       return {
         kind: 'rejected',
-        error: { code: 'f4_preflight_receipt_not_rendered' },
+        error: { code: 'f4_preflight_receipt_rendering' },
+      } as const;
+    }
+    if (invoiceCredited.value.receiptRenderState === 'unrendered') {
+      return {
+        kind: 'rejected',
+        error: { code: 'f4_preflight_receipt_render_stuck' },
       } as const;
     }
 

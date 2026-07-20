@@ -431,7 +431,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRendered: true, status: 'paid' },
+      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
     },
     {
       name: 'event invoice, NON-registrant buyer → NOT creditable (§105 receipt)',
@@ -444,7 +444,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: false, receiptRendered: true, status: 'paid' },
+      expected: { creditable: false, receiptRenderState: 'rendered', status: 'paid' },
     },
     {
       name: 'event invoice, VAT-registrant buyer → creditable',
@@ -455,10 +455,12 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRendered: true, status: 'paid' },
+      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
     },
     {
-      name: 'receipt PDF still pending → receiptRendered false',
+      // C2 — TRANSIENT. The reconcile cron's scan matches `pending` rows older
+      // than the stuck interval, so this genuinely clears itself.
+      name: 'receipt PDF pending → rendering (transient)',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -466,7 +468,81 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'pending',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRendered: false, status: 'paid' },
+      expected: { creditable: true, receiptRenderState: 'rendering', status: 'paid' },
+    },
+    {
+      // C2 — NOT transient, deliberately. The reconcile cron RESETS
+      // `receipt_pdf_render_attempts` to 0 on every re-enqueue, so no column
+      // on the row distinguishes "the cron will retry this" from "the cron
+      // gave up and paged". Classified as operator-action on the asymmetry: a
+      // false "escalate" costs a self-resolving ticket, a false "wait a few
+      // minutes" costs the member their refund indefinitely.
+      name: 'receipt PDF failed → unrendered (operator action, NOT "wait")',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'failed',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRenderState: 'unrendered', status: 'paid' },
+    },
+    {
+      // C2 + I2 — the input that gave a silently wrong answer before. NULL is
+      // matched by NEITHER arm of the reconcile cron's scan predicate
+      // (`= 'failed'` OR `= 'pending' AND stuck`), because SQL NULL compares
+      // equal to nothing. So a null-status row is swept by nobody, ever, and
+      // telling the admin to wait a few minutes is simply false.
+      name: 'receipt PDF status NULL → unrendered (cron never sweeps NULL)',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+        receiptPdfStatus: null,
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRenderState: 'unrendered', status: 'paid' },
+    },
+    {
+      // I2 / 066 relax — THE case with live production rows behind it. A
+      // membership invoice is a valid §86/4 regardless of the buyer's
+      // registrant status, so it stays creditable. Production holds 11 such
+      // invoices; the wrong buyer-side §86/10 rationale, if ever acted on,
+      // would break exactly these.
+      name: 'membership invoice, NON-registrant buyer → still creditable (066 relax)',
+      invoice: {
+        invoiceSubject: 'membership',
+        memberId,
+        memberIdentitySnapshot: { tax_id: null, buyer_is_vat_registrant: false },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+    },
+    {
+      // I2 — the walk-in arm. `resolveBuyerIsVatRegistrant` falls back to TIN
+      // presence when `memberId` is null; every case above passes a non-null
+      // memberId, so this branch was unexercised here.
+      name: 'walk-in (memberId null) event invoice WITH a TIN → creditable',
+      invoice: {
+        invoiceSubject: 'event',
+        memberId: null,
+        memberIdentitySnapshot: { tax_id: '1234567890123' },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+    },
+    {
+      name: 'walk-in (memberId null) event invoice with NO TIN → not creditable',
+      invoice: {
+        invoiceSubject: 'event',
+        memberId: null,
+        memberIdentitySnapshot: { tax_id: null },
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: { creditable: false, receiptRenderState: 'rendered', status: 'paid' },
     },
     {
       name: 'voided invoice → status surfaced verbatim',
@@ -477,7 +553,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'void',
       },
-      expected: { creditable: true, receiptRendered: true, status: 'void' },
+      expected: { creditable: true, receiptRenderState: 'rendered', status: 'void' },
     },
   ];
 
@@ -498,7 +574,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.creditable).toBe(c.expected.creditable);
-        expect(result.value.receiptRendered).toBe(c.expected.receiptRendered);
+        expect(result.value.receiptRenderState).toBe(c.expected.receiptRenderState);
         expect(result.value.status).toBe(c.expected.status);
       }
     });
