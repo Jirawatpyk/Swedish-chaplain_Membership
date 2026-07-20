@@ -334,16 +334,10 @@ export async function markPaidOffline(
   // document off the price-tampering surface. The cycle-vs-invoice price
   // assertion lives in the offline mark-paid integration test.
   //
-  // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
-  // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
-  // fiscal-year start-month) — the identical helper confirm-renewal,
-  // admin-renew and the §87 sequential-number allocator use. UTC
-  // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
-  // helper also hardcoded a January start, so it would diverge from every
-  // other billing path for a non-January-start tenant. One source of truth
-  // for the §86/4 fiscal year across the online + offline rails.
-  const planYear = deriveFiscalYear(preLoad.periodFrom);
-  const planId = preLoad.planIdAtCycleStart;
+  // `planId` + `planYear` are derived from the LOCKED cycle inside the tx below
+  // (NOT here from `preLoad`) so all three §86/4 inputs — identity, fiscal year
+  // and price — come from one coherent snapshot. `memberId` is a cycle
+  // invariant (a cycle's member never changes) so the pre-lock read is safe.
   const memberId = preLoad.memberId;
 
   // 070 Item D — hoisted to the use-case scope so the POST-commit F2
@@ -379,6 +373,23 @@ export async function markPaidOffline(
           currentStatus: lockedCycle.status,
         });
       }
+
+      // Split-brain fix — derive the §86/4's plan identity + fiscal year from
+      // the LOCKED cycle (the SAME snapshot as its frozen price on the bridge
+      // call below), NOT the pre-lock `preLoad`. A plan change landing between
+      // the pre-lock read and lock acquisition must never mint a tax document
+      // carrying one plan's identity/year with another plan's price.
+      //
+      // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
+      // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
+      // fiscal-year start-month) — the identical helper confirm-renewal,
+      // admin-renew and the §87 sequential-number allocator use. UTC
+      // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
+      // helper also hardcoded a January start, so it would diverge from every
+      // other billing path for a non-January-start tenant. One source of truth
+      // for the §86/4 fiscal year across the online + offline rails.
+      const planId = lockedCycle.planIdAtCycleStart;
+      const planYear = deriveFiscalYear(lockedCycle.periodFrom);
 
       // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
       // Task 7 (spec §1 consuming-site 3) — classify the payment for the

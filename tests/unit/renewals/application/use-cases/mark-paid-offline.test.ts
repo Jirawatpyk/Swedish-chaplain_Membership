@@ -1130,6 +1130,44 @@ describe('markPaidOffline — error paths', () => {
     }
   });
 
+  // Split-brain guard — the §86/4's plan identity + fiscal year MUST come from
+  // the SAME (locked) snapshot as its price. Before this fix `planId`/`planYear`
+  // were read from the PRE-LOCK snapshot (mark-paid-offline.ts:345-346) while
+  // `frozenPlanPriceThb` was read from the LOCKED cycle (:644), so a plan change
+  // landing between the pre-lock read and the lock acquisition would mint a tax
+  // document carrying one plan's identity/year and another plan's price. Sibling
+  // of the W-05 newExpiresAt guard above.
+  it('sources planId + planYear from the LOCKED cycle, coherent with the frozen price (split-brain)', async () => {
+    const preLoadCycle = buildCycle({
+      planIdAtCycleStart: 'regular',
+      periodFrom: '2025-06-01T00:00:00Z', // fiscal year 2025
+      periodTo: '2026-06-01T00:00:00Z',
+      frozenPlanPriceThb: '18000.00' as ThbDecimal,
+    });
+    const lockedCycle = buildCycle({
+      planIdAtCycleStart: 'premium',
+      periodFrom: '2026-06-01T00:00:00Z', // fiscal year 2026 (concurrent shift)
+      periodTo: '2027-06-01T00:00:00Z',
+      frozenPlanPriceThb: '60000.00' as ThbDecimal,
+    });
+    const { deps, bridgeMock } = fakeDeps(preLoadCycle);
+    (
+      deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(lockedCycle);
+
+    await markPaidOffline(deps, baseInput);
+
+    // All three cycle-sourced §86/4 inputs come from the locked snapshot —
+    // never a mix of pre-lock identity with post-lock price.
+    expect(bridgeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planId: 'premium',
+        planYear: 2026,
+        frozenPlanPriceThb: '60000.00',
+      }),
+    );
+  });
+
   // Round 3 IM2 regression-detector — guards against a future F4 contract
   // change that decouples bridge.ok from onPaid invocation. Without this
   // safety net the cycle would commit as still-awaiting-payment while
