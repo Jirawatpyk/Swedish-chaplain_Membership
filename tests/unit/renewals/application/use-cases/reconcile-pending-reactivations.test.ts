@@ -1006,6 +1006,60 @@ describe('reconcilePendingReactivations (F8-RP) — async reject-with-refund set
     });
   });
 
+  // Track B (F-E, async leg) — the sync path was corrected to gate the finance
+  // task on `refundIssued`; this path was not, and still gates on
+  // `creditNoteId !== null`. A refund that legitimately owes no §86/10 (voided
+  // invoice, or a §105 receipt) settles `succeeded` with a NULL credit note, so
+  // the async leg silently skips the review.
+  //
+  // That is exactly inverted from what it should do. A waived refund is the
+  // class MOST in need of finance follow-up: the money went back to the member
+  // AND an output-VAT adjustment is now owed that no credit note records.
+  // Reachable without a flag — reject a pending reactivation on a PromptPay-paid
+  // §105 event invoice, where the refund settles asynchronously.
+  it('marked cycle, refund settled succeeded with a WAIVED credit note → still inserts post_refund_review', async () => {
+    const cycle = pendingCycle({ daysPending: 5, marked: true });
+    const { deps, transitionMock, emitInTxMock, insertTaskMock } = fakeDeps({
+      cycles: [cycle],
+      getRefundOutcomeResult: { status: 'succeeded', creditNoteId: null },
+    });
+
+    const r = await reconcilePendingReactivations(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.asyncRejectSettledCancelled).toBe(1);
+
+    // The cycle still closes exactly as it does with a credit note — the money
+    // moved either way, and the waiver changes only the tax paperwork.
+    expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
+      from: 'pending_admin_reactivation',
+      to: 'cancelled',
+      closedReason: 'admin_rejected_with_refund',
+    });
+
+    // THE assertion. Without it the accountant never learns the refund happened.
+    expect(insertTaskMock).toHaveBeenCalledOnce();
+    expect(insertTaskMock.mock.calls[0]?.[1]).toMatchObject({
+      taskType: 'post_refund_review',
+    });
+
+    // A null credit-note id must travel as null, not be cast into a branded
+    // string. The audit consumer reads this field to decide whether a §86/10
+    // exists to look up.
+    const rejectedEmit = emitInTxMock.mock.calls.find(
+      (c) => c[1]?.type === 'lapsed_member_admin_reactivation_rejected',
+    );
+    expect(rejectedEmit?.[1].payload).toMatchObject({
+      refund_credit_note_id: null,
+    });
+    const taskEmit = emitInTxMock.mock.calls.find(
+      (c) => c[1]?.type === 'escalation_task_created',
+    );
+    expect(taskEmit?.[1].payload).toMatchObject({
+      task_type: 'post_refund_review',
+      refund_credit_note_id: null,
+    });
+  });
+
   it('marked cycle, refund STILL pending → skip (stays pending, no transition), still_pending counter', async () => {
     const cycle = pendingCycle({ daysPending: 5, marked: true });
     const { deps, transitionMock, emitInTxMock } = fakeDeps({

@@ -1061,10 +1061,20 @@ async function processMarkedRejectRefund(
           },
         );
 
-        // post_refund_review escalation task — inserted only when a credit note
-        // materialised (parity with the sync path, which inserts only when
-        // refundCreditNoteId !== null). Idempotent on the open-task index.
-        if (creditNoteId !== null) {
+        // post_refund_review escalation task. Reached only on a SETTLED
+        // `succeeded` refund, so the money has moved and the task is always
+        // owed — it is NOT gated on a credit note existing.
+        //
+        // Track B (F-E, async leg): this used to read
+        // `if (creditNoteId !== null)`, mirroring the sync path as it was
+        // BEFORE the sync path was corrected. A refund that legitimately owes
+        // no §86/10 (voided invoice, or a §105 receipt) settles succeeded with
+        // a NULL credit note, so that gate skipped the review on precisely the
+        // population that needs it most: money returned to the member AND an
+        // output-VAT adjustment now owed that no credit note records.
+        //
+        // Idempotent on the open-task index.
+        {
           const dueAt = new Date(
             now.getTime() + POST_REFUND_REVIEW_DUE_DAYS * MS_PER_DAY,
           ).toISOString();
@@ -1088,7 +1098,12 @@ async function processMarkedRejectRefund(
                   member_id: cycle.memberId as MemberId,
                   cycle_id: cycleId as CycleId,
                   trigger_reason: 'admin_reject_with_refund',
-                  refund_credit_note_id: asCreditNoteId(creditNoteId),
+                  // NULL when the refund carried a waiver. Travels as null
+                  // rather than a branded empty string so the audit consumer
+                  // can tell "there is no §86/10 to look up" from "here is its
+                  // id" — the distinction the whole waiver mechanism exists on.
+                  refund_credit_note_id:
+                    creditNoteId === null ? null : asCreditNoteId(creditNoteId),
                 },
               },
               {
@@ -1097,7 +1112,10 @@ async function processMarkedRejectRefund(
                 actorRole: 'admin',
                 correlationId,
                 requestId: null,
-                summary: `post_refund_review task created for credit-note ${creditNoteId}`,
+                summary:
+                  creditNoteId === null
+                    ? 'post_refund_review task created for a refund carrying no credit note (waived)'
+                    : `post_refund_review task created for credit-note ${creditNoteId}`,
               },
             );
           }
