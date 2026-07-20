@@ -1828,6 +1828,13 @@
       "when": 1798539700000,
       "tag": "0269_payment_settlement_rolled_back_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 271,
+      "version": "7",
+      "when": 1798539800000,
+      "tag": "0270_member_plan_change_billing_effect_audit",
+      "breakpoints": true
     }
   ]
 }

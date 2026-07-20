@@ -194,6 +194,13 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     events drive the F2 scheduled-plan-change lifecycle audit
   //     trail (Wave B G1 verify-run remediation). ---
   'member_plan_manually_changed',
+  // --- Plan-change → billing remediation (Package A, migration 0259) ---
+  //     Forensic record of the billing consequence when a member's live
+  //     `members.plan_id` diverges from a renewal cycle's frozen plan.
+  //     Owned by F3 members (F3AuditEventType union); emitted from the F8
+  //     renewals seed seams via a narrow renewals-owned audit port. 5y
+  //     retention (NOT a tax-document event — retention trigger untouched).
+  'member_plan_change_billing_effect',
   'plan_change_scheduled',
   'plan_change_superseded',
   'plan_change_cancelled',

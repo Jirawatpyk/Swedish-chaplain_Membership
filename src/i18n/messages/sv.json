@@ -5791,6 +5791,7 @@
       "plan_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (paket)",
       "fee_config_updated": "Avgiftskonfiguration uppdaterad",
       "member_plan_manually_changed": "Paket ändrat manuellt",
+      "member_plan_change_billing_effect": "Faktureringseffekt av planändring",
       "plan_change_scheduled": "Paketbyte schemalagt",
       "plan_change_superseded": "Paketbyte ersatt",
       "plan_change_cancelled": "Paketbyte avbrutet",
