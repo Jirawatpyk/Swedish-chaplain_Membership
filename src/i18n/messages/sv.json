@@ -3933,7 +3933,7 @@
         "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha makulerats eller redan krediterats i sin helhet.",
         "f4_preflight_not_creditable": "För denna betalning utfärdades endast ett kvitto, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Inga pengar flyttades. Återbetalning kräver manuell hantering — kontakta supporten.",
         "f4_preflight_receipt_rendering": "Kvittot för denna betalning håller fortfarande på att skapas. Inga pengar flyttades — försök återbetala igen om några minuter.",
-        "f4_preflight_receipt_render_stuck": "Kvittot för denna betalning skapades inte, och det slutförs inte av sig själv. Inga pengar flyttades. Skapa om kvittot från fakturasidan och försök återbetala igen — kontakta supporten om det misslyckas på nytt.",
+        "f4_preflight_receipt_render_stuck": "Kvittot för denna betalning skapades inte, och det slutförs inte av sig själv. Inga pengar flyttades. Supporten behöver skapa om kvittot innan återbetalningen kan genomföras — kontakta supporten.",
         "tenant_settings_incomplete": "Betalningsinställningarna är ofullständiga, så återbetalningar kan inte behandlas. Inga pengar flyttades. Be en administratör komplettera betalningsinställningarna.",
         "invalid_input": "Återbetalningsbegäran avvisades som ogiltig. Inga pengar flyttades. Kontrollera belopp och orsak och försök igen.",
         "rate_limited": "För många återbetalningsförsök. Inga pengar flyttades — vänta en stund och försök igen.",

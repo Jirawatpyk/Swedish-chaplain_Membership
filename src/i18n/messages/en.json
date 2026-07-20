@@ -1883,7 +1883,7 @@
           "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
           "receiptNotCreditable": "This payment was issued a Section 105 receipt, not a tax invoice, so no credit note can be issued against it. Refunding it needs a manual process — please contact support.",
-          "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
+          "receiptNotRendered": "The tax receipt PDF is still being generated, or failed to render. A credit note can only be issued once the §86/4 receipt has rendered. Wait a moment and retry — if it still fails, contact support to regenerate it.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
           "codeFallback": "Error code: {code}"
         }
@@ -3933,7 +3933,7 @@
         "f4_preflight_invalid_status": "This invoice can no longer be credited, so it can't be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
         "f4_preflight_not_creditable": "This payment was issued a Section 105 receipt, not a tax invoice/receipt, so no credit note can be issued against it. No money was moved. Refunding it needs a manual process — please contact support.",
         "f4_preflight_receipt_rendering": "The receipt for this payment is still being generated. No money was moved — try the refund again in a few minutes.",
-        "f4_preflight_receipt_render_stuck": "The receipt for this payment was not generated, and it will not complete on its own. No money was moved. Re-render the receipt from the invoice page, then retry the refund — or contact support if it fails again.",
+        "f4_preflight_receipt_render_stuck": "The receipt for this payment was not generated, and it will not complete on its own. No money was moved. This needs support to regenerate the receipt before the refund can go through — please contact support.",
         "tenant_settings_incomplete": "Payment settings are incomplete, so refunds cannot be processed. No money was moved. Ask an administrator to complete the payment settings.",
         "invalid_input": "The refund request was rejected as invalid. No money was moved. Check the amount and reason, then try again.",
         "rate_limited": "Too many refund attempts. No money was moved — wait a moment and try again.",

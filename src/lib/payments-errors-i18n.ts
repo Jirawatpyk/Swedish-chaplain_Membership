@@ -240,14 +240,19 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   },
   f4_preflight_receipt_render_stuck: {
     // The opposite instruction, deliberately. This receipt is `failed` or has
-    // no status at all; no worker will pick it up, so "wait" would strand the
-    // member's money with nobody alerted. Points at the re-render action that
-    // actually unblocks it — the wording F4's own `receiptNotRendered` copy
-    // already uses on the credit-note screen.
+    // no status at all; no worker reliably picks it up, so "wait" would strand
+    // the member's money with nobody alerted.
+    //
+    // It must NOT name a re-render action either: there is no admin-facing
+    // re-render control anywhere in the invoice UI (verified — the only
+    // re-render is the reconcile cron, which never scans a NULL status at
+    // all). Naming a button that does not exist is the same defect as telling
+    // someone to wait for a render that will never happen. Support has the
+    // runbook; the admin has nothing to click, so say so.
     message:
-      'The receipt for this payment was not generated, and it will not complete on its own. No money was moved. Re-render the receipt from the invoice page, then retry the refund — or contact support if it fails again.',
+      'The receipt for this payment was not generated, and it will not complete on its own. No money was moved. This needs support to regenerate the receipt before the refund can go through — please contact support.',
     messageThai:
-      'ระบบไม่ได้สร้างใบเสร็จสำหรับการชำระเงินนี้ และจะไม่ดำเนินการต่อเอง ยังไม่มีการเคลื่อนไหวของเงิน กรุณาสร้างใบเสร็จใหม่จากหน้าใบแจ้งหนี้ แล้วลองคืนเงินอีกครั้ง หากยังไม่สำเร็จ กรุณาติดต่อฝ่ายสนับสนุน',
+      'ระบบไม่ได้สร้างใบเสร็จสำหรับการชำระเงินนี้ และจะไม่ดำเนินการต่อเอง ยังไม่มีการเคลื่อนไหวของเงิน ต้องให้ฝ่ายสนับสนุนสร้างใบเสร็จใหม่ก่อนจึงจะคืนเงินได้ กรุณาติดต่อฝ่ายสนับสนุน',
   },
   f4_bridge_deferred: {
     // Deliberately reassuring and explicitly non-actionable. The admin has
