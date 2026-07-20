@@ -78,6 +78,18 @@ export {
   type EventDocumentKind,
   type BuyerRegistrantParts,
 } from './domain/document-kind';
+// Task 7 Track B — "does this refund require a §86/10 ใบลดหนี้?", answered once,
+// in F4 Domain, beside the doc-kind discriminator and for the same reason: the
+// moment two modules answer a tax question independently they drift. F5's
+// refund pre-flight consumes this and never re-derives the rules.
+export {
+  resolveRefundCreditNoteRequirement,
+  CREDIT_NOTE_WAIVER_REASONS,
+  type CreditNoteWaiverReason,
+  type CreditNoteBlockRetryability,
+  type RefundCreditNoteBlockReason,
+  type RefundCreditNoteRequirement,
+} from './domain/refund-credit-note-requirement';
 export {
   DocumentNumber,
   DOCUMENT_NUMBER_MAX_SEQ,
