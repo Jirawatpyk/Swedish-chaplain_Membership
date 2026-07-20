@@ -70,6 +70,81 @@ function flatten(prefix: string, value: unknown, out: Set<string>): void {
 }
 
 /**
+ * F5 route-error-code → i18n coverage gate (money-remediation Task 7 / I6).
+ *
+ * `src/lib/payments-errors-i18n.ts` already guarantees every
+ * `F5RouteErrorCode` has an API-envelope bilingual string — `F5_ERROR_MESSAGES`
+ * is typed `Record<F5RouteErrorCode, Bilingual>`, so the compiler enforces it.
+ * NOTHING guaranteed the UI side. The admin refund dialog renders
+ * `t(body.error.code)` under `admin.refund.error.*`, and next-intl's default
+ * `getMessageFallback` returns the RAW DOTTED KEY on a miss (use-intl 4.11
+ * `defaultGetMessageFallback` → `joinPath(namespace, key)`); `t()` does NOT
+ * throw, so the call site's try/catch cannot save it. Five reachable codes
+ * shipped with no key — including `f4_bridge_deferred`, whose entire purpose
+ * is to stop an admin re-clicking a refund that already settled.
+ *
+ * The required set is DERIVED FROM THE ROUTE SOURCE, never hand-listed: a
+ * hand list drifts exactly the way the JSON did. Adding a `case` to
+ * `httpStatusForUseCaseError` extends the required set automatically.
+ */
+const ROUTE_CODE_I18N_SURFACES = [
+  {
+    label: 'refunds.initiate',
+    route: 'src/app/api/refunds/initiate/route.ts',
+    namespace: 'admin.refund.error',
+    // Floor guard against a silent false-GREEN: if a refactor changes the
+    // literal shape the extractor keys on, we must fail loudly rather than
+    // conclude "0 codes required". Fix the patterns; never lower this.
+    minCodes: 14,
+  },
+] as const;
+
+// `routeCode: 'x'` inside the exhaustive use-case-error switch, plus direct
+// `errorResponse(<3-digit status>, 'x', …)` calls in the handler body. The
+// `errorResponse(status, routeCode, …)` variable call is deliberately NOT
+// matched — those codes are already covered by the `routeCode:` literals.
+const ROUTE_CODE_RE = /routeCode:\s*'([a-z0-9_]+)'/g;
+const ERROR_RESPONSE_LITERAL_RE = /errorResponse\(\s*\d{3}\s*,\s*'([a-z0-9_]+)'/g;
+
+async function checkRouteErrorCodeI18nCoverage(
+  sets: Record<Locale, Set<string>>,
+): Promise<boolean> {
+  let ok = true;
+  for (const surface of ROUTE_CODE_I18N_SURFACES) {
+    const src = await readFile(resolve(process.cwd(), surface.route), 'utf8');
+    const codes = new Set<string>();
+    for (const re of [ROUTE_CODE_RE, ERROR_RESPONSE_LITERAL_RE]) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src)) !== null) codes.add(m[1]!);
+    }
+    if (codes.size < surface.minCodes) {
+      console.error(
+        `[check:i18n] HARD FAIL — ${surface.label}: extracted only ${codes.size} route ` +
+          `code(s) from ${surface.route} (expected >= ${surface.minCodes}). The extractor ` +
+          `patterns no longer match the route source. Fix the patterns — do NOT lower minCodes.`,
+      );
+      ok = false;
+      continue;
+    }
+    for (const code of [...codes].sort()) {
+      const key = `${surface.namespace}.${code}`;
+      for (const locale of LOCALES) {
+        if (!sets[locale].has(key)) {
+          console.error(
+            `[check:i18n] HARD FAIL — ${surface.label} can return error code "${code}" but ` +
+              `${locale}.json has no "${key}". next-intl renders the raw dotted key, so an ` +
+              `admin would see "${key}" on a money surface.`,
+          );
+          ok = false;
+        }
+      }
+    }
+  }
+  return ok;
+}
+
+/**
  * T040 — F5 sub-folder catalogue validation. The top-20 Stripe
  * decline-reason catalogue lives under `messages/{locale}/payment-
  * decline-reasons.json` (separate files per locale — the main
@@ -233,6 +308,13 @@ async function main(): Promise<void> {
       );
       process.exitCode = 1;
     }
+  }
+
+  // I6 — hard fail on EVERY branch, not release-gated. The release-gated
+  // soft path below exists for TH/SV translation lag; this is structural
+  // wiring that breaks EN too, so it belongs with the namespace hard fail.
+  if (!(await checkRouteErrorCodeI18nCoverage(sets))) {
+    process.exitCode = 1;
   }
 
   for (const key of enKeys) {
