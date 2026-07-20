@@ -651,6 +651,45 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       expect(asMock(deps.processorGateway.createRefund)).toHaveBeenCalledTimes(1);
       expect(r.ok).toBe(true);
 
+      // The waive arm skips BOTH external calls in Phase B. Skipping
+      // `getInvoiceStatus` is the one that matters most: it errors
+      // `unexpected_status` for exactly `paid`/`void` — the two statuses a waive
+      // produces — and calling it was the original stuck-row bug. The default
+      // mock returns `ok(...)`, so a regression that re-added the call would NOT
+      // throw and would ship silently without this assertion.
+      expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).not.toHaveBeenCalled();
+      expect(asMock(deps.invoicingBridge.getInvoiceStatus)).not.toHaveBeenCalled();
+
+      // The refund flip stamps the waiver timestamp and NO credit note id.
+      const updateArgs = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1] as
+        | { creditNoteWaivedAt?: Date; creditNoteId?: string }
+        | undefined;
+      expect(updateArgs?.creditNoteWaivedAt).toBeInstanceOf(Date);
+      expect(updateArgs?.creditNoteId).toBeUndefined();
+
+      // The success envelope reports the refund as waived with no credit note.
+      // Its `invoice.status` is the invoice's REAL status (the admin-facing
+      // truth), NOT null — that is different from the AUDIT's
+      // `invoice_next_status`, which IS null because this refund caused no
+      // credit-note transition. Two fields, two meanings; both asserted.
+      if (r.ok && r.value.kind === 'succeeded') {
+        expect(r.value.refund.creditNote).toEqual({
+          kind: 'waived',
+          reason: c.reason,
+        });
+        expect(r.value.invoice.status).toBe(c.invoiceStatus);
+      }
+
+      // The refund_succeeded audit carries the null CN + null invoice status.
+      const succeededAudit = asMock(deps.audit.emit).mock.calls.find(
+        (call) => call[1].eventType === 'refund_succeeded',
+      );
+      expect(succeededAudit?.[1].payload).toMatchObject({
+        credit_note_id: null,
+        invoice_next_status: null,
+        credit_note_waiver_reason: c.reason,
+      });
+
       // The waiver reason is pinned on the row at Phase-A INSERT, not at
       // settlement — so a refund that later fails at Stripe still carries the
       // decision that was made about it.

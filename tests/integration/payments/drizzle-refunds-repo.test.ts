@@ -37,6 +37,7 @@ import {
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
@@ -1179,6 +1180,170 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         'refunds_waiver_reason_enum',
       );
     });
+
+    it('REJECTS a row carrying BOTH a credit note and a waiver (refunds_cn_xor_waived)', async () => {
+      // The one CHECK the other four tests did not pin by name, and the one F9's
+      // no-double-subtract correctness leans on: `invoice-source-adapter.ts`
+      // subtracts BOTH `credited_total_satang` (the credit-noted reversals) and
+      // `sumWaivedByInvoice` (the waived ones), safe ONLY because this XOR makes
+      // them mutually exclusive per refund row. If it were dropped, a single row
+      // carrying both instruments would be netted twice and revenue would
+      // understate by the refund amount. `credit_note_id` is a real FK, so seed a
+      // credit note first, then try to also stamp `credit_note_waived_at`.
+      const cnId = await runInTenant(tenantA.ctx, async (tx) => {
+        const id = randomUUID();
+        await tx.execute(sql`
+          INSERT INTO credit_notes (
+            tenant_id, credit_note_id, original_invoice_id, fiscal_year,
+            sequence_number, document_number, issue_date, issued_by_user_id,
+            reason, credit_amount_satang, vat_satang, total_satang,
+            tenant_identity_snapshot, member_identity_snapshot,
+            pdf_blob_key, pdf_sha256, pdf_template_version
+          ) VALUES (
+            ${tenantA.ctx.slug}, ${id}, ${invoiceId}, 2026,
+            90000, 'TC-2026-090000', '2026-04-16', ${user.userId},
+            'xor probe', 1000, 70, 1070,
+            '{}'::jsonb, '{}'::jsonb,
+            'invoicing/xor/seed.pdf', ${'a'.repeat(64)}, 1
+          )`);
+        return id;
+      });
+
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268x_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteId: cnId,
+          creditNoteWaivedAt: new Date(),
+          creditNoteWaiverReason: 'section_105_receipt',
+        }),
+        'refunds_cn_xor_waived',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Track B — sumWaivedByInvoice (the F9 netting read) against live Postgres
+  // -------------------------------------------------------------------------
+  //
+  // The whole F9 revenue correction rests on this aggregate, and until now it
+  // ran only on the empty table or through a structural typeof check. This
+  // seeds every row class it must discriminate and asserts the exact satang:
+  //   - two SUCCEEDED WAIVED refunds on one invoice  → summed, INCLUDED
+  //   - a SUCCEEDED CREDIT-NOTED refund               → EXCLUDED (double-count guard)
+  //   - a PENDING refund carrying a waiver reason      → EXCLUDED (proves the
+  //       filter keys on `credit_note_waived_at`, the settlement timestamp, and
+  //       NOT on `credit_note_waiver_reason`, the Phase-A intent)
+  //   - a cross-tenant probe                           → tenant B's aggregate
+  //       sees none of tenant A's waived money (RLS + the explicit tenant_id
+  //       predicate; a repo reaching the global `db` would leak here).
+  describe('sumWaivedByInvoice — F9 waived-refund netting read', () => {
+    // Drizzle builder (not a raw `sql` template) — the postgres.js driver
+    // rejects a bigint JS value passed as a raw parameter, so amount_satang
+    // must go through `asSatang`, exactly as the 0268-block `insertRefund` does.
+    async function rawInsertRefund(cols: {
+      status: 'pending' | 'succeeded' | 'failed';
+      amountSatang: bigint;
+      processorRefundId?: string | null;
+      creditNoteId?: string | null;
+      creditNoteWaiverReason?: CreditNoteWaiverReason | null;
+      creditNoteWaivedAt?: Date | null;
+      completedAt?: Date | null;
+    }): Promise<void> {
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.insert(refunds).values({
+          id: randomUUID(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(cols.amountSatang),
+          reason: 'sumWaived probe',
+          status: cols.status,
+          processorRefundId: cols.processorRefundId ?? null,
+          creditNoteId: cols.creditNoteId ?? null,
+          creditNoteWaiverReason: cols.creditNoteWaiverReason ?? null,
+          creditNoteWaivedAt: cols.creditNoteWaivedAt ?? null,
+          initiatedAt: new Date(),
+          completedAt: cols.completedAt ?? null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-sumwaived',
+        });
+      });
+    }
+
+    it('sums SUCCEEDED WAIVED rows per invoice, excluding credit-noted, pending, and cross-tenant', async () => {
+      // A real credit note so the credit-noted refund's FK is satisfiable.
+      const cnId = await runInTenant(tenantA.ctx, async (tx) => {
+        const id = randomUUID();
+        await tx.execute(sql`
+          INSERT INTO credit_notes (
+            tenant_id, credit_note_id, original_invoice_id, fiscal_year,
+            sequence_number, document_number, issue_date, issued_by_user_id,
+            reason, credit_amount_satang, vat_satang, total_satang,
+            tenant_identity_snapshot, member_identity_snapshot,
+            pdf_blob_key, pdf_sha256, pdf_template_version
+          ) VALUES (
+            ${tenantA.ctx.slug}, ${id}, ${invoiceId}, 2026,
+            90001, 'TC-2026-090001', '2026-04-16', ${user.userId},
+            'sumWaived cn', 1000, 70, 1070,
+            '{}'::jsonb, '{}'::jsonb,
+            'invoicing/sumwaived/seed.pdf', ${'b'.repeat(64)}, 1
+          )`);
+        return id;
+      });
+
+      // INCLUDED: two succeeded waived refunds on the fixture invoice → summed.
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 30_000n,
+        processorRefundId: `re_sw_1_${Date.now()}`,
+        creditNoteWaiverReason: 'section_105_receipt',
+        creditNoteWaivedAt: new Date(),
+        completedAt: new Date(),
+      });
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 10_000n,
+        processorRefundId: `re_sw_2_${Date.now()}`,
+        creditNoteWaiverReason: 'invoice_voided',
+        creditNoteWaivedAt: new Date(),
+        completedAt: new Date(),
+      });
+      // EXCLUDED: a succeeded refund documented by a CREDIT NOTE (waived_at NULL)
+      // — the double-count guard: it is already netted via credited_total_satang.
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 20_000n,
+        processorRefundId: `re_sw_cn_${Date.now()}`,
+        creditNoteId: cnId,
+        completedAt: new Date(),
+      });
+      // EXCLUDED: a PENDING refund that already carries the waiver reason but no
+      // timestamp — proves the filter is on the timestamp, not the reason.
+      await rawInsertRefund({
+        status: 'pending',
+        amountSatang: 50_000n,
+        creditNoteWaiverReason: 'invoice_voided',
+      });
+
+      const map = await makeDrizzleRefundsRepo(
+        tenantA.ctx.slug,
+      ).sumWaivedByInvoice(tenantA.ctx.slug);
+
+      // Only the invoice with waived refunds appears, keyed by invoiceId, summed
+      // to 40,000 (30,000 + 10,000) — never 60,000 (would mean the credit-noted
+      // row leaked in) and never 90,000 (the pending row too).
+      expect(map.size).toBe(1);
+      expect(map.get(invoiceId)).toBe(40_000n);
+
+      // Cross-tenant: tenant B's aggregate sees none of tenant A's waived money.
+      const mapB = await makeDrizzleRefundsRepo(
+        tenantB.ctx.slug,
+      ).sumWaivedByInvoice(tenantB.ctx.slug);
+      expect(mapB.has(invoiceId)).toBe(false);
+      expect(mapB.size).toBe(0);
+    }, 60_000);
   });
 
 });

@@ -424,6 +424,64 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
   });
 
+  it('found + pending + succeeded + WAIVER on the row → settles with NO credit note, both bridge calls skipped', async () => {
+    // Track B — the production-reachable async waive: a §105 (or voided-invoice)
+    // refund settles via `charge.refund.updated`, so the finaliser runs in
+    // WEBHOOK mode against a locked row that already carries the waiver decision
+    // (stamped at Phase-A insert). This path had ZERO waiver coverage, and it is
+    // the exact call-site of the original stuck-row bug: the waive arm must NOT
+    // call `getInvoiceStatus` (it errors for `paid`/`void`) or
+    // `issueCreditNoteFromRefund`, and must stamp the waiver instead.
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeRefund({
+        status: 'pending',
+        amountSatang: asSatang(50_000n),
+        creditNoteWaiverReason: 'section_105_receipt',
+      }),
+    );
+
+    const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
+
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.kind !== 'reconciled_succeeded') {
+      throw new Error('expected reconciled_succeeded on the waive path');
+    }
+    // No §86/10 exists or ever will.
+    expect(result.value.creditNoteId).toBeNull();
+
+    // THE regression guards: neither external call is made on the waive arm.
+    // A future edit that re-adds a `getInvoiceStatus` read here is the silent-
+    // wrong-return shape the review flagged — the default mock returns
+    // `ok('credited')`, so it would NOT throw and would ship undetected without
+    // this assertion.
+    expect(vi.mocked(deps.invoicingBridge.getInvoiceStatus)).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund),
+    ).not.toHaveBeenCalled();
+
+    // The refund flip stamps the settlement timestamp, not a credit note id —
+    // this is what the 0268 completeness CHECK keys on.
+    const refundFlip = vi.mocked(deps.refundsRepo.updateStatus).mock.calls[0]![1] as {
+      creditNoteWaivedAt?: Date;
+      creditNoteId?: string;
+    };
+    expect(refundFlip.creditNoteWaivedAt).toBeInstanceOf(Date);
+    expect(refundFlip.creditNoteId).toBeUndefined();
+
+    // refund_succeeded audit: null CN, null invoice status, waiver ground recorded.
+    const succeededAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(succeededAudit).toBeDefined();
+    expect(succeededAudit![1].payload).toMatchObject({
+      path: 'webhook_refund_updated',
+      credit_note_id: null,
+      invoice_next_status: null,
+      credit_note_waiver_reason: 'section_105_receipt',
+    });
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+  });
+
   it('found + pending + incoming succeeded (full) → reconciled_succeeded; payment advanced to refunded', async () => {
     vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
       makeRefund({ status: 'pending', amountSatang: asSatang(100_000n) }),

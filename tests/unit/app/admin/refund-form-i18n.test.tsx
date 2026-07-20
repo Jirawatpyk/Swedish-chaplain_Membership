@@ -18,7 +18,10 @@ import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('sonner', () => ({
+  // `warning` is the waived-refund arm (a caution: money back, output-VAT owed).
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+}));
 
 // RHF async validation needs real timers (tests/setup.ts installs fake ones).
 beforeEach(() => {
@@ -216,6 +219,131 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
       expect(toast.error).not.toHaveBeenCalled();
       // No destructive alert => no Confirm button to click a second time.
       expect(screen.queryByTestId('refund-form-error')).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('RefundForm — Track B: the waived-refund toast tells the truth', () => {
+  // The two waiver branches are the ONLY admin-visible signal that a refund
+  // settled with no §86/10 credit note. A regression in the discriminator
+  // (`creditNote?.kind === 'waived'` / `creditNoteWaiverReason`) would silently
+  // fall through to the plain credit-note toast — "credit note issued once it
+  // settles" — on a refund that will NEVER get one. next-intl gates key
+  // existence at build time, so the risk here is branch SELECTION, which only a
+  // render test catches.
+  const asMock = (f: unknown) => f as ReturnType<typeof vi.fn>;
+
+  function renderWith(onClose: () => void) {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <AlertDialog open onOpenChange={() => undefined}>
+          <RefundForm
+            paymentId="pay_1"
+            memberCompanyName="Acme AB"
+            remainingRefundableSatang={535000n}
+            currencyCode="THB"
+            onClose={onClose}
+          />
+        </AlertDialog>
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('201 synchronous WAIVED → warning toast (not the credit-note success), persistent + dismissible', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        refund: {
+          status: 'succeeded',
+          creditNote: { kind: 'waived', reason: 'section_105_receipt' },
+        },
+      }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    try {
+      renderWith(onClose);
+      await submitPartialRefund();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      // The caution toast fired…
+      expect(asMock(toast.warning)).toHaveBeenCalledTimes(1);
+      const [title, opts] = asMock(toast.warning).mock.calls[0] as [
+        string,
+        { description?: string; duration?: number; closeButton?: boolean },
+      ];
+      expect(title).toBe(enMessages.admin.refund.success.waivedToast);
+      expect(opts.description).toBe(
+        enMessages.admin.refund.success.waivedReason.section105Receipt,
+      );
+      // Persistent, and dismissible — the a11y fix (WCAG 2.1.1).
+      expect(opts.duration).toBe(Infinity);
+      expect(opts.closeButton).toBe(true);
+      // …and the credit-note "issued" toast did NOT.
+      expect(asMock(toast.success)).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('202 pending WAIVED → pending-waived warning (never "the credit note is issued once it settles")', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 202,
+      json: async () => ({
+        refund: { status: 'pending', creditNoteWaiverReason: 'invoice_voided' },
+      }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    try {
+      renderWith(onClose);
+      await submitPartialRefund();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(asMock(toast.warning)).toHaveBeenCalledTimes(1);
+      const [title, opts] = asMock(toast.warning).mock.calls[0] as [
+        string,
+        { description?: string; closeButton?: boolean },
+      ];
+      expect(title).toBe(enMessages.admin.refund.success.pendingWaivedToast);
+      expect(opts.description).toBe(
+        enMessages.admin.refund.success.waivedReason.invoiceVoided,
+      );
+      expect(opts.closeButton).toBe(true);
+      // The plain pending toast, whose copy promises a credit note, must NOT fire.
+      expect(asMock(toast.success)).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('201 issued (control) → the credit-note success toast, NOT a warning', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        refund: {
+          status: 'succeeded',
+          creditNote: { kind: 'issued', id: 'cn_1', number: 'TC-2026-000001' },
+          creditNoteNumber: 'TC-2026-000001',
+        },
+      }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    try {
+      renderWith(onClose);
+      await submitPartialRefund();
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      // Without this control, an implementation that warned on EVERY refund
+      // would pass both waived cases above.
+      expect(asMock(toast.success)).toHaveBeenCalledTimes(1);
+      expect(asMock(toast.warning)).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }
