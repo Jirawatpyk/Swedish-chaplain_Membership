@@ -3917,7 +3917,8 @@
       },
       "success": {
         "toast": "Refund processed — credit note {number} issued and emailed to member",
-        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles."
+        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles.",
+        "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed."
       },
       "error": {
         "title": "Couldn't issue the refund",
@@ -3931,6 +3932,11 @@
         "f4_preflight_invalid_status": "This invoice can no longer be credited, so it can't be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
         "f4_preflight_not_creditable": "This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it needs a manual process — please contact finance.",
         "f4_preflight_receipt_not_rendered": "The receipt for this payment is still being generated. No money was moved — try the refund again in a few minutes.",
+        "tenant_settings_incomplete": "Payment settings are incomplete, so refunds cannot be processed. No money was moved. Ask an administrator to complete the payment settings.",
+        "invalid_input": "The refund request was rejected as invalid. No money was moved. Check the amount and reason, then try again.",
+        "rate_limited": "Too many refund attempts. No money was moved — wait a moment and try again.",
+        "f4_bridge_deferred": "Refund sent — the money is on its way back to the member. The credit note is still being issued and completes automatically. No action is needed, and you must not retry this refund.",
+        "refund_needs_reconciliation": "An earlier refund on this payment settled at the payment processor but was recorded as failed, so further refunds are blocked until it has been reconciled manually. No money was moved by this attempt. Contact support to reconcile it.",
         "internal_error": "An unexpected error occurred. Please try again."
       },
       "cmdk": {

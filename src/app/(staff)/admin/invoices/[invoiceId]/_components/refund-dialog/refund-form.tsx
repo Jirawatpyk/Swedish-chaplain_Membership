@@ -190,6 +190,23 @@ export function RefundForm({
           error?: { code?: string };
         };
         const code = body.error?.code ?? 'internal_error';
+        // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
+        // only the credit note is outstanding, and the stale-pending sweep
+        // retries it automatically. The generic branch below would render it
+        // inside a destructive InlineAlert titled "Couldn't issue the refund"
+        // (`error.title`), which is false and is exactly the read that made an
+        // admin click again and double-refund the member. Terminate the dialog
+        // the same way the 202 pending path does — no retry affordance at all.
+        // `admin.refund.error.f4_bridge_deferred` is still REQUIRED to exist
+        // (the check:i18n route-code gate enforces it) as the fallback if this
+        // special case is ever removed.
+        if (code === 'f4_bridge_deferred') {
+          toast.success(t('success.deferredToast'));
+          succeeded = true;
+          onClose();
+          router.refresh();
+          return;
+        }
         // Surface the localised message inline + as a toast so the
         // admin sees it whether their focus is in or out of the
         // dialog.

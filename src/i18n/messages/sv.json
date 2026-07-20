@@ -3917,7 +3917,8 @@
       },
       "success": {
         "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen",
-        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts."
+        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts.",
+        "deferredToast": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan slutförs automatiskt; ingen åtgärd behövs."
       },
       "error": {
         "title": "Det gick inte att utfärda återbetalningen",
@@ -3931,6 +3932,11 @@
         "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha makulerats eller redan krediterats i sin helhet.",
         "f4_preflight_not_creditable": "Denna betalning kvitterades utan fakturaunderlag för moms, så ingen kreditnota kan utfärdas mot den. Inga pengar flyttades. Återbetalning kräver manuell hantering — kontakta ekonomiavdelningen.",
         "f4_preflight_receipt_not_rendered": "Kvittot för denna betalning håller fortfarande på att skapas. Inga pengar flyttades — försök återbetala igen om några minuter.",
+        "tenant_settings_incomplete": "Betalningsinställningarna är ofullständiga, så återbetalningar kan inte behandlas. Inga pengar flyttades. Be en administratör komplettera betalningsinställningarna.",
+        "invalid_input": "Återbetalningsbegäran avvisades som ogiltig. Inga pengar flyttades. Kontrollera belopp och orsak och försök igen.",
+        "rate_limited": "För många återbetalningsförsök. Inga pengar flyttades — vänta en stund och försök igen.",
+        "f4_bridge_deferred": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan utfärdas fortfarande och slutförs automatiskt. Ingen åtgärd behövs, och du får inte försöka återbetala igen.",
+        "refund_needs_reconciliation": "En tidigare återbetalning på denna betalning genomfördes hos betalningsleverantören men registrerades som misslyckad, så fler återbetalningar är blockerade tills den har stämts av manuellt. Inga pengar flyttades av detta försök. Kontakta supporten för avstämning.",
         "internal_error": "Ett oväntat fel uppstod. Försök igen."
       },
       "cmdk": {
