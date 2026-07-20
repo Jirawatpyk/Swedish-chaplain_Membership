@@ -73,6 +73,8 @@ export const parseRefundId = _refundIdHelpers.parse;
 
 import type { PaymentId } from './payment';
 import type { Satang } from '@/lib/money';
+// Track B — waiver vocabulary owned by F4 Domain, via the published barrel.
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 
 export interface Refund {
   readonly id: RefundId;
@@ -88,7 +90,17 @@ export interface Refund {
 
   readonly processorRefundId: string | null; // re_…; set once Stripe accepts (may be non-null while status='pending')
   readonly failureReasonCode: string | null; // NOT NULL iff status='failed'
-  readonly creditNoteId: string | null;      // F4 CN id; NOT NULL iff status='succeeded'
+  readonly creditNoteId: string | null;      // F4 CN id; set iff the refund is documented BY a credit note
+  /**
+   * Track B — waiver INTENT, pinned in Phase A. Non-null when F4 owes no
+   * §86/10 for this refund (voided invoice, or a §105 receipt).
+   */
+  readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+  /**
+   * Track B — waiver COMPLETION, stamped on the succeeded flip. Mutually
+   * exclusive with `creditNoteId` (DB CHECK `refunds_cn_xor_waived`).
+   */
+  readonly creditNoteWaivedAt: Date | null;
 
   readonly initiatedAt: Date;
   readonly completedAt: Date | null;         // NULL iff status='pending'
@@ -130,7 +142,8 @@ export const isLegalRefundTransition = _refundStateMachine.isLegalTransition;
 
 export type RefundCompletenessReason =
   | 'succeeded_missing_processor_refund_id'
-  | 'succeeded_missing_credit_note_id'
+  | 'succeeded_missing_credit_note_documentation'
+  | 'waived_without_reason'
   | 'failed_missing_failure_reason_code'
   | 'pending_unexpected_completed_at'
   | 'terminal_missing_completed_at';
@@ -157,8 +170,15 @@ export function assertRefundComplete(
     if (r.processorRefundId === null) {
       return { ok: false, reason: 'succeeded_missing_processor_refund_id' };
     }
-    if (r.creditNoteId === null) {
-      return { ok: false, reason: 'succeeded_missing_credit_note_id' };
+    // Track B — a succeeded refund must be DOCUMENTED, by a credit note or by
+    // an enumerated waiver. The invariant is strengthened, not relaxed: there
+    // is still no state in which a succeeded refund carries neither. Mirrors
+    // the DB's `refunds_succeeded_iff_documented`.
+    if (r.creditNoteId === null && r.creditNoteWaivedAt === null) {
+      return { ok: false, reason: 'succeeded_missing_credit_note_documentation' };
+    }
+    if (r.creditNoteWaivedAt !== null && r.creditNoteWaiverReason === null) {
+      return { ok: false, reason: 'waived_without_reason' };
     }
     return { ok: true };
   }

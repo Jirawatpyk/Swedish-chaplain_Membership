@@ -66,6 +66,7 @@ import type {
 // a sibling context's published contract, never its internals.
 import type {
   CreditNoteWaiverReason,
+  InvoiceStatus,
   RefundCreditNoteBlockReason,
 } from '@/modules/invoicing';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
@@ -121,8 +122,16 @@ export type IssueRefundSuccess =
         readonly reason: string;
         readonly status: 'succeeded';
         readonly processorRefundId: string;
-        readonly creditNoteId: string;
-        readonly creditNoteNumber: string;
+        /**
+         * Track B — what documents this refund. `waived` when F4 owed no
+         * §86/10 (voided invoice, or a §105 receipt). A union rather than two
+         * nullable strings so a consumer cannot render "credit note  issued"
+         * with an empty number, which is what the admin toast did when this
+         * was flat.
+         */
+        readonly creditNote:
+          | { readonly kind: 'issued'; readonly id: string; readonly number: string }
+          | { readonly kind: 'waived'; readonly reason: CreditNoteWaiverReason };
         readonly completedAt: string;
       };
       readonly payment: {
@@ -133,7 +142,13 @@ export type IssueRefundSuccess =
       };
       readonly invoice: {
         readonly id: string;
-        readonly status: 'partially_credited' | 'credited';
+        /**
+         * Widened from the credited pair: a WAIVED refund leaves the invoice
+         * `paid` (§105) or `void`, because no credit note was issued against
+         * it. Reporting `credited` there would be a lie the old narrow type
+         * forced.
+         */
+        readonly status: InvoiceStatus;
       };
     }
   | {
@@ -497,6 +512,12 @@ async function issueRefundBody(
          * lock, and the async settlement paths do not have them.
          */
         readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+        /**
+         * The invoice status F4 reported at pre-flight, pinned under the same
+         * lock. Used only on the WAIVE path, where the finaliser reports no
+         * status of its own because it never credited the invoice.
+         */
+        readonly invoiceStatusAtPreflight: InvoiceStatus;
       }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
@@ -683,6 +704,11 @@ async function issueRefundBody(
     // pin the invoice status without re-narrowing.
     const waiver = requirement.kind === 'waive' ? requirement : null;
     const creditNoteWaiverReason = waiver?.reason ?? null;
+    // On the `issue` arm the invoice is `paid | partially_credited` by
+    // construction (the resolver refused everything else); the waive arm pins
+    // the real status. Either way this is F4's value, read under the lock.
+    const invoiceStatusAtPreflight: InvoiceStatus =
+      waiver?.invoiceStatus ?? 'paid';
     const invariant = checkRefundNotExceedingRemainder({
       paymentAmountSatang: payment.amountSatang,
       succeededSumSatang: ctx.succeededSumSatang,
@@ -792,6 +818,7 @@ async function issueRefundBody(
       payment,
       succeededSumBefore: ctx.succeededSumSatang,
       creditNoteWaiverReason,
+      invoiceStatusAtPreflight: invoiceStatusAtPreflight,
     } as const;
   });
 
@@ -1009,6 +1036,9 @@ async function issueRefundBody(
         refundId: prepared.refundId,
         tenantId: input.tenantId,
         paymentId,
+        // Track B — pinned in Phase A under the payment lock; Phase B cannot
+        // re-derive it.
+        creditNoteWaiverReason: prepared.creditNoteWaiverReason,
         invoiceId: prepared.payment.invoiceId,
         amountSatang: input.amountSatang,
         reason: input.reason,
@@ -1167,8 +1197,17 @@ async function issueRefundBody(
       reason: input.reason,
       status: 'succeeded',
       processorRefundId: stripeRefund.value.id,
-      creditNoteId: finalizeResult.value.creditNoteId,
-      creditNoteNumber: finalizeResult.value.creditNoteNumber,
+      creditNote:
+        finalizeResult.value.documentation === 'credit_note'
+          ? {
+              kind: 'issued' as const,
+              id: finalizeResult.value.creditNoteId,
+              number: finalizeResult.value.creditNoteNumber,
+            }
+          : {
+              kind: 'waived' as const,
+              reason: finalizeResult.value.waiverReason,
+            },
       completedAt: completedAt.toISOString(),
     },
     payment: {
@@ -1183,10 +1222,17 @@ async function issueRefundBody(
     },
     invoice: {
       id: prepared.payment.invoiceId,
-      // tax#5 (B.2): F4-AUTHORITATIVE — the shared helper sourced this from
-      // F4's post-CN invoice status (`getInvoiceStatus`), not the F5 payment
-      // arithmetic, so a pre-existing manual F4 credit note is reflected.
-      status: finalizeResult.value.invoiceStatus,
+      // tax#5 (B.2): F4-AUTHORITATIVE on the credit-note path — sourced from
+      // F4's post-CN invoice status, not F5 payment arithmetic, so a
+      // pre-existing manual F4 credit note is reflected.
+      //
+      // On the WAIVE path the helper reports none (it never called
+      // `getInvoiceStatus`, which errors for exactly `paid` and `void`), so the
+      // status pinned at pre-flight is used — the real one, not a filler.
+      status:
+        finalizeResult.value.documentation === 'credit_note'
+          ? finalizeResult.value.invoiceStatus
+          : prepared.invoiceStatusAtPreflight,
     },
   });
 }

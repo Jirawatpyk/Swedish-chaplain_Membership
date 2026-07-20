@@ -33,6 +33,15 @@ interface UpdateRefundStatusBase {
   readonly processorRefundId?: string | null;
   readonly failureReasonCode?: string | null;
   readonly creditNoteId?: string | null;
+  /**
+   * Track B — stamped ONLY on the succeeded flip of a refund that owes no
+   * §86/10 ใบลดหนี้. Mutually exclusive with `creditNoteId` (DB CHECK
+   * `refunds_cn_xor_waived`), and it is this timestamp — never the waiver
+   * REASON written at insert — that the completeness CHECK keys on. See
+   * migration 0268 for why: reason-keying makes an intermediate `pending` row
+   * violate the biconditional after Stripe has already moved the money.
+   */
+  readonly creditNoteWaivedAt?: Date | null;
   readonly completedAt: Date;
   /**
    * Optional optimistic-concurrency guard (S5 / RR-1). When set, the

@@ -352,8 +352,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             reason: v.refund.reason,
             status: v.refund.status,
             processorRefundId: v.refund.processorRefundId,
-            creditNoteId: v.refund.creditNoteId,
-            creditNoteNumber: v.refund.creditNoteNumber,
+            // Track B — a discriminated shape, so a client cannot render
+            // "credit note  issued" with an empty number. The legacy flat
+            // fields are still emitted on the issued path for backwards
+            // compatibility with anything reading them; they are NULL when the
+            // refund carries a waiver instead.
+            creditNote: v.refund.creditNote,
+            creditNoteId:
+              v.refund.creditNote.kind === 'issued' ? v.refund.creditNote.id : null,
+            creditNoteNumber:
+              v.refund.creditNote.kind === 'issued'
+                ? v.refund.creditNote.number
+                : null,
             completedAt: v.refund.completedAt,
           },
           payment: {

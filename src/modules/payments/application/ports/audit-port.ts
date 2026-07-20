@@ -331,8 +331,17 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
         invoice_next_status: 'partially_credited' | 'credited';
@@ -354,8 +363,17 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
         invoice_next_status: 'partially_credited' | 'credited';
@@ -386,8 +404,17 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
         invoice_next_status: 'partially_credited' | 'credited';

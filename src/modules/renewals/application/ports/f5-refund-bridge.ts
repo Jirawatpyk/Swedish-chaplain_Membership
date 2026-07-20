@@ -48,8 +48,19 @@ export type IssueRefundForInvoiceResult =
   | {
       readonly status: 'refunded';
       readonly refundId: string;
-      readonly creditNoteId: string;
-      readonly creditNoteNumber: string;
+      /**
+       * Track B — NULL when the refund legitimately owed NO §86/10 ใบลดหนี้
+       * (the invoice was voided, or the buyer holds a §105 receipt). The money
+       * DID go back; there is simply no credit note to reference.
+       *
+       * Consumers must not read `creditNoteId === null` as "nothing was
+       * refunded" — see the escalation gate in `admin-reject-reactivation`,
+       * which keys on the refund OUTCOME for exactly this reason. A waived
+       * refund is in fact the class MOST in need of human review, because it
+       * creates a manual output-VAT obligation.
+       */
+      readonly creditNoteId: string | null;
+      readonly creditNoteNumber: string | null;
     }
   | {
       readonly status: 'no_payment_found';

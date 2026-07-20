@@ -135,8 +135,9 @@ export type ProcessRefundUpdatedOutcome =
   | {
       readonly kind: 'reconciled_succeeded';
       readonly invoiceId: string;
-      readonly creditNoteId: string;
-      readonly creditNoteNumber: string;
+      /** Track B — NULL when the refund owed no §86/10 (waived). */
+      readonly creditNoteId: string | null;
+      readonly creditNoteNumber: string | null;
     }
   | { readonly kind: 'reconciled_failed'; readonly invoiceId: string }
   | { readonly kind: 'already_finalized'; readonly invoiceId: string }
@@ -487,6 +488,13 @@ export async function processRefundUpdated(
             invoiceId: refund.invoiceId,
             amountSatang: refund.amountSatang,
             reason: refund.reason,
+            // Track B — read off the refund row, which pinned it in Phase A.
+            // REQUIRED by the finaliser, deliberately: defaulting it to `null`
+            // here would route a waived refund into the credit-note bridge,
+            // which refuses it, leaving a Stripe-settled refund `pending`
+            // forever and blocking every future refund on the payment. That is
+            // the F-3 shape, recreated. A compile error is the cheaper failure.
+            creditNoteWaiverReason: refund.creditNoteWaiverReason,
             processorRefundId: input.processorRefundId,
             actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
             requestId: input.requestId,
@@ -514,8 +522,15 @@ export async function processRefundUpdated(
           return {
             kind: 'reconciled_succeeded',
             invoiceId: refund.invoiceId,
-            creditNoteId: finalized.value.creditNoteId,
-            creditNoteNumber: finalized.value.creditNoteNumber,
+            // NULL on a waived refund — no credit note was owed.
+            creditNoteId:
+              finalized.value.documentation === 'credit_note'
+                ? finalized.value.creditNoteId
+                : null,
+            creditNoteNumber:
+              finalized.value.documentation === 'credit_note'
+                ? finalized.value.creditNoteNumber
+                : null,
           };
         }
 

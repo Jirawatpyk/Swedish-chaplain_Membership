@@ -29,6 +29,7 @@ import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
 import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 
 // H-9 / H-10 (review 2026-04-27): defensive boundary guards mirroring
@@ -80,6 +81,9 @@ function toRefundDomain(row: RefundRow): Refund {
     processorRefundId: row.processorRefundId,
     failureReasonCode: row.failureReasonCode,
     creditNoteId: row.creditNoteId,
+    creditNoteWaiverReason:
+      row.creditNoteWaiverReason as CreditNoteWaiverReason | null,
+    creditNoteWaivedAt: row.creditNoteWaivedAt,
     initiatedAt: row.initiatedAt,
     completedAt: row.completedAt,
     initiatorUserId: row.initiatorUserId,
@@ -156,6 +160,12 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       }
       if (input.creditNoteId !== undefined) {
         patch.creditNoteId = input.creditNoteId;
+      }
+      // Track B — the waiver COMPLETION stamp, written only on the succeeded
+      // flip of a refund that owes no §86/10. Mutually exclusive with
+      // `creditNoteId` at the DB level (`refunds_cn_xor_waived`).
+      if (input.creditNoteWaivedAt !== undefined) {
+        patch.creditNoteWaivedAt = input.creditNoteWaivedAt;
       }
 
       const whereClauses = [

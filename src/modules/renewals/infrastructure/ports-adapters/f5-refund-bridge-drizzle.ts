@@ -164,8 +164,19 @@ export const f5RefundBridge: F5RefundBridge = {
     return {
       status: 'refunded',
       refundId: refundResult.value.refund.id,
-      creditNoteId: refundResult.value.refund.creditNoteId,
-      creditNoteNumber: refundResult.value.refund.creditNoteNumber,
+      // Track B — NULL when the refund owed no §86/10. F8 must not treat that
+      // as "no payment was refunded": the money DID go back, there is simply
+      // no credit note to reference. See the escalation gate in
+      // admin-reject-reactivation, which keys on the refund OUTCOME rather
+      // than on credit-note presence for exactly this reason.
+      creditNoteId:
+        refundResult.value.refund.creditNote.kind === 'issued'
+          ? refundResult.value.refund.creditNote.id
+          : null,
+      creditNoteNumber:
+        refundResult.value.refund.creditNote.kind === 'issued'
+          ? refundResult.value.refund.creditNote.number
+          : null,
     };
   },
 

@@ -493,6 +493,13 @@ export async function sweepStalePendingRefunds(
               invoiceId: locked.invoiceId,
               amountSatang: locked.amountSatang,
               reason: locked.reason,
+              // Track B — off the locked row, which pinned it in Phase A.
+              // REQUIRED by the finaliser rather than optional: a silent `null`
+              // default here would send a waived refund into the credit-note
+              // bridge, which refuses it, stranding a Stripe-settled refund
+              // `pending` forever — the exact F-3 shape, recreated by the sweep
+              // that exists to clean F-3 up.
+              creditNoteWaiverReason: locked.creditNoteWaiverReason,
               processorRefundId,
               // SECURITY / FK: the F4 credit-note `issued_by_user_id` FKs to
               // users(id); the sweep is unattended so it must NOT attribute

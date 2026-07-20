@@ -60,6 +60,8 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { Satang } from '@/lib/money';
+// Track B — the waiver vocabulary is F4 Domain's, consumed through the barrel.
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import type {
   AuditPort,
   ClockPort,
@@ -99,6 +101,19 @@ export interface FinalizeSucceededRefundInput {
   /** Stripe `re_…` id — re-affirmed on the refund row + carried in the audit. */
   readonly processorRefundId: string;
   /**
+   * Track B — non-null when F4 owes NO §86/10 ใบลดหนี้ for this refund (the
+   * invoice was voided, or the buyer holds a §105 receipt). Read off the
+   * refund row, which pinned it in Phase A.
+   *
+   * REQUIRED, not optional, and deliberately so: every caller must state the
+   * answer. Defaulting it to `null` would silently route a waived refund into
+   * the credit-note bridge, which refuses it — and a refund that Stripe has
+   * already settled then stays `pending` forever, blocking every future refund
+   * on the payment. That is the F-3 shape this remediation exists to remove,
+   * so it is a compile error instead.
+   */
+  readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+  /**
    * A.11 DUAL-MODE discriminator for the payment flip:
    *
    *   ADMIN mode (A.9 `issueRefund`) — PROVIDED. The caller computed this
@@ -122,11 +137,31 @@ export interface FinalizeSucceededRefundInput {
   readonly path: FinalizeSucceededRefundPath;
 }
 
-export interface FinalizeSucceededRefundResult {
-  readonly creditNoteId: string;
-  readonly creditNoteNumber: string;
+/**
+ * Track B — a DISCRIMINATED result, because a waived refund has no credit note
+ * and did not credit the invoice.
+ *
+ * The waived arm deliberately carries no `invoiceStatus`. Reporting one would
+ * mean calling `getInvoiceStatus`, which narrows to the credited pair and
+ * errors `unexpected_status` for exactly `paid` and `void` — the two statuses
+ * a waive produces. The old flat shape would have forced a filler value, and
+ * the filler would have said `credited` for an invoice carrying zero credit
+ * notes, on every waived refund.
+ */
+export type FinalizeSucceededRefundResult =
+  | (FinalizeSucceededRefundCommon & {
+      readonly documentation: 'credit_note';
+      readonly creditNoteId: string;
+      readonly creditNoteNumber: string;
+      readonly invoiceStatus: 'partially_credited' | 'credited';
+    })
+  | (FinalizeSucceededRefundCommon & {
+      readonly documentation: 'waived';
+      readonly waiverReason: CreditNoteWaiverReason;
+    });
+
+interface FinalizeSucceededRefundCommon {
   readonly paymentNextStatus: 'partially_refunded' | 'refunded';
-  readonly invoiceStatus: 'partially_credited' | 'credited';
   /**
    * A.9 review fix (#1) — `true` when the refund-flip's
    * `expectedCurrentStatus='pending'` guard matched ZERO rows (a sibling
@@ -185,50 +220,86 @@ export async function finalizeSucceededRefund(
   tx: unknown,
   input: FinalizeSucceededRefundInput,
 ): Promise<Result<FinalizeSucceededRefundResult, FinalizeSucceededRefundError>> {
-  // --- Step 1: F4 credit note (idempotent per (tenant, source_refund_id)) ---
-  // F4 manages its own tx; the passed `tx` is idle for the duration of
-  // this external call (PDF render + Blob upload). Acceptable: refunds
-  // are low-frequency (admin 20/5min) and A.11 requires this call inside
-  // the same `tx` window as `markProcessed` for atomicity.
-  const cnResult = await deps.invoicingBridge.issueCreditNoteFromRefund({
-    tenantId: input.tenantId,
-    invoiceId: input.invoiceId,
-    refundId: input.refundId,
-    amountSatang: input.amountSatang,
-    reason: input.reason,
-    actorUserId: input.actorUserId,
-    requestId: input.requestId,
-  });
-  if (!cnResult.ok) {
-    return err({ code: cnResult.error.code, detail: cnResult.error.detail });
-  }
+  // Track B — WHAT DOCUMENTS THIS REFUND. Either F4 issues a §86/10 ใบลดหนี้,
+  // or none is owed and the waiver is stamped instead. The DB enforces that it
+  // is exactly one of the two (`refunds_cn_xor_waived`).
+  //
+  // The waive path skips BOTH external calls below, and skipping the SECOND is
+  // not an optimisation — `getInvoiceStatus` narrows to the credited pair and
+  // errors `unexpected_status` for exactly `paid` and `void`, which are the two
+  // statuses the waive arm produces. Calling it would log an ERROR on the
+  // designed happy path and then report `credited` for an invoice carrying zero
+  // credit notes, on 100% of waived refunds.
+  const waiverReason = input.creditNoteWaiverReason;
 
-  // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) ---------------
-  // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
-  // flipped the invoice to `credited`/`partially_credited`). Read that
-  // authoritative status HERE — threading the caller's `tx` (B.1 lesson: no
-  // nested pooled connection while row locks are held; the finalise tx is READ
-  // COMMITTED so it sees F4's just-committed flip). We source the status from
-  // F4 instead of projecting the F5 payment status because the payment status
-  // is blind to a pre-existing MANUAL F4 credit note (see `resolveInvoiceStatus`).
-  const f4StatusResult = await deps.invoicingBridge.getInvoiceStatus({
-    tenantId: input.tenantId,
-    invoiceId: input.invoiceId,
-    externalTx: tx,
-  });
-  // Resolve the reported invoice status: F4's authoritative value when the read
-  // succeeded, else the payment-derived projection. The fallback keeps an
-  // already-succeeded refund from being failed over a transient F4 read hiccup;
-  // the DB invoice status is F4-authoritative regardless — this envelope field
-  // is a display hint consumed only by the admin caller (webhook/sweep ignore it).
-  const resolveInvoiceStatus = (
+  let documentation:
+    | { readonly kind: 'credit_note'; readonly id: string; readonly number: string }
+    | { readonly kind: 'waived'; readonly reason: CreditNoteWaiverReason };
+
+  // Resolves the invoice status reported in the ADMIN envelope. On the
+  // credit-note path it prefers F4's authoritative post-CN value and falls back
+  // to the payment-derived projection so a transient read hiccup cannot fail an
+  // already-succeeded refund. On the WAIVE path it is never called — that arm
+  // returns no `invoiceStatus` at all, because the invoice was not credited.
+  let resolveInvoiceStatus: (
     fallbackNextStatus: 'partially_refunded' | 'refunded',
-  ): 'partially_credited' | 'credited' =>
-    f4StatusResult.ok
-      ? f4StatusResult.value
-      : fallbackNextStatus === 'refunded'
-        ? 'credited'
-        : 'partially_credited';
+  ) => 'partially_credited' | 'credited';
+
+  if (waiverReason === null) {
+    // --- Step 1: F4 credit note (idempotent per (tenant, source_refund_id)) ---
+    // F4 manages its own tx; the passed `tx` is idle for the duration of
+    // this external call (PDF render + Blob upload). Acceptable: refunds
+    // are low-frequency (admin 20/5min) and A.11 requires this call inside
+    // the same `tx` window as `markProcessed` for atomicity.
+    const cnResult = await deps.invoicingBridge.issueCreditNoteFromRefund({
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+      refundId: input.refundId,
+      amountSatang: input.amountSatang,
+      reason: input.reason,
+      actorUserId: input.actorUserId,
+      requestId: input.requestId,
+    });
+    if (!cnResult.ok) {
+      return err({ code: cnResult.error.code, detail: cnResult.error.detail });
+    }
+    documentation = {
+      kind: 'credit_note',
+      id: cnResult.value.creditNoteId,
+      number: cnResult.value.creditNoteNumber,
+    };
+
+    // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) -------------
+    // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
+    // flipped the invoice to `credited`/`partially_credited`). Read that
+    // authoritative status HERE — threading the caller's `tx` (B.1 lesson: no
+    // nested pooled connection while row locks are held; the finalise tx is
+    // READ COMMITTED so it sees F4's just-committed flip). We source the status
+    // from F4 instead of projecting the F5 payment status because the payment
+    // status is blind to a pre-existing MANUAL F4 credit note.
+    const f4StatusResult = await deps.invoicingBridge.getInvoiceStatus({
+      tenantId: input.tenantId,
+      invoiceId: input.invoiceId,
+      externalTx: tx,
+    });
+    resolveInvoiceStatus = (fallbackNextStatus) =>
+      f4StatusResult.ok
+        ? f4StatusResult.value
+        : fallbackNextStatus === 'refunded'
+          ? 'credited'
+          : 'partially_credited';
+  } else {
+    documentation = { kind: 'waived', reason: waiverReason };
+    // Unreachable on this arm — the waived result carries no `invoiceStatus`.
+    // Present only so the binding is definitely assigned; if a future edit
+    // makes the waive path report a status, that is a decision to take
+    // deliberately, not to inherit from a filler value.
+    resolveInvoiceStatus = () => {
+      throw new Error(
+        'finalizeSucceededRefund: waived refunds report no invoice status',
+      );
+    };
+  }
 
   const completedAt = new Date(deps.clock.nowMs());
 
@@ -242,7 +313,10 @@ export async function finalizeSucceededRefund(
     tenantId: input.tenantId,
     nextStatus: 'succeeded',
     processorRefundId: input.processorRefundId,
-    creditNoteId: cnResult.value.creditNoteId,
+    // Exactly ONE instrument documents the refund; the DB enforces the XOR.
+    ...(documentation.kind === 'credit_note'
+      ? { creditNoteId: documentation.id }
+      : { creditNoteWaivedAt: completedAt }),
     completedAt,
     expectedCurrentStatus: 'pending',
   });
@@ -261,12 +335,20 @@ export async function finalizeSucceededRefund(
     // is an unconsumed, type-only default on that path.
     const reportedNextStatus = input.paymentNextStatus ?? 'refunded';
     return ok({
-      creditNoteId: cnResult.value.creditNoteId,
-      creditNoteNumber: cnResult.value.creditNoteNumber,
+      ...(documentation.kind === 'credit_note'
+        ? {
+            documentation: 'credit_note' as const,
+            creditNoteId: documentation.id,
+            creditNoteNumber: documentation.number,
+            // tax#5 (B.2) — F4-authoritative (the sibling's CN already flipped
+            // the invoice); fall back to the payment projection on a read error.
+            invoiceStatus: resolveInvoiceStatus(reportedNextStatus),
+          }
+        : {
+            documentation: 'waived' as const,
+            waiverReason: documentation.reason,
+          }),
       paymentNextStatus: reportedNextStatus,
-      // tax#5 (B.2) — F4-authoritative (the sibling's CN already flipped the
-      // invoice); fall back to the payment projection only if the read errored.
-      invoiceStatus: resolveInvoiceStatus(reportedNextStatus),
       siblingWon: true,
     });
   }
@@ -353,15 +435,27 @@ export async function finalizeSucceededRefund(
     requestId: input.requestId,
     eventType: 'refund_succeeded',
     actorUserId: input.actorUserId,
-    summary: `Refund ${input.refundId} succeeded — credit note ${cnResult.value.creditNoteNumber} issued for ${input.amountSatang.toString()} satang`,
+    summary:
+      documentation.kind === 'credit_note'
+        ? `Refund ${input.refundId} succeeded — credit note ${documentation.number} issued for ${input.amountSatang.toString()} satang`
+        : // Deliberately does NOT contain the words "credit note … issued".
+          // This summary is what a human reads in the audit viewer, and on this
+          // path no credit note exists; the waiver ground is the fact worth
+          // surfacing, and `refund_credit_note_waived` carries the detail.
+          `Refund ${input.refundId} succeeded — no credit note owed (${documentation.reason}) for ${input.amountSatang.toString()} satang`,
     payload: {
       path: input.path,
       refund_id: input.refundId,
       payment_id: input.paymentId,
       invoice_id: input.invoiceId,
       processor_refund_id: input.processorRefundId,
-      credit_note_id: cnResult.value.creditNoteId,
-      credit_note_number: cnResult.value.creditNoteNumber,
+      credit_note_id:
+        documentation.kind === 'credit_note' ? documentation.id : null,
+      credit_note_number:
+        documentation.kind === 'credit_note' ? documentation.number : null,
+      ...(documentation.kind === 'waived'
+        ? { credit_note_waiver_reason: documentation.reason }
+        : {}),
       amount_satang: input.amountSatang.toString(),
       payment_next_status: resolvedNextStatus,
       invoice_next_status: invoiceStatus,
@@ -370,10 +464,18 @@ export async function finalizeSucceededRefund(
   });
 
   return ok({
-    creditNoteId: cnResult.value.creditNoteId,
-    creditNoteNumber: cnResult.value.creditNoteNumber,
+    ...(documentation.kind === 'credit_note'
+      ? {
+          documentation: 'credit_note' as const,
+          creditNoteId: documentation.id,
+          creditNoteNumber: documentation.number,
+          invoiceStatus,
+        }
+      : {
+          documentation: 'waived' as const,
+          waiverReason: documentation.reason,
+        }),
     paymentNextStatus: resolvedNextStatus,
-    invoiceStatus,
     siblingWon: false,
   });
 }
