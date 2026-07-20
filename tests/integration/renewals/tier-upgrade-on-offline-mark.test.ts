@@ -56,11 +56,12 @@
  *      row→applied, both audits emitted) AND still completes the cycle + creates
  *      the next cycle.
  *
- * NOTE: the next cycle inherits the prior cycle's `planIdAtCycleStart`
- * regardless of the tier-upgrade (apply does NOT flip the cycle's plan nor
- * `members.plan_id` — see `apply-pending-tier-upgrade.ts` docstring). So the
- * end-state asserted here is the SUGGESTION + F2 plan-change lifecycle, NOT a
- * "next cycle at upgraded tier" — the original brief's phrasing.
+ * NOTE: this file asserts the SUGGESTION + F2 plan-change lifecycle only
+ * (suggestion→applied, F2 row→applied, both audits). Package B1 now ALSO flips
+ * `members.plan_id` in the apply so the next cycle follows the upgraded tier —
+ * that plan-flip → next-cycle-billing reach is pinned separately by
+ * tier-upgrade-reaches-billing.test.ts (both rails). This file does not
+ * re-assert it.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';

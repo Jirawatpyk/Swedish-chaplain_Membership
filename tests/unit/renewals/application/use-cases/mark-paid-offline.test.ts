@@ -202,6 +202,18 @@ function fakeDeps(
     planId: (cycle?.planIdAtCycleStart as string) ?? 'plan-x',
     isArchived: false,
   }));
+  // Package B1 — tier-upgrade apply flips members.plan_id via this writer.
+  // Default no-op echo (the apply path only runs when a pending suggestion is
+  // driven; unrelated tests never touch it).
+  const memberPlanWriterMock = vi.fn(
+    async (
+      _tx: unknown,
+      _tenantId: string,
+      _memberId: string,
+      planId: string,
+      planYear: number,
+    ) => ({ planId, planYear }),
+  );
   const planChangeBillingEffectEmitMock = vi.fn(async () => {});
   // 070 Item D — tier-upgrade apply (in-tx) seam. Default: no pending
   // suggestion for the cycle, so the apply is a clean no-op (the existing
@@ -330,6 +342,10 @@ function fakeDeps(
     memberPlanLookup: {
       loadMemberPlanInTx: loadMemberPlanInTxMock,
     } as unknown as RenewalsDeps['memberPlanLookup'],
+    // Package B1 — tier-upgrade apply flips members.plan_id via this writer.
+    memberPlanWriter: {
+      writePlanIdInTx: memberPlanWriterMock,
+    } as unknown as RenewalsDeps['memberPlanWriter'],
     planChangeBillingEffectAudit: {
       emitInTx: planChangeBillingEffectEmitMock,
     } as unknown as RenewalsDeps['planChangeBillingEffectAudit'],

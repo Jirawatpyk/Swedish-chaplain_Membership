@@ -151,7 +151,13 @@ export type ConfirmRenewalError =
 export interface ConfirmRenewalDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'clock' | 'memberRenewalFlagsRepo'
+    | 'tenant'
+    | 'cyclesRepo'
+    | 'auditEmitter'
+    | 'clock'
+    | 'memberRenewalFlagsRepo'
+    // Package B1 — persist the member's plan pick to members.plan_id.
+    | 'memberPlanWriter'
   > {
   readonly f4InvoicingBridge: F4InvoicingForRenewalBridge;
   readonly planLookupForRenewal: PlanLookupForRenewalPort;
@@ -399,6 +405,25 @@ export async function confirmRenewal(
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },
+      );
+
+      // Package B1 — persist the member's own plan pick to members.plan_id
+      // (+ plan_year) in the SAME tx, so it does NOT revert one cycle later
+      // when Package A's next-cycle seed reads members.plan_id. FK-safe: the
+      // `mode:'offer'` lookup above already resolved `(newPlanId,
+      // deriveFiscalYear(periodFrom))` to an ACTIVE catalogue row (a
+      // not_found / plan_inactive result returned err BEFORE any write), so
+      // the members composite FK cannot violate. plan_year is the SAME fiscal
+      // year the §86/4 buckets into (derived at line ~500). Placed after the
+      // cycle re-freeze so a throw here rolls the whole Step-1 tx back via the
+      // file's throw-to-rollback mechanism — `err()` would COMMIT the partial
+      // change (the runInTenant gotcha).
+      await deps.memberPlanWriter.writePlanIdInTx(
+        tx,
+        input.tenantId,
+        cycle.memberId,
+        input.newPlanId,
+        deriveFiscalYear(cycle.periodFrom),
       );
     }
 
