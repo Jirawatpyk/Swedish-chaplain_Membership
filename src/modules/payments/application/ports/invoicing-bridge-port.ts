@@ -13,6 +13,7 @@ import type {
   InvoiceStatus,
   F4InvoicePaidEvent,
   TaxAtPaymentFlag,
+  RefundCreditNoteRequirement,
 } from '@/modules/invoicing';
 import type { Satang } from '@/lib/money';
 
@@ -265,67 +266,29 @@ export interface InvoicingBridgePort {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
         /**
-         * F-4 (money-remediation Task 7) — the invoice's F4-authoritative
-         * status, so the refund pre-flight can mirror F4's credit-note STATUS
-         * gate (F4's `invalid_status`) instead of only its amount gate.
+         * Track B — the F4-authoritative answer to "does this refund owe a
+         * §86/10 ใบลดหนี้, and if so can one be issued right now?".
          *
-         * The caller MUST admit exactly `paid` and `partially_credited`. A
-         * `=== 'paid'` shortcut looks equivalent and is not: after the first
-         * partial refund F4 flips the invoice to `partially_credited`, so the
-         * shortcut breaks every SECOND partial refund — a live regression
-         * worse than the bug this field exists to fix.
+         * Replaces the three flat fields this DTO used to carry (`status`,
+         * `creditable`, `receiptRenderState`). Those were three orthogonal
+         * booleans-and-an-enum that the CALLER had to recombine in F4's exact
+         * gate order to reach a verdict — so the ordering lived as prose in
+         * three files, and adding a FOURTH F4 gate compiled silently
+         * everywhere while changing nothing. That is precisely the bug this
+         * whole task exists to fix, one axis later.
+         *
+         * As a union, a new gate is a new arm, and every consumer that
+         * switches on it fails the build until it handles the arm.
+         *
+         * The verdict is computed by `resolveRefundCreditNoteRequirement` in
+         * F4 DOMAIN, not here and not in the caller: it encodes F4's §86/10
+         * rules, so it belongs where `document-kind.ts` lives, for the same
+         * reason. The adapter's only job is to feed it the invoice facts —
+         * including `isSection105`, composed through the SAME shared
+         * discriminator F4's own credit gate uses, so issue-time, credit-time
+         * and this pre-flight cannot drift apart (059 / PR-A Task 6a).
          */
-        readonly status: InvoiceStatus;
-        /**
-         * F-4 — mirrors F4's §105 gate (its `receipt_not_creditable` arm).
-         * `false` when the invoice is an EVENT invoice issued to a
-         * non-VAT-registrant buyer: the document raised was a §105
-         * ใบเสร็จรับเงิน, never a §86/4 ใบกำกับภาษี. §86/10 วรรคสอง requires a
-         * ใบลดหนี้ to cite THE NUMBER AND DATE OF THE ORIGINAL ใบกำกับภาษี, and
-         * a §105 receipt supplies neither — so there is nothing lawful to
-         * cite. This is PERMANENT — no retry ever clears it.
-         *
-         * THE RULE IS SELLER-SIDE. §86/10 binds the VAT-registered SELLER who
-         * raised the original tax invoice; it does not require the BUYER to be
-         * a registrant. Do NOT restate this as "the buyer has no input VAT to
-         * reverse": membership invoices go to non-registrant buyers as valid
-         * §86/4 documents under the 066 relax and ARE creditable (11 such rows
-         * live in production today), so the buyer-side framing contradicts
-         * behaviour this system depends on.
-         *
-         * Derived by the adapter via the SAME shared discriminator F4 uses
-         * (`inferEventDocumentKind` ∘ `resolveBuyerIsVatRegistrant`), so
-         * issue-time, credit-time and this pre-flight cannot drift apart.
-         */
-        readonly creditable: boolean;
-        /**
-         * C2 (Task 7 remediation) — HOW a blocked receipt clears, not merely
-         * whether it has. The pre-fix `receiptRendered: boolean` collapsed four
-         * DB states into one, and the single error it fed said "try again in a
-         * few minutes" — true for exactly one of them.
-         *
-         *   'rendered'   — `receipt_pdf_status = 'rendered'`. Creditable.
-         *   'rendering'  — `'pending'`. TRANSIENT: the reconcile cron's scan
-         *                  matches stuck `pending` rows, so it does clear
-         *                  itself. This is the only state where "wait" is true.
-         *   'unrendered' — `'failed'` OR **NULL**. Needs a human.
-         *
-         * Why `failed` is here and not under 'rendering': the reconcile cron
-         * RESETS `receipt_pdf_render_attempts` to 0 on every re-enqueue, so the
-         * counter oscillates and NO column on the row distinguishes "the cron
-         * will retry this" from "the cron gave up and paged". Given that, the
-         * conservative direction wins on asymmetry — a false "escalate" costs a
-         * self-resolving ticket, a false "wait a few minutes" costs the member
-         * their refund indefinitely. (If this proves noisy, the fix is a
-         * persisted at-rest "abandoned" marker written by the cron's
-         * permanently-failed branch, NOT resurrecting the attempts counter.)
-         *
-         * Why NULL is here: the cron's scan predicate is
-         * `receipt_pdf_status = 'failed' OR (= 'pending' AND stuck)`. SQL NULL
-         * compares equal to neither, so a null-status row is swept by nobody,
-         * ever. Legacy paid rows carry it.
-         */
-        readonly receiptRenderState: 'rendered' | 'rendering' | 'unrendered';
+        readonly creditNoteRequirement: RefundCreditNoteRequirement;
       },
       {
         readonly code:

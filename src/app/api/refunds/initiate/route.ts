@@ -98,10 +98,14 @@ const InitiateRefundBody = z.object({
  * future variant addition fails the build instead of silently falling
  * through to `internal_error`.
  */
-function httpStatusForUseCaseError(code: IssueRefundError['code']): {
+function httpStatusForUseCaseError(error: IssueRefundError): {
   status: number;
   routeCode: F5RouteErrorCode;
 } {
+  // Track B — takes the whole error, not just its code, because
+  // `f4_preflight_credit_note_blocked` carries F4's Domain reason and the copy
+  // must follow the REASON's retryability, not the outer code.
+  const code = error.code;
   switch (code) {
     case 'invalid_payment_id':
       // Path-shape validation failure; surface as 400 invalid_input
@@ -141,27 +145,39 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
     // would read as "try again", which is exactly the click F-3 proved
     // expensive.
     //
-    // Kept as three DISTINCT route codes rather than one collapsed code
-    // because the operator response differs per axis (see each copy string).
-    case 'f4_preflight_invalid_status':
-      // Look at the invoice: it was voided after payment, or is already fully
-      // credited.
-      return { status: 409, routeCode: 'f4_preflight_invalid_status' };
-    case 'f4_preflight_not_creditable':
-      // Permanent (§105). A credit note is the wrong instrument for this
-      // buyer; no amount of retrying or waiting changes that.
-      return { status: 409, routeCode: 'f4_preflight_not_creditable' };
-    case 'f4_preflight_receipt_rendering':
-      // TRANSIENT, and the only receipt state that is: the async worker is
-      // still `pending` and the reconcile cron sweeps stuck pending rows. The
-      // copy says "wait", and here that is true.
-      return { status: 409, routeCode: 'f4_preflight_receipt_rendering' };
-    case 'f4_preflight_receipt_render_stuck':
-      // NOT transient — `failed` or NULL. Distinct from its sibling because
-      // the copy must say "escalate", not "wait". Telling an admin to wait a
-      // few minutes for a render that will never happen strands the member's
-      // money with nobody alerted, which is the defect C2 exists to remove.
-      return { status: 409, routeCode: 'f4_preflight_receipt_render_stuck' };
+    // Track B — one use-case code carrying F4's Domain reason. The route code
+    // (and therefore the copy) is chosen by the REASON, because retryability
+    // differs per arm and route codes are the i18n keys: one code cannot carry
+    // two call-to-actions.
+    //
+    // 409 throughout — money did not move and no orphaned Stripe refund
+    // exists. 409 does NOT mean "never retry"; `receipt_render_pending` clears
+    // on its own and its copy says to wait.
+    case 'f4_preflight_credit_note_blocked':
+      switch (error.reason.code) {
+        case 'invoice_not_creditable':
+          // Look at the invoice: already fully credited, or an anomalous
+          // status. (A VOIDED invoice no longer lands here — it waives.)
+          return { status: 409, routeCode: 'f4_preflight_invalid_status' };
+        case 'identity_snapshot_missing':
+          // A corrupt row, not a business state. Reuses the existing
+          // corrupt-data envelope rather than minting a code whose copy would
+          // say the same thing; 422 because the request is well-formed and the
+          // stored data is not.
+          return { status: 422, routeCode: 'invoice_data_corrupt' };
+        case 'receipt_render_pending':
+          // TRANSIENT, and the only receipt state that is: the reconcile cron
+          // sweeps stuck `pending` rows, so "wait" is honest here.
+          return { status: 409, routeCode: 'f4_preflight_receipt_rendering' };
+        case 'receipt_render_failed':
+        case 'receipt_render_not_started':
+          // Deliberately SHARE one route code and one copy: the two are
+          // distinct in Domain for telemetry (a NULL spike means a broken
+          // enqueue path, a `failed` spike means a broken renderer) but the
+          // remedy an admin is given is identical, so splitting the copy would
+          // be a distinction without a difference.
+          return { status: 409, routeCode: 'f4_preflight_receipt_render_stuck' };
+      }
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure
@@ -357,7 +373,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const errCode = result.error.code;
-    const { status, routeCode } = httpStatusForUseCaseError(errCode);
+    const { status, routeCode } = httpStatusForUseCaseError(result.error);
     // PCI: log ONLY the bounded `kind` discriminator + closed-union
     // `reason` literal — never raw Stripe SDK text.
     const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
@@ -380,8 +396,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // The docstring promised on-call a field that did not exist. Emit it.
         // Bounded enum (`draft|issued|paid|void|credited|partially_credited`)
         // — no PII, nothing to redact.
-        ...(result.error.code === 'f4_preflight_invalid_status'
-          ? { invoiceStatus: result.error.status }
+        ...(result.error.code === 'f4_preflight_credit_note_blocked'
+          ? {
+              // I8 — the block reason and how it clears, so a triager can tell
+              // a self-healing render from a permanently uncreditable invoice
+              // without a second query. Bounded literals; no PII.
+              gateReason: result.error.reason.code,
+              gateRetryability: result.error.reason.retryability,
+              ...(result.error.reason.code === 'invoice_not_creditable'
+                ? { invoiceStatus: result.error.reason.status }
+                : {}),
+            }
           : {}),
       },
       'refunds.initiate.use_case_error',

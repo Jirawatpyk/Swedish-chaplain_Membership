@@ -64,7 +64,10 @@ import type {
 // F-4 (Task 7) — type-only, through F4's public barrel (the same path the
 // bridge PORT already uses for this type). Principle III: Application talks to
 // a sibling context's published contract, never its internals.
-import type { InvoiceStatus } from '@/modules/invoicing';
+import type {
+  CreditNoteWaiverReason,
+  RefundCreditNoteBlockReason,
+} from '@/modules/invoicing';
 import { checkRefundNotExceedingRemainder } from '../../domain/invariants/refund-not-exceeding-remainder';
 import {
   classifyGatewayFailure,
@@ -182,58 +185,26 @@ export type IssueRefundError =
    */
   | { readonly code: 'f4_preflight_gate_underivable' }
   /**
-   * F-4 (money-remediation Task 7) — the refund was refused in Phase A because
-   * F4 would decline the §86/10 credit note. Money did NOT move; no Stripe
-   * refund exists to hunt; no `refunds` row and no `refund_initiated` audit
-   * were written. All three map to **409**, not 502: retrying the identical
-   * request changes nothing, so a retryable-looking status code would only
-   * invite the click that F-3 showed is expensive.
+   * Track B — the refund was refused in Phase A because F4 owes a §86/10
+   * ใบลดหนี้ for it and cannot issue one. Money did NOT move: no Stripe refund
+   * exists to hunt, no `refunds` row was written, no `refund_initiated` audit.
    *
-   * `f4_preflight_invalid_status` — mirrors F4's `invalid_status` gate. The
-   * common trigger is an invoice voided after payment (the void route accepts
-   * `paid` and writes nothing to payments, so the payment still looks fully
-   * refundable). Carries the status so ops can tell `void` from `credited`
-   * without a second query.
+   * ONE code carrying F4's Domain reason, rather than four sibling codes. The
+   * reason is a discriminated union whose arms each declare their own
+   * `retryability`, so the route can pick copy that is true for the specific
+   * block instead of a single string that was true for one of four database
+   * states. Adding a fifth F4 gate adds an arm, and every consumer that
+   * switches on it fails the build until it is handled.
+   *
+   * 409, not 502 — money did not move and no orphaned refund exists. Note that
+   * 409 does NOT mean "never retry": the `receipt_render_pending` arm clears on
+   * its own. The status code says the current STATE forbids the request; HOW
+   * that state clears is carried by `reason.retryability`.
    */
   | {
-      readonly code: 'f4_preflight_invalid_status';
-      readonly status: InvoiceStatus;
+      readonly code: 'f4_preflight_credit_note_blocked';
+      readonly reason: RefundCreditNoteBlockReason;
     }
-  /**
-   * F-4 — mirrors F4's `receipt_not_creditable` gate (§105). PERMANENT: the
-   * document raised was a §105 ใบเสร็จรับเงิน, not a §86/4 ใบกำกับภาษี, and
-   * §86/10 วรรคสอง requires a ใบลดหนี้ to cite the ORIGINAL ใบกำกับภาษี's
-   * number and date — which a §105 receipt does not have. No retry and no
-   * operator action clears this; a refund here needs a different instrument.
-   *
-   * SELLER-SIDE RULE. §86/10 binds the VAT-registered seller, not the buyer.
-   * "The buyer has no input VAT to reverse" is NOT the rule and must not be
-   * written here — membership invoices to non-registrant buyers are valid
-   * §86/4 documents and ARE creditable (066 relax).
-   */
-  | { readonly code: 'f4_preflight_not_creditable' }
-  /**
-   * C2 (Task 7 remediation) — mirrors F4's `receipt_not_rendered` gate, TRANSIENT
-   * arm. The async receipt-PDF worker is still `pending`, the reconcile cron
-   * sweeps stuck `pending` rows, and the refund becomes possible once the
-   * receipt lands. 409, and the copy tells the admin to WAIT.
-   *
-   * This is the ONLY receipt state where "try again in a few minutes" is true.
-   * It used to be said for all four, including two that never clear on their own.
-   */
-  | { readonly code: 'f4_preflight_receipt_rendering' }
-  /**
-   * C2 — mirrors the same F4 gate, OPERATOR arm: `receipt_pdf_status` is
-   * `failed` or NULL. Not transient, and telling the admin to wait strands the
-   * member's money indefinitely while nobody is alerted.
-   *
-   * `failed` is here rather than under the transient arm because the reconcile
-   * cron resets `receipt_pdf_render_attempts` to 0 on every re-enqueue, so no
-   * column distinguishes "will retry" from "gave up and paged"; the asymmetry
-   * favours escalating. NULL is here because the cron's scan predicate matches
-   * neither NULL arm at all — those rows are swept by nobody, ever.
-   */
-  | { readonly code: 'f4_preflight_receipt_render_stuck' }
   | { readonly code: 'f4_bridge_error'; readonly detail: string }
   /**
    * Money-remediation F-3 leg 1/2 — the Stripe refund SUCCEEDED and the F4
@@ -513,7 +484,20 @@ async function issueRefundBody(
   // Phase A — prepareRefund tx: lock, validate, insert pending, audit init
   // -------------------------------------------------------------------------
   type PreparedRefund =
-    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: Satang }
+    | {
+        readonly kind: 'prepared';
+        readonly refundId: string;
+        readonly idempotencyKey: string;
+        readonly payment: Payment;
+        readonly succeededSumBefore: Satang;
+        /**
+         * Track B — non-null when F4 owes NO §86/10 for this refund. Carried
+         * from Phase A because Phase B cannot re-derive it: the invoice facts
+         * (subject, buyer snapshot, receipt status) are read under the Phase-A
+         * lock, and the async settlement paths do not have them.
+         */
+        readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+      }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
   const prepared: PreparedRefund = await deps.paymentsRepo.withTx(async (tx) => {
@@ -613,32 +597,35 @@ async function issueRefundBody(
       } as const;
     }
 
-    // F-4 (money-remediation Task 7) — mirror F4's credit-note BUSINESS-STATE
-    // gates before Stripe. The pre-fix preflight mirrored only F4's AMOUNT
-    // gate, so a refund F4 would decline on any other axis still reached
-    // Stripe: the money moved, and only then did the CN bridge refuse.
+    // Track B — consult F4's Domain verdict BEFORE Stripe. The pre-fix
+    // preflight mirrored only F4's AMOUNT gate, so a refund F4 would decline on
+    // any other axis still reached Stripe: the money moved, and only then did
+    // the credit-note bridge refuse.
     //
-    // WHAT IS MIRRORED (F4 error code → guard below):
-    //   `invalid_status`         → f4_preflight_invalid_status
-    //   `receipt_not_creditable` → f4_preflight_not_creditable
-    //   `receipt_not_rendered`   → f4_preflight_receipt_rendering
-    //                              / f4_preflight_receipt_render_stuck
+    // The verdict itself is computed in F4 Domain
+    // (`resolveRefundCreditNoteRequirement`), not reassembled here. What used
+    // to be four hand-ordered guards over three flat fields is now one switch,
+    // and the gate ORDER lives once, beside F4's own rules.
     //
-    // WHAT IS DELIBERATELY *NOT* MIRRORED — this is not full parity, and
-    // calling it that would tell a future reader the F-3 window is closed on
-    // this path when it is not. F4 also refuses with `no_snapshot_on_invoice`,
-    // `settings_missing`, `invalid_event_invoice` and
-    // `membership_effect_required`. Those are corrupt-row and misconfiguration
-    // states, not routine business states, and a refund that hits one still
-    // reaches Stripe and lands in the F-3 casualty state. They are out of
-    // scope here because mirroring them needs F4 aggregate fields this bridge
-    // does not carry — not because they are impossible.
+    // MIRRORED: F4's `invalid_status`, `receipt_not_creditable` and
+    // `receipt_not_rendered` gates — the last split by remedy, plus a
+    // corrupt-snapshot guard F4 gets for free from its own aggregate reads.
     //
-    // Reachable in production with no feature flag: void a `paid` invoice
-    // (`void-invoice.ts` accepts `issued|paid` — 088 T068 widened that CAS;
-    // § F.3 does not state it — and writes nothing to payments), then refund.
-    // Blocking here is FREE — the money has not moved yet — whereas every
-    // downstream remedy is a manual runbook.
+    // DELIBERATELY *NOT* MIRRORED, and this is not full parity: F4 also refuses
+    // with `no_snapshot_on_invoice`, `settings_missing`, `invalid_event_invoice`
+    // and `membership_effect_required`. Those are corrupt-row and
+    // misconfiguration states; a refund that hits one still reaches Stripe and
+    // lands in the F-3 casualty state. Out of scope because mirroring them
+    // needs F4 aggregate fields this bridge does not carry — not because they
+    // are impossible. Calling this "parity" would tell a future reader the F-3
+    // window is closed on this path when it is not.
+    //
+    // TWO verdicts now let the refund THROUGH where the pre-fix code refused:
+    // a voided invoice and a §105 receipt. Both were dead ends — void is
+    // irreversible and `void-invoice.ts` writes nothing to payments, and F4's
+    // own credit-note screen tells the admin to use a direct refund for a §105.
+    // Neither owes a §86/10, so neither should have been gated on issuing one.
+    // The waiver is recorded on the refund row and in a 10-year forensic.
     //
     // S7 — THE WINDOW IS NARROWED, NOT CLOSED. Do not read the guards below as
     // serialising against a concurrent void. Phase A locks the PAYMENT row,
@@ -672,54 +659,30 @@ async function issueRefundBody(
     // status code reflects that the current STATE forbids the request; how the
     // state clears is carried by the code, and by the copy that code selects.
 
-    // Mirrors F4's `invalid_status` gate EXACTLY. The allow-list must stay
-    // `paid | partially_credited`: F4 flips an invoice to `partially_credited`
-    // after the first partial refund's CN, so narrowing this to `=== 'paid'`
-    // would break every SECOND partial refund — a live regression strictly
-    // worse than the bug this guard closes.
-    if (
-      invoiceCredited.value.status !== 'paid' &&
-      invoiceCredited.value.status !== 'partially_credited'
-    ) {
+    // ONE switch over F4's verdict, replacing the four hand-ordered guards
+    // that used to recombine three flat fields here. The gate ORDER now lives
+    // once, in F4 Domain beside F4's own rules, instead of as prose repeated
+    // across three files — and a FOURTH F4 gate becomes a new union arm that
+    // fails this build until it is handled, rather than compiling silently.
+    const requirement = invoiceCredited.value.creditNoteRequirement;
+    if (requirement.kind === 'blocked') {
       return {
         kind: 'rejected',
         error: {
-          code: 'f4_preflight_invalid_status',
-          status: invoiceCredited.value.status,
+          code: 'f4_preflight_credit_note_blocked',
+          reason: requirement.reason,
         },
       } as const;
     }
 
-    // Mirrors F4's `receipt_not_creditable` gate (§105). PERMANENT: the
-    // document raised was a §105 ใบเสร็จรับเงิน, so there is no original
-    // §86/4 ใบกำกับภาษี whose number and date a §86/10 ใบลดหนี้ could cite
-    // (§86/10 วรรคสอง). No retry and no operator action changes that.
-    if (!invoiceCredited.value.creditable) {
-      return {
-        kind: 'rejected',
-        error: { code: 'f4_preflight_not_creditable' },
-      } as const;
-    }
-
-    // C2 (Task 7 remediation) — mirrors F4's `receipt_not_rendered` gate, but
-    // split by HOW the block clears. The pre-fix single code told every admin
-    // to "try again in a few minutes" — true only for `pending`. A `failed` or
-    // NULL receipt never clears on its own (the reconcile cron resets the
-    // attempts counter, and its scan predicate matches NULL not at all), so
-    // that copy left the member's money stranded with nobody alerted.
-    if (invoiceCredited.value.receiptRenderState === 'rendering') {
-      return {
-        kind: 'rejected',
-        error: { code: 'f4_preflight_receipt_rendering' },
-      } as const;
-    }
-    if (invoiceCredited.value.receiptRenderState === 'unrendered') {
-      return {
-        kind: 'rejected',
-        error: { code: 'f4_preflight_receipt_render_stuck' },
-      } as const;
-    }
-
+    // `issue` (a credit note is owed and issuable) and `waive` (none is owed)
+    // both PROCEED to Stripe. The difference is carried forward on the refund
+    // row and settled in Phase B: the waive arm never calls the credit-note
+    // bridge and stamps `credit_note_waived_at` instead.
+    // Kept as the whole arm, not just the reason, so the forensic below can
+    // pin the invoice status without re-narrowing.
+    const waiver = requirement.kind === 'waive' ? requirement : null;
+    const creditNoteWaiverReason = waiver?.reason ?? null;
     const invariant = checkRefundNotExceedingRemainder({
       paymentAmountSatang: payment.amountSatang,
       succeededSumSatang: ctx.succeededSumSatang,
@@ -763,6 +726,11 @@ async function issueRefundBody(
       reason: input.reason,
       status: 'pending',
       processorRefundId: null,
+      // Track B — the INTENT, pinned now. `credit_note_waived_at` is stamped
+      // separately on the succeeded flip; the completeness CHECK keys on that
+      // timestamp, never on this column, because this one is written while the
+      // row is still `pending`.
+      creditNoteWaiverReason,
       initiatorUserId: input.actorUserId,
       correlationId: input.correlationId,
       initiatedAt,
@@ -785,12 +753,45 @@ async function issueRefundBody(
       retentionYears: retentionFor('refund_initiated'),
     });
 
+    // Track B — the ONLY record that money is going back with no §86/10
+    // against it. Emitted HERE, in Phase A, because this is where the invoice
+    // facts are still in hand: the async settlement paths (webhook, sweep)
+    // finalise from the refund row alone and could not reconstruct the ground
+    // or the invoice status. 10-year retention — it is tax evidence, and
+    // whoever files ภ.พ.30 has nothing else to find.
+    //
+    // Emitted on INTENT rather than on settlement, so a refund that later
+    // fails still leaves the decision trail. The row's `credit_note_waived_at`
+    // is what says the money actually moved; this says why no credit note was
+    // owed.
+    if (waiver !== null) {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'refund_credit_note_waived',
+        actorUserId: input.actorUserId,
+        summary: `Refund ${refundId} carries no credit note (${waiver.reason}) on invoice ${payment.invoiceId}`,
+        payload: {
+          refund_id: refundId,
+          payment_id: paymentId,
+          invoice_id: payment.invoiceId,
+          amount_satang: input.amountSatang.toString(),
+          waiver_reason: waiver.reason,
+          invoice_status: waiver.invoiceStatus,
+          runbook_url:
+            'docs/runbooks/refund-without-credit-note.md',
+        },
+        retentionYears: retentionFor('refund_credit_note_waived'),
+      });
+    }
+
     return {
       kind: 'prepared',
       refundId,
       idempotencyKey,
       payment,
       succeededSumBefore: ctx.succeededSumSatang,
+      creditNoteWaiverReason,
     } as const;
   });
 

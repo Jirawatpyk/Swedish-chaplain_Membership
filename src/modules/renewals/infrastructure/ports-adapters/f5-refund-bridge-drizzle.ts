@@ -116,10 +116,18 @@ export const f5RefundBridge: F5RefundBridge = {
       // Stripe), so there is no refund row and nothing webhook-matchable —
       // unlike `f4_bridge_deferred` above, where the money DID move.
       //
-      // Its sibling `f4_preflight_receipt_render_stuck` deliberately stays on
-      // the FAILED side: `failed`/NULL receipts never clear on their own, so
-      // an admin genuinely must act.
-      if (refundResult.error.code === 'f4_preflight_receipt_rendering') {
+      // Its siblings stay on the FAILED side: a `failed`/NULL receipt never
+      // clears on its own, and an uncreditable or corrupt invoice never will
+      // either, so an admin genuinely must act on those.
+      //
+      // Track B — the discriminator is the DOMAIN reason's `retryability`, not
+      // a code list. That is the point of carrying retryability in the type: a
+      // future F4 gate whose block is transient joins the WAIT side by being
+      // typed transient, with no edit here and no chance of being forgotten.
+      if (
+        refundResult.error.code === 'f4_preflight_credit_note_blocked' &&
+        refundResult.error.reason.retryability === 'transient'
+      ) {
         return { status: 'refund_pending' };
       }
       return {
@@ -128,8 +136,10 @@ export const f5RefundBridge: F5RefundBridge = {
         detail:
           'detail' in refundResult.error
             ? refundResult.error.detail
-            : 'reason' in refundResult.error
-              ? String(refundResult.error.reason)
+            : refundResult.error.code === 'f4_preflight_credit_note_blocked'
+              ? refundResult.error.reason.code
+              : 'reason' in refundResult.error
+                ? String(refundResult.error.reason)
               : refundResult.error.code,
       };
     }

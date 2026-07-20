@@ -37,6 +37,9 @@ import {
   // F4's own credit gate cannot drift apart.
   inferEventDocumentKind,
   resolveBuyerIsVatRegistrant,
+  // Track B — the F4-Domain verdict for "does this refund owe a §86/10?".
+  resolveRefundCreditNoteRequirement,
+  type RefundCreditNoteRequirement,
   type InvoiceForPayment as F4InvoiceForPayment,
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
 } from '@/modules/invoicing';
@@ -431,36 +434,28 @@ export const invoicingBridge: InvoicingBridgePort = {
     // still threw, because a call site throws when the BINDING is undefined
     // (barrel export dropped, circular-import TDZ, mock factory omission) or
     // when the F4 aggregate stops carrying a field read here. Keep this try.
-    let creditable: boolean;
-    let receiptRenderState: 'rendered' | 'rendering' | 'unrendered';
+    let creditNoteRequirement: RefundCreditNoteRequirement;
     try {
-      // §105 creditability — derived through the SAME shared discriminator
-      // `issue-credit-note.ts` uses, deliberately rather than re-deriving it
-      // here. Keying this on TIN-presence while F4's gate keys on registrant
-      // status is exactly the lockstep divergence `document-kind.ts` exists
-      // to prevent (059 / PR-A Task 6a).
-      creditable =
-        inferEventDocumentKind(
-          inv.invoiceSubject,
-          resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
-        ) !== 'receipt_separate';
-      // C2 (Task 7 remediation) — map the FOUR DB states onto how each one
-      // actually clears, because that is what the copy and the F8 refund
-      // bridge branch on. `pending` is the only genuinely transient one: the
-      // reconcile cron's scan is
-      // `receipt_pdf_status = 'failed' OR (= 'pending' AND stuck)`.
-      //   - `failed` re-enqueues, but the cron RESETS the attempts counter to
-      //     0 each cycle, so nothing on the row says whether it will retry
-      //     again or has already been abandoned and paged. Conservative
-      //     direction: treat as needing a human.
-      //   - NULL matches NEITHER arm of that predicate (SQL NULL compares
-      //     equal to nothing), so those rows are swept by nobody, ever.
-      receiptRenderState =
-        inv.receiptPdfStatus === 'rendered'
-          ? 'rendered'
-          : inv.receiptPdfStatus === 'pending'
-            ? 'rendering'
-            : 'unrendered';
+      creditNoteRequirement = resolveRefundCreditNoteRequirement({
+        status: inv.status,
+        // The §105 discriminator flows through the SAME shared composition
+        // F4's own credit gate uses, deliberately rather than being re-derived
+        // here. Keying it on TIN presence while F4 keys on registrant status is
+        // exactly the lockstep divergence `document-kind.ts` exists to prevent
+        // (059 / PR-A Task 6a).
+        isSection105:
+          inferEventDocumentKind(
+            inv.invoiceSubject,
+            resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
+          ) === 'receipt_separate',
+        // Fed separately because the discriminator above is FAIL-CLOSED for a
+        // missing snapshot: it returns "not a registrant", which for an event
+        // invoice yields `isSection105` — and under Track B that means WAIVE.
+        // The resolver blocks on this instead, so a corrupt row cannot move
+        // money and silently create an output-VAT obligation.
+        hasIdentitySnapshot: inv.memberIdentitySnapshot != null,
+        receiptPdfStatus: inv.receiptPdfStatus,
+      });
     } catch (e) {
       paymentsMetrics.f4BridgeUnknownErrorShape(
         'getInvoiceCreditedTotal_credit_gate_underivable',
@@ -486,57 +481,42 @@ export const invoicingBridge: InvoicingBridgePort = {
       return err({ code: 'credit_gate_underivable' });
     }
 
-    // I2 (Task 7 remediation) — leave a trace when a gate axis will REFUSE.
+    // I2 — leave a trace when the gate will REFUSE or WAIVE.
     //
-    // `creditable: false` and a non-`rendered` receipt are both permanent-
-    // looking refusals whose two causes are indistinguishable downstream: a
-    // legitimate §105 receipt and a CORRUPT row produce the identical verdict,
-    // because `resolveBuyerIsVatRegistrant` is fail-closed and returns `false`
-    // for a missing or key-less snapshot. Without this line, a snapshot-shape
-    // regression that flipped every event invoice to uncreditable would present
-    // as "finance says refunds stopped working" with nothing in logs or metrics
-    // to point at — the refusal itself is logged by the route, but only as a
-    // code, with no discriminator.
+    // Both outcomes are indistinguishable downstream from their benign
+    // lookalikes: a legitimate §105 receipt and a CORRUPT row once produced the
+    // identical verdict, and a waiver looks like an ordinary refund in every
+    // table except this one. Without this line a snapshot-shape regression, or
+    // an unexpected surge of credit-note-less refunds, would present as
+    // "finance says something is wrong" with nothing to grep.
     //
     // This is the ONLY caller of `getInvoiceCreditedTotal` (the refund
-    // pre-flight), so it fires on refusals and nowhere else.
+    // pre-flight), so it fires on refusals and waivers and nowhere else.
     //
-    // LOG HYGIENE: bounded literals and presence booleans only. The snapshot
-    // holds the buyer's name, address and TIN; presence is the whole
-    // diagnostic — it tells you whether `resolveBuyerIsVatRegistrant` took its
-    // snapshot arm or its fail-closed arm, which is exactly the ambiguity being
-    // resolved.
-    if (!creditable || receiptRenderState !== 'rendered') {
+    // LOG HYGIENE: bounded literals and presence booleans only — the snapshot
+    // carries the buyer's name, address and TIN.
+    if (creditNoteRequirement.kind !== 'issue') {
       logger.warn(
         {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
           invoiceSubject: inv.invoiceSubject,
-          creditable,
-          receiptRenderState,
-          // Raw column value: distinguishes a `failed` render (a worker gave
-          // up) from NULL (a legacy row no cron has ever scanned). Both map to
-          // `unrendered`, but they need different human action.
+          creditNoteVerdict: creditNoteRequirement.kind,
+          verdictReason:
+            creditNoteRequirement.kind === 'waive'
+              ? creditNoteRequirement.reason
+              : creditNoteRequirement.reason.code,
+          // Raw column: separates "a worker gave up" from "no cron ever
+          // scanned this row". Both block, but they need different action.
           receiptPdfStatus: inv.receiptPdfStatus,
           hasIdentitySnapshot: inv.memberIdentitySnapshot != null,
           hasMemberId: inv.memberId != null,
         },
-        'invoicing-bridge.credit_gate_will_refuse',
+        'invoicing-bridge.credit_gate_non_issue',
       );
     }
 
-    return ok({
-      creditedTotalSatang,
-      totalSatang,
-      // F-4 (Task 7) — the other axes of F4's credit-note gate, read off the
-      // invoice ALREADY in hand. No extra round-trip: `f4GetInvoice` above
-      // returned the whole aggregate; the pre-fix contract simply did not
-      // surface these, which is why the pre-flight could not check them even
-      // by accident.
-      status: inv.status,
-      creditable,
-      receiptRenderState,
-    });
+    return ok({ creditedTotalSatang, totalSatang, creditNoteRequirement });
   },
 
   /**

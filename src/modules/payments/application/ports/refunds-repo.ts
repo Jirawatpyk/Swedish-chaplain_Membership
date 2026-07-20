@@ -12,6 +12,9 @@ import type { PaymentId } from '../../domain/payment';
 import type { Refund, RefundStatus } from '../../domain/refund';
 import type { RejectionProof } from '../../domain/settlement/money-moved';
 import type { Satang } from '@/lib/money';
+// Track B — the waiver vocabulary is owned by F4 Domain (it encodes §86/10
+// rules), consumed here through the published barrel.
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 export type { RefundStatus };
 
 export interface RefundRow {
@@ -98,7 +101,16 @@ export interface RefundsRepo {
       readonly processorRefundId: string | null;
       readonly initiatorUserId: string;
       readonly correlationId: string;
-      readonly initiatedAt: Date;
+      /**
+     * Track B — waiver INTENT: non-null when F4 owes NO §86/10 ใบลดหนี้ for
+     * this refund (the invoice was voided, or the buyer holds a §105 receipt).
+     * Written with the still-`pending` row; the COMPLETION timestamp
+     * (`creditNoteWaivedAt`) is stamped separately on the succeeded flip, and
+     * the DB completeness CHECK keys on that timestamp rather than on this
+     * column — see migration 0268.
+     */
+    readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
+    readonly initiatedAt: Date;
     },
   ): Promise<RefundRow>;
 

@@ -107,6 +107,11 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
           reason: input.reason,
           status: input.status,
           processorRefundId: input.processorRefundId,
+          // Track B — waiver INTENT only. `creditNoteWaivedAt` is deliberately
+          // NOT written here: the completeness CHECK keys on that timestamp, so
+          // stamping it on a still-`pending` row would violate the
+          // biconditional before Stripe has even been called.
+          creditNoteWaiverReason: input.creditNoteWaiverReason,
           initiatorUserId: input.initiatorUserId,
           correlationId: input.correlationId,
           initiatedAt: input.initiatedAt,
