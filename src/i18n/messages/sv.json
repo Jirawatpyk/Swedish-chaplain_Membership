@@ -3669,6 +3669,12 @@
           "paid_invoice_volume_above_threshold": "Fakturavolym över tröskelvärde",
           "multi_signal": "Flera signaler"
         },
+        "evidence": {
+          "declared_turnover_above_threshold": "Deklarerad omsättning {turnover} · tröskel nådd {date}",
+          "paid_invoice_volume_above_threshold": "Betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "multi_signal": "Deklarerad omsättning {turnover} · betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "unavailable": "Underlag saknas — verifiera manuellt innan du accepterar"
+        },
         "empty_state": {
           "title": "Inga uppgraderingskandidater denna vecka",
           "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln.",
@@ -3690,20 +3696,41 @@
             "dialog_title": "Acceptera nivåhöjning?",
             "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
             "success": "Nivåhöjning accepterad",
-            "error": "Kunde inte acceptera nivåhöjning"
+            "error": "Kunde inte acceptera nivåhöjning",
+            "evidence_restated": "Underlag: {evidence}. Detta flyttar medlemmen från {fromPlan} till {toPlan} — årsavgiften ändras på nästa förnyelsefaktura.",
+            "submitting": "Accepterar…"
           },
           "dismiss": {
             "label": "Avvisa",
             "dialog_title": "Avvisa förslaget om nivåhöjning?",
             "confirm": "Förslaget stängs och nya förslag undertrycks i 90 dagar. Denna åtgärd kan inte ångras.",
             "success": "Förslag avvisat",
-            "error": "Kunde inte avvisa förslag"
+            "error": "Kunde inte avvisa förslag",
+            "submitting": "Avvisar…"
           },
           "escalate": {
             "label": "Eskalera",
             "success": "Utkast till uppsökande skapat",
             "error": "Kunde inte skapa utkast"
           }
+        },
+        "loading": "Laddar kön för nivåuppgraderingar…",
+        "action_errors": {
+          "unknown": "Något gick fel. Försök igen.",
+          "network_error": "Vi kunde inte nå servern. Kontrollera din anslutning och försök igen.",
+          "http_error": "Servern gav ett oväntat svar. Försök igen.",
+          "read_only_mode": "Systemet är i underhållsläge och ändringar är pausade. Försök igen om en stund.",
+          "csrf_rejected": "Sidan är inaktuell. Ladda om sidan och försök igen.",
+          "feature_disabled": "Förnyelsefunktionerna är avstängda just nu. Kontakta en administratör.",
+          "no_session": "Din session har gått ut. Logga in igen för att fortsätta.",
+          "forbidden": "Du har inte behörighet att utföra den här åtgärden.",
+          "server_error": "Något gick fel på vår sida. Försök igen.",
+          "invalid_body": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "invalid_input": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "suggestion_not_found": "Det här förslaget finns inte längre. Uppdatera kön för att se aktuell lista.",
+          "suggestion_not_open": "Någon har redan hanterat det här förslaget. Uppdatera kön för att se aktuell lista.",
+          "no_active_cycle": "Den här medlemmen har ingen aktiv förnyelsecykel, så uppgraderingen kan inte schemaläggas än.",
+          "plan_change_failed": "Planändringen kunde inte tillämpas. Försök igen, eller kontakta supporten om det kvarstår."
         }
       },
       "tasks": {
