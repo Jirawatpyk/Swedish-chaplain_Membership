@@ -170,6 +170,99 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     expect(c['err']).toBe('RangeError');
   });
 
+  it('I3: threads externalTx into makeGetInvoiceDeps (the third and last F4 read)', async () => {
+    // The threading itself shipped with ZERO pinning: deleting `externalTx: tx`
+    // in confirm-payment, or the second argument here, made nothing go red.
+    // The un-threaded form works fine whenever the pool has a spare connection
+    // — which is exactly why it survived review twice before. Under pool
+    // pressure it self-deadlocks: `getInvoiceForPayment` opens a SECOND pooled
+    // connection while confirm-payment's Phase-A tx still holds `FOR UPDATE`
+    // on the payment row, and Stripe-captured payments stop being marked paid.
+    // Same class as B.1 Fix#2, already fixed twice on the sibling reads; this
+    // is the third, and the pattern for the other two already exists in this
+    // file.
+    const sentinelTx = Symbol('phase-a-tx');
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      ok({
+        id: invoiceId,
+        status: 'issued',
+        totalSatang: 535_000n,
+        memberId,
+        tenantId,
+      }),
+    );
+
+    const bridge = await loadBridge();
+    await bridge.getInvoiceForPayment({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'off',
+      reconciliationPath: true,
+      externalTx: sentinelTx,
+    });
+
+    expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, sentinelTx);
+  });
+
+  it('I3: the self-pay initiate path passes no tx (F4 opens its own)', async () => {
+    // The counterpart assertion. `initiate-payment` is NOT inside a tx, so the
+    // bridge must forward `undefined` and let `makeGetInvoiceDeps` open its own
+    // tenant-bound transaction. Pinning both directions is what stops someone
+    // "simplifying" the optional parameter away in either direction.
+    f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
+      ok({
+        id: invoiceId,
+        status: 'issued',
+        totalSatang: 535_000n,
+        memberId,
+        tenantId,
+      }),
+    );
+
+    const bridge = await loadBridge();
+    await bridge.getInvoiceForPayment({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'off',
+      reconciliationPath: false,
+    });
+
+    expect(f4Mock.makeGetInvoiceDeps).toHaveBeenCalledWith(tenantId, undefined);
+  });
+
+  it('I4: returns read_failed (not a throw) when the F4 read throws', async () => {
+    // Threading `externalTx` armed the invoice repo's tenant-mismatch guard,
+    // which is a raw `throw new Error`. The webhook caller runs this inside its
+    // Phase-A `withTx`, so an escaping throw aborted the tx and surfaced as an
+    // unhandled 500 with no metric and no bounded log line.
+    f4Mock.getInvoiceForPayment.mockRejectedValueOnce(
+      new Error('tenant mismatch: expected acme, got other'),
+    );
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceForPayment({
+      tenantId,
+      invoiceId,
+      taxAtPayment: 'off',
+      reconciliationPath: true,
+      externalTx: Symbol('phase-a-tx'),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('read_failed');
+    expect(metricsSpy).toHaveBeenCalledWith('getInvoiceForPayment_read_threw');
+
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe('invoicing-bridge.getInvoiceForPayment_read_threw');
+    const c = ctx as Record<string, unknown>;
+    // Bounded discriminators that say WHICH caller shape hit it, and no more.
+    expect(c['reconciliationPath']).toBe(true);
+    expect(c['hasExternalTx']).toBe(true);
+    expect(c['err']).toBe('Error');
+    // Never the raw message — it carries the tenant slugs.
+    expect(JSON.stringify(ctx)).not.toContain('tenant mismatch');
+  });
+
   it('happy path (positive totalSatang) returns Result.ok with branded value', async () => {
     f4Mock.getInvoiceForPayment.mockResolvedValueOnce(
       ok({
