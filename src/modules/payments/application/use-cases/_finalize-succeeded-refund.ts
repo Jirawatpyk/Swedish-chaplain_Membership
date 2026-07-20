@@ -232,18 +232,32 @@ export async function finalizeSucceededRefund(
   // credit notes, on 100% of waived refunds.
   const waiverReason = input.creditNoteWaiverReason;
 
+  // `resolveInvoiceStatus` is CARRIED BY the credit-note arm rather than living
+  // in a sibling binding, so the waive arm structurally does not have one to
+  // call. The previous shape kept them apart and gave the waive arm a stub that
+  // threw, under a comment asserting the stub was unreachable — and a call site
+  // added later (the ADMIN envelope's status, below) reached it on every waived
+  // refund. The throw was swallowed by the Phase-B handler and reported as
+  // `f4_bridge_deferred`: money out of Stripe, row `pending` forever, sweep
+  // retrying into the same throw.
+  //
+  // A comment cannot hold that invariant. One discriminant can: narrowing to
+  // `kind === 'credit_note'` is now the only way to obtain the resolver, so the
+  // compiler refuses a waive-path call instead of a test having to catch it.
+  //
+  // The resolver prefers F4's authoritative post-CN status and falls back to the
+  // payment-derived projection, so a transient read hiccup cannot fail an
+  // already-succeeded refund.
   let documentation:
-    | { readonly kind: 'credit_note'; readonly id: string; readonly number: string }
+    | {
+        readonly kind: 'credit_note';
+        readonly id: string;
+        readonly number: string;
+        readonly resolveInvoiceStatus: (
+          fallbackNextStatus: 'partially_refunded' | 'refunded',
+        ) => 'partially_credited' | 'credited';
+      }
     | { readonly kind: 'waived'; readonly reason: CreditNoteWaiverReason };
-
-  // Resolves the invoice status reported in the ADMIN envelope. On the
-  // credit-note path it prefers F4's authoritative post-CN value and falls back
-  // to the payment-derived projection so a transient read hiccup cannot fail an
-  // already-succeeded refund. On the WAIVE path it is never called — that arm
-  // returns no `invoiceStatus` at all, because the invoice was not credited.
-  let resolveInvoiceStatus: (
-    fallbackNextStatus: 'partially_refunded' | 'refunded',
-  ) => 'partially_credited' | 'credited';
 
   if (waiverReason === null) {
     // --- Step 1: F4 credit note (idempotent per (tenant, source_refund_id)) ---
@@ -263,11 +277,6 @@ export async function finalizeSucceededRefund(
     if (!cnResult.ok) {
       return err({ code: cnResult.error.code, detail: cnResult.error.detail });
     }
-    documentation = {
-      kind: 'credit_note',
-      id: cnResult.value.creditNoteId,
-      number: cnResult.value.creditNoteNumber,
-    };
 
     // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) -------------
     // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
@@ -282,23 +291,19 @@ export async function finalizeSucceededRefund(
       invoiceId: input.invoiceId,
       externalTx: tx,
     });
-    resolveInvoiceStatus = (fallbackNextStatus) =>
-      f4StatusResult.ok
-        ? f4StatusResult.value
-        : fallbackNextStatus === 'refunded'
-          ? 'credited'
-          : 'partially_credited';
+    documentation = {
+      kind: 'credit_note',
+      id: cnResult.value.creditNoteId,
+      number: cnResult.value.creditNoteNumber,
+      resolveInvoiceStatus: (fallbackNextStatus) =>
+        f4StatusResult.ok
+          ? f4StatusResult.value
+          : fallbackNextStatus === 'refunded'
+            ? 'credited'
+            : 'partially_credited',
+    };
   } else {
     documentation = { kind: 'waived', reason: waiverReason };
-    // Unreachable on this arm — the waived result carries no `invoiceStatus`.
-    // Present only so the binding is definitely assigned; if a future edit
-    // makes the waive path report a status, that is a decision to take
-    // deliberately, not to inherit from a filler value.
-    resolveInvoiceStatus = () => {
-      throw new Error(
-        'finalizeSucceededRefund: waived refunds report no invoice status',
-      );
-    };
   }
 
   const completedAt = new Date(deps.clock.nowMs());
@@ -342,7 +347,7 @@ export async function finalizeSucceededRefund(
             creditNoteNumber: documentation.number,
             // tax#5 (B.2) — F4-authoritative (the sibling's CN already flipped
             // the invoice); fall back to the payment projection on a read error.
-            invoiceStatus: resolveInvoiceStatus(reportedNextStatus),
+            invoiceStatus: documentation.resolveInvoiceStatus(reportedNextStatus),
           }
         : {
             documentation: 'waived' as const,
@@ -427,7 +432,22 @@ export async function finalizeSucceededRefund(
   // tax#5 (B.2): invoice status is sourced from F4 (authoritative) via the
   // Step-1b read, NOT projected from the resolved payment status. Falls back to
   // the payment projection only if the F4 read errored (see `resolveInvoiceStatus`).
-  const invoiceStatus = resolveInvoiceStatus(resolvedNextStatus);
+  //
+  // Track B — THIS is the call site that reached the old throwing stub. On the
+  // waive path there is no post-credit-note status to report: no credit note was
+  // issued, so the invoice's status is unchanged by this refund. `null` says
+  // exactly that. A filler value would have the audit trail assert an invoice
+  // transition that never happened, on every waived refund.
+  //
+  // Resolved ONCE into the same discriminated value, so the audit payload and
+  // the returned envelope cannot report different statuses for one refund.
+  const documented =
+    documentation.kind === 'credit_note'
+      ? {
+          ...documentation,
+          invoiceStatus: documentation.resolveInvoiceStatus(resolvedNextStatus),
+        }
+      : documentation;
 
   // --- Step 4: audit refund_succeeded (path-discriminated) -----------------
   await deps.audit.emit(tx, {
@@ -449,31 +469,31 @@ export async function finalizeSucceededRefund(
       payment_id: input.paymentId,
       invoice_id: input.invoiceId,
       processor_refund_id: input.processorRefundId,
-      credit_note_id:
-        documentation.kind === 'credit_note' ? documentation.id : null,
+      credit_note_id: documented.kind === 'credit_note' ? documented.id : null,
       credit_note_number:
-        documentation.kind === 'credit_note' ? documentation.number : null,
-      ...(documentation.kind === 'waived'
-        ? { credit_note_waiver_reason: documentation.reason }
+        documented.kind === 'credit_note' ? documented.number : null,
+      ...(documented.kind === 'waived'
+        ? { credit_note_waiver_reason: documented.reason }
         : {}),
       amount_satang: input.amountSatang.toString(),
       payment_next_status: resolvedNextStatus,
-      invoice_next_status: invoiceStatus,
+      invoice_next_status:
+        documented.kind === 'credit_note' ? documented.invoiceStatus : null,
     },
     retentionYears: retentionFor('refund_succeeded'),
   });
 
   return ok({
-    ...(documentation.kind === 'credit_note'
+    ...(documented.kind === 'credit_note'
       ? {
           documentation: 'credit_note' as const,
-          creditNoteId: documentation.id,
-          creditNoteNumber: documentation.number,
-          invoiceStatus,
+          creditNoteId: documented.id,
+          creditNoteNumber: documented.number,
+          invoiceStatus: documented.invoiceStatus,
         }
       : {
           documentation: 'waived' as const,
-          waiverReason: documentation.reason,
+          waiverReason: documented.reason,
         }),
     paymentNextStatus: resolvedNextStatus,
     siblingWon: false,

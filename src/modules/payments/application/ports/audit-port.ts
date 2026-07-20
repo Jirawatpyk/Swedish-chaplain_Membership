@@ -344,7 +344,13 @@ export interface F5AuditPayloadByType {
         credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       }
     | {
         /**
@@ -376,7 +382,13 @@ export interface F5AuditPayloadByType {
         credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       }
     | {
         /**
@@ -417,7 +429,13 @@ export interface F5AuditPayloadByType {
         credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       };
   refund_failed: {
     refund_id: string;

@@ -650,7 +650,8 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       // The waiver reason is pinned on the row at Phase-A INSERT, not at
       // settlement — so a refund that later fails at Stripe still carries the
       // decision that was made about it.
-      const inserted = asMock(deps.refundsRepo.insert).mock.calls[0]?.[0] as
+      // `insert(tx, row)` — the row is the SECOND argument.
+      const inserted = asMock(deps.refundsRepo.insert).mock.calls[0]?.[1] as
         | Record<string, unknown>
         | undefined;
       expect(inserted?.['creditNoteWaiverReason']).toBe(c.reason);
