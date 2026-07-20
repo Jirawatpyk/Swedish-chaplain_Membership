@@ -1119,6 +1119,46 @@ describe('confirmPayment (T057)', () => {
       expect(forensic?.[1].payload.bridge_error_code).toBe('pdf_render_failed');
       expect(forensic?.[1].retentionYears).toBe(10);
     });
+
+    it('flag ON — a FAILED forensic emit is swallowed; the decline still returns bridge_error and rolls back (task-4 S-2)', async () => {
+      // The forensic `emitSettlementRollbackForensic` wraps its `audit.emit` in
+      // `.catch(() => {})`. That swallow is load-bearing: letting it throw would
+      // escape `runTxDecided` as a raw 500 AND lose the rollback (the whole point
+      // of the F-1 fix). Nothing tested it — removing the `.catch()` reddened
+      // nothing — so this pins it: an audit-table outage during the forensic
+      // must not turn a clean decline-and-rollback into a thrown 500.
+      const runner = makeFakeTxRunner();
+      const deps = { ...makeDeps(), settlementAbort: true };
+      (deps.paymentsRepo as { withTx: unknown }).withTx = runner.withTx.bind(runner);
+      (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockImplementation(
+        async (tx: unknown) => {
+          recordWrite(tx, 'payments.updateStatus', { nextStatus: 'succeeded' });
+          return PENDING_PAYMENT;
+        },
+      );
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+      // The forensic emit (null tx, `payment_settlement_rolled_back`) REJECTS.
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_tx: unknown, event: { eventType: string }) => {
+          if (event.eventType === 'payment_settlement_rolled_back') {
+            throw new Error('audit table unavailable');
+          }
+          return undefined;
+        },
+      );
+
+      // MUST NOT throw — resolves the same decline as the happy-forensic case.
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // The rollback still held despite the failed forensic.
+      expectRolledBack(runner, 'payments.updateStatus');
+      // And the invoice was never flipped to paid.
+      expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

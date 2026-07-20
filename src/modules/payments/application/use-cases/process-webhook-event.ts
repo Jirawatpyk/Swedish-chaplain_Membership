@@ -191,6 +191,13 @@ const F4_RECORD_PAYMENT_PERMANENCE: Readonly<
   no_snapshot_on_invoice: 'permanent',
   legacy_no_tin_event_needs_remediation: 'permanent',
   legacy_invoice_needs_reissue: 'permanent',
+  // A CONFIG gap, classified with `settings_missing`: it clears only when an
+  // operator flips `FEATURE_088_TAX_AT_PAYMENT` on, which no Stripe retry can
+  // do. Trade-off (task-5 review L-2): if the flag is toggled OFF→ON within
+  // minutes, in-flight PIs captured while OFF get 200-acked here and are not
+  // retried, so an operator reconciles them from the forensic row — accepted,
+  // because treating it transient would instead 72h-retry every capture during
+  // a deliberate flag-OFF window.
   new_flow_bill_requires_flag_on: 'permanent',
   overflow: 'permanent',
   membership_terminated: 'permanent',

@@ -131,11 +131,13 @@ async function failPaymentBody(
 ): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
-    // F5R2-CRIT-2 — return dedicated bridge_error code (in PERMANENT
-    // sub-use-case-details set) so dispatcher classifies as permanent
-    // → route returns 200 + forensic audit instead of 500 → Stripe
-    // stops retrying. Pre-fix this path triggered a 72h Stripe retry
-    // storm on a configuration gap.
+    // F5R2-CRIT-2 — refuse an unconfigured tenant with `bridge_error` +
+    // `F5_SETTINGS_MISSING_DETAIL`, which `classifyDispatchPermanence`
+    // special-cases to PERMANENT (Task 5 replaced the old
+    // `PERMANENT_SUB_USE_CASE_DETAILS` set with that classifier) → route returns
+    // 200 + forensic audit instead of 500 → Stripe stops retrying. Pre-fix this
+    // path triggered a 72h Stripe retry storm on a configuration gap. The detail
+    // is the shared const so this producer and the consumer rename in lockstep.
     return err({ code: 'bridge_error', detail: F5_SETTINGS_MISSING_DETAIL });
   }
 
