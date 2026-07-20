@@ -210,6 +210,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'first partial',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rfnd-1',
         initiatedAt,
@@ -238,6 +239,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'will fail',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rfnd-fail',
         initiatedAt,
@@ -280,6 +282,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           processorRefundId: null,
           initiatorUserId: user.userId,
           correlationId: `corr-bulk-${i}`,
+          creditNoteWaiverReason: null,
           initiatedAt: new Date(),
         });
       }
@@ -372,6 +375,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'RR-1 race target',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rr1',
         initiatedAt,
@@ -452,6 +456,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-attach-1',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
 
@@ -513,6 +518,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'lock test',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-lock-1',
         initiatedAt,
@@ -575,6 +581,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId,
         initiatorUserId: user.userId,
         correlationId: 'corr-xtenant-1',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -649,6 +656,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           reason: 'a14-order',
           status: 'pending',
           processorRefundId: null,
+          creditNoteWaiverReason: null,
           initiatorUserId: user.userId,
           correlationId: 'corr-a14-order',
           initiatedAt,
@@ -731,6 +739,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           processorRefundId: null,
           initiatorUserId: user.userId,
           correlationId: 'corr-backstop',
+          creditNoteWaiverReason: null,
           initiatedAt: new Date(),
         });
         await repo.updateStatus(tx, {
@@ -815,6 +824,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-f9-1',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -864,6 +874,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-f9-2',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -911,6 +922,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-f9-xtenant',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -964,6 +976,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-f9-applayer',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });

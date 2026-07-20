@@ -72,6 +72,8 @@ function lockedRefund(): Refund {
     processorRefundId: 're_stale1',
     failureReasonCode: null,
     creditNoteId: null,
+    creditNoteWaivedAt: null,
+    creditNoteWaiverReason: null,
     initiatedAt: new Date(NOW_MS - AGED_HOURS * HOUR_MS),
     completedAt: null,
     initiatorUserId: 'user-admin-1',

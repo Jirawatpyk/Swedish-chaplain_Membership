@@ -218,6 +218,7 @@ describe('processRefundUpdated — cross-tenant isolation, live Neon (A.18 #2)',
         processorRefundId: reA,
         initiatorUserId: user.userId,
         correlationId: 'corr-xtenant-refund',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });

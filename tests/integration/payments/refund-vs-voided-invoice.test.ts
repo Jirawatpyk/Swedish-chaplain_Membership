@@ -17,27 +17,42 @@
  * Reachable today with no feature flag: pay an invoice by card, void it via
  * `POST /api/invoices/[id]/void` (which accepts `paid` per 088 § F.3 and
  * writes nothing to payments/refunds), then refund. Every Phase-A check
- * passes, **Stripe moves real money**, and only then does F4 decline with
- * `invalid_status`.
+ * passes, **Stripe moves real money**, and only then does F4 decline.
  *
  * ## The fix under test
  *
- * The same single `f4GetInvoice` call now also surfaces `status`,
- * `creditable`, and `receiptRenderState`; four guards reject inside Phase A's
- * `withTx` **above** the amount check, the `refunds` insert, and the
- * `refund_initiated` emit. Placement is correctness, not style: `err()`
- * inside `runInTenant` COMMITS, so a guard below the insert would leave a
- * phantom `pending` row plus a false audit trail behind a refusal.
+ * The same single `f4GetInvoice` call now also answers F4's credit-note
+ * question, as ONE Domain verdict (`resolveRefundCreditNoteRequirement`)
+ * rather than three axes each caller ordered by hand. The verdict is consumed
+ * inside Phase A's `withTx` **above** the amount check, the `refunds` insert,
+ * and the `refund_initiated` emit. Placement is correctness, not style:
+ * `err()` inside `runInTenant` COMMITS, so a guard below the insert would
+ * leave a phantom `pending` row plus a false audit trail behind a refusal.
+ *
+ * ## Track B — the VOID case INVERTED, and that is the point
+ *
+ * Refusing a refund on a voided invoice was itself a bug. `void-invoice`
+ * writes nothing to payments and void is irreversible, so a refusal stranded
+ * settled member money behind a gate that could never open. And no §86/10 is
+ * owed: the VOID stamp already reversed the document, so there is no live
+ * §86/4 for a credit note to reduce.
+ *
+ * A voided invoice therefore now WAIVES — the money goes back and the waiver
+ * is recorded on the refund row. The case below asserts that inversion
+ * against live Neon, because the waiver is a persisted tax fact and a mock
+ * cannot show that the row and its 10-year forensic actually landed.
  *
  * ## What each assertion is for
  *
- * The money fact is asserted FIRST (`createRefund` never called), before any
- * error-code check — an error-code assertion that fires first kills a mutant
- * before it reaches the path that actually matters.
+ * On the REFUSING cases the money fact is asserted FIRST (`createRefund`
+ * never called), before any error-code check — an error-code assertion that
+ * fires first kills a mutant before it reaches the path that matters. On the
+ * WAIVING case the mirror-image applies: `createRefund` WAS called.
  *
  * The final case is a POSITIVE CONTROL: a `paid` + `rendered` invoice must
- * still be ALLOWED through to Stripe. Without it a guard that rejects
- * everything would pass every other test in this file.
+ * still be allowed through to Stripe AND still get a real credit note.
+ * Without it, an implementation that waived everything would pass every other
+ * case in this file.
  *
  * Run in isolation to avoid shared-Neon concurrent-suite flake:
  *   pnpm test:integration tests/integration/payments/refund-vs-voided-invoice.test.ts
@@ -379,7 +394,49 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
     });
   }
 
-  it('refuses a refund against a VOIDED invoice — money never moves, no row, no audit', async () => {
+  /** The refund row's tax documentation, read back from live Neon. */
+  async function readRefundDocumentation(paymentId: PaymentId): Promise<{
+    status: string;
+    creditNoteId: string | null;
+    waiverReason: string | null;
+    waivedAt: Date | null;
+  } | null> {
+    return runInTenant(tenant.ctx, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT status, credit_note_id, credit_note_waiver_reason, credit_note_waived_at
+          FROM refunds
+         WHERE tenant_id = ${tenant.ctx.slug} AND payment_id = ${paymentId}
+      `)) as unknown as Array<{
+        status: string;
+        credit_note_id: string | null;
+        credit_note_waiver_reason: string | null;
+        credit_note_waived_at: Date | null;
+      }>;
+      const row = rows[0];
+      return row
+        ? {
+            status: row.status,
+            creditNoteId: row.credit_note_id,
+            waiverReason: row.credit_note_waiver_reason,
+            waivedAt: row.credit_note_waived_at,
+          }
+        : null;
+    });
+  }
+
+  async function countWaiverAudits(paymentId: PaymentId): Promise<number> {
+    return runInTenant(tenant.ctx, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT COUNT(*)::int AS c FROM audit_log
+        WHERE tenant_id = ${tenant.ctx.slug}
+          AND event_type = 'refund_credit_note_waived'
+          AND payload->>'payment_id' = ${paymentId}
+      `)) as unknown as Array<{ c: number | string }>;
+      return Number(rows[0]?.c ?? 0);
+    });
+  }
+
+  it('WAIVES on a VOIDED invoice — money goes back, waiver persisted, no credit note', async () => {
     const deps = buildDeps(tenant.ctx.slug);
 
     const r = await issueRefund(deps, {
@@ -392,20 +449,26 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
       requestId: 'req-void',
     });
 
-    // MONEY FIRST — this is the fact the finding is about. Asserted before
-    // any error-code check so a mutant cannot die on a cosmetic assertion
-    // before it reaches the path that matters.
-    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
-    expect(await countRefunds(voidCase.paymentId)).toBe(0);
-    expect(await countRefundInitiatedAudits(voidCase.paymentId)).toBe(0);
+    // MONEY FIRST — inverted from the pre-Track-B expectation, and this is the
+    // whole finding: void is irreversible and writes nothing to payments, so
+    // refusing here stranded the member's settled money permanently.
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledTimes(1);
+    expect(r.ok).toBe(true);
+    expect(await countRefunds(voidCase.paymentId)).toBe(1);
 
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.error.code).toBe('f4_preflight_invalid_status');
-      if (r.error.code === 'f4_preflight_invalid_status') {
-        expect(r.error.status).toBe('void');
-      }
-    }
+    // The waiver is a PERSISTED tax fact, not a return value. This is the
+    // assertion a mock cannot make: the row satisfies `refunds_cn_xor_waived`
+    // and `refunds_succeeded_iff_documented` as actually written to Postgres.
+    const doc = await readRefundDocumentation(voidCase.paymentId);
+    expect(doc).not.toBeNull();
+    expect(doc?.status).toBe('succeeded');
+    expect(doc?.creditNoteId).toBeNull();
+    expect(doc?.waiverReason).toBe('invoice_voided');
+    expect(doc?.waivedAt).not.toBeNull();
+
+    // 10-year forensic. Without a row here the accountant's month-close
+    // discovery query returns nothing and the waiver is invisible.
+    expect(await countWaiverAudits(voidCase.paymentId)).toBe(1);
   }, 60_000);
 
   it('refuses a refund whose receipt PDF has not rendered — money never moves, no row, no audit', async () => {

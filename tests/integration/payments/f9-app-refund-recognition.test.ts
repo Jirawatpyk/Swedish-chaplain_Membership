@@ -193,6 +193,7 @@ describe('F-9 app-refund recognition — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-f9-refund',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });

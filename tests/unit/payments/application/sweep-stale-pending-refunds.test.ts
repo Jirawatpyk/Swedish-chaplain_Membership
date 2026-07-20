@@ -109,6 +109,8 @@ function makeLockedRefund(overrides: Partial<Refund> = {}): Refund {
     processorRefundId: 're_stale1',
     failureReasonCode: null,
     creditNoteId: null,
+    creditNoteWaivedAt: null,
+    creditNoteWaiverReason: null,
     initiatedAt: new Date(NOW_MS - 30 * HOUR_MS),
     completedAt: null,
     initiatorUserId: 'user-admin-1',
@@ -177,6 +179,10 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
   beforeEach(() => {
     mockFinalize.mockResolvedValue(
       ok({
+        // Track B — the finaliser result is discriminated on WHAT documented
+        // the refund. The sweep only ever settles credit-noted refunds through
+        // this stub; the waived arm carries no `invoiceStatus` at all.
+        documentation: 'credit_note' as const,
         creditNoteId: 'cn-1',
         creditNoteNumber: 'TC-1',
         paymentNextStatus: 'refunded',
@@ -241,6 +247,10 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
     mockFinalize.mockResolvedValueOnce(
       ok({
+        // Track B — the finaliser result is discriminated on WHAT documented
+        // the refund. The sweep only ever settles credit-noted refunds through
+        // this stub; the waived arm carries no `invoiceStatus` at all.
+        documentation: 'credit_note' as const,
         creditNoteId: 'cn-1',
         creditNoteNumber: 'TC-1',
         paymentNextStatus: 'refunded',
@@ -555,6 +565,8 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
       makeLockedRefund({
         status: 'succeeded',
         creditNoteId: 'cn-existing',
+        creditNoteWaivedAt: null,
+        creditNoteWaiverReason: null,
         completedAt: new Date(NOW_MS),
       }),
     );
