@@ -51,14 +51,31 @@ const f4Mock = vi.hoisted(() => ({
 // discriminator, so a stub here would test the opposite of the invariant.
 // Safe to import for real — `document-kind.ts` is pure Domain (Principle III:
 // zero framework/ORM imports), so it drags in no DB or server-only module.
+//
+// I1 (Task 7 remediation) — they are wrapped in spies that DELEGATE to the real
+// implementations rather than being passed through bare. The default behaviour
+// is unchanged (still the real discriminator, so the lockstep invariant above
+// still holds); the wrapper exists only so a test can inject a throw and prove
+// the derivation's catch is distinguishable from the brand catch.
+const docKindSpies = vi.hoisted(() => ({
+  inferEventDocumentKind: vi.fn(),
+  resolveBuyerIsVatRegistrant: vi.fn(),
+}));
+
 vi.mock('@/modules/invoicing', async () => {
   const docKind = await vi.importActual<
     typeof import('@/modules/invoicing/domain/document-kind')
   >('@/modules/invoicing/domain/document-kind');
+  docKindSpies.inferEventDocumentKind.mockImplementation(
+    docKind.inferEventDocumentKind,
+  );
+  docKindSpies.resolveBuyerIsVatRegistrant.mockImplementation(
+    docKind.resolveBuyerIsVatRegistrant,
+  );
   return {
     ...f4Mock,
-    inferEventDocumentKind: docKind.inferEventDocumentKind,
-    resolveBuyerIsVatRegistrant: docKind.resolveBuyerIsVatRegistrant,
+    inferEventDocumentKind: docKindSpies.inferEventDocumentKind,
+    resolveBuyerIsVatRegistrant: docKindSpies.resolveBuyerIsVatRegistrant,
   };
 });
 
@@ -296,7 +313,78 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
     const c = ctx as Record<string, unknown>;
     expect(c['tenantId']).toBe(tenantId);
     expect(c['invoiceId']).toBe(invoiceId);
-    expect(c['errKind']).toBe('Error');
+    // Log hygiene: the canonical shape is `err: errKind(e)` (src/lib/log-id.ts),
+    // not a hand-rolled `errKind:` field.
+    expect(c['err']).toBe('Error');
+  });
+
+  it('I1: a derivation throw is credit_gate_underivable, NOT invalid_total', async () => {
+    // THE BUG THIS PINS. Before the fix, deriving the §105/receipt axes sat
+    // inside the SAME try as the two `asSatang` brand calls. Its catch bumped
+    // `…_brand_failed`, logged only satang values, and returned
+    // `invalid_total` — which `issue-refund` maps to `f4_preflight_read_error`
+    // and the route renders as a RETRYABLE 502 saying the refundable BALANCE
+    // could not be read. So a document-kind fault was reported to the admin as
+    // a transient money-read failure and to SRE as money corruption, with
+    // nothing in the log that could identify it.
+    //
+    // Not hypothetical: the mock-factory comment at the top of this file
+    // records this file failing exactly that way when the gate fields landed.
+    // "The resolver is pure and total so it cannot throw" is the reasoning
+    // that produced it — a call site throws when the BINDING is undefined
+    // (dropped barrel export, circular-import TDZ, mock omission), which no
+    // function body controls.
+    f4Mock.getInvoice.mockResolvedValueOnce(
+      ok({
+        id: invoiceId,
+        total: { satang: 107_000n },
+        creditedTotal: { satang: 0n },
+        status: 'paid',
+        invoiceSubject: 'event',
+        memberId,
+        memberIdentitySnapshot: { buyer_is_vat_registrant: true },
+        receiptPdfStatus: 'rendered',
+      }),
+    );
+    docKindSpies.inferEventDocumentKind.mockImplementationOnce(() => {
+      throw new TypeError('inferEventDocumentKind is not a function');
+    });
+
+    const bridge = await loadBridge();
+    const result = await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('credit_gate_underivable');
+      // The money is fine. Saying otherwise sends on-call after a Money VO bug.
+      expect(result.error.code).not.toBe('invalid_total');
+    }
+    expect(metricsSpy).toHaveBeenCalledWith(
+      'getInvoiceCreditedTotal_credit_gate_underivable',
+    );
+    expect(metricsSpy).not.toHaveBeenCalledWith(
+      'getInvoiceCreditedTotal_brand_failed',
+    );
+
+    const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+    expect(msg).toBe(
+      'invoicing-bridge.getInvoiceCreditedTotal_credit_gate_underivable',
+    );
+    const c = ctx as Record<string, unknown>;
+    // Fields that actually identify the fault…
+    expect(c['invoiceSubject']).toBe('event');
+    expect(c['hasIdentitySnapshot']).toBe(true);
+    expect(c['hasMemberId']).toBe(true);
+    expect(c['receiptPdfStatus']).toBe('rendered');
+    expect(c['err']).toBe('TypeError');
+    // …and NOT the satang values, which are irrelevant here and were the only
+    // thing the old shared catch logged.
+    expect(c['rawTotalSatang']).toBeUndefined();
+    expect(c['rawCreditedTotalSatang']).toBeUndefined();
+    // LOG HYGIENE: the snapshot holds the buyer's name, address and TIN.
+    // Presence is the whole diagnostic; the object must never be logged.
+    expect(c['memberIdentitySnapshot']).toBeUndefined();
+    expect(c['memberId']).toBeUndefined();
   });
 
   it('threads externalTx into makeGetInvoiceDeps (Fix#2 — shared connection)', async () => {
