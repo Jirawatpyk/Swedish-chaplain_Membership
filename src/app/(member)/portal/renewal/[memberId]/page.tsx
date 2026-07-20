@@ -33,7 +33,8 @@ import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewa
 // Round-3 test-coverage I1 fix: locale fallback resolver extracted
 // to a testable utility module so the en/th/sv branching is covered
 // by a unit test instead of relying on E2E for behavioural pinning.
-import { resolvePlanName } from './_lib/resolve-plan-name';
+// Promoted to `@/lib/` (plan-change UX P1-8) so admin surfaces share it.
+import { resolvePlanName } from '@/lib/resolve-plan-name';
 // 059-membership-suspension Task 9 item 4 — payability-gate predicate,
 // extracted for unit-testability (see `_lib/is-renewal-payable.ts`).
 import { isRenewalPayable } from './_lib/is-renewal-payable';
