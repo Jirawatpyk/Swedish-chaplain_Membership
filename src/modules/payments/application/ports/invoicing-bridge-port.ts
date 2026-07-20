@@ -267,7 +267,7 @@ export interface InvoicingBridgePort {
         /**
          * F-4 (money-remediation Task 7) — the invoice's F4-authoritative
          * status, so the refund pre-flight can mirror F4's credit-note STATUS
-         * gate (`issue-credit-note.ts:419`) instead of only its amount gate.
+         * gate (F4's `invalid_status`) instead of only its amount gate.
          *
          * The caller MUST admit exactly `paid` and `partially_credited`. A
          * `=== 'paid'` shortcut looks equivalent and is not: after the first

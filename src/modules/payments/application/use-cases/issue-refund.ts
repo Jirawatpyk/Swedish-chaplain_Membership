@@ -189,7 +189,7 @@ export type IssueRefundError =
    * request changes nothing, so a retryable-looking status code would only
    * invite the click that F-3 showed is expensive.
    *
-   * `f4_preflight_invalid_status` — mirrors `issue-credit-note.ts:419`. The
+   * `f4_preflight_invalid_status` — mirrors F4's `invalid_status` gate. The
    * common trigger is an invoice voided after payment (the void route accepts
    * `paid` and writes nothing to payments, so the payment still looks fully
    * refundable). Carries the status so ops can tell `void` from `credited`
@@ -613,17 +613,52 @@ async function issueRefundBody(
       } as const;
     }
 
-    // F-4 (money-remediation Task 7) — preflight PARITY with F4's credit-note
-    // gates. The pre-fix preflight mirrored only F4's AMOUNT gate, so a refund
-    // that F4 would decline on any of the other three axes still reached
+    // F-4 (money-remediation Task 7) — mirror F4's credit-note BUSINESS-STATE
+    // gates before Stripe. The pre-fix preflight mirrored only F4's AMOUNT
+    // gate, so a refund F4 would decline on any other axis still reached
     // Stripe: the money moved, and only then did the CN bridge refuse.
     //
-    // Reachable in production with no feature flag: void a `paid` invoice
-    // (`POST /api/invoices/[id]/void` accepts `paid` per 088 § F.3 and writes
-    // nothing to payments), then refund. Blocking here is FREE — the money has
-    // not moved yet — whereas every downstream remedy is a manual runbook.
+    // WHAT IS MIRRORED (F4 error code → guard below):
+    //   `invalid_status`         → f4_preflight_invalid_status
+    //   `receipt_not_creditable` → f4_preflight_not_creditable
+    //   `receipt_not_rendered`   → f4_preflight_receipt_rendering
+    //                              / f4_preflight_receipt_render_stuck
     //
-    // ALL THREE guards sit ABOVE `checkRefundNotExceedingRemainder`, the
+    // WHAT IS DELIBERATELY *NOT* MIRRORED — this is not full parity, and
+    // calling it that would tell a future reader the F-3 window is closed on
+    // this path when it is not. F4 also refuses with `no_snapshot_on_invoice`,
+    // `settings_missing`, `invalid_event_invoice` and
+    // `membership_effect_required`. Those are corrupt-row and misconfiguration
+    // states, not routine business states, and a refund that hits one still
+    // reaches Stripe and lands in the F-3 casualty state. They are out of
+    // scope here because mirroring them needs F4 aggregate fields this bridge
+    // does not carry — not because they are impossible.
+    //
+    // Reachable in production with no feature flag: void a `paid` invoice
+    // (`void-invoice.ts` accepts `issued|paid` — 088 T068 widened that CAS;
+    // § F.3 does not state it — and writes nothing to payments), then refund.
+    // Blocking here is FREE — the money has not moved yet — whereas every
+    // downstream remedy is a manual runbook.
+    //
+    // S7 — THE WINDOW IS NARROWED, NOT CLOSED. Do not read the guards below as
+    // serialising against a concurrent void. Phase A locks the PAYMENT row,
+    // reads the invoice through an UNLOCKED plain SELECT (`findById`, not the
+    // `findByIdInTxForUpdate` variant), commits, and only then calls Stripe
+    // outside any transaction. `void-invoice` locks the INVOICE row FOR UPDATE
+    // in a different transaction. Nothing serialises the two, so a void that
+    // commits between our read and the Stripe call still produces the old
+    // outcome: money moves, then F4 declines the credit note.
+    //
+    // Deliberately NOT fixed here. A plain `FOR UPDATE` on the invoice parent
+    // deadlocks against FK-child inserts in this codebase (`FOR NO KEY UPDATE`
+    // is the known-safe form), and reordering F4's and F5's lock acquisition is
+    // a cross-module redesign needing its own change, its own integration test
+    // and its own review. A narrow TOCTOU beats a certain deadlock. The
+    // residual is also benign under the current design: the refund settles and
+    // the credit note defers (`f4_bridge_deferred`, row stays `pending`), the
+    // sweep retries, and the money is never lost — the retry is merely futile.
+    //
+    // EVERY guard below sits ABOVE `checkRefundNotExceedingRemainder`, the
     // `refundsRepo.insert`, and the `refund_initiated` emit, and that ordering
     // is a correctness requirement rather than a style choice: `err()` inside
     // `runInTenant` COMMITS, so a guard below either write would leave a
@@ -631,10 +666,13 @@ async function issueRefundBody(
     // payment via `ctx.pendingCount > 0`) plus a false audit trail behind what
     // is supposed to be a refusal.
     //
-    // All three map to 409, never 502: money did not move, no orphaned Stripe
-    // refund exists, and retrying the identical request changes nothing.
+    // All map to 409, never 502: money did not move and no orphaned Stripe
+    // refund exists. Note that 409 does NOT mean "never retry" — the
+    // `receipt_rendering` arm clears on its own and its copy says to wait. The
+    // status code reflects that the current STATE forbids the request; how the
+    // state clears is carried by the code, and by the copy that code selects.
 
-    // Mirrors `issue-credit-note.ts:419` EXACTLY. The allow-list must stay
+    // Mirrors F4's `invalid_status` gate EXACTLY. The allow-list must stay
     // `paid | partially_credited`: F4 flips an invoice to `partially_credited`
     // after the first partial refund's CN, so narrowing this to `=== 'paid'`
     // would break every SECOND partial refund — a live regression strictly

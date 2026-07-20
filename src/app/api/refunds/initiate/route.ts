@@ -182,6 +182,25 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // remaining-refundable maths is blind to money that already left.
       // A human must reconcile via `docs/runbooks/out-of-band-refund.md`.
       return { status: 409, routeCode: 'refund_needs_reconciliation' };
+    // S3 (Task 7 remediation) — exhaustiveness, asserted rather than implied.
+    //
+    // Today this switch is already total by structure: it has no `default:`,
+    // the return type excludes `undefined`, and `noImplicitReturns` is on, so
+    // a missing case fails the build. But that guarantee is one keystroke from
+    // gone — anyone adding `default: return { status: 500, routeCode:
+    // 'internal_error' }` (which reads as defensive hardening and would pass
+    // review) silently converts every FUTURE missing case into a 500 on a
+    // money surface.
+    //
+    // This arm survives that edit: there is already a default, so adding
+    // another is a duplicate-case error, and the compile failure now NAMES the
+    // unhandled variant instead of the opaque "lacks ending return statement".
+    default: {
+      const exhaustive: never = code;
+      throw new Error(
+        `httpStatusForUseCaseError: unhandled IssueRefundError code ${JSON.stringify(exhaustive)}`,
+      );
+    }
   }
 }
 
@@ -354,6 +373,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         routeCode,
         ...(processorErrorKind ? { processorErrorKind } : {}),
         ...(processorErrorReason ? { processorErrorReason } : {}),
+        // I8 (Task 7 remediation) — the `status` payload on
+        // `f4_preflight_invalid_status` was documented as letting ops tell a
+        // voided invoice from a fully-credited one "without a second query",
+        // and then was never logged, never returned, and never read anywhere.
+        // The docstring promised on-call a field that did not exist. Emit it.
+        // Bounded enum (`draft|issued|paid|void|credited|partially_credited`)
+        // — no PII, nothing to redact.
+        ...(result.error.code === 'f4_preflight_invalid_status'
+          ? { invoiceStatus: result.error.status }
+          : {}),
       },
       'refunds.initiate.use_case_error',
     );
