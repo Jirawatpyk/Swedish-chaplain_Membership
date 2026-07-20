@@ -206,9 +206,13 @@ export const f5RefundBridge: F5RefundBridge = {
     }
     switch (refund.status) {
       case 'succeeded':
-        // F5 domain invariant: status='succeeded' ⟺ credit_note_id NOT NULL.
-        // The DTO surfaces it directly; pass it through (defensively nullable
-        // per the port contract — see GetRefundOutcomeResult.succeeded).
+        // Track B — a succeeded refund is documented by a §86/10 credit note OR
+        // by a recorded waiver, so `credit_note_id` is legitimately NULL on a
+        // waived (voided-invoice / §105) refund. The DTO surfaces whatever the
+        // row holds; pass it through. Do NOT re-add a "succeeded ⟺ credit_note_id
+        // NOT NULL" invariant here — that was true pre-Track-B, and a guard
+        // enforcing it would false-fire on every waived async reject and strand
+        // the cycle `pending` in reconcile.
         return { status: 'succeeded', creditNoteId: refund.creditNoteId };
       case 'failed':
         return {

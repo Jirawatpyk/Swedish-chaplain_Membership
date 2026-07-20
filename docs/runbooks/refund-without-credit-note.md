@@ -153,7 +153,9 @@ Rows where `r.status <> 'succeeded'` are decisions that never became money.
 
 ## Step 2 — What the audit trail gives you
 
-`refund_credit_note_waived` (retention **10 years**, per §87/3) carries:
+`refund_credit_note_waived` (retention **10 years** — §87/3 sets a 5-year floor;
+10y is the repo convention for tax evidence, matching the F4 tax-document
+backfill in migration 0039) carries:
 `refund_id`, `payment_id`, `invoice_id`, `amount_satang`, `waiver_reason`,
 `invoice_status` (as at pre-flight), and `runbook_url`.
 
@@ -199,7 +201,8 @@ invoice was ever paid:
 | `i.paid_at IS NOT NULL` | Output VAT WAS declared. Same handover as Step 3. |
 
 Never hard-delete a §87-numbered document. Retain the original and its copies
-with a written cancellation note, for the §87/3 ten-year period.
+with a written cancellation note. §87/3 requires a 5-year minimum; retain for
+the repo's 10-year tax-evidence convention.
 
 ---
 
@@ -242,8 +245,8 @@ exists to prevent.
 ## References
 
 - Thai Revenue Code as used elsewhere in this repo: §78/1 (tax point), §86/4
-  (tax invoice), §86/10 (credit note), §87 + §87/3 (registers, 10-year
-  retention), §105 (receipt).
+  (tax invoice), §86/10 (credit note), §87 + §87/3 (registers, 5-year retention
+  floor), §105 (receipt).
 - `docs/runbooks/event-invoice-legacy-no-tin-remediation.md` — correction-register
   precedent (see the premise caveat in Step 3).
 - `docs/observability.md` § 21.1 / § 21.3 / § 21.5.

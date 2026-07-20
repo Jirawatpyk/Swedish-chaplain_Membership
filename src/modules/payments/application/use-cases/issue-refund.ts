@@ -311,9 +311,10 @@ async function finaliseFailedRefund(
      * settled `failed`/`canceled`, persist the `re_…` id on the failed
      * row (forensic completeness + webhook-matchable). Omitted when the
      * `createRefund` call itself failed (no processor id exists).
-     * CHECK-safe: `refunds_succeeded_iff_complete` holds because the
-     * `failed` status keeps `credit_note_id` NULL (biconditional
-     * `false = false`).
+     * CHECK-safe: `refunds_succeeded_iff_documented` (migration 0268, which
+     * replaced `refunds_succeeded_iff_complete`) holds because the `failed`
+     * status keeps both `credit_note_id` and `credit_note_waived_at` NULL — the
+     * biconditional is `false = false`.
      */
     readonly processorRefundId?: string;
     readonly extraPayload?: Readonly<Record<string, unknown>>;
@@ -323,12 +324,13 @@ async function finaliseFailedRefund(
   const outcome = await deps.paymentsRepo.withTx(async (tx) => {
     // F-10 — CAS predicate. This was the ONLY refund-status writer without
     // either a row lock or an expected-status guard. Without it, a sibling
-    // that already finalised the row to `succeeded` (with a `credit_note_id`)
-    // gets `failed` stamped over it, which violates the
-    // `refunds_succeeded_iff_complete` biconditional CHECK, aborts the tx,
-    // and drops us into the double-fault handler — which then emits a 10-year
-    // forensic saying the refund is stuck pending, about a refund that
-    // succeeded and has a §86/10 credit note.
+    // that already finalised the row to `succeeded` (documented by a
+    // `credit_note_id` OR a waiver) gets `failed` stamped over it, which
+    // violates the `refunds_succeeded_iff_documented` biconditional CHECK
+    // (migration 0268, formerly `refunds_succeeded_iff_complete`), aborts the
+    // tx, and drops us into the double-fault handler — which then emits a
+    // 10-year forensic saying the refund is stuck pending, about a refund that
+    // succeeded and is fully documented.
     const updated = await deps.refundsRepo.updateStatus(tx, {
       refundId: input.refundId,
       tenantId: input.tenantId,
@@ -717,9 +719,17 @@ async function issueRefundBody(
     // pin the invoice status without re-narrowing.
     const waiver = requirement.kind === 'waive' ? requirement : null;
     const creditNoteWaiverReason = waiver?.reason ?? null;
-    // On the `issue` arm the invoice is `paid | partially_credited` by
-    // construction (the resolver refused everything else); the waive arm pins
-    // the real status. Either way this is F4's value, read under the lock.
+    // `invoiceStatusAtPreflight` is READ AT EXACTLY ONE SITE — the success
+    // envelope's `invoice.status`, and only on the WAIVE branch (where the
+    // finaliser returns `documentation: 'waived'` and computes no status of its
+    // own). On that branch `waiver` is non-null by construction, so
+    // `waiver.invoiceStatus` — F4's real value, read under the lock — is what is
+    // returned. The `?? 'paid'` fallback is therefore reached ONLY on the
+    // `issue` arm, whose value is never read (that branch takes the finaliser's
+    // authoritative post-CN status instead). It is an unobservable placeholder,
+    // not a claim about the invoice; the type cannot express "present only when
+    // waived" because the waive decision and the finalise result are separate
+    // values across the Stripe call, so the invariant is documented here.
     const invoiceStatusAtPreflight: InvoiceStatus =
       waiver?.invoiceStatus ?? 'paid';
     const invariant = checkRefundNotExceedingRemainder({

@@ -297,9 +297,17 @@ export function RefundForm({
         // settles" would be false for the whole life of that refund.
         const pendingWaiver = body.refund.creditNoteWaiverReason ?? null;
         if (pendingWaiver) {
-          toast.success(t('success.pendingWaivedToast'), {
+          // `warning`, not `success`: the money went back, but the message is a
+          // CAUTION — an output-VAT adjustment is now owed. The green check of
+          // `toast.success` reads as "all done"; the triangle of `toast.warning`
+          // matches "succeeded, but act". `closeButton` is REQUIRED alongside
+          // `duration: Infinity` — a toast that never auto-dismisses and has no
+          // focusable dismiss control strands a keyboard/screen-reader admin
+          // under it on every subsequent screen (WCAG 2.1.1 / ux-standards §4.2).
+          toast.warning(t('success.pendingWaivedToast'), {
             description: t(`success.waivedReason.${waiverKey(pendingWaiver)}`),
             duration: Infinity,
+            closeButton: true,
           });
         } else {
           toast.success(t('success.pendingToast'));
@@ -313,13 +321,16 @@ export function RefundForm({
         // chamber's accountant. Turning an unanswered tax question into an
         // instruction would be a worse lie than the one being removed here.
         //
-        // Persistent (`duration: Infinity`) for the same reason: this is the
-        // only moment the admin is told, and it must not auto-dismiss.
-        toast.success(t('success.waivedToast'), {
+        // `warning` + persistent + `closeButton`: this is a caution, it is the
+        // only moment the admin is told, and it must be dismissible by keyboard
+        // and screen reader — see the pending-waived arm above for the full
+        // reasoning.
+        toast.warning(t('success.waivedToast'), {
           description: t(
             `success.waivedReason.${waiverKey(body.refund.creditNote.reason)}`,
           ),
           duration: Infinity,
+          closeButton: true,
         });
       } else {
         toast.success(

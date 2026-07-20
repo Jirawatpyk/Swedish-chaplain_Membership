@@ -177,6 +177,20 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
           // remedy an admin is given is identical, so splitting the copy would
           // be a distinction without a difference.
           return { status: 409, routeCode: 'f4_preflight_receipt_render_stuck' };
+        // Same S3 reasoning as the OUTER switch's default, and load-bearing for
+        // the same reason: this inner switch has no return after it, so a NEW
+        // `RefundCreditNoteBlockReason` (the Domain union invites exactly that)
+        // would match no case and FALL THROUGH to `f4_bridge_error` below —
+        // answering a Phase-A block, where no money moved, with a 502 that reads
+        // as retryable. `noImplicitReturns` does not catch it because the outer
+        // arm still returns. The `never` assignment turns "added a reason,
+        // forgot the route mapping" into a compile error that NAMES the reason.
+        default: {
+          const exhaustiveReason: never = error.reason;
+          throw new Error(
+            `httpStatusForUseCaseError: unhandled RefundCreditNoteBlockReason ${JSON.stringify(exhaustiveReason)}`,
+          );
+        }
       }
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a

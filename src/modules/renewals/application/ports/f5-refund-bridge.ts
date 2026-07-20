@@ -123,13 +123,15 @@ export interface GetRefundOutcomeInput {
 export type GetRefundOutcomeResult =
   | {
       /**
-       * The refund SETTLED successfully. The F4 credit note is now attached
-       * (F5 domain invariant: `status='succeeded'` ⟺ `credit_note_id NOT NULL`),
-       * so `creditNoteId` is present for byte-identical audit parity with the
-       * sync reject path. `null` only in the pathological case of a settled
-       * refund whose CN row is missing (referential drift) — the cron still
-       * converges to cancelled (money is back) and records a null CN, mirroring
-       * the sync path's `no_payment_found` null-CN tolerance.
+       * The refund SETTLED successfully. `creditNoteId` is the attached §86/10
+       * credit note when one was owed, and legitimately `null` when it was NOT
+       * — Track B: a refund against a voided invoice or a §105 receipt settles
+       * `succeeded` with a recorded WAIVER and no credit note. A null here is a
+       * normal waived refund, NOT "referential drift"; the money is back and the
+       * cron converges to cancelled either way. (It was also always tolerant of
+       * a genuinely missing CN row, mirroring the sync path's `no_payment_found`
+       * null-CN handling — but that pathological case is no longer the only
+       * source of a null, so do not treat a null CN as an anomaly.)
        */
       readonly status: 'succeeded';
       readonly creditNoteId: string | null;

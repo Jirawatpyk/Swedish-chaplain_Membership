@@ -30,7 +30,10 @@ import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
 import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import type { CreditNoteWaiverReason } from '@/modules/invoicing';
+import {
+  CREDIT_NOTE_WAIVER_REASONS,
+  type CreditNoteWaiverReason,
+} from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 
 // H-9 / H-10 (review 2026-04-27): defensive boundary guards mirroring
@@ -39,6 +42,26 @@ import { logger } from '@/lib/logger';
 function assertRefundStatus(s: string, rowId: string): RefundStatus {
   if ((REFUND_STATUSES as readonly string[]).includes(s)) return s as RefundStatus;
   throw new Error(`drizzle-refunds-repo: unknown refund status '${s}' on row ${rowId}`);
+}
+
+// Track B — narrow the waiver reason at the DB→Domain seam, same H-9/H-10
+// principle this file already applies to `status` and `amountSatang`: a value
+// the Domain vocabulary does not recognise (a dropped CHECK, an out-of-band SQL
+// write, a future enum value this build predates) is a corrupt row, and it must
+// surface as a loud throw here rather than a bare `as` cast that lets an unknown
+// string flow into the aggregate. `null` is a legitimate value (no waiver), so
+// it passes through.
+function assertCreditNoteWaiverReason(
+  s: string | null,
+  rowId: string,
+): CreditNoteWaiverReason | null {
+  if (s === null) return null;
+  if ((CREDIT_NOTE_WAIVER_REASONS as readonly string[]).includes(s)) {
+    return s as CreditNoteWaiverReason;
+  }
+  throw new Error(
+    `drizzle-refunds-repo: unknown credit_note_waiver_reason '${s}' on row ${rowId}`,
+  );
 }
 
 // F5R3 H-5 (2026-05-16) — return `Satang` brand at DB→Domain boundary.
@@ -82,8 +105,10 @@ function toRefundDomain(row: RefundRow): Refund {
     processorRefundId: row.processorRefundId,
     failureReasonCode: row.failureReasonCode,
     creditNoteId: row.creditNoteId,
-    creditNoteWaiverReason:
-      row.creditNoteWaiverReason as CreditNoteWaiverReason | null,
+    creditNoteWaiverReason: assertCreditNoteWaiverReason(
+      row.creditNoteWaiverReason,
+      row.id,
+    ),
     creditNoteWaivedAt: row.creditNoteWaivedAt,
     initiatedAt: row.initiatedAt,
     completedAt: row.completedAt,

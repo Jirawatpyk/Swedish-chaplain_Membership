@@ -70,6 +70,12 @@ export type F5RouteErrorCode =
   // operator response differs per axis (fix the invoice / permanent, use a
   // different instrument / just wait for the receipt render).
   | 'f4_preflight_invalid_status'
+  // RESERVED / UNREACHABLE (Track B) — no producer. The refund route no longer
+  // emits this: a §105 receipt is now handled by the WAIVE arm (the refund
+  // succeeds without a credit note), not refused, so the "not creditable" block
+  // it named cannot occur. Kept, not deleted, so the id stays stable for the
+  // historical audit rows that carry it and so a future re-introduction reuses
+  // the same string. Its copy in messages/*.json is likewise dormant.
   | 'f4_preflight_not_creditable'
   // C2 (Task 7) — split from a single `f4_preflight_receipt_not_rendered`,
   // whose copy told every admin to wait a few minutes. True only for

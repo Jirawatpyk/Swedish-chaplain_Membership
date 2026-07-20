@@ -1882,8 +1882,8 @@
           "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
-          "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Återbetalning kräver manuell hantering — kontakta supporten.",
-          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
+          "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. För att återbetala den, använd återbetalningsåtgärden på betalningen — den återför pengarna utan en kreditnota.",
+          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande, eller kunde inte skapas. En kreditnota kan utfärdas först när §86/4-kvittot har genererats. Vänta en stund och försök igen — om det fortfarande misslyckas, kontakta supporten för att återskapa det.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
           "codeFallback": "Felkod: {code}"
         }
