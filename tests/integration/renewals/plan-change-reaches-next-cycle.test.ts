@@ -181,6 +181,14 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
   }> {
     const memberId = randomUUID();
     const invoiceId = randomUUID();
+    // tx1 — member, contact, terminal predecessor, invoice. The predecessor
+    // MUST be inserted in an EARLIER tx than the awaiting cycle below: both
+    // `renewal_cycles.created_at` default to the transaction timestamp, and
+    // `findLatestCycleForMember` orders by `created_at DESC, cycle_id DESC`.
+    // Same-tx inserts share created_at, so the random-UUID cycle_id tiebreaker
+    // could pick the (lapsed) predecessor as "latest" -> markPaidOffline's
+    // wall-clock terminated-gate would then refuse with `member_terminated`.
+    // Separate txs make the awaiting cycle deterministically the latest.
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
         tenantId: tenant.ctx.slug,
@@ -222,7 +230,7 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
         closedAt: new Date('2025-01-01T00:00:00.000Z'),
         closedReason: 'cancelled',
       });
-      // Prior awaiting_payment cycle FROZEN on plan A, linked to the invoice.
+      // Invoice for the prior awaiting_payment cycle (FK for linkedInvoiceId).
       await tx.insert(invoices).values({
         tenantId: tenant.ctx.slug,
         invoiceId,
@@ -257,6 +265,11 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
         pdfSha256: 'a'.repeat(64),
         pdfTemplateVersion: 1,
       });
+    });
+    // tx2 — the prior awaiting_payment cycle (strictly later created_at than
+    // the predecessor above) + the plan divergence.
+    await runInTenant(tenant.ctx, async (tx) => {
+      // Prior awaiting_payment cycle FROZEN on plan A, linked to the invoice.
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId: randomUUID(),

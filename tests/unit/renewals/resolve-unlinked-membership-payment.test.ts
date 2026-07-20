@@ -190,6 +190,9 @@ function fakeDeps(args: {
     idFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000c9999') },
     memberRenewalFlagsRepo: { readReactivationGuardsInTx: readGuards } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberRenewalFlagsRepo'],
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlan } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
+    // Package A — cohort-E fallback audit port (unused when memberPlan matches
+    // the cycle's plan, i.e. no divergence — the default here).
+    planChangeBillingEffectAudit: { emitInTx: vi.fn(async () => {}) } as unknown as ResolveUnlinkedMembershipPaymentDeps['planChangeBillingEffectAudit'],
     fiscalYearSettings: { getFiscalYearStartMonthInTx },
     escalationTaskRepo: { insertIfAbsent: escalationInsert } as unknown as ResolveUnlinkedMembershipPaymentDeps['escalationTaskRepo'],
   };
@@ -1051,6 +1054,9 @@ function makeInterplayDeps(cyclesRepo: ReturnType<typeof makeInMemoryCyclesRepo>
     memberPlanLookup: {
       loadMemberPlanInTx: vi.fn(async () => ({ planId: 'p1', isArchived: false })),
     } as unknown as ResolveUnlinkedMembershipPaymentDeps['memberPlanLookup'],
+    // Package A — cohort-E fallback audit port (interplay cycles are all on
+    // 'p1' == the member plan, so no divergence -> never invoked here).
+    planChangeBillingEffectAudit: { emitInTx: vi.fn(async () => {}) } as unknown as ResolveUnlinkedMembershipPaymentDeps['planChangeBillingEffectAudit'],
     // FIX-3 (PR #173 review, 2026-07-09) — January default; none of the
     // interplay tests below exercise a fiscal-year crossing.
     fiscalYearSettings: { getFiscalYearStartMonthInTx: vi.fn(async () => 1) },
@@ -1069,7 +1075,7 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 8: callback interpl
     expect(repo.rows.size).toBe(1);
 
     await createNextCycleOnPaidInTx(
-      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory },
+      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory, memberPlanLookup: deps.memberPlanLookup, planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit },
       evt,
       SENTINEL_TX,
     );
@@ -1097,7 +1103,7 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 8: callback interpl
     expect(repo.rows.size).toBe(1);
 
     await createNextCycleOnPaidInTx(
-      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory },
+      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory, memberPlanLookup: deps.memberPlanLookup, planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit },
       evt,
       SENTINEL_TX,
     );
@@ -1123,7 +1129,7 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 8: callback interpl
     expect(repo.rows.size).toBe(2);
 
     await createNextCycleOnPaidInTx(
-      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory },
+      { cyclesRepo: repo as never, planLookup: deps.planLookup, auditEmitter: deps.auditEmitter, idFactory: deps.idFactory, memberPlanLookup: deps.memberPlanLookup, planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit },
       evt,
       SENTINEL_TX,
     );

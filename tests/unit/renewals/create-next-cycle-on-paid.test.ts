@@ -21,6 +21,8 @@ import { asCycleId, type RenewalCycle } from '@/modules/renewals/domain/renewal-
 import type { CreateCycleInTxDeps } from '@/modules/renewals/application/use-cases/create-cycle-in-tx';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalCycleRepo } from '@/modules/renewals/application/ports/renewal-cycle-repo';
+import type { MemberPlanLookupPort } from '@/modules/renewals/application/ports/member-plan-lookup-port';
+import type { PlanChangeBillingEffectAuditPort } from '@/modules/renewals/application/ports/plan-change-billing-effect-audit-port';
 import type { TenantTx } from '@/lib/db';
 
 const fakeTx = {} as TenantTx;
@@ -69,6 +71,11 @@ type WrapperDeps = CreateCycleInTxDeps & {
     RenewalCycleRepo,
     'findByInvoiceIdInTx' | 'findActiveForMemberInTx' | 'insert'
   >;
+  // Package A — the seed now reads the member's live plan + can emit the
+  // cohort-E fallback audit. Stubbed to return the prior plan (no divergence)
+  // so the wrapper's behaviour is unchanged for these tests.
+  memberPlanLookup: MemberPlanLookupPort;
+  planChangeBillingEffectAudit: PlanChangeBillingEffectAuditPort;
 };
 
 function makeDeps(opts?: {
@@ -81,6 +88,8 @@ function makeDeps(opts?: {
   insert: ReturnType<typeof vi.fn>;
   loadPlanFrozenFields: ReturnType<typeof vi.fn>;
   emitInTx: ReturnType<typeof vi.fn>;
+  loadMemberPlanInTx: ReturnType<typeof vi.fn>;
+  billingEffectEmitInTx: ReturnType<typeof vi.fn>;
 } {
   const findByInvoiceIdInTx = vi
     .fn()
@@ -96,6 +105,15 @@ function makeDeps(opts?: {
     plan: { tierBucket: 'regular', priceTHB: '15000.00', termMonths: 12, currency: 'THB' },
   });
   const emitInTx = vi.fn().mockResolvedValue(undefined);
+  // Return the prior cycle's plan so livePlanId === priorPlanId (no
+  // divergence) — the seed helper then behaves exactly as before.
+  const priorPlanId =
+    (opts?.prior === undefined ? PRIOR_CYCLE : opts.prior)?.planIdAtCycleStart ??
+    'regular';
+  const loadMemberPlanInTx = vi
+    .fn()
+    .mockResolvedValue({ planId: priorPlanId, isArchived: false });
+  const billingEffectEmitInTx = vi.fn().mockResolvedValue(undefined);
 
   const deps: WrapperDeps = {
     cyclesRepo: {
@@ -106,6 +124,8 @@ function makeDeps(opts?: {
     planLookup: { loadPlanFrozenFields },
     auditEmitter: { emit: vi.fn(), emitInTx, bulkEmitInTx: vi.fn() },
     idFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000000c2') },
+    memberPlanLookup: { loadMemberPlanInTx },
+    planChangeBillingEffectAudit: { emitInTx: billingEffectEmitInTx },
   };
   return {
     deps,
@@ -114,6 +134,8 @@ function makeDeps(opts?: {
     insert,
     loadPlanFrozenFields,
     emitInTx,
+    loadMemberPlanInTx,
+    billingEffectEmitInTx,
   };
 }
 

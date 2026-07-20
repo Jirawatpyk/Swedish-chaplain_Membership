@@ -195,6 +195,14 @@ function fakeDeps(
       currency: 'THB' as const,
     },
   }));
+  // Package A — the next-cycle seed now reads the member's live plan. Return
+  // the (prior) cycle's plan so livePlanId === priorPlanId (no divergence),
+  // keeping the on-paid next-cycle creation unchanged for these tests.
+  const loadMemberPlanInTxMock = vi.fn(async () => ({
+    planId: (cycle?.planIdAtCycleStart as string) ?? 'plan-x',
+    isArchived: false,
+  }));
+  const planChangeBillingEffectEmitMock = vi.fn(async () => {});
   // 070 Item D — tier-upgrade apply (in-tx) seam. Default: no pending
   // suggestion for the cycle, so the apply is a clean no-op (the existing
   // happy-path / error-path tests stay green). A targeted test overrides
@@ -318,6 +326,13 @@ function fakeDeps(
     // cycle-id generator from `deps.cycleIdFactory` (was an inline literal).
     // Provide a deterministic generator so the next-cycle insert resolves.
     cycleIdFactory: { cycleId: () => asCycleId(VALID_UUID) },
+    // Package A — seed-next-cycle-from-member-plan deps.
+    memberPlanLookup: {
+      loadMemberPlanInTx: loadMemberPlanInTxMock,
+    } as unknown as RenewalsDeps['memberPlanLookup'],
+    planChangeBillingEffectAudit: {
+      emitInTx: planChangeBillingEffectEmitMock,
+    } as unknown as RenewalsDeps['planChangeBillingEffectAudit'],
   } as unknown as RenewalsDeps;
   return {
     deps,

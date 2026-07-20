@@ -633,6 +633,9 @@ export async function markPaidOffline(
             planLookup: deps.planLookupForRenewal,
             auditEmitter: deps.auditEmitter,
             idFactory: deps.cycleIdFactory,
+            // Package A — seed the next cycle from the member's live plan.
+            memberPlanLookup: deps.memberPlanLookup,
+            planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
           },
           evt,
           tx,

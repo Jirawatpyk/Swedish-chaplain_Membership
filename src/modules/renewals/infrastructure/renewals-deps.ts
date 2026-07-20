@@ -75,6 +75,8 @@ import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-fo
 import { makeDrizzleFiscalYearStartMonth } from './ports-adapters/fiscal-year-settings-drizzle';
 import type { FiscalYearStartMonthPort } from '../application/ports/fiscal-year-settings-port';
 import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
+import { planChangeBillingEffectAuditDrizzle } from './ports-adapters/plan-change-billing-effect-audit-drizzle';
+import type { PlanChangeBillingEffectAuditPort } from '../application/ports/plan-change-billing-effect-audit-port';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
 import { makeDrizzleConsumedLinkTokensRepo } from './drizzle/drizzle-consumed-link-tokens-repo';
@@ -234,6 +236,13 @@ export interface RenewalsDeps {
    * adapter delegating to F3's `findByIdInTx`.
    */
   readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * Plan-change -> billing remediation (Package A) — narrow renewals-owned
+   * audit port for the `member_plan_change_billing_effect` event, emitted
+   * by the seed seams' cohort-E fallback. Stateless const adapter (writes
+   * `audit_log` via the caller's tx).
+   */
+  readonly planChangeBillingEffectAudit: PlanChangeBillingEffectAuditPort;
   /**
    * F8 renewal benefit-summary — F8 → F9 bridge that resolves a member's
    * metered benefit consumption (E-Blasts / cultural tickets) for the
@@ -432,6 +441,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
     memberPlanLookup: memberPlanLookupDrizzle,
+    planChangeBillingEffectAudit: planChangeBillingEffectAuditDrizzle,
     benefitConsumptionReader: benefitConsumptionReaderInsights,
     cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },
     eventAttendees: eventAttendeesPort,
@@ -782,6 +792,9 @@ export function f8OnPaidCallbacks(
           planLookup: deps.planLookupForRenewal,
           auditEmitter: deps.auditEmitter,
           idFactory: deps.cycleIdFactory,
+          // Package A — seed the next cycle from the member's live plan.
+          memberPlanLookup: deps.memberPlanLookup,
+          planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
         },
         evt,
         txUnknown,

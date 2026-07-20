@@ -62,12 +62,17 @@ import {
 } from '../ports/renewal-cycle-repo';
 import type { MemberRenewalFlagsRepo } from '../ports/member-renewal-flags-repo';
 import type { MemberPlanLookupPort } from '../ports/member-plan-lookup-port';
+import type { PlanChangeBillingEffectAuditPort } from '../ports/plan-change-billing-effect-audit-port';
 import {
   createCycleInTx,
   PlanNotResolvableError,
   type CreateCycleInTxDeps,
   type CreateCycleOutcome,
 } from './create-cycle-in-tx';
+import {
+  seedNextCycleFromMemberPlanInTx,
+  type SeedNextCycleFromMemberPlanDeps,
+} from './_lib/seed-next-cycle-from-member-plan';
 import type { FiscalYearStartMonthPort } from '../ports/fiscal-year-settings-port';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import { reanchorFirstPaymentCycleInTx } from './_lib/reanchor-first-payment';
@@ -134,6 +139,14 @@ export type ResolveUnlinkedMembershipPaymentDeps = CreateCycleInTxDeps & {
    * creation.
    */
   readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * Plan-change -> billing remediation (Package A) — emits the cohort-E
+   * `member_plan_change_billing_effect(seed_fallback_plan_unresolvable)`
+   * audit when `renewalComplete`'s next-cycle seed falls back from the
+   * member's (unresolvable) live plan to the prior cycle's plan. Threaded
+   * into `seedNextCycleFromMemberPlanInTx`.
+   */
+  readonly planChangeBillingEffectAudit: PlanChangeBillingEffectAuditPort;
   /**
    * FIX-3 (PR #173 review, 2026-07-09) — threaded through to
    * `reanchorFirstPaymentCycleInTx` (the `firstPayment` branch below) so
@@ -585,34 +598,35 @@ async function renewalComplete(
     { tenantId: evt.tenantId, ...AUDIT_ACTOR, correlationId: correlationId(evt) },
   );
 
-  const createDeps: CreateCycleInTxDeps = {
+  const seedDeps: SeedNextCycleFromMemberPlanDeps = {
     cyclesRepo: deps.cyclesRepo,
     planLookup: deps.planLookup,
     auditEmitter: deps.auditEmitter,
     idFactory: deps.idFactory,
+    memberPlanLookup: deps.memberPlanLookup,
+    planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
   };
-  // Mirrors create-next-cycle-on-paid.ts's exact call: gapless next cycle
-  // anchored at the just-completed cycle's periodTo. `createCycleInTx`'s
-  // in-tx idempotency guard (`findActiveForMemberInTx`) sees the
-  // uncommitted completion flip above and correctly excludes it, so the
-  // next cycle IS created on first delivery.
+  // Plan-change -> billing remediation (Package A): the gapless next cycle is
+  // seeded from the member's LIVE plan (`members.plan_id`), NOT
+  // `cycle.planIdAtCycleStart`. `createCycleInTx`'s in-tx idempotency guard
+  // (`findActiveForMemberInTx`, inside the helper) sees the uncommitted
+  // completion flip above and correctly excludes it, so the next cycle IS
+  // created on first delivery.
   //
-  // Deliberately NOT wrapped in a try/catch for `PlanNotResolvableError`
-  // (asymmetric to `healNoCycle`'s guard above — see F1 fix comment
-  // there). `create-next-cycle-on-paid.ts`'s docstring is explicit: "THROWS
-  // on any failure ... NEVER swallow — a swallow would commit the payment
-  // while the member silently drops out of the renewal pipeline with no
-  // retry trigger." A catalogue gap discovered while COMPLETING a renewal
-  // is a real ops incident (the plan the member just paid to renew no
-  // longer resolves) and must roll back the whole tx so the at-least-once
-  // retry / webhook redelivery surfaces it loudly — unlike the heal
-  // branch, where the payment already succeeded independent of any
-  // specific plan and there is no renewal state to roll back.
-  await createCycleInTx(createDeps, tx, {
+  // This branch KEEPS the never-swallow posture for GENUINE failures: a
+  // PlanNotResolvableError on the PRIOR plan (a real catalogue gap on the plan
+  // the member just paid to renew) still propagates and rolls back the whole
+  // tx, so the at-least-once retry / webhook redelivery surfaces it loudly —
+  // asymmetric to `healNoCycle`, where the payment stands independent of any
+  // plan. The ONE new exception is cohort E: the member's diverged LIVE plan
+  // being unresolvable falls back to the prior plan + emits a forensic audit,
+  // NEVER a rollback (converting that to a rollback would be a Stripe-retry
+  // storm over an admin plan-change data problem). See the helper's docstring.
+  await seedNextCycleFromMemberPlanInTx(seedDeps, tx, {
     tenantId: evt.tenantId,
     memberId: cycle.memberId,
     periodFrom: cycle.periodTo,
-    planId: cycle.planIdAtCycleStart,
+    priorPlanId: cycle.planIdAtCycleStart,
     actorUserId: AUDIT_ACTOR.actorUserId,
     actorRole: AUDIT_ACTOR.actorRole,
     correlationId: `on-paid:${evt.invoiceId}`,
