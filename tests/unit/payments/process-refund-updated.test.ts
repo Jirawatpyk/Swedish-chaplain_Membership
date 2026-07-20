@@ -116,6 +116,18 @@ function makeDeps(): ProcessRefundUpdatedDeps {
       // status on the succeeded path. The webhook outcome does not surface it,
       // so the value is inert here; must be present or the real finaliser throws.
       getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
+      // 8B — on a Phase-B credit-note DECLINE the finaliser re-consults F4's
+      // Domain verdict. Default `issue` (invoice NOT void) → the decline still
+      // DEFERS, exactly as before this fix. Without this stub the decline test
+      // below reaches `undefined(...)` and passes via a TypeError instead of
+      // the real defer path.
+      getInvoiceCreditedTotal: vi.fn(async () =>
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: asSatang(100_000n),
+          creditNoteRequirement: { kind: 'issue' as const },
+        }),
+      ),
     } as unknown as ProcessRefundUpdatedDeps['invoicingBridge'],
     audit: {
       emit: vi.fn(async () => undefined),

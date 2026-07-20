@@ -42,6 +42,16 @@ interface UpdateRefundStatusBase {
    * violate the biconditional after Stripe has already moved the money.
    */
   readonly creditNoteWaivedAt?: Date | null;
+  /**
+   * Track B / 8B — the waiver REASON, written alongside `creditNoteWaivedAt`.
+   * On the ordinary pre-pinned-waive path Phase A already wrote it at insert,
+   * so the succeeded flip re-writes the same value (idempotent). On a Phase-B
+   * CONVERTED waive (a void raced the credit note; Phase A pinned it NULL on
+   * the `issue` arm) this write is load-bearing: the DB CHECK
+   * `refunds_waived_at_requires_reason` rejects a `creditNoteWaivedAt` with a
+   * NULL reason.
+   */
+  readonly creditNoteWaiverReason?: CreditNoteWaiverReason | null;
   readonly completedAt: Date;
   /**
    * Optional optimistic-concurrency guard (S5 / RR-1). When set, the

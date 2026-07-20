@@ -194,6 +194,12 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       if (input.creditNoteWaivedAt !== undefined) {
         patch.creditNoteWaivedAt = input.creditNoteWaivedAt;
       }
+      // Track B / 8B — the waiver reason. Paired with `creditNoteWaivedAt` to
+      // satisfy `refunds_waived_at_requires_reason`; load-bearing on a Phase-B
+      // converted waive where Phase A left it NULL.
+      if (input.creditNoteWaiverReason !== undefined) {
+        patch.creditNoteWaiverReason = input.creditNoteWaiverReason;
+      }
 
       const whereClauses = [
         eq(refunds.tenantId, input.tenantId),

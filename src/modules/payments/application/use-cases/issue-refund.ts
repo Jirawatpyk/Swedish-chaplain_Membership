@@ -1259,10 +1259,17 @@ async function issueRefundBody(
       // On the WAIVE path the helper reports none (it never called
       // `getInvoiceStatus`, which errors for exactly `paid` and `void`), so the
       // status pinned at pre-flight is used — the real one, not a filler.
+      //
+      // 8B — EXCEPT on a CONVERTED waive (a void raced the credit note): there
+      // the finaliser threads out F4's real post-void status, which supersedes
+      // the pre-flight placeholder (`paid`, pinned when the invoice was still
+      // paid). `undefined` on the ordinary pre-pinned-waive path → the correct
+      // pre-flight status is used.
       status:
         finalizeResult.value.documentation === 'credit_note'
           ? finalizeResult.value.invoiceStatus
-          : prepared.invoiceStatusAtPreflight,
+          : (finalizeResult.value.invoiceStatus ??
+            prepared.invoiceStatusAtPreflight),
     },
   });
 }

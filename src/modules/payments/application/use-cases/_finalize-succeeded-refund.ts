@@ -61,7 +61,9 @@
 import { err, ok, type Result } from '@/lib/result';
 import type { Satang } from '@/lib/money';
 // Track B — the waiver vocabulary is F4 Domain's, consumed through the barrel.
-import type { CreditNoteWaiverReason } from '@/modules/invoicing';
+// 8B — `InvoiceStatus` too, to report a converted-waive refund's real
+// post-decline invoice status out to the admin envelope.
+import type { CreditNoteWaiverReason, InvoiceStatus } from '@/modules/invoicing';
 import type {
   AuditPort,
   ClockPort,
@@ -72,6 +74,7 @@ import type {
 } from '../ports';
 import { asPaymentId } from '../../domain/payment';
 import { retentionFor } from '../ports/audit-port';
+import { paymentsMetrics } from '@/lib/metrics';
 
 /**
  * The triggers that flow through the shared finaliser. Matches the
@@ -158,6 +161,15 @@ export type FinalizeSucceededRefundResult =
   | (FinalizeSucceededRefundCommon & {
       readonly documentation: 'waived';
       readonly waiverReason: CreditNoteWaiverReason;
+      /**
+       * 8B — present ONLY when this refund was CONVERTED to a waive on a
+       * Phase-B decline (a concurrent void landed in the TOCTOU window). Carries
+       * F4's real post-decline invoice status (`void`) so the admin envelope
+       * reports the truth instead of the `paid` placeholder pinned at pre-flight.
+       * Absent on the ordinary pre-pinned-waive path, where the caller's
+       * pre-flight status is already correct.
+       */
+      readonly invoiceStatus?: InvoiceStatus;
     });
 
 interface FinalizeSucceededRefundCommon {
@@ -199,9 +211,12 @@ export interface FinalizeSucceededRefundDeps {
   // B.2 (tax#5) — `getInvoiceStatus` reads F4's authoritative post-CN invoice
   // status (see the payment-flip / return sections). Both callers pass their
   // full `InvoicingBridgePort`, so the wider `Pick` is satisfied.
+  // 8B — `getInvoiceCreditedTotal` is re-read on a Phase-B decline to consult
+  // F4's Domain verdict (has the invoice become `waive`-eligible in the TOCTOU
+  // window?). Both callers pass their full `InvoicingBridgePort`.
   readonly invoicingBridge: Pick<
     InvoicingBridgePort,
-    'issueCreditNoteFromRefund' | 'getInvoiceStatus'
+    'issueCreditNoteFromRefund' | 'getInvoiceStatus' | 'getInvoiceCreditedTotal'
   >;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
@@ -231,6 +246,18 @@ export async function finalizeSucceededRefund(
   // designed happy path and then report `credited` for an invoice carrying zero
   // credit notes, on 100% of waived refunds.
   const waiverReason = input.creditNoteWaiverReason;
+
+  // 8B (money-remediation) — set when a Phase-B credit-note decline is
+  // re-consulted and F4's Domain verdict has become `waive`: a concurrent
+  // `voidInvoice` committed in the window between Phase A's pre-flight (verdict
+  // `issue`) and this credit note, so the invoice now owes NO §86/10. Carries
+  // the reason + the invoice's real post-decline status out to the envelope +
+  // the forensic. `null` on every path that did not convert (pre-pinned waive,
+  // clean credit note, or a decline that DID NOT flip to `waive`).
+  let convertedWaive: {
+    readonly reason: CreditNoteWaiverReason;
+    readonly invoiceStatus: InvoiceStatus;
+  } | null = null;
 
   // `resolveInvoiceStatus` is CARRIED BY the credit-note arm rather than living
   // in a sibling binding, so the waive arm structurally does not have one to
@@ -275,33 +302,64 @@ export async function finalizeSucceededRefund(
       requestId: input.requestId,
     });
     if (!cnResult.ok) {
-      return err({ code: cnResult.error.code, detail: cnResult.error.detail });
+      // 8B — a decline is NOT automatically a dead-end. Stripe has already
+      // settled the money; deferring a refund whose invoice can never take a
+      // credit note strands the row `pending` forever (sweep retrying into the
+      // same permanent refusal) and blocks every future refund on the payment.
+      //
+      // Re-consult F4's Domain verdict: if the invoice has flipped to `waive`
+      // (a concurrent `voidInvoice` landed in the TOCTOU window → no §86/10
+      // owed), CONVERT to a clean waived-success. Any OTHER outcome — verdict
+      // still `issue`/`blocked` (a genuine over-credit) or the re-read errored —
+      // DEFERS exactly as before. Fail-closed: a real over-credit is never
+      // silently waived, because only an explicit `waive` verdict converts.
+      //
+      // The read threads the caller's `tx` (B.1 lesson: no nested pooled
+      // connection while row locks are held; READ COMMITTED, so it sees the
+      // just-committed void). It takes NO lock (plain aggregate read), so it
+      // cannot invert the finaliser's refund→invoice lock order.
+      const recheck = await deps.invoicingBridge.getInvoiceCreditedTotal({
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        externalTx: tx,
+      });
+      const requirement = recheck.ok
+        ? recheck.value.creditNoteRequirement
+        : null;
+      if (requirement === null || requirement.kind !== 'waive') {
+        return err({ code: cnResult.error.code, detail: cnResult.error.detail });
+      }
+      convertedWaive = {
+        reason: requirement.reason,
+        invoiceStatus: requirement.invoiceStatus,
+      };
+      documentation = { kind: 'waived', reason: requirement.reason };
+    } else {
+      // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) -----------
+      // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
+      // flipped the invoice to `credited`/`partially_credited`). Read that
+      // authoritative status HERE — threading the caller's `tx` (B.1 lesson: no
+      // nested pooled connection while row locks are held; the finalise tx is
+      // READ COMMITTED so it sees F4's just-committed flip). We source the status
+      // from F4 instead of projecting the F5 payment status because the payment
+      // status is blind to a pre-existing MANUAL F4 credit note.
+      const f4StatusResult = await deps.invoicingBridge.getInvoiceStatus({
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        externalTx: tx,
+      });
+      documentation = {
+        kind: 'credit_note',
+        id: cnResult.value.creditNoteId,
+        number: cnResult.value.creditNoteNumber,
+        resolveInvoiceStatus: (fallbackNextStatus) =>
+          f4StatusResult.ok
+            ? f4StatusResult.value
+            : fallbackNextStatus === 'refunded'
+              ? 'credited'
+              : 'partially_credited',
+      };
     }
-
-    // --- Step 1b: F4-AUTHORITATIVE invoice status (tax#5, B.2) -------------
-    // The CN above committed in F4's own tx (it ran `applyCreditNoteRollup` →
-    // flipped the invoice to `credited`/`partially_credited`). Read that
-    // authoritative status HERE — threading the caller's `tx` (B.1 lesson: no
-    // nested pooled connection while row locks are held; the finalise tx is
-    // READ COMMITTED so it sees F4's just-committed flip). We source the status
-    // from F4 instead of projecting the F5 payment status because the payment
-    // status is blind to a pre-existing MANUAL F4 credit note.
-    const f4StatusResult = await deps.invoicingBridge.getInvoiceStatus({
-      tenantId: input.tenantId,
-      invoiceId: input.invoiceId,
-      externalTx: tx,
-    });
-    documentation = {
-      kind: 'credit_note',
-      id: cnResult.value.creditNoteId,
-      number: cnResult.value.creditNoteNumber,
-      resolveInvoiceStatus: (fallbackNextStatus) =>
-        f4StatusResult.ok
-          ? f4StatusResult.value
-          : fallbackNextStatus === 'refunded'
-            ? 'credited'
-            : 'partially_credited',
-    };
   } else {
     documentation = { kind: 'waived', reason: waiverReason };
   }
@@ -319,9 +377,17 @@ export async function finalizeSucceededRefund(
     nextStatus: 'succeeded',
     processorRefundId: input.processorRefundId,
     // Exactly ONE instrument documents the refund; the DB enforces the XOR.
+    // 8B — the waived arm writes BOTH the completion timestamp AND the reason.
+    // On the ordinary pre-pinned-waive path the reason is already on the row
+    // (idempotent re-write); on a CONVERTED waive Phase A pinned it NULL (it
+    // took the `issue` arm), so this write is load-bearing — omit it and
+    // `refunds_waived_at_requires_reason` aborts the Phase-B tx.
     ...(documentation.kind === 'credit_note'
       ? { creditNoteId: documentation.id }
-      : { creditNoteWaivedAt: completedAt }),
+      : {
+          creditNoteWaivedAt: completedAt,
+          creditNoteWaiverReason: documentation.reason,
+        }),
     completedAt,
     expectedCurrentStatus: 'pending',
   });
@@ -352,6 +418,11 @@ export async function finalizeSucceededRefund(
         : {
             documentation: 'waived' as const,
             waiverReason: documentation.reason,
+            // 8B — carry the converted post-void status even when a sibling
+            // won the flip, so the admin envelope still reports the truth.
+            ...(convertedWaive
+              ? { invoiceStatus: convertedWaive.invoiceStatus }
+              : {}),
           }),
       paymentNextStatus: reportedNextStatus,
       siblingWon: true,
@@ -483,6 +554,38 @@ export async function finalizeSucceededRefund(
     retentionYears: retentionFor('refund_succeeded'),
   });
 
+  // 8B — CONVERTED-waive forensic. On the ordinary pre-pinned-waive path this
+  // 10-year row is emitted in Phase A (issueRefund, before Stripe); a refund
+  // that only became a waive HERE (a concurrent void raced the credit note) has
+  // no Phase-A forensic, so emit it now beside `refund_succeeded`. Winner-only
+  // (the sibling-won branch returned above at the `updatedRefund === null`
+  // guard), which keeps the counter ↔ forensic 1:1 the same way the caller
+  // gates `refundSucceededCount` on `siblingWon === false`. A sibling that won
+  // the flip and also converted owns its own forensic on its own winning call.
+  if (convertedWaive !== null) {
+    await deps.audit.emit(tx, {
+      tenantId: input.tenantId,
+      requestId: input.requestId,
+      eventType: 'refund_credit_note_waived',
+      actorUserId: input.actorUserId,
+      summary: `Refund ${input.refundId} carries no credit note (${convertedWaive.reason}) on invoice ${input.invoiceId}`,
+      payload: {
+        refund_id: input.refundId,
+        payment_id: input.paymentId,
+        invoice_id: input.invoiceId,
+        amount_satang: input.amountSatang.toString(),
+        waiver_reason: convertedWaive.reason,
+        invoice_status: convertedWaive.invoiceStatus,
+        runbook_url: 'docs/runbooks/refund-without-credit-note.md',
+      },
+      retentionYears: retentionFor('refund_credit_note_waived'),
+    });
+    paymentsMetrics.refundCreditNoteWaivedCount(
+      input.tenantId,
+      convertedWaive.reason,
+    );
+  }
+
   return ok({
     ...(documented.kind === 'credit_note'
       ? {
@@ -494,6 +597,12 @@ export async function finalizeSucceededRefund(
       : {
           documentation: 'waived' as const,
           waiverReason: documented.reason,
+          // 8B — the converted-waive path threads F4's real post-void status
+          // ('void'); the pre-pinned-waive path leaves it absent (the caller's
+          // pre-flight status is already correct).
+          ...(convertedWaive
+            ? { invoiceStatus: convertedWaive.invoiceStatus }
+            : {}),
         }),
     paymentNextStatus: resolvedNextStatus,
     siblingWon: false,
