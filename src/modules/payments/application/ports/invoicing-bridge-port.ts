@@ -260,12 +260,21 @@ export interface InvoicingBridgePort {
          */
         readonly status: InvoiceStatus;
         /**
-         * F-4 — mirrors F4's §105 gate (`issue-credit-note.ts:476`,
-         * `receipt_not_creditable`). `false` when the invoice is an EVENT
-         * invoice issued to a non-VAT-registrant buyer: that buyer received a
-         * §105 ใบเสร็จรับเงิน, never a TIN-bearing §86/4 tax invoice, so they
-         * have no input VAT to reverse and a §86/10 ใบลดหนี้ against it is
-         * legally void. This is PERMANENT — no retry ever clears it.
+         * F-4 — mirrors F4's §105 gate (its `receipt_not_creditable` arm).
+         * `false` when the invoice is an EVENT invoice issued to a
+         * non-VAT-registrant buyer: the document raised was a §105
+         * ใบเสร็จรับเงิน, never a §86/4 ใบกำกับภาษี. §86/10 วรรคสอง requires a
+         * ใบลดหนี้ to cite THE NUMBER AND DATE OF THE ORIGINAL ใบกำกับภาษี, and
+         * a §105 receipt supplies neither — so there is nothing lawful to
+         * cite. This is PERMANENT — no retry ever clears it.
+         *
+         * THE RULE IS SELLER-SIDE. §86/10 binds the VAT-registered SELLER who
+         * raised the original tax invoice; it does not require the BUYER to be
+         * a registrant. Do NOT restate this as "the buyer has no input VAT to
+         * reverse": membership invoices go to non-registrant buyers as valid
+         * §86/4 documents under the 066 relax and ARE creditable (11 such rows
+         * live in production today), so the buyer-side framing contradicts
+         * behaviour this system depends on.
          *
          * Derived by the adapter via the SAME shared discriminator F4 uses
          * (`inferEventDocumentKind` ∘ `resolveBuyerIsVatRegistrant`), so

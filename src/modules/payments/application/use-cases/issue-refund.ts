@@ -189,11 +189,16 @@ export type IssueRefundError =
       readonly status: InvoiceStatus;
     }
   /**
-   * F-4 — mirrors `issue-credit-note.ts:476` (§105). PERMANENT: the buyer
-   * received a ใบเสร็จรับเงิน, not a TIN-bearing §86/4 tax invoice, so there is
-   * no input VAT to reverse and a §86/10 ใบลดหนี้ would be legally void. No
-   * retry and no operator action clears this — a refund here needs a different
-   * instrument entirely.
+   * F-4 — mirrors F4's `receipt_not_creditable` gate (§105). PERMANENT: the
+   * document raised was a §105 ใบเสร็จรับเงิน, not a §86/4 ใบกำกับภาษี, and
+   * §86/10 วรรคสอง requires a ใบลดหนี้ to cite the ORIGINAL ใบกำกับภาษี's
+   * number and date — which a §105 receipt does not have. No retry and no
+   * operator action clears this; a refund here needs a different instrument.
+   *
+   * SELLER-SIDE RULE. §86/10 binds the VAT-registered seller, not the buyer.
+   * "The buyer has no input VAT to reverse" is NOT the rule and must not be
+   * written here — membership invoices to non-registrant buyers are valid
+   * §86/4 documents and ARE creditable (066 relax).
    */
   | { readonly code: 'f4_preflight_not_creditable' }
   /**
@@ -608,10 +613,10 @@ async function issueRefundBody(
       } as const;
     }
 
-    // Mirrors `issue-credit-note.ts:476` (§105). PERMANENT: a buyer who
-    // received a §105 ใบเสร็จรับเงิน rather than a §86/4 tax invoice has no
-    // input VAT to reverse, so no retry and no operator action can ever make
-    // this refund creditable.
+    // Mirrors F4's `receipt_not_creditable` gate (§105). PERMANENT: the
+    // document raised was a §105 ใบเสร็จรับเงิน, so there is no original
+    // §86/4 ใบกำกับภาษี whose number and date a §86/10 ใบลดหนี้ could cite
+    // (§86/10 วรรคสอง). No retry and no operator action changes that.
     if (!invoiceCredited.value.creditable) {
       return {
         kind: 'rejected',

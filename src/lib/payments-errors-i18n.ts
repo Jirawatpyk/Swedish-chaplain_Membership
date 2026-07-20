@@ -201,8 +201,11 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
       'ใบแจ้งหนี้นี้ไม่สามารถออกใบลดหนี้ได้แล้ว จึงไม่สามารถคืนเงินได้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาตรวจสอบใบแจ้งหนี้ อาจถูกยกเลิกหรือออกใบลดหนี้เต็มจำนวนไปแล้ว',
   },
   f4_preflight_not_creditable: {
-    // Permanent by law, so the copy must not imply retrying. §105 receipt
-    // holders have no input VAT to reverse.
+    // Permanent by law, so the copy must not imply retrying: a §105
+    // ใบเสร็จรับเงิน has no ใบกำกับภาษี number and date for a §86/10 ใบลดหนี้
+    // to cite (§86/10 วรรคสอง). Seller-side rule — not "the buyer has no
+    // input VAT to reverse", which would wrongly implicate the membership
+    // path's non-registrant buyers, who ARE creditable under the 066 relax.
     message:
       'This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it requires a manual process — please contact finance.',
     messageThai:
