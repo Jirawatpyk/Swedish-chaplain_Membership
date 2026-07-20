@@ -47,6 +47,12 @@ import {
   type MemberInitialValues,
   type EditablePrimaryContact,
 } from './edit-member-payloads';
+import {
+  buildPlanChangeSummary,
+  type PlanChangeSummary,
+} from './plan-change-summary';
+import { PlanChangeConfirmDialog } from './plan-change-confirm-dialog';
+import { resolveBundlePlanLabel } from './resolve-bundle-plan-label';
 
 // MemberInitialValues + EditablePrimaryContact are defined alongside the
 // pure payload builders in ./edit-member-payloads (imported above).
@@ -68,6 +74,8 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const tOverride = useTranslations('admin.members.overrideReason');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [planConfirmState, setPlanConfirmState] =
+    useState<PlanChangeSummary | null>(null);
   const [bundleState, setBundleState] = useState<BundleChangePayload | null>(null);
   const [overrideState, setOverrideState] = useState<{ message: string } | null>(
     null,
@@ -181,11 +189,23 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     const code = body?.error?.code;
     if (res.status === 409 && code === 'bundle_change_requires_confirmation') {
       const details = body.error.details ?? {};
+      const oldBundleId = details.oldBundleCorporatePlanId ?? null;
+      const newBundleId = details.newBundleCorporatePlanId ?? null;
+      // BP5 item 6 — resolve the corporate bundle slugs to human names so the
+      // warning dialog isn't a pair of font-mono UUIDs. Old bundle is matched
+      // in the member's current plan year; new bundle in the year being saved.
+      const newPlanYear = lastValuesRef.current?.plan_year ?? member.planYear;
       setBundleState({
-        oldBundleCorporatePlanId: details.oldBundleCorporatePlanId ?? null,
-        newBundleCorporatePlanId: details.newBundleCorporatePlanId ?? null,
+        oldBundleCorporatePlanId: oldBundleId,
+        newBundleCorporatePlanId: newBundleId,
         oldPlanId: member.planId,
         oldPlanYear: member.planYear,
+        oldBundleLabel: resolveBundlePlanLabel(
+          plans,
+          oldBundleId,
+          member.planYear,
+        ),
+        newBundleLabel: resolveBundlePlanLabel(plans, newBundleId, newPlanYear),
       });
       return;
     }
@@ -272,7 +292,12 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     return body;
   };
 
-  const onSubmit = async (values: MemberFormValues) => {
+  /**
+   * The full member-edit submit sequence (member fields → contact fields →
+   * contact email → plan change LAST). Reached ONLY after the plan-change
+   * confirm gate for a plan change, or directly for a non-plan edit.
+   */
+  const runSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
     setServerFieldError(null);
     setSubmitting(true);
@@ -351,6 +376,38 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * Thin form-submit gate. A plan change (new plan_id OR plan_year) is gated
+   * behind an unconditional confirm dialog BEFORE any network request; a
+   * non-plan edit submits immediately. This gate returns before `setSubmitting`
+   * / any fetch, so it composes cleanly with the server-driven 409 bundle /
+   * 422 override dialogs — those open post-request from inside `runSubmit` and
+   * therefore can never race or double-prompt with this pre-request gate.
+   */
+  const onSubmit = async (values: MemberFormValues) => {
+    if (planChanged(values)) {
+      lastValuesRef.current = values;
+      setPlanConfirmState(
+        buildPlanChangeSummary(
+          plans,
+          member.planId,
+          member.planYear,
+          values.plan_id,
+          values.plan_year,
+        ),
+      );
+      return;
+    }
+    await runSubmit(values);
+  };
+
+  /** Admin confirmed the plan change → run the real submit with the same values. */
+  const onPlanConfirm = async () => {
+    if (!lastValuesRef.current) return;
+    setPlanConfirmState(null);
+    await runSubmit(lastValuesRef.current);
   };
 
   const onBundleConfirm = async () => {
@@ -456,6 +513,15 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         onCancel={() => router.push(`/admin/members/${member.memberId}`)}
         mode="edit"
         serverFieldError={serverFieldError}
+      />
+      <PlanChangeConfirmDialog
+        open={planConfirmState !== null}
+        onOpenChange={(next) => {
+          if (!next) setPlanConfirmState(null);
+        }}
+        summary={planConfirmState}
+        onConfirm={onPlanConfirm}
+        submitting={submitting}
       />
       <BundleChangeWarningDialog
         open={bundleState !== null}

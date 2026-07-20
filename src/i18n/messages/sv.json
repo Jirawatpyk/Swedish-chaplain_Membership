@@ -971,7 +971,24 @@
         "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
         "confirm": "Bekräfta paketändring",
         "cancel": "Avbryt",
-        "loading": "Beräknar berörda medlemmar…"
+        "loading": "Beräknar berörda medlemmar…",
+        "noBundle": "Inget"
+      },
+      "planChangeConfirm": {
+        "title": "Bekräfta byte av medlemsplan",
+        "description": "Du håller på att ändra medlemmens plan. Granska ändringen innan du sparar.",
+        "currentPlan": "Nuvarande plan",
+        "newPlan": "Ny plan",
+        "feeLabel": "Årsavgift (exkl. moms)",
+        "feeUnknown": "Ej tillgänglig",
+        "yearOnlyNotice": "Endast planåret ändras. Själva planen är oförändrad.",
+        "billingNoteHeading": "Vad som ändras och inte ändras",
+        "billingNoteRecord": "Medlemmens registrerade plan ändras omedelbart.",
+        "billingNoteCurrentInvoice": "Redan utfärdade fakturor ändras inte. Om beloppet nu är fel, utfärda på nytt eller kreditera separat.",
+        "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande den tidigare registrerade planen tills förnyelsecykeln ändras separat.",
+        "billingNoteFutureCyclesAutomatic": "Nästa förnyelsefaktura använder den nya planen.",
+        "confirm": "Byt plan",
+        "cancel": "Avbryt"
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {

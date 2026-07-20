@@ -971,7 +971,24 @@
         "affectedCount": "{count, plural, =0 {No members affected} one {# member affected} other {# members affected}}",
         "confirm": "Confirm bundle change",
         "cancel": "Cancel",
-        "loading": "Calculating affected members…"
+        "loading": "Calculating affected members…",
+        "noBundle": "None"
+      },
+      "planChangeConfirm": {
+        "title": "Confirm plan change",
+        "description": "You are changing this member's membership plan. Review the change before saving.",
+        "currentPlan": "Current plan",
+        "newPlan": "New plan",
+        "feeLabel": "Annual fee (excl. VAT)",
+        "feeUnknown": "Not available",
+        "yearOnlyNotice": "Only the plan year changes. The plan itself stays the same.",
+        "billingNoteHeading": "What this does and does not change",
+        "billingNoteRecord": "The member's plan on record changes immediately.",
+        "billingNoteCurrentInvoice": "Invoices that have already been issued are not changed. If the amount is now wrong, reissue or credit them separately.",
+        "billingNoteFutureCycles": "Renewal billing is not updated automatically. The next renewal invoice will still use the previously recorded plan until the renewal cycle is changed separately.",
+        "billingNoteFutureCyclesAutomatic": "The next renewal invoice will use the new plan.",
+        "confirm": "Change plan",
+        "cancel": "Cancel"
       },
       "subtitle": "Member companies + primary contacts",
       "directory": {
