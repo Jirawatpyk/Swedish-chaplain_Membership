@@ -5823,6 +5823,7 @@
       "payment_invoice_not_found": "Payment — invoice not found",
       "stale_pending_refund_detected": "Stale pending refund detected",
       "refund_cn_deferred": "Refund credit note deferred",
+      "refund_credit_note_waived": "Refund credit note waived",
       "payment_acknowledged_terminal_state": "Payment already in final state",
       "dispute_created": "Payment dispute opened",
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",

@@ -90,6 +90,17 @@ export type F5AuditEventType =
   // money was returned to a customer with no §86/10 credit note against it,
   // which is exactly what an auditor reconciling output VAT needs to see.
   | 'refund_cn_deferred'
+  // Migration 0268 (Task 7 / Track B) — a refund SUCCEEDED and no §86/10
+  // ใบลดหนี้ was owed: the invoice was voided (the void stamp is itself the tax
+  // reversal) or the buyer holds a §105 ใบเสร็จรับเงิน with no original
+  // ใบกำกับภาษี for a credit note to cite.
+  //
+  // 10-year retention, and it is the whole reason this event exists: it is the
+  // ONLY record that money went back to a member with no credit note against
+  // it. An auditor reconciling output VAT, and whoever files ภ.พ.30, have
+  // nothing else to find. Emitted in PHASE A, where the invoice facts are
+  // still in hand — the async settlement paths cannot reconstruct them.
+  | 'refund_credit_note_waived'
   // Migration 0052 (H-11 review 2026-04-27) — emitted from
   // confirmPayment when the state machine acknowledges a permanent
   // terminal-state mismatch (illegal_transition or duplicate-
@@ -447,6 +458,17 @@ export interface F5AuditPayloadByType {
     detail: string;
     runbook_url: string;
   };
+  refund_credit_note_waived: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    /** `invoice_voided` | `section_105_receipt` — the enumerated ground. */
+    waiver_reason: string;
+    /** The invoice status at pre-flight, pinned so the trail is self-contained. */
+    invoice_status: string;
+    runbook_url: string;
+  };
   payment_acknowledged_terminal_state: Record<string, unknown>;
   // Migration 0043 — F-09 rate-limit forensic events. Permissive shape
   // because the F1 generic auditRepo.append path doesn't carry F5-typed
@@ -578,6 +600,7 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   out_of_band_refund_detected: 10,
   stale_pending_refund_detected: 10,
   refund_cn_deferred: 10,
+  refund_credit_note_waived: 10,
   dispute_created: 10,
 
   payment_environment_mismatch: 5,

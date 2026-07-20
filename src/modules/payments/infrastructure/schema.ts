@@ -109,6 +109,26 @@ export const refunds = pgTable('refunds', {
   processorRefundId: text('processor_refund_id'),
   failureReasonCode: text('failure_reason_code'),
   creditNoteId: text('credit_note_id'), // uuid at DB; nullable
+  /**
+   * Track B (migration 0268) — waiver INTENT, pinned at the Phase-A insert
+   * while the row is still `pending`. Closed vocabulary, mirroring
+   * `CreditNoteWaiverReason` in F4 Domain; the DB enforces it with a CHECK.
+   */
+  creditNoteWaiverReason: text('credit_note_waiver_reason'),
+  /**
+   * Track B — waiver COMPLETION, stamped on the succeeded flip only.
+   *
+   * SEPARATE from the reason, and the completeness CHECK
+   * (`refunds_succeeded_iff_documented`) keys on THIS column, never on the
+   * reason. Keying on the reason would make an intermediate state — a
+   * still-`pending` row that has just had its `processor_refund_id` attached —
+   * violate the biconditional AFTER Stripe already moved the money, stranding
+   * the row `pending` forever and blocking every future refund on the payment.
+   * Verified empirically against both variants before this shipped.
+   */
+  creditNoteWaivedAt: timestamp('credit_note_waived_at', {
+    withTimezone: true,
+  }),
   initiatedAt: timestamp('initiated_at', { withTimezone: true }).notNull(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   initiatorUserId: text('initiator_user_id').notNull(), // uuid at DB

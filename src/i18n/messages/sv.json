@@ -5823,6 +5823,7 @@
       "payment_invoice_not_found": "Betalning — faktura hittades inte",
       "stale_pending_refund_detected": "Inaktuell väntande återbetalning upptäckt",
       "refund_cn_deferred": "Kreditnota för återbetalning uppskjuten",
+      "refund_credit_note_waived": "Kreditnota för återbetalning efterskänkt",
       "payment_acknowledged_terminal_state": "Betalning redan i slutläge",
       "dispute_created": "Betalningstvist öppnad",
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",

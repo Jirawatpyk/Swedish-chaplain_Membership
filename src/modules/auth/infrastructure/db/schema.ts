@@ -172,6 +172,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   // --- F5 refund credit-note deferral added by migration 0266
   //     (money-remediation Task 6 / finding F-3) ---
   'refund_cn_deferred',
+  'refund_credit_note_waived',
   // --- F5 confirm-step terminal-state ack added by migration 0052 (H-11
   //     review 2026-04-27) — emitted on illegal_transition and
   //     invariant_violation_duplicate_succeeded ack paths instead of
