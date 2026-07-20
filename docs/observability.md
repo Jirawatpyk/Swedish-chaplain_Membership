@@ -842,7 +842,7 @@ Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
 `Stripe-Signature` header value is ever attributed** — those are in pino's
 redact list (see § 21.4).
 
-### 21.1 Metrics catalogue (18 metrics — T166 added 3)
+### 21.1 Metrics catalogue (19 metrics — T166 added 3; money-remediation Task 7 Track B added 1)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -852,7 +852,8 @@ redact list (see § 21.4).
 | `payments.failed.count` | counter | `tenant`, `method`, `reason_code` | decline-rate alert (excluding bank-decline codes) |
 | `payments.auto_refunded_stale.count` | counter | `tenant` | guard-rail anomaly (overpaid invoice flagged for auto-refund) |
 | `refunds.initiate.count` | counter | `tenant`, `method`, `partial:bool` | refund volume |
-| `refunds.succeeded.count` | counter | `tenant` | refund → CN throughput |
+| `refunds.succeeded.count` | counter | `tenant` | refund settlement throughput (credit note **or** waiver) |
+| `refunds.credit_note_waived.count` | counter | `tenant`, `reason` | refunds that returned money owing NO §86/10 ใบลดหนี้ |
 | `refunds.failed.count` | counter | `tenant`, `reason_code` | refund-failure forensics |
 | `webhook.receive.count` | counter | `tenant`, `event_type` | per-type ingest rate |
 | `webhook.duplicate_ignored.count` | counter | `tenant`, `event_type` | idempotency guard hit-rate (FR-008) |
@@ -886,13 +887,14 @@ identifier.
 | SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
 | SLO-F5-007 receipt email delivery time-to-first-attempt p95 (post T166 async) | ≤ 60 s post-webhook-ack | distributed trace `payment_intent.succeeded webhook_receive → receipt_email_outbox_dispatched` (added 2026-04-28 per review-20260428-102639.md S3 closure). Outbox cron cadence 5 min in dev / 1 min in prod; 60 s p95 budget assumes prod cadence + worker first-attempt success on the happy path. `pdf_render_permanently_failed` page (§ 21.3 below) is the alert on the failure tail. |
 
-### 21.3 Alert rules (11 alerts — T166 added `pdf_render_permanently_failed`; review-20260428-102639.md added `slo_f5_002b_breach`)
+### 21.3 Alert rules (12 alerts — T166 added `pdf_render_permanently_failed`; review-20260428-102639.md added `slo_f5_002b_breach`; Track B added `refund_credit_note_waived`)
 
 | Alert | Severity | Threshold | Runbook |
 |---|---|---|---|
 | `webhook_signature_rejected` ≥ 1 / 5 min | **alarm** | possible abuse / misconfig | `docs/runbooks/webhook-signature-rejected.md` (TODO) |
 | `webhook_api_version_mismatch_total` > 0 | **alarm** | Stripe API version drift — Q5 monitoring | `docs/runbooks/api-version-mismatch.md` (TODO) |
 | `payment_cross_tenant_probe` ≥ 1 / 5 min | **alarm** | Constitution Principle I breach attempt | `docs/runbooks/cross-tenant-probe.md` |
+| `refunds.credit_note_waived.count` > 0 in a tax month | **alarm** (never page) | each one leaves an output-VAT adjustment for a human; the real control is the month-close checklist, not this alert | `docs/runbooks/refund-without-credit-note.md` |
 | webhook span p99 > 2 s | **alarm** | Stripe → us latency or DB stall | observe + diagnose; auto-recovers if Stripe transient |
 | webhook backlog > 5 min | **page** | event delivery queue unhealthy | check Vercel function execution + Stripe webhook UI |
 | payment-success rate < 95 % (1 h, ex bank-decline) | **alarm** | feature regression or processor outage | check Stripe status + `payments.failed.count` per `reason_code` |
@@ -936,6 +938,7 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - `docs/runbooks/unprocessed-events-count.md` — unreconciled `processor_events` gauge + the `payments_unreconciled_total` roll-up (money-remediation Task 1)
 - `docs/runbooks/receipt-pdf-permanently-failed.md` — T166 receipt PDF worker exhausted 3 attempts (page on-call)
 - `docs/runbooks/receipt-pdf-async-rollback.md` — T166 async receipt PDF kill-switch flip (`FEATURE_F5_ASYNC_RECEIPT_PDF=false`)
+- `docs/runbooks/refund-without-credit-note.md` — a refund succeeded owing no §86/10 ใบลดหนี้ (invoice voided, or §105 receipt); month-close discovery + accountant handover. Referenced as `runbook_url` in the 10-year `refund_credit_note_waived` audit payload.
 
 ### 21.6 Dashboard — F5 Online Payment (Vercel Analytics)
 

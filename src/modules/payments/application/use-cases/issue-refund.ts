@@ -822,6 +822,12 @@ async function issueRefundBody(
         },
         retentionYears: retentionFor('refund_credit_note_waived'),
       });
+      // Paired with the audit row above, on the same INTENT basis, so the
+      // counter and the 10-year forensic agree 1:1 and either cross-checks the
+      // other. Nothing decrements this — a waiver has no "handled" state in
+      // this system — so it is a counter, and the alarm it feeds is a
+      // month-close review, never a page.
+      paymentsMetrics.refundCreditNoteWaivedCount(input.tenantId, waiver.reason);
     }
 
     return {

@@ -1023,13 +1023,46 @@ export const paymentsMetrics = {
   },
 
   /**
-   * `refunds.succeeded.count{tenant}` — refund → CN throughput.
+   * `refunds.succeeded.count{tenant}` — refund settlement throughput.
+   *
+   * Track B — counts EVERY succeeded refund, whether it was documented by a
+   * §86/10 credit note or by a recorded waiver. The description previously said
+   * "with credit-note issued", which stopped being true when credit-note-less
+   * refunds became possible; `refunds_credit_note_waived_count` below is the
+   * subset that carried no credit note.
    */
   refundSucceededCount(tenantId: string): void {
     counter(
       'refunds_succeeded_count',
-      'Refunds reaching succeeded state with credit-note issued',
+      'Refunds reaching succeeded state (credit note issued OR waiver recorded)',
     ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `refunds.credit_note_waived.count{tenant, reason}` — refunds that returned
+   * money while legitimately issuing NO §86/10 ใบลดหนี้.
+   *
+   * A COUNTER, not a gauge, and deliberately so: nothing can ever decrement it.
+   * There is no "handled" or "filed" flag on a waived refund — the outstanding
+   * output-VAT adjustment lives in the accountant's process, not in this
+   * system — so a gauge would only ever climb and would read as a leak.
+   *
+   * Emitted in Phase A alongside the `refund_credit_note_waived` audit row, so
+   * the counter and the 10-year forensic agree 1:1 and either can be used to
+   * cross-check the other. That means it counts the DECISION, not the
+   * settlement: a refund that later fails at Stripe still increments it. That
+   * is the right basis for the alarm this feeds (an unexpected surge means the
+   * §105 gate is firing where it should not), and the wrong basis for counting
+   * money returned — for that, query the rows.
+   *
+   * ALARM, never page: the correct response is a month-close review, not a
+   * 3am wake-up. See docs/runbooks/refund-without-credit-note.md.
+   */
+  refundCreditNoteWaivedCount(tenantId: string, reason: string): void {
+    counter(
+      'refunds_credit_note_waived_count',
+      'Refunds recorded as owing no §86/10 credit note, by waiver ground',
+    ).add(1, { tenant: tenantId, reason });
   },
 
   /**

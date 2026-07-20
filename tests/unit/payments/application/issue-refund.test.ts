@@ -32,6 +32,10 @@ const metricsMocks = vi.hoisted(() => ({
   // Money-remediation Task 6 — emitted when a processor-settled refund's F4
   // credit note could not be booked and the row was deferred, not failed.
   refundCreditNoteDeferred: vi.fn(),
+  // Track B — emitted in Phase A beside the `refund_credit_note_waived` audit
+  // row, so counter and 10-year forensic agree 1:1. MUST be present or the
+  // real call throws (this stub going stale is how the waive path first broke).
+  refundCreditNoteWaivedCount: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -663,6 +667,12 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
         (call) => call[1].eventType === 'refund_credit_note_waived',
       );
       expect(waived).toBeDefined();
+      // Counter and forensic are emitted together on the same INTENT basis —
+      // either cross-checks the other, so they must not drift apart.
+      expect(metricsMocks.refundCreditNoteWaivedCount).toHaveBeenCalledWith(
+        TENANT_ID,
+        c.reason,
+      );
       expect(waived![1].payload).toMatchObject({
         waiver_reason: c.reason,
         invoice_status: c.invoiceStatus,

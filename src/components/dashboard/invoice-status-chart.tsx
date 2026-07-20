@@ -139,6 +139,20 @@ function zeroBucket(bucket: Bucket): InvoiceStatusBucket {
  * 100 minus a sum of integers) one-by-one to the buckets with the largest
  * fractional remainder, tie-broken by original index for determinism. */
 function allocatePercentages(values: readonly number[]): number[] {
+  // Track B — a NEGATIVE input must yield all-zeros, not a negative share.
+  // `total <= 0` alone does not cover it: mixed signs can sum positive, and
+  // [-100, 500, 0] then allocates −25% and 125% beside a hard-coded "100%"
+  // Total row. There is no meaningful part-to-whole reading of a negative
+  // slice, so refusing the whole allocation is the only honest answer —
+  // clamping just the negative bucket would silently inflate its siblings'
+  // shares to fill the gap.
+  //
+  // Unreachable from F9 today (both netting helpers clamp at 0n), and kept
+  // anyway: this component is shared, and that clamp is one edit away from
+  // someone removing it after "verifying" a negative cannot occur.
+  if (values.some((v) => !Number.isFinite(v) || v < 0)) {
+    return values.map(() => 0);
+  }
   const total = values.reduce((sum, v) => sum + v, 0);
   if (total <= 0) return values.map(() => 0);
 

@@ -254,6 +254,41 @@ describe('InvoiceStatusChart', () => {
     expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
   });
 
+  // Track B — `allocatePercentages` had no negative contract. `total <= 0`
+  // returns zeros, but MIXED signs slip through: [-100, 500, 0] sums to 400, so
+  // the shares compute as −25% and 125% and render beside a hard-coded "100%"
+  // Total row.
+  //
+  // The F9 adapter clamps both netting helpers at 0n, so today nothing can feed
+  // this a negative. That is exactly why the guard belongs here too: the clamp
+  // is one edit away from being removed by someone who "verified the scenario
+  // cannot happen", and this component is shared. A percentage outside 0–100 in
+  // a finance donut is a number a chamber officer would act on.
+  it('never renders a percentage outside 0-100, even if a bucket arrives negative', () => {
+    const distribution: InvoiceStatusDistribution = {
+      buckets: [
+        { bucket: 'paid', satang: '-100', count: 1 },
+        { bucket: 'unpaid', satang: '500', count: 1 },
+        { bucket: 'overdue', satang: '0', count: 0 },
+      ],
+      draftCount: 0,
+    };
+    renderChart(distribution);
+    const table = screen.getByRole('table');
+    const pcts = within(table)
+      .getAllByRole('cell')
+      .map((el) => el.textContent ?? '')
+      .filter((txt) => txt.trim().endsWith('%'))
+      .map((txt) => Number(txt.trim().replace('%', '')));
+
+    expect(pcts.length).toBeGreaterThan(0);
+    for (const pct of pcts) {
+      expect(Number.isFinite(pct)).toBe(true);
+      expect(pct).toBeGreaterThanOrEqual(0);
+      expect(pct).toBeLessThanOrEqual(100);
+    }
+  });
+
   // Minor: naive independent `Math.round(share / total * 100)` per bucket
   // can fail to sum to 100 (e.g. three equal thirds round to 33/33/33 = 99).
   // Largest-remainder allocation must make the displayed bucket %s always
