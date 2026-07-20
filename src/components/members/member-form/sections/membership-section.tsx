@@ -15,7 +15,7 @@
  * schema with the plan's conditional DOB requirement) — so the `planId`
  * state itself stays in the root rather than living here.
  */
-import { useTranslations } from 'next-intl';
+import { useTranslations, useFormatter } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,11 +41,27 @@ export function MembershipSection({
 }) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
+  // Client-safe currency formatter (next-intl). The plans-domain `formatMoney`
+  // lives behind the server-heavy `@/modules/plans` barrel, so it can't be
+  // imported into this client component — `useFormatter` is the client
+  // equivalent. THB/SEK/EUR/USD (the tenant currencies) all carry 2 minor-unit
+  // decimals, so minor→major is `/100`.
+  const format = useFormatter();
   const {
     register,
     control,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
+
+  function planFeeLabel(p: PlanOption): string | null {
+    if (p.annual_fee_minor_units === undefined || p.currency_code === undefined) {
+      return null;
+    }
+    return format.number(p.annual_fee_minor_units / 100, {
+      style: 'currency',
+      currency: p.currency_code,
+    });
+  }
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -94,11 +110,23 @@ export function MembershipSection({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {plans.map((p) => (
-                    <SelectItem key={p.plan_id} value={p.plan_id}>
-                      {p.display_name}
-                    </SelectItem>
-                  ))}
+                  {plans.map((p) => {
+                    const fee = planFeeLabel(p);
+                    return (
+                      <SelectItem key={p.plan_id} value={p.plan_id}>
+                        <span>{p.display_name}</span>
+                        {fee !== null && (
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {/* sr-only prefix so a screen reader hears
+                                "Annual fee: …" rather than a bare number
+                                trailing the plan name. */}
+                            <span className="sr-only">{tf('planAnnualFee')}: </span>
+                            {fee}
+                          </span>
+                        )}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             )}

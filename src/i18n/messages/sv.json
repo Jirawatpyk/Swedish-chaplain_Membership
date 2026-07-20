@@ -1430,6 +1430,7 @@
           "turnoverHint": "Används för att placera medlemmen i planens omsättningsintervall.",
           "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
+          "planAnnualFee": "Årsavgift",
           "planPlaceholder": "Välj paket…",
           "billingCycle": "Faktureringscykel",
           "billingCyclePlaceholder": "Välj faktureringscykel…",

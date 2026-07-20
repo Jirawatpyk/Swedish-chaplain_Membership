@@ -1430,6 +1430,7 @@
           "turnoverHint": "Used to place the member in a plan's turnover band.",
           "registeredCapitalThb": "Registered capital (THB)",
           "plan": "Plan",
+          "planAnnualFee": "Annual fee",
           "planPlaceholder": "Select a plan…",
           "billingCycle": "Billing cycle",
           "billingCyclePlaceholder": "Select a billing cycle…",

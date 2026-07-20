@@ -1430,6 +1430,7 @@
           "turnoverHint": "ใช้จัดสมาชิกให้อยู่ในช่วงยอดขายของแพ็กเกจ",
           "registeredCapitalThb": "ทุนจดทะเบียน (บาท)",
           "plan": "แพ็กเกจ",
+          "planAnnualFee": "ค่าสมาชิกรายปี",
           "planPlaceholder": "เลือกแพ็กเกจ…",
           "billingCycle": "รอบการเรียกเก็บ",
           "billingCyclePlaceholder": "เลือกรอบการเรียกเก็บ…",
