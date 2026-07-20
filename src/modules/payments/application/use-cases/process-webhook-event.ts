@@ -150,6 +150,12 @@ export const PERMANENT_SUB_USE_CASE_DETAILS: ReadonlySet<string> = new Set([
   'invoice_shape_invalid',
   'payment_method_unsupported',
   'invariant_auto_refunded_missing_invoice_id',
+  // I4 (Task 7) — NOTE the deliberate ABSENCE of `invoice_read_failed`
+  // (confirm-payment). It is a transient F4 read fault — Neon down, tx
+  // aborted, tenant-mismatch guard — and MUST keep Stripe retrying. Listing it
+  // here would 200 the webhook and stop the retries, stranding a captured
+  // payment against an `issued` invoice. That is why it is a distinct code
+  // from `bridge_error` rather than reusing it.
 ]);
 
 export type ProcessWebhookEventError = {

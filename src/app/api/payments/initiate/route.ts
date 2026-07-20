@@ -124,6 +124,16 @@ function httpStatusForUseCaseError(code: string): {
       return { status: 422, routeCode: 'invoice_data_corrupt' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
+    // I4 (Task 7) — the F4 payability read THREW (Neon down). 500 is the SAME
+    // status the previously-escaping throw produced, so nothing user-visible
+    // moved; the gain is that the bridge now emits a metric and a bounded log
+    // line instead of an unhandled exception. Listed explicitly rather than
+    // left to `default:` so a reader can see the mapping was chosen, not
+    // forgotten — and so that collapsing it into `invoice_not_payable` (409,
+    // "this invoice cannot be paid") is a visible edit rather than a silent
+    // one. That copy would be a lie told to a member because of a read hiccup.
+    case 'invoice_read_failed':
+      return { status: 500, routeCode: 'internal_error' };
     default:
       return { status: 500, routeCode: 'internal_error' };
   }

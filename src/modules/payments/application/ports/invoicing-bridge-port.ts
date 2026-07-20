@@ -59,7 +59,24 @@ export type GetInvoiceForPaymentBridgeError =
    * `not_payable`) so initiate-payment's warn log + the route's
    * `useCaseErrorCode` keep the flag-rollback discriminator for ops.
    */
-  | { readonly code: 'new_flow_bill_requires_flag_on' };
+  | { readonly code: 'new_flow_bill_requires_flag_on' }
+  /**
+   * I4 (Task 7 remediation) — the underlying F4 read THREW rather than
+   * returning a Result: Neon down, the caller's tx already aborted, or the
+   * invoice repo's runtime tenant-mismatch guard firing (a raw `throw new
+   * Error`, newly reachable here because this method now accepts `externalTx`).
+   *
+   * Mirrors the identical member on `getInvoiceCreditedTotal` and
+   * `getInvoiceStatus`; this was the last of the three tx-threaded F4 reads
+   * without one.
+   *
+   * CALLERS MUST HANDLE THIS EXPLICITLY AND MUST TREAT IT AS TRANSIENT.
+   * It carries NO `status`, so it must never reach `confirm-payment`'s
+   * `invoiceStatus` resolver — falling through there auto-refunds a paying
+   * customer because a database read hiccuped. See the `never` arm in that
+   * resolver, which now makes the mistake a build failure.
+   */
+  | { readonly code: 'read_failed' };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;

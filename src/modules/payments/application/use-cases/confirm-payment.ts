@@ -33,6 +33,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
+  GetInvoiceForPaymentBridgeError,
   InvoicingBridgePort,
   PaymentsRepo,
   ProcessorEventsRepo,
@@ -133,7 +134,20 @@ export type ConfirmPaymentOutcome =
 // branches that look load-bearing.
 export type ConfirmPaymentError =
   | { readonly code: 'processor_unavailable'; readonly reason: string }
-  | { readonly code: 'bridge_error'; readonly detail: string };
+  | { readonly code: 'bridge_error'; readonly detail: string }
+  /**
+   * I4 (Task 7 remediation) — the F4 payability READ threw (Neon down, tx
+   * aborted, tenant-mismatch guard). TRANSIENT by construction.
+   *
+   * A DISTINCT code, not `bridge_error`, and the distinction is
+   * money-critical: `'bridge_error'` is in `PERMANENT_SUB_USE_CASE_DETAILS`
+   * and permanence is keyed on the sub-use-case CODE, so reusing it would 200
+   * the webhook and stop Stripe retrying — leaving the invoice `issued`
+   * forever with the customer's money captured. Keep this code OUT of that
+   * set so it classifies transient → 500 → Stripe retries → recovery when the
+   * read recovers.
+   */
+  | { readonly code: 'invoice_read_failed'; readonly detail: string };
 
 export interface ConfirmPaymentDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -283,6 +297,63 @@ export type StaleRefundCause =
   | 'invoice_voided'
   | 'invoice_credited'
   | 'invoice_unknown_status';
+
+/**
+ * I4 (Task 7 remediation) — resolve the invoice status carried by a bridge
+ * ERROR, exhaustively.
+ *
+ * This replaces a ternary chain that ended in `: undefined`, which was a
+ * loaded gun. Step-2 above is an if-CHAIN, not a switch, so any bridge error
+ * code it does not name falls through to here; `undefined` then makes
+ * `inPayableStatus` false, `causeForInvoiceStatus(undefined)` hits its
+ * `default:` arm, and the stale-invoice branch AUTO-REFUNDS a customer who
+ * paid. Every future bridge error code inherited that behaviour silently, with
+ * a green typecheck.
+ *
+ * The `never` arm makes the next added code a BUILD failure instead, exactly
+ * as the `InvoiceStatus` switch further down already does for F4's enum.
+ * Codes that legitimately resolve to `undefined` must say so HERE, by name.
+ */
+function invoiceStatusFromBridgeError(
+  e: GetInvoiceForPaymentBridgeError,
+): string | undefined {
+  switch (e.code) {
+    // Carries the status verbatim — the stale-invoice branch needs it to
+    // record the refund cause.
+    case 'not_payable':
+      return e.status;
+    // REMOVE-WITH-064-REMEDIATION — treated as payable so the flip proceeds
+    // and the markPaid-side guard fails it loudly instead of silently
+    // auto-refunding here.
+    case 'legacy_no_tin_event_not_payable':
+      return 'issued';
+    // 088 SEC-MED — deliberately resolves to `undefined`, i.e. it DOES reach
+    // the stale-invoice auto-refund. That is pre-existing behaviour and is
+    // preserved byte-for-byte here rather than changed as a side effect of
+    // this hardening; naming it makes the choice visible instead of implicit.
+    // If it was never intended, that is a separate finding for whoever owns
+    // 088 — do not "fix" it inside an unrelated change.
+    case 'new_flow_bill_requires_flag_on':
+      return undefined;
+    // All returned early at step 2, so they are unreachable here. They must
+    // still be named: `undefined` for them would mean auto-refund, and the
+    // whole point of this switch is that no code reaches that outcome by
+    // omission.
+    case 'forbidden':
+    case 'not_found':
+    case 'corrupted_total':
+      return undefined;
+    // I4 — returned early at step 2 with a transient err. Never reaches here;
+    // if it ever did, `undefined` would auto-refund on a read hiccup.
+    case 'read_failed':
+      return undefined;
+    default: {
+      const exhaustive: never = e;
+      void exhaustive;
+      return undefined;
+    }
+  }
+}
 
 export function causeForInvoiceStatus(
   invoiceStatus: string | undefined,
@@ -558,6 +629,35 @@ async function confirmPaymentBody(
           invoiceId: payment.invoiceId,
         });
       }
+      // I4 (Task 7 remediation) — the F4 read THREW. MUST return early.
+      //
+      // NO `markProcessed()`, NO audit, NO auto-refund. Falling through would
+      // be a customer-money bug, not a style issue: `read_failed` carries no
+      // `status`, so the resolver below lands on its defensive arm,
+      // `inPayableStatus` goes false, and the stale-invoice branch
+      // AUTO-REFUNDS a customer who paid — because a database read hiccuped.
+      // A test pins this (`createRefund` must not be called).
+      //
+      // Returning err is the whole point: the dispatcher classifies
+      // `invoice_read_failed` as TRANSIENT (it is deliberately absent from
+      // `PERMANENT_SUB_USE_CASE_DETAILS`), the route 500s, and Stripe retries
+      // until the read recovers. Marking processed here would DROP a real
+      // payment confirmation permanently, which is worse than a retry storm.
+      if (invoiceResult.error.code === 'read_failed') {
+        deps.logger?.warn('confirm_payment.invoice_read_failed', {
+          tenantId: input.tenantId,
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+          // Bounded discriminator only. The bridge already emitted the metric
+          // and the errKind line; this records the DECISION taken here.
+          bridgeOutcome: 'read_failed',
+          disposition: 'transient_err_stripe_will_retry',
+        });
+        return err({
+          code: 'invoice_read_failed',
+          detail: 'invoice_payability_read_failed',
+        } as const);
+      }
       // not_payable → handled by stale-invoice branch below (we
       // re-derive via status).
     }
@@ -584,14 +684,15 @@ async function confirmPaymentBody(
     // stale-invoice auto-refund: the member genuinely owes the fee) and let
     // the markPaid-side `legacy_no_tin_event_needs_remediation` guard fail
     // the flip, where the dedicated ops log below makes it loud.
+    // I4 (Task 7 remediation) — the `: undefined` fallback this replaces was a
+    // loaded gun: any bridge error code not named resolved to `undefined` →
+    // `inPayableStatus` false → the stale-invoice branch AUTO-REFUNDS the
+    // customer, silently, with a green typecheck. The helper's `never` arm
+    // makes the next added code a BUILD failure, exactly as the InvoiceStatus
+    // switch below already does.
     const invoiceStatus = invoiceResult.ok
       ? invoiceResult.value.status
-      : invoiceResult.error.code === 'legacy_no_tin_event_not_payable'
-        ? 'issued'
-        /* v8 ignore next 3 -- defensive ternary: forbidden/not_found returned at step 2; only not_payable carries `status` */
-        : invoiceResult.error.code === 'not_payable'
-          ? invoiceResult.error.status
-          : undefined;
+      : invoiceStatusFromBridgeError(invoiceResult.error);
     // F4 models "overdue" as a derived state (issue_date + due_date
     // computation, see src/modules/invoicing/application/use-cases/
     // derive-overdue.ts) — not a distinct InvoiceStatus enum value.

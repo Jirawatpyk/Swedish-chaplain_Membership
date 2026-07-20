@@ -208,18 +208,46 @@ export const invoicingBridge: InvoicingBridgePort = {
     // self-pay initiate path, where `makeGetInvoiceDeps` opens its own
     // tenant-bound tx exactly as before.
     const deps = makeGetInvoiceDeps(input.tenantId, input.externalTx);
-    const result = await f4GetInvoiceForPayment(deps, {
-      tenantId: input.tenantId,
-      invoiceId: input.invoiceId,
-      ...(input.actor ? { actor: input.actor } : {}),
-      // 088 SEC-MED — forward BOTH axes verbatim into F4's payability read: the
-      // 2-state flow flag AND the reconciliation bit. Initiate → {flag, false};
-      // webhook confirm → {flag, true} (guard dormant). Dropping either forward
-      // would silently re-arm/disarm the stranded-funds guard, so it is locked
-      // by an integration test (bridge-forwards-both-axes).
-      taxAtPayment: input.taxAtPayment,
-      reconciliationPath: input.reconciliationPath,
-    });
+    // I4 (Task 7 remediation) — this read can THROW, and until now it was the
+    // only tx-threaded F4 read that did not catch. Threading `externalTx` arms
+    // the invoice repo's tenant-mismatch guard, which is a raw
+    // `throw new Error`; an already-aborted caller tx throws here too. The
+    // webhook caller runs this INSIDE its Phase-A `withTx`, so an escaping
+    // throw aborted the tx and surfaced as an unhandled 500 with no metric and
+    // no bounded log line. Same catch shape as `getInvoiceCreditedTotal` and
+    // `getInvoiceStatus`.
+    let result: Awaited<ReturnType<typeof f4GetInvoiceForPayment>>;
+    try {
+      result = await f4GetInvoiceForPayment(deps, {
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        ...(input.actor ? { actor: input.actor } : {}),
+        // 088 SEC-MED — forward BOTH axes verbatim into F4's payability read: the
+        // 2-state flow flag AND the reconciliation bit. Initiate → {flag, false};
+        // webhook confirm → {flag, true} (guard dormant). Dropping either forward
+        // would silently re-arm/disarm the stranded-funds guard, so it is locked
+        // by an integration test (bridge-forwards-both-axes).
+        taxAtPayment: input.taxAtPayment,
+        reconciliationPath: input.reconciliationPath,
+      });
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape('getInvoiceForPayment_read_threw');
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          // Bounded: which caller shape hit it. `true` = webhook confirm,
+          // `false` = self-pay initiate. Distinguishes a tenant-mismatch
+          // composition bug (initiate) from a mid-tx abort (confirm) without
+          // logging the actor.
+          reconciliationPath: input.reconciliationPath,
+          hasExternalTx: input.externalTx !== undefined,
+          err: errKind(e),
+        },
+        'invoicing-bridge.getInvoiceForPayment_read_threw',
+      );
+      return err({ code: 'read_failed' });
+    }
     if (!result.ok) return err(mapF4GetError(result.error));
     // F5R3v3 H-1 (2026-05-16) — bridge may surface its OWN typed err
     // (corrupted_total) when F4 returns a money field that fails
