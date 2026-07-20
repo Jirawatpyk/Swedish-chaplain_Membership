@@ -456,18 +456,28 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
     expect(r.ok).toBe(true);
     expect(await countRefunds(voidCase.paymentId)).toBe(1);
 
-    // The waiver is a PERSISTED tax fact, not a return value. This is the
-    // assertion a mock cannot make: the row satisfies `refunds_cn_xor_waived`
-    // and `refunds_succeeded_iff_documented` as actually written to Postgres.
+    // This file's Stripe stub returns `pending` on purpose (see `buildDeps`),
+    // which makes the row a precise probe of the INTENT/OUTCOME split that the
+    // 0268 CHECK design turns on:
+    //
+    //   `credit_note_waiver_reason` — the DECISION, written in Phase A, present
+    //                                 the moment the row exists.
+    //   `credit_note_waived_at`     — the OUTCOME, stamped only on the
+    //                                 succeeded flip. Still NULL here.
+    //
+    // A completeness CHECK keyed on the reason would reject exactly this row —
+    // after Stripe had already been called. That is why it keys on the
+    // timestamp, and this is the live-Postgres proof the row is legal.
     const doc = await readRefundDocumentation(voidCase.paymentId);
     expect(doc).not.toBeNull();
-    expect(doc?.status).toBe('succeeded');
+    expect(doc?.status).toBe('pending');
     expect(doc?.creditNoteId).toBeNull();
     expect(doc?.waiverReason).toBe('invoice_voided');
-    expect(doc?.waivedAt).not.toBeNull();
+    expect(doc?.waivedAt).toBeNull();
 
-    // 10-year forensic. Without a row here the accountant's month-close
-    // discovery query returns nothing and the waiver is invisible.
+    // 10-year forensic, emitted at INTENT — so the decision is on record even
+    // for a refund that never settles. Without a row here the accountant's
+    // month-close discovery query returns nothing and the waiver is invisible.
     expect(await countWaiverAudits(voidCase.paymentId)).toBe(1);
   }, 60_000);
 
@@ -490,7 +500,18 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
 
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.code).toBe('f4_preflight_receipt_rendering');
+      // Track B — every block now travels under ONE code carrying the Domain
+      // reason; the ROUTE fans the reason out to the operator-facing codes
+      // (`f4_preflight_receipt_rendering` here). Asserting the reason AND its
+      // retryability is what pins the "wait" copy as honest: `transient` is the
+      // only classification for which telling an admin to wait is true.
+      expect(r.error.code).toBe('f4_preflight_credit_note_blocked');
+      if (r.error.code === 'f4_preflight_credit_note_blocked') {
+        expect(r.error.reason).toEqual({
+          code: 'receipt_render_pending',
+          retryability: 'transient',
+        });
+      }
     }
   }, 60_000);
 

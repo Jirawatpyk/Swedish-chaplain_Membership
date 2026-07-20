@@ -1003,4 +1003,182 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     expect(result).toBeNull();
   });
 
+
+  // -------------------------------------------------------------------------
+  // Track B — migration 0268 completeness CHECKs, against live Postgres
+  // -------------------------------------------------------------------------
+  //
+  // These pin a DESIGN DECISION, not just DDL. The completeness CHECK keys on
+  // `credit_note_waived_at` (a settlement fact) and NOT on
+  // `credit_note_waiver_reason` (a Phase-A intent). The reason-keyed variant
+  // looks equivalent and is not: it REJECTS the two states below, and both are
+  // reached only AFTER Stripe has already moved the money — leaving the row
+  // stuck `pending` forever, which then blocks every future refund on that
+  // payment.
+  //
+  // A unit test cannot make this argument. Only the database can say which
+  // shapes it will actually accept.
+  describe('0268 — waiver completeness CHECKs', () => {
+    /** Raw insert so a constraint can be violated deliberately. */
+    async function insertRefund(cols: Record<string, unknown>): Promise<void> {
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.insert(refunds).values({
+          id: makeRefundUlid(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(1_000n),
+          reason: '0268 constraint probe',
+          status: 'pending',
+          processorRefundId: null,
+          creditNoteId: null,
+          creditNoteWaivedAt: null,
+          creditNoteWaiverReason: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-0268',
+          initiatedAt: new Date(),
+          ...cols,
+        } as never);
+      });
+    }
+
+    /**
+     * Drizzle wraps a driver error as `Failed query: <sql>`, so the CHECK's name
+     * is not in `.message` — it is on the postgres.js cause. Asserting the NAME
+     * (not merely "it threw") is what makes these tests prove WHICH constraint
+     * fired; any bad insert throws, and a test that only asserts rejection would
+     * pass even if the constraint under test had been dropped.
+     */
+    async function expectConstraintViolation(
+      run: Promise<void>,
+      constraint: string,
+    ): Promise<void> {
+      let caught: unknown;
+      try {
+        await run;
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, `expected ${constraint} to reject the insert`).toBeDefined();
+      const cause = (caught as { cause?: { constraint_name?: string } }).cause;
+      const name =
+        cause?.constraint_name ??
+        (caught as { constraint_name?: string }).constraint_name;
+      expect(name).toBe(constraint);
+    }
+
+    it('ACCEPTS a pending row that already carries the waiver reason AND a processor id', async () => {
+      // THE case that decided the design. This is the real Phase-A → Stripe
+      // sequence: the reason is stamped at insert while the row is pending,
+      // then the processor id is attached once Stripe responds. A CHECK keyed
+      // on the reason would reject this — after the money had already moved.
+      await expect(
+        insertRefund({
+          status: 'pending',
+          processorRefundId: `re_0268_${Date.now()}`,
+          creditNoteWaiverReason: 'section_105_receipt',
+          creditNoteWaivedAt: null,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('a FAILED settlement KEEPS the waiver reason (intent survives outcome)', async () => {
+      // The second state reason-keying would break. Driven through the repo's
+      // real failure path rather than a raw insert, because writing `failed`
+      // requires rejection proof — a raw insert would be rejected for an
+      // unrelated reason and prove nothing about the waiver constraints.
+      const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+      const refundId = makeRefundUlid();
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await repo.insert(tx, {
+          id: refundId,
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(1_000n),
+          reason: '0268 failed-keeps-reason probe',
+          status: 'pending',
+          processorRefundId: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-0268f',
+          creditNoteWaiverReason: 'invoice_voided',
+          initiatedAt: new Date(),
+        });
+      });
+
+      const updated = await runInTenant(tenantA.ctx, async (tx) =>
+        repo.updateStatus(tx, {
+          refundId,
+          tenantId: tenantA.ctx.slug,
+          nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
+          failureReasonCode: 'retryable',
+          completedAt: new Date(),
+        }),
+      );
+
+      expect(updated?.status).toBe('failed');
+
+      // Read the waiver columns straight from Postgres: `RefundRow` (the repo's
+      // return shape) does not carry them, so the assertion has to go to the
+      // source rather than trust a projection that cannot see the fields.
+      const row = await runInTenant(tenantA.ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT credit_note_waiver_reason, credit_note_waived_at
+            FROM refunds
+           WHERE tenant_id = ${tenantA.ctx.slug} AND id = ${refundId}
+        `)) as unknown as Array<{
+          credit_note_waiver_reason: string | null;
+          credit_note_waived_at: Date | null;
+        }>;
+        return rows[0];
+      });
+
+      // The decision is retained; only the OUTCOME column stayed null. This is
+      // precisely why the completeness CHECK cannot key on the reason.
+      expect(row?.credit_note_waiver_reason).toBe('invoice_voided');
+      expect(row?.credit_note_waived_at).toBeNull();
+    });
+
+    it('REJECTS succeeded with neither a credit note nor a waiver (refunds_succeeded_iff_documented)', async () => {
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268u_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteId: null,
+          creditNoteWaivedAt: null,
+        }),
+        'refunds_succeeded_iff_documented',
+      );
+    });
+
+    it('REJECTS a waiver stamped without a reason (refunds_waived_at_requires_reason)', async () => {
+      // The reason is the only field telling the accountant WHY no §86/10
+      // exists. A waiver without one is an unexplained hole in the tax trail.
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268r_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteWaivedAt: new Date(),
+          creditNoteWaiverReason: null,
+        }),
+        'refunds_waived_at_requires_reason',
+      );
+    });
+
+    it('REJECTS an unknown waiver reason (refunds_waiver_reason_enum)', async () => {
+      // The reason strings are a STORAGE contract — renaming one needs a
+      // migration, not just an edit to the Domain union.
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'pending',
+          creditNoteWaiverReason: 'invoice_cancelled',
+        }),
+        'refunds_waiver_reason_enum',
+      );
+    });
+  });
+
 });
