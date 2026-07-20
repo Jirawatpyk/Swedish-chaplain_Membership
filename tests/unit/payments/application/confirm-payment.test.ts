@@ -994,3 +994,63 @@ describe('confirmPayment (T057)', () => {
     expect(bridgeCall?.method).toBe('stripe_promptpay');
   });
 });
+
+/**
+ * I4 (money-remediation Task 7) — a failed payability READ must never be
+ * mistaken for an unpayable invoice.
+ *
+ * `getInvoiceForPayment` newly accepts `externalTx`, which arms the invoice
+ * repo's runtime tenant-mismatch guard — a raw `throw new Error`. Running on
+ * the caller's connection also means an already-aborted tx throws here. So the
+ * bridge now returns a typed `read_failed` where it previously let the throw
+ * escape.
+ *
+ * Adding that union member WITHOUT an explicit branch here is a customer-money
+ * bug, and a silent one. The Step-2 handling is an if-CHAIN, not a switch, and
+ * it deliberately falls through for `not_payable`. An unhandled code therefore
+ * reaches the `invoiceStatus` resolver, whose final arm is `: undefined` →
+ * `inPayableStatus` false → `causeForInvoiceStatus(undefined)` hits its
+ * `default:` arm → the stale-invoice branch AUTO-REFUNDS a customer who
+ * legitimately paid, because a database read hiccuped. TypeScript flags none
+ * of it: the ternary's `: undefined` arm and the `default:` arm both absorb a
+ * new code silently.
+ */
+describe('confirmPayment — I4: bridge read_failed must not auto-refund', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns invoice_read_failed and refunds NOTHING when the payability read throws', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+
+    const result = await confirmPayment(deps, INPUT);
+
+    // THE ASSERTION THAT MATTERS. A read hiccup must not move the customer's
+    // money. Everything else in this test is secondary to this line.
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+
+    // Transient err, not ok(...): the dispatcher must classify this as
+    // retryable so the route 500s and Stripe keeps retrying until the read
+    // recovers. Returning ok/markProcessed would DROP a real payment
+    // confirmation permanently — strictly worse than a retry storm.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_read_failed');
+
+    // A DISTINCT code, not `bridge_error`. `bridge_error` sits in
+    // PERMANENT_SUB_USE_CASE_DETAILS, so reusing it would 200 the webhook and
+    // stop Stripe retrying — leaving the invoice `issued` forever with the
+    // customer's money captured.
+    expect(result.error.code).not.toBe('bridge_error');
+
+    // The invoice was never flipped, and no auto-refund audit was written.
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) =>
+        String(c[1]?.eventType ?? '').startsWith('payment_auto_refunded'),
+      ),
+    ).toBe(false);
+  });
+});
