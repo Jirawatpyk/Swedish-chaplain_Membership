@@ -151,12 +151,14 @@ export type ConfirmPaymentError =
    * aborted, tenant-mismatch guard). TRANSIENT by construction.
    *
    * A DISTINCT code, not `bridge_error`, and the distinction is
-   * money-critical: `'bridge_error'` is in `PERMANENT_SUB_USE_CASE_DETAILS`
-   * and permanence is keyed on the sub-use-case CODE, so reusing it would 200
-   * the webhook and stop Stripe retrying — leaving the invoice `issued`
-   * forever with the customer's money captured. Keep this code OUT of that
-   * set so it classifies transient → 500 → Stripe retries → recovery when the
-   * read recovers.
+   * money-critical. Task 5 replaced the old `PERMANENT_SUB_USE_CASE_DETAILS`
+   * set with `classifyDispatchPermanence(code, subDetail)`: its `default` arm
+   * returns `'transient'`, so this code — an unrecognised one to the classifier
+   * — is transient. Reusing `bridge_error` would instead route through the F4
+   * permanence Record, where a permanent sub-detail would 200 the webhook and
+   * stop Stripe retrying — leaving the invoice `issued` forever with the
+   * customer's money captured. Keep this a distinct code so it stays transient
+   * → 500 → Stripe retries → recovery when the read recovers.
    */
   | { readonly code: 'invoice_read_failed'; readonly detail: string };
 
@@ -757,10 +759,11 @@ async function confirmPaymentBody(
       // AUTO-REFUNDS a customer who paid — because a database read hiccuped.
       // A test pins this (`createRefund` must not be called).
       //
-      // Returning err is the whole point: the dispatcher classifies
-      // `invoice_read_failed` as TRANSIENT (it is deliberately absent from
-      // `PERMANENT_SUB_USE_CASE_DETAILS`), the route 500s, and Stripe retries
-      // until the read recovers. Marking processed here would DROP a real
+      // Returning err is the whole point: `classifyDispatchPermanence`'s
+      // `default` arm classifies `invoice_read_failed` as TRANSIENT (Task 5
+      // replaced the old `PERMANENT_SUB_USE_CASE_DETAILS` set — an unknown code
+      // now defaults transient), the route 500s, and Stripe retries until the
+      // read recovers. Marking processed here would DROP a real
       // payment confirmation permanently, which is worse than a retry storm.
       //
       // Stack-assembly (task-4 F-1) — this exit sits INSIDE `runTxDecided`, so
