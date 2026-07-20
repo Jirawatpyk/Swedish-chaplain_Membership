@@ -85,7 +85,7 @@ describe('formatPlanFee', () => {
 });
 
 describe('PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL', () => {
-  it('is false — a manual plan change does not yet reach renewal billing', () => {
-    expect(PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL).toBe(false);
+  it('is true — the seed now reads members.plan_id, so future renewal cycles bill the new plan', () => {
+    expect(PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL).toBe(true);
   });
 });

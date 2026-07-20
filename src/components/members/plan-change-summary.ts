@@ -17,15 +17,19 @@ import type { PlanOption } from './member-form/schema';
  * Whether a manual member-edit plan change automatically flows into renewal
  * billing.
  *
- * Currently **false**: `create-next-cycle-on-paid.ts:74` derives the next
- * renewal cycle's plan from the paid invoice, NOT from a mid-cycle manual
- * edit, so the next renewal invoice keeps the previously-recorded plan until
- * the renewal cycle itself is changed. The confirm dialog surfaces the
- * truthful billing note keyed on this flag; the fix that makes a manual plan
- * change reach renewal billing flips this constant in the same PR (a
- * deliberately separate, deferred change — see the plan's § 6 item 2).
+ * **true** since the plan-change → billing remediation: `changePlan` flips
+ * `members.plan_id` immediately and the next-cycle seed
+ * (`create-next-cycle-on-paid.ts` + `resolve-unlinked-membership-payment.ts`)
+ * now reads `members.plan_id`, so every renewal cycle created AFTER the change
+ * bills the new plan automatically — no separate renewal-cycle edit needed.
+ *
+ * Scope note the dialog copy must respect: this is a FUTURE-cycles guarantee,
+ * not an immediate one. The current open cycle keeps its frozen (old) price
+ * until it rolls over — an already-issued §86/4 is never rewritten (immediate
+ * mid-cycle re-freeze is the deferred, flag-gated Phase 2). Hence the note
+ * reads "future renewal cycles", NOT "the next invoice".
  */
-export const PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL = false;
+export const PLAN_CHANGE_BILLING_FLOWS_TO_RENEWAL = true;
 
 export interface PlanChangeSummary {
   readonly oldPlanId: string;

@@ -77,12 +77,12 @@ describe('PlanChangeConfirmDialog', () => {
     expect(screen.getByText(C.yearOnlyNotice)).toBeInTheDocument();
   });
 
-  it('shows the non-automatic future-cycles billing note (flag is false)', () => {
+  it('shows the automatic future-cycles billing note (flag is true post-remediation)', () => {
     renderDialog();
-    expect(screen.getByText(C.billingNoteFutureCycles)).toBeInTheDocument();
     expect(
-      screen.queryByText(C.billingNoteFutureCyclesAutomatic),
-    ).toBeNull();
+      screen.getByText(C.billingNoteFutureCyclesAutomatic),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(C.billingNoteFutureCycles)).toBeNull();
   });
 
   it('calls onConfirm exactly once when Confirm is clicked', () => {

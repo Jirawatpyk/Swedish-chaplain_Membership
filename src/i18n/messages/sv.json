@@ -986,7 +986,7 @@
         "billingNoteRecord": "Medlemmens registrerade plan ändras omedelbart.",
         "billingNoteCurrentInvoice": "Redan utfärdade fakturor ändras inte. Om beloppet nu är fel, utfärda på nytt eller kreditera separat.",
         "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande den tidigare registrerade planen tills förnyelsecykeln ändras separat.",
-        "billingNoteFutureCyclesAutomatic": "Nästa förnyelsefaktura använder den nya planen.",
+        "billingNoteFutureCyclesAutomatic": "Framtida förnyelsecykler debiteras automatiskt enligt den nya planen. Den nuvarande förnyelseperioden behåller sitt registrerade pris tills den förnyas.",
         "confirm": "Byt plan",
         "cancel": "Avbryt"
       },

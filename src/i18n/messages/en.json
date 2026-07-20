@@ -986,7 +986,7 @@
         "billingNoteRecord": "The member's plan on record changes immediately.",
         "billingNoteCurrentInvoice": "Invoices that have already been issued are not changed. If the amount is now wrong, reissue or credit them separately.",
         "billingNoteFutureCycles": "Renewal billing is not updated automatically. The next renewal invoice will still use the previously recorded plan until the renewal cycle is changed separately.",
-        "billingNoteFutureCyclesAutomatic": "The next renewal invoice will use the new plan.",
+        "billingNoteFutureCyclesAutomatic": "Future renewal cycles will bill the new plan automatically. The current renewal period keeps its recorded price until it renews.",
         "confirm": "Change plan",
         "cancel": "Cancel"
       },
